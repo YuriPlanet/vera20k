@@ -76,7 +76,7 @@ fn native_tube_hierarchy_pairs_match_original_executable() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|v| v.as_u64().unwrap() as u16)
+            .map(|v| v.as_u64().unwrap() as ZoneId)
             .collect();
         let record = BridgeEndpointRecord {
             endpoint_a: coord(&case["a"]),
@@ -88,9 +88,10 @@ fn native_tube_hierarchy_pairs_match_original_executable() {
         for seed in case["seed_pairs"].as_array().unwrap() {
             register_native_hierarchy_pair(
                 &mut buckets,
-                seed[0].as_u64().unwrap() as u16,
-                seed[1].as_u64().unwrap() as u16,
+                seed[0].as_u64().unwrap() as ZoneId,
+                seed[1].as_u64().unwrap() as ZoneId,
                 seed[2].as_u64().unwrap() as u8,
+                crate::map::cell_index::CellGrid::Retail,
             );
         }
         let width = case["width"].as_u64().unwrap() as u16;
@@ -322,7 +323,7 @@ fn tube_hierarchy_constant_walk_endpoints_match_original_executable() {
             |v: &serde_json::Value| (v[0].as_i64().unwrap() as u16, v[1].as_i64().unwrap() as u16);
         let token = case["token"].as_i64().unwrap() as i32;
         assert_eq!(
-            hierarchy_walk_tube_path(&terrain, coord(&case["start"]), &[token]),
+            terrain.walk_native_path(coord(&case["start"]), &[token]),
             Ok(coord(&case["end"])),
             "raw token {token}"
         );
@@ -336,9 +337,27 @@ fn tube_hierarchy_constant_walk_endpoints_match_original_executable() {
 #[test]
 fn a_sign_extended_pair_is_kept_once_per_bucket() {
     let mut buckets = HierarchyEdgeBuckets::new();
-    register_native_hierarchy_pair(&mut buckets, 1, 0x8001, 0);
-    register_native_hierarchy_pair(&mut buckets, 2, 0x8001, 0);
-    register_native_hierarchy_pair(&mut buckets, 1, 0x8001, 1);
+    register_native_hierarchy_pair(
+        &mut buckets,
+        1,
+        0x8001,
+        0,
+        crate::map::cell_index::CellGrid::Retail,
+    );
+    register_native_hierarchy_pair(
+        &mut buckets,
+        2,
+        0x8001,
+        0,
+        crate::map::cell_index::CellGrid::Retail,
+    );
+    register_native_hierarchy_pair(
+        &mut buckets,
+        1,
+        0x8001,
+        1,
+        crate::map::cell_index::CellGrid::Retail,
+    );
     let stored: Vec<_> = buckets
         .buckets
         .iter()

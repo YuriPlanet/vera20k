@@ -17,7 +17,7 @@ fn action(kind: i32, operand: &str) -> RuntimeAction {
         .unwrap()
         .entries()[0]
         .clone();
-    RuntimeDefinitions::default().resolve_action(entry, None, None)
+    RuntimeDefinitions::default().resolve_action(entry, None, None, None)
 }
 
 fn run(sim: &mut Simulation, action: &RuntimeAction) -> bool {
@@ -31,7 +31,7 @@ fn run(sim: &mut Simulation, action: &RuntimeAction) -> bool {
         &mut Vec::new(),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -122,6 +122,7 @@ fn ordered_tag_rgb_actions_then_the_production_fade_keep_distinct_palette_operat
         &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
         None,
         None,
+        None,
     );
     sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     sim.session.publish_started();
@@ -137,10 +138,9 @@ fn ordered_tag_rgb_actions_then_the_production_fade_keep_distinct_palette_operat
         .advance_app_frame(
             &[],
             &rules,
-            None,
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(frame.tick.frame_committed);
@@ -225,4 +225,37 @@ fn palette_constructor_priority_matches_eight_original_suffix_controls() {
             "{storm}/{nuke}/{chrono}/{dom}"
         );
     }
+}
+
+/// Execute127's ChronoScreen53B460 and the end of 53B560 call neither
+/// UpdateLighting, RecalcLighting nor the cell relight, but 555DA0 builds a
+/// new Convert with the nuke's RGB while the effect runs: each edge, the
+/// paused service visit's end included, puts that in the ordered stream.
+#[test]
+fn chrono_screen_edges_publish_the_convert_rgb_without_a_relight() {
+    let mut sim = Simulation::with_seed(0);
+    assert!(run(&mut sim, &action(127, "1")));
+    assert!(
+        matches!(
+            sim.take_lighting_events()[..],
+            [LightingEvent::RelightProfile {
+                cell_profile: ScenarioLightingProfile::Normal,
+                constructor_rgb: Some([1750, 1500, 1250]),
+            }]
+        ),
+        "the start"
+    );
+    while sim.session.chrono_screen().active() {
+        crate::sim::replay::ScenarioServiceInput::StepChronoScreen.apply(&mut sim);
+    }
+    assert!(
+        matches!(
+            sim.take_lighting_events()[..],
+            [LightingEvent::RelightProfile {
+                cell_profile: ScenarioLightingProfile::Normal,
+                constructor_rgb: None,
+            }]
+        ),
+        "the end"
+    );
 }

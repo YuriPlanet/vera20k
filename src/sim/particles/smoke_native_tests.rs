@@ -1,4 +1,6 @@
 //! Consumes original execution, never Rust-produced expectations.
+// Ares simulates these Smoke systems itself (hooks 0x62DF05, 0x62FD60): the
+// stock system controls hold in a stock game only.
 use super::*;
 use crate::map::bridge_facts::{BRIDGE_FLAG_STRUCTURAL, BridgeCellFacts};
 use crate::map::entities::EntityCategory;
@@ -110,7 +112,7 @@ fn original_smoke_constructors_preserve_signed_delta_then_lifetime_rng() {
             id,
             coords(&case["particle"]["coords"]),
             IVec3::ZERO,
-            rules.particle_type(id),
+            &rules,
             &mut sim,
         );
         assert_particle(&p, &case["particle"]);
@@ -133,7 +135,7 @@ fn original_smoke_dispatch_cadence_drift_speed_and_word_lifetime() {
         adopt_rng(&mut sim, case);
         let main = sim.main_rng.native_state_hex();
         let mapgen = sim.mapgen_rng.native_state_hex();
-        super::super::system_ai::tick_particle(&mut p, &mut sim, &rules);
+        super::super::system_ai::tick_particle(&mut p, &mut sim, &rules, None, None);
         assert_particle(&p, &case["after"]);
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
@@ -160,11 +162,32 @@ fn original_smoke_move_uses_old_live_bridge_and_retains_move_death_coords() {
             rules.particle_type(ty),
             rules.general.wind_direction(),
             &sim,
-        );
+        )
+        .unwrap();
         assert_particle(&p, &case["after"]);
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             case["scenario_after"].as_str().unwrap()
+        );
+    }
+}
+
+/// A mod's `[General] WindDirection` outside 0..=7 (or the -1 of a missing
+/// key) must not stop the game: the smoke moves by its own drift alone.
+#[test]
+fn a_wind_direction_outside_the_table_moves_smoke_with_no_wind() {
+    let data = corpus();
+    let case = &data["movement"][0];
+    for wind in [-1, 8] {
+        let rules = rules(&data, &case["input"]);
+        let mut sim = sim(false);
+        let mut p = declared_particle(&mut sim, &rules, &case["before"]);
+        let before = p.coords;
+        let ty = p.type_id;
+        move_smoke(&mut p, rules.particle_type(ty), wind, &sim).unwrap();
+        assert_eq!(
+            (p.coords.x - before.x, p.coords.y - before.y),
+            (p.drift_x, p.drift_y)
         );
     }
 }
@@ -209,7 +232,10 @@ fn install_system(
                     z: c.z,
                 });
             if category == EntityCategory::Structure {
-                entity.type_facts.set_foundation_for_test("2x2".into());
+                entity
+                    .seldom
+                    .type_facts
+                    .set_foundation_for_test("2x2".into());
             }
         }
         sim.substrate.entities.insert(entity);
@@ -253,6 +279,7 @@ fn install_system(
             .entities
             .get_mut(owner)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .set_for_test(Some(id));
         if !input["moved_owner_coords"].is_null() {
@@ -321,7 +348,7 @@ fn original_smoke_follows_owner_offset_leaves_trail_and_suppresses_tube_births()
                 &mut sim,
                 &rules,
                 id,
-                crate::sim::world::UninitContext::with_rules(&rules)
+                crate::sim::world::UninitContext::new(&rules)
             ));
             assert_system(&sim, id, Some(owner), expected);
             assert_eq!(
@@ -365,6 +392,7 @@ fn assert_system(sim: &Simulation, id: u64, owner: Option<u64>, expected: &Value
                 .entities
                 .get(owner)
                 .unwrap()
+                .seldom
                 .damage_smoke_system_id
                 .system()
                 == Some(id),
@@ -388,7 +416,7 @@ fn original_smoke_system_birth_split_emission_cutoff_and_limbo() {
                 &mut sim,
                 &rules,
                 id,
-                crate::sim::world::UninitContext::with_rules(&rules)
+                crate::sim::world::UninitContext::new(&rules)
             ));
             assert_system(&sim, id, owner, &visit["state"]);
         }
@@ -436,7 +464,7 @@ fn original_stored_smoke_accumulator_preserves_long_run_rng_boundaries() {
             &mut sim,
             &rules,
             id,
-            crate::sim::world::UninitContext::with_rules(&rules),
+            crate::sim::world::UninitContext::new(&rules),
         );
         if let Some(point) = points.iter().find(|point| point["frame"] == frame) {
             assert_system(&sim, id, None, &point["state"]);
@@ -476,7 +504,7 @@ fn smoke_scalar_and_air_authorities_survive_existing_snapshot_roundtrip() {
         &mut sim,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     sim.session
         .set_map_name_for_test("damage-smoke-continuation".into());
@@ -512,13 +540,13 @@ fn smoke_scalar_and_air_authorities_survive_existing_snapshot_roundtrip() {
         &mut sim,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     super::super::system_ai::tick_particle_system(
         &mut restored,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules),
+        crate::sim::world::UninitContext::new(&rules),
     );
     assert_system(&restored, id, owner, &case["visits"][1]);
     let a = sim.particle_systems().get(id).unwrap();

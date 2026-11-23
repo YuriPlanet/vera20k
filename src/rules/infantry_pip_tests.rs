@@ -141,3 +141,22 @@ fn retail_pip_fields_and_capacities_match_original_readers() {
         }
     }
 }
+
+/// Ares replaces ReadPip (hook 0x004748A0): a missing value keeps the current
+/// frame instead of reading it as a name index, and an integer is a frame.
+#[test]
+fn ares_read_pip_keeps_the_frame_and_takes_integers() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let mut section = IniSection::new("E1".to_owned());
+    for (key, value) in [
+        ("Named", "PersonBlue"),
+        ("Number", "6"),
+        ("Junk", "striped"),
+    ] {
+        section.set(key, value);
+    }
+    assert_eq!(section.read_pip("Missing", 7), 7);
+    assert_eq!(section.read_pip("Named", 7), 11);
+    assert_eq!(section.read_pip("Number", 7), 6);
+    assert_eq!(section.read_pip("Junk", 7), 7);
+}

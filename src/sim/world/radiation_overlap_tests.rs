@@ -21,10 +21,9 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) -> super::SimFrameOutput {
         .advance_app_frame(
             &commands,
             rules,
-            None,
             33,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary DESO overlap frame");
     assert!(output.tick.frame_committed);

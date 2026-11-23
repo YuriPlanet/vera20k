@@ -38,7 +38,7 @@ pub(crate) fn hierarchy_native_fixture(
         .as_array()
         .unwrap()
         .iter()
-        .map(|v| v.as_u64().unwrap() as u16)
+        .map(|v| v.as_u64().unwrap() as ZoneId)
         .collect();
     let mut base = hierarchy_base(classes, ids);
     base.levels = input["levels"]
@@ -197,9 +197,9 @@ pub(crate) fn assert_native_hierarchy_graphs(
         }
         let records: Vec<_> = (0..graph.record_slot_count())
             .map(|i| {
-                let r = graph.record(i as u16).unwrap();
+                let r = graph.record(i as ZoneId).unwrap();
                 let edges: Vec<_> = graph
-                    .edges(i as u16)
+                    .edges(i as ZoneId)
                     .iter()
                     .map(|e| [u32::from(e.neighbor), u32::from(e.flag)])
                     .collect();
@@ -283,7 +283,7 @@ fn bridge_hierarchy_native_full_and_local_graphs_queries_and_padding() {
                         base.levels[i] = v as u8;
                     }
                     if let Some(v) = change["base_id"].as_u64() {
-                        base.zone_ids[i] = v as u16;
+                        base.zone_ids[i] = v as ZoneId;
                     }
                     if let Some(v) = change["cell_level"].as_u64() {
                         terrain.cells_mut_for_test()[i].level = v as u8;
@@ -382,6 +382,7 @@ fn bridge_hierarchy_native_flood_last_neighbor_query_order_and_flag() {
                 width: 16,
                 height: 16,
                 native_scan_offset: None,
+                signed_levels: false,
             },
             &mut graph,
             HierarchyBlock {
@@ -474,14 +475,14 @@ fn bridge_hierarchy_native_world_endpoint_lookup_retains_boundary_zone() {
     for level in 0..3 {
         let expected = case["initial"]["graphs"][level]["padding_ids"][8]
             .as_u64()
-            .unwrap() as u16;
+            .unwrap() as ZoneId;
         assert_eq!(
             zones.hierarchy_zone_at_native(level, (19, 8)),
             Some(expected)
         );
         let aliased = case["initial"]["graphs"][level]["ids"][9 * 19 + 3]
             .as_u64()
-            .unwrap() as u16;
+            .unwrap() as ZoneId;
         assert_eq!(
             zones.hierarchy_zone_at_native(level, (23, 8)),
             Some(aliased)

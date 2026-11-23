@@ -3,7 +3,7 @@
 //! supplied native state; producer/lift admission is tested by its sim owner.
 
 use crate::app::presentation::render::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectBodyDraw, PlannedObjectInstance, lower_object_instances,
+    NativeDisplayOrder, ObjectBodyDraw, OwnedPlannedObject, lower_object_instances,
 };
 use crate::app::presentation::render::merge_passes::draw_native_object_pass;
 use crate::render::batch::BatchRenderer;
@@ -79,6 +79,8 @@ fn draw(value: &Value) -> WaveDraw {
             "fallback" => WaveClipPath::Fallback,
             other => panic!("unknown native clip branch {other}"),
         },
+        blend: crate::render::wave_geometry::WaveBlend::Native,
+        ares: false,
     }
 }
 
@@ -216,6 +218,8 @@ fn original_pixel_linear_aliases_and_initialized_adjacent_window_are_consumed() 
             phase: integer(&input["phase"]),
             direction: integer(&input["direction"]).try_into().unwrap(),
             clip_path: WaveClipPath::Fast,
+            blend: crate::render::wave_geometry::WaveBlend::Native,
+            ares: false,
         };
         let pixel = wave
             .pixel_operation(
@@ -379,16 +383,39 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
         let z = words(&input["z_words"]);
         let alpha = words(&input["alpha_words"]);
         let expected = expected_words(row);
-        let waves = row["draws"]
+        let stock = row["draws"]
             .as_array()
             .unwrap()
             .iter()
             .map(draw)
             .collect::<Vec<_>>();
-        for format in [
-            wgpu::TextureFormat::Bgra8UnormSrgb,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-        ] {
+        // Ares ModifyWaveColor (Ares.dll 10055920) with each kind's
+        // GetWaveColorData defaults (Sonic 0,256,256; MagBeam 128,0,1024; no
+        // Color) reproduces both stock blends, so the folded mode 11 must
+        // produce the same native planes.
+        let ares = stock
+            .iter()
+            .map(|&wave| WaveDraw {
+                blend: crate::render::wave_geometry::WaveBlend::Ares(
+                    crate::render::wave_geometry::WaveColor {
+                        intensity: match wave.polygon {
+                            WavePolygon::Sonic(_) => [0, 256, 256],
+                            WavePolygon::Magnetic(_) => [128, 0, 1024],
+                            WavePolygon::Laser(_) => unreachable!("stock rows hold no laser"),
+                        },
+                        color: [0; 3],
+                    },
+                ),
+                ..wave
+            })
+            .collect::<Vec<_>>();
+        for (waves, format) in [stock, ares].into_iter().flat_map(|waves| {
+            [
+                wgpu::TextureFormat::Bgra8UnormSrgb,
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+            ]
+            .map(|format| (waves.clone(), format))
+        }) {
             let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
             batch.write_camera(&gpu.queue, camera(size));
             let color = gpu.target(size, format);
@@ -415,14 +442,14 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                 // Opposite storage/ID order cannot replace native Air append order.
                 let ids = (1..=waves.len() as u64).rev().collect::<Vec<_>>();
                 for &id in &ids {
-                    assert!(display.submit(id, Some(DisplayLayer::AIR), &|_| 0));
+                    assert!(display.submit(id, Some(DisplayLayer::AIR)));
                 }
                 let order = NativeDisplayOrder::from_display(&display);
                 let mut parents = waves
                     .iter()
                     .zip(&ids)
                     .map(|(&wave, &id)| {
-                        let mut parent = PlannedObjectInstance::object(
+                        let mut parent = OwnedPlannedObject::object(
                             order.object_draw(id, SpriteEncoding::Plain).unwrap(),
                             Vec::new(),
                         );
@@ -431,7 +458,7 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                     })
                     .collect::<Vec<_>>();
                 parents.reverse();
-                let mut layers = lower_object_instances(parents);
+                let mut layers = lower_object_instances(parents.into());
                 let air = &mut layers[3];
                 for draws in &air.surface_draws {
                     air.line_batches.push(terrain.prepare_surface_lines(
@@ -449,7 +476,6 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                             zoom: 1.,
                         },
                         |_| false,
-                        |_| panic!("Wave must never query A"),
                     ));
                 }
                 let initial = background

@@ -68,10 +68,10 @@ fn active(sim: &Simulation, owner: &str, name: &str) -> bool {
 
 fn recheck(sim: &mut Simulation, rules: &RuleSet, owner: &str) {
     let owner = sim.interner.get(owner).unwrap();
-    sim.recheck_house_tech_tree(owner, rules);
+    sim.recheck_house_tech_tree(owner, rules, &mut Default::default());
     // Revocation itself requests a follow-up tail. Settle it so each next
     // lifecycle change must publish its own invalidation, not inherit one.
-    sim.recheck_house_tech_tree(owner, rules);
+    sim.recheck_house_tech_tree(owner, rules, &mut Default::default());
     assert!(!sim.houses.get_mut(&owner).unwrap().take_tech_recheck());
 }
 
@@ -94,6 +94,7 @@ fn ready(sim: &mut Simulation, name: &str) -> InternedId {
 
 #[test]
 fn auxiliary_is_any_of_negative_is_any_veto_and_native_aux_remains_required() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("[BlackWidowSpecial]\nAuxBuilding=NATIVEAUX\n");
     for auxiliary in ["GASCEA", "GASCPF"] {
         let mut sim = world(&rules);
@@ -129,6 +130,7 @@ fn auxiliary_is_any_of_negative_is_any_veto_and_native_aux_remains_required() {
 
 #[test]
 fn black_widow_upgrade_switches_grants_at_the_existing_dirty_house_tail() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     spawn(&mut sim, &rules, "GACLAB", OWNER, 4);
@@ -150,7 +152,7 @@ fn black_widow_upgrade_switches_grants_at_the_existing_dirty_house_tail() {
         id,
         (15, 15),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     sim.sound_events.clear_for_test();
@@ -168,6 +170,7 @@ fn black_widow_upgrade_switches_grants_at_the_existing_dirty_house_tail() {
 
 #[test]
 fn capture_moves_last_negative_and_grants_between_both_houses() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     for (owner, offset) in [(OWNER, 0), (OTHER, 10)] {
@@ -179,14 +182,14 @@ fn capture_moves_last_negative_and_grants_between_both_houses() {
     recheck(&mut sim, &rules, OWNER);
     recheck(&mut sim, &rules, OTHER);
     let other = sim.interner.get(OTHER).unwrap();
-    sim.change_owner_with_rules(first, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(first, other, &rules, None, &mut FrameEffects::default());
     recheck(&mut sim, &rules, OWNER);
     recheck(&mut sim, &rules, OTHER);
     assert!(!active(&sim, OWNER, NORMAL), "one negative still remains");
     assert!(active(&sim, OWNER, ALPHA));
     assert!(!active(&sim, OTHER, NORMAL));
     assert!(active(&sim, OTHER, ALPHA));
-    sim.change_owner_with_rules(second, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(second, other, &rules, None, &mut FrameEffects::default());
     recheck(&mut sim, &rules, OWNER);
     recheck(&mut sim, &rules, OTHER);
     assert!(active(&sim, OWNER, NORMAL));
@@ -197,6 +200,7 @@ fn capture_moves_last_negative_and_grants_between_both_houses() {
 
 #[test]
 fn limbo_buildings_do_not_satisfy_auxiliary_or_block_as_negative() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     spawn(&mut sim, &rules, "GACLAB", OWNER, 4);
@@ -209,7 +213,7 @@ fn limbo_buildings_do_not_satisfy_auxiliary_or_block_as_negative() {
     assert!(allowed(&sim, &rules, OWNER, NORMAL));
     recheck(&mut sim, &rules, OWNER);
     assert!(active(&sim, OWNER, NORMAL));
-    sim.techno_limbo_with_rules(auxiliary, &rules, None);
+    sim.techno_limbo_with_rules(auxiliary, &rules);
     assert!(!allowed(&sim, &rules, OWNER, NORMAL));
     recheck(&mut sim, &rules, OWNER);
     assert!(!active(&sim, OWNER, NORMAL));
@@ -217,6 +221,7 @@ fn limbo_buildings_do_not_satisfy_auxiliary_or_block_as_negative() {
 
 #[test]
 fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     let owner = sim.interner.get(OWNER).unwrap();
@@ -228,7 +233,14 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
     };
     sim.sound_events.clear_for_test();
     let before = sim.state_hash();
-    sim.apply_command_with_overlays(OWNER, &command, &rules, None, FrameEffects::default());
+    sim.apply_command_with_overlays(
+        None,
+        OWNER,
+        &command,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert_eq!(
         sim.state_hash(),
         before,
@@ -240,7 +252,14 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
     );
     spawn(&mut sim, &rules, "GASCEA", OWNER, 8);
     sim.sound_events.clear_for_test();
-    sim.apply_command_with_overlays(OWNER, &command, &rules, None, FrameEffects::default());
+    sim.apply_command_with_overlays(
+        None,
+        OWNER,
+        &command,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(!sim.super_weapons[&owner][&id].is_ready);
     assert!(
         sim.sound_events
@@ -251,6 +270,7 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
 
 #[test]
 fn unavailable_ai_does_not_enter_target_search_or_draw_rng() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     let owner = sim.interner.get(OWNER).unwrap();
@@ -262,11 +282,11 @@ fn unavailable_ai_does_not_enter_target_search_or_draw_rng() {
         .get_mut(&owner)
         .unwrap()
         .set_player_control_for_test(false);
-    assert!(!sim.houses[&owner].is_controlled_by_human(sim.session.game_mode_nonzero()));
+    assert!(!sim.houses[&owner].is_controlled_by_human(sim.session.rule_policy()));
     ready(&mut sim, NORMAL);
     let before = sim.state_hash();
     ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));
-    ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+    ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
     let observed = ai_fire::AI_FIRE_LOG.take().unwrap();
     assert_eq!(observed, vec![ai_fire::AiFireEvent::TryFire]);
     assert_eq!(sim.state_hash(), before);
@@ -274,6 +294,7 @@ fn unavailable_ai_does_not_enter_target_search_or_draw_rng() {
 
 #[test]
 fn snapshot_retains_counts_and_pending_recheck_without_new_availability_state() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with("");
     let mut sim = world(&rules);
     spawn(&mut sim, &rules, "GACLAB", OWNER, 4);
@@ -312,6 +333,7 @@ fn snapshot_retains_counts_and_pending_recheck_without_new_availability_state() 
 
 #[test]
 fn ordered_building_lists_find_existing_types_without_allocation() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let art = IniFile::empty();
     let source = |lists: &str| {
         IniFile::from_str(&format!(
@@ -393,6 +415,7 @@ fn ordered_building_lists_find_existing_types_without_allocation() {
 
 #[test]
 fn absent_tags_preserve_stock_and_resolved_extension_lists_participate_in_hash() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let mut rules = rules_with("");
     let original = rules.simulation_config_hash();
     rules
@@ -441,6 +464,7 @@ fn absent_tags_preserve_stock_and_resolved_extension_lists_participate_in_hash()
 
 #[test]
 fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules_with(
         "[BlackWidowSpecial]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.Damage=75\n[Payload]\nCellSpread=0.5\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     );
@@ -468,7 +492,7 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
         id,
         (15, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.state_hash(), before);
@@ -482,7 +506,7 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
         id,
         (15, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 925);
@@ -497,7 +521,7 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
         id,
         (15, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.state_hash(), before);

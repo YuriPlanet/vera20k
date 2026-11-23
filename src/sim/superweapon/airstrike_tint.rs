@@ -13,7 +13,7 @@ use crate::sim::timer::CdTimer;
 
 /// Techno+1A8 outer timer, +1B4 phase timer and +1C0 phase. Separate from
 /// Iron Curtain: both advance in native Techno AI, Iron first, on one stream.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AirstrikeTintState {
     timer: CdTimer,
     tint_timer: CdTimer,
@@ -31,6 +31,12 @@ impl AirstrikeTintState {
     /// 0070E340 starts the outer timer with zero; it does not reset the phase.
     pub(crate) fn stop(&mut self, frame: i32) {
         self.timer.start(frame, 0);
+    }
+
+    /// Whether [`Self::update_tint`] can change anything: an admitted
+    /// building, or a phase to reset.
+    pub(crate) fn updates(&self, active: bool) -> bool {
+        active || self.tint_stage != 0
     }
 
     /// 0070E920 admits only a building with a marker whose manager targets
@@ -105,6 +111,6 @@ impl AirstrikeTintState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "airstrike_tint_tests.rs"]
 mod tests;

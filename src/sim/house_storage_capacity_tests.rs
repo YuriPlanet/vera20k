@@ -79,7 +79,7 @@ fn capacity_matches_original_signed_transfer_slices() {
         ));
         if remove {
             assert_eq!(sim.houses[&owner].tracking().storage_capacity(), 100);
-            sim.techno_limbo_with_rules(target, &rules, None);
+            sim.techno_limbo_with_rules(target, &rules);
         }
         assert_eq!(
             sim.houses[&owner].tracking().storage_capacity(),
@@ -106,7 +106,7 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
         logic_eligible: true,
     };
     assert!(matches!(
-        sim.try_reveal_entity_with_context(target, rejected, UninitContext::with_rules(&rules)),
+        sim.try_reveal_entity_with_context(target, rejected, UninitContext::new(&rules)),
         RevealOutcome::Failed(_)
     ));
     assert_eq!(sim.houses[&first].tracking().storage_capacity(), 0);
@@ -136,7 +136,7 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
         41,
         "score filters do not suppress capacity"
     );
-    sim.change_owner_with_rules(target, second, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(target, second, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         (
             sim.houses[&first].tracking().storage_capacity(),
@@ -144,10 +144,10 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
         ),
         (18, 23)
     );
-    sim.techno_limbo_with_rules(target, &rules, None);
-    sim.techno_limbo_with_rules(target, &rules, None);
+    sim.techno_limbo_with_rules(target, &rules);
+    sim.techno_limbo_with_rules(target, &rules);
     assert_eq!(sim.houses[&second].tracking().storage_capacity(), 0);
-    sim.change_owner_with_rules(target, first, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(target, first, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.houses[&first].tracking().storage_capacity(),
         18,
@@ -192,39 +192,39 @@ fn capacity_and_future_type_input_survive_snapshot_and_affect_hash() {
         .houses
         .get_mut(&owner)
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .storage_capacity = -16;
     assert_ne!(restored.state_hash(), hash);
     restored
         .houses
         .get_mut(&owner)
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .storage_capacity = -17;
-    let facts = restored
+    let facts = *restored
         .substrate
         .entities
         .get(future)
         .unwrap()
-        .tracking_facts;
+        .tracking_facts();
     restored
         .substrate
         .entities
         .get_mut(future)
         .unwrap()
-        .tracking_facts
+        .tracking_facts_mut_for_test()
         .storage_capacity = 0;
     assert_ne!(
         restored.state_hash(),
         hash,
         "a limbo object's future input matters"
     );
-    restored
+    *restored
         .substrate
         .entities
         .get_mut(future)
         .unwrap()
-        .tracking_facts = facts;
+        .tracking_facts_mut_for_test() = facts;
     assert_eq!(restored.state_hash(), hash);
     for candidate in [&mut sim, &mut restored] {
         assert!(matches!(

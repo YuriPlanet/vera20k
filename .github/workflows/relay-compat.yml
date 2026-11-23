@@ -1,0 +1,63 @@
+name: Relay compatibility
+
+# A released game reads the relay's records with its own copy of
+# vera20k-relay-protocol, and a relay deploy reaches every version the lobby
+# admits. `tools/relay_compat.py` builds this change's compat client against the
+# protocol crate of each stable release from OLDEST_ADMITTED (the lobby's floor)
+# on and of the newest dev build, and plays each against the relay this change
+# builds, so a record they cannot read fails here instead of after a deploy
+# (#3322's silence departure stalled v0.2.2 that way). It also plays the
+# change's own client as a control.
+#
+# A change that breaks admitted releases on purpose raises OLDEST_ADMITTED past
+# them and carries the `relay-compat-break` label: the client failures that
+# remain, such as an earlier dev build of the new floor's version, then only warn.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'services/relay/**'
+      - 'services/relay-protocol/**'
+      - 'tools/relay_compat.py'
+      - '.github/workflows/relay-compat.yml'
+  workflow_dispatch:
+    inputs:
+      clients:
+        description: 'Release tags or full commit hashes, space-separated (default: every build the lobby admits)'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: relay-compat-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  released-clients:
+    runs-on: ubuntu-24.04
+    # Each client's match waits out the relay's 60 s loading silence.
+    timeout-minutes: 30
+    env:
+      # One target for every tree, so released trees reuse the dependency builds.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Play released clients against this relay
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLIENTS: ${{ inputs.clients }}
+          ALLOW_BREAK: ${{ contains(github.event.pull_request.labels.*.name, 'relay-compat-break') }}
+        run: |
+          args=()
+          for client in $CLIENTS; do args+=(--client "$client"); done
+          if [ "$ALLOW_BREAK" = true ]; then args+=(--allow-break); fi
+          python -m tools.relay_compat "${args[@]}"

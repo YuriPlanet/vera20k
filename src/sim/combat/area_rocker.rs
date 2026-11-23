@@ -219,7 +219,7 @@ fn words(world: &Simulation, id: u64) -> [u32; 4] {
         .map_or([0; 4], |state| state.native_bits())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use super::*;
     use crate::sim::components::DriveCoord;
@@ -356,8 +356,7 @@ mod tests {
                 .unwrap()
             );
             world.main_rng =
-                SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                    .into();
+                SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
             world.scenario_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["scenario"].as_str().unwrap(),
             );
@@ -517,7 +516,7 @@ mod tests {
             .get_mut(upper)
             .unwrap()
             .set_on_bridge(true);
-        assert!(world.mark_entity_put(upper, crate::sim::world::UninitContext::with_rules(&rules)));
+        assert!(world.mark_entity_put(upper, crate::sim::world::UninitContext::new(&rules)));
         CALLS.with_borrow_mut(|capture| *capture = Some(Vec::new()));
         apply(
             &mut world,

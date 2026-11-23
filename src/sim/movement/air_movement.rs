@@ -230,10 +230,11 @@ pub fn object_height_in_query(
     on_bridge: bool,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> i32 {
-    let ground = cells
-        .and_then(|cells| super::ground_pose::query_ground_height(cells, coord).ok())
-        .unwrap_or(0);
-    super::ground_pose::height_at_z(coord.z, ground, on_bridge)
+    match cells.and_then(|cells| super::ground_pose::query_surface_z(cells, coord, on_bridge).ok())
+    {
+        Some(surface) => coord.z.wrapping_sub(surface),
+        None => super::ground_pose::height_at_z(coord.z, 0, on_bridge),
+    }
 }
 
 /// Object virtual+50 /5F6B60. A marked grounded object is low; an unmarked
@@ -380,16 +381,18 @@ pub(crate) fn update_fly_height(
 ) -> super::fly_height::HeightOutput {
     let xy = super::ground_pose::position_world_xy(&entity.position);
     let ground_z = super::ground_pose::ground_surface_z_at(xy, false, terrain, None).unwrap_or(0);
-    let structural_bridge = terrain.is_some_and(|grid| {
-        let cell = grid.native_cell_identity(((xy[0] / 256) as i16, (xy[1] / 256) as i16));
-        grid.native_cell_flags(cell) & 0x100 != 0
+    let bridge_deck_z = terrain.and_then(|grid| {
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(grid);
+        let cell = cells.lookup_world(xy[0], xy[1]);
+        (cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0)
+            .then(|| super::ground_pose::deck_surface_z(&cells, cell, ground_z))
     });
     let object =
         rules_context.and_then(|(rules, interner)| interner.object_type(entity.type_ref(), rules));
     let flight_level = type_flight_level(entity, rules_context);
     let has_passenger = entity.category() == crate::map::entities::EntityCategory::Aircraft
         && entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .is_some_and(|cargo| cargo.count() != 0);
     let world_z = super::ground_pose::object_world_z_leptons(entity, terrain);
@@ -405,18 +408,24 @@ pub(crate) fn update_fly_height(
             world_z,
             ground_z,
             on_bridge,
-            structural_bridge,
+            bridge_deck_z,
             health: entity.health.current(),
             has_passenger,
             is_dropship: object.is_some_and(|o| o.is_dropship),
             flight_level,
+            hunter_seeker: rules_context
+                .filter(|(rules, _)| rules.ares_form())
+                .and_then(|(rules, _)| {
+                    let o = object.filter(|o| o.hunter_seeker)?;
+                    Some(o.techno_combat().hunter_seeker_climb(rules.ares_general()))
+                }),
         });
     entity.position.put_z(output.world_z);
     entity.on_bridge.store(output.on_bridge);
     output
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_movement, tests_sim_a_b)))]
 pub(crate) mod tests {
     use super::*;
     use crate::rules::locomotor_type::LocomotorKind;
@@ -432,6 +441,31 @@ pub(crate) mod tests {
             .as_ref()
             .and_then(|locomotor| locomotor.fly_runtime())
             .is_some_and(crate::sim::movement::fly_height::FlyRuntime::moving)
+    }
+
+    #[test]
+    fn unit_over_a_depressed_lane_is_grounded_on_the_bridge() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+        use crate::map::resolved_terrain::{NativeCellQuery, test_flat_cell, test_grid};
+
+        let mut terrain = test_grid(12, 12, |x, y| {
+            let mut cell = test_flat_cell(x, y);
+            cell.level = if (x, y) == (6, 7) { 0 } else { 4 };
+            cell
+        });
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((6, 6), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+        let cells = NativeCellQuery::canonical(&terrain);
+        let point = DriveCoord {
+            x: 6 * 256 + 128,
+            y: 7 * 256 + 128,
+            z: 832,
+        };
+        let height = || object_height_in_query(point, true, Some(&cells));
+        assert_eq!(height(), 0);
+        assert!(!object_flight_predicate(true, height, true));
     }
 
     #[test]
@@ -501,8 +535,7 @@ pub(crate) mod tests {
             id,
             Some(crate::sim::components::NavTargetRef::cell(20, 15)),
             &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("the Unit setter takes the cell");
 
@@ -668,6 +701,6 @@ pub(crate) mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "object_flight_tests.rs"]
 mod object_flight_tests;

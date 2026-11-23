@@ -4,6 +4,14 @@ Run and export instructions: [retail corpus owner](../../../tools/retail_corpus.
 `manifest.json` contains archive-index fingerprints and Rust decoder digests.
 These are **not native oracle goldens**. Never update them from a failing test.
 
+## October 28 sniffer change
+
+`detect_format` no longer drops every entry whose leading zero word reads as a nested
+MIX header (#1293). That newly admits 2,998 SHP and 32 PAL files (5,448 and 130 in all,
+11,854 sniffed), which changes only those two counts and rollups. Every other field,
+including the ten named digests, is unchanged. Across the corpus `identify` changes one
+verdict: `audio.mix` inside `language.mix` was a false VPL and is now a nested MIX.
+
 ## September 27 migration
 
 The 21 former integration tests were outside the required `cargo test --lib`

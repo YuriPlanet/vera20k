@@ -12,10 +12,12 @@ use super::spark::{
     classify_collision_kind, in_contact_band,
 };
 use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::voxel_slope::slope_matrix;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::{CellRef, get_cellclass_fallback_leptons};
+use crate::sim::movement::ground_pose::{corrected_deck_z, z_at_height};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::Simulation;
 use crate::util::lepton::{UnsupportedGroundSlope, ground_height_leptons};
@@ -106,6 +108,20 @@ pub(super) fn constructor_ground_height(
     ground_height_for_selection(&selected, world_x, world_y).map(Some)
 }
 
+fn selected_bridge_z(
+    terrain: &ResolvedTerrainGrid,
+    cell: &SelectedSparkCell<'_>,
+    ground: i32,
+) -> i32 {
+    let fixed_deck = match &cell.cell {
+        CellRef::Real(cell) => terrain
+            .native_fixed_cell_index(cell.rx as i16, cell.ry as i16)
+            .and_then(|idx| corrected_deck_z(terrain, NativeCellIdentity::Real(idx))),
+        CellRef::Dummy { .. } => None,
+    };
+    fixed_deck.unwrap_or_else(|| z_at_height(ground, 0, true))
+}
+
 /// SmokeMove62D3F0 queries the OLD cell and reads ground only if that
 /// selected real/dummy cell has a live structural bridge. No overlay lookup.
 pub(super) fn smoke_bridge_deck(
@@ -120,10 +136,8 @@ pub(super) fn smoke_bridge_deck(
         return Ok(None);
     }
     let ground = select_cell(terrain, SparkCellSelectionRole::Ground, coords.x, coords.y);
-    Ok(Some(
-        ground_height_for_selection(&ground, coords.x, coords.y)?
-            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
-    ))
+    let ground_z = ground_height_for_selection(&ground, coords.x, coords.y)?;
+    Ok(Some(selected_bridge_z(terrain, &cell, ground_z)))
 }
 
 /// Concrete read-only view over the live simulation state Spark collision reads.
@@ -199,24 +213,19 @@ impl<'a> SparkCollisionWorld<'a> {
             motion.candidate_coords.x,
             motion.candidate_coords.y,
         );
-        let candidate_has_structural_bridge = Self::live_structural_bridge(&candidate_cell)?;
-        let old_has_structural_bridge = if candidate_has_structural_bridge {
-            false
-        } else {
-            let old_cell = select(
+        let terrain = self
+            .sim
+            .resolved_terrain
+            .as_ref()
+            .ok_or(SparkWorldError::MissingTerrain)?;
+        let bridge_z = Self::bridge_crossing_plane(terrain, &candidate_cell, ground_z, || {
+            select(
                 SparkCellSelectionRole::Cell,
                 motion.old_coords.x,
                 motion.old_coords.y,
-            );
-            Self::live_structural_bridge(&old_cell)?
-        };
-
-        let bridge_kind = bridge_collision_kind(
-            motion,
-            ground_z,
-            old_has_structural_bridge,
-            candidate_has_structural_bridge,
-        );
+            )
+        })?;
+        let bridge_kind = bridge_collision_kind(motion, bridge_z);
         let mut accepted_building = false;
         let mut wall_overlay_id = None;
         if bridge_kind.is_none() && in_contact_band(motion, ground_z)? {
@@ -231,8 +240,7 @@ impl<'a> SparkCollisionWorld<'a> {
         let mut facts = SparkCollisionFacts {
             ground_z,
             slope_matrix: None,
-            old_has_structural_bridge,
-            candidate_has_structural_bridge,
+            bridge_z,
             accepted_building,
             wall_overlay_id,
         };
@@ -245,6 +253,23 @@ impl<'a> SparkCollisionWorld<'a> {
             facts.slope_matrix = Some(self.slope_matrix_for_selection(&candidate_slope)?);
         }
         Ok(facts)
+    }
+
+    /// The stock and Ares Spark branches prefer the candidate cell and read
+    /// the old cell only if the candidate does not have a structural bridge.
+    /// For both, the legacy plane is still based on the candidate floor.
+    fn bridge_crossing_plane(
+        terrain: &ResolvedTerrainGrid,
+        candidate_cell: &SelectedSparkCell<'a>,
+        ground_z: i32,
+        select_old_cell: impl FnOnce() -> SelectedSparkCell<'a>,
+    ) -> Result<Option<i32>, SparkWorldError> {
+        if Self::live_structural_bridge(candidate_cell)? {
+            return Ok(Some(selected_bridge_z(terrain, candidate_cell, ground_z)));
+        }
+        let old_cell = select_old_cell();
+        Ok(Self::live_structural_bridge(&old_cell)?
+            .then(|| selected_bridge_z(terrain, &old_cell, ground_z)))
     }
 
     fn live_structural_bridge(selection: &SelectedSparkCell<'_>) -> Result<bool, SparkWorldError> {
@@ -301,6 +326,19 @@ impl<'a> SparkCollisionWorld<'a> {
     }
 
     fn building_collision(&self, rx: u16, ry: u16) -> Result<Option<bool>, SparkWorldError> {
+        let Some(building) = self.first_building(rx, ry)? else {
+            return Ok(None);
+        };
+        if building.laser_fence {
+            return Err(SparkWorldError::UnsupportedLaserFence(building.id));
+        }
+        Ok(Some(!building.strange))
+    }
+
+    /// The cell's first Building (`CellClass::GetBuilding @ 0x0047C520`):
+    /// its id, `LaserFence=` and its IsStrange answer (vt+0x80: a 1x1 type
+    /// that undeploys into a known type).
+    fn first_building(&self, rx: u16, ry: u16) -> Result<Option<CellBuilding>, SparkWorldError> {
         let Some(sid) = self
             .sim
             .occupancy()
@@ -319,20 +357,92 @@ impl<'a> SparkCollisionWorld<'a> {
             .sim
             .object_type(entity.type_ref(), self.rules)
             .ok_or(SparkWorldError::MissingObjectType(entity.stable_id()))?;
-        if object.laser_fence {
-            return Err(SparkWorldError::UnsupportedLaserFence(entity.stable_id()));
-        }
         let undeploys_from_one_by_one = object
             .undeploys_into
             .as_deref()
             .and_then(|target| self.rules.object(target))
             .is_some()
             && object.foundation.dimensions() == (1, 1);
-        Ok(Some(!undeploys_from_one_by_one))
+        Ok(Some(CellBuilding {
+            id: entity.stable_id(),
+            laser_fence: object.laser_fence,
+            strange: undeploys_from_one_by_one,
+        }))
     }
 }
 
-#[cfg(test)]
+struct CellBuilding {
+    id: u64,
+    laser_fence: bool,
+    strange: bool,
+}
+
+/// Ares 3.0 UpdateSparkMovement (Ares.dll `10028900`, `1002895E..10028B1B`):
+/// whether a spark moving from `old` to `new` dies on the world. Its cell is
+/// the one at the new coordinate (the inlined `MapClass::GetCellAt`, dummy
+/// when outside). It dies below that cell's floor (`0x0047B3A0`); across the
+/// bridge deck (floor + `0x1A0`) when that cell or the old one has a
+/// structural bridge; and within 150 leptons above the floor on the cell's
+/// first Building, unless an offline laser fence (`LaserFenceFrame >= 8`) or
+/// IsStrange, or without one on a wall overlay (`ConnectsToOverlay(-1, -1)`,
+/// `0x00480510`, with Ares' own `Wall=` answer at `0x480534`).
+///
+/// Without resolved terrain (fixtures) a spark meets nothing, the policy of
+/// [`constructor_ground_height`].
+///
+/// RESIDUAL: VERA keeps no LaserFenceFrame (`+0x618`), so a `LaserFence=yes`
+/// building counts as an online section. VERA builds no fence sections.
+pub(super) fn ares_spark_dies(
+    sim: &Simulation,
+    rules: &RuleSet,
+    old: IVec3,
+    new: IVec3,
+) -> Result<bool, SparkWorldError> {
+    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+        return Ok(false);
+    };
+    let ground = select_cell(terrain, SparkCellSelectionRole::Ground, new.x, new.y);
+    let floor = ground_height_for_selection(&ground, new.x, new.y)?;
+    if new.z < floor {
+        return Ok(true);
+    }
+    let cell = select_cell(terrain, SparkCellSelectionRole::Cell, new.x, new.y);
+    if let Some(deck) = SparkCollisionWorld::bridge_crossing_plane(terrain, &cell, floor, || {
+        select_cell(terrain, SparkCellSelectionRole::Cell, old.x, old.y)
+    })? {
+        let crossed = if new.z < deck {
+            old.z >= deck
+        } else {
+            old.z < deck
+        };
+        if crossed {
+            return Ok(true);
+        }
+    }
+    if new.z.wrapping_sub(150) >= floor {
+        return Ok(false);
+    }
+    let CellRef::Real(real) = &cell.cell else {
+        // The dummy cell holds no Building and overlay -1.
+        return Ok(false);
+    };
+    let world = SparkCollisionWorld { sim, rules };
+    if let Some(building) = world.first_building(real.rx, real.ry)? {
+        return Ok(!building.strange);
+    }
+    let overlay = world.wall_overlay_for_selection(&cell)?;
+    Ok(matches!(
+        crate::sim::cell_kernel::wall_connection_step(
+            overlay.map_or(-1, i32::from),
+            -1,
+            Some(rules.overlay_registry()),
+            rules.ares_form(),
+        ),
+        crate::sim::cell_kernel::WallConnectionStep::Return(true)
+    ))
+}
+
+#[cfg(all(test, tests_sim_p_s))]
 pub(super) mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
@@ -604,7 +714,7 @@ pub(super) mod tests {
                 (SparkCellSelectionRole::Cell, 256, 0),
             ]
         );
-        assert!(!facts.candidate_has_structural_bridge);
+        assert_eq!(facts.bridge_z, None);
         assert_eq!(terrain.shared_cell_dummy().snapshot().coord, (1, 0));
     }
 
@@ -689,8 +799,10 @@ pub(super) mod tests {
             })
             .unwrap();
 
-        assert!(facts.candidate_has_structural_bridge);
-        assert!(!facts.old_has_structural_bridge);
+        assert_eq!(
+            facts.bridge_z,
+            Some(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+        );
         assert_eq!(
             transcript,
             vec![
@@ -763,6 +875,30 @@ pub(super) mod tests {
     }
 
     #[test]
+    fn spark_moving_off_bridge_crosses_the_old_cells_fixed_deck() {
+        let mut bridge = terrain_cell(0, 0);
+        bridge.level = 7;
+        bridge.bridge_facts.raw_flags =
+            BRIDGE_FLAG_STRUCTURAL | crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
+        let mut terrain = ResolvedTerrainGrid::from_cells(2, 1, vec![bridge, terrain_cell(1, 0)]);
+        let anchor = terrain.native_cell_identity((0, 0));
+        terrain.set_authored_high_bridge_deck(anchor, 10);
+        let mut sim = Simulation::new();
+        sim.resolved_terrain = Some(terrain);
+        let rules = empty_rules();
+        let motion = motion_between(IVec3::new(255, 0, 1050), IVec3::new(256, 0, 1030));
+        let world = SparkCollisionWorld::new(&sim, &rules).unwrap();
+        let collision =
+            super::super::spark::resolve_collision(motion, world.query(motion).unwrap()).unwrap();
+        assert_eq!(collision.committed_coords.z, 1040);
+        assert!(ares_spark_dies(&sim, &rules, motion.old_coords, motion.candidate_coords).unwrap());
+        assert_eq!(
+            smoke_bridge_deck(&sim, motion.old_coords).unwrap(),
+            Some(1040)
+        );
+    }
+
+    #[test]
     fn gsi_04_03_bridge_crossing_skips_contact_dependencies_and_selects_slope() {
         let mut cell = terrain_cell(0, 0);
         cell.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
@@ -789,7 +925,10 @@ pub(super) mod tests {
                 (SparkCellSelectionRole::Slope, 0, 0),
             ]
         );
-        assert!(facts.candidate_has_structural_bridge);
+        assert_eq!(
+            facts.bridge_z,
+            Some(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+        );
         assert!(!facts.accepted_building);
         assert_eq!(facts.wall_overlay_id, None);
         assert!(facts.slope_matrix.is_some());

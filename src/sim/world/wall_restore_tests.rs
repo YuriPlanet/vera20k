@@ -129,13 +129,13 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         .spawn_object_with_overlay_registry("MTNK", "Americans", 12, 16, 64, rules, &registry)
         .unwrap();
     let target = Some(TargetKind::Cell(16, 16));
-    let effects = crate::sim::world::FrameEffects::default();
+    let mut effects = crate::sim::world::FrameEffects::default();
     let he = sim.interner.intern("HE");
     sim.overlay_grid
         .as_mut()
         .unwrap()
         .place_overlay(16, 16, ore, 0);
-    sim.assign_target_represented(tank, target, rules, Some(&registry), effects)
+    sim.assign_target_represented(tank, target, rules, &mut effects)
         .unwrap();
     let removed = crate::sim::combat::world_receiver::collect_area(
         &mut sim,
@@ -144,10 +144,11 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         (16, 16),
         10,
         warhead,
+        true,
         (crate::sim::combat::RAD_NO_ATTACKER, None, he),
         None,
         0,
-        effects,
+        &mut effects,
     );
     assert_eq!(
         sim.overlay_grid.as_ref().unwrap().cell(16, 16).overlay_id,
@@ -165,7 +166,7 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         None
     );
 
-    sim.assign_target_represented(tank, target, rules, Some(&registry), effects)
+    sim.assign_target_represented(tank, target, rules, &mut effects)
         .unwrap();
     let empty = crate::sim::combat::world_receiver::collect_area(
         &mut sim,
@@ -174,10 +175,11 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         (16, 16),
         10,
         warhead,
+        true,
         (crate::sim::combat::RAD_NO_ATTACKER, None, he),
         None,
         0,
-        effects,
+        &mut effects,
     );
     assert!(empty.cell_target_detaches.is_empty());
     assert_eq!(

@@ -34,7 +34,7 @@ fn native_bridge_base_edges_match_original_executable() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|n| n.as_u64().unwrap() as u16)
+            .map(|n| n.as_u64().unwrap() as ZoneId)
             .collect();
         let size = (
             case["size"][0].as_i64().unwrap() as i32,

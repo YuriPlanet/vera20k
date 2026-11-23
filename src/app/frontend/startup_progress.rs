@@ -113,7 +113,7 @@ impl StartupProgressPresentation {
         }
         presenter.encode_present(&mut encoder, &output.texture);
         gpu.queue.submit(std::iter::once(encoder.finish()));
-        crate::render::present::present(output);
+        output.present(&gpu.queue);
         Ok(true)
     }
 }

@@ -2,11 +2,11 @@
 Imports preserved impact harness, adapting ONLY fixture initialization statements
 in memory; every launch/AI/damage/bridge/lifetime native instruction is unchanged.
 """
-import importlib.util,inspect,json,struct,sys,os
+import importlib.util,json,struct,sys,os
 from pathlib import Path
 from unicorn.x86_const import *
 from unicorn import UC_HOOK_CODE
-from tools.native_oracle import run_checked,finish_vectors,provenance
+from tools.native_oracle import edited_source,finish_vectors,provenance,require,run_checked
 from tools.spatial_oracle.bridge_rim import GLOBALS
 from tools.spatial_oracle.building_body_rules import SP,INI,dwords
 spec=importlib.util.spec_from_file_location('_bridge_impact',Path(__file__).with_name('ifv_impact.py'));impact=importlib.util.module_from_spec(spec);spec.loader.exec_module(impact)
@@ -104,18 +104,17 @@ def prepare():
 impact.launch.prepare=prepare
 # The preserved launch fixture clears flags before calling native FireAt. This
 # companion replaces that fixture write with the already supplied stock flags.
-src=inspect.getsource(impact.launch.launch)
-line=' for xy,c in cells.items():u.mem_write(c+0x140,dwords(0x100 if bridge and xy==(10,20) else 0))'
-assert src.count(line)==1
-exec(src.replace(line,' # Stock bridge flags remain as loaded above.').replace('target=cells[16,20]','target=cells[10,20]'),impact.launch.__dict__)
+exec(edited_source(impact.launch.launch,
+ (' for xy,c in cells.items():u.mem_write(c+0x140,dwords(0x100 if bridge and xy==(10,20) else 0))',' # Stock bridge flags remain as loaded above.'),
+ ('target=cells[16,20]','target=cells[10,20]')),impact.launch.__dict__)
 # Preserve stock tile/overlay identities and map extents at impact setup.
-src=inspect.getsource(impact.execute)
-line=' initialize_effect_world(m,cells)'
-assert src.count(line)==1
-src=src.replace(line,' initialize_effect_world(m,cells,seed=BRIDGE_SEED,map_size=(136,140),clear_terrain=False)')
 impact.BRIDGE_SEED=31
-src=src.replace('for _ in range(100):','for _ in range(0):').replace('count=1000000','count=6000000').replace("0x587180:'BridgeDriver'","0x587180:'BridgeDriver',0x576ba0:'HighBridgeBody',0x576770:'Rim',0x47dd70:'Fallout',0x56dae0:'Connectivity',0x6551c0:'RadarDirty',0x6d2790:'ScreenDirty',0x575ee0:'Notify',0x487720:'DirtyCell'").replace('0x65c780,0x65c7e0,0x5f4ec0):pending','0x65c780,0x65c7e0,0x5f4ec0,0x587180,0x576ba0):pending')
-exec(src,impact.__dict__)
+exec(edited_source(impact.execute,
+ (' initialize_effect_world(m,cells)',' initialize_effect_world(m,cells,seed=BRIDGE_SEED,map_size=(136,140),clear_terrain=False)'),
+ ('for _ in range(100):','for _ in range(0):'),
+ ('count=1000000','count=6000000'),
+ ("0x587180:'BridgeDriver'","0x587180:'BridgeDriver',0x576ba0:'HighBridgeBody',0x576770:'Rim',0x47dd70:'Fallout',0x56dae0:'Connectivity',0x6551c0:'RadarDirty',0x6d2790:'ScreenDirty',0x575ee0:'Notify',0x487720:'DirtyCell'"),
+ ('0x65c780,0x65c7e0,0x5f4ec0):pending','0x65c780,0x65c7e0,0x5f4ec0,0x587180,0x576ba0):pending')),impact.__dict__)
 def retained_snapshot(m):
  u=m.u;record=m.read32(0x87f7e8+0x54)
  graphs=[]
@@ -139,10 +138,10 @@ def generate():
  for name,seed,prime in (('rejected',31,False),('damaged',39,False),('collapsed',39,True)):
   PRIME=prime;impact.BRIDGE_SEED=seed
   r=impact.execute(False,origin=(2176,5248,600));m,cells=last_prepared
-  assert 'failure' not in r,(name,r.get('failure'))
+  require('failure' not in r,f"{name}: {r.get('failure')}")
   r['name']=name;r['bridge_after']=bridge_snapshot(m,cells);r['retained_after']=retained_snapshot(m)
   r['supplied']['target_cell']=[10,20];r['supplied']['scenario_rng_seed']=seed
-  assert r['after_drain']['queue_count']==0 and r['after_drain']['bullet_count']==0
+  require(r['after_drain']['queue_count']==0 and r['after_drain']['bullet_count']==0,f'{name}: Bullet queue not drained')
   rows.append(r)
  return dict(scope='Original physical selected FV guided launch/flight into stock scalar bridge topology; rejected/damaged/primed-collapse controls through full AreaDamage, bridge body/perpendicular/rim/fallout, original retained graph disconnection/raw connectivity rebuild, physical effect creation and actual Bullet queue drain. Retained graph/base classifiers, map crop, source lifecycle, launch admission and independent hit seed are supplied. No native map loader, full Rules Process, wholematch native IDs, rendering or post-impact Anim scheduler proof.',rows=rows)
 

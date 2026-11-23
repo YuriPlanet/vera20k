@@ -32,23 +32,152 @@ pub(crate) struct MatchDiagnosticsState {
     /// by the frame loop, closed by the lifecycle flush points above.
     pub(crate) replay_log: Option<ReplayLog>,
     command_executions: Option<CommandExecutionLog>,
-    loading_cancel: Option<Vec<LoadingCancelObservation>>,
+    /// Diagnostic probe the draw fills through `&AppState`, hence a `RefCell`.
+    actor_presentation: std::cell::RefCell<Option<ActorPresentationProbe>>,
+    replay_playback: Option<ReplayPlaybackState>,
+    replay_capture_output: Option<PathBuf>,
+    replay_artifact_sha256: Option<String>,
+    /// The startup refusal the active segment already logged.
+    replay_startup_refusal: Option<String>,
+}
+
+enum ReplayPlaybackState {
+    Loading(std::sync::Arc<ReplayLog>),
+    Playing(crate::sim::replay::ReplayPlayback),
+    Failed(String),
 }
 
 /// One actual post-formation native command dispatch and its immediate
 /// receiver state. This opt-in app observation is never saved or hashed.
 pub(crate) struct CommandExecutionObservation {
+    pub observed_at: ObservationTime,
     pub frame: u32,
     pub record: crate::sim::command::CommandRecord,
     pub applied: bool,
     pub actor: Option<u64>,
+    pub motion: Option<ActorMotionObservation>,
     pub timing: Option<CommandTimingObservation>,
     pub destination: Option<crate::sim::components::NavTargetRef>,
     pub cell: Option<(u16, u16)>,
     pub mission: Option<(i32, i32)>,
 }
+
+/// Existing movement owners projected for app diagnostics; no mutable access.
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct ActorMotionObservation {
+    pub actor_type: String,
+    pub locomotor: Option<String>,
+    pub applied_fraction: f64,
+    pub applied_fraction_bits: u64,
+    pub moving: Option<bool>,
+    pub drive_destination: Option<crate::sim::components::DriveCoord>,
+    pub drive_head: Option<crate::sim::components::DriveCoord>,
+    pub mission: (i32, i32),
+}
+impl ActorMotionObservation {
+    pub(crate) fn read(
+        sim: &crate::sim::world::Simulation,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> Self {
+        Self::of_parts(
+            sim.interner().resolve(entity.type_ref()),
+            entity
+                .locomotor
+                .as_ref()
+                .map(|locomotor| {
+                    crate::app::presentation::frame::LocomotorView::of(locomotor, || None)
+                })
+                .as_ref(),
+            entity.foot_speed.native_applied_fraction().bits(),
+            crate::sim::movement::motion_query::is_moving(entity),
+            (
+                entity.mission.current().raw(),
+                entity.mission.queued().raw(),
+            ),
+        )
+    }
+
+    /// [`Self::read`] of an object's presentation record.
+    pub(crate) fn of_record(
+        sim: &crate::sim::world::Simulation,
+        entity: &crate::app::presentation::frame::ObjectRecord,
+    ) -> Self {
+        Self::of_parts(
+            sim.interner().resolve(entity.type_ref()),
+            entity.locomotor.as_ref(),
+            entity.applied_fraction.bits(),
+            entity.place.moving,
+            (
+                entity.mission.current().raw(),
+                entity.mission.queued().raw(),
+            ),
+        )
+    }
+
+    fn of_parts(
+        actor_type: &str,
+        locomotor: Option<&crate::app::presentation::frame::LocomotorView>,
+        bits: u64,
+        moving: Option<bool>,
+        mission: (i32, i32),
+    ) -> Self {
+        let drive = locomotor.and_then(|loco| loco.drive_track());
+        Self {
+            actor_type: actor_type.to_owned(),
+            locomotor: locomotor.map(|loco| format!("{:?}", loco.active_kind())),
+            applied_fraction: f64::from_bits(bits),
+            applied_fraction_bits: bits,
+            moving,
+            drive_destination: drive.and_then(|[destination, _]| destination),
+            drive_head: drive.and_then(|[_, head]| head),
+            mission,
+        }
+    }
+}
+
+/// App-only clocks for measurement. Neither clock enters commands or hashes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ObservationTime {
+    pub instant: crate::util::time::Instant,
+    pub unix_us: u64,
+}
+impl ObservationTime {
+    pub(crate) fn now() -> Self {
+        Self {
+            instant: crate::util::time::Instant::now(),
+            unix_us: crate::util::time::SystemTime::now()
+                .duration_since(crate::util::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_micros() as u64,
+        }
+    }
+}
+
+pub(crate) type GpuCompletion = std::sync::Arc<std::sync::Mutex<Option<ObservationTime>>>;
+
+#[derive(Clone)]
+pub(crate) struct ActorPresentation {
+    pub at: ObservationTime,
+    pub frame: u32,
+    pub screen: [f32; 2],
+    pub body: u16,
+    pub motion: ActorMotionObservation,
+    pub gpu_done: GpuCompletion,
+}
+impl ActorPresentation {
+    pub(crate) fn gpu_completed_at(&self) -> Option<ObservationTime> {
+        *self
+            .gpu_done
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
+}
+struct ActorPresentationProbe {
+    actor: u64,
+    pending: Option<(u32, [f32; 2], u16, ActorMotionObservation)>,
+    submitted: Option<ActorPresentation>,
+}
 pub(crate) struct CommandTimingObservation {
-    pub publisher: Option<i8>,
     pub fps: Option<u16>,
     pub frame_send_rate: Option<u8>,
     pub max_ahead: Option<i32>,
@@ -83,15 +212,16 @@ impl CommandExecutionLog {
         }
         let entity = actor.and_then(|actor| sim.entities().get(actor));
         self.records.push(CommandExecutionObservation {
+            observed_at: ObservationTime::now(),
             frame: sim.session().binary_frame(),
             record: record.clone(),
             applied,
             actor,
+            motion: entity.map(|entity| ActorMotionObservation::read(sim, entity)),
             timing: sim
                 .session()
                 .network_command_timing()
                 .map(|timing| CommandTimingObservation {
-                    publisher: sim.network_timing_host_house(),
                     fps: Some(timing.frames_per_second()),
                     frame_send_rate: Some(timing.frame_send_rate().get()),
                     max_ahead: sim.session().network_max_ahead_frames(),
@@ -103,56 +233,250 @@ impl CommandExecutionLog {
     }
 }
 
-#[derive(Clone, serde::Serialize)]
-pub(crate) struct LoadingCancelObservation {
-    pub event: &'static str,
-    pub match_id: Option<String>,
-    pub source: Option<usize>,
-    pub worker_owner_taken: bool,
-    pub loading_active: bool,
-}
-
 pub(crate) struct ReplayLogFlush {
     pub(crate) path: PathBuf,
     pub(crate) tick_count: usize,
 }
 
 impl MatchDiagnosticsState {
-    pub(crate) fn begin_loading_cancel_observation(&mut self) {
-        self.loading_cancel.get_or_insert_with(Vec::new);
+    pub(crate) fn actor_presentation_observer_active(&self) -> bool {
+        self.actor_presentation.borrow().is_some()
     }
-    pub(crate) fn observe_loading_cancel(
-        &mut self,
-        event: &'static str,
-        match_id: Option<String>,
-        source: Option<usize>,
-        worker_owner_taken: bool,
-        loading_active: bool,
+
+    pub(crate) fn observe_actor_presentation(&self, actor: u64) {
+        *self.actor_presentation.borrow_mut() = Some(ActorPresentationProbe {
+            actor,
+            pending: None,
+            submitted: None,
+        });
+    }
+    pub(crate) fn begin_presentation_observation(&self) {
+        if let Some(probe) = self.actor_presentation.borrow_mut().as_mut() {
+            probe.pending = None;
+            probe.submitted = None;
+        }
+    }
+    pub(crate) fn record_actor_draw(
+        &self,
+        sim: &crate::sim::world::Simulation,
+        entity: &crate::app::presentation::frame::ObjectRecord,
+        frame: u32,
+        screen: [f32; 2],
+        body: u16,
     ) {
-        if let Some(log) = self.loading_cancel.as_mut() {
-            if log.len() < 16 {
-                log.push(LoadingCancelObservation {
-                    event,
-                    match_id,
-                    source,
-                    worker_owner_taken,
-                    loading_active,
-                });
+        if let Some(probe) = self.actor_presentation.borrow_mut().as_mut()
+            && probe.actor == entity.stable_id()
+        {
+            probe.pending = Some((
+                frame,
+                screen,
+                body,
+                ActorMotionObservation::of_record(sim, entity),
+            ));
+        }
+    }
+    pub(crate) fn commit_presentation_observation(&self) -> Option<GpuCompletion> {
+        if let Some(probe) = self.actor_presentation.borrow_mut().as_mut() {
+            probe.submitted =
+                probe
+                    .pending
+                    .take()
+                    .map(|(frame, screen, body, motion)| ActorPresentation {
+                        at: ObservationTime::now(),
+                        frame,
+                        screen,
+                        body,
+                        motion,
+                        gpu_done: Default::default(),
+                    });
+            return probe.submitted.as_ref().map(|frame| frame.gpu_done.clone());
+        }
+        None
+    }
+    pub(crate) fn actor_presentation(&self) -> Option<ActorPresentation> {
+        self.actor_presentation.borrow().as_ref()?.submitted.clone()
+    }
+    pub(crate) fn end_presentation_observation(&self) {
+        *self.actor_presentation.borrow_mut() = None;
+    }
+    pub(crate) fn is_replay_playback(&self) -> bool {
+        self.replay_playback.is_some()
+    }
+
+    pub(crate) fn begin_playback(
+        &mut self,
+        replay: std::sync::Arc<ReplayLog>,
+        capture_output: Option<PathBuf>,
+        replay_sha256: String,
+    ) {
+        self.replay_playback = Some(ReplayPlaybackState::Loading(replay));
+        self.replay_capture_output = capture_output;
+        self.replay_artifact_sha256 = Some(replay_sha256);
+    }
+
+    pub(crate) fn install_playback(
+        &mut self,
+        runtime: &mut crate::sim::runtime::SimRuntime,
+        source: &crate::map::source::LoadedMapSource,
+        map_hash: u64,
+    ) -> anyhow::Result<Vec<crate::sim::trigger_runtime::TriggerEffect>> {
+        let replay = match self.replay_playback.take() {
+            Some(ReplayPlaybackState::Loading(replay)) => replay,
+            other => {
+                self.replay_playback = other;
+                anyhow::bail!("replay loader lost its immutable startup");
+            }
+        };
+        match crate::sim::replay::ReplayPlayback::prepare(runtime, replay, source, map_hash) {
+            Ok(mut playback) => {
+                let effects = playback.take_initial_effects();
+                self.replay_playback = Some(ReplayPlaybackState::Playing(playback));
+                Ok(effects)
+            }
+            Err(error) => {
+                self.replay_playback = Some(ReplayPlaybackState::Failed(format!("{error:#}")));
+                Err(error)
             }
         }
     }
-    pub(crate) fn loading_cancel_observations(&self) -> Option<&[LoadingCancelObservation]> {
-        self.loading_cancel.as_deref()
+
+    pub(crate) fn playback_can_advance(&self) -> bool {
+        matches!(&self.replay_playback, Some(ReplayPlaybackState::Playing(playback)) if playback.can_advance())
     }
-    pub(crate) fn end_loading_cancel_observation(&mut self) {
-        self.loading_cancel = None;
+
+    /// The replay plays on: installed, not failed and not at its end.
+    pub(crate) fn playback_playing(&self) -> bool {
+        matches!(
+            &self.replay_playback,
+            Some(ReplayPlaybackState::Playing(playback))
+                if !playback.is_finished() && playback.failure().is_none()
+        )
+    }
+
+    pub(crate) fn playback_status(&self) -> Option<String> {
+        Some(match self.replay_playback.as_ref()? {
+            ReplayPlaybackState::Loading(_) => crate::i18n::tr("VERA:LoadingReplay"),
+            ReplayPlaybackState::Failed(error) => {
+                crate::i18n::tr_fill("VERA:ReplayFailed", &[("error", error)])
+            }
+            ReplayPlaybackState::Playing(playback) => match playback.failure() {
+                Some(error) => crate::i18n::tr_fill("VERA:ReplayFailed", &[("error", &error)]),
+                None if playback.is_finished() => crate::i18n::tr("VERA:ReplayEnded"),
+                None => crate::i18n::tr("VERA:ReplayPlaying"),
+            },
+        })
+    }
+
+    /// Disjoint borrows keep the recorder/observation owner beside playback;
+    /// no caller moves the cursor out or temporarily disables the input gate.
+    /// Whether a command execution log observes each applied command.
+    pub(crate) fn observes_commands(&self) -> bool {
+        self.command_executions.is_some()
+    }
+
+    pub(crate) fn playback_and_observations_mut(
+        &mut self,
+    ) -> (
+        Option<&mut crate::sim::replay::ReplayPlayback>,
+        Option<&mut CommandExecutionLog>,
+    ) {
+        let playback = match &mut self.replay_playback {
+            Some(ReplayPlaybackState::Playing(playback)) => Some(playback),
+            _ => None,
+        };
+        (playback, self.command_executions.as_mut())
+    }
+
+    pub(crate) fn playback_capture_ready(&self) -> bool {
+        self.replay_capture_output.is_some()
+            && match &self.replay_playback {
+                Some(ReplayPlaybackState::Failed(_)) => true,
+                Some(ReplayPlaybackState::Playing(playback)) => !playback.can_advance(),
+                _ => false,
+            }
+    }
+
+    pub(crate) fn playback_capture_requested(&self) -> bool {
+        self.replay_capture_output.is_some()
+    }
+
+    /// The explicit automation flag captures the same final visible frame.
+    /// Files are exclusively created; ordinary replay never writes a capture
+    /// or exits automatically.
+    pub(crate) fn complete_playback_capture(
+        &mut self,
+        runtime: &crate::sim::runtime::SimRuntime,
+        width: u32,
+        height: u32,
+        pixels: &[u8],
+    ) -> anyhow::Result<()> {
+        use anyhow::Context;
+        use image::ImageEncoder;
+        use std::io::Write;
+        anyhow::ensure!(
+            self.playback_capture_ready(),
+            "replay capture is not complete"
+        );
+        anyhow::ensure!(
+            pixels.len() as u64 == u64::from(width) * u64::from(height) * 4,
+            "replay BGRA readback dimensions differ"
+        );
+        let path = self
+            .replay_capture_output
+            .as_ref()
+            .context("replay capture path")?;
+        let mut rgba = pixels.to_vec();
+        for pixel in rgba.chunks_exact_mut(4) {
+            pixel.swap(0, 2);
+        }
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png).write_image(
+            &rgba,
+            width,
+            height,
+            image::ExtendedColorType::Rgba8,
+        )?;
+        let verification = match &self.replay_playback {
+            Some(ReplayPlaybackState::Playing(playback)) if playback.failure().is_none() => {
+                Some(playback.verification(runtime)?)
+            }
+            _ => None,
+        };
+        if let Some(verified) = &verification {
+            log::info!(
+                "Rendered replay verified {} checkpoints through frame {}, final state {:016x}",
+                verified.checked_hashes, verified.final_tick, verified.final_state_hash
+            );
+        }
+        let receipt = serde_json::json!({
+            "replay_sha256": self.replay_artifact_sha256,
+            "png_sha256": crate::util::sha256::sha256_hex(&png),
+            "width": width, "height": height, "status": self.playback_status(),
+            "verification": verification,
+            "recorded_final_state_hash": match &self.replay_playback {
+                Some(ReplayPlaybackState::Playing(playback)) => playback.recorded_final_hash(), _ => None,
+            },
+        });
+        for (output, bytes) in [
+            (path.clone(), png),
+            (
+                path.with_extension("json"),
+                serde_json::to_vec_pretty(&receipt)?,
+            ),
+        ] {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&output)?;
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+        }
+        self.replay_capture_output = None;
+        Ok(())
     }
 
     pub(crate) fn begin_command_observation(&mut self) {
         self.command_executions = Some(CommandExecutionLog::default());
-    }
-    pub(crate) fn command_observations_mut(&mut self) -> Option<&mut CommandExecutionLog> {
-        self.command_executions.as_mut()
     }
     pub(crate) fn take_command_observations(
         &mut self,
@@ -172,25 +496,82 @@ impl MatchDiagnosticsState {
         &mut self,
         runtime: &crate::sim::runtime::SimRuntime,
     ) -> Option<&mut ReplayLog> {
+        if self.is_replay_playback() {
+            return None;
+        }
+        let sim = &runtime.simulation;
         // Trainer changes are deliberately outside the ordinary command log.
         // The caller closes the valid prefix before the first such mutation;
         // never emit an apparently replayable continuation afterward.
         #[cfg(feature = "debug-tools")]
-        if runtime.simulation.trainer_modified() {
+        if sim.trainer_modified() {
             self.replay_log = None;
             return None;
         }
+        if self.replay_log.is_none() {
+            self.replay_startup_refusal = None;
+        }
         Some(self.replay_log.get_or_insert_with(|| {
-            let sim = &runtime.simulation;
             ReplayLog::new(crate::sim::replay::ReplayHeader {
                 pixel_conversion_bounds: sim.session().pixel_conversion_bounds(),
-                version: 2,
+                version: crate::sim::replay::REPLAY_VERSION,
                 tick_hz: crate::app::types::SIM_TICK_HZ,
                 seed: sim.session().seed(),
                 map_name: sim.session().map_name().to_owned(),
                 rules_hash: runtime.resources.rules.simulation_config_hash(),
             })
         }))
+    }
+
+    /// Attach startup only before any commands or scenario service has been
+    /// recorded. The Simulation and accepted launch remain the sole owners.
+    pub(crate) fn retain_replay_startup(
+        &mut self,
+        runtime: &crate::sim::runtime::SimRuntime,
+        launch: Option<crate::sim::replay::ReplayLaunchInput<'_>>,
+        source: Option<&crate::map::source::LoadedMapSource>,
+        map_hash: Option<u64>,
+        options: crate::sim::replay::ReplayStartOptions,
+    ) {
+        let Some(log) = self.replay_log.as_mut().filter(|log| {
+            log.startup.is_none()
+                && log.ticks.is_empty()
+                && log.initial_scenario_services.is_empty()
+        }) else {
+            return;
+        };
+        let (Some(launch), Some(source), Some(map_hash)) = (launch, source, map_hash) else {
+            return;
+        };
+        match crate::sim::replay::ReplayStartup::capture(
+            runtime,
+            launch,
+            source,
+            map_hash,
+            crate::app::types::SIM_TICK_MS,
+            options,
+        ) {
+            Ok(startup) => {
+                log.header.version = crate::sim::replay::REPLAY_VERSION;
+                log.startup = Some(Box::new(startup));
+            }
+            Err(error) => {
+                if let Some(refusal) = self.new_replay_startup_refusal(&error) {
+                    log::warn!("This match's replay cannot be replayed: {refusal}");
+                }
+            }
+        }
+    }
+
+    /// A segment reports each refusal once. A network match retries startup on
+    /// every frame pass while it waits at frame zero, and gets the same answer.
+    fn new_replay_startup_refusal(&mut self, error: &anyhow::Error) -> Option<String> {
+        let refusal = format!("{error:#}");
+        if self.replay_startup_refusal.as_deref() == Some(refusal.as_str()) {
+            return None;
+        }
+        self.replay_startup_refusal = Some(refusal.clone());
+        Some(refusal)
     }
 
     /// Persist and consume the active segment. `Ok(None)` when there is no
@@ -207,6 +588,33 @@ impl MatchDiagnosticsState {
         replays_dir: &Path,
         unix_secs: u64,
     ) -> anyhow::Result<Option<ReplayLogFlush>> {
+        // The browser has no std::fs and nothing reads a segment back: it goes
+        // straight to the host, or nowhere when the host takes no replays.
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            let Some(log) = self.replay_log.take() else {
+                return Ok(None);
+            };
+            if (log.ticks.is_empty() && log.initial_scenario_services.is_empty())
+                || !crate::web::has_replay_callback()
+            {
+                return Ok(None);
+            }
+            let name = format!("replay_tick{session_tick}_{unix_secs}.json");
+            let mut bytes = Vec::new();
+            let written = log
+                .write_json(&mut bytes)
+                .and_then(|()| crate::web::hand_over_replay(&name, &bytes));
+            if let Err(error) = written {
+                self.replay_log = Some(log);
+                return Err(error);
+            }
+            return Ok(Some(ReplayLogFlush {
+                path: replays_dir.join(name),
+                tick_count: log.ticks.len(),
+            }));
+        }
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         self.flush_to_with_writer(session_tick, replays_dir, unix_secs, |log, file| {
             log.write_json(file)
         })
@@ -227,7 +635,7 @@ impl MatchDiagnosticsState {
         }
 
         let result = (|| {
-            std::fs::create_dir_all(replays_dir)?;
+            crate::util::file_system::create_dir_all(replays_dir)?;
             let (path, mut file) = reserve_segment_path(replays_dir, session_tick, unix_secs)?;
             // Keep the exclusively created handle through the write. Reopening
             // its path could truncate a replacement supplied after reservation.
@@ -235,9 +643,10 @@ impl MatchDiagnosticsState {
             drop(file);
             if let Err(error) = written {
                 // Close before deleting so retry cleanup also works on Windows.
-                let _ = std::fs::remove_file(&path);
+                let _ = crate::util::file_system::remove_file(&path);
                 return Err(error.context(format!("Diagnostic log: {}", path.display())));
             }
+            prune_old_segments(replays_dir, KEPT_SEGMENTS);
             Ok(Some(ReplayLogFlush {
                 path,
                 tick_count: log.ticks.len(),
@@ -267,6 +676,47 @@ impl MatchDiagnosticsState {
             self.replay_log = None;
         }
         result
+    }
+}
+
+/// How many diagnostic segments `replays/` keeps; each flush deletes older ones.
+const KEPT_SEGMENTS: usize = 20;
+
+/// The `(unix_secs, tick, n)` order key of a `replay_tick{tick}_{secs}[_{n}].json`
+/// name; None for any other file.
+fn segment_age(name: &str) -> Option<(u64, u64, u64)> {
+    let stem = name.strip_prefix("replay_tick")?.strip_suffix(".json")?;
+    let mut parts = stem.split('_').map(|part| part.parse::<u64>().ok());
+    let tick = parts.next()??;
+    let secs = parts.next()??;
+    let n = parts.next().unwrap_or(Some(0))?;
+    parts.next().is_none().then_some((secs, tick, n))
+}
+
+/// Delete all but the newest `keep` segments. Other files in the folder are
+/// left alone, and a failed delete is only logged.
+fn prune_old_segments(replays_dir: &Path, keep: usize) {
+    let Ok(entries) = crate::util::file_system::read_dir(replays_dir) else {
+        return;
+    };
+    let mut segments: Vec<_> = entries
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            let age = segment_age(path.file_name()?.to_str()?)?;
+            Some((age, path))
+        })
+        .collect();
+    if segments.len() <= keep {
+        return;
+    }
+    segments.sort_unstable();
+    for (_, path) in &segments[..segments.len() - keep] {
+        if let Err(error) = crate::util::file_system::remove_file(path) {
+            log::warn!(
+                "Could not delete old diagnostic log {}: {error}",
+                path.display()
+            );
+        }
     }
 }
 
@@ -315,14 +765,27 @@ fn reserve_segment_path(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
-    use super::MatchDiagnosticsState;
+    use super::{MatchDiagnosticsState, prune_old_segments};
     use crate::sim::replay::{ReplayHeader, ReplayLog};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn actor_observer_is_active_before_a_draw_and_until_explicit_end() {
+        let diagnostics = MatchDiagnosticsState::default();
+        assert!(!diagnostics.actor_presentation_observer_active());
+        diagnostics.observe_actor_presentation(7);
+        assert!(diagnostics.actor_presentation_observer_active());
+        assert!(diagnostics.actor_presentation().is_none());
+        diagnostics.begin_presentation_observation();
+        assert!(diagnostics.actor_presentation_observer_active());
+        diagnostics.end_presentation_observation();
+        assert!(!diagnostics.actor_presentation_observer_active());
+    }
 
     #[cfg(feature = "debug-tools")]
     #[test]
@@ -371,7 +834,7 @@ mod tests {
     fn sample_log_with(seed: u64, map_name: &str, state_hash: u64) -> ReplayLog {
         let mut log = ReplayLog::new(ReplayHeader {
             pixel_conversion_bounds: Default::default(),
-            version: 71,
+            version: crate::sim::replay::REPLAY_VERSION,
             tick_hz: 15,
             seed,
             map_name: map_name.to_owned(),
@@ -385,11 +848,90 @@ mod tests {
         sample_log_with(0x1234, "gsi_17_08.map", 0x9abc)
     }
 
+    #[test]
+    fn playback_owns_input_during_loading_and_failure_without_recording_or_changing_world() {
+        let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(
+            crate::sim::world::Simulation::with_seed(7),
+        );
+        let hash = runtime.simulation.state_hash();
+        let mut diagnostics = MatchDiagnosticsState::default();
+        diagnostics.begin_playback(std::sync::Arc::new(sample_log()), None, "0".repeat(64));
+        assert!(diagnostics.is_replay_playback());
+        assert!(!diagnostics.playback_can_advance());
+        assert!(diagnostics.get_or_begin_replay(&runtime).is_none());
+        assert!(
+            diagnostics
+                .install_playback(
+                    &mut runtime,
+                    &crate::map::source::LoadedMapSource::LegacyFallback {
+                        label: "unused".into()
+                    },
+                    0
+                )
+                .is_err()
+        );
+        assert!(diagnostics.is_replay_playback());
+        assert!(!diagnostics.playback_can_advance());
+        assert!(
+            diagnostics
+                .playback_status()
+                .unwrap()
+                .starts_with("Replay failed")
+        );
+        assert!(diagnostics.get_or_begin_replay(&runtime).is_none());
+        assert_eq!(runtime.simulation.state_hash(), hash);
+    }
+
     fn diagnostics_with_segment() -> MatchDiagnosticsState {
         MatchDiagnosticsState {
             replay_log: Some(sample_log()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_segment_logs_its_replay_startup_refusal_once() {
+        let runtime = crate::sim::runtime::SimRuntime::from_simulation(
+            crate::sim::world::Simulation::with_seed(17),
+        );
+        let mut diagnostics = MatchDiagnosticsState::default();
+        diagnostics.get_or_begin_replay(&runtime).unwrap();
+        let refusal = anyhow::anyhow!("generated/legacy maps lack authored replay startup");
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_some());
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_none());
+        // The next segment reports its own refusal.
+        diagnostics.replay_log = None;
+        diagnostics.get_or_begin_replay(&runtime).unwrap();
+        assert!(diagnostics.new_replay_startup_refusal(&refusal).is_some());
+    }
+
+    #[test]
+    fn source_grants_allow_an_automatic_replay_segment() {
+        use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+        use crate::sim::house_state::HouseState;
+        use crate::sim::scenario_session::ScenarioGameMode;
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        for (name, human) in [("Shared", true), ("Third", false)] {
+            let owner = sim.intern(name);
+            sim.register_house(HouseState::new(owner, 0, None, human, 0, 1));
+        }
+        sim.install_session_mode(ScenarioGameMode::Lan);
+        sim.session_mut_for_test()
+            .install_shared_house_sources_for_test(vec![0, 0], Some(0));
+        sim.install_control_grants(vec![ControlGrant {
+            source: 0,
+            house: 1,
+            level: ControlGrantLevel::FullControl,
+        }])
+        .unwrap();
+
+        let runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
+        let mut diagnostics = MatchDiagnosticsState::default();
+        assert!(diagnostics.get_or_begin_replay(&runtime).is_some());
+        assert!(diagnostics.replay_log.is_some());
+        assert!(diagnostics.replay_startup_refusal.is_none());
     }
 
     #[test]
@@ -408,8 +950,43 @@ mod tests {
         let log = ReplayLog::load(&flush.path).unwrap();
         assert_eq!(log.header.seed, 17);
         assert!(log.ticks.is_empty());
-        assert_eq!(log.initial_scenario_services, [ScenarioServiceInput::Pause]);
+        assert_eq!(
+            log.initial_scenario_services,
+            [crate::sim::replay::RecordedServiceInput::Scenario(
+                ScenarioServiceInput::Pause
+            )]
+        );
         assert!(diagnostics.replay_log.is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_flush_keeps_only_the_newest_segments() {
+        let root = test_path("prune");
+        std::fs::create_dir_all(&root).unwrap();
+        // Name order is not age order: the tick comes before the seconds.
+        for name in [
+            "replay_tick9_100.json",
+            "replay_tick1_200.json",
+            "replay_tick1_200_1.json",
+        ] {
+            std::fs::write(root.join(name), b"{}").unwrap();
+        }
+        std::fs::write(root.join("notes.txt"), b"mine").unwrap();
+        prune_old_segments(&root, 2);
+        let mut left: Vec<_> = std::fs::read_dir(&root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        left.sort();
+        assert_eq!(
+            left,
+            [
+                "notes.txt",
+                "replay_tick1_200.json",
+                "replay_tick1_200_1.json"
+            ]
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

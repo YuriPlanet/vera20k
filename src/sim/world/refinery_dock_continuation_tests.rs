@@ -138,11 +138,10 @@ fn fixture(row: &Value) -> Scene {
     // Native OTHER is a supplied radio object, neither House-listed nor
     // foundation-placed. Use membership owners to reproduce that prestate.
     let owner = s.sim.substrate.entities.get(s.other).unwrap().owner();
-    crate::sim::world::Simulation::update_house_tracking(
+    crate::sim::house_tracking::HouseTracking::unregister_object(
         &mut s.sim.substrate,
         &mut s.sim.houses,
         s.other,
-        crate::sim::house_tracking::HouseTracking::remove_tracking,
     );
     s.sim.houses.leave_house_base_lists(s.other, owner);
     for y in 20..23 {
@@ -174,11 +173,13 @@ fn fixture(row: &Value) -> Scene {
         let contact = before[contact].as_str().map(|n| s.id(n));
         let peer = if id == s.miner { s.refinery } else { s.miner };
         let e = s.sim.substrate.entities.get_mut(id).unwrap();
-        e.radio_contacts.clear_all();
+        e.seldom.radio_contacts.clear_all();
         if let Some(contact) = contact {
-            e.radio_contacts.set_slot(0, contact);
+            e.seldom.radio_contacts.set_slot(0, contact);
         }
-        e.tether.set_for_test((before[tether] == 1).then_some(peer));
+        e.seldom
+            .tether
+            .set_for_test((before[tether] == 1).then_some(peer));
     }
     if let Some(slots) = case["actual_slots"].as_array() {
         // These native controls supply an actual vector independently of the
@@ -194,6 +195,7 @@ fn fixture(row: &Value) -> Scene {
             .entities
             .get_mut(s.refinery)
             .unwrap()
+            .seldom
             .radio_contacts = serde_json::from_value(json!({"slots": slots})).unwrap();
     }
     {
@@ -342,6 +344,10 @@ fn compare(s: &Scene, native: &Value, context: &str) {
         "scenario_rng":{"disabled":view.disabled,"index_a":view.index_a,"index_b":view.index_b,"state":view.words}
     });
     for (key, value) in fields.as_object().unwrap() {
+        // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
+        if s.rules.ares() && key == "score" {
+            continue;
+        }
         assert_eq!(value, &native[key], "{context}: {key}");
     }
     for (id, field) in [
@@ -355,6 +361,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .map_or(Value::Null, |id| s.name(id)),
@@ -370,6 +377,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
                     .entities
                     .get(id)
                     .unwrap()
+                    .seldom
                     .tether
                     .partner()
                     .is_some()
@@ -411,6 +419,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 .entities
                 .get(s.refinery)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .has_free_or(s.miner),
             step["returned"]["admitted"].as_bool().unwrap(),
@@ -422,11 +431,12 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 &mut s.sim,
                 s.miner,
                 &s.rules,
-                super::ObjectAiCtx {
+                &mut super::ObjectAiCtx {
                     overlay_registry: Some(registry()),
                     ..Default::default()
                 },
-            );
+            )
+            .unwrap();
             s.sim
                 .substrate
                 .entities
@@ -444,7 +454,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 &s.rules,
                 None,
                 s.miner,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             int(&step["returned"]),
             "{context}: delay"
@@ -454,7 +464,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 &mut s.sim,
                 &s.rules,
                 s.miner,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             int(&step["returned"]),
             "{context}: delay"
@@ -469,7 +479,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 dock_types,
                 op["wide"] == 1,
                 op["bypass"] == 1,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 found.map_or(Value::Null, |id| s.name(id)),
@@ -498,7 +508,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                     message,
                     RadioPayload::default(),
                     &s.rules,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .code() as i32,
                 int(&step["returned"]["reply"]),
@@ -512,7 +522,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 s.miner,
                 &s.rules,
                 Some(registry()),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             step["returned"]["early_return_before_unit_tail"]
                 .as_bool()
@@ -532,7 +542,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 &mut s.sim,
                 &s.rules,
                 s.miner,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         "break_other_contact" => {
@@ -541,7 +551,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 s.other,
                 RadioMessage::Break,
                 &s.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         "arrival" => {
@@ -583,7 +593,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 s.miner,
                 &s.rules,
                 Some(registry()),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             s.sim
                 .per_cell_process(
@@ -591,7 +601,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                     crate::sim::movement::PerCellReason::Arrival,
                     &s.rules,
                     Some(registry()),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
         }
@@ -624,8 +634,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 Some(owner),
                 PointerExpiryControl::Uninit,
                 &s.rules,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         other => panic!("{context}: operation {other}"),
@@ -647,6 +656,7 @@ fn compare_contact_vector(s: &Scene, native: &Value, context: &str) {
         .entities
         .get(s.refinery)
         .unwrap()
+        .seldom
         .radio_contacts;
     let slots: Vec<_> = (0..contacts.capacity())
         .map(|index| contacts.slot(index).map_or(Value::Null, |id| s.name(id)))
@@ -759,9 +769,9 @@ fn independent_pending_entry_survives_save_load_and_changes_the_state_hash() {
         .sim;
     let unit = restored.substrate.entities.get(s.miner).unwrap();
     assert_eq!(unit.pending_entry(), Some(s.other));
-    assert!(unit.radio_contacts.contains(s.refinery));
+    assert!(unit.seldom.radio_contacts.contains(s.refinery));
     let building = restored.substrate.entities.get(s.refinery).unwrap();
-    assert!(building.radio_contacts.contains(s.miner));
+    assert!(building.seldom.radio_contacts.contains(s.miner));
     assert_eq!(
         building.mission.current(),
         MissionId::from_known(crate::sim::mission::MissionType::Repair)

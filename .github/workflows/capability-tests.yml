@@ -1,6 +1,6 @@
 name: Capability tests
 
-# The optional capabilities (ares, phobos, npatch, the diagnostic builds) used
+# The optional capabilities (phobos, npatch, the diagnostic builds) used
 # to be compiled by nobody: the default-features suite, the release job and the
 # nightly all skip them, so a break could sit on main until someone happened to
 # build that combination by hand (#2798, #2789). This workflow runs
@@ -36,12 +36,14 @@ jobs:
     # capability's suite once; the shared target keeps the dependency builds.
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config

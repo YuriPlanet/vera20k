@@ -17,6 +17,7 @@ import struct
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESP
 from tools.native_oracle import provenance, run_checked
+from tools.native_oracle import require
 from tools.spatial_oracle import astar_hills_bridge_inputs as inputs
 from tools.spatial_oracle.map_queries import dwords, packed
 from tools.spatial_oracle.anytown_damage.navigation import MAP, Navigation, sr
@@ -172,7 +173,7 @@ class Route:
         mark_rng = states(m)
         cell = m.ptrs[(78,75)]
         cell_before = bytes(u.mem_read(cell, 0x200)).hex()
-        assert m.call(0x4D3780, this=blocker, args=(1,), count=1000000) == 1
+        require(m.call(0x4D3780, this=blocker, args=(1,), count=1000000) == 1, 'native 0x4D3780 returned an unexpected result')
         cell = m.ptrs[(78,75)]
         occupied = dict(deck_bits=sr.u32(u, cell+0x128),
                         deck_head_matches=sr.u32(u, cell+0xE8) == blocker)
@@ -185,7 +186,7 @@ class Route:
         assert 0x4F9AA8 in self.reached and 0x4F9AAE not in self.reached
         row.update(blocker_prestate=blocker_state, occupation=occupied,
                    same_house_pointer_branch=True, house_index_and_alliance_unread=True)
-        assert m.call(0x4D3780, this=blocker, args=(0,), count=1000000) == 1
+        require(m.call(0x4D3780, this=blocker, args=(0,), count=1000000) == 1, 'native 0x4D3780 returned an unexpected result')
         assert mark_rng == states(m)
         row['mark_rng_before'] = mark_rng
         row['mark_rng_after'] = states(m)
@@ -287,7 +288,7 @@ class MarkerControls(Route):
         self.cell = m.ptrs[(78, 75)]
         self.cell_before_mark = bytes(u.mem_read(self.cell, 0x200)).hex()
         before_mark = states(m)
-        assert m.call(0x4D3780, this=self.blocker, args=(1,), count=1000000) == 1
+        require(m.call(0x4D3780, this=self.blocker, args=(1,), count=1000000) == 1, 'native 0x4D3780 returned an unexpected result')
         assert before_mark == states(m)
         assert sr.u32(u, self.cell + 0xE4) == self.blocker
         assert sr.u32(u, self.cell + 0x124) & 0x20
@@ -371,7 +372,7 @@ def generate_markers():
              for urgency in (0, 1, 2)]
     m, u = owner.m, owner.m.uc
     before_unmark = states(m)
-    assert m.call(0x4D3780, this=owner.blocker, args=(0,), count=1000000) == 1
+    require(m.call(0x4D3780, this=owner.blocker, args=(0,), count=1000000) == 1, 'native 0x4D3780 returned an unexpected result')
     assert before_unmark == states(m)
     assert bytes(u.mem_read(owner.cell, 0x200)).hex() == owner.cell_before_mark
     assert owner.marker_cells() == []

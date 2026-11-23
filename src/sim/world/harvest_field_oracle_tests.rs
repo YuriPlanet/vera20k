@@ -277,6 +277,7 @@ pub(super) fn row_scene_with(input: &Value, edit: impl FnOnce(&mut String, &mut 
             .entities
             .get_mut(s.miner)
             .unwrap()
+            .seldom
             .discovery
             .set_owned_by_current_house_for_test(owned);
         s.sim.fog = crate::sim::vision::FogState::new(33, 33);
@@ -450,7 +451,8 @@ fn reduce_tiberium_matches_the_original_cell_reduction() {
             input["amount"].as_i64().unwrap() as i32,
             &s.rules,
             Some(registry()),
-        );
+        )
+        .unwrap();
         assert_eq!(
             u64::from(outcome.removed_amount),
             row["removed"].as_u64().unwrap(),
@@ -492,7 +494,8 @@ fn scan_for_tiberium_matches_the_original_ring_scan() {
             Some(registry()),
             s.miner,
             input["range"].as_i64().unwrap() as i32,
-        );
+        )
+        .unwrap();
         let found = found.map_or(serde_json::json!([0, 0]), |(x, y)| {
             serde_json::json!([x, y])
         });
@@ -514,8 +517,9 @@ fn search_for_tiberium_matches_the_original_search_and_move() {
             Some(registry()),
             s.miner,
             input["range"].as_i64().unwrap() as i32,
-            crate::sim::world::FrameEffects::default(),
-        );
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
         assert_eq!(
             u64::from(ok),
             row["ok"].as_u64().unwrap(),
@@ -558,11 +562,12 @@ fn mission_harvest_states_zero_and_one_match_the_original_dispatch() {
             &mut s.sim,
             s.miner,
             &s.rules,
-            crate::sim::world::ObjectAiCtx {
+            &mut crate::sim::world::ObjectAiCtx {
                 overlay_registry: Some(registry()),
                 ..Default::default()
             },
-        );
+        )
+        .unwrap();
         let entity = s.sim.substrate.entities.get(s.miner).unwrap();
         let timer = entity.mission.dispatch_timer();
         assert_eq!(
@@ -625,6 +630,7 @@ fn campaign_player_scan_rejects_unexplored_ore() {
         .entities
         .get_mut(scene.miner)
         .unwrap()
+        .seldom
         .discovery
         .set_owned_by_current_house_for_test(true);
     scene.sim.fog = crate::sim::vision::FogState::new(33, 33);
@@ -643,7 +649,8 @@ fn campaign_player_scan_rejects_unexplored_ore() {
             Some(registry()),
             scene.miner,
             6,
-        ),
+        )
+        .unwrap(),
         None,
         "the native campaign scan rejects the only hidden candidate"
     );

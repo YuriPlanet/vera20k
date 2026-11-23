@@ -355,7 +355,12 @@ fn original_state10_rows() {
                 ammo: ammo.current(),
                 target: get("target").as_bool().unwrap(),
                 leaves_map: get("flag_3d4").as_i64().unwrap() != 0,
-                human: house.is_controlled_by_human(get("game_mode").as_i64().unwrap() != 0),
+                human: house.is_controlled_by_human(
+                    crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+                        get("game_mode").as_i64().unwrap() as i32,
+                    )
+                    .stock_rule_policy(None),
+                ),
                 airstrike: get("airstrike").as_bool().unwrap(),
             };
             let mut host = ExitReplay {
@@ -474,7 +479,8 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
                 EntityCategory::Structure,
             );
             // Construction stamps the type's `Foundation=2x2`.
-            pad.type_facts
+            pad.seldom
+                .type_facts
                 .set_foundation_for_test("2x2".to_string().into());
             pad.lifecycle.set_in_limbo_for_test(false);
             sim.substrate.entities.insert(pad);
@@ -491,16 +497,15 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
             // Find_Docking_Bay walks the house's buildings and its tracked
             // counts, which construction fills.
             sim.append_house_base_building_for_test(2);
-            Simulation::update_house_tracking(
+            crate::sim::house_tracking::HouseTracking::register_object(
                 &mut sim.substrate,
                 &mut sim.houses,
                 2,
-                crate::sim::house_tracking::HouseTracking::add_tracking,
             );
         }
         plane.set_category_for_test(EntityCategory::Aircraft);
         // The RadioClass constructor's one contact slot (`0x0065A764`).
-        plane.radio_contacts.set_capacity(1);
+        plane.seldom.radio_contacts.set_capacity(1);
         plane.mission_leaf = MissionLeafState::aircraft_raw_for_test(1, 1);
         plane
             .mission
@@ -576,7 +581,10 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
     let (sim, edge) = exit("HARR", true, true);
     let plane = sim.substrate.entities.get(1).unwrap();
     assert_eq!(plane.mission.current().known(), Some(MissionType::Enter));
-    assert!(plane.radio_contacts.contains(2), "HELLO linked the dock");
+    assert!(
+        plane.seldom.radio_contacts.contains(2),
+        "HELLO linked the dock"
+    );
     assert_eq!(
         plane.navigation.nav_com(),
         Some(NavTargetRef::Object { id: 2 }),

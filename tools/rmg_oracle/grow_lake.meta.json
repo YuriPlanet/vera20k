@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "11 whole original GrowLake calls: given seeds, hunted seeds that commit through the shore pass, dilation and green fill or roll back, pocketed and exhausted hunts, the Gaussian size draw, the growth heap and its drain",
+  "assumptions": [
+    "Existing CliffFixture owns original-constructed Cell backing, admission, the stride-33 scratch and the physical clear/cliff/shore TMP registration; bounds 16..48. Shore-piece anchor table filled by its original static initializer 57A9C0. Scratch coordinates stamped for in-diamond records only; region and stamp start 0, mask cache -1, shore enable 1.",
+    "Declared scene: clear cells, optional foreign water (WaterSet base, region 3) and non-clear (CliffSet base) cells, or every in-diamond cell outside a clear pocket non-clear. Generator +4C WaterAmount, +180/+184 generated size, +304 placed, +308 region. Not a complete Generate prefix.",
+    "Linear neighbour offsets written as PathfinderClass::ResizeMapArrays 42AC00 computes them for stride 33. Gaussian cache empty with source 598000. FPCW 0E7F. All streams seeded by original 65C6D0."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS; native code bytes unchanged. No lake, RNG, Gaussian or tile result is supplied."
+  ],
+  "entry_points": {
+    "grow_lake": "0x0059C920",
+    "next": "0x0065C780",
+    "gaussian": "0x005980C0"
+  },
+  "replay_command": "python -m tools.rmg_oracle.grow_lake",
+  "payload_sha256": "1bce0d86921b97d94af8a36ef647e26bab45773649c4140397a9342e412c1095"
+}

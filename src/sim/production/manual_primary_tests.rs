@@ -70,7 +70,7 @@ fn stale_primary_events_preserve_then_toggle_each_limbo_peer_flag() {
     };
     // This is the original Event17 receiver's accepted retained-state domain.
     // A common retail producer of an already-primary limbo peer is not claimed.
-    sim.techno_limbo_with_rules(first, &rules, None);
+    sim.techno_limbo_with_rules(first, &rules);
     let toggle = |sim: &mut Simulation, entity_id| {
         assert!(sim.apply_command(
             "Americans",
@@ -109,6 +109,39 @@ fn stale_primary_events_preserve_then_toggle_each_limbo_peer_flag() {
     toggle(&mut restored, first);
     assert!(restored.production.is_primary_factory(first));
     assert!(!restored.production.is_primary_factory(second));
+}
+
+/// Building448070/448160 group primaries by raw Factory and Naval, so a raw
+/// `Factory=Unit` (1) building keeps its own flag beside raw UnitType (40).
+#[test]
+fn raw_factory_values_form_their_own_primary_groups() {
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n[Sides]\nGDI=Americans\n\
+         [BuildingTypes]\n0=WEAP\n1=UNITFAC\n\
+         [WEAP]\nFactory=UnitType\nOwner=Americans\n\
+         [UNITFAC]\nFactory=Unit\nOwner=Americans\n",
+    ))
+    .unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x0044_8070);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let ids = [(4, "WEAP"), (10, "UNITFAC"), (16, "UNITFAC")].map(|(x, kind)| {
+        sim.spawn_object(kind, "Americans", x, 4, 0, &rules)
+            .unwrap()
+    });
+    let primary = |sim: &Simulation| ids.map(|id| sim.production.is_primary_factory(id));
+    assert_eq!(primary(&sim), [true, true, false], "Unlimbo's 448070");
+    assert!(can_select_factory_primary(&sim, &rules, ids[2]));
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::TogglePrimaryFactory { entity_id: ids[2] },
+        Some(&rules)
+    ));
+    assert_eq!(
+        primary(&sim),
+        [true, false, true],
+        "448160 clears raw-1 peers"
+    );
 }
 
 fn manual_primary_corpus() -> &'static serde_json::Value {
@@ -330,7 +363,10 @@ fn assert_primary_native_state(
             native["flags"],
             "{context}: actor{id} flags"
         );
-        assert_eq!(u8::from(entity.selection.is_selected()), native["selected"]);
+        assert_eq!(
+            u8::from(entity.seldom.selection.is_selected()),
+            native["selected"]
+        );
         assert_eq!(u8::from(entity.lifecycle.cell_marked()), native["marked"]);
         let timer = entity.mission.dispatch_timer();
         assert_eq!(
@@ -450,20 +486,16 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
             supply_primary_actor_flags(&mut sim, id, &case["initial"]["actors"][index]["flags"]);
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.lifecycle.set_cell_marked_for_test(true);
-            entity.selection.set_selected_for_test(false);
+            entity.seldom.selection.set_selected_for_test(false);
             sim.append_house_base_building_for_test(id);
             if actor["primary"].as_u64() == Some(1) {
-                let category = super::production_tech::factory_category_for_building(
-                    rules.object(kind).unwrap(),
-                )
-                .unwrap();
-                sim.production.set_primary_factory(owner, category, id);
+                sim.production.set_primary_factory(id);
             }
             ids.push(id);
         }
         sim.sound_events.clear_for_test();
         let seed = corpus["seed"].as_u64().unwrap();
-        sim.main_rng = SimRng::new(seed).into();
+        sim.main_rng = SimRng::new(seed);
         sim.scenario_rng = SimRng::new(seed);
         sim.mapgen_rng = SimRng::new(seed);
         let assert_rng = |sim: &Simulation, expected: &serde_json::Value| {
@@ -516,6 +548,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                                 .entities
                                 .get_mut(selected)
                                 .unwrap()
+                                .seldom
                                 .selection
                                 .set_selected_for_test(selected == id);
                         }

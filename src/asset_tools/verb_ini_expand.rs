@@ -15,14 +15,22 @@ pub fn run(
     source_only: bool,
 ) -> Result<Value, ErrorReport> {
     let fail = |error: String| {
-        ErrorReport { error, hint: Some("This checks INI expansion, not MO gameplay. --all-mixes widens only this tool's archive search.".into()) }
+        ErrorReport { error, hint: Some("This checks INI expansion, not gameplay compatibility. --all-mixes widens only this tool's archive search.".into()) }
     };
     let raw = assets
         .resolve_ref(name)
         .ok_or_else(|| fail(format!("INI {name} is unavailable")))?;
     let raw = IniFile::from_bytes(raw.bytes).map_err(|e| fail(e.to_string()))?;
-    let selected = select_ini_with_options(assets, name, DirectiveOptions { strict, max_depth })
-        .map_err(fail)?;
+    let selected = select_ini_with_options(
+        assets,
+        name,
+        DirectiveOptions {
+            strict,
+            max_depth,
+            ..DirectiveOptions::default()
+        },
+    )
+    .map_err(fail)?;
     let raw_names: BTreeSet<_> = raw.section_names().into_iter().collect();
     let names: BTreeSet<_> = selected.ini.section_names().into_iter().collect();
     let added: Vec<_> = names.difference(&raw_names).copied().collect();
@@ -41,7 +49,7 @@ pub fn run(
     }))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
     #[test]
@@ -68,7 +76,15 @@ mod tests {
             b"[Child]\nValue=yes\n",
         )]);
         dir.write("custom.mix", &mix);
-        assert!(crate::asset_tools::root::open_manager(dir.path(), false).is_err());
+        assert!(
+            crate::asset_tools::root::open_manager(
+                dir.path(),
+                false,
+                Default::default(),
+                &crate::util::archive_names::ArchiveNames::default(),
+            )
+            .is_err()
+        );
         let normal = crate::asset_tools::root::open_ini_probe_manager(dir.path(), false).unwrap();
         assert!(run(&normal, "root.ini", true, 64, false, true).is_err());
         let wide = crate::asset_tools::root::open_ini_probe_manager(dir.path(), true).unwrap();

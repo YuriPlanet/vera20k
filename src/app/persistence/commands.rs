@@ -1,6 +1,7 @@
 //! User save/load requests; input and dialogs only select the operation.
 
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::SimWrite;
 
 use std::path::{Path, PathBuf};
 
@@ -19,6 +20,8 @@ pub(crate) enum SaveCommandError {
     Terrain(#[from] crate::map::resolved_terrain::SavedTerrainError),
     #[error("Could not capture the local view: {0}")]
     LocalView(#[from] crate::sim::snapshot::saved_local_view::SavedLocalViewError),
+    #[error("Could not encode the saved game: {0}")]
+    Encode(#[source] crate::util::save_codec::Error),
     #[error("Could not save the game: {0}")]
     Write(#[from] crate::app::persistence::SaveWriteError),
 }
@@ -59,7 +62,7 @@ pub(crate) fn prepare_initial_campaign_save<'a>(
     let campaign = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .is_some_and(|runtime| !runtime.simulation.session().game_mode_nonzero());
     state
         .persistence
@@ -124,7 +127,7 @@ fn save(
         &state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .ok_or(SaveCommandError::MissingSimulation)?
             .simulation,
         &state.persistence.repository,
@@ -161,15 +164,15 @@ fn prepare_save<'a>(
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .ok_or(SaveCommandError::MissingSimulation)?;
     let map_hash = state
         .match_state
         .loaded_map_hash
         .ok_or(SaveCommandError::MissingMapHash)?;
     let sim = &runtime.simulation;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = crate::util::time::SystemTime::now()
+        .duration_since(crate::util::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let mut sinking_waterlines = state
@@ -179,11 +182,19 @@ fn prepare_save<'a>(
         .borrow()
         .saved();
     sinking_waterlines.retain(|(id, _)| sim.entities().contains(*id));
-    let sidebar_order = state
-        .match_state
-        .match_presentation
+    let presentation = &state.match_state.match_presentation;
+    let active_tab = saved_active_tab(presentation.active_sidebar_tab);
+    let sidebar_order = presentation
         .sidebar_projection
-        .saved_order();
+        .saved_order()
+        .map(|order| order.with_active_tab(active_tab));
+    // Phobos keeps `SWSidebar_Enable` in the scenario extension, so it rides
+    // the local presentation envelope rather than the simulation hash.
+    #[cfg(feature = "phobos")]
+    let sidebar_order = sidebar_order.map(|mut order| {
+        order.set_sw_sidebar_expanded(state.match_state.match_presentation.sw_sidebar.expanded);
+        order
+    });
     let tactical_view = crate::app::input::camera::saved_tactical_view(state);
     let rules_owner = rules_owner.ok_or(SaveCommandError::MissingResources("process rules"))?;
     let processed =
@@ -210,6 +221,12 @@ fn prepare_save<'a>(
         &presentation.sidebar_gadget_state,
     )?;
     local_view.set_power_bar(presentation.power_bar_anim.saved());
+    local_view.set_radar_housing(
+        presentation
+            .radar_anim
+            .as_ref()
+            .map(crate::render::radar::anim::RadarAnimState::saved_housing),
+    );
     local_view.set_credits_counter(
         state
             .match_state
@@ -239,6 +256,18 @@ fn prepare_save<'a>(
         state.match_state.session.local_player_name(),
         state.audio.theme.saved_slots(),
         presentation.radar_movies.scenario_hold(),
+    )
+    // Save_Game's VocClass::SaveStaticSounds (`0x00751620`): the map's
+    // retained coordinate sounds, so a load can restart its ambient loops.
+    // RESIDUAL: the audio owner keeps the list, so a session with no sound
+    // device saves none and a later load with sound stays quiet there.
+    .with_static_sounds(
+        state
+            .audio
+            .sfx_player
+            .as_ref()
+            .map(crate::audio::sfx::SfxPlayer::saved_static_sounds)
+            .unwrap_or_default(),
     );
     let resources = crate::sim::snapshot::scenario_resources::SavedScenarioResourcesRef::capture(
         &runtime.resources,
@@ -260,6 +289,14 @@ fn prepare_save<'a>(
         local_view,
         resources,
     })
+}
+
+/// Mouse Save 5BE6D0 writes the open tab (ActiveTab, +0x539C) beside the
+/// strips; every save path carries it ([`SavedSidebarOrder::active_tab`]).
+///
+/// [`SavedSidebarOrder::active_tab`]: crate::sim::snapshot::SavedSidebarOrder::active_tab
+pub(crate) fn saved_active_tab(tab: crate::ui::sidebar::SidebarTab) -> u8 {
+    tab.tab_index() as u8
 }
 
 impl PreparedSave<'_> {
@@ -304,28 +341,31 @@ impl PreparedSave<'_> {
             Some(&self.local_view),
             Some(&self.resources),
         );
-        let tick = sim.session().tick();
-        let result = match destination {
-            SaveDestination::Existing(path) => repository
-                .overwrite_existing(path, &bytes)
-                .map(|()| path.to_path_buf()),
-            SaveDestination::InitialCampaign(filename) => {
-                repository.write_initial_campaign(filename, &bytes)
+        let result = bytes.map_err(SaveCommandError::Encode).and_then(|bytes| {
+            match destination {
+                SaveDestination::Existing(path) => repository
+                    .overwrite_existing(path, &bytes)
+                    .map(|()| path.to_path_buf()),
+                SaveDestination::InitialCampaign(filename) => {
+                    repository.write_initial_campaign(filename, &bytes)
+                }
+                SaveDestination::New => {
+                    let tick = sim.session().tick();
+                    let filename = match self.sanitized {
+                        Some(name) => format!("save_{name}_tick{tick}_{}.bin", self.timestamp),
+                        None => format!("save_tick{tick}_{}.bin", self.timestamp),
+                    };
+                    repository.write_named(&filename, &bytes)
+                }
             }
-            SaveDestination::New => {
-                let filename = match self.sanitized {
-                    Some(name) => format!("save_{name}_tick{tick}_{}.bin", self.timestamp),
-                    None => format!("save_tick{tick}_{}.bin", self.timestamp),
-                };
-                repository.write_named(&filename, &bytes)
-            }
-        };
-        // Keep synchronous IO dwell out of the source clock, including failure.
+            .map_err(Into::into)
+        });
+        // Keep synchronous save dwell out of the source clock, including failure.
         clock.finish_save(
             clock_save,
             crate::app::match_runtime::frame_pacer::wall_clock_ms(),
         );
-        result.map_err(Into::into)
+        result
     }
 }
 
@@ -385,15 +425,100 @@ pub(crate) fn quickload(state: &mut AppState) {
             return;
         }
     };
-    load_save_file(state, &path);
+    request_saved_game_load(state, path);
 }
 
-/// Load a save file by path. Used by both quickload and the save/load panel.
-#[cfg(feature = "dev-overlays")]
-pub(crate) fn load_save_file(state: &mut AppState, path: &std::path::Path) {
-    if let Err(error) = try_load_save_file(state, path) {
-        log_prepared_load_error(path, &error);
+pub(crate) struct PendingSavedGameLoad {
+    path: PathBuf,
+    convert: bool,
+    presented: bool,
+}
+
+impl PendingSavedGameLoad {
+    fn new(path: PathBuf, convert: bool) -> Self {
+        Self {
+            path,
+            convert,
+            presented: false,
+        }
     }
+
+    fn advance(&mut self, present: impl FnOnce() -> bool) -> Option<&Path> {
+        if !self.presented {
+            self.presented = present();
+            return None;
+        }
+        Some(self.path.as_path())
+    }
+}
+
+/// LoadOptions559D60 shows F0 before LoadGame67E440. Returning after that
+/// frame gives the browser a paint opportunity before synchronous restoration.
+pub(crate) fn request_saved_game_load(state: &mut AppState, path: PathBuf) {
+    queue_saved_game_load(state, path, false);
+}
+
+pub(crate) fn request_saved_game_conversion(state: &mut AppState, path: PathBuf) {
+    queue_saved_game_load(state, path, true);
+}
+
+fn queue_saved_game_load(state: &mut AppState, path: PathBuf, convert: bool) {
+    if state.persistence.pending_load.is_none() {
+        state.persistence.pending_load = Some(PendingSavedGameLoad::new(path, convert));
+        state.platform.window.request_redraw();
+    }
+}
+
+/// Called before ordinary frame service; the retained browser owns failure UI.
+pub(crate) fn pump_saved_game_load(state: &mut AppState) -> Option<bool> {
+    let mut pending = state.persistence.pending_load.take()?;
+    let convert = pending.convert;
+    let Some(path) = pending.advance(|| {
+        match crate::app::loading::pump::present_saved_game_loading(state) {
+            Ok(presented) => presented,
+            Err(error) => {
+                // Like missing native progress artwork, presentation failure
+                // must not make an otherwise loadable save inaccessible.
+                log::warn!("Saved-game loading dialog presentation failed: {error:#}");
+                true
+            }
+        }
+    }) else {
+        let presented = pending.presented;
+        state.persistence.pending_load = Some(pending);
+        state.platform.window.request_redraw();
+        return Some(presented);
+    };
+    let from_menu = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu;
+    let from_browser = state
+        .match_state
+        .match_presentation
+        .saved_game_browser
+        .is_some();
+    let mut converted = None;
+    let result = (|| {
+        if convert {
+            if state.match_state.live_network.is_some() {
+                return Err(super::PreparedLoadError::NetworkMatch);
+            }
+            converted = Some(state.persistence.repository.migrate_for_load(path)?);
+        }
+        restore_save_file(state, converted.as_deref().unwrap_or(path))
+    })();
+    let was_converted = converted.is_some();
+    let path = converted.as_deref().unwrap_or(path);
+    if from_menu {
+        crate::app::App::finish_load_saved_game_from_menu(state, path, result, was_converted);
+    } else if from_browser {
+        crate::app::App::finish_saved_game_load(state, path, result, was_converted);
+    } else if let Err(error) = result {
+        #[cfg(feature = "dev-overlays")]
+        log_prepared_load_error(path, &error);
+        #[cfg(not(feature = "dev-overlays"))]
+        log::warn!("Load: {}: {error}", path.display());
+    }
+    state.platform.window.request_redraw();
+    Some(false)
 }
 
 /// Both browser routes prepare the saved world's own resources, then publish
@@ -403,13 +528,28 @@ pub(crate) fn try_load_save_file(
     state: &mut AppState,
     path: &Path,
 ) -> Result<(), crate::app::persistence::PreparedLoadError> {
-    // UI559DBC->69BB40->5BF450 precedes the lower load, including failure.
+    if let Err(error) = crate::app::loading::pump::present_saved_game_loading(state) {
+        log::warn!("Saved-game loading dialog presentation failed: {error:#}");
+    }
+    restore_save_file(state, path)
+}
+
+fn restore_save_file(
+    state: &mut AppState,
+    path: &Path,
+) -> Result<(), crate::app::persistence::PreparedLoadError> {
+    // A network game offers no load; one peer swapping its world mid-match
+    // would leave the others' lockstep.
+    if state.match_state.live_network.is_some() {
+        return Err(crate::app::persistence::PreparedLoadError::NetworkMatch);
+    }
+    // UI559DBC->69BB40->5BF450 precedes the lower load, including failure;
+    // a failed load leaves the radar to wind its clip down itself.
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::radar_movie::retire(state, wall_ms);
+    crate::app::radar_movie::retire_for_load(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
     use crate::app::persistence::{PreparedLoadError, PreparedSavedGame, SavedGamePreparationView};
     let from_menu = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu;
-    crate::app::loading::pump::present_saved_game_loading(state);
     let Some(mut assets) = state.process_assets.lease_for_loading() else {
         return Err(PreparedLoadError::Resources(
             "retail assets are unavailable".into(),
@@ -431,7 +571,7 @@ pub(crate) fn try_load_save_file(
                 current_simulation: state
                     .match_state
                     .sim_runtime
-                    .as_ref()
+                    .runtime()
                     .map(|runtime| &runtime.simulation),
                 frontend_main: &state.frontend.frontend_main_rng,
                 rules_owner,
@@ -456,21 +596,30 @@ pub(crate) fn try_load_save_file(
     let prepared = prepared?;
     crate::app::match_runtime::restore::commit_prepared_load(state, path, prepared, from_menu);
     if from_menu {
-        // Main52E619 initializes Scenario/Main only on this route; in-game
-        // options resume never enters it. The ordinary offline clock owner
-        // keeps Windows GetTickCount distinct from the non-Windows fallback.
-        let seed = crate::app::match_bootstrap::read_match_seed(
-            &mut crate::app::match_bootstrap::OrdinaryMatchSeedClock,
-        );
-        state
+        let runtime = state
             .match_state
             .sim_runtime
-            .as_mut()
-            .expect("saved world committed")
-            .simulation
-            .initialize_random_number_system(seed.value);
+            .write_sim(SimWrite::Lifecycle)
+            .expect("saved world committed");
+        resume_menu_saved_game_rng(
+            &mut runtime.simulation,
+            &mut crate::app::match_bootstrap::OrdinaryMatchSeedClock,
+        );
     }
     Ok(())
+}
+
+/// Main52E619 initializes the stock Scenario/Main streams after loading
+/// from the menu. The custom snapshot path retains its saved continuation.
+pub(super) fn resume_menu_saved_game_rng(
+    simulation: &mut crate::sim::world::Simulation,
+    clock: &mut impl crate::app::match_bootstrap::MatchSeedClock,
+) {
+    if simulation.retains_snapshot_continuation() {
+        return;
+    }
+    let seed = crate::app::match_bootstrap::read_match_seed(clock);
+    simulation.initialize_random_number_system(seed.value);
 }
 
 #[cfg(feature = "dev-overlays")]
@@ -484,12 +633,15 @@ fn log_prepared_load_error(
         PreparedLoadError::ReadFile(source) => {
             log::warn!("Load: could not read {}: {source}", path.display())
         }
-        PreparedLoadError::MissingRules => log::warn!("Load: {error}"),
+        PreparedLoadError::MissingRules
+        | PreparedLoadError::NetworkMatch
+        | PreparedLoadError::SaveMigration(_) => {
+            log::warn!("Load: {error}")
+        }
         #[cfg(test)]
         PreparedLoadError::MissingCurrentSimulation
         | PreparedLoadError::MissingMapHash
-        | PreparedLoadError::MissingTerrainTemplate
-        | PreparedLoadError::MissingOverlayRegistry => log::error!("Load: {error}"),
+        | PreparedLoadError::MissingTerrainTemplate => log::error!("Load: {error}"),
         PreparedLoadError::Snapshot(source) => log::error!("Load: {source}"),
         PreparedLoadError::Restore(source) => {
             log::error!("Load: restoration validation failed: {source}")
@@ -510,7 +662,7 @@ fn log_prepared_load_error(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod save_name_tests {
     use super::sanitize_save_name;
     use crate::sim::snapshot::GameSnapshot;
@@ -549,7 +701,28 @@ mod save_name_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
+mod pending_load_tests {
+    use super::PendingSavedGameLoad;
+    use std::path::PathBuf;
+
+    #[test]
+    fn restoration_waits_for_a_presented_loading_frame() {
+        for path in ["menu-save.bin", "in-game-save.sav"] {
+            let mut pending = PendingSavedGameLoad::new(PathBuf::from(path), false);
+            // A lost/minimized surface must retry the loading frame first.
+            assert!(pending.advance(|| false).is_none());
+            // Successful presentation still returns to the event loop.
+            assert!(pending.advance(|| true).is_none());
+            assert_eq!(
+                pending.advance(|| panic!("loading frame was already presented")),
+                Some(std::path::Path::new(path))
+            );
+        }
+    }
+}
+
+#[cfg(all(test, tests_app))]
 mod initial_save_tests {
     use super::initial_campaign_filename;
 

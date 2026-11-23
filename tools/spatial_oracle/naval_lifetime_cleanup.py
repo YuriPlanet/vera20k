@@ -6,6 +6,7 @@ Resident current-cell Water02.sno bytes are physical stock Shrapnel metadata.
 from naval_occupants import *
 from tools.spatial_oracle.shrapnel_repair.retail_inputs import Rules as ResidentRules, theater
 from tools.spatial_oracle.shrapnel_repair.shrapnel_repair import physical_map
+from tools.native_oracle import require
 
 class Cleanup(Native):
  def __init__(self,case):
@@ -35,7 +36,7 @@ class Cleanup(Native):
   self.read_ranges.append(('current_cell',p,0x144));self.current_cell=p
   # Actual static startup and registration owners, supplied empty world.
   self.invoke(0x40CB80,0);self.invoke(0x4A8630,0)
-  assert self.invoke(0x55BAA0,0x87F778,(self.actor,0))&255
+  require(self.invoke(0x55BAA0,0x87F778,(self.actor,0))&255, 'native 0x55BAA0 returned an unexpected result')
   self.invoke(0x4A9720,0,(self.actor,))
   self.counter=self.alloc(64);u.mem_write(self.counter,dwords(1))
   u.mem_write(self.house+0x5564,dwords(0,self.counter,16,1,1))

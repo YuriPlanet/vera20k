@@ -60,7 +60,7 @@ fn pending_group_assignment_survives_save_and_commits_as_local_ingress() {
     loaded.scenario_rng = rng_before;
     let hash_before = loaded.state_hash();
     assert_eq!(
-        loaded.apply_due_frame_ingress_commands(&pending, &rules, 1, FrameEffects::default()),
+        loaded.apply_due_frame_ingress_commands(&pending, &rules, 1, &mut FrameEffects::default()),
         1
     );
     assert_eq!(loaded.entities().get(first).unwrap().object_group(), -1);
@@ -80,4 +80,40 @@ fn pending_group_assignment_survives_save_and_commits_as_local_ingress() {
         checksum_before,
         "native frame checksum excludes local Group"
     );
+}
+
+/// A network game's group key changes only the local player's own slots:
+/// Recruit6EAA90, WakeupGroup6E03B0 and the state hash read the +214 every
+/// peer shares, which no peer's key reaches.
+#[test]
+fn network_group_assignment_leaves_the_shared_group_to_every_peer() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
+    ))
+    .unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 731060);
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    let owner = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(owner));
+    let unit = sim
+        .spawn_object("E1", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    let hash_before = sim.state_hash();
+    let command = CommandEnvelope::new(
+        owner,
+        0,
+        Command::AssignControlGroup {
+            group: 0,
+            entity_ids: vec![unit],
+        },
+    );
+    assert!(sim.issue_local_command(command));
+    let pending = sim.take_due_commands();
+    assert_eq!(
+        sim.apply_due_frame_ingress_commands(&pending, &rules, 1, &mut FrameEffects::default()),
+        1
+    );
+    assert_eq!(sim.entities().get(unit).unwrap().object_group(), -1);
+    assert_eq!(sim.state_hash(), hash_before);
+    assert_eq!(sim.projected_control_groups()[1], [unit]);
 }

@@ -85,7 +85,7 @@ def main():
             # once; deploy it through the same byte-readback path as the rest
             # instead of a manual copy that skips verification. Discover it by
             # glob so a version bump cannot leave this list stale.
-            clients = sorted((ROOT / "dist").glob("vera20-client-*.nsp"))
+            clients = sorted((ROOT / "dist").glob("ver20k-Yuris-Revenge-v*.nsp"))
             if not clients:
                 raise SystemExit("No client NSP in dist; build it with build.py --client")
             client = clients[-1]

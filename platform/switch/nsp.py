@@ -132,11 +132,11 @@ def audit_packaged_romfs(path: Path, keys: Path, sdk: Path) -> None:
         print(f"Packaged RomFS audited: {len(files)} files, no empty members")
 
 
-def verify_runtime_file(runtime: Path):
+def verify_runtime_file(runtime: Path, *, max_bytes: int = 32 * 1024 * 1024):
     """Reject an unexpectedly large runtime image before packaging."""
     size = runtime.stat().st_size
-    if size > 32 * 1024 * 1024:
-        raise SystemExit(f"Refusing oversized Switch NSO runtime: {size} bytes")
+    if size > max_bytes:
+        raise SystemExit(f"Refusing oversized Switch NSO runtime: {size} bytes, limit {max_bytes}")
     with runtime.open("rb") as source:
         header = source.read(4)
     if header != b"NSO0":
@@ -162,7 +162,13 @@ def package(root: Path, sdk: Path, elf: Path, nacp: Path, *,
     for directory in [exefs, control, output]:
         directory.mkdir(parents=True, exist_ok=True)
     subprocess.run([str(sdk / "tools/bin/elf2nso"), str(elf), str(exefs / "main")], check=True)
-    verify_runtime_file(exefs / "main")
+    # The complete 0.4.2 client also contains its multilingual font bank and
+    # the new renderer. Keep the original probe budget for small binaries.
+    client_artifacts = {"vera20k-client", "vera20k-client-profile"}
+    if artifact in client_artifacts:
+        verify_runtime_file(exefs / "main", max_bytes=64 * 1024 * 1024)
+    else:
+        verify_runtime_file(exefs / "main")
     metadata = json.loads((root / "npdm.json").read_text())
     for field in ("program_id", "program_id_range_min", "program_id_range_max"):
         metadata[field] = "0x" + title_id

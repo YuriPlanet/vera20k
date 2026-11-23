@@ -1,5 +1,5 @@
 {
-  "schema_version": "vera20k.map-observation-profile.v2",
+  "schema_version": "vera20k.map-observation-profile.v3",
   "launch": {
     "mode": {
       "class": "Battle",
@@ -148,7 +148,10 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "DeployMcv": {
-          "entity_id": 1371
+          "entity_id": {
+            "type_id": "AMCV",
+            "owner": "VERA-OBSERVER"
+          }
         }
       }
     },
@@ -157,7 +160,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "QueueProduction": {
-          "type_id": 272
+          "type_id": "GAPOWR"
         }
       }
     },
@@ -166,7 +169,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "PlaceReadyBuilding": {
-          "type_id": 272,
+          "type_id": "GAPOWR",
           "rx": 31,
           "ry": 89
         }
@@ -177,7 +180,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "QueueProduction": {
-          "type_id": 275
+          "type_id": "GAPILE"
         }
       }
     },
@@ -186,7 +189,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "PlaceReadyBuilding": {
-          "type_id": 275,
+          "type_id": "GAPILE",
           "rx": 31,
           "ry": 91
         }
@@ -240,8 +243,8 @@
     1400
   ],
   "cursor_position": [
-    320,
-    240
+    720,
+    556
   ],
   "gestures": [
     {

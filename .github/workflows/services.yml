@@ -1,0 +1,49 @@
+name: Online services
+
+# Pull requests that touch the relay, its protocol or the browser gateway run
+# those packages' own tests, which take a minute or two. The engine's library
+# tests stay in the manual platform workflows; relay changes also get
+# relay-compat.yml. The lobby Worker and its tests live in a private repository.
+on:
+  pull_request:
+    paths:
+      - 'services/**'
+      - 'tools/wasm/gateway/**'
+      - 'Cargo.lock'
+      - '.github/workflows/services.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: services-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  relay-protocol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo test -p vera20k-relay-protocol -p vera20k-relay --lib --no-fail-fast
+      # The netsim runner and the load generator build only with test-support.
+      - run: cargo check -p vera20k-relay-protocol --features test-support --examples
+
+  gateway:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools/wasm/gateway
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm test

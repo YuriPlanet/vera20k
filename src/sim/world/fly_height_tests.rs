@@ -91,11 +91,18 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     if flag("loaded") {
         assert_eq!(sim.substrate.allocate_stable_id(), 2);
         insert_entity(&mut sim, 2, EntityCategory::Infantry);
-        sim.substrate.entities.get_mut(2).unwrap().passenger_role =
-            PassengerRole::inside_for_test(1, false);
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
         let mut cargo = PassengerCargo::new(1, 0.0);
         cargo.board_forced_chain(&[(2, 1.0)]);
-        sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::transport(cargo));
     }
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity
@@ -135,7 +142,7 @@ fn healthy_native_height_vectors_reach_production_coordinates() {
             1,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let entity = sim.substrate.entities.get(1).unwrap();
@@ -222,7 +229,7 @@ fn fly_integer_target_flags_and_cargo_survive_save_and_continuation() {
                         1,
                         &rules,
                         None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
             }
@@ -370,7 +377,7 @@ fn landing_base_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
         slots.remove(id);
     }
     let entity = sim.substrate.entities.get_mut(1).unwrap();
-    entity.radio_contacts = slots;
+    entity.seldom.radio_contacts = slots;
     entity.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_raw(input["current"].as_i64().unwrap_or(7) as i32),
         queued: MissionId::from_raw(input["queued"].as_i64().unwrap_or(-1) as i32),
@@ -713,7 +720,7 @@ fn fly_retained_destination_drives_subcell_arrival_after_save_and_restore() {
                 1,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let entity = instance.substrate.entities.get(1).unwrap();
@@ -913,7 +920,6 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
         other.locomotor = loco;
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             1,
@@ -922,7 +928,6 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
         );
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             peer,
@@ -930,8 +935,12 @@ fn fly_takeoff_phase_matches_native_display_reordering_and_gates() {
             None,
         );
         let rng = sim.scenario_rng.logical_state();
-        let admitted =
-            sim.complete_fly_phase(1, &rules, None, crate::sim::world::FrameEffects::default());
+        let admitted = sim.complete_fly_phase(
+            1,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         assert_eq!(
             admitted,
             !row["phase_calls"].as_array().unwrap().is_empty(),
@@ -995,7 +1004,6 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
         other.locomotor = loco;
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             1,
@@ -1004,7 +1012,6 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
         );
         Simulation::submit_entity_display(
             &sim.interner,
-            &sim.terrain_objects,
             &mut sim.substrate,
             &sim.resolved_terrain,
             peer,
@@ -1016,7 +1023,7 @@ fn fly_nonlandable_phase_matches_native_without_display_resubmission() {
             1,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_native_takeoff_result(&sim, &row);
         let entity = sim.substrate.entities.get(1).unwrap();
@@ -1068,7 +1075,6 @@ fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
     let (mut sim, rules) = takeoff_fixture(&row);
     Simulation::submit_entity_display(
         &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         &sim.resolved_terrain,
         1,
@@ -1079,7 +1085,7 @@ fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
         1,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let entity = sim.substrate.entities.get(1).unwrap();
@@ -1106,7 +1112,7 @@ fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
                     1,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_eq!(
@@ -1147,7 +1153,7 @@ fn fly_phase_outer_health_power_and_life_gates_precede_nonlandable_override() {
             1,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_eq!(sim.state_hash(), before, "{gate}");
     }
@@ -1260,7 +1266,7 @@ fn fly_production_process_resets_enter_mode_using_native_mission_precedence() {
     for row in rows {
         let (mut sim, rules) = fixture(&serde_json::json!({"input":{"z":900,"target":900}}));
         let entity = sim.substrate.entities.get_mut(1).unwrap();
-        let mut mission = serde_json::to_value(entity.mission).unwrap();
+        let mut mission = serde_json::to_value(entity.mission.clone()).unwrap();
         mission["current"] = row["current"].clone();
         mission["queued"] = row["queued"].clone();
         entity.mission = serde_json::from_value(mission).unwrap();
@@ -1279,7 +1285,7 @@ fn fly_production_process_resets_enter_mode_using_native_mission_precedence() {
             1,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let mode = sim
@@ -1328,7 +1334,7 @@ fn fly_production_tick_uses_primary_current_and_continues_after_restore() {
                     1,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             let entity = instance.substrate.entities.get(1).unwrap();
@@ -1462,7 +1468,7 @@ fn fly_paid_step_matches_native_math_and_production_type_speed() {
             1,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let actual = position_world_coord(&sim.substrate.entities.get(1).unwrap().position);
@@ -1478,7 +1484,7 @@ fn fly_paid_step_matches_native_math_and_production_type_speed() {
                     1,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_eq!(restored.state_hash(), sim.state_hash());
@@ -1490,7 +1496,7 @@ fn fly_paid_step_matches_native_math_and_production_type_speed() {
                             1,
                             &rules,
                             None,
-                            crate::sim::world::FrameEffects::default(),
+                            &mut crate::sim::world::FrameEffects::default(),
                         )
                         .unwrap();
                 }

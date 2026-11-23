@@ -4,7 +4,7 @@
 //! that path nor this value boundary runs authored Fill/Recalc, Tube or Anim
 //! constructors. Process identity and resident catalogs are supplied separately.
 
-use super::build::load_native_tmp_draw_heights;
+use super::build::{MAX_TMP_RAMP_TYPE, load_native_tmp_draw_heights};
 use super::cliffs::build_destroyable_cliff_catalog;
 use super::*;
 use crate::assets::asset_manager::AssetManager;
@@ -26,6 +26,9 @@ pub struct SavedTerrainTemplate {
     native_tube_indices: Vec<NativeTubeCellIndex>,
     tube_native_ids: Vec<Option<i32>>,
     tile_animations: Vec<TerrainTileAnimation>,
+    /// Tile Save549D70/Load549C80 preserve the +0x305 flags in the saved
+    /// type bodies. Keep that history when resident TMP assets are rebound.
+    tile_burrowing_permissions: Option<Vec<bool>>,
 }
 
 /// A baseline-only fixture cannot certify the live Cell+EC value. This wire
@@ -83,10 +86,14 @@ pub enum SavedTerrainError {
     },
     #[error("saved terrain cell {index} references missing Tube {tube}")]
     TubeReference { index: usize, tube: u16 },
+    #[error("saved terrain cell {index} has slope {slope}, past the slope tables")]
+    Slope { index: usize, slope: u8 },
     #[error("saved terrain animation {index} has no allocated cell at {cell:?}")]
     AnimationCell { index: usize, cell: (u16, u16) },
     #[error("saved terrain resident assets: {0}")]
     Assets(String),
+    #[error("saved terrain has {count} tile permissions, beyond the physical tile registry limit")]
+    TilePermissions { count: usize },
 }
 
 impl SavedTerrainTemplate {
@@ -128,7 +135,7 @@ impl SavedTerrainTemplate {
                 });
             }
         }
-        for (index, (cell, live)) in self.cells.iter_mut().zip(&live.cells).enumerate() {
+        for (index, (cell, live)) in self.cells.iter_mut().zip(live.cells.iter()).enumerate() {
             if self
                 .native_allocated
                 .as_ref()
@@ -181,7 +188,10 @@ impl SavedTerrainTemplate {
     pub fn validate(&self) -> Result<(), SavedTerrainError> {
         // Resize565C10 owns the fixed512x512 cell table. A one-sided empty
         // rectangle is not a materialized grid produced by the map owner.
-        if self.width > 512 || self.height > 512 || (self.width == 0) != (self.height == 0) {
+        if self.width > crate::map::cell_index::MAX_CELL_SIDE
+            || self.height > crate::map::cell_index::MAX_CELL_SIDE
+            || (self.width == 0) != (self.height == 0)
+        {
             return Err(SavedTerrainError::Dimensions {
                 width: self.width,
                 height: self.height,
@@ -214,6 +224,13 @@ impl SavedTerrainTemplate {
                 found: self.tube_native_ids.len(),
             });
         }
+        if let Some(permissions) = &self.tile_burrowing_permissions
+            && permissions.len() > usize::from(u16::MAX)
+        {
+            return Err(SavedTerrainError::TilePermissions {
+                count: permissions.len(),
+            });
+        }
         for (index, cell) in self.cells.iter().enumerate() {
             let expected = (
                 (index % usize::from(self.width)) as u16,
@@ -232,6 +249,16 @@ impl SavedTerrainTemplate {
                 return Err(SavedTerrainError::TubeReference {
                     index,
                     tube: tube.0,
+                });
+            }
+            // Map building flattens a ramp past the 21-record slope tables
+            // (`merge_tmp_metadata`), so only a damaged save holds one; the
+            // Cell coordinate readers (`CellRef::center_coordinate`) expect
+            // one inside.
+            if cell.slope_type > MAX_TMP_RAMP_TYPE {
+                return Err(SavedTerrainError::Slope {
+                    index,
+                    slope: cell.slope_type,
                 });
             }
         }
@@ -268,27 +295,32 @@ impl SavedTerrainTemplate {
         Ok(ResolvedTerrainGrid {
             width: self.width,
             height: self.height,
-            cells: self.cells,
+            level_span: LevelSpan::of_terrain(&self.cells),
+            cells: super::terrain_cells::TerrainCells::new(self.cells),
             land_speed_costs: land_speed_cost_profiles(None),
-            overlay_passability: Vec::new(),
-            native_tmp_draw_heights: HashMap::new(),
+            overlay_passability: Default::default(),
+            native_tmp_draw_heights: Default::default(),
             shared_cell_dummy,
             mutation_epoch: 0,
-            native_allocated: self.native_allocated,
-            radar_color_valid: self.radar_color_valid,
-            damaged_radar_metadata,
+            native_allocated: self.native_allocated.map(Into::into),
+            radar_color_valid: self.radar_color_valid.into(),
+            damaged_radar_metadata: damaged_radar_metadata.into(),
             tube_facts: self.tube_facts,
             native_tube_indices: self.native_tube_indices,
             tube_native_ids: self.tube_native_ids,
             clear_tile_id: 0,
             water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
             tile_registry_len: None,
+            tile_burrowing_permissions: self.tile_burrowing_permissions,
             dummy_accepts_smudge: false,
             bridge_set_start: None,
             high_bridge_rim_tiles: None,
+            wood_bridge_rim_tiles: Default::default(),
             wood_bridge_set_start: None,
             tile_animations: self.tile_animations,
             destroyable_cliff_catalog: None,
+            deformation_catalog: None,
+            deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
         })
@@ -301,13 +333,14 @@ impl ResolvedTerrainGrid {
             land_role: SavedLandRole::Baseline,
             width: self.width,
             height: self.height,
-            cells: self.cells.clone(),
-            native_allocated: self.native_allocated.clone(),
-            radar_color_valid: self.radar_color_valid.clone(),
+            cells: self.cells.all().to_vec(),
+            native_allocated: self.native_allocated.as_deref().cloned(),
+            radar_color_valid: (*self.radar_color_valid).clone(),
             tube_facts: self.tube_facts.clone(),
             native_tube_indices: self.native_tube_indices.clone(),
             tube_native_ids: self.tube_native_ids.clone(),
             tile_animations: self.tile_animations.clone(),
+            tile_burrowing_permissions: self.tile_burrowing_permissions.clone(),
         };
         saved.validate()?;
         Ok(saved)
@@ -370,10 +403,6 @@ impl ResolvedTerrainGrid {
 
     /// Derived asset/catalog binding shared by fresh construction and saved
     /// loading. It never materializes cells or enters the variant selector.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "theater, assets, both rules projections and the selector inputs"
-    )]
     pub(super) fn bind_asset_catalogs(
         &mut self,
         theater: Option<&TheaterData>,
@@ -385,17 +414,34 @@ impl ResolvedTerrainGrid {
         selector: TileVariantSelector,
     ) {
         self.land_speed_costs = land_speed_cost_profiles(rules);
-        self.overlay_passability = overlay_passability_flags(overlay_types);
+        self.overlay_passability = overlay_passability_flags(overlay_types).into();
         self.clear_tile_id = theater.and_then(|td| td.rmg_tiles.clear_tile).unwrap_or(0);
         self.water_tiles = theater.map_or_else(
             || crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
             crate::map::rmg::tiles::TileIds::resolve,
         );
         self.tile_registry_len = theater.map(|td| td.lookup.len());
+        // Fresh grids project the admitted theater once. TileType Save549D70
+        // already supplied a restored grid's flags; resident rebinding must
+        // not replace those gameplay values with today's theater INI.
+        if self.tile_burrowing_permissions.is_none()
+            && let Some(theater) = theater
+        {
+            self.tile_burrowing_permissions = Some(
+                (0..theater.lookup.len())
+                    .map(|tile| theater.lookup.allows_burrowing(tile as u16))
+                    .collect(),
+            );
+        }
         self.dummy_accepts_smudge =
             theater.is_some_and(|td| current_tile_permissions(&td.lookup, 0xffff).0);
-        self.high_bridge_rim_tiles =
-            theater.map(super::super::bridge_rim_tiles::HighBridgeRimTiles::from_theater);
+        self.high_bridge_rim_tiles = theater.map(|td| td.high_bridge_rim_tiles);
+        self.wood_bridge_rim_tiles =
+            theater
+                .zip(assets)
+                .map_or_else(Default::default, |(td, assets)| {
+                    crate::map::bridge_rim_tiles::WoodBridgeRimTiles::from_theater(td, assets)
+                });
         self.bridge_set_start = theater.and_then(|td| {
             td.bridge_set
                 .and_then(|set| td.lookup.bounds().get(usize::from(set)))
@@ -409,11 +455,14 @@ impl ResolvedTerrainGrid {
         if self.cells.is_empty() {
             self.native_tmp_draw_heights.clear();
             self.destroyable_cliff_catalog = None;
+            self.deformation_catalog = None;
             self.bridge_recalc_catalog = None;
             return;
         }
-        self.native_tmp_draw_heights = load_native_tmp_draw_heights(theater, assets);
+        self.native_tmp_draw_heights = load_native_tmp_draw_heights(theater, assets).into();
         self.destroyable_cliff_catalog = build_destroyable_cliff_catalog(theater, assets, rules);
+        self.deformation_catalog =
+            super::deformation::build_deformation_catalog(theater, assets, rules);
         self.bridge_recalc_catalog = match (theater, assets, rules) {
             (Some(theater), Some(assets), Some(rules)) => {
                 Some(Arc::new(BridgeRecalcCatalog::for_runtime_terrain(
@@ -440,10 +489,6 @@ impl ResolvedTerrainGrid {
     /// Bind the future-restore baseline after the actual loaded cells have
     /// visited the selector. A baseline is not itself a native loaded-cell pass
     /// and must never initialize a cold table or consume additional Main draws.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the existing map binder inputs plus the scenario's overlay types"
-    )]
     pub fn bind_saved_template_assets(
         &mut self,
         theater: &TheaterData,
@@ -473,10 +518,6 @@ impl ResolvedTerrainGrid {
     /// native iterator/variant scan. Run this after dynamic cells, before final
     /// publication. Later presentation reads use the same retained table; only
     /// presentation projections change, never Cell gameplay/Tube/Anim values.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the existing map binder inputs plus the saved Size and selector continuation"
-    )]
     pub fn finish_loaded_assets(
         &mut self,
         theater: &TheaterData,

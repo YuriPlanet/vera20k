@@ -196,7 +196,7 @@ impl Probe {
             );
         }
         let rules = &scene.runtime.resources.rules;
-        let registry = &scene.runtime.resources.overlay_registry;
+        let registry = scene.runtime.resources.rules.overlay_registry();
         let names = crate::render::overlay_assets::render_overlay_names(registry);
         let gpu = Gpu::new();
         let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
@@ -336,7 +336,7 @@ impl Probe {
                 atlas: &self.atlas,
                 names: &self.names,
                 live_grid: scene.sim().overlay_grid(),
-                registry: Some(&scene.runtime.resources.overlay_registry),
+                registry: Some(scene.runtime.resources.rules.overlay_registry()),
                 rules: None,
                 interner: None,
                 tiberium_types: Some(&scene.runtime.resources.rules.tiberium_types),
@@ -779,7 +779,7 @@ multiview_mask: None,
             point.1 - input["cell_point"][1].as_i64().unwrap() as f32,
         ];
         let (source, owner) = self.live_a.as_mut().unwrap();
-        source.rebuild_if_needed(
+        source.rebuild_submitted(
             &self.gpu.device,
             &self.gpu.queue,
             scene.sim().fog(),
@@ -805,12 +805,13 @@ multiview_mask: None,
         let (instances, draws) = self.instances_in_view(scene, entries, &view);
         let mut shadows = Vec::new();
         crate::app::presentation::instances::bridges::build_bridge_shadow_instances_inner(
+            crate::render::cell_window::CellWindow::Whole,
             terrain,
             &self.shadow.as_ref().unwrap().0,
             &self.names,
             entries,
             scene.sim().overlay_grid(),
-            Some(&scene.runtime.resources.overlay_registry),
+            Some(scene.runtime.resources.rules.overlay_registry()),
             None,
             view.world_origin_y,
             view.world_height,
@@ -1046,7 +1047,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
     let sim = scene.sim();
     let before = sim.state_hash();
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let mut assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
     assert_eq!(scene.map.header.theater, "TEMPERATE");
     let theater = crate::map::theater::load_theater(&mut assets, &scene.map.header.theater)
@@ -1222,6 +1223,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
         assert_eq!(draws[0].render_z, RenderZPolicy::ReadWrite);
         let mut shadows = Vec::new();
         crate::app::presentation::instances::bridges::build_bridge_shadow_instances_inner(
+            crate::render::cell_window::CellWindow::Whole,
             terrain,
             &shadow_atlas,
             &names,

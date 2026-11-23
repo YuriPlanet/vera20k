@@ -71,16 +71,10 @@ fn native_base_response_dispatch_matches_14_represented_original_tails() {
     use crate::sim::combat::Health;
     use crate::sim::rng::{SimRng, trace_draws};
     use crate::sim::timer::CdTimer;
-    let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
-        return;
-    };
     let Some(mut rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
     else {
         return;
     };
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let base_delay = rules.general.base_defense_delay_minutes;
     let native = corpus();
     let mut compared = 0;
@@ -195,6 +189,7 @@ fn native_base_response_dispatch_matches_14_represented_original_tails() {
                 .entities
                 .get(ids["attacker"])
                 .unwrap()
+                .seldom
                 .base_defense_response
                 .cooldown,
             CdTimer::from_raw(signed(&cooldown[0]), signed(&cooldown[2])),
@@ -552,7 +547,10 @@ fn native_base_response_live_threat_matches_representable_original_rows() {
         }
         if count > 0 {
             for id in (0..count as u64).rev() {
-                owner.passenger_role.occupants_mut().add(id + 10);
+                owner
+                    .passenger_role_mut_for_test()
+                    .occupants_mut()
+                    .add_for_test(id + 10);
             }
         }
         let mut entities = EntityStore::new();

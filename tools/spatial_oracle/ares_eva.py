@@ -15,6 +15,7 @@ from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBX,
 
 from tools import native_oracle as native
 from tools.native_oracle import finish_vectors, map_pe32_image, provenance, run_checked
+from tools.native_oracle import require
 from tools.rules_oracle.ares_prerequisites import ARES_SHA256, Probe, identified_bytes
 
 VOICE_CACHE = 0xB1D4C8
@@ -161,7 +162,7 @@ def read_bind_controls(ares):
         constructor_voice = f.integer(extension+0x90)
         call(0x10057CF0, [side, extension], ecx=0x100C1BE8)
         call(0x1002E190, [INI], ecx=extension)
-        assert call(0x10057C70, [side], ecx=0x100C1BE8) == extension
+        require(call(0x10057C70, [side], ecx=0x100C1BE8) == extension, 'native 0x10057C70 returned an unexpected result')
         sides.append((side, extension))
         controls.append(dict(kind='side_default', id=name,
                              constructor_voice_index=constructor_voice,
@@ -289,7 +290,7 @@ def scalar_roundtrips():
     extension = p.alloc(0x280)
     p.call(0x1002D9F0, side, ecx=extension)
     p.call(0x10057CF0, side, extension, ecx=0x100C1BE8)
-    assert p.call(0x10057C70, side, ecx=0x100C1BE8) == extension
+    require(p.call(0x10057C70, side, ecx=0x100C1BE8) == extension, 'native 0x10057C70 returned an unexpected result')
     array = p.alloc(16)
     u.mem_write(array, struct.pack('<4I', 0, 0, 0, side))
     p.write(0x8B4124, array)

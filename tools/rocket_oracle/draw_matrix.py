@@ -32,6 +32,7 @@ import struct
 
 from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESP
 from tools.native_oracle import RET_MAGIC, finish_vectors, provenance, run_checked
+from tools.native_oracle import require
 from tools.rocket_oracle.flight import (
     ARGUMENT, BASE, INTERFACE, LOCO, OWNER, ROWS, SP, WORK, Rocket, blocks, dwords, f32_bits,
 )
@@ -66,7 +67,7 @@ class Drawn(Rocket):
     def draw(self, key_in):
         u = self.uc
         u.mem_write(DRAW_KEY, dwords(key_in))
-        assert self.call(0x663470, 0, [INTERFACE, DRAW_MATRIX, DRAW_KEY]) == DRAW_MATRIX
+        require(self.call(0x663470, 0, [INTERFACE, DRAW_MATRIX, DRAW_KEY]) == DRAW_MATRIX, 'native 0x663470 returned an unexpected result')
         self.call(0x754BE0, CAMERA_COPY, [])
         u.mem_write(SP, dwords(RET_MAGIC, DRAW_MATRIX))
         u.reg_write(UC_X86_REG_ESP, SP)

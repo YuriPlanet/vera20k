@@ -20,8 +20,9 @@
 //!    all distances are zero and the first house in HouseClass::Array that is
 //!    not the house, not passive and not defeated takes one anger point,
 //!    ally or not. The anger rescan ([`update_anger_nodes`]) picks the enemy.
-//!    Its own timer (`+0x5640`/`+0x5648`, [`ENEMY_SEARCH_TIMER`]) has no
-//!    writer after the constructor.
+//!    Its own per-house timer (`+0x5640`/`+0x5648`) starts from
+//!    `AIHateDelays[difficulty]` during non-campaign Post_Map_Init
+//!    (`0x00686A12..0x00686A2B`); Strategy never restarts it.
 //! 2. A defeated enemy's anger is cancelled and the enemy forgotten
 //!    (`0x004FD723..0x004FD772`).
 //! 3. AI_TryFireSW (`0x005098F0`, `superweapon::ai_fire`) in a nonzero game
@@ -34,7 +35,9 @@
 //!    building whose type has `Factory=` sells everything and sends everyone
 //!    hunting as well (`0x004FD879..0x004FD904`); then a house that must
 //!    rebuild its economy (Check_Build_Need, asked first) runs
-//!    Manage_Build_Queue (`sim::ai_build_need`).
+//!    Manage_Build_Queue (`sim::ai_build_need`). Phobos
+//!    `[General] AIFireSale=`/`AIAllToHunt=` gate only these two last-legs
+//!    calls; `AIFireSaleDelay=` arms a per-house timer on the first reach.
 //!
 //! Evidence: `tools/ai_strategy_oracle.py` runs the Update block, whole
 //! Strategy with the original UpdateAngerNodes, Fire_Sale and All_To_Hunt;
@@ -53,7 +56,7 @@
 use crate::sim::world::FrameEffects;
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::HouseAllianceMap;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::house_state::HouseState;
@@ -63,17 +66,10 @@ use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::production::{SellOrder, sell_back};
 use crate::sim::scenario_session::ScenarioSession;
-use crate::sim::timer::CdTimer;
 use crate::sim::world::Simulation;
 
 /// `0x004FD918..0x004FD928`: `RandomRanged(1, 7) + 105`.
 const RESCHEDULE_BASE_FRAMES: i32 = 105;
-/// The enemy search's timer (`+0x5640`/`+0x5648`) as the constructor leaves
-/// it (`0x004F5BAE..0x004F5BBA`), started at the construction frame, 0, with
-/// no delay; nothing writes it later. It is expired until the signed frame
-/// wraps.
-const ENEMY_SEARCH_TIMER: CdTimer = CdTimer::started(0, 0);
-
 /// `HouseClass::Update @ 0x004F8FBE..0x004F9032`: a computer house whose
 /// Strategy timer has expired runs [`building_strategy`], and the timer
 /// restarts at this frame with the delay it returns.
@@ -82,16 +78,24 @@ pub(crate) fn update_strategy(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let frame = sim.session.binary_frame() as i32;
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if !house.strategy_timer().expired(frame)
-        || house.is_controlled_by_human(sim.session.game_mode_nonzero())
-        || house.multiplay_passive()
-    {
+    if !house.strategy_timer().expired(frame) {
+        return;
+    }
+    if house.is_controlled_by_human(sim.session.rule_policy()) {
+        // Ares4F9004 hook10034CD0 calls AI_TryFireSW for humans, after
+        // the existing strategy timer gate, without restarting that timer.
+        if rules.ares_form() {
+            crate::sim::superweapon::ai_fire::try_fire(sim, rules, owner, registry, frame_effects);
+        }
+        return;
+    }
+    if house.multiplay_passive() {
         return;
     }
     let delay = building_strategy(sim, rules, owner, registry, frame_effects);
@@ -107,18 +111,29 @@ fn building_strategy(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> i32 {
+    let policy = sim.session.rule_policy();
     pick_enemy(
         &sim.interner,
         &sim.session,
         &sim.house_alliances,
         &mut sim.houses,
         owner,
+        rules.ares_form(),
+        rules.general.ai_nearest_enemy,
     );
-    forget_defeated_enemy(&sim.interner, &sim.house_alliances, &mut sim.houses, owner);
+    forget_defeated_enemy(
+        &sim.interner,
+        &sim.house_alliances,
+        &mut sim.houses,
+        owner,
+        policy,
+        rules.ares_form(),
+        rules.general.ai_nearest_enemy,
+    );
     // `0x004FD77C..0x004FD79B`: a signed IQ (`+0x24C`) compare.
-    if sim.session.game_mode_nonzero()
+    if policy.runs_ai_strategy()
         || sim
             .houses
             .get(&owner)
@@ -143,25 +158,19 @@ fn building_strategy(
     // slot 1 Check_Build_Need's answer (0 or 1), both asked before either
     // acts; from level 4 down, slot 0's sells off and hunts and slot 1's
     // runs Manage_Build_Queue.
-    if sim.session.game_mode_nonzero() {
-        let suppressed = sim
+    let no_factory = policy.runs_ai_strategy()
+        && sim
             .houses
             .get(&owner)
-            .is_none_or(|house| house.strategy_emergency().mode() == 3);
-        let no_factory = !suppressed && !has_live_factory(sim, rules, owner);
-        let build_need = crate::sim::ai_build_need::check_build_need(sim, rules, owner);
-        if no_factory {
-            sell_off_and_hunt(sim, rules, owner, "no factory", registry, frame_effects);
-        }
-        if build_need {
-            crate::sim::ai_build_need::manage_build_queue(
-                sim,
-                rules,
-                owner,
-                registry,
-                frame_effects,
-            );
-        }
+            .is_some_and(|house| house.strategy_emergency().mode() != 3)
+        && !has_live_factory(sim, rules, owner);
+    let build_need =
+        policy.runs_ai_strategy() && crate::sim::ai_build_need::check_build_need(sim, rules, owner);
+    if no_factory {
+        last_legs_actions(sim, rules, owner, registry, frame_effects);
+    }
+    if build_need {
+        crate::sim::ai_build_need::manage_build_queue(sim, rules, owner, registry, frame_effects);
     }
 
     sim.scenario_rng
@@ -176,7 +185,7 @@ fn sell_off_and_hunt(
     owner: InternedId,
     why: &str,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     log::debug!(
         "{} sells off and hunts ({why})",
@@ -186,6 +195,65 @@ fn sell_off_and_hunt(
     all_to_hunt(sim, rules, owner, registry, frame_effects);
 }
 
+/// `0x004FD8F7..0x004FD907`, the no-factory block's calls, as Phobos
+/// `[General] AIFireSale=`, `AIFireSaleDelay=` and `AIAllToHunt=` gate them
+/// (`src/Ext/House/Hooks.cpp`) when Phobos plays (`RuleSet::phobos`).
+/// All_To_Hunt still runs while the delayed sale waits, and the timer is armed
+/// once and then only read.
+fn last_legs_actions(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: &mut FrameEffects<'_>,
+) {
+    if rules.phobos() {
+        phobos_last_legs_actions(sim, rules, owner, registry, frame_effects);
+    } else {
+        sell_off_and_hunt(sim, rules, owner, "no factory", registry, frame_effects);
+    }
+}
+
+fn phobos_last_legs_actions(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: &mut FrameEffects<'_>,
+) {
+    if rules.general.ai_fire_sale {
+        let frame = sim.session.binary_frame() as i32;
+        let delay = rules.general.ai_fire_sale_delay;
+        let sale_due = if delay <= 0 {
+            true
+        } else {
+            match sim
+                .houses
+                .get(&owner)
+                .map(|house| house.strategy_emergency().ai_fire_sale_delay_timer())
+            {
+                Some(Some(timer)) => timer.expired(frame),
+                Some(None) => {
+                    if let Some(house) = sim.houses.get_mut(&owner) {
+                        house
+                            .strategy_emergency_mut()
+                            .start_ai_fire_sale_delay(frame, delay);
+                    }
+                    false
+                }
+                None => false,
+            }
+        };
+        if sale_due {
+            log::debug!("{} sells off on its last legs", sim.interner.resolve(owner));
+            fire_sale(sim, rules, owner, registry, frame_effects);
+        }
+    }
+    if rules.general.ai_all_to_hunt {
+        all_to_hunt(sim, rules, owner, registry, frame_effects);
+    }
+}
+
 /// `0x004FD538..0x004FD71E`: see the module doc.
 fn pick_enemy(
     interner: &StringInterner,
@@ -193,14 +261,23 @@ fn pick_enemy(
     house_alliances: &HouseAlliances,
     houses: &mut Houses,
     owner: InternedId,
+    ares: bool,
+    nearest_enemy: bool,
 ) {
-    if !ENEMY_SEARCH_TIMER.expired(session.binary_frame() as i32) || !session.game_mode_nonzero() {
+    let policy = session.rule_policy();
+    if !policy.runs_ai_strategy() {
         return;
     }
     let Some(house) = houses.get(&owner) else {
         return;
     };
-    if house.enemy_house().is_some() || house.multiplay_passive() || house.base_origin() == (0, 0) {
+    if !house
+        .enemy_search_timer()
+        .expired(session.binary_frame() as i32)
+        || house.enemy_house().is_some()
+        || house.multiplay_passive()
+        || house.base_origin() == (0, 0)
+    {
         return;
     }
     let first = houses.order().iter().copied().find(|&peer| {
@@ -209,8 +286,38 @@ fn pick_enemy(
                 .get(&peer)
                 .is_some_and(|peer| !peer.multiplay_passive() && !peer.is_defeated())
     });
-    if let Some(peer) = first {
-        update_anger_nodes(houses, house_alliances.as_map(), interner, owner, peer, 1);
+    // VERA `[General] AINearestEnemy=` (off by default; the original's
+    // distances are all zero, see the module doc): the candidate that is no
+    // ally and whose base centre is nearest, the earlier house on a tie.
+    let nearest = nearest_enemy
+        .then(|| {
+            let origin = house.base_origin();
+            houses
+                .order()
+                .iter()
+                .copied()
+                .filter(|&peer| {
+                    peer != owner
+                        && houses
+                            .get(&peer)
+                            .is_some_and(|peer| !peer.multiplay_passive() && !peer.is_defeated())
+                        && !house_alliances.is_allied(interner, owner, peer)
+                })
+                .min_by_key(|peer| base_distance_squared(origin, houses[peer].base_origin()))
+        })
+        .flatten();
+    if let Some(peer) = nearest.or(first) {
+        update_anger_nodes(
+            houses,
+            house_alliances,
+            interner,
+            owner,
+            peer,
+            1,
+            policy,
+            ares,
+            nearest_enemy,
+        );
     }
 }
 
@@ -221,6 +328,9 @@ fn forget_defeated_enemy(
     house_alliances: &HouseAlliances,
     houses: &mut Houses,
     owner: InternedId,
+    policy: RulePolicy,
+    ares: bool,
+    nearest_enemy: bool,
 ) {
     let Some(enemy) = houses.get(&owner).and_then(|house| house.enemy_house()) else {
         return;
@@ -235,11 +345,14 @@ fn forget_defeated_enemy(
         .unwrap_or(0);
     update_anger_nodes(
         houses,
-        house_alliances.as_map(),
+        house_alliances,
         interner,
         owner,
         enemy,
         anger.wrapping_neg(),
+        policy,
+        ares,
+        nearest_enemy,
     );
     if let Some(house) = houses.get_mut(&owner) {
         house.forget_enemy();
@@ -273,7 +386,7 @@ pub(crate) fn fire_sale(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(house) = sim.houses.get(&owner) else {
         return;
@@ -321,7 +434,7 @@ pub(crate) fn all_to_hunt(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     // Steam gamemd:501400 captures count once;50141D/501423
     // re-read the array and its indexed object after callbacks. Storage
@@ -340,7 +453,7 @@ pub(crate) fn all_to_hunt(
         {
             continue;
         }
-        let dominated_strength = (techno.mind_control.permanent() && !human)
+        let dominated_strength = (techno.seldom.mind_control.permanent() && !human)
             .then(|| sim.interner.object_type(techno.type_ref(), rules))
             .flatten()
             .filter(|object| object.insignificant)
@@ -362,6 +475,9 @@ pub(crate) fn all_to_hunt(
             continue;
         }
         if techno.category() == EntityCategory::Structure {
+            // RESIDUAL (invisible): native sells only a building with
+            // occupants (0x005014F9); this also clears an empty building's
+            // CurrentFireIdx.
             crate::sim::passenger::garrison_eject::sell_building_occupants(
                 sim,
                 rules,
@@ -393,23 +509,43 @@ pub(crate) fn all_to_hunt(
 /// a strict-positive/strict-greater winner rule. Rust's sparse map represents
 /// untouched constructor-zero nodes without materializing serialized state.
 /// With no winner the enemy is cleared (`0x0050484F`).
+///
+/// Ares 3.0 HouseClass_AddAnger_MultiplayPassive 10023FB0 (hook
+/// `0x00504796`): the stock multiplayer policy skips the node update
+/// for a `MultiplayPassive` peer; the enemy rescan
+/// still runs. `ares` is the caller's `rules.ares_form()`.
+///
+/// VERA `[General] AINearestEnemy=` (`nearest_enemy`, off by default): among
+/// peers of equal anger the one whose base centre is nearer wins, instead of
+/// the earlier house.
 pub(crate) fn update_anger_nodes(
     houses: &mut crate::sim::houses::Houses,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     interner: &StringInterner,
     owner: InternedId,
     peer: InternedId,
     delta: i32,
+    policy: RulePolicy,
+    ares: bool,
+    nearest_enemy: bool,
 ) {
+    let passive_peer = ares
+        && policy.runs_ai_strategy()
+        && houses.get(&peer).is_some_and(HouseState::multiplay_passive);
     let peer_is_registered = peer != owner && houses.contains_key(&peer);
-    if peer_is_registered && let Some(house) = houses.get_mut(&owner) {
+    if peer_is_registered
+        && !passive_peer
+        && let Some(house) = houses.get_mut(&owner)
+    {
         house.add_anger(peer, delta);
     }
 
     let Some(house) = houses.get(&owner) else {
         return;
     };
+    let origin = house.base_origin();
     let mut best_score = 0;
+    let mut best_distance = u64::MAX;
     let mut best_house = None;
     for &candidate_id in houses.order() {
         if candidate_id == owner {
@@ -423,21 +559,42 @@ pub(crate) fn update_anger_nodes(
             .get(&candidate_id)
             .copied()
             .unwrap_or(0);
-        if score > best_score
+        let distance = if nearest_enemy {
+            base_distance_squared(origin, candidate.base_origin())
+        } else {
+            0
+        };
+        let nearer_tie = nearest_enemy
+            && best_house.is_some()
+            && score == best_score
+            && distance < best_distance;
+        if (score > best_score || nearer_tie)
             && !candidate.is_defeated()
-            && !crate::map::houses::is_allied_with(
-                alliances,
-                interner.resolve(owner),
-                interner.resolve(candidate_id),
-            )
+            && !alliances.is_allied(interner, owner, candidate_id)
         {
             best_score = score;
+            best_distance = distance;
             best_house = Some(candidate_id);
         }
     }
     if let Some(house) = houses.get_mut(&owner) {
         house.assign_enemy(best_house);
     }
+}
+
+/// VERA `AINearestEnemy=`: the squared cell distance between two base
+/// centres. A house without one (`(0, 0)`) is the farthest; with no centre
+/// of its own every peer is equally far and house order decides.
+fn base_distance_squared(origin: (u16, u16), peer: (u16, u16)) -> u64 {
+    if origin == (0, 0) {
+        return 0;
+    }
+    if peer == (0, 0) {
+        return u64::MAX;
+    }
+    let dx = u64::from(origin.0.abs_diff(peer.0));
+    let dy = u64::from(origin.1.abs_diff(peer.1));
+    dx * dx + dy * dy
 }
 
 /// Exact `House+0x249` decision consumed by native
@@ -459,6 +616,6 @@ pub(crate) fn all_to_hunt_score_override(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 #[path = "house_strategy_tests.rs"]
 mod tests;

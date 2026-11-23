@@ -219,7 +219,7 @@ fn retail_bridge_debris_matches_original_producer_and_constructor_rng() {
             sim.scenario_rng.native_state_hex(),
             row["rng_before"].as_str().unwrap()
         );
-        spawn_bridge_debris(&mut sim, &rules, &cells);
+        spawn_bridge_debris(&mut sim, &rules, &cells, None);
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             row["rng_after"].as_str().unwrap(),
@@ -252,8 +252,8 @@ fn retail_bridge_debris_matches_original_producer_and_constructor_rng() {
                 "{input}"
             );
             assert_eq!(
-                u64::from(anim.runtime().delay_remaining),
-                constructor["delay"].as_u64().unwrap(),
+                i64::from(anim.runtime().delay_remaining),
+                constructor["delay"].as_i64().unwrap(),
                 "{input}"
             );
             assert_eq!(

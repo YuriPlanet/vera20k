@@ -17,12 +17,12 @@ impl Simulation {
         FrameAdvanceError::new(self.session.tick(), self.session.binary_frame(), id, cause)
     }
 
-    pub(super) fn scatter_building_infantry(
+    pub(crate) fn scatter_building_infantry(
         &mut self,
         building: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
         let mut index = 0;
         let mut changed = false;

@@ -221,13 +221,13 @@ pub(crate) fn zones(terrain: &ResolvedTerrainGrid, row: &Value) -> ZoneGrid {
         let (x, y) = pair(&cell["xy"]);
         base.zone_ids_mut_for_test()
             [usize::from(y) * usize::from(terrain.width()) + usize::from(x)] =
-            cell["group"].as_u64().unwrap() as u16;
+            cell["group"].as_u64().unwrap() as crate::sim::pathfinding::zone_map::ZoneId;
     }
     let labels: Vec<_> = supplied["raw_labels"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|v| v.as_u64().unwrap() as u16)
+        .map(|v| v.as_u64().unwrap() as crate::sim::pathfinding::zone_map::ZoneId)
         .collect();
     for raw in base.raw_zone_ids_by_row_mut_for_test() {
         *raw = labels.clone();

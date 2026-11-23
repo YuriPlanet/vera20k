@@ -6,7 +6,7 @@
 //! still-marked hull through [`Simulation::begin_living_ship_sinking`]. Foot AI
 //! skips Process, observes the sound edge, and Unit/Aircraft AI lowers the raw
 //! coordinate until its terminal RecordKill/UnInit.
-//! Native execution: tools/spatial_oracle/naval_occupants and naval_sink_tick.
+//! Native execution: tools/spatial_oracle/naval_sink_tick.
 //! Aircraft suffix control flow: AircraftClass::AI414DB6..414ED0.
 
 use super::{SimSoundEvent, Simulation, UninitContext};
@@ -60,7 +60,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
@@ -68,10 +68,7 @@ impl Simulation {
         entity.health.set(1);
         entity.lifecycle.restore_alive();
         entity.sinking.active = true;
-        self.techno_death_stun(
-            id,
-            UninitContext::with_rules(rules).with_effects(frame_effects),
-        );
+        self.stun(id, UninitContext::new(rules).with_effects(frame_effects));
     }
 
     /// PostWarpValidation (`0x00718968..0x00718977`, `0x00718ABF..0x00718ACE`)
@@ -83,7 +80,7 @@ impl Simulation {
         id: u64,
         trigger: LivingSinkTrigger,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
@@ -96,20 +93,19 @@ impl Simulation {
             let announcement = self.substrate.entities.get(id).and_then(|entity| {
                 crate::sim::combat::death_announcement_event(
                     self.object_type(entity.type_ref(), rules)?,
+                    entity.type_ref(),
                     entity.category(),
                     entity.position.rx(),
                     entity.position.ry(),
                     entity.owner(),
+                    rules.ares_form(),
                 )
             });
             if let Some(event) = announcement {
                 self.dispatch_unit_lost_events(&[event]);
             }
         }
-        self.techno_death_stun(
-            id,
-            UninitContext::with_rules(rules).with_effects(frame_effects),
-        );
+        self.stun(id, UninitContext::new(rules).with_effects(frame_effects));
     }
 
     /// Foot4DABC7..4DACD7: voice first (no local-player gate), then the type
@@ -131,14 +127,14 @@ impl Simulation {
         }
         if state.active {
             let object = interner.object_type(entity.type_ref(), rules);
-            let voice = object.and_then(|object| object.voice_sinking.clone());
+            let voice = object.and_then(|object| object.voice_sinking.as_deref());
             let sound = object
-                .and_then(|object| object.sinking_sound.clone())
-                .or_else(|| rules.general.sinking_sound.clone());
+                .and_then(|object| object.sinking_sound.as_deref())
+                .or(rules.general.sinking_sound.as_deref());
             let coord = position_world_coord(&entity.position);
             if let Some(sound_id) = voice {
                 sound_events.emit(SimSoundEvent::VocAt {
-                    sound_id,
+                    sound_id: rules.sound_name(sound_id),
                     audible_to: None,
                     rx: entity.position.rx(),
                     ry: entity.position.ry(),
@@ -150,7 +146,7 @@ impl Simulation {
             if let Some(sound) = sound {
                 sound_events.emit(SimSoundEvent::AnimationStarted {
                     anim_id: id,
-                    sound_id: sound,
+                    sound_id: rules.sound_name(sound),
                     world: AnimWorldCoord {
                         x: coord.x,
                         y: coord.y,
@@ -176,7 +172,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -211,12 +207,9 @@ impl Simulation {
                 id,
                 crate::sim::combat::KillSource::Techno(None),
                 crate::sim::combat::KillCallback::Terminal,
-                UninitContext::new(rules, registry).with_effects(frame_effects),
+                UninitContext::new(rules).with_effects(frame_effects),
             );
-            self.uninit_with_context(
-                id,
-                UninitContext::new(rules, registry).with_effects(frame_effects),
-            );
+            self.uninit_with_context(id, UninitContext::new(rules).with_effects(frame_effects));
             self.sound_events
                 .emit(SimSoundEvent::ObjectSoundReleased { owner: id });
             return true;
@@ -248,10 +241,10 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "sinking_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_p_s))]
 #[path = "aircraft_sinking_tests.rs"]
 mod aircraft_tests;

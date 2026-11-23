@@ -21,7 +21,7 @@ fn retail_middle_bridge_resident_recalc_admits_both_families() {
     let sim = scenario.sim();
     let initial = sim.resolved_terrain.as_ref().expect("resolved terrain");
     let overlays = sim.overlay_grid.as_ref().expect("live overlays");
-    let registry = &scenario.runtime.resources.overlay_registry;
+    let registry = scenario.runtime.resources.rules.overlay_registry();
     let keys = initial
         .high_bridge_rim_tiles()
         .expect("retail theater keys");

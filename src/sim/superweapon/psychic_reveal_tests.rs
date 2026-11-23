@@ -9,7 +9,7 @@ use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::superweapon::chronosphere_tests::{
     charge_super, click, retail_rules_binding, world_with,
 };
-use crate::sim::world::SimSoundEvent;
+use crate::sim::world::{SimSoundEvent, Simulation};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
@@ -123,11 +123,12 @@ fn the_launch_matches_native() {
 /// Case 11 through a production click on retail rules
 /// (`PsychicRevealRadius=15`, `AllyReveal=yes`) on a map whose `Size=` is
 /// the corpus's 50x50 diamond, at a cell raised four levels: the launcher's
-/// map, and the map of the house it names its ally, gain exactly the cells
-/// RevealArea hands its leaf in `tools/spatial_oracle/reveal_area.json`'s
-/// row at (75, 50), z 416, radius 10 (the walk clamps 15 to 10:
-/// `reveal_area_tests`), its centre lifted two cells. A house that names the
-/// launcher its ally, unanswered, gains nothing.
+/// map gains exactly the cells RevealArea hands its leaf in
+/// `tools/spatial_oracle/reveal_area.json`'s row at (75, 50), z 416, radius
+/// 10 (the walk clamps 15 to 10: `reveal_area_tests`), its centre lifted two
+/// cells. The computer house it names its ally has no client map (RevealArea
+/// writes only PlayerPtr's, `0x00567AB0..0x00567B12`), and a house that names
+/// the launcher its ally, unanswered, gains nothing.
 #[test]
 fn a_launch_maps_the_native_cells_for_its_house_and_allies() {
     let Some(rules) = retail_rules_binding(&[]) else {
@@ -189,6 +190,92 @@ fn a_launch_maps_the_native_cells_for_its_house_and_allies() {
             .collect()
     };
     assert_eq!(revealed(americans), native);
-    assert_eq!(revealed(russians), native);
+    assert!(revealed(russians).is_empty(), "a computer ally has no map");
     assert!(revealed(yuri).is_empty());
+}
+
+fn ares_scene(range: &str) -> (RuleSet, Simulation, crate::sim::intern::InternedId) {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let ini = IniFile::from_str(&format!(
+        "[AudioVisual]\nPsychicRevealActivateSound=RevealCue\n[CombatDamage]\nPsychicRevealRadius=2\n[SuperWeaponTypes]\n0={REVEAL}\n\
+         [{REVEAL}]\nType=PsychicReveal\nAction=None\nSW.Range={range}\n",
+    ));
+    let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
+        &ini,
+        &IniFile::empty(),
+        &["RevealCue"],
+    )
+    .unwrap();
+    let (rules, mut sim, owner) = world_with(rules, 64, &[]);
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
+        base: 24,
+        off_fc: -64,
+        off_100: -64,
+        off_104: 128,
+        off_108: 128,
+    }));
+    sim.set_playfield_size_height_for_test(Some(24));
+    charge_super(&mut sim, owner, REVEAL);
+    (rules, sim, owner)
+}
+
+#[test]
+fn ares_whole_map_launch_from_the_cameo_explores_the_playable_diamond() {
+    let (rules, mut sim, owner) = ares_scene("-1");
+    assert!(rules.super_weapon(REVEAL).unwrap().action.is_none());
+    click(&mut sim, &rules, owner, REVEAL, (0, 0));
+    assert!(sim.sound_events.iter().any(|event| matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id.name_in(&rules) == "RevealCue")));
+    assert!(sim.fog.is_cell_revealed(owner, 40, 25));
+    assert!(sim.fog.is_cell_revealed(owner, 12, 18));
+    assert!(!sim.fog.is_cell_revealed(owner, 3, 3));
+}
+
+#[test]
+fn ares_reveal_exclusions_follow_the_admitted_rules_in_network_play() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::skirmish_modes::MpModeClass;
+
+    let class = Some(MpModeClass::Battle);
+    let lan = ScenarioGameMode::Lan;
+    let local = ScenarioGameMode::Skirmish;
+    let stock = lan.stock_rule_policy(class);
+    for (mode, policy, reveals_excluded_cell) in [
+        (lan, stock, false),
+        (lan, stock.with_ares_psychic_reveal_exclusions(false), true),
+        (local, local.stock_rule_policy(class), true),
+    ] {
+        let (rules, mut sim, owner) = ares_scene("3,3");
+        sim.install_session_admission(mode, class, policy);
+        // This direct launch omits the frame's fog-dimension update.
+        sim.fog = crate::sim::vision::FogState::new(64, 64);
+        let sw_type = sim.interner.get(REVEAL).unwrap();
+        let sw = rules.super_weapon(REVEAL).unwrap();
+        super::ares_launch(&mut sim, &rules, owner, sw_type, sw, (7, 29));
+
+        // With Size=(24,24), (7,29) is one of RevealHelper's excluded cells.
+        assert_eq!(
+            sim.fog.is_cell_revealed(owner, 7, 29),
+            reveals_excluded_cell
+        );
+        assert!(sim.fog.is_cell_revealed(owner, 8, 29));
+    }
+}
+
+#[test]
+fn ares_authored_radius_and_rectangle_reveal_only_their_cells() {
+    let target = (25, 25);
+    let (rules, mut sim, owner) = ares_scene("12");
+    click(&mut sim, &rules, owner, REVEAL, target);
+    assert!(sim.fog.is_cell_revealed(owner, 36, 25));
+    assert!(!sim.fog.is_cell_revealed(owner, 37, 25));
+
+    let (rules, mut sim, owner) = ares_scene("6,2");
+    click(&mut sim, &rules, owner, REVEAL, target);
+    assert!(sim.fog.is_cell_revealed(owner, 22, 24));
+    assert!(!sim.fog.is_cell_revealed(owner, 25, 26));
+
+    // A positive range beyond the grid still visits only stored cells.
+    let (rules, mut sim, owner) = ares_scene("1e38");
+    click(&mut sim, &rules, owner, REVEAL, target);
+    assert!(sim.fog.is_cell_revealed(owner, 40, 25));
 }

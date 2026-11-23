@@ -1,26 +1,35 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K Titelbild" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <strong>Deutsch</strong> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.zh-TW.md" lang="zh-TW">繁體中文</a> · <strong>Deutsch</strong> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
-  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter macOS (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Bibliothekstests unter macOS" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Linux (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliothekstests unter Linux" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Windows (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Bibliothekstests unter Windows" height="23" align="middle"></a>
-  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord beitreten" height="23" align="middle"></a>
-  <img src="https://img.shields.io/badge/QQ_Gruppe-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-Gruppe" height="23" align="middle">
+  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FkmjRUn5m5F%3Fwith_counts%3Dtrue&amp;query=%24.approximate_presence_count&amp;suffix=%20online&amp;label=VERA20K%20Discord&amp;color=5865F2&amp;style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord beitreten" height="23" align="middle"></a>
+  <img src="https://img.shields.io/badge/VERA20K_QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-Gruppe (VERA20K)" height="23" align="middle">
+  <img src="https://img.shields.io/badge/ra20k.com_QQ-319832195-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-Gruppe (ra20k.com)" height="23" align="middle">
 </p>
 
 # VERA20K
 
-VERA20K ist eine von der Community getragene Neuimplementierung der ursprünglichen Engine,
-`gamemd.exe`. Sie verwendet die originalen Spieldateien, also brauchst du eine eigene Kopie von
-Red Alert 2: Yuri's Revenge.
+VERA20K ist eine neue Engine für Red Alert 2: Yuri's Revenge. Sie spielt sich wie das Original, mit
+denselben Einheiten, Karten und demselben Aussehen, und läuft unter Windows, macOS und Linux. Sie
+ist für größere Schlachten gebaut, mit bis zu 30 Spielern und 20.000 Einheiten auf einer Karte.
 
 VERA20K wird von Spielern für Spieler gemacht, und die Spieler haben das letzte Wort, wohin sich
 das Projekt entwickelt.
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: Gefechtseinstellungen und eine Szene aus dem Spiel" width="100%">
+
+## Herunterladen und spielen
+
+1. Installiere Red Alert 2: Yuri's Revenge über Steam oder die EA app.
+2. Lade VERA20K für dein System von der [Release-Seite](https://github.com/YuriPlanet/vera20k/releases) herunter.
+3. Öffne die heruntergeladene Datei. Sie findet dein Spiel und richtet VERA20K in einem eigenen
+   Ordner ein.
+
+Kommst du nicht weiter? Schau auf der [Hilfeseite](https://vera20k.org/de/help) nach.
 
 ## Projektziele
 
@@ -29,59 +38,22 @@ das Projekt entwickelt.
 3. Bekannte RTS-Funktionen integrieren und einige, die es noch nie gab.
 4. Integrierter Mehrspieler-Client
 
-## Aktueller Stand
+## Mitmachen
 
-**In aktiver Entwicklung.**
+Mitwirkende können Verantwortung für Bereiche der Engine übernehmen und haben dabei viel
+Spielraum für Änderungen, die VERA20K voranbringen.
 
-- **Gefechte:** Unter Windows, Linux und macOS spielbar, mit Originalkarten und zufällig
-  generierten Karten, Basisbau, Rohstoffernte, Kämpfen sowie Speichern und Laden.
-- **Kampagnen:** Missionen lassen sich starten; die Unterstützung bleibt unvollständig.
-- **KI:** Teile der ursprünglichen KI übernehmen den Basisbau und skriptgesteuerte Angriffe.
-- **Laufende Arbeiten:** Spielverhalten, Grafik und Leistung.
-- **Mehrspielermodus:** Aktuelle Quellcode-Builds unterstützen LAN- und Online-Spiele auf macOS und Linux.
-- **Größenordnung:** Zwei aufeinanderfolgende Online-Partien bestanden die Funktionsprüfung mit
-  30 unabhängigen Client-Prozessen und jeweils mehr als 20.000 aktiven mobilen Einheiten.
-  Die Linux-Clients teilten sich virtuelle Maschinen; flüssige Echtzeitleistung ist damit nicht belegt.
+Die Maintainer helfen beim Review, bei der Integration und beim Mergen. Dein Beitrag wird
+dir vollständig zugeschrieben.
 
-## Herunterladen und spielen
-
-Lade den Installer für Windows, macOS oder Linux von der
-[Release-Seite](https://github.com/YuriPlanet/vera20k/releases) herunter. Er findet dein
-Yuri's Revenge aus [Steam](https://store.steampowered.com/app/2229850/) oder der
-[EA app](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection)
-und richtet VERA20K in einem neuen Ordner ein. Dort kommen künftig auch Mods und neue Inhalte hin,
-sodass die Spieldateien nie verändert werden.
-
-Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client startest, steht in der
-[Offline-Client-Einrichtung](integrations/cncnet/README.md).
-
-## Einstellungen
-
-Nutze **Options** für Ton und Steuerung und **Vera Options** für VERA-spezifische Funktionen.
-Spielereinstellungen, Tastenkürzel und Lobby-Einstellungen werden in `VERA.INI` gespeichert:
-
-- **Windows-Installer:** neben `vera20k.exe`.
-- **macOS:** `~/Library/Application Support/VERA20k/VERA.INI`.
-- **Linux:** `~/.local/share/VERA20k/VERA.INI` oder in deinem XDG-Datenordner.
-
-`config.toml` legt den Spielordner fest und kann einen anderen Einstellungsordner vorgeben.
-
-Wenn `VERA.INI` fehlt, erstellt VERA die Datei und importiert vorhandene Einstellungen einmalig.
-Ohne alte Einstellungen bleibt die Datei zunächst leer; VERA verwendet die integrierten
-Standardwerte, bis Einstellungen gespeichert werden. Die Originaldateien `RA2MD.INI` und
-`KeyboardMD.ini` werden nur für den Import gelesen und nie überschrieben.
-
-`VERARULES.INI` im selben Ordner enthält optionale Änderungen am Spielverhalten. Die Datei
-enthält zunächst auskommentierte Beispiele; die Regeln der Mission oder Karte bleiben maßgeblich.
-Zum Bearbeiten und Überschreiben siehe [persönliche Regeln](docs/personal-rules.md).
+Diskutiert wird auf [Discord](https://discord.gg/kmjRUn5m5F) und in der QQ-Gruppe (1097193563).
 
 ## Architektur
 
 Die Engine besteht aus drei Hauptteilen:
 
 - **Simulation:** Verwaltet Spielzustand und Spiellogik.
-- **Rendering:** Eine völlig neue GPU-Rendering-Pipeline mit den ursprünglichen Spieldaten,
-  gebaut, um das ursprüngliche Erscheinungsbild zu bewahren.
+- **Rendering:** Zeichnet Gelände, Einheiten und Gebäude mit den Originalgrafiken auf der GPU.
 - **Anwendung:** Übernimmt Eingaben, Menüs, Audio und Plattformintegration und verbindet die Systeme.
 
 Diese Trennung unterstützt einen deterministischen Spielablauf.
@@ -98,9 +70,7 @@ Du brauchst:
   [Git](https://git-scm.com/).
 - **Build-Werkzeuge:** unter Windows die C++-Build-Tools von Visual Studio, deren Installation
   der Rust-Installer anbietet; unter macOS `xcode-select --install`; unter Debian und Ubuntu
-  `sudo apt install build-essential libasound2-dev pkg-config`.
-
-VERA20K wurde bereits unter Windows, Linux und macOS gespielt.
+  `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
 
 ```sh
 git clone https://github.com/YuriPlanet/vera20k.git
@@ -109,8 +79,6 @@ cp config.toml.example config.toml
 # Bearbeite config.toml und setze ra2_dir auf deinen Spielordner, bevor du das Spiel startest:
 cargo run --release --bin vera20k
 ```
-
-Der Build belegt mehrere GB in `target/`.
 
 ## So arbeiten wir
 
@@ -121,24 +89,16 @@ ursprüngliche Engine mit Ghidra, übertragen dann ihr Verhalten nach Rust und p
 
 ## Anpassung
 
-VERA20K spielt sich standardmäßig wie das Originalspiel. Jede neue Funktion, auch Erweiterungen
-aus Mods wie Ares, muss ausgeschaltet bleiben, bis sie auf einem dieser Wege aktiviert wird:
+VERA20K verwendet standardmäßig die Spielregeln von Yuri's Revenge. Unter **Options** kannst du
+Ton, Grafik und Steuerung anpassen oder VERA-Funktionen einschalten. Das Spiel speichert deine
+Einstellungen in `VERA.INI`. Die VERA-spezifischen Optionen stehen im Abschnitt `[VERA]`.
 
-- **Eine VERA-Spieleroption** unter **Options → Vera Options**, gespeichert im Abschnitt `[VERA]` in `VERA.INI`.
-- **Eine Build-Option**, z. B. `--features ares` für die unterstützten [Ares-Erweiterungen](docs/ares.md).
-- **Eine Lobby-Option im Spiel**, die für jede Partie gewählt wird.
-- **Ein INI-Schlüssel**, den eine Mod oder eine Karte setzt.
+Lobby-Einstellungen, Mods und Karten können die Regeln einer Partie ändern. Mods und Karten können
+über ihre INI-Dateien unterstützte Funktionen von [Ares](docs/ares.md) und [Phobos](docs/phobos.md)
+aktivieren. Eine Mod kann Ares auch aktivieren, indem sie `ares.mix` mitliefert. Einige
+Phobos-Funktionen erfordern weiterhin eine mit `--features phobos` kompilierte Spielversion.
 
-Einstellungen für Ton, Grafik und Steuerung werden in `VERA.INI` gespeichert. Die Spielregeln
-stammen aus den Lobby-Einstellungen, Mods oder Karten.
-
-## Mitmachen
-
-Hilfe ist willkommen. Du kannst Code schreiben, die Engine refaktorieren, das Spiel testen,
-Ideen einbringen oder es neben dem Original spielen und uns sagen, was sich falsch anfühlt.
-Öffne einen PR, und wir kümmern uns um den Rest.
-
-Diskutiert wird auf [Discord](https://discord.gg/kmjRUn5m5F) und in der QQ-Gruppe (1097193563).
+Wie du deine eigene Mod erstellst, zeigt die [Modding-Anleitung](docs/modding.md).
 
 ## Unterstützen
 
@@ -158,9 +118,30 @@ Danke an OpenRA, XCC Mixer, das ModEnc-Wiki, Project Perfect Mod, EA für die Ve
 des Quellcodes von Command & Conquer und Red Alert unter der GPL, World-Altering Editor,
 Final Alert, YRpp, Ares, Phobos und viele andere.
 
-Lizenziert unter der [GPLv3](LICENSE-GPL). Dieses Repository enthält keine Spieldateien.
-Command & Conquer und Red Alert sind Marken von Electronic Arts Inc. Die Screenshots zeigen
-Spielgrafiken, die Electronic Arts gehören. VERA20K steht in keiner Verbindung zu Electronic Arts
-und wird nicht von Electronic Arts unterstützt.
+Copyright © 2026 Halvor Nikolai Rusten und die Mitwirkenden an VERA20K.
+Lizenziert unter der [GPLv3](LICENSE-GPL) mit [zusätzlichen Bedingungen](LEGAL.md#additional-terms).
+Dieses Repository enthält keine Spieldateien.
+Command & Conquer und Red Alert sind Marken von Electronic Arts Inc. Die Screenshots und das
+App-Symbol, der rote Stern aus Red Alert 2, zeigen Spielgrafiken, die Electronic Arts gehören.
+VERA20K steht in keiner Verbindung zu Electronic Arts und wird nicht von Electronic Arts
+unterstützt.
+
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
+
+**Lies den [rechtlichen Hinweis](LEGAL.md), bevor du VERA20K weitergibst, verkaufst oder forkst.**
+
+## Dokumentation
+
+- [WebAssembly-Vorschau](docs/wasm.md): ein optionaler Einzelspieler-Build, der im Browser läuft.
+- [Modding-Anleitung](docs/modding.md): was Mods können und was nicht und worin sich VERA20K vom Originalspiel unterscheidet.
+- [INI-Profile](docs/ini-roots.md): Regel-, Grafik- und KI-Dateien auswählen.
+- [Ares](docs/ares.md), [Phobos](docs/phobos.md) und [NPatch](docs/npatch.md): Unterstützung der Erweiterungen und ihre Grenzen.
+- [Engine-Überblick](docs/index.md): Aufbau des Codes und wie die Teile der Engine zusammenspielen.
+- [Entwicklerwerkzeuge](tools/README.md): Builds, Tests und Untersuchung der Spieldaten.
+- [Kartentests](tools/map_observation.md): geskriptete Szenarien, Screenshots und Beobachtungen von Partien.
+- [Vergleiche mit dem Original](tools/native_oracle.md): Verhalten mit dem Originalspiel vergleichen.
+- [Ghidra-Arbeitsablauf](docs/ghidra-workflow.md): die ursprüngliche Engine untersuchen.
 
 Übersetzung von [README.md](README.md); bitte mit der englischen Version synchron halten.

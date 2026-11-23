@@ -77,7 +77,9 @@ fn shared_null_destination_matches_original_gate_and_timer_boundaries() {
             );
         }
         if input["open_transport"] == true {
-            e.passenger_role = crate::sim::passenger::PassengerRole::inside_for_test(2, true);
+            e.set_passenger_role_for_test(crate::sim::passenger::PassengerRole::inside_for_test(
+                2, true,
+            ));
         }
         sim.substrate.entities.insert(e);
         if aircraft {
@@ -85,10 +87,15 @@ fn shared_null_destination_matches_original_gate_and_timer_boundaries() {
                 1,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         } else {
-            sim.foot_null_destination(1, &rules, None, crate::sim::world::FrameEffects::default());
+            sim.foot_null_destination(
+                1,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
         }
         let e = sim.substrate.entities.get(1).unwrap();
         let (destination, head) = if input["family"] == "drive" {
@@ -221,7 +228,8 @@ fn actor(input: &Value) -> GameEntity {
         .set_nav_com_aux_for_test(Some(NavTargetRef::cell(0, 0)));
     e.navigation
         .set_nav_com_for_test((input["same_nav"] == true).then(|| NavTargetRef::cell(11, 10)));
-    e.setter_force_reassign
+    e.seldom
+        .setter_force_reassign
         .set_for_test(input["force_reassign"] == true);
     e.navigation.set_nav_queue_for_test(vec![
         NavTargetRef::cell(11, 10);
@@ -360,7 +368,7 @@ fn compare(e: &GameEntity, row: &Value) {
         ("retries", json!(p.retries_left())),
         (
             "force_reassign",
-            json!(u8::from(e.setter_force_reassign.is_raised())),
+            json!(u8::from(e.seldom.setter_force_reassign.is_raised())),
         ),
     ] {
         assert_eq!(actual, row[key], "{key}: {row}");
@@ -482,6 +490,7 @@ fn repeated_move_orders_sample_live_native_speed() {
                 rank => panic!("unexpected native rank {rank}"),
             }
             entity
+                .seldom
                 .setter_force_reassign
                 .set_for_test(step["forced"] == true);
             let retained_before =
@@ -518,7 +527,7 @@ fn repeated_move_orders_sample_live_native_speed() {
                     "head": [head.x, head.y, head.z],
                     "nav": nav,
                     "nav_queue": entity.navigation.nav_queue().len(),
-                    "force_reassign": u8::from(entity.setter_force_reassign.is_raised()),
+                    "force_reassign": u8::from(entity.seldom.setter_force_reassign.is_raised()),
                     "movement_timer": [
                         path.movement_timer().start_frame(), path.movement_timer().duration(),
                     ],
@@ -535,7 +544,7 @@ fn repeated_move_orders_sample_live_native_speed() {
                 native_speed,
                 "{step}"
             );
-            let speed = super::super::track_speed::advance(
+            let (speed, _) = super::super::track_speed::advance(
                 sim.substrate.entities.get_mut(1).unwrap(),
                 rules.object("MOVER"),
                 &rules,
@@ -698,7 +707,7 @@ fn unit_setters_clear_navqueue_like_the_original() {
                 1,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
         } else {
             assert!(sim.set_unit_destination(
@@ -706,7 +715,7 @@ fn unit_setters_clear_navqueue_like_the_original() {
                 NavTargetRef::cell(11, 10),
                 &rules,
                 input["flag"] != 0,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ));
         }
         compare(sim.substrate.entities.get(1).unwrap(), &row);
@@ -846,9 +855,6 @@ fn anytown_destination_dependencies() -> Option<(
         .expect("AnyTown/Battle production Rules layers")
         .into_parts();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let overlays =
         crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&processed, Some(&art));
     let terrain = ResolvedTerrainGrid::build(
@@ -973,10 +979,8 @@ fn destination_receipt_actor(
 fn noncell_foot_destinations_match_original_anytown_class_calls() {
     use crate::sim::rng::SimRng;
 
-    let native: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/anytown_damage/foot_missions.json",
-    ))
-    .unwrap();
+    let native =
+        crate::test_fixture::json("tools/spatial_oracle/anytown_damage/foot_missions.json");
     let rows = native["navigation_rows"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
     for row in rows {
@@ -1053,9 +1057,7 @@ fn noncell_foot_destinations_match_original_anytown_class_calls() {
             })
             .unwrap();
         let entry = &class["rng_at_entry"];
-        sim.main_rng = serde_json::from_value::<SimRng>(entry["main"].clone())
-            .unwrap()
-            .into();
+        sim.main_rng = serde_json::from_value::<SimRng>(entry["main"].clone()).unwrap();
         sim.scenario_rng = serde_json::from_value::<SimRng>(entry["scenario"].clone()).unwrap();
         sim.mapgen_rng = serde_json::from_value::<SimRng>(entry["mapgen"].clone()).unwrap();
         let requested = NavTargetRef::Object { id: 2 };
@@ -1073,7 +1075,7 @@ fn noncell_foot_destinations_match_original_anytown_class_calls() {
                 requested,
                 &rules,
                 true,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         } else {
             sim.assign_infantry_destination(
@@ -1081,7 +1083,7 @@ fn noncell_foot_destinations_match_original_anytown_class_calls() {
                 requested,
                 &rules,
                 Some(&overlays),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
         };

@@ -10,8 +10,8 @@
   "assumptions": [
     "Loading wait controls execute original643C50 signed-percent updates (including regressions/upper clamp),6433D0 average and68444C..684465 completion comparison. Only643AE0 drawing is suppressed. Explicit2/8-row controls include99/100 and signed negative input; native stored doubles and branch destinations are observed, not calculated by Python.",
     "Starting-MCV no-match controls execute complete5D7030, Owner-only505310 and originalCountryName5117D0 with explicit Owner masks and Country0. Unit constructor entry is fail-closed; completeScenario RNG bytes and callback result are observed. Separate original65C7E0(0,FFFF) records the orchestrator tail5D6FFE; no constructor/RNG result is substituted.",
-    "LAN MaxAhead controls enter original host5DD48D and guest5DD2CD with caller-established EBP=0, explicit protocol and successive raw32 connection response fields. Stop before hostSetTiming5DD541/guestcontinuation5DD877. Both paths observe frame-send-rate5 and all3 reset writes; second-read controls establish absence of another floor check.",
-    "BC5DEC3B..5DEC61 executes original MainRandomRanged(1,32767), CRTsrand7CB49D andCRTrand7CB4AA across two successive entries. ExplicitMainseeds initialize real65C6D0 state; TLSthreadcell starts73 but eachentry replacesit. FullMainstates, rawdraws, callhistory, CRTstate andtransmittedseed observed.",
+    "LAN MaxAhead controls enter original host5DD48D and guest5DD2CD with caller-established EBP=0, explicit protocol and successive raw32 connection response fields. Stop before hostSetTiming5DD541/guestcontinuation5DD877. Each control runs both paths, which must agree on MaxAhead and getter reads and observe frame-send-rate5 and all3 reset writes; one row records them. Second-read controls establish absence of another floor check.",
+    "BC5DEC3B..5DEC61 executes original MainRandomRanged(1,32767), CRTsrand7CB49D andCRTrand7CB4AA across two successive entries. ExplicitMainseeds initialize real65C6D0 state; TLSthreadcell starts73 but eachentry replacesit. FullMainstates, rawdraws, callhistory andtransmittedseed observed.",
     "Cooperative5C2710 executes all8 rows for each campaign round on actual7EE27C vtable, originalcountry callbacks/ID-Name resolver/vector allocation/RNG. OriginalReadInt/ReadString/strtok read physical CoopCampMD and RULESMD country list/Name inputs through existing lexical+reader owners. Progressstage and humanresolvedcolors are controlled inputs; no Rust values seed native results.",
     "Observer-start controls execute whole5D6890 in supplied House order with explicit House human/UIName fields, source nodes, three start cells and initial start table; original50B730/wcscmp/RNG/distance math execute. FPCW and cached ftol word0E7F match active startup. Normal rows precede observercolor8, as native CreateHouses sorts resolved colors.",
     "Assignment cases supply original128-byte human nodes (+4B country,+4F country selector,+53 color,+57 color selector,+6B observer), ordered vector and eight raw AI arrays; unfilled AI slots are-1. Battle vtable7EE184 from ctor5C0DF8 selects original5D6430/5D6440/69B670 country callbacks. seeded_struct executes native65C6D0; full RNG states and ordered ranged/raw draws retained.",
@@ -67,5 +67,5 @@
     "help": "0x006040B0"
   },
   "replay_command": "python -m tools.storage_oracle.lan_lobby",
-  "payload_sha256": "4518e4cf88bf98b4819c65e412a08ec96260b2665693d7430d0c7f7481d61b87"
+  "payload_sha256": "34bcfbb3c4b3056cb5ddff5124bed87a401f5d3625885ae81e4bcfd0a6079efd"
 }

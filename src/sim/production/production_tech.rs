@@ -8,10 +8,12 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 
-use super::can_build::{CanBuild, can_build, check_build_limit, find_factory};
+use super::can_build::{
+    CanBuild, FactoryRoster, can_build, check_build_limit, find_factory, find_factory_among,
+};
 use super::production_types::*;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "construction_options_tests.rs"]
 mod construction_options_tests;
 
@@ -72,9 +74,14 @@ fn append_construction_options(
     let Some(building) = sim.entities().get(building_id) else {
         return;
     };
+    // Ares 3.0 BuildingClass_UpdateConstructionOptions_ExcludeDisabled
+    // (10053D80, hook 0x4456E5) adds IsUnderEMP (vt+0x37C, Building's is
+    // Techno 0x0070EFD0: +0x504 > 0) to the limbo test.
+    let disabled = rules.ares_form() && building.emp_remaining() > 0;
     if sim.session.current_house() != Some(building.owner())
         || building.lifecycle.in_limbo()
-        || !building.discovery.discovered_by_current_house()
+        || disabled
+        || !building.seldom.discovery.discovered_by_current_house()
         || !building.building_online()
     {
         return;
@@ -103,35 +110,46 @@ fn append_construction_options(
 /// No money check: a build starts without the funds and stalls its steps
 /// instead (`SelectClass::Action @ 0x006AAD00` and `HouseClass::Begin_Production
 /// @ 0x004FA350` test none).
-pub(super) fn build_option_for_owner(
+/// `owner` is the house's interned name; `None` for a name nothing interned.
+/// `factories` is that house's roster ([`FactoryRoster::of`]).
+fn build_option_among(
     sim: &Simulation,
     rules: &RuleSet,
-    owner: &str,
+    owner: Option<InternedId>,
+    factories: Option<&FactoryRoster<'_>>,
     type_id: &str,
 ) -> Option<BuildOption> {
     let obj = rules.object(type_id)?;
-    let reason = match sim.interner.get(owner) {
-        Some(owner_id) => sidebar_state(sim, rules, owner_id, obj),
+    let reason = match owner {
+        Some(owner_id) => sidebar_state(sim, rules, owner_id, factories, obj),
         None => Some(BuildDisabledReason::NoFactory),
     };
     let type_interned = sim.interner.get(type_id).unwrap_or_default();
-    let cost = match sim.interner.get(owner) {
+    let cost = match owner {
         Some(owner_id) => sim.cost_of(owner_id, obj, rules),
         None => rules.cost_of(obj, None),
     };
     Some(BuildOption {
         type_id: type_interned,
-        display_name: obj.name.clone().unwrap_or_else(|| obj.id.clone()),
         cost,
         object_category: obj.category,
         queue_category: production_category_for_object(obj),
         enabled: reason.is_none(),
-        at_build_limit: sim
-            .interner
-            .get(owner)
-            .is_some_and(|owner| check_build_limit(sim, rules, owner, obj)),
+        at_build_limit: owner.is_some_and(|owner| check_build_limit(sim, rules, owner, obj)),
         reason,
     })
+}
+
+/// [`build_option_among`] for one type alone.
+#[cfg(test)]
+pub(super) fn build_option_for_owner(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: Option<InternedId>,
+    type_id: &str,
+) -> Option<BuildOption> {
+    let factories = owner.and_then(|owner| FactoryRoster::of(sim, rules, owner));
+    build_option_among(sim, rules, owner, factories.as_ref(), type_id)
 }
 
 /// Whether the player's strip keeps a cameo of `obj` (`StripClass::Recalculate
@@ -156,7 +174,23 @@ fn strip_refusal(
     owner: InternedId,
     obj: &ObjectType,
 ) -> Option<BuildDisabledReason> {
-    if find_factory(sim, rules, owner, obj, true, false, false).is_none() {
+    let factories = FactoryRoster::of(sim, rules, owner);
+    strip_refusal_among(sim, rules, owner, factories.as_ref(), obj)
+}
+
+/// [`strip_refusal`] with `owner`'s roster in hand; a house-less owner has
+/// none, and so no factory.
+fn strip_refusal_among(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    factories: Option<&FactoryRoster<'_>>,
+    obj: &ObjectType,
+) -> Option<BuildDisabledReason> {
+    let could_build = factories.is_some_and(|factories| {
+        find_factory_among(sim, rules, owner, factories, obj, true, false, false).is_some()
+    });
+    if !could_build {
         Some(BuildDisabledReason::NoFactory)
     } else if can_build(sim, rules, owner, obj, false, true) == CanBuild::No {
         Some(BuildDisabledReason::CannotBuild)
@@ -181,12 +215,16 @@ fn sidebar_state(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,
+    factories: Option<&FactoryRoster<'_>>,
     obj: &ObjectType,
 ) -> Option<BuildDisabledReason> {
-    if let Some(refusal) = strip_refusal(sim, rules, owner, obj) {
+    if let Some(refusal) = strip_refusal_among(sim, rules, owner, factories, obj) {
         return Some(refusal);
     }
-    if find_factory(sim, rules, owner, obj, true, true, true).is_none() {
+    let ready = factories.is_some_and(|factories| {
+        find_factory_among(sim, rules, owner, factories, obj, true, true, true).is_some()
+    });
+    if !ready {
         return Some(BuildDisabledReason::NoReadyFactory);
     }
     if draw_at_build_limit(sim, rules, owner, obj) {
@@ -249,27 +287,43 @@ pub fn all_build_options_for_owner(
     rules: &RuleSet,
     owner: &str,
 ) -> Vec<BuildOption> {
-    let mut out: Vec<BuildOption> = Vec::new();
-    for id in &rules.building_ids {
-        if let Some(opt) = build_option_for_owner(sim, rules, owner, id) {
-            out.push(opt);
-        }
-    }
-    for id in &rules.infantry_ids {
-        if let Some(opt) = build_option_for_owner(sim, rules, owner, id) {
-            out.push(opt);
-        }
-    }
-    for id in &rules.vehicle_ids {
-        if let Some(opt) = build_option_for_owner(sim, rules, owner, id) {
-            out.push(opt);
-        }
-    }
-    for id in &rules.aircraft_ids {
-        if let Some(opt) = build_option_for_owner(sim, rules, owner, id) {
-            out.push(opt);
-        }
-    }
+    let owner = sim.interner.get(owner);
+    // Every type asks FindFactory of the same house: list its factories once
+    // instead of walking all its buildings for each type.
+    let factories = owner.and_then(|owner| FactoryRoster::of(sim, rules, owner));
+    let mut out: Vec<BuildOption> = [
+        &rules.building_ids,
+        &rules.infantry_ids,
+        &rules.vehicle_ids,
+        &rules.aircraft_ids,
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(|id| build_option_among(sim, rules, owner, factories.as_ref(), id))
+    .collect();
+    out.sort_by_key(|opt| opt.queue_category);
+    out
+}
+
+/// [`all_build_options_for_owner`] for `types` alone, by category: what the
+/// player's sidebar asks, as `StripClass::Recalculate @ 0x006AA600` and
+/// `StripClass::Draw @ 0x006A9540` ask only the strip's entries and AddCameo
+/// only its candidate. A type no rules list builds has none.
+pub fn build_options_for_types(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: &str,
+    types: impl IntoIterator<Item = InternedId>,
+) -> Vec<BuildOption> {
+    let owner = sim.interner.get(owner);
+    let factories = owner.and_then(|owner| FactoryRoster::of(sim, rules, owner));
+    let mut out: Vec<BuildOption> = types
+        .into_iter()
+        .filter_map(|id| {
+            let name = sim.interner.try_resolve(id)?;
+            build_option_among(sim, rules, owner, factories.as_ref(), name)
+        })
+        .collect();
     out.sort_by_key(|opt| opt.queue_category);
     out
 }
@@ -305,7 +359,7 @@ pub(crate) fn factory_category_for_building(object: &ObjectType) -> Option<Produ
 
 /// Check if a structure is a production factory for the given category.
 ///
-/// Uses the data-driven Factory= key from rules.ini via RuleSet.factory_map.
+/// Uses the BuildingType's `Factory=` (`ObjectType::factory_type`).
 /// A building with `Factory=InfantryType` produces infantry, `Factory=UnitType`
 /// produces vehicles, etc. Buildings without Factory= are never factories.
 pub(super) fn is_production_factory(
@@ -324,7 +378,7 @@ pub(super) fn is_production_factory(
             && factory_category == ProductionCategory::Building)
 }
 
-/// VERA-only: the producer-focus list (the sidebar's view and `CycleProducerFocus`): the owner's
+/// VERA-only: the producer-focus list (`CycleProducerFocus`): the owner's
 /// structures that build `category`, less dying, limboed and constructing ones, from the store.
 pub fn producer_candidates_for_owner_category(
     entities: &EntityStore,
@@ -392,8 +446,9 @@ pub fn building_base_foundation_cells(
     cells.into_iter().collect()
 }
 
-/// Cells that block static grid movement, given the base foundation and whether
-/// the building has a bib (`Bib=yes` in rules.ini).
+/// Cells that block static grid movement for a building at `origin` with
+/// `foundation`, and whether the building has a bib (`Bib=yes` in rules.ini),
+/// in the foundation's cell-offset order.
 ///
 /// For non-bib buildings, this is just the base foundation. For `Bib=yes`
 /// buildings, the east-edge column of the foundation is excluded: those cells
@@ -401,8 +456,8 @@ pub fn building_base_foundation_cells(
 /// relaxation in `Can_Enter_Cell` (probes the east neighbor; if it isn't part
 /// of the same building, the building stops blocking the cell).
 ///
-/// "East edge" = any cell in `base_foundation` whose east neighbor `(x+1, y)`
-/// is outside the base foundation.
+/// "East edge" = any base foundation cell whose east neighbor `(x+1, y)` is
+/// outside the base foundation (or past the last cell column).
 ///
 /// `NumberImpassableRows` is deliberately not applied here. That field is a
 /// live `UnitClass::Can_Enter_Cell` object-list skip (`0x0073F57C..5A2` radio
@@ -410,30 +465,35 @@ pub fn building_base_foundation_cells(
 /// the Unit Find_Path search reaches through `Simulation::foot_can_enter`; it
 /// is not static terrain data.
 pub fn building_movement_blocking_cells(
-    base_foundation: &[(u16, u16)],
+    origin: (u16, u16),
+    foundation: &crate::rules::foundation::Foundation,
     has_bib: bool,
-) -> Vec<(u16, u16)> {
-    use std::collections::BTreeSet;
-    if !has_bib {
-        return base_foundation.to_vec();
-    }
-    let set: BTreeSet<(u16, u16)> = base_foundation.iter().copied().collect();
-    base_foundation
-        .iter()
-        .copied()
-        .filter(|&(x, y)| x.checked_add(1).is_some_and(|nx| set.contains(&(nx, y))))
-        .collect()
+) -> impl Iterator<Item = (u16, u16)> + '_ {
+    let (origin_rx, origin_ry) = origin;
+    crate::sim::crew_survival::foundation_cells(origin_rx, origin_ry, foundation).filter(
+        move |&(x, y)| {
+            !has_bib
+                || x.checked_add(1).is_some_and(|east| {
+                    let dx = i32::from(east) - i32::from(origin_rx);
+                    let dy = i32::from(y) - i32::from(origin_ry);
+                    i16::try_from(dx)
+                        .ok()
+                        .zip(i16::try_from(dy).ok())
+                        .is_some_and(|offset| foundation.contains_cell_offset(offset))
+                })
+        },
+    )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod footprint_tests {
     use super::*;
 
     #[test]
     fn movement_blocking_with_bib_drops_east_edge_rectangle() {
         // Plain 4x3 with bib → east column (x = 13) drops.
-        let footprint = building_base_foundation_cells(10, 20, &"4x3".into());
-        let blocking = building_movement_blocking_cells(&footprint, true);
+        let blocking: Vec<_> =
+            building_movement_blocking_cells((10, 20), &"4x3".into(), true).collect();
         // 12 base cells - 3 east-edge column (13, 20), (13, 21), (13, 22) = 9.
         assert_eq!(blocking.len(), 9);
         assert!(!blocking.contains(&(13, 20)));
@@ -445,10 +505,51 @@ mod footprint_tests {
 
     #[test]
     fn static_movement_blocking_keeps_number_rows_out_of_the_grid() {
-        let footprint = building_base_foundation_cells(10, 20, &"4x3".into());
-        let blocking = building_movement_blocking_cells(&footprint, false);
+        let blocking: Vec<_> =
+            building_movement_blocking_cells((10, 20), &"4x3".into(), false).collect();
         assert_eq!(blocking.len(), 12);
         assert!(blocking.contains(&(12, 21)));
         assert!(blocking.contains(&(13, 21)));
+    }
+
+    /// Every retail building's blocking cells, read through the production
+    /// reader, are the cells of the set-based rule the walk replaced: the
+    /// in-range foundation cells, less with a bib those whose east neighbour
+    /// is not one of them. Also at the last cell column and row.
+    #[test]
+    fn retail_blocking_cells_match_the_set_rule() {
+        use std::collections::BTreeSet;
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+            return;
+        };
+        let mut bibs = 0;
+        for id in &rules.building_ids {
+            let object = rules.object(id).expect("listed building");
+            bibs += usize::from(object.bib);
+            for origin in [(10, 20), (u16::MAX - 1, u16::MAX - 1)] {
+                let base: BTreeSet<(u16, u16)> = object
+                    .foundation
+                    .cell_offsets()
+                    .filter_map(|(dx, dy)| {
+                        let x = u16::try_from(i32::from(origin.0) + i32::from(dx)).ok()?;
+                        let y = u16::try_from(i32::from(origin.1) + i32::from(dy)).ok()?;
+                        Some((x, y))
+                    })
+                    .collect();
+                let expected: Vec<_> = base
+                    .iter()
+                    .copied()
+                    .filter(|&(x, y)| {
+                        !object.bib || x.checked_add(1).is_some_and(|nx| base.contains(&(nx, y)))
+                    })
+                    .collect();
+                let mut walked: Vec<_> =
+                    building_movement_blocking_cells(origin, &object.foundation, object.bib)
+                        .collect();
+                walked.sort_unstable();
+                assert_eq!(walked, expected, "{id} at {origin:?}");
+            }
+        }
+        assert!(bibs > 0, "retail rules list bib buildings");
     }
 }

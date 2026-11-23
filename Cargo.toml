@@ -1,6 +1,6 @@
 [package]
 name = "vera20k"
-version = "0.2.2"
+version = "0.4.2"
 edition = "2024"
 description = "Vera20k Engine — a from-scratch Rust engine for Red Alert 2: Yuri's Revenge"
 autobins = false
@@ -13,7 +13,7 @@ publish = false
 # asset tools and the game binary). The core manifest sits in `src/`, so rustc
 # still names every source file `src/...`.
 [workspace]
-members = ["src", "services/relay-protocol", "services/relay"]
+members = ["src", "gui", "services/relay-protocol", "services/relay", "android"]
 # Plain `cargo build`/`cargo test --lib` cover both crates.
 default-members = [".", "src"]
 
@@ -37,22 +37,54 @@ name = "telemetry-serve"
 path = "src/bin/telemetry-serve.rs"
 required-features = ["telemetry-dashboard"]
 
+# Test groups: the module path prefixes each one owns; the longest prefix
+# decides. `python -m tools.group_tests check` holds the test modules to it.
+[package.metadata.test-groups]
+app = ["app"]
+app-frontend = ["app::frontend"]
+app-input-a-c = ["app::input::a", "app::input::b", "app::input::c"]
+app-input-d-z = ["app::input"]
+app-match = ["app::match_runtime"]
+app-presentation = ["app::presentation"]
+app-presentation-instances = ["app::presentation::instances"]
+app-presentation-render = ["app::presentation::render"]
+asset-tools = ["asset_tools"]
+audio = ["audio"]
+render-a-r = [
+    "render::a", "render::b", "render::c", "render::d", "render::e", "render::f", "render::g",
+    "render::h", "render::i", "render::j", "render::k", "render::l", "render::m", "render::n",
+    "render::o", "render::p", "render::q", "render::r",
+]
+render-s-z = ["render"]
+root = ["i18n", "web", "entry", "architecture_guards", "browser_"]
+ui = ["ui"]
+
 [features]
+# Browser host support; target selection still controls every platform implementation.
+wasm = ["vera20k-core/wasm", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys", "dep:console_log", "dep:console_error_panic_hook", "getrandom/wasm_js", "sys-locale/js"]
+# Optional browser networking; desktop targets keep their native transport.
+wasm-net = ["wasm", "vera20k-core/wasm-net"]
+# Browser LAN play over WebRTC; the gateway only coordinates the handshake.
+wasm-lan = ["wasm-net", "vera20k-core/wasm-lan"]
+# Browser simulation work on a Web Worker pool. It needs shared Wasm memory, so
+# tools/wasm/build.py --threads builds it with a pinned nightly and its own std.
+wasm-threads = ["wasm", "vera20k-core/wasm-threads", "dep:wasm-bindgen-rayon", "dep:rayon"]
 # Development builds carry the Ctrl+Shift dev chord. The release workflow builds
 # with `--no-default-features`, so shipped binaries do not.
 default = ["dev-overlays"]
-# The standalone Switch workspace supplies the Horizon winit and audio backends.
+# Optional Switch client and its frame timing diagnostics.
 horizon-client = []
-# Opt-in Horizon-only frame ledger. Shipped Switch builds leave it off; the
-# standalone Switch profiler build forwards core's telemetry feature.
 horizon-frame-profile = ["vera20k-core/telemetry"]
-# Optional gameplay extensions. Neither default nor shipping builds enable this.
-ares = ["vera20k-core/ares"]
-# Optional Phobos extensions, independent of the Ares capability; neither
-# default nor shipping builds enable this either.
+# Optional Phobos extensions; neither default nor shipping builds enable this.
+# Ares needs no feature: it switches on from a game's data in every build.
 phobos = ["vera20k-core/phobos"]
 # Placeholder for the NPatch capability; no chain reads it yet.
 npatch = ["vera20k-core/npatch"]
+# VERA20K's own first-party extension capability; VeraX-gated chains read it.
+verax = ["vera20k-core/verax"]
+# Optional NPBUG bug-fix extension; neither default nor shipping builds enable
+# it.
+npbug = ["vera20k-core/npbug"]
 # The Ctrl+Shift dev chord: renderer-native diagnostic overlays (grid, heightmap,
 # pathgrid, foot path, fog), the debug pause and quicksave/quickload. Captures
 # rely on it (literal Ctrl+Shift+M/N quicksave/quickload).
@@ -62,22 +94,50 @@ telemetry-dashboard = ["vera20k-core/telemetry", "dep:sha1"]
 # Explicit offline trainer and per-unit event hooks. Never enabled by the
 # dashboard alone or the default/shipping feature set.
 debug-tools = ["telemetry-dashboard", "dev-overlays", "vera20k-core/debug-tools"]
+# Offline performance-recording build: writes a per-frame CSV of every SIM and
+# render phase plus path/process/GPU counters to ./perf/. A tool feature (never
+# shipped, PC-only): the recorder is on for the whole run, with no runtime
+# toggle. Enables the derived timing ledgers it reads.
+perf = ["vera20k-core/telemetry"]
+# A focused test build (tools/README.md, "Test groups"): with `test-focus` only
+# the test groups whose `tests-*` feature is on compile. Without it every test
+# compiles, so a plain `cargo test` is always the full suite. Neither reaches
+# `vera20k-core`, whose own tests have their own groups.
+test-focus = []
+tests-app = []
+tests-app-frontend = []
+tests-app-input-a-c = []
+tests-app-input-d-z = []
+tests-app-match = []
+tests-app-presentation = []
+tests-app-presentation-instances = []
+tests-app-presentation-render = []
+tests-asset-tools = []
+tests-audio = []
+tests-render-a-r = []
+tests-render-s-z = []
+tests-root = []
+tests-ui = []
 
 [dependencies]
 # The GPU-free engine. Its dev features follow this package's.
 vera20k-core = { path = "src" }
+vera20k-gui = { path = "gui" }
 
-# Verified HTTPS lobby requests, independent of simulation.
-ureq = { version = "3.5", default-features = false, features = ["rustls", "json"] }
+# Background HTTPS lobby I/O; verified TLS is independent of simulation.
 base64 = "0.22"
 
-# OS session credentials and RFC6455 handshake; no simulation RNG or command intake.
+# OS multiplayer session nonces and RFC6455 handshake; no simulation RNG or command intake.
 getrandom = { version = "=0.3.4" }
 sha1 = { version = "=0.10.6", optional = true }
 
 # --- GPU rendering ---
 # winit 0.30 is the latest stable. 0.31 is still in beta.
 # Uses the ApplicationHandler trait pattern (deferred window creation).
+# The supported no-title CSD keeps Wayland borders/buttons and window title
+# metadata, but omits drawn title text when the compositor needs client-side
+# decorations. It avoids ab_glyph's unmaintained ttf-parser; X11/server-side
+# decorations and the macOS/Windows title bars keep their normal text.
 # raw-window-handle + windows-sys let us clip the OS cursor to the game window
 # with the Win32 ClipCursor API . That is reliable on frameless
 # windows. winit's CursorGrabMode::Confined instead clips a *hidden* cursor to a
@@ -85,9 +145,13 @@ sha1 = { version = "=0.10.6", optional = true }
 # off the taskbar), and VERA hides the OS arrow whenever it draws mouse.shp, so the
 # grab mode pins the pointer in place ("mouse won't move").
 raw-window-handle = "0.6"
-# `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClipCursor/GetClientRect;
-# `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen coords).
+# `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClipCursor/GetClientRect
+# and the startup window's black background (SetClassLongPtrW);
+# `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen
+# coords) and the stock black brush.
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
+# Atlas keys carry an object type name. Already built through winit.
+smol_str = "0.2"
 # bytemuck enables safe transmutation of structs to GPU-friendly byte slices.
 bytemuck = { version = "1", features = ["derive"] }
 
@@ -98,6 +162,29 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
+
+# --- UI text ---
+# Layout of every interface string: shaping (harfrust), bidirectional text,
+# line breaking (ICU4X) and font fallback by script. Only VERA's bundled fonts
+# are registered: fontique's `system` feature (CoreText, DirectWrite,
+# fontconfig) stays off. See src/render/text_engine/mod.rs.
+# `complex-scripts` stays off: its word dictionaries for Thai, Lao, Khmer and
+# Burmese, which put no spaces between words, add about 3 MB to every build
+# (1.9 MB of the browser download). Without them a run of those scripts too
+# long for its line breaks where the line runs out, at a grapheme cluster
+# (`OverflowWrap::Anywhere` in text_engine), sometimes inside a word.
+parley = { version = "0.12", default-features = false, features = ["std"] }
+# Glyph outlines for the runs parley shapes, through the same skrifa parley
+# reads them with; VERA draws them as whole pixels itself
+# (src/render/text_engine/pixels.rs).
+swash = { version = "0.2.10", default-features = false, features = ["std", "scale"] }
+# CLDR plural rules for the language files' plural forms (src/i18n), from the
+# ICU4X release parley's line breaking already uses.
+icu_plurals = { version = "2.4", default-features = false, features = ["compiled_data"] }
+icu_locale_core = { version = "2.4", default-features = false }
+# The system's preferred languages, which choose VERA's language until the
+# player picks one (src/i18n).
+sys-locale = "0.3"
 
 # --- Image processing ---
 # Used for texture atlas creation and debug image output, not for asset parsing.
@@ -114,17 +201,55 @@ image = { version = "0.25", default-features = false, features = ["png", "ico"] 
 rodio = { version = "0.22", default-features = false, features = ["playback"] }
 
 [target.'cfg(not(target_os = "horizon"))'.dependencies]
-wgpu = "29"
-winit = "0.30"
+wgpu = "30.0.1"
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita-notitle"] }
 
 [target.'cfg(target_os = "horizon")'.dependencies]
-wgpu = { version = "29", default-features = false, features = ["std", "vulkan", "wgsl", "counters"] }
-winit = "=0.30.12"
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "vulkan", "wgsl", "counters"] }
+winit = { version = "=0.30.13", default-features = false, features = ["rwh_06"] }
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+# platform-verifier: the updater trusts the system's certificates first
+# (src/app/updater/fetch.rs); the lobby's agents keep ureq's webpki roots.
+ureq = { version = "3.5", default-features = false, features = ["rustls", "json", "platform-verifier"] }
+# The lobby's event stream (src/app/shell_wol/live_service/http/stream.rs), over
+# the same rustls, ring provider and webpki roots as the lobby's ureq agents.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+rustls = { version = "0.23.46", default-features = false, features = ["std", "ring"] }
+webpki-roots = "1.0"
+# Ed25519 for the updater's signed release manifest (src/app/updater). Already
+# compiled for ureq's rustls, so it adds no crate.
+ring = "0.17"
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["Window", "Document", "HtmlCanvasElement", "Element", "HtmlElement", "AudioBuffer", "AudioBufferSourceNode", "AudioContext", "AudioDestinationNode", "AudioNode", "AudioScheduledSourceNode", "BaseAudioContext", "CompositionEvent", "CssStyleDeclaration", "DomRect", "Event", "EventTarget", "FocusEvent", "HtmlTextAreaElement", "KeyboardEvent", "KeyboardEventInit", "Node", "UiEvent"] }
+console_log = { version = "1", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+# Starts rayon's pool on Web Workers. `no-bundler` fits the plain `--target web`
+# package; the crate also turns on rayon's `web_spin_lock`.
+wasm-bindgen-rayon = { version = "1.3", optional = true, features = ["no-bundler"] }
+# Whether that pool runs, before the simulation worker starts (src/web/sim_worker.rs).
+rayon = { version = "1.11", optional = true, features = ["web_spin_lock"] }
+# Browser WebGL2 fallback for pages without WebGPU; desktop backends are unchanged.
+wgpu = { version = "30.0.1", features = ["webgl"] }
 
 [target.'cfg(unix)'.dependencies]
 # Continuing presentation uptime across saved-game process restarts. The
 # existing core dependency already pins the same libc version in Cargo.lock.
 libc = "0.2"
+
+# --- Android ---
+# The client crate also builds for Android, where winit refuses to compile
+# without a platform backend feature; the desktop features above stay in the
+# unconditional table, and winit gates their crates by target internally, so
+# this only adds the Android backend. `android-game-activity` (winit's other
+# Android backend, which carries text input) replaces this feature if P6 picks
+# GameActivity over NativeActivity.
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }
 
 # --- macOS application icon and game folder chooser ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which
@@ -134,8 +259,37 @@ libc = "0.2"
 # default features are off because they enable every AppKit framework class.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSImage", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSLocale", "NSString", "NSURL"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSCursor", "NSImage", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSGeometry", "NSLocale", "NSString", "NSURL", "objc2-core-foundation"] }
+
+# --- Clipboard ---
+# The random-map dialog copies and pastes share codes (src/app/os_clipboard.rs).
+# arboard reaches the Win32 clipboard, NSPasteboard and the X11 selection
+# (Wayland through XWayland). Default features are off, which leaves out image
+# support and its `image` crate. arboard has no Android or browser backend, so
+# those builds have no clipboard.
+[target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
+arboard = { version = "3.7", default-features = false }
+
+# --- Windows memory allocator ---
+# The game program (src/main.rs) allocates through mimalloc on Windows instead
+# of the process heap. MIT, linked statically, and built by the C compiler that
+# `ring` already needs. No features: the crate's default is mimalloc v3.
+# A trial for slow Windows machines; the gain has not been measured there yet.
+[target.'cfg(windows)'.dependencies]
+mimalloc = { version = "0.1.52", default-features = false }
+
+# Use wgpu-hal's Windows bindings for the device removal reason and the
+# Shell COM file chooser.
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_System_Com",
+    "Win32_UI_Shell_Common",
+]
 
 # --- Windows program icon and version details ---
 # build.rs compiles them into vera20k.exe with the Windows SDK's resource
@@ -149,6 +303,9 @@ winresource = { version = "0.1.34", default-features = false }
 [dev-dependencies]
 # Client tests use core's test fixtures and helpers.
 vera20k-core = { path = "src", features = ["test-support"] }
+# wgpu's own naga, with the GLSL ES writer its WebGL2 backend uses, so the
+# browser fallback's shaders are translated in ordinary test runs.
+naga = { version = "30.0.1", features = ["wgsl-in", "glsl-out"] }
 
 # Dependencies both crates use, declared once so they cannot drift apart.
 [workspace.dependencies]
@@ -159,7 +316,7 @@ serde_json = "1"
 # thiserror for structured library errors (AssetError, RulesError, etc.)
 thiserror = "2"
 # anyhow for application-level error propagation (main.rs, app facade)
-anyhow = "1"
+anyhow = "1.0.104"
 log = "0.4"
 
 [lints]
@@ -172,6 +329,22 @@ debug_assert_with_mut_call = "deny"
 # Native ports keep gamemd's inputs explicit (the object, its rules and the
 # world state the body reads) instead of bundling them into one-use structs.
 too_many_arguments = "allow"
+# Every `unsafe` block and `unsafe impl` says in a `// SAFETY:` comment why
+# its contract holds, and every public `unsafe fn` documents it in `# Safety`.
+undocumented_unsafe_blocks = "deny"
+missing_safety_doc = "deny"
+# A lint silenced with `#[allow]` says why; one that always fires there takes
+# `#[expect(lint, reason = ..)]`, which warns once the lint stops firing.
+allow_attributes_without_reason = "deny"
+
+[workspace.lints.rust]
+# A dropped `Result` or `#[must_use]` value hides a failure or a lost value.
+unused_must_use = "deny"
+# Each unsafe operation inside an `unsafe fn` sits in its own `unsafe` block
+# with its own SAFETY comment, rather than the whole body being unsafe.
+unsafe_op_in_unsafe_fn = "deny"
+# A lifetime parameter equal to another (or to `'static`) is noise to read.
+redundant_lifetimes = "deny"
 
 # --- Build speed ---
 # Optimize all code at opt-level 1 in dev builds. The game rebuilds sprite
@@ -232,3 +405,18 @@ incremental = true
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+# The browser package (tools/wasm/build.py's default), which every player
+# downloads: optimized for size across every crate as one unit, without the
+# function names only a debugger reads. Optimization levels keep simulation
+# results (Rust has no fast-math; Wasm integer and float operations are
+# exact). Measured on 2026-11-09 with sim-bench built for wasm32-wasip1 under
+# Node (match scenario, amazon.mmx, 900 ticks, about 6,000 objects), each with
+# the same final hash: opt-level 3 took 143.5 ms a tick in an 8.2 MB binary,
+# "s" 162.2 ms in 5.7 MB and "z" 203.9 ms in 5.3 MB.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = true

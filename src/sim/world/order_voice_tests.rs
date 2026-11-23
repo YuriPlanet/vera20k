@@ -16,6 +16,8 @@ fn native_voice_corpus() -> serde_json::Value {
     corpus
 }
 
+// Ares replaces VoiceAttack's choice (TechnoClass_SelectFiringVoice
+// 1004B1D0, hook 0x7090A8): `ares_firing_voice_tiers_fall_through`.
 #[test]
 fn retail_attack_acknowledgement_spends_the_original_singleton_main_draw() {
     use crate::map::entities::EntityCategory;
@@ -79,6 +81,60 @@ fn retail_attack_acknowledgement_spends_the_original_singleton_main_draw() {
     );
     assert_eq!(sim.scenario_rng.logical_state(), scenario);
     assert_eq!(sim.mapgen_rng.logical_state(), mapgen);
+}
+
+#[test]
+fn delegated_voice_follows_the_local_source_without_changing_the_shared_hash() {
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let (mut sim, rules, actor) = scene_with_input(
+        "VoiceSelect=Move\nVoiceMove=Move\nVoiceAttack=Attack\nVoiceDeploy=Enter\n",
+        &serde_json::json!({"actor_owner": "other"}),
+    );
+    sim.install_session_mode(ScenarioGameMode::Lan);
+    sim.install_network_timing(10);
+    sim.network_command_queues()
+        .install_timing(0, std::num::NonZeroU8::new(5).unwrap(), [0, 1]);
+    sim.session
+        .install_shared_house_sources(vec![0, 0], Some(0));
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: 1,
+        level: ControlGrantLevel::UnitsOnly,
+    }])
+    .unwrap();
+    let shared = sim.state_hash();
+
+    let (selected, draws) = trace_draws(|| sim.selection_voice_request(&rules, actor, true));
+    assert_eq!((selected, draws.len()), (Some("Move"), 1));
+    let (moving, draws) =
+        trace_draws(|| sim.order_voice_request(&rules, actor, "VoiceMove", None, true));
+    assert_eq!((moving, draws.len()), (Some("Move"), 1));
+    let (attacking, draws) =
+        trace_draws(|| sim.order_voice_request(&rules, actor, "VoiceAttack", None, true));
+    assert_eq!((attacking, draws.len()), (Some("Attack"), 1));
+    let (deploying, draws) = trace_draws(|| sim.deploy_voice_request(&rules, actor, true));
+    assert_eq!((deploying, draws.len()), (Some("Enter"), 0));
+    assert_eq!(sim.state_hash(), shared);
+
+    sim.session
+        .install_shared_house_sources(vec![0, 0], Some(1));
+    let (selected, draws) = trace_draws(|| sim.selection_voice_request(&rules, actor, true));
+    assert_eq!((selected, draws.len()), (None, 0));
+    let (moving, draws) =
+        trace_draws(|| sim.order_voice_request(&rules, actor, "VoiceMove", None, true));
+    assert_eq!((moving, draws.len()), (None, 1));
+    assert_eq!(sim.deploy_voice_request(&rules, actor, true), None);
+    assert_eq!(sim.state_hash(), shared);
+
+    let neutral = sim.interner.get("Other").unwrap();
+    sim.houses
+        .get_mut(&neutral)
+        .unwrap()
+        .set_multiplay_passive_for_test(true);
+    let (selected, draws) = trace_draws(|| sim.selection_voice_request(&rules, actor, true));
+    assert_eq!((selected, draws.len()), (None, 1));
 }
 
 fn scene(body: &str) -> (Simulation, RuleSet, u64) {
@@ -237,7 +293,7 @@ fn assert_move_voice_request(corpus: &serde_json::Value, row: &serde_json::Value
     // A declared native action boundary, before event encoding/audio. These
     // complete states are installed once, never reseeded between draws.
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(output["main_before_hex"].as_str().unwrap()).into();
+        SimRng::from_native_state_hex_for_test(output["main_before_hex"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(output["scenario_before_hex"].as_str().unwrap());
     sim.mapgen_rng =
@@ -404,7 +460,9 @@ fn attack_control_rules(corpus: &serde_json::Value, input: &serde_json::Value) -
             // The native component supplies index1 at its declared selector
             // seam. Use the existing gunner owner to reach the same index,
             // rather than duplicating selection in the voice implementation.
-            body.push_str("TurretCount=1\nWeapon1=VOICE_CONTROL\nWeapon2=VOICE_CONTROL\n");
+            // Ares validates index1 against WeaponCount. Both original
+            // secondary rows keep that record's weapon pointer null.
+            body.push_str("TurretCount=1\nWeaponCount=2\nWeapon1=VOICE_CONTROL\n");
         }
         Some(-1) => body.push_str("DeployFire=yes\nDeployFireWeapon=-1\n"),
         None | Some(0) => {}
@@ -428,6 +486,8 @@ fn attack_control_rules(corpus: &serde_json::Value, input: &serde_json::Value) -
     rules
 }
 
+// Ares replaces VoiceAttack's choice (TechnoClass_SelectFiringVoice
+// 1004B1D0, hook 0x7090A8): `ares_firing_voice_tiers_fall_through`.
 #[test]
 fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
     use crate::map::entities::EntityCategory;
@@ -478,7 +538,7 @@ fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
             if index == -1 {
                 entity.set_unit_simple_deploy_for_test(true, false, false);
             } else {
-                entity.set_gunner_weapon(index as i32, object);
+                entity.set_gunner_weapon(index as i32, object, rules.ares());
             }
         }
         let target = if input["null_target"] == true {
@@ -537,9 +597,12 @@ fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
         });
         if output["fault"].is_object() {
             native_faults += 1;
-            assert!(
-                result.is_err(),
-                "{name}: original NULL slot faults before a draw"
+            // VoiceAttack7090C0 dereferences the NULL slot here; VERA carries
+            // on with no attack voice and, as checked below, no draw.
+            assert_eq!(
+                result.unwrap(),
+                None,
+                "{name}: no voice where the original faults on a NULL slot"
             );
         } else {
             let request = result.unwrap();
@@ -666,8 +729,7 @@ fn attack_voice_selects_for_the_committed_target_without_retargeting_the_actor()
         actor,
         Some(TargetKind::Entity(2)),
         &rules,
-        None,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     )
     .unwrap();
     for (target, expected) in [
@@ -723,7 +785,7 @@ fn capture_enter_and_harvest_preserve_scalar_precedence_and_move_fallback() {
             ("VoiceEnter", enter),
             ("VoiceHarvest", harvest),
         ] {
-            let (sim, rules, id) = scene(body);
+            let (mut sim, rules, id) = scene(body);
             let (request, draws) =
                 trace_draws(|| sim.order_voice_request(&rules, id, field, None, true));
             assert_eq!(request, expected, "{field} with {body:?}");
@@ -743,7 +805,7 @@ fn capture_enter_and_harvest_preserve_scalar_precedence_and_move_fallback() {
 
 #[test]
 fn disabled_order_voice_rejects_before_move_or_fallback_is_reached() {
-    let (sim, rules, id) = scene("VoiceMove=Move\n");
+    let (mut sim, rules, id) = scene("VoiceMove=Move\n");
     for field in [
         "VoiceMove",
         "VoiceAttack",
@@ -788,7 +850,7 @@ fn allied_object_move_voice_matches_native_rng_and_queue() {
         assert!(matches!(entry, 0x006f_fbe0 | 0x0070_8fc0), "{name}");
         let is_direct = entry == 0x0070_8fc0;
         let body = format!("VoiceMove={}\n", voices.join(","));
-        let (sim, rules, id) = scene_with_input(&body, input);
+        let (mut sim, rules, id) = scene_with_input(&body, input);
         let human = sim.house_is_human_player(sim.entities().get(id).unwrap().owner());
         assert_eq!(
             sim.main_rng.native_state_hex(),
@@ -873,4 +935,29 @@ fn allied_object_move_voice_matches_native_rng_and_queue() {
     ] {
         assert!(count > 0, "missing native {name} control");
     }
+}
+
+/// Ares 3.0 TechnoClass_SelectFiringVoice (1004B1D0, hook 0x7090A8): an
+/// elite unit without an elite override speaks its rookie override, with no
+/// Main draw (stock draws from VoiceAttack instead).
+#[test]
+fn ares_firing_voice_tiers_fall_through() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    use crate::util::native_x87::NativeF32Bits;
+    let (mut sim, rules, actor) = scene(
+        "Primary=Gun\nVoicePrimaryWeaponAttack=Special\nVoiceAttack=Attack\n\
+         [Gun]\nDamage=10\nWarhead=AP\n[AP]\nVerses=100%\n",
+    );
+    sim.substrate
+        .entities
+        .get_mut(actor)
+        .unwrap()
+        .veterancy
+        .set_raw_for_test(NativeF32Bits::from_bits(2.0f32.to_bits()));
+    let main = sim.main_rng.native_state_hex();
+    assert_eq!(
+        sim.order_voice_request(&rules, actor, "VoiceAttack", None, true),
+        Some("Special")
+    );
+    assert_eq!(sim.main_rng.native_state_hex(), main);
 }

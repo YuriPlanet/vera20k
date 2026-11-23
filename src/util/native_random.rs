@@ -191,7 +191,7 @@ pub(crate) fn draw(words: &mut [u32], lead: &mut usize, lagged: &mut usize) -> u
     value
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

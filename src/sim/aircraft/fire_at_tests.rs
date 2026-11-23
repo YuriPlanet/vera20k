@@ -86,16 +86,21 @@ impl FireAtHost for Recorder {
         self.velocity = velocity;
     }
 
-    fn owner_is_player(&mut self) -> bool {
+    /// The row's one client: the owner's, when it is the player.
+    fn player_clients(&mut self) -> Vec<InternedId> {
         self.calls.push(json!(["owner_is_player"]));
-        self.input["player"].as_bool().unwrap()
+        if self.input["player"].as_bool().unwrap() {
+            vec![crate::sim::intern::StringInterner::new().intern("Player")]
+        } else {
+            Vec::new()
+        }
     }
 
     fn location(&mut self) -> ProjectileCoord {
         coord(&self.input["location"])
     }
 
-    fn is_shrouded(&mut self, point: ProjectileCoord) -> bool {
+    fn is_shrouded(&mut self, _client: InternedId, point: ProjectileCoord) -> bool {
         self.calls
             .push(json!(["is_shrouded", [point.x, point.y, point.z]]));
         let shrouded = self.input["shrouded_at"].as_i64() == Some(self.shroud_calls);
@@ -103,7 +108,7 @@ impl FireAtHost for Recorder {
         shrouded
     }
 
-    fn reveal_area(&mut self, final_pass: bool) {
+    fn reveal_area(&mut self, _client: InternedId, final_pass: bool) {
         self.calls.push(json!([
             "reveal_area",
             self.input["location"],

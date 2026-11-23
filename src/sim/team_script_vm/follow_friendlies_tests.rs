@@ -71,11 +71,11 @@ impl Fixture {
 
     fn step(&mut self) {
         self.sim
-            .team_step_script(self.team, &self.rules, None, FrameEffects::default());
+            .team_step_script(self.team, &self.rules, None, &mut FrameEffects::default());
     }
 
     fn center(&mut self) -> Option<TeamTarget> {
-        self.sim.team_calc_center(self.team, &self.rules, None);
+        self.sim.team_calc_center(self.team, &self.rules);
         self.sim.team_script_vm.team(self.team).unwrap().zone
     }
 
@@ -99,7 +99,7 @@ impl Fixture {
 
     fn target(&mut self, id: u64, target: Option<TargetKind>) {
         self.sim
-            .assign_target_represented(id, target, &self.rules, None, FrameEffects::default())
+            .assign_target_represented(id, target, &self.rules, &mut FrameEffects::default())
             .unwrap();
     }
 }
@@ -445,7 +445,7 @@ fn follow_friendlies_snapshot_keeps_focus_and_continues_reselection_without_rng_
             .unwrap()
             .health
             .set_for_test(0);
-        sim.team_step_script(f.team, &f.rules, None, FrameEffects::default());
+        sim.team_step_script(f.team, &f.rules, None, &mut FrameEffects::default());
         assert_eq!(
             sim.team_script_vm.team(f.team).unwrap().zone,
             Some(TeamTarget::Object(second))
@@ -471,7 +471,7 @@ fn follow_friendlies_placement_scope_admits_limbo_without_leaking() {
     assert_eq!(f.center(), None);
     let team = f.team;
     f.sim
-        .with_object_placement_scope(|sim| sim.team_calc_center(team, &f.rules, None));
+        .with_object_placement_scope(|sim| sim.team_calc_center(team, &f.rules));
     assert_eq!(
         f.sim.team_script_vm.team(team).unwrap().zone,
         Some(TeamTarget::Object(friendly))

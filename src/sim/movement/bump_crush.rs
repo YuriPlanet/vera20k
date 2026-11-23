@@ -166,7 +166,7 @@ pub(crate) fn blocker_plane_source(
     if entity.death.is_dying() || !entity.lifecycle.cell_marked() {
         return None;
     }
-    if entity.passenger_role.is_inside_transport()
+    if entity.passenger_role().is_inside_transport()
         || crate::sim::occupancy::cell_list_layer_for_entity(entity, terrain).is_none()
     {
         return None;
@@ -513,7 +513,7 @@ impl CrushTarget {
     pub fn from_entity(entity: &GameEntity, current_frame: u32) -> Self {
         Self {
             category: entity.category(),
-            crushable: entity.crushable_facts.crushable(),
+            crushable: entity.seldom.crushable_facts.crushable(),
             deploy_crush_immune: deploy_crush_immune(entity),
             omni_crush_resistant: entity.mover_facts.omni_crush_resistant(),
             iron_curtained: crate::sim::superweapon::invulnerability::is_invulnerable(
@@ -557,9 +557,8 @@ impl CrushTarget {
 /// `UnitClass::Death_Explosion` with its Scenario picks and anims, then the
 /// same release), `Record_The_Kill` (score, trigger events, EVA and the
 /// crusher's veterancy, which this engine now pays), then unmark, limbo and
-/// `UnInit`; no smudge. `Simulation::per_cell_process` runs them, except that
-/// the captive release waits for the victim's UnInit (residual in
-/// `sim::capture_manager`).
+/// `UnInit`; no smudge. `Simulation::per_cell_process` runs them in that
+/// order, the captive release included.
 ///
 /// GSI-08.17 named two more gaps underneath it.
 /// - **Overlay crushing — CLOSED.** `Per_Cell_Process @ 0x0073AFD4` flattens any
@@ -571,10 +570,9 @@ impl CrushTarget {
 ///   This block previously described the rule correctly while listing it as
 ///   open, and the gate it describes was for a while implemented as a Drive
 ///   locomotor test instead.
-/// - **Mind-control release.** A crushed controller frees its captives in its
-///   UnInit (`FootClass::UnInit @ 0x004DE5DD`) later in the same frame, not
-///   inside vt+0x170 before Record_The_Kill (residual in
-///   `sim::capture_manager`).
+/// - **Mind-control release — CLOSED.** A crushed controller frees its
+///   captives inside vt+0x170, before Record_The_Kill
+///   (`Simulation::free_all_captures` in `per_cell_process`).
 pub fn can_crush(
     capability: CrushCapability,
     target: CrushTarget,
@@ -636,8 +634,11 @@ pub(crate) fn emit_crush_kill_sounds_at(
     interner: &mut crate::sim::intern::StringInterner,
     sound_events: &mut crate::sim::world::FrameChannel<crate::sim::world::SimSoundEvent>,
 ) {
-    let type_str = interner.resolve(victim.type_ref()).to_string();
-    let Some(obj) = rules.object(&type_str) else {
+    // Unit7418CE/7418D4 and Jumpjet54CD06/54CD0C read the victim's
+    // concrete Type+1F0, even when another class registers the same ID.
+    let Some(obj) =
+        interner.object_type_in_category(victim.type_ref(), victim.category().into(), rules)
+    else {
         return;
     };
     if let Some(ref crush_sound) = obj.crush_sound {
@@ -649,57 +650,52 @@ pub(crate) fn emit_crush_kill_sounds_at(
     }
 }
 
-/// The occupants a crusher fully inside the cell kills, in cell-list order:
-/// the `entering == 0` crush loop of `UnitClass::PerCellProcess`. The
-/// entering cell's unforced scatter is `Scatter_Objects`' dispatch walk
-/// ([`super::scatter::scatter_objects_admitted`]).
+/// Whether a crusher fully inside the cell kills occupant `victim_id`: the
+/// `entering == 0` crush loop of `UnitClass::PerCellProcess`, asked of each
+/// occupant in cell-list order. The entering cell's unforced scatter is
+/// `Scatter_Objects`' dispatch walk
+/// ([`super::scatter::retain_scatter_admitted`]).
 ///
 /// `current_frame` feeds the Iron Curtain gate of the crush predicate.
-pub fn select_crush_victims(
-    occ: &[u64],
+pub fn crushes(
+    victim_id: u64,
     entities: &EntityStore,
     crusher_id: u64,
-    alliances: &crate::map::houses::HouseAllianceMap,
+    alliances: &crate::sim::house_diplomacy::HouseAlliances,
     interner: &crate::sim::intern::StringInterner,
     crusher_coord: (i32, i32),
     capability: CrushCapability,
     current_frame: u32,
-) -> Vec<u64> {
-    if !capability.can_crush_units() {
-        return Vec::new();
+) -> bool {
+    if !capability.can_crush_units() || victim_id == crusher_id {
+        return false;
     }
     let Some(crusher) = entities.get(crusher_id) else {
-        return Vec::new();
+        return false;
     };
     let crusher_owner = crusher.owner();
-    occ.iter()
-        .copied()
-        .filter(|&id| id != crusher_id)
-        .filter(|&id| {
-            entities.get(id).is_some_and(|victim| {
-                // The victim's GetCoords XY (vt+0x48, `0x007417FB`) that
-                // `TechnoClass::DistanceSquaredTo` (`0x005F6560`) measures in
-                // `UnitClass::Crush_Or_Prescatter_Cell` (`0x007416A0`).
-                let [x, y] = super::ground_pose::position_world_xy(&victim.position);
-                within_crush_distance_sq(crusher_coord, (x, y))
-                    && can_crush(
-                        capability,
-                        CrushTarget::from_entity(victim, current_frame),
-                        |owner| {
-                            crate::sim::combat::combat_weapon::is_ally_by_object(
-                                Some(alliances),
-                                interner,
-                                crusher_owner,
-                                owner,
-                            )
-                        },
+    entities.get(victim_id).is_some_and(|victim| {
+        // The victim's GetCoords XY (vt+0x48, `0x007417FB`) that
+        // `TechnoClass::DistanceSquaredTo` (`0x005F6560`) measures in
+        // `UnitClass::Crush_Or_Prescatter_Cell` (`0x007416A0`).
+        let [x, y] = super::ground_pose::position_world_xy(&victim.position);
+        within_crush_distance_sq(crusher_coord, (x, y))
+            && can_crush(
+                capability,
+                CrushTarget::from_entity(victim, current_frame),
+                |owner| {
+                    crate::sim::combat::combat_weapon::is_ally_by_object(
+                        Some(alliances),
+                        interner,
+                        crusher_owner,
+                        owner,
                     )
-                    // UnitCrush741811..741819 skips Object+8D only here;
-                    // the falling occupant remains crushable for cell entry.
-                    && !victim.is_falling_down()
-            })
-        })
-        .collect()
+                },
+            )
+            // UnitCrush741811..741819 skips Object+8D only here;
+            // the falling occupant remains crushable for cell entry.
+            && !victim.is_falling_down()
+    })
 }
 
 // ---------------------------------------------------------------------------

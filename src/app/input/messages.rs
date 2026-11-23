@@ -1,5 +1,5 @@
 //! Chat/system message surface driver (study §3.1): anchors the
-//! `ui::messages::MessageList` to the tactical viewport (x+3 / y / w−14),
+//! `ui::messages::MessageList` to the tactical viewport,
 //! posts system messages (insert sound = [AudioVisual] IncomingMessage),
 //! expires rows on Main_Tick against the advancing process wall clock,
 //! and builds the text instances drawn between sidebar text and tooltip.
@@ -11,9 +11,6 @@ use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
 
-/// Native Init anchors: x = tactical_x + 3, y = tactical_y, w = tactical_w − 14.
-const MESSAGE_X_INSET: i32 = 3;
-const MESSAGE_WIDTH_INSET: i32 = 14;
 /// Fallback while match color schemes are unavailable.
 const MESSAGE_RGB_SYSTEM: [f32; 3] = [1.0, 1.0, 1.0];
 /// `0xF0` native 16 ms timer buckets.
@@ -39,20 +36,34 @@ pub(crate) fn message_now_ms(state: &AppState) -> u64 {
 /// scenario-side priority through69A310 and adds a non-silent4046 row.
 /// MessageDelay's ftol result is in WallClock16ms buckets, not sim frames.
 pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     // The selected campaign opening keeps its startup player/country. The
     // existing House owner supplies that side; a later scenario-side change
     // independent of the current House remains a separate retained-field gap.
-    let side = runtime
-        .simulation
-        .session()
-        .current_house()
-        .and_then(|owner| runtime.simulation.houses().get(&owner))
-        .map_or(0, |house| i32::from(house.side_index()));
+    // Ares `TActionClass_Execute_MessageColor @ 0x1002FA80` reads the saved
+    // Scenario.PlayerSideIndex instead. Its `[Side] MessageTextColor=` lives
+    // in the SideExt only Rules read the Ares way hold.
     let rules = &runtime.resources.rules;
-    let rgb = trigger_message_rgb(&rules.color_schemes, side);
+    let ares = rules.ares_form();
+    let side = if ares {
+        runtime.simulation.session().scenario_side()
+    } else {
+        runtime
+            .simulation
+            .session()
+            .current_house()
+            .and_then(|owner| runtime.simulation.houses().get(&owner))
+            .map_or(0, |house| i32::from(house.side_index()))
+    };
+    let rgb = if ares {
+        ares_message_text_rgb(rules, side).unwrap_or_else(|| {
+            trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
+        })
+    } else {
+        trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
+    };
     let timeout = message_delay_timeout_ms(rules.general.message_delay_minutes);
     post_localized_message(
         state,
@@ -79,16 +90,31 @@ fn message_delay_buckets(delay: crate::util::native_x87::NativeF64Bits) -> i32 {
         .map_or(0, X87Chop53::ftol_i32_low_masked)
 }
 
+/// Ares `[Side] MessageTextColor=`: the stored runtime ColorScheme index (two
+/// schemes per `[Colors]` entry) resolves to that entry. `-1`/an
+/// out-of-range entry leaves the stock side-priority path unchanged.
+fn ares_message_text_rgb(rules: &crate::rules::ruleset::RuleSet, side: i32) -> Option<[f32; 3]> {
+    let index = rules.side_message_text_color_index(side)?;
+    if index < 0 {
+        return None;
+    }
+    let entry = usize::try_from(index).ok()? / 2;
+    crate::rules::color_scheme::scheme_hsv_by_entry(&rules.color_schemes, entry)
+        .map(crate::rules::color_scheme::hsv_to_rgb)
+        .map(|rgb| rgb.map(|channel| f32::from(channel) / 255.0))
+}
+
 fn trigger_message_rgb(
     schemes: &[crate::rules::color_scheme::ColorSchemeEntry],
     side: i32,
+    skirmish_colors: crate::rules::skirmish_colors::SkirmishColorMode,
 ) -> [f32; 3] {
     let priority = match side {
         0 => 2,
         1 => 1,
         _ => 5,
     };
-    let entry = crate::rules::color_scheme::scheme_entry_for_priority(priority);
+    let entry = skirmish_colors.entry_for_priority(priority);
     crate::rules::color_scheme::scheme_hsv_by_entry(schemes, entry)
         .map(crate::rules::color_scheme::hsv_to_rgb)
         .unwrap_or([255; 3])
@@ -100,9 +126,10 @@ pub(crate) fn post_type_select_feedback(state: &mut AppState, csf_key: &str) {
     post_silent_house_feedback(state, csf_key, TYPE_SELECT_MESSAGE_TIMEOUT_MS);
 }
 
-///63A0D0/639FD0/639130 use the same silent730A90 HUD owner with duration1E0.
-/// Their separate ScoldSound belongs to the planning input owner.
-pub(crate) fn post_planning_refusal(state: &mut AppState, csf_key: &str) {
+/// PlanMgr's refusals (63A0D0/639FD0/639130/638120/637270) and help
+/// (63A120/63A1B0) use the same silent730A90 HUD owner with duration1E0.
+/// A refusal's separate ScoldSound belongs to the planning input owner.
+pub(crate) fn post_planning_message(state: &mut AppState, csf_key: &str) {
     post_silent_house_feedback(state, csf_key, 0x1E0 * 16);
 }
 
@@ -215,6 +242,20 @@ pub(crate) fn post_selection_navigation_text(state: &mut AppState, text: &str) {
 pub(crate) enum HudMessage {
     LowPower,
     SuperWeapon(&'static str),
+    /// The configured label/style is resolved from its type at presentation.
+    AresSuperWeaponRefused(crate::sim::intern::InternedId),
+    /// SWTypeExt::PrintMessage10033BD0 of one `Message.*` label, with the
+    /// House its Message.FirerColor would use (None: Gold).
+    AresSuperWeaponMessage {
+        sw_type: crate::sim::intern::InternedId,
+        message: crate::rules::superweapon_type::AresSuperWeaponMessage,
+        firer: Option<crate::sim::intern::InternedId>,
+    },
+    /// A captured tech building's `Message.Lost`/`Message.Capture` label
+    /// (Ares `BuildingClass_ChangeOwnership_Tech @ 10013E40`'s PrintMessage
+    /// lambda): PlayerPtr's colour, MessageDelay through the CRT `_ftol2`
+    /// (`100772B0`), silent 0.
+    AresTechCaptureLabel(crate::sim::intern::InternedId),
     /// MPlayer_Defeated's line for a non-observer House (`0x004FC271`,
     /// `0x004FC34F`).
     PlayerDefeated(crate::sim::intern::InternedId),
@@ -230,17 +271,37 @@ pub(crate) enum HudMessage {
     /// (`0x00430CF9..0x00430D69`): PlayerPtr's scheme `+0x16054`, style
     /// 4046, `0xE1` buckets, silent 0.
     BeaconHelp(&'static str),
+    /// VERA's optional detailed EVA text (`[VERA] DetailedEvaText=`, default
+    /// off): one line naming the object an EVA voice spoke about without
+    /// naming it. The audio dispatch arm that admitted the voice collects it,
+    /// so text and voice share every gate. `label` selects the VERA template;
+    /// `type_id` is the sim's own type, never a lookup or a guess.
+    EvaObjectLine {
+        label: &'static str,
+        type_id: crate::sim::intern::InternedId,
+    },
+    /// VERA's optional detailed EVA text for an alert with no single subject
+    /// object (base/harvester under attack, infiltration, new construction).
+    /// Unlike [`Self::EvaObjectLine`] it names no type, so the sim event need
+    /// not carry an id. `label` selects the VERA template, resolved verbatim.
+    EvaTextLine {
+        label: &'static str,
+    },
 }
 
 impl HudMessage {
-    fn csf_key(self) -> &'static str {
-        match self {
+    fn csf_key(self) -> Option<&'static str> {
+        Some(match self {
+            Self::AresSuperWeaponRefused(_)
+            | Self::AresSuperWeaponMessage { .. }
+            | Self::AresTechCaptureLabel(_) => return None,
             Self::LowPower => "TXT_LOW_POWER", // original House4F8D4A
             Self::SuperWeapon(key) | Self::BeaconHelp(key) => key,
             Self::PlayerDefeated(_) => "TXT_PLAYER_DEFEATED",
             Self::Alliance { formed: true, .. } => "TXT_HAS_ALLIED",
             Self::Alliance { formed: false, .. } => "TXT_AT_WAR",
-        }
+            Self::EvaObjectLine { .. } | Self::EvaTextLine { .. } => return None,
+        })
     }
 
     fn timeout_ms(self, rules: &crate::rules::ruleset::RuleSet) -> Option<u64> {
@@ -251,7 +312,14 @@ impl HudMessage {
                 message_delay_timeout_ms(rules.general.message_delay_minutes)
             }
             Self::SuperWeapon(_) => Some(SUPER_WEAPON_MESSAGE_TIMEOUT_MS),
+            Self::AresSuperWeaponRefused(_)
+            | Self::AresSuperWeaponMessage { .. }
+            | Self::AresTechCaptureLabel(_) => {
+                ares_message_delay_timeout_ms(rules.general.message_delay_minutes)
+            }
             Self::BeaconHelp(_) => Some(BEACON_HELP_TIMEOUT_MS),
+            // `post_hud_message` posts these through `post_eva_text`.
+            Self::EvaObjectLine { .. } | Self::EvaTextLine { .. } => None,
         }
     }
 
@@ -259,20 +327,127 @@ impl HudMessage {
         self,
         rules: &crate::rules::ruleset::RuleSet,
         rgb: [f32; 3],
-    ) -> crate::ui::messages::MessagePost<'static> {
-        crate::ui::messages::MessagePost {
+    ) -> Option<crate::ui::messages::MessagePost<'static>> {
+        Some(crate::ui::messages::MessagePost {
             prefix: None,
-            text: self.csf_key(),
+            text: self.csf_key()?,
             rgb,
             timeout_ms: self.timeout_ms(rules),
             silent: false,
-        }
+        })
     }
 }
 
 fn message_delay_timeout_ms(delay: crate::util::native_x87::NativeF64Bits) -> Option<u64> {
     let buckets = message_delay_buckets(delay);
+    message_timeout_ms_from_buckets(buckets)
+}
+
+fn message_timeout_ms_from_buckets(buckets: i32) -> Option<u64> {
     (buckets != -1).then(|| u64::try_from(buckets).unwrap_or(0) * 16)
+}
+
+/// Ares PrintMessage10033BD0 uses CRT100772B0's signed32 conversion,
+/// unlike the stock callers' Math7C5F00 low dword. Reuse the numeric owner.
+fn ares_message_delay_timeout_ms(delay: crate::util::native_x87::NativeF64Bits) -> Option<u64> {
+    use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
+    let scaled = X::mul(
+        X::load_f64(delay),
+        X::load_f64(NativeF64Bits::from_bits(0x408c_2000_0000_0000)),
+    );
+    message_timeout_ms_from_buckets(X::fistp_i32_masked(scaled))
+}
+
+/// Installed Ares PrintMessage10033BD0: retain the caller's label, choose
+/// firer/configured/player colour (Gold only for a null house), MessageDelay
+/// in900 wall-clock buckets, no prefix and silent0. The existing message list
+/// owns CSF lookup, empty-text admission, repeated rows, expiry and insert audio.
+fn ares_message_post<'a>(
+    settings: &'a crate::rules::superweapon_type::AresSuperWeaponMessages,
+    message: crate::rules::superweapon_type::AresSuperWeaponMessage,
+    schemes: &[crate::rules::color_scheme::ColorSchemeEntry],
+    colors: &crate::map::houses::HouseColorMap,
+    firer: Option<&str>,
+    player: Option<&str>,
+    delay: crate::util::native_x87::NativeF64Bits,
+) -> Option<crate::ui::messages::MessagePost<'a>> {
+    let text = settings.label(message);
+    if text.is_empty() {
+        return None;
+    }
+    let house = if settings.firer_color() {
+        firer
+    } else {
+        player
+    };
+    let rgb = if !settings.firer_color() && settings.color_scheme() >= 0 {
+        country_message_rgb(settings.color_scheme(), schemes)
+    } else if let Some(house) = house {
+        house_message_rgb(Some(house), colors, Some(schemes))
+    } else {
+        // PrintMessage10033BD0 calls ColorScheme::Find("Gold", 1): the even member.
+        let gold = crate::rules::color_scheme::scheme_entry_by_name(schemes, "Gold")
+            .map_or(-1, |entry| (entry as i32).wrapping_mul(2));
+        country_message_rgb(gold, schemes)
+    };
+    Some(crate::ui::messages::MessagePost {
+        prefix: None,
+        text,
+        rgb,
+        timeout_ms: ares_message_delay_timeout_ms(delay),
+        silent: false,
+    })
+}
+
+/// A cameo press refusal's line, with the local player as the firer: the
+/// select hook 10034DA0 prints only the funds and CannotFire labels.
+pub(crate) fn post_ares_superweapon_refusal(
+    state: &mut AppState,
+    section: &str,
+    refusal: crate::sim::superweapon::AresCameoRefusal,
+) {
+    use crate::rules::superweapon_type::AresSuperWeaponMessage as M;
+    use crate::sim::superweapon::AresCameoRefusal as R;
+    let message = match refusal {
+        R::CannotFire => M::CannotFire,
+        R::InsufficientFunds => M::InsufficientFunds,
+        R::NotReady | R::ManualFireDisabled | R::Unstoppable => return,
+    };
+    let owner = crate::app::input::commands::preferred_local_owner_name(state);
+    post_ares_superweapon_message(state, section, message, owner.as_deref());
+}
+
+/// SWTypeExt::PrintMessage10033BD0 of one label of `section`, for `firer`
+/// (the House whose colour Message.FirerColor picks; None prints Gold).
+pub(crate) fn post_ares_superweapon_message(
+    state: &mut AppState,
+    section: &str,
+    message: crate::rules::superweapon_type::AresSuperWeaponMessage,
+    firer: Option<&str>,
+) {
+    let Some(settings) = state
+        .rules()
+        .and_then(|rules| rules.super_weapon(section))
+        .map(|sw| sw.ares_messages().clone())
+    else {
+        return;
+    };
+    let player = crate::app::input::commands::preferred_local_owner_name(state);
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let Some(post) = ares_message_post(
+        &settings,
+        message,
+        &rules.color_schemes,
+        &state.match_state.match_presentation.house_color_map,
+        firer,
+        player.as_deref(),
+        rules.general.message_delay_minutes,
+    ) else {
+        return;
+    };
+    post_localized_message(state, &post);
 }
 
 /// House4F8D5C and the Super print callers use MessageList5D3BA0 with
@@ -281,17 +456,87 @@ fn message_delay_timeout_ms(delay: crate::util::native_x87::NativeF64Bits) -> Op
 /// The callers' text flags still share the existing bitmap-text lane; this
 /// transport does not establish native glyph/style raster equivalence.
 pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
+    if let HudMessage::AresSuperWeaponRefused(sw_type) = message {
+        let section = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+            runtime
+                .simulation
+                .interner()
+                .try_resolve(sw_type)
+                .map(str::to_owned)
+        });
+        if let Some(section) = section {
+            post_ares_superweapon_refusal(
+                state,
+                &section,
+                crate::sim::superweapon::AresCameoRefusal::CannotFire,
+            );
+        }
+        return;
+    }
+    if let HudMessage::AresSuperWeaponMessage {
+        sw_type,
+        message,
+        firer,
+    } = message
+    {
+        let names = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+            let interner = runtime.simulation.interner();
+            Some((
+                interner.try_resolve(sw_type)?.to_owned(),
+                firer.and_then(|firer| interner.try_resolve(firer).map(str::to_owned)),
+            ))
+        });
+        if let Some((section, firer)) = names {
+            post_ares_superweapon_message(state, &section, message, firer.as_deref());
+        }
+        return;
+    }
+    if let HudMessage::AresTechCaptureLabel(label) = message {
+        let Some(label) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+            runtime
+                .simulation
+                .interner()
+                .try_resolve(label)
+                .map(str::to_owned)
+        }) else {
+            return;
+        };
+        let Some(rules) = state.rules() else {
+            return;
+        };
+        let post = crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &label,
+            rgb: house_message_rgb(
+                crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+                &state.match_state.match_presentation.house_color_map,
+                Some(&rules.color_schemes),
+            ),
+            timeout_ms: message.timeout_ms(rules),
+            silent: false,
+        };
+        post_localized_message(state, &post);
+        return;
+    }
+    if let HudMessage::EvaObjectLine { label, type_id } = message {
+        if let Some(name) = eva_text_product_name(state, type_id) {
+            post_eva_text(state, label, &name);
+        }
+        return;
+    }
+    if let HudMessage::EvaTextLine { label } = message {
+        post_eva_plain_text(state, label);
+        return;
+    }
+    let Some(key) = message.csf_key() else {
+        return;
+    };
     if let HudMessage::PlayerDefeated(house) = message {
-        post_house_line(state, message.csf_key(), house, HouseLineColor::Player);
+        post_house_line(state, key, house, HouseLineColor::Player);
         return;
     }
     if let HudMessage::Alliance { owner, other, .. } = message {
-        post_house_names_line(
-            state,
-            message.csf_key(),
-            &[owner, other],
-            HouseLineColor::Country,
-        );
+        post_house_names_line(state, key, &[owner, other], HouseLineColor::Country);
         return;
     }
     let Some(rules) = state.rules() else {
@@ -302,8 +547,188 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         &state.match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
-    let post = message.post(rules, rgb);
-    post_localized_message(state, &post);
+    if let Some(post) = message.post(rules, rgb) {
+        post_localized_message(state, &post);
+    }
+}
+
+/// The visible name of a sim type, through the owner every tooltip uses
+/// ([`crate::assets::csf_file::type_ui_name`]); a type with no `UIName=`
+/// keeps its rules key (e.g. `HTNK`).
+fn eva_text_product_name(
+    state: &AppState,
+    type_id: crate::sim::intern::InternedId,
+) -> Option<String> {
+    let section = state
+        .match_state
+        .sim_runtime
+        .runtime()?
+        .simulation
+        .interner()
+        .resolve(type_id);
+    eva_text_name(section, state.rules()?, state.process_assets.csf.as_ref())
+}
+
+fn eva_text_name(
+    section: &str,
+    rules: &crate::rules::ruleset::RuleSet,
+    csf: Option<&crate::assets::csf_file::CsfFile>,
+) -> Option<String> {
+    let object = rules.object(section)?;
+    let name = crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf);
+    Some(if name.is_empty() {
+        section.to_owned()
+    } else {
+        name
+    })
+}
+
+/// The sidebar speaks `EVA_Building` / `EVA_Training` without naming the
+/// object, while the clicked cameo carries its type key. Only these two lines
+/// get a row: hold/resume arms speak the same line and name the resumed type,
+/// while on-hold, unable-to-comply and select-target arms speak other lines.
+/// The cancel line has its own row; see [`post_eva_cancel`].
+pub(crate) fn post_eva_production_start(state: &mut AppState, eva_line: &str, type_key: &str) {
+    let label = match eva_line {
+        crate::app::input::sidebar_eva::EVA_BUILDING => "VERA:EvaBuildingStarted",
+        crate::app::input::sidebar_eva::EVA_TRAINING => "VERA:EvaTrainingStarted",
+        _ => return,
+    };
+    post_eva_type_line(state, label, type_key);
+}
+
+/// `EVA_Canceled` (`SelectClass::Action @ 0x006AAD00`, `0x006AAE39`) names
+/// nothing either, and a single `ABANDON` removed exactly the clicked cameo's
+/// type. `structure` comes from the strip that owns the click.
+pub(crate) fn post_eva_cancel(state: &mut AppState, type_key: &str, structure: bool) {
+    let label = if structure {
+        "VERA:EvaBuildingCanceled"
+    } else {
+        "VERA:EvaTrainingCanceled"
+    };
+    post_eva_type_line(state, label, type_key);
+}
+
+fn post_eva_type_line(state: &mut AppState, label: &str, type_key: &str) {
+    if !state.persistence.options_profile.detailed_eva_text {
+        return;
+    }
+    let Some(name) = state
+        .rules()
+        .and_then(|rules| eva_text_name(type_key, rules, state.process_assets.csf.as_ref()))
+    else {
+        return;
+    };
+    post_eva_text(state, label, &name);
+}
+
+/// Post one detailed EVA text row from the VERA template `label`, with the
+/// object's `{name}` filled in. The rows are subtitles, not chat: `silent`
+/// skips the `IncomingMessage` insert sound and the typing reveal, so the
+/// EVA voice stays the only sound.
+/// Detailed EVA text for a newly unlocked construction option. The voice is
+/// app-local (sidebar cameo insert), so its text is posted beside that voice
+/// rather than through the sim sound-events bridge.
+pub(crate) fn post_eva_new_construction(state: &mut AppState) {
+    post_eva_plain_text(state, "VERA:EvaNewConstruction");
+}
+
+/// Post one detailed EVA row with no subject object: `label` is a complete
+/// VERA template (no `{name}` slot), used for alerts whose sim event carries
+/// no type id. Shares the switch and the subtitle styling with
+/// [`post_eva_text`].
+fn post_eva_plain_text(state: &mut AppState, label: &str) {
+    if !state.persistence.options_profile.detailed_eva_text {
+        return;
+    }
+    let Some(text) = crate::i18n::find(label) else {
+        return;
+    };
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let rgb = house_message_rgb(
+        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        &state.match_state.match_presentation.house_color_map,
+        Some(&rules.color_schemes),
+    );
+    post_resolved_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &text,
+            rgb,
+            timeout_ms,
+            silent: true,
+        },
+    );
+}
+
+fn post_eva_text(state: &mut AppState, label: &str, name: &str) {
+    if !state.persistence.options_profile.detailed_eva_text {
+        return;
+    }
+    let Some(template) = crate::i18n::find(label) else {
+        return;
+    };
+    let text = crate::i18n::fill(&template, &[("name", &name)]);
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let rgb = house_message_rgb(
+        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        &state.match_state.match_presentation.house_color_map,
+        Some(&rules.color_schemes),
+    );
+    post_resolved_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &text,
+            rgb,
+            timeout_ms,
+            silent: true,
+        },
+    );
+}
+
+/// The localized smart-command result line for `count` issued orders.
+fn auto_loaded_line(count: usize) -> Option<String> {
+    let template = crate::i18n::find("VERA:EvaAutoLoaded")?;
+    Some(crate::i18n::fill(&template, &[("count", &count)]))
+}
+
+/// VERA's smart-command result line: the number of orders Ctrl+D issued.
+/// Shares the detailed-EVA text lane and every one of its gates; the count is
+/// the number of orders the hotkey actually scheduled, never a guess.
+pub(crate) fn post_eva_auto_loaded(state: &mut AppState, count: usize) {
+    if !state.persistence.options_profile.detailed_eva_text {
+        return;
+    }
+    let Some(text) = auto_loaded_line(count) else {
+        return;
+    };
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let rgb = house_message_rgb(
+        crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+        &state.match_state.match_presentation.house_color_map,
+        Some(&rules.color_schemes),
+    );
+    post_resolved_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &text,
+            rgb,
+            timeout_ms,
+            silent: true,
+        },
+    );
 }
 
 /// The colour of a House-named line.
@@ -330,6 +755,18 @@ pub(crate) fn post_house_line(
     post_house_names_line(state, key, &[house], color);
 }
 
+/// [`post_house_line`] naming player `name` instead of the House: VERA
+/// shared control names which of a shared House's players left.
+pub(crate) fn post_player_house_line(
+    state: &mut AppState,
+    key: &str,
+    house: crate::sim::intern::InternedId,
+    name: &str,
+    color: HouseLineColor,
+) {
+    post_named_house_line(state, key, house, &[name.to_owned()], color);
+}
+
 /// [`post_house_line`] with one `%s` per House, coloured by the first.
 fn post_house_names_line(
     state: &mut AppState,
@@ -347,10 +784,21 @@ fn post_house_names_line(
     let Some(&house) = houses.first() else {
         return;
     };
+    post_named_house_line(state, key, house, &names, color);
+}
+
+/// The line itself: the template with `names`, coloured by `house`.
+fn post_named_house_line(
+    state: &mut AppState,
+    key: &str,
+    house: crate::sim::intern::InternedId,
+    names: &[String],
+    color: HouseLineColor,
+) {
     let Some(sim) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| &runtime.simulation)
     else {
         return;
@@ -372,12 +820,16 @@ fn post_house_names_line(
         ),
         HouseLineColor::Country => {
             // HouseType+0xC0 holds 2*entry+1 (ReadColor 0x474A90).
+            // RESIDUAL (kept by the maintainer, 2026-11-15): a multiplayer
+            // SetCreditsAndColor overwrites it with the slot's raw colour
+            // priority (`0x004FCE17`), so gamemd colours these lines with that
+            // scheme of the country's last slot house; VERA keeps Color=.
             let scheme = country.map_or(0, |country| rules.country_color_scheme(&country));
             country_message_rgb(scheme, &rules.color_schemes)
         }
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    let template = crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned();
+    let template = state.csf_text(key);
     let args: Vec<crate::assets::csf_file::CsfArg<'_>> = names
         .iter()
         .map(|name| crate::assets::csf_file::CsfArg::Str(name))
@@ -401,7 +853,7 @@ pub(crate) fn player_line_rgb(state: &AppState, owner: crate::sim::intern::Inter
     let owner = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| runtime.simulation.interner().resolve(owner).to_string());
     house_message_rgb(
         owner.as_deref(),
@@ -417,7 +869,7 @@ pub(crate) fn packet_player_line_rgb(state: &AppState, priority: i32) -> [f32; 3
         return MESSAGE_RGB_SYSTEM;
     };
     country_message_rgb(
-        crate::rules::color_scheme::scheme_index_for_priority(priority) as i32,
+        rules.skirmish_colors().scheme_index_for_priority(priority) as i32,
         &rules.color_schemes,
     )
 }
@@ -440,6 +892,30 @@ pub(crate) fn post_chat_line(state: &mut AppState, name: &str, text: &str, rgb: 
             silent: false,
         },
     );
+}
+
+/// Radar subtitle callback `0x005BF360`: literal text, scheme 0 and native
+/// MessageList duration buckets; cue Position/RGB belong to full-screen movies.
+pub(crate) fn post_movie_subtitle(state: &mut AppState, text: &str, duration: u32) {
+    let rgb = state.rules().map_or(MESSAGE_RGB_SYSTEM, |rules| {
+        country_message_rgb(0, &rules.color_schemes)
+    });
+    post_resolved_message(state, &movie_subtitle_post(text, duration, rgb));
+}
+
+fn movie_subtitle_post(
+    text: &str,
+    duration: u32,
+    rgb: [f32; 3],
+) -> crate::ui::messages::MessagePost<'_> {
+    crate::ui::messages::MessagePost {
+        prefix: None,
+        text,
+        rgb,
+        // 0x005BF360 passes the cue duration as Add_Message's signed timeout.
+        timeout_ms: message_timeout_ms_from_buckets(duration as i32),
+        silent: false,
+    }
 }
 
 /// The observer gate's silent `TXT_OBSERVER_CANT_SEND` row in the "Grey"
@@ -484,14 +960,9 @@ pub(crate) fn post_cooperative_save_result(state: &mut AppState, saved: bool) {
     post_grey_row(state, key, true, false);
 }
 
-/// A row in `GadgetClass::GetColorScheme` (`0x004E12D0`, "Grey"), flags
-/// 0x16, `MessageDelay * 900`; `text` is a CSF key when `localize`.
-fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool) {
-    let Some(rules) = state.rules() else {
-        return;
-    };
-    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    let rgb = crate::rules::color_scheme::scheme_entry_by_name(&rules.color_schemes, "Grey")
+/// `GadgetClass::GetColorScheme`'s "Grey" (`0x004E12D0`) as a row colour.
+fn grey_rgb(rules: &crate::rules::ruleset::RuleSet) -> [f32; 3] {
+    crate::rules::color_scheme::scheme_entry_by_name(&rules.color_schemes, "Grey")
         .and_then(|entry| u8::try_from(entry).ok())
         .map_or(MESSAGE_RGB_SYSTEM, |entry| {
             crate::rules::house_colors::house_text_rgb(
@@ -499,7 +970,17 @@ fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool)
                 crate::rules::house_colors::HouseColorIndex(entry),
             )
             .map(|channel| f32::from(channel) / 255.0)
-        });
+        })
+}
+
+/// A row in `GadgetClass::GetColorScheme` (`0x004E12D0`, "Grey"), flags
+/// 0x16, `MessageDelay * 900`; `text` is a CSF key when `localize`.
+fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool) {
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let rgb = grey_rgb(rules);
     post_message(
         state,
         &crate::ui::messages::MessagePost {
@@ -513,10 +994,136 @@ fn post_grey_row(state: &mut AppState, text: &str, localize: bool, silent: bool)
     );
 }
 
+/// A change to the relay's shared timeline (`network_match`): a speed
+/// change, or another player's shared pause or resume. gamemd has no such
+/// lines, so `text` is VERA's own, not a CSF key.
+pub(crate) fn post_relay_notice(state: &mut AppState, text: &str) {
+    post_grey_row(state, text, false, false);
+}
+
+/// VERA: the answer to a `/pause` or `/resume` chat line
+/// (`pause_menu::chat_command`); `text` is VERA's own, not a CSF key.
+pub(crate) fn post_chat_command_answer(state: &mut AppState, text: &str) {
+    post_grey_row(state, text, false, false);
+}
+
+/// VERA: what online play and a replay are doing, as silent Grey rows
+/// ([`crate::ui::messages::MessageList::show_notice`]): the game server
+/// connection, the shared pause and the replay. Each frame of a match brings
+/// them up to date, also while a pause holds Main_Tick and the rows' expiry.
+/// A replay's hint expires as any row does; the other notices stay while
+/// their state lasts. gamemd has none of these, so the texts are VERA's own.
+pub(crate) fn show_status_notices(state: &mut AppState) {
+    use crate::ui::messages::NoticeSlot;
+    if state.frontend.screen != GameScreen::InGame {
+        return;
+    }
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let rgb = grey_rgb(rules);
+    let delay_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let network =
+        crate::app::match_runtime::network_match::recovery_notice(state).map(crate::i18n::tr);
+    let pause = crate::app::input::pause_menu::multiplayer_control(state)
+        .and_then(|control| control.status)
+        .map(crate::i18n::tr);
+    let diagnostics = &state.match_state.match_diagnostics;
+    let replay_ms = if diagnostics.playback_playing() {
+        delay_ms
+    } else {
+        None
+    };
+    let replay = diagnostics.playback_status();
+    sync_view(state);
+    let now = message_now_ms(state);
+    let font = &state.renderer.bit_font;
+    let list = &mut state.match_state.match_presentation.message_list;
+    for (slot, text, timeout_ms) in [
+        (NoticeSlot::Network, network, None),
+        (NoticeSlot::Pause, pause, None),
+        (NoticeSlot::Replay, replay, replay_ms),
+    ] {
+        let post = text
+            .as_deref()
+            .map(|text| crate::ui::messages::MessagePost {
+                prefix: None,
+                text,
+                rgb,
+                timeout_ms,
+                silent: true,
+            });
+        list.show_notice(slot, post.as_ref(), now, &|s| font.text_width(s) as i32);
+    }
+}
+
+/// VERA: a match whose `veraui.ini` had lines the game could not use says so
+/// once, naming the first; the log lists them all.
+pub(crate) fn post_layout_problem(state: &mut AppState) {
+    let Some(place) = state
+        .match_state
+        .match_presentation
+        .match_layouts
+        .problems()
+        .first()
+        .map(crate::ui::match_layout::LayoutProblem::place)
+    else {
+        return;
+    };
+    let text = crate::i18n::tr_fill("VERA:LayoutFileProblem", &[("where", &place)]);
+    post_grey_row(state, &text, false, false);
+}
+
+/// What the layout edit mode tells the player (`input::layout_edit`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LayoutEditLine {
+    /// It is on, and how to use it.
+    On,
+    /// Save ended it, and what they moved is kept.
+    Saved,
+    /// It ended without saving.
+    Cancelled,
+}
+
+/// Tell the player the layout edit mode is on and how to use it, or that it
+/// is off and whether what they moved is kept.
+pub(crate) fn post_layout_edit(state: &mut AppState, line: LayoutEditLine) {
+    let key = match line {
+        LayoutEditLine::On => "VERA:LayoutEditHint",
+        LayoutEditLine::Saved => "VERA:LayoutEditDone",
+        LayoutEditLine::Cancelled => "VERA:LayoutEditCancelled",
+    };
+    post_grey_row(state, &crate::i18n::tr(key), false, false);
+}
+
+/// VERA formation lock (`context_order::toggle_formation_lock`): say that
+/// the selection's units were locked, and how many, or unlocked. gamemd has
+/// no such line, so the text is VERA's own.
+pub(crate) fn post_formation_lock(state: &mut AppState, locked: bool, units: usize) {
+    let text = if locked {
+        crate::i18n::tr_fill("VERA:FormationLocked", &[("count", &units)])
+    } else {
+        crate::i18n::tr("VERA:FormationUnlocked")
+    };
+    post_grey_row(state, &text, false, true);
+}
+
+/// VERA primary rotation (`input::primary_rotation`): say how many factories
+/// now take turns, or that the selected ones stopped. gamemd has no such
+/// line, so the text is VERA's own.
+pub(crate) fn post_primary_rotation(state: &mut AppState, factories: usize) {
+    let text = if factories > 0 {
+        crate::i18n::tr_fill("VERA:PrimaryRotationOn", &[("count", &factories)])
+    } else {
+        crate::i18n::tr("VERA:PrimaryRotationOff")
+    };
+    post_grey_row(state, &text, false, true);
+}
+
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,
-        "Commands are still being sent. Try again shortly.",
+        &crate::i18n::tr("VERA:CommandsStillSending"),
         false,
         true,
     );
@@ -625,12 +1232,20 @@ fn sync_view(state: &mut AppState) {
         .match_presentation
         .message_list
         .set_typing(typing);
-    // The list spans the tactical viewport: the frame left of the sidebar.
-    let tactical_w = crate::app::input::camera::tactical_viewport_size(state).0 as i32;
+    // The list spans its box: the tactical viewport, the frame beside the
+    // sidebar, unless the side's layout gives it another.
+    // VERA's performance panel holds the viewport's top left while it shows, and the
+    // list and its edit line start below it.
+    let [x, y, width, _] = crate::app::presentation::field_parts::rect(
+        state,
+        crate::ui::field_layout::FieldPart::Messages,
+    );
+    let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
+    let top = state.renderer.performance_overlay.message_top();
     state.match_state.match_presentation.message_list.set_view(
-        MESSAGE_X_INSET,
-        0,
-        (tactical_w - MESSAGE_WIDTH_INSET).max(0),
+        x,
+        y.max(tactical_y as i32 + top),
+        width,
     );
 }
 
@@ -657,9 +1272,21 @@ pub(crate) fn build_message_instances(
             crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
         }
     }
+    // A layout that leaves the messages out only takes them off the screen.
+    if !crate::app::presentation::field_parts::shows(
+        state,
+        crate::ui::field_layout::FieldPart::Messages,
+    ) {
+        return (Vec::new(), Vec::new());
+    }
     message_instances(
         &state.renderer.bit_font,
         &state.match_state.match_presentation.message_list,
+        state
+            .platform
+            .ime
+            .composition(crate::app::input::ime::ImeTarget::InGameChat)
+            .map(|(units, _)| units),
         [
             state.match_state.input.camera_x,
             state.match_state.input.camera_y,
@@ -667,9 +1294,33 @@ pub(crate) fn build_message_instances(
     )
 }
 
+/// The open edit line in window pixels, where the input method shows its
+/// candidates; `None` while no edit is open.
+pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
+    if state.frontend.screen != GameScreen::InGame {
+        return None;
+    }
+    let list = &state.match_state.match_presentation.message_list;
+    let edit = list.edit_line()?;
+    let font = &state.renderer.bit_font;
+    // The message rows are frame pixels, which a zoomed match shows scaled
+    // and centred in the window.
+    let (x, y) = (list.x() as f32, edit.y as f32);
+    let ((x, y), scale) = state.tactical_zoom().map_or(((x, y), 1.0), |zoom| {
+        (zoom.source_to_window(x, y), zoom.scale())
+    });
+    Some(crate::ui::shell::geom::RectPx::new(
+        x as i32,
+        y as i32,
+        (font.text_width(&edit.text) as f32 * scale) as i32,
+        (font.cell_height() * scale) as i32,
+    ))
+}
+
 fn message_instances(
     font: &crate::render::bit_font::BitFont,
     list: &crate::ui::messages::MessageList,
+    composition: Option<&[u16]>,
     camera_offset: [f32; 2],
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     let x = list.x() as f32;
@@ -677,10 +1328,27 @@ fn message_instances(
     let mut texts = Vec::new();
     // Draw 0x005D49A0 paints the edit label first, whole: its reveal flag
     // is never set and the chat cursor character 0 draws no caret.
+    // A hidden edit (the beacon label's) draws nothing, nor its composition.
     let edit = list
         .edit_line()
+        .filter(|edit| !edit.hidden)
         .map(|edit| crate::ui::messages::Message::edit_row(&edit));
-    for m in edit.iter().chain(list.messages()) {
+    // The open composition follows the typed text (`app::input::ime`).
+    let composition = edit.as_ref().zip(composition).map(|(row, units)| {
+        let mut row = row.clone();
+        row.text = String::from_utf16_lossy(units);
+        row.rgb = crate::app::input::ime::COMPOSITION_RGB.map(|c| f32::from(c) / 255.0);
+        row
+    });
+    let composition_x = edit
+        .as_ref()
+        .map_or(x, |row| x + font.text_width(&row.text) as f32);
+    let rows = edit
+        .iter()
+        .map(|row| (x, row))
+        .chain(composition.iter().map(|row| (composition_x, row)))
+        .chain(list.messages().iter().map(|row| (x, row)));
+    for (x, m) in rows {
         // Message rows are screen-space, but `draw_pooled_ui` binds the
         // live world camera and the shader subtracts it. Add that camera
         // back here so scrolling cannot displace the HUD text.
@@ -716,9 +1384,114 @@ fn message_instances(
     (fills, texts)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn movie_subtitle_rows_keep_native_duration_and_literal_text() {
+        let rgb = [0.2, 0.3, 0.4];
+        let post = movie_subtitle_post("test subtitle", 180, rgb);
+        assert_eq!(post.text, "test subtitle");
+        assert_eq!(post.rgb, rgb);
+        assert!(post.prefix.is_none());
+        let mut list = crate::ui::messages::MessageList::new(3, 0, 6, 600);
+        let result = list.add_message(&post, 1_000, &|s| s.len() as i32);
+        assert!(result.play_sound, "native callback uses silent=0");
+        assert_eq!(list.messages()[0].deadline_ms, Some(3_880));
+        list.manage(3_879);
+        assert_eq!(list.messages().len(), 1);
+        list.manage(3_880);
+        assert_eq!(
+            list.messages().len(),
+            1,
+            "MessageList expires strictly after its deadline"
+        );
+        list.manage(3_881);
+        assert!(list.messages().is_empty());
+        assert!(
+            movie_subtitle_post("persistent", u32::MAX, rgb)
+                .timeout_ms
+                .is_none()
+        );
+        assert_eq!(movie_subtitle_post("zero", 0, rgb).timeout_ms, Some(0));
+    }
+
+    #[test]
+    fn ares_refusal_post_uses_localized_message_owner_colour_and_expiry() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::native_processing::RulesLayerStack;
+        use crate::rules::superweapon_type::AresSuperWeaponMessage;
+        let ini = IniFile::from_str(
+            "[AudioVisual]\nMessageDelay=1\n[Colors]\nGold=85,255,255\nOwner=0,255,255\nPlayer=170,255,255\n\
+             [SuperWeaponTypes]\n0=Strike\n1=Configured\n2=Firer\n\
+             [Strike]\nType=GenericWarhead\nMessage.CannotFire=MSG:Denied\nMessage.InsufficientFunds=MSG:Funds\n\
+             [Configured]\nType=GenericWarhead\nMessage.CannotFire=MSG:Denied\nMessage.Color=Owner\n\
+             [Firer]\nType=GenericWarhead\nMessage.CannotFire=MSG:Denied\nMessage.FirerColor=yes\nMessage.Color=Player\n",
+        );
+        let processed = RulesLayerStack::new(ini)
+            .process_with_fixed_art(&IniFile::empty())
+            .unwrap();
+        let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
+        let mut colors = crate::map::houses::HouseColorMap::new();
+        colors.insert(
+            "FirerHouse".into(),
+            crate::rules::house_colors::HouseColorIndex(1),
+        );
+        colors.insert(
+            "PlayerHouse".into(),
+            crate::rules::house_colors::HouseColorIndex(2),
+        );
+        let build = |id: &str, firer| {
+            ares_message_post(
+                rules.super_weapon(id).unwrap().ares_messages(),
+                AresSuperWeaponMessage::CannotFire,
+                &rules.color_schemes,
+                &colors,
+                firer,
+                Some("PlayerHouse"),
+                rules.general.message_delay_minutes,
+            )
+            .unwrap()
+        };
+        let post = build("Strike", Some("FirerHouse"));
+        assert_eq!(post.rgb, [0.0, 0.0, 1.0]);
+        assert_eq!(post.timeout_ms, Some(14_400));
+        assert!(post.prefix.is_none() && !post.silent);
+        assert_eq!(build("Configured", Some("FirerHouse")).rgb, [1.0, 0.0, 0.0]);
+        assert_eq!(build("Firer", Some("FirerHouse")).rgb, [1.0, 0.0, 0.0]);
+        assert_eq!(
+            build("Firer", None).rgb,
+            [0.0, 1.0, 0.0],
+            "null firer uses Gold"
+        );
+        let csf = test_csf("MSG:Denied", "No eligible target");
+        let mut list = crate::ui::messages::MessageList::new(3, 0, 6, 600);
+        assert!(
+            add_localized_message(&mut list, Some(&csf), &post, 100, &|s| s.len() as i32)
+                .play_sound
+        );
+        assert_eq!(list.messages()[0].text, "No eligible target");
+        assert_eq!(list.messages()[0].deadline_ms, Some(14_500));
+        assert!(
+            add_localized_message(&mut list, Some(&csf), &post, 101, &|s| s.len() as i32)
+                .play_sound
+        );
+        assert_eq!(
+            list.messages().len(),
+            2,
+            "retain native repeated rows; no new debounce"
+        );
+        let empty = test_csf("MSG:Denied", "");
+        assert!(
+            !add_localized_message(&mut list, Some(&empty), &post, 102, &|s| s.len() as i32)
+                .play_sound
+        );
+        assert_eq!(list.messages().len(), 2);
+        list.manage(14_502);
+        assert!(list.messages().is_empty());
+    }
 
     #[test]
     fn timed_release_admission_survives_a_new_pause_in_the_same_logic_pass() {
@@ -862,7 +1635,11 @@ mod tests {
             let expected = crate::rules::color_scheme::hsv_to_rgb(scheme.hsv)
                 .map(|channel| f32::from(channel) / 255.0);
             assert_eq!(
-                trigger_message_rgb(&rules.color_schemes, row["side"].as_i64().unwrap() as i32),
+                trigger_message_rgb(
+                    &rules.color_schemes,
+                    row["side"].as_i64().unwrap() as i32,
+                    crate::rules::skirmish_colors::SkirmishColorMode::VANILLA,
+                ),
                 expected,
                 "{row}"
             );
@@ -1007,7 +1784,7 @@ mod tests {
             &colors,
             Some(&retail.rules.color_schemes),
         );
-        let post = HudMessage::LowPower.post(&retail.rules, rgb);
+        let post = HudMessage::LowPower.post(&retail.rules, rgb).unwrap();
         assert!(post.prefix.is_none());
         assert_eq!(post.text, "TXT_LOW_POWER");
         assert_eq!(post.silent, args[6] != 0);
@@ -1037,9 +1814,9 @@ mod tests {
             4,
         );
         assert_eq!(list.advance_reveal(now as u32), 1);
-        assert_eq!(message_instances(&font, &list, [0.0; 2]).1.len(), 1);
+        assert_eq!(message_instances(&font, &list, None, [0.0; 2]).1.len(), 1);
         assert_eq!(list.advance_reveal(now as u32 + 16), 1);
-        assert_eq!(message_instances(&font, &list, [0.0; 2]).1.len(), 2);
+        assert_eq!(message_instances(&font, &list, None, [0.0; 2]).1.len(), 2);
         // Offline menus skip Manage. Equality still retains the row; a
         // first resumed poll past the deadline removes it immediately.
         assert!(!list.manage(deadline));
@@ -1048,7 +1825,7 @@ mod tests {
         assert!(list.messages().is_empty());
 
         // Admission failure cannot play the message-insertion sound.
-        list.set_view(3, 0, 0);
+        list.set_view(0, 0, 0);
         let rejected =
             add_localized_message(&mut list, Some(&csf), &post, resumed_wall_ms + 2, &|_| 8);
         assert_eq!(rejected.added, 0);
@@ -1100,6 +1877,29 @@ mod tests {
     }
 
     #[test]
+    fn open_composition_paints_after_the_typed_text_in_its_colour() {
+        use crate::render::bit_font::tests::make_test_font;
+
+        let font = make_test_font(&[(b'a' as u16, 6), (0x4E2D, 15)], 4);
+        let mut list = crate::ui::messages::MessageList::new(3, 0, 6, 1_000);
+        assert!(list.add_edit("a", [1.0, 1.0, 1.0], true));
+        let (fills, texts) = message_instances(&font, &list, Some(&[0x4E2D]), [0.0; 2]);
+        let expected = font.build_text_label(
+            "\u{4E2D}",
+            3.0 + font.text_width("a") as f32,
+            list.edit_line().unwrap().y as f32,
+            0.00022,
+            [0.0; 2],
+            crate::app::input::ime::COMPOSITION_RGB,
+            0,
+        );
+        assert_eq!(texts.len(), 2);
+        assert_eq!(texts[1].position, expected[0].position);
+        assert_eq!(texts[1].tint, expected[0].tint);
+        assert_eq!(fills.len(), 2, "the composition has its own backing box");
+    }
+
+    #[test]
     fn gsi_02_14_message_glyphs_compensate_for_ui_camera() {
         use crate::render::bit_font::tests::make_test_font;
 
@@ -1117,9 +1917,9 @@ mod tests {
             &|text| font.text_width(text) as i32,
         );
 
-        let at_origin = message_instances(&font, &list, [0.0, 0.0]).1;
+        let at_origin = message_instances(&font, &list, None, [0.0, 0.0]).1;
         let ui_camera = [640.0_f32, 480.0_f32];
-        let panned = message_instances(&font, &list, ui_camera).1;
+        let panned = message_instances(&font, &list, None, ui_camera).1;
 
         assert_eq!(at_origin.len(), 3);
         assert_eq!(panned.len(), at_origin.len());
@@ -1130,5 +1930,64 @@ mod tests {
             ];
             assert_eq!(after_shader_subtraction, origin.position);
         }
+    }
+
+    /// An EVA row names the type by its `UIName=` text, as tooltips do; a
+    /// type with no `UIName=` keeps its rules key, and an unknown type posts
+    /// nothing.
+    #[test]
+    fn eva_text_names_a_type_by_its_ui_name() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[General]\nFixtureOnly=1\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n0=GAPOWR\n1=GAREFN\n[GAPOWR]\nUIName=Name:GAPOWR\n[GAREFN]\n[AudioVisual]\nBaseUnderAttackSound=Siren\n",
+            ),
+        )
+        .unwrap();
+        let csf = test_csf("Name:GAPOWR", "發電廠");
+        assert_eq!(
+            eva_text_name("GAPOWR", &rules, Some(&csf)).as_deref(),
+            Some("發電廠")
+        );
+        assert_eq!(
+            eva_text_name("GAREFN", &rules, Some(&csf)).as_deref(),
+            Some("GAREFN")
+        );
+        assert_eq!(eva_text_name("UNKNOWN", &rules, Some(&csf)), None);
+    }
+}
+
+#[cfg(all(test, tests_app_input_d_z))]
+mod ares_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    #[test]
+    fn fourth_side_message_text_color_resolves_to_its_colors_entry() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let mut colors = String::from("[Colors]\n");
+        for index in 0..11 {
+            colors.push_str(&format!("C{index}={},{},{}\n", index, index, index));
+        }
+        colors.push_str("DarkRed=0,230,255\n");
+        let ini = IniFile::from_str(&format!(
+            "{colors}\
+             [Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n\
+             [Fourth]\nMessageTextColor=DarkRed\n"
+        ));
+        let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+            .process()
+            .expect("message color rules process");
+        let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed)
+            .expect("message color projection");
+        let entry =
+            crate::rules::color_scheme::scheme_entry_by_name(&rules.color_schemes, "DarkRed")
+                .expect("DarkRed entry");
+        assert_eq!(
+            ares_message_text_rgb(&rules, 3),
+            Some(
+                crate::rules::color_scheme::hsv_to_rgb(rules.color_schemes[entry].hsv)
+                    .map(|channel| f32::from(channel) / 255.0)
+            )
+        );
     }
 }

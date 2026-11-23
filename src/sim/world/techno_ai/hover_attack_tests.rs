@@ -57,7 +57,13 @@ fn a_landed_rocketeer_holding_a_target_re_anchors_on_guard_and_attack() {
             .expect("an open arena has a nearby cell");
         for id in [rocketeer, rifleman] {
             guard_with_target(&mut sim, id, enemy, mission);
-            crate::sim::world::dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default());
+            crate::sim::world::dispatch_foot_mission(
+                &mut sim,
+                id,
+                &rules,
+                &mut ObjectAiCtx::default(),
+            )
+            .unwrap();
         }
         let nav_com = |id| sim.substrate.entities.get(id).unwrap().navigation.nav_com();
         assert_eq!(
@@ -84,7 +90,8 @@ fn a_landed_rocketeer_holding_a_target_re_anchors_on_guard_and_attack() {
         0
     );
     guard_with_target(&mut sim, aloft, enemy, MissionType::Guard);
-    crate::sim::world::dispatch_foot_mission(&mut sim, aloft, &rules, ObjectAiCtx::default());
+    crate::sim::world::dispatch_foot_mission(&mut sim, aloft, &rules, &mut ObjectAiCtx::default())
+        .unwrap();
     assert_eq!(
         sim.substrate
             .entities
@@ -121,7 +128,10 @@ fn boxed_landed_unit(
         .terrain_rules
         .semantics_for_land_type(LandType::Rock.as_index())
         .unwrap();
-    assert_eq!(rock.speed_costs.hover, Some(0));
+    assert_eq!(
+        rock.speed_costs.hover,
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+    );
     let terrain = sim.resolved_terrain.as_mut().unwrap();
     for y in 0..96 {
         for x in 0..96 {
@@ -191,7 +201,7 @@ fn failed_hover_attack_reanchor_keeps_the_original_jumpjet_handoff() {
             let rng = sim.scenario_rng.native_state_hex();
             // Compare exactly the native prefix's setter-return boundary,
             // before either mission performs later targeting/cadence work.
-            super::hover_attack_reanchor(&mut sim, &rules, actor, ObjectAiCtx::default());
+            super::hover_attack_reanchor(&mut sim, &rules, actor, &mut ObjectAiCtx::default());
             let entity = sim.substrate.entities.get(actor).unwrap();
             let runtime = entity
                 .locomotor
@@ -242,7 +252,8 @@ fn failed_reanchor_on_guard_lifts_the_stock_unit_and_survives_save() {
         .unwrap()
         .attack_target
         .set_for_test(Some(TargetKind::Cell(50, 50)));
-    crate::sim::world::dispatch_foot_mission(&mut sim, actor, &rules, ObjectAiCtx::default());
+    crate::sim::world::dispatch_foot_mission(&mut sim, actor, &rules, &mut ObjectAiCtx::default())
+        .unwrap();
     assert_eq!(
         sim.substrate
             .entities
@@ -273,6 +284,8 @@ fn failed_reanchor_on_guard_lifts_the_stock_unit_and_survives_save() {
             .same_identity(&control_dummy)
     );
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    // Player load clears planning tokens (6370B0 / 70BF79).
+    sim.reset_planning_after_player_load();
     for id in sim.substrate.entities.keys_sorted() {
         sim.substrate.restore_move_sound_state_after_load(id);
     }

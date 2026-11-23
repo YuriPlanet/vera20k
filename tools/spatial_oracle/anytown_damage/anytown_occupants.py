@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from collections import Counter
 from tools.spatial_oracle.naval_occupants import *
+from tools.native_oracle import require
 from tools.rules_oracle.bridge_anim_inputs import crc
 from tools.rules_oracle.bridge_child_sound import sections as sound_sections
 HERE=Path(__file__).resolve().parent
@@ -58,7 +59,7 @@ class Occupied(Native):
    u.mem_write(self.loco+0x58,dwords(-1,0));u.mem_write(self.loco+0x63,b'\1');u.mem_write(self.actor+0x8D,b'\1');u.mem_write(self.loco+0x50,struct.pack('<d',0.75))
   u.mem_write(self.actor+0x2B4,dwords(self.selected if case.get('target_impact') else 0))
   u.mem_write(0xB0F698,dwords(0x7E91EC,self.alloc(128),32,1,0,10))
-  self.invoke(0x40CB80,0);self.invoke(0x4A8630,0);assert self.invoke(0x55BAA0,0x87F778,(self.actor,0))&255;self.invoke(0x4A9720,0,(self.actor,))
+  self.invoke(0x40CB80,0);self.invoke(0x4A8630,0);require(self.invoke(0x55BAA0,0x87F778,(self.actor,0))&255, 'native 0x55BAA0 returned an unexpected result');self.invoke(0x4A9720,0,(self.actor,))
   techno_items=self.alloc(64);u.mem_write(techno_items,dwords(self.actor));u.mem_write(0xA8EC78,dwords(0x7EB6D4,techno_items,16,1,1,10))
   self.counter=self.alloc(64);u.mem_write(self.counter,dwords(1));u.mem_write(self.house+0x5564,dwords(0,self.counter,16,1,1))
   u.mem_write(self.current_cell+0x120,b'\x10')
@@ -81,7 +82,7 @@ class Occupied(Native):
   for off,size in ((0x40,12),(0x50,8),(0x58,8),(0x63,1)):
    u.mem_write(loco+off,bytes(u.mem_read(self.loco+off,size)))
   self.invoke(0x5F5B90,p,(0,self.alloc(0x80)));u.mem_write(self.actor+0x30,dwords(p))
-  assert self.invoke(0x55BAA0,0x87F778,(p,0))&255;self.invoke(0x4A9720,0,(p,));u.mem_write(self.counter,dwords(2))
+  require(self.invoke(0x55BAA0,0x87F778,(p,0))&255, 'native 0x55BAA0 returned an unexpected result');self.invoke(0x4A9720,0,(p,));u.mem_write(self.counter,dwords(2))
   self.second=p;self.second_loco=loco;self.symbols[p]='mtnk2';self.symbols[loco]='drive2';self.symbols[loco+4]='drive2_interface'
   self.read_ranges.extend([('actor2',p,0x800),('drive2',loco,0x100)])
  def read_extra(self):
@@ -89,7 +90,7 @@ class Occupied(Native):
   self.block(0x665E21,0x665E2B,{UC_X86_REG_ESI:RULES})
   physical=sound_sections((ASSETS/'SOUNDMD.INI').read_bytes());wanted={k:v for k,v in physical.items() if k in ('Defaults','GenVehicleDie')};wanted['SoundList']={k:v for k,v in physical['SoundList'].items() if v=='GenVehicleDie'}
   self.make_ini(wanted);u.mem_write(0x87E2A0,dwords(1));u.mem_write(0x87E294,dwords(self.alloc(0x100)));self.invoke(0x4072C0,0x87E250);u.mem_write(0xB1D378,dwords(0x7EB6D4,self.alloc(64),16,1,0,10));self.invoke(0x7510D0,INI)
-  assert self.invoke(0x7514D0,self.cstring('GenVehicleDie'))==0
+  require(self.invoke(0x7514D0,self.cstring('GenVehicleDie'))==0, 'native 0x7514D0 returned an unexpected result')
   self.extra_layers=[]
   map_path=self.scene['map_path']
   for name,p in [('RULESMD.INI',ASSETS/'RULESMD.INI'),('MPBattleMD.ini',ASSETS/'MPBattleMD.ini'),(map_path.name,map_path)]:

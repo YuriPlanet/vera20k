@@ -30,6 +30,11 @@ impl NativeF32Bits {
     pub const fn bits(self) -> u32 {
         self.0
     }
+
+    /// IEEE binary32 zero, independent of its sign bit.
+    pub const fn is_zero(self) -> bool {
+        self.0 & 0x7fff_ffff == 0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -518,7 +523,30 @@ pub fn adjust_for_z_with_multiplier(
 }
 
 /// Evaluate active YR's standard-session height-to-screen conversion.
+///
+/// The evaluation runs on the x87 evaluator, which every placed object's
+/// screen point asks for each frame, so the Z values below
+/// [`ADJUST_FOR_Z_TABLE_LEN`] (terrain up to level 127 and every flight
+/// height) are looked up in a table of the same evaluations.
 pub fn adjust_for_z_standard(world_z: i32) -> i32 {
+    static TABLE: crate::util::sync::OnceLock<Box<[i32]>> = crate::util::sync::OnceLock::new();
+    let Ok(index) = usize::try_from(world_z) else {
+        return adjust_for_z_standard_evaluated(world_z);
+    };
+    if index >= ADJUST_FOR_Z_TABLE_LEN {
+        return adjust_for_z_standard_evaluated(world_z);
+    }
+    TABLE.get_or_init(|| {
+        (0..ADJUST_FOR_Z_TABLE_LEN as i32)
+            .map(adjust_for_z_standard_evaluated)
+            .collect()
+    })[index]
+}
+
+/// The Z values [`adjust_for_z_standard`] looks up instead of evaluating.
+const ADJUST_FOR_Z_TABLE_LEN: usize = 16_384;
+
+fn adjust_for_z_standard_evaluated(world_z: i32) -> i32 {
     adjust_for_z_with_multiplier(world_z, STANDARD_ADJUST_FOR_Z_MULTIPLIER)
         .expect("the verified finite standard multiplier maps every i32 Z into i32")
 }
@@ -571,6 +599,25 @@ pub fn object_distance(
     building_foundation: Option<(i32, i32)>,
 ) -> i32 {
     let distance = distance_3d_leptons([from[0], from[2], from[1]], [to[0], to[2], to[1]]);
+    less_target_foundation(distance, building_foundation)
+}
+
+/// `ObjectClass::Distance_To @ 0x005F6440` between two GetCoords XYs: the
+/// planar distance through [`distance_3d_leptons`] with Z zeroed, less the
+/// target building's foundation as in [`object_distance`]. The foundation
+/// height query (`0x0045ECA0`) receives false, so a Bib never adds to it.
+pub fn object_planar_distance(
+    from: [i32; 2],
+    to: [i32; 2],
+    building_foundation: Option<(i32, i32)>,
+) -> i32 {
+    let distance = distance_3d_leptons([from[0], from[1], 0], [to[0], to[1], 0]);
+    less_target_foundation(distance, building_foundation)
+}
+
+/// `(Width + Height) * 64` off a distance whose target is a building of that
+/// foundation, not below 0.
+fn less_target_foundation(distance: i32, building_foundation: Option<(i32, i32)>) -> i32 {
     match building_foundation {
         Some((width, height)) => distance.wrapping_sub((width + height) * 64).max(0),
         None => distance,
@@ -607,7 +654,7 @@ fn shift_right_jam_u128(value: u128, distance: u32) -> u64 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     #[test]
     fn compare_orders_against_zero_by_sign_not_exponent() {
@@ -918,5 +965,17 @@ mod tests {
         assert_eq!(adjust_for_z_standard(1_500), 216);
         assert_eq!(adjust_for_z_standard(-104), -14);
         assert_eq!(adjust_for_z_standard(-400), -56);
+    }
+
+    #[test]
+    fn adjust_for_z_standard_table_matches_the_evaluation_at_its_edges() {
+        let last = ADJUST_FOR_Z_TABLE_LEN as i32 - 1;
+        for z in [0, 727, 728, last, last + 1, -1] {
+            assert_eq!(
+                adjust_for_z_standard(z),
+                adjust_for_z_standard_evaluated(z),
+                "Z {z}"
+            );
+        }
     }
 }

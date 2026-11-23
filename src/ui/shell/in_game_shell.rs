@@ -138,6 +138,30 @@ impl InGameShellLayout {
             button_size[1],
         )
     }
+
+    /// Phobos `uimd.ini [Sidebar] CenterPauseMenuBackground`: the
+    /// `InitSideRectangles_CenterBackground` hook at 0x0072FCB5 replaces the
+    /// background's top-left corner with the centre of the battlefield, the
+    /// frame less the 168-pixel right column and the 32-pixel bottom strip.
+    /// The hook holds those two insets as literals rather than as the loaded
+    /// CREDITS width, so this keeps the literals too. Signed halves truncate
+    /// toward zero, as the native `idiv` does.
+    pub fn with_centered_background(mut self, width: i32, height: i32) -> Self {
+        self.background.x = (width - 168 - self.background.w) / 2;
+        self.background.y = (height - 32 - self.background.h) / 2;
+        self
+    }
+
+    /// VERA's placement without the Phobos switch: the whole battlefield, left
+    /// of the column and above the bottom strip, with the art stretched over
+    /// it. `0x0072FC60` keeps the canvas size, and retail art is exactly the
+    /// battlefield at 640x480, 800x600 and 1024x768, so those stay 1:1. VERA's
+    /// frames take any size (Zoom, Sidebar size), where the canvas would leave
+    /// black beside or below the art, or crop it.
+    pub fn with_battlefield_background(mut self) -> Self {
+        self.background = RectPx::new(0, 0, self.credits.x, self.bottom_clip.y);
+        self
+    }
 }
 
 /// An active-game dialog's title static 0x694: original 0x0060B1D0's active
@@ -207,7 +231,7 @@ pub(crate) fn allied_fixture_layout(width: i32, height: i32) -> InGameShellLayou
     .unwrap()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
     use serde::Deserialize;
@@ -308,5 +332,51 @@ mod tests {
             assert_eq!(layout.bottom_closed_x, case.bottom_closed_x);
             assert_eq!(layout.bottom_repeat_span, case.bottom_repeat_span);
         }
+    }
+
+    /// Phobos `[Sidebar] CenterPauseMenuBackground` at 0x0072FCB5. Retail art
+    /// fills the battlefield exactly at 640x480, 800x600 and 1024x768, so the
+    /// hook leaves those placements alone; the resolution it was written for
+    /// keeps BKGDLG's 856x736 canvas and centres it.
+    #[test]
+    fn centered_background_keeps_stock_art_and_centres_it_at_a_larger_frame() {
+        for (width, height, canvas) in [
+            (640, 480, RectPx::new(0, 0, 472, 448)),
+            (800, 600, RectPx::new(0, 0, 632, 568)),
+            (1024, 768, RectPx::new(0, 0, 856, 736)),
+        ] {
+            let layout = allied_fixture_layout(width, height);
+            assert_eq!(layout.background, canvas);
+            assert_eq!(
+                layout.with_centered_background(width, height).background,
+                canvas
+            );
+        }
+        let layout = allied_fixture_layout(1280, 1024);
+        assert_eq!(layout.background, RectPx::new(0, 0, 856, 736));
+        assert_eq!(
+            layout.with_centered_background(1280, 1024).background,
+            RectPx::new(128, 128, 856, 736)
+        );
+    }
+
+    /// The reported Auto zoom frame, 1121x741: BKGDLG's 856x736 canvas falls
+    /// short of the 953x709 battlefield, which the art now fills. At the stock
+    /// sizes the battlefield is the canvas itself.
+    #[test]
+    fn battlefield_background_fills_any_frame_and_keeps_stock_canvases() {
+        for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
+            let layout = allied_fixture_layout(width, height);
+            assert_eq!(
+                layout.with_battlefield_background().background,
+                layout.background
+            );
+        }
+        assert_eq!(
+            allied_fixture_layout(1121, 741)
+                .with_battlefield_background()
+                .background,
+            RectPx::new(0, 0, 953, 709)
+        );
     }
 }

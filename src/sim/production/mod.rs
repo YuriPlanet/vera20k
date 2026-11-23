@@ -31,52 +31,54 @@ mod wall_placement;
 // Re-export everything so external code can still use `production::X`.
 pub use self::factory::{
     CancelOutcome, Factory, FactoryHolder, FactoryRegistry, FactoryView, PRODUCTION_STEPS,
-    PendingObject, STEP_RATE_MAX, STEP_RATE_MIN, StepOutcome, TimeToBuildInputs,
-    category_for_object, time_to_build, type_base_build_time,
+    PendingObject, ProductionState, STEP_RATE_MAX, STEP_RATE_MIN, StepOutcome, TimeToBuildInputs,
+    category_for_object, time_to_build, type_base_build_time, type_build_time,
 };
 pub(crate) use self::factory_lifecycle::enqueue_selected;
-pub(crate) use self::factory_lifecycle::suspend_production;
-pub use self::factory_lifecycle::{
-    FactoryRestoreError, ready_building_entity_for_owner, validate_restored_factory_state,
-};
+pub(crate) use self::factory_lifecycle::{suspend_production, validate_restored_factory_state};
+pub use self::factory_lifecycle::{FactoryRestoreError, ready_building_entity_for_owner};
 pub use self::factory_lifecycle::{
     ProductionCancellation, cancel_production_for_owner, enqueue_by_type,
 };
 pub(crate) use self::production_placement::place_production_with_overlays;
 pub use self::production_placement::{
-    active_producer_for_owner_category, cycle_active_producer_for_owner_category,
-    is_within_build_area, placement_preview_for_owner_with_overlays,
+    build_area_reach_cells, cycle_active_producer_for_owner_category,
+    is_within_build_area,
+    placement_preview_for_owner_with_overlays,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub(in crate::sim) use self::production_queue::house_for_test;
 pub use self::production_queue::{
-    build_options_for_owner, credits_for_owner, has_build_option_for_owner,
-    power_balance_for_owner, publish_production_changes, queue_view_for_owner,
-    ready_buildings_for_owner,
+    build_options_for_owner, credits_for_owner, power_balance_for_owner,
+    publish_production_changes, queue_view_for_owner, ready_buildings_for_owner,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use self::production_queue::{
     dispatch_production_changes_for_tests, publish_production_changes_for_tests,
 };
 pub(crate) use self::production_refinery::spawn_building_free_unit;
-pub use self::production_repair::can_repair_building;
-pub use self::production_repair::{RepairControl, repair_step_cost, toggle_repair};
+pub use self::production_repair::{
+    RepairControl, repair_remaining, repair_step_cost, toggle_repair,
+};
+pub use self::production_repair::{buildings_wanting_repair, can_repair_building};
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use self::production_sell::begin_selling;
+pub use self::production_sell::foot_can_be_sold;
+pub(crate) use self::production_sell::foot_on_sold;
 pub(crate) use self::production_sell::sell_back;
 #[cfg(any(test, feature = "test-support"))]
 pub use self::production_sell::sell_building_now_for_test;
 pub use self::production_sell::sell_stage_zero;
 pub use self::production_sell::{SellOrder, can_sell_building, techno_refund};
 pub(crate) use self::production_sell::{
-    archive_less_sale, sell_after_owner_change, sell_complete, sell_stage_one, type_refund,
-    undeploy_target,
+    archive_less_sale, sell_after_owner_change, sell_complete, sell_stage_one,
+    sell_useless_repair_contact, type_refund, undeploy_target,
 };
 pub use self::production_spawn::mark_war_factory_spawn_contact;
 pub use self::production_tech::{
-    CameoDrawState, all_build_options_for_owner, cameo_draw_state, construction_options_for_owner,
-    initial_construction_options,
+    CameoDrawState, all_build_options_for_owner, build_options_for_types, cameo_draw_state,
+    construction_options_for_owner, initial_construction_options,
 };
 pub use self::production_tech::{
     building_base_foundation_cells, building_movement_blocking_cells,
@@ -86,10 +88,12 @@ pub use self::production_types::*;
 
 // Re-exports for external consumers (files outside production/ that previously
 // imported private submodules directly).
-pub(crate) use self::can_build::{
-    CanBuild, can_build, initialize_factory_primary, toggle_factory_primary,
-};
+pub(crate) use self::can_build::ares_build_limit_remaining;
+pub(crate) use self::can_build::owns_prerequisites;
+pub use self::can_build::{CanBuild, can_build, primary_factory_category};
+pub(crate) use self::can_build::{RequirementStatus, requirements_met};
 pub use self::can_build::{can_select_factory_primary, find_factory, object_find_factory};
+pub(crate) use self::can_build::{initialize_factory_primary, toggle_factory_primary};
 pub(crate) use self::factory_ai::{
     AiPlacementTimer, detach_all as detach_building_factory, factory_ai,
 };
@@ -100,8 +104,8 @@ pub(in crate::sim) use self::factory_lifecycle::construct_active_factory_fixture
 #[cfg(any(test, feature = "test-support"))]
 pub(in crate::sim) use self::factory_lifecycle::release_delivered_mobile;
 pub(in crate::sim) use self::factory_lifecycle::{
-    abandon_house_factories, detach_building_production, recalculate_strips,
-    refresh_factory_rates_for_house, step_factories, update_factory_queue,
+    abandon_house_factories, delete_building_factory, detach_building_production,
+    recalculate_strips, refresh_factory_rates_for_house, step_factories, update_factory_queue,
 };
 pub(in crate::sim) use self::production_queue::exit_produced_object;
 pub(crate) use self::production_tech::factory_category_for_building;
@@ -109,43 +113,45 @@ pub(crate) use self::wall_placement::{
     autofill_walls, linked_overlay_id as linked_wall_overlay_id,
 };
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "production_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod industrial_plant_retail_tests;
 
-#[cfg(test)]
+// Ares 3.0 10014390 (hook 0x446E9F) gives a non-harvester FreeUnit
+// Area_Guard instead (`production_placement_tests`).
+#[cfg(all(test, tests_sim_production))]
 mod free_unit_harvest_retail_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod production_start_price_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "production_queue_tests.rs"]
 mod queue_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "production_placement_tests.rs"]
 mod placement_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 #[path = "production_replay_tests.rs"]
 mod replay_tests;
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "factory_lifecycle_tests.rs"]
 mod lifecycle_tests;
 
 #[cfg(test)]
 pub(crate) use lifecycle_tests::prerequisite_loss_cancellation_fixture;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod manual_primary_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod native_event_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_production))]
 mod typed_identity_tests;

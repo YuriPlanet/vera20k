@@ -218,9 +218,6 @@ impl Fixture {
             &IniFile::from_str(&text),
             &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&sound_text)),
         );
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         for anim in corpus["native_fatal_anim_inputs"].as_array().unwrap() {
             rules.bind_anim_frame_count_for_test(
                 anim["name"].as_str().unwrap(),
@@ -278,7 +275,7 @@ impl Fixture {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         sim.reveal_constructed_object_at_height(
@@ -289,7 +286,7 @@ impl Fixture {
             0,
             super::PlacementEvidence::MarkSucceeded,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         if prior.get("attacker").is_none() {
@@ -300,7 +297,7 @@ impl Fixture {
             for (rx, ry) in crate::sim::crew_survival::foundation_cells(
                 entity.position.rx(),
                 entity.position.ry(),
-                entity.type_facts.foundation(),
+                entity.seldom.type_facts.foundation(),
             ) {
                 sim.substrate.raw_cell_occupation.clear_ground(
                     rx,
@@ -348,7 +345,7 @@ impl Fixture {
             false,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(
             sim.substrate
@@ -367,8 +364,7 @@ impl Fixture {
                 unit,
                 Some(TargetKind::Entity(building)),
                 &rules,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             let actor = sim.substrate.entities.get_mut(unit).unwrap();
@@ -396,6 +392,7 @@ impl Fixture {
                     ),
                 });
             actor
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::from_raw(
                     int(&attacker["rearm_timer"][0]),
@@ -427,7 +424,7 @@ impl Fixture {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(prior["rng"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(prior["rng"]["main"].as_str().unwrap()).into();
+            SimRng::from_native_state_hex_for_test(prior["rng"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(prior["rng"]["mapgen"].as_str().unwrap());
         Self {
@@ -460,7 +457,7 @@ impl Fixture {
             &self.rules,
             Some(&self.registry),
             &[hit],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
 
@@ -502,7 +499,7 @@ impl Fixture {
             "{boundary}: queued Building body",
         );
         assert_eq!(
-            building.building_last_operational.is_operational(),
+            building.building.building_last_operational.is_operational(),
             native["building"]["old_operational"] == 1,
             "{boundary}: retained operational state",
         );
@@ -732,8 +729,8 @@ impl Fixture {
         );
         assert_eq!(
             [
-                attacker.rearm_timer.start_frame(),
-                attacker.rearm_timer.duration()
+                attacker.seldom.rearm_timer.start_frame(),
+                attacker.seldom.rearm_timer.duration()
             ],
             [
                 int(&expected["rearm_timer"][0]),
@@ -747,7 +744,7 @@ impl Fixture {
             "{boundary}: firing timestamp"
         );
         assert_eq!(
-            attacker.weapon_burst.index(),
+            attacker.seldom.weapon_burst.index(),
             int(&expected["burst_index"]),
             "{boundary}: retained burst"
         );
@@ -1164,7 +1161,7 @@ impl Fixture {
                 facing,
                 0,
                 &self.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(self.native_id(id), int(&native["constructor"]["native_id"]));
@@ -1182,7 +1179,7 @@ impl Fixture {
                 super::PlacementEvidence::MarkSucceeded,
                 &self.rules,
                 Some(&self.registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         assert_eq!(int(&native["unlimbo"]["result"]) & 255, 1);
         assert_eq!(
@@ -1350,7 +1347,7 @@ impl Fixture {
         let door_phase = actor.door_phase();
         assert_eq!(door_phase, crate::sim::door::DoorPhase::Opening);
         let door_timer = actor.door_timer_fields();
-        let mission = actor.mission;
+        let mission = actor.mission.clone();
         let grid = self.sim.smudge_grid.as_ref().unwrap();
         assert_eq!(grid.object_count(), constructors.len());
         for ((id, object), native) in grid.objects().zip(constructors) {
@@ -1427,7 +1424,11 @@ impl Fixture {
             })
         );
         let mut in_logic = GameSnapshot::load_unchecked(&bytes).unwrap().sim;
-        in_logic.substrate.logic.try_push(first).unwrap();
+        in_logic
+            .substrate
+            .logic
+            .try_push(first, super::ObjectKind::Smudge)
+            .unwrap();
         assert_eq!(
             in_logic.restore_after_snapshot_load(),
             Err(SnapshotRestoreError::InactiveLogicIdentity {
@@ -1438,8 +1439,7 @@ impl Fixture {
 
         restored.process_pending_delete_with(
             &self.rules,
-            Some(&self.registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             false,
         );
@@ -1556,6 +1556,11 @@ impl Fixture {
 /// and without the stock smudges joined.
 #[test]
 fn original_ready_mtnk_shot_runs_building_fires_crew_and_deferred_cleanup() {
+    // Stock oracle; Ares replaces the Unit tail (737F97) and GetCrew (707D20),
+    // and Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the rearm jitter.
+    if crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED {
+        return;
+    }
     for path in [
         "tools/spatial_oracle/building_death_anims_joined.json",
         "tools/spatial_oracle/building_death_anims_joined_stock_smudges.json",
@@ -1590,7 +1595,7 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             },
             &fixture.rules,
             Some(&fixture.registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         fixture.assert_live_frame(
             route,
@@ -1623,7 +1628,7 @@ fn assert_ready_fatal_routes(corpus: &Value) {
                 .advance_live_object_pass(
                     &fixture.rules,
                     Some(&fixture.registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             fixture.assert_live_frame(
@@ -1646,8 +1651,7 @@ fn assert_ready_fatal_routes(corpus: &Value) {
                 .set_binary_frame_for_test(fixture.sim.session.binary_frame().wrapping_add(1));
             fixture.sim.process_pending_delete_with(
                 &fixture.rules,
-                Some(&fixture.registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 1,
                 false,
             );
@@ -1669,8 +1673,7 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
         fixture.sim.process_pending_delete_with(
             &fixture.rules,
-            Some(&fixture.registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             false,
         );
@@ -1771,8 +1774,7 @@ fn original_direct_ap_receivers_join_debris_crew_uninit_power_and_deferred_destr
         .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
     fixture.sim.process_pending_delete_with(
         &fixture.rules,
-        Some(&fixture.registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         1,
         false,
     );

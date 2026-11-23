@@ -5,10 +5,10 @@ import struct
 
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_EBP,
-                               UC_X86_REG_EDI, UC_X86_REG_EIP, UC_X86_REG_ESP,
+                               UC_X86_REG_EDI, UC_X86_REG_ESP,
                                UC_X86_REG_FPCW)
 
-from tools.native_oracle import NATIVE_FPCW, OracleError, STACK_BASE, STACK_SIZE, provenance, run_checked
+from tools.native_oracle import NATIVE_FPCW, OracleError, STACK_BASE, STACK_SIZE, finish_vectors, provenance, run_checked
 from tools.storage_oracle.lan_messages import PacketMachine
 from tools.storage_oracle.saved_game_layout import code_guard, check_code
 
@@ -59,8 +59,7 @@ class InGameMachine(PacketMachine):
             raise OracleError(f'loading record is {length} bytes')
         check_code(self.uc, self.guard)
         return dict(**self.capture_packet(pointer, length), reliable=reliable,
-                    wire_percent=struct.unpack('<i', self.uc.mem_read(pointer + 47, 4))[0],
-                    transport_entry=f'{self.uc.reg_read(UC_X86_REG_EIP):08X}')
+                    wire_percent=struct.unpack('<i', self.uc.mem_read(pointer + 47, 4))[0])
 
     def chat(self, text):
         stack = self.stack()
@@ -141,3 +140,6 @@ SOURCE_PATHS = {
 }
 
 
+if __name__ == '__main__':
+    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata,
+                   source_paths=SOURCE_PATHS)

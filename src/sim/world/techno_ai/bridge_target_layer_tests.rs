@@ -197,14 +197,13 @@ fn supply_step(sim: &mut Simulation, rules: &RuleSet, input: &Value) {
             1,
             None::<TargetKind>,
             rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     }
     let source = sim.substrate.entities.get_mut(1).unwrap();
     if let Some(timer) = input["rearm"].as_array() {
-        source.rearm_timer.set_for_test(CdTimer::from_raw(
+        source.seldom.rearm_timer.set_for_test(CdTimer::from_raw(
             timer[0].as_i64().unwrap() as i32,
             timer[1].as_i64().unwrap() as i32,
         ));
@@ -328,7 +327,7 @@ fn native_passive_bridge_histories_preserve_timers_rng_assignment_and_cell_list_
             let main = sim.main_rng.logical_state();
             let map = sim.mapgen_rng.logical_state();
             let ids = sim.native_unique_ids.as_ref().unwrap().current_raw();
-            passive_acquire_step(&mut sim, 1, &rules, ObjectAiCtx::default());
+            passive_acquire_step(&mut sim, 1, &rules, &mut ObjectAiCtx::default());
             assert_state(&sim, &step["after"], &format!("{label}/{index} after"));
             assert_eq!(
                 sim.scenario_rng.native_state_hex(),
@@ -423,7 +422,7 @@ fn move_retail_fv(
                 },
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let entity = runtime.simulation.substrate.entities.get(id).unwrap();
@@ -483,7 +482,10 @@ fn assert_retail_target_state_restored(live: &Simulation, restored: &Simulation,
             assert_eq!(json!(before.position), json!(after.position));
             assert_eq!(before.on_bridge(), after.on_bridge());
             assert_eq!(before.passive_scan.timer(), after.passive_scan.timer());
-            assert_eq!(before.rearm_timer.timer(), after.rearm_timer.timer());
+            assert_eq!(
+                before.seldom.rearm_timer.timer(),
+                after.seldom.rearm_timer.timer()
+            );
             assert_eq!(json!(before.attack_target), json!(after.attack_target));
             assert_eq!(
                 before.passive_scan.acquired(),
@@ -542,7 +544,10 @@ pub(super) fn retail_hills_collapsed_scene(
             (cell.level, cell.slope_type, cell.base_land_type),
             (6, 0, 7)
         );
-        assert_eq!(cell.base_speed_costs.track, Some(100));
+        assert_eq!(
+            cell.base_speed_costs.track,
+            Some(crate::util::native_x87::NativeF32Bits::ONE)
+        );
         assert!(!cell.base_ground_walk_blocked);
         assert_ne!(cell.bridge_facts.raw_flags & 0x100, 0);
     }
@@ -607,7 +612,7 @@ pub(super) fn retail_hills_collapsed_scene(
         // Native composed deck-to-ground rearm boundary: ready weapons
         // reject earlier in T58; the busy deck source reaches Evaluate's G27.
         // The reverse direction rejects in InRange before G27.
-        entity.rearm_timer.set_for_test(CdTimer::started(
+        entity.seldom.rearm_timer.set_for_test(CdTimer::started(
             runtime.simulation.session.binary_frame() as i32,
             10,
         ));
@@ -615,8 +620,8 @@ pub(super) fn retail_hills_collapsed_scene(
             &mut runtime.simulation,
             source,
             &runtime.resources.rules,
-            ObjectAiCtx {
-                overlay_registry: Some(&runtime.resources.overlay_registry),
+            &mut ObjectAiCtx {
+                overlay_registry: Some(runtime.resources.rules.overlay_registry()),
                 ..Default::default()
             },
         );
@@ -683,7 +688,7 @@ pub(super) fn retail_hills_collapsed_scene(
                 &[],
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         std::mem::swap(&mut runtime.simulation, &mut first);
@@ -692,7 +697,7 @@ pub(super) fn retail_hills_collapsed_scene(
                 &[],
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(
@@ -743,7 +748,7 @@ fn collapse_retail_scene(
     };
     let mut collapsed = false;
     for _ in 0..8 {
-        collapsed|=crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(&mut runtime.simulation,&runtime.resources.rules,&[event],Some(&runtime.resources.overlay_registry), crate::sim::world::FrameEffects::default());
+        collapsed|=crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(&mut runtime.simulation, &runtime.resources.rules, &[event], &mut crate::sim::world::FrameEffects::default());
         if !runtime
             .simulation
             .resolved_terrain
@@ -801,7 +806,7 @@ fn collapse_retail_scene(
                 &[],
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         std::mem::swap(&mut runtime.simulation, &mut first);
@@ -810,7 +815,7 @@ fn collapse_retail_scene(
                 &[],
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(

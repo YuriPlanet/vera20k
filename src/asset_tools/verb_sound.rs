@@ -21,6 +21,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::asset_tools::report::{ErrorReport, SoundEntry, SoundReport};
+use crate::asset_tools::sanitise_name;
 use crate::assets::asset_manager::{
     AssetManager, AssetResolutionRef, AudioIndexSources, LoadedAudioIndex, load_audio_index_pair,
 };
@@ -119,7 +120,6 @@ struct OpenBag {
     /// How this pair was opened, e.g. `AUDIOMD.MIX -> audio.idx/audio.bag`.
     identity: String,
     sources: AudioIndexSources,
-    #[cfg(feature = "ares")]
     additional_sources: Vec<AudioIndexSources>,
 }
 
@@ -186,7 +186,6 @@ pub fn sound(
     Ok(SoundReport {
         bag: bag.identity,
         sources: Some(bag.sources),
-        #[cfg(feature = "ares")]
         additional_sources: bag.additional_sources,
         entry_count,
         matched: 1,
@@ -211,7 +210,6 @@ pub fn bag_ls(
         return Ok(SoundReport {
             bag: NO_BAG_IDENTITY.to_string(),
             sources: None,
-            #[cfg(feature = "ares")]
             additional_sources: Vec::new(),
             entry_count: 0,
             matched: 0,
@@ -251,7 +249,6 @@ pub fn bag_ls(
     Ok(SoundReport {
         bag: bag.identity,
         sources: Some(bag.sources),
-        #[cfg(feature = "ares")]
         additional_sources: bag.additional_sources,
         entry_count: reachable.len(),
         matched: matched.len(),
@@ -270,7 +267,7 @@ fn open_bag(asset_manager: &AssetManager, opts: &SoundOptions) -> (Option<OpenBa
             Ok(None) => (
                 None,
                 vec![
-                    if cfg!(feature = "ares") {
+                    if asset_manager.ships_ares() {
                         "startup Ares audio catalog has no valid pair"
                     } else {
                         "startup audio.idx/audio.bag pair is unavailable"
@@ -358,7 +355,6 @@ fn opened_pair(loaded: LoadedAudioIndex) -> OpenBag {
         "IDX from {}; BAG from {}",
         loaded.sources.idx.source_archive, loaded.sources.bag.source_archive
     );
-    #[cfg(feature = "ares")]
     let identity = if loaded.additional_sources.is_empty() {
         identity
     } else {
@@ -370,7 +366,6 @@ fn opened_pair(loaded: LoadedAudioIndex) -> OpenBag {
     OpenBag {
         index: loaded.index,
         sources: loaded.sources,
-        #[cfg(feature = "ares")]
         additional_sources: loaded.additional_sources,
         identity,
     }
@@ -503,7 +498,7 @@ fn write_wav(out: &Path, name: &str, audio: &BagAudio) -> Result<String, String>
             dir.display()
         )
     })?;
-    let path = dir.join(format!("{}.wav", sanitise_name(name)));
+    let path = dir.join(format!("{}.wav", sanitise_name(name, FALLBACK_FILE_NAME)));
     std::fs::write(&path, bytes).map_err(|err| {
         format!(
             "could not write {}: {err} — pass a writable `--out` root",
@@ -554,26 +549,6 @@ fn sound_dir(out: &Path) -> PathBuf {
     root.join(SOUND_SUBDIR)
 }
 
-/// Replace every character outside `[A-Za-z0-9._-]`, matching the render verb's
-/// rule so both verbs' outputs are safe filename components everywhere.
-fn sanitise_name(name: &str) -> String {
-    let sanitised: String = name
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-') {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if sanitised.is_empty() {
-        FALLBACK_FILE_NAME.to_string()
-    } else {
-        sanitised
-    }
-}
-
 /// The leading characters of a missed name, offered back as `--prefix`.
 fn prefix_hint(name: &str) -> String {
     let hint: String = name
@@ -588,7 +563,7 @@ fn prefix_hint(name: &str) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

@@ -21,14 +21,15 @@
 //!
 //! ## Dependency rules
 //! - Depends on `assets/` (archive resolution), `rules/` (the art registry and
-//!   its filename-convention helpers), and the sibling `identify` / `locate` /
-//!   `report` modules.
+//!   its filename-convention helpers), `map::theater` (the production theater
+//!   table), and the sibling `identify` / `locate` / `report` modules.
 //! - Nothing from `sim/`, `render/`, `ui/`, `audio/`, or `net/`. The cameo
 //!   ordering is *mirrored* from the render-side resolver, not imported.
 
 use crate::asset_tools::identify;
 use crate::asset_tools::report::{AnimSlot, ArtCandidate, ArtForReport, ErrorReport};
 use crate::assets::asset_manager::AssetManager;
+use crate::map::theater::theater_names_and_extensions;
 use crate::rules::art_data::{
     ArtRegistry, effect_shp_candidates, object_shp_candidates, voxel_asset_names,
 };
@@ -37,35 +38,10 @@ use crate::rules::art_data::{
 /// theater every stock skirmish map uses unless it says otherwise.
 const DEFAULT_THEATER: &str = "tem";
 
-/// Accepted `--theater` values and the `(theater_ext, theater_name)` pair each
-/// maps to.
-///
-/// Both strings are what the `rules::art_data` candidate builders expect, and
-/// they are not interchangeable: `theater_ext` becomes the file extension
-/// (`GAPOWR.TEM`), while `theater_name` selects the `NewTheater` substitution
-/// letter and only matches on the long uppercase spelling. Passing `"tem"` where
-/// `"TEMPERATE"` belongs silently disables the substitution and yields candidates
-/// that never resolve. The pairs are copied from the theater table in
-/// `map::theater`, which is what the production loader uses.
-const THEATERS: &[(&str, &str, &str)] = &[
-    ("tem", "tem", "TEMPERATE"),
-    ("sno", "sno", "SNOW"),
-    ("urb", "urb", "URBAN"),
-    ("lun", "lun", "LUNAR"),
-    ("des", "des", "DESERT"),
-    ("ubn", "ubn", "NEWURBAN"),
-];
-
-/// Faction filename prefixes a cameo sometimes drops (`GAPOWR` → `POWRICON`).
-/// Mirrors the production sidebar cameo resolver.
-const CAMEO_PREFIX_DROPS: &[&str] = &["GA", "NA", "YA", "CA"];
-
-/// Length of the prefixes in [`CAMEO_PREFIX_DROPS`].
-const CAMEO_PREFIX_LEN: usize = 2;
-
-/// Suffix that marks a name as already being a cameo id, so it is not doubled
-/// into `...ICONICON`.
-const CAMEO_SUFFIX: &str = "ICON";
+/// The stock placeholder a type without loadable cameo art shows
+/// (`TechnoTypeClass::ReadINI`, `0x00715A4F`), and the name its savegame
+/// reload reads when no `Cameo=` is declared (`0x00716C86`).
+const PLACEHOLDER_CAMEO: &str = "XXICON";
 
 /// Emitted when the registry carries no art.ini at all. Without this the report
 /// looks like a successful lookup that happened to find nothing declared.
@@ -82,8 +58,8 @@ const NO_RULES_IMAGE_WARNING: &str = "no rules Image= was supplied, so the effec
 /// Options for one `asset art-for` invocation.
 #[derive(Debug, Clone)]
 pub struct ArtForOptions {
-    /// Theater short name, e.g. `tem`. See [`THEATERS`] for the accepted set;
-    /// the long spelling (`temperate`) is accepted too, in any case.
+    /// Theater extension, e.g. `tem`, or its long name (`temperate`), in any
+    /// case; the production theater table in `map::theater` is the accepted set.
     pub theater: String,
 }
 
@@ -122,6 +98,7 @@ pub fn run(
         rules_image.trim(),
         theater_ext,
         theater_name,
+        asset_manager.ships_ares(),
         &mut resolve,
     ))
 }
@@ -142,23 +119,28 @@ fn validate_type_id(type_id: &str) -> Result<&str, ErrorReport> {
     Ok(trimmed)
 }
 
-/// Map a `--theater` value to `(theater_ext, theater_name)`.
+/// Map a `--theater` value to `(theater_ext, theater_name)` through the
+/// production theater table.
 ///
-/// Matches the short name or the long name, case-insensitively, so a caller that
+/// Both strings are what the `rules::art_data` candidate builders expect, and
+/// they are not interchangeable: `theater_ext` becomes the file extension
+/// (`GAPOWR.TEM`), while `theater_name` selects the `NewTheater` substitution
+/// letter and only matches on the long uppercase spelling. Passing `"tem"` where
+/// `"TEMPERATE"` belongs silently disables the substitution and yields candidates
+/// that never resolve.
+///
+/// Matches the extension or the long name, case-insensitively, so a caller that
 /// types `TEMPERATE` is not punished for it.
 fn resolve_theater(requested: &str) -> Option<(&'static str, &'static str)> {
     let wanted = requested.trim();
-    THEATERS
-        .iter()
-        .find(|(short, _, long)| {
-            wanted.eq_ignore_ascii_case(short) || wanted.eq_ignore_ascii_case(long)
-        })
-        .map(|(_, ext, name)| (*ext, *name))
+    theater_names_and_extensions()
+        .find(|(name, ext)| wanted.eq_ignore_ascii_case(ext) || wanted.eq_ignore_ascii_case(name))
+        .map(|(name, ext)| (ext, name))
 }
 
 /// The rejection path for an unknown theater, listing every valid short name.
 fn unknown_theater_error(requested: &str) -> ErrorReport {
-    let valid: Vec<&str> = THEATERS.iter().map(|(short, _, _)| *short).collect();
+    let valid: Vec<&str> = theater_names_and_extensions().map(|(_, ext)| ext).collect();
     ErrorReport {
         error: format!("unknown theater \"{}\"", requested.trim()),
         hint: Some(format!(
@@ -181,39 +163,38 @@ struct CandidateNames {
 ///
 /// The resolver returns the candidate row plus an optional warning, so a hit in
 /// a catalogued-but-unreachable archive is reported rather than passed off as a
-/// normal lookup.
+/// normal lookup. `ares` is whether the game is an Ares game, whose sidebar
+/// draws a declared PCX cameo first.
 fn assemble(
     art_registry: &ArtRegistry,
     type_id: &str,
     rules_image: &str,
     theater_ext: &str,
     theater_name: &str,
+    ares: bool,
     resolve: &mut dyn FnMut(&str) -> (ArtCandidate, Option<String>),
 ) -> ArtForReport {
     // Retail ids are uppercase everywhere in art.ini; normalise once so the
     // report and its warnings never disagree about how the type is spelled.
     let type_upper = type_id.to_ascii_uppercase();
     let effective_image_id = art_registry.resolve_effective_image_id(type_id, rules_image);
-    let cameo_id = art_registry.resolve_declared_cameo_id(type_id, rules_image);
+    let cameo_id = art_registry
+        .resolve_declared_cameo_id(type_id, rules_image)
+        .unwrap_or_else(|| PLACEHOLDER_CAMEO.to_owned());
     let declared_palette = art_registry.resolve_declared_palette_id(type_id, rules_image);
 
-    let names = candidate_names(
+    let mut names = candidate_names(
         art_registry,
-        type_id,
         &effective_image_id,
         &cameo_id,
         theater_ext,
         theater_name,
     );
-    #[cfg(feature = "ares")]
-    let names = {
-        let mut names = names;
-        if let [Some(filename), _] = art_registry.resolve_declared_pcx_cameos(type_id, rules_image)
-        {
-            names.cameo.insert(0, filename.to_owned());
-        }
-        names
-    };
+    if ares
+        && let [Some(filename), _] = art_registry.resolve_declared_pcx_cameos(type_id, rules_image)
+    {
+        names.cameo.insert(0, filename.to_owned());
+    }
 
     let mut warnings: Vec<String> = Vec::new();
     // Registry state first: it changes how every id below must be read.
@@ -326,7 +307,6 @@ fn assemble(
 /// Assemble every candidate filename this type could be backed by.
 fn candidate_names(
     art_registry: &ArtRegistry,
-    type_id: &str,
     effective_image_id: &str,
     cameo_id: &str,
     theater_ext: &str,
@@ -340,63 +320,21 @@ fn candidate_names(
             theater_ext,
             theater_name,
         ),
-        cameo: cameo_candidate_names(type_id, effective_image_id, cameo_id),
+        cameo: cameo_candidate_names(cameo_id),
         voxel: vec![vxl, hva],
     }
 }
 
-/// Cameo filenames in the order the production sidebar resolver tries them.
-///
-/// Declared ids first, then the `...ICON` convention, then the dropped-faction-
-/// prefix spelling. Ordering matters even here, where every entry is resolved:
-/// it is the order the game's own cameo loader would take, so the first row with
+/// Cameo filenames in the order the production sidebar resolver tries them:
+/// the declared cameo, then the stock placeholder, so the first row with
 /// `exists: true` is the file the sidebar would show.
-fn cameo_candidate_names(type_id: &str, effective_image_id: &str, cameo_id: &str) -> Vec<String> {
-    let upper_type = type_id.to_ascii_uppercase();
-    let image = effective_image_id.to_ascii_uppercase();
+fn cameo_candidate_names(cameo_id: &str) -> Vec<String> {
     let cameo = cameo_id.to_ascii_uppercase();
-    let mut names: Vec<String> = Vec::with_capacity(8);
-
-    push_unique(&mut names, format!("{cameo}.SHP"));
-    if !image.eq_ignore_ascii_case(&cameo) {
-        push_unique(&mut names, format!("{image}.SHP"));
+    let mut names = vec![format!("{cameo}.SHP")];
+    if cameo != PLACEHOLDER_CAMEO {
+        names.push(format!("{PLACEHOLDER_CAMEO}.SHP"));
     }
-
-    // A declared cameo id already ending in ICON must not become ...ICONICON.
-    if !cameo.ends_with(CAMEO_SUFFIX) {
-        push_unique(&mut names, format!("{cameo}{CAMEO_SUFFIX}.SHP"));
-    }
-    push_unique(&mut names, format!("{image}{CAMEO_SUFFIX}.SHP"));
-
-    if !upper_type.eq_ignore_ascii_case(&cameo) && !upper_type.eq_ignore_ascii_case(&image) {
-        push_unique(&mut names, format!("{upper_type}{CAMEO_SUFFIX}.SHP"));
-        push_unique(&mut names, format!("{upper_type}.SHP"));
-    }
-
-    for name in [&upper_type, &image] {
-        if let Some(tail) = drop_faction_prefix(name) {
-            push_unique(&mut names, format!("{tail}{CAMEO_SUFFIX}.SHP"));
-        }
-    }
-
     names
-}
-
-/// Strip a faction prefix such as `GA` when one is present and something follows
-/// it. Uses `get` rather than slicing so a non-ASCII id cannot panic here.
-fn drop_faction_prefix(upper: &str) -> Option<&str> {
-    let head = upper.get(..CAMEO_PREFIX_LEN)?;
-    if !CAMEO_PREFIX_DROPS.contains(&head) {
-        return None;
-    }
-    let tail = upper.get(CAMEO_PREFIX_LEN..)?;
-    (!tail.is_empty()).then_some(tail)
-}
-
-fn push_unique(names: &mut Vec<String>, candidate: String) {
-    if !names.contains(&candidate) {
-        names.push(candidate);
-    }
 }
 
 /// Resolve a batch of candidate names, folding their warnings in without
@@ -452,9 +390,10 @@ fn resolve_candidate(asset_manager: &AssetManager, name: &str) -> (ArtCandidate,
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
+    use crate::map::theater::theater_extension;
 
     /// A resolver that reports every name as missing.
     fn miss() -> impl FnMut(&str) -> (ArtCandidate, Option<String>) {
@@ -500,7 +439,18 @@ mod tests {
 
     #[test]
     fn theater_lookup_accepts_the_long_spelling_and_ignores_case() {
-        assert_eq!(resolve_theater("TEMPERATE"), Some(("tem", "TEMPERATE")));
+        for (ext, name) in [
+            ("tem", "TEMPERATE"),
+            ("sno", "SNOW"),
+            ("urb", "URBAN"),
+            ("lun", "LUNAR"),
+            ("des", "DESERT"),
+            ("ubn", "NEWURBAN"),
+        ] {
+            assert_eq!(resolve_theater(ext), Some((ext, name)));
+            assert_eq!(resolve_theater(name), Some((ext, name)));
+            assert_eq!(theater_extension(name), Some(ext));
+        }
         assert_eq!(resolve_theater("newurban"), Some(("ubn", "NEWURBAN")));
         assert_eq!(resolve_theater("  SNO  "), Some(("sno", "SNOW")));
     }
@@ -514,7 +464,7 @@ mod tests {
         let err = unknown_theater_error("mars");
         assert!(err.error.contains("mars"), "{}", err.error);
         let hint = err.hint.expect("the rejection must name the valid set");
-        for (short, _, _) in THEATERS {
+        for short in ["tem", "sno", "urb", "lun", "des", "ubn"] {
             assert!(hint.contains(short), "hint omits {short}: {hint}");
         }
     }
@@ -529,7 +479,7 @@ mod tests {
     #[test]
     fn shp_candidates_follow_the_new_theater_convention_of_the_chosen_theater() {
         let registry = ArtRegistry::empty();
-        let names = candidate_names(&registry, "GAPOWR", "GAPOWR", "GAPOWR", "tem", "TEMPERATE");
+        let names = candidate_names(&registry, "GAPOWR", "GAPOWR", "tem", "TEMPERATE");
         assert_eq!(
             names.shp,
             vec![
@@ -544,7 +494,7 @@ mod tests {
 
         // Snow substitutes to the same letter the name already has, so the
         // theater-specific pair collapses into the plain one.
-        let snow = candidate_names(&registry, "GAPOWR", "GAPOWR", "GAPOWR", "sno", "SNOW");
+        let snow = candidate_names(&registry, "GAPOWR", "GAPOWR", "sno", "SNOW");
         assert_eq!(
             snow.shp,
             vec!["GAPOWR.SHP", "GAPOWR.SNO", "GGPOWR.SHP", "GGPOWR.SNO"]
@@ -554,62 +504,46 @@ mod tests {
     #[test]
     fn a_type_without_the_new_theater_prefix_gets_the_plain_pair_only() {
         let registry = ArtRegistry::empty();
-        let names = candidate_names(&registry, "E1", "E1", "E1", "tem", "TEMPERATE");
+        let names = candidate_names(&registry, "E1", "E1", "tem", "TEMPERATE");
         assert_eq!(names.shp, vec!["E1.SHP", "E1.TEM"]);
     }
 
-    #[cfg(feature = "ares")]
     #[test]
-    fn report_puts_the_authored_pcx_ahead_of_body_shp_fallbacks() {
+    fn report_puts_the_authored_pcx_ahead_of_the_placeholder() {
         let registry = ArtRegistry::from_ini(&crate::rules::ini_parser::IniFile::from_str(
             "[IMAGE]\nImage=BODY\nCameoPCX=Normal.PCX\n[BODY]\nCameoPCX=wrong.pcx\n",
         ));
-        let report = assemble(&registry, "TYPE", "IMAGE", "tem", "TEMPERATE", &mut miss());
+        let report = assemble(
+            &registry,
+            "TYPE",
+            "IMAGE",
+            "tem",
+            "TEMPERATE",
+            true,
+            &mut miss(),
+        );
         assert_eq!(report.cameo_candidates[0].name, "normal.pcx");
-        assert_eq!(report.cameo_candidates[1].name, "BODY.SHP");
+        assert_eq!(report.cameo_candidates[1].name, "XXICON.SHP");
+        let stock = assemble(
+            &registry,
+            "TYPE",
+            "IMAGE",
+            "tem",
+            "TEMPERATE",
+            false,
+            &mut miss(),
+        );
+        assert_eq!(stock.cameo_candidates[0].name, "XXICON.SHP");
     }
 
     #[test]
     fn cameo_candidates_mirror_the_production_sidebar_resolver() {
-        // Declared cameo differs from the image and already ends in ICON.
-        let declared = cameo_candidate_names("GACNST", "GACNST", "CIVICON");
+        // The declared cameo, then the stock placeholder; no image-id guesses.
         assert_eq!(
-            declared,
-            vec![
-                "CIVICON.SHP",
-                "GACNST.SHP",
-                "GACNSTICON.SHP",
-                "CNSTICON.SHP",
-            ]
+            cameo_candidate_names("CIVICON"),
+            vec!["CIVICON.SHP", "XXICON.SHP"]
         );
-        assert!(
-            !declared.contains(&"CIVICONICON.SHP".to_string()),
-            "a cameo id ending in ICON must not be doubled"
-        );
-    }
-
-    #[test]
-    fn cameo_candidates_keep_the_type_id_when_the_image_points_elsewhere() {
-        // BFRT-shaped case: rules points the art at another type's section, so
-        // the type id itself is still worth trying.
-        let names = cameo_candidate_names("BFRT", "SREF", "SREF");
-        assert_eq!(
-            names,
-            vec!["SREF.SHP", "SREFICON.SHP", "BFRTICON.SHP", "BFRT.SHP",]
-        );
-    }
-
-    #[test]
-    fn faction_prefix_drop_is_bounded_and_never_panics() {
-        assert_eq!(drop_faction_prefix("GAPOWR"), Some("POWR"));
-        assert_eq!(drop_faction_prefix("YAPPET"), Some("PPET"));
-        // Prefix with nothing after it, unknown prefix, and short names.
-        assert_eq!(drop_faction_prefix("GA"), None);
-        assert_eq!(drop_faction_prefix("HTNK"), None);
-        assert_eq!(drop_faction_prefix("E"), None);
-        assert_eq!(drop_faction_prefix(""), None);
-        // Multi-byte input must not split a char boundary.
-        assert_eq!(drop_faction_prefix("\u{e9}x"), None);
+        assert_eq!(cameo_candidate_names("XXICON"), vec!["XXICON.SHP"]);
     }
 
     #[test]
@@ -621,6 +555,7 @@ mod tests {
             "GAPOWR",
             "tem",
             "TEMPERATE",
+            false,
             &mut miss(),
         );
 
@@ -628,7 +563,7 @@ mod tests {
         assert_eq!(report.theater, "TEMPERATE");
         assert_eq!(report.declared_image, "GAPOWR");
         assert_eq!(report.effective_image_id, "GAPOWR");
-        assert_eq!(report.cameo_id, "GAPOWR");
+        assert_eq!(report.cameo_id, "XXICON");
         assert_eq!(report.declared_palette, None);
         assert_eq!(report.shp_candidates.len(), 6);
         assert_eq!(report.voxel_candidates.len(), 2);
@@ -639,7 +574,15 @@ mod tests {
     #[test]
     fn a_missing_rules_image_is_warned_about() {
         let registry = ArtRegistry::empty();
-        let report = assemble(&registry, "GAPOWR", "", "tem", "TEMPERATE", &mut miss());
+        let report = assemble(
+            &registry,
+            "GAPOWR",
+            "",
+            "tem",
+            "TEMPERATE",
+            false,
+            &mut miss(),
+        );
         assert!(
             report.warnings.iter().any(|w| w == NO_RULES_IMAGE_WARNING),
             "{:?}",
@@ -653,7 +596,15 @@ mod tests {
     #[test]
     fn nothing_resolving_is_warned_about_with_the_verbs_that_help() {
         let registry = ArtRegistry::empty();
-        let report = assemble(&registry, "GAPOWR", "GAPOWR", "lun", "LUNAR", &mut miss());
+        let report = assemble(
+            &registry,
+            "GAPOWR",
+            "GAPOWR",
+            "lun",
+            "LUNAR",
+            false,
+            &mut miss(),
+        );
         let warning = report
             .warnings
             .last()
@@ -672,6 +623,7 @@ mod tests {
             "GAPOWR",
             "tem",
             "TEMPERATE",
+            false,
             &mut hit_only("GAPOWR.SHP"),
         );
 

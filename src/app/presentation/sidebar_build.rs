@@ -11,10 +11,11 @@
 use crate::app::AppState;
 use crate::app::presentation::sidebar_render::current_sidebar_chrome;
 use crate::render::batch::SpriteInstance;
+use crate::render::bit_font::{BitFont, Fit};
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
 use crate::ui::sidebar::power_bar_anim::PowerBarAnimState;
 use crate::ui::sidebar::{
-    Rect, SidebarChromeLayoutSpec, SidebarLayout, SidebarTabButton, SidebarView,
+    Rect, SidebarChromeLayoutSpec, SidebarLayout, SidebarPart, SidebarTabButton, SidebarView,
 };
 
 #[path = "sidebar_command_bar.rs"]
@@ -42,7 +43,6 @@ pub(crate) fn build_sidebar_chrome_instances(
             state.match_state.input.camera_x,
             state.match_state.input.camera_y,
         ],
-        state.match_state.match_presentation.ui_scale,
         state.match_state.match_presentation.radar_anim.is_none(),
     )
 }
@@ -65,186 +65,226 @@ pub fn build_sidebar_chrome_instances_for_layout(
     tabs: &[SidebarTabButton],
     power_bar_anim: &PowerBarAnimState,
     camera_offset: [f32; 2],
-    ui_scale: f32,
     static_radar_fallback: bool,
 ) -> Vec<SpriteInstance> {
     let mut inst = Vec::new();
     let d = 0.00048;
-    let s = ui_scale;
-    let cx = layout.sidebar_x;
-    // RadarClass::Draw 653100 and DrawCreditsSHPBackground 6D0E60.
-    if let Some(top) = atlas.top_strip_sidebar {
-        push_chrome(&mut inst, top, cx, 16.0, d, camera_offset, s);
-    }
-    if let Some(credits) = atlas.top_strip_thin {
-        push_chrome(&mut inst, credits, cx, 0.0, d, camera_offset, s);
-    }
-
-    if static_radar_fallback {
-        push_chrome(
-            &mut inst,
-            atlas.radar,
-            cx,
-            layout.radar_y,
-            d,
-            camera_offset,
-            s,
-        );
-    }
-    push_chrome(
-        &mut inst,
-        atlas.side1,
-        cx,
-        layout.side1_y,
-        d,
-        camera_offset,
-        s,
-    );
     let td = d - 0.00001;
-    for tab_btn in tabs {
-        let idx = tab_btn.tab.tab_index();
-        let frame = tab_btn.frame_index as usize;
-        // Fall back to frame 0 if the requested frame is missing in MIX.
-        let entry = atlas.tab_frames[idx][frame].or(atlas.tab_frames[idx][0]);
-        if let Some(e) = entry {
-            push_chrome(
-                &mut inst,
-                e,
-                tab_btn.rect.x,
-                tab_btn.rect.y,
-                td,
-                camera_offset,
-                s,
-            );
-        }
-    }
-    // 6A6C30: row count is native capacity; pixel advance is SIDE2's
-    // loaded canvas height. SIDE3 and ADDON follow the last actual tile.
-    for row in 0..layout.side2_tile_count {
-        let y = layout.cameo_grid_top + row as f32 * atlas.side2.pixel_size[1];
-        push_chrome(&mut inst, atlas.side2, cx, y, d, camera_offset, s);
-    }
-    push_chrome(
-        &mut inst,
-        atlas.side3,
-        cx,
-        layout.side3_y,
-        d,
-        camera_offset,
-        s,
-    );
-    if let Some(addon) = atlas.unknown_top_housing {
-        push_chrome(
-            &mut inst,
-            addon,
-            cx,
-            layout.side3_y + atlas.side3.pixel_size[1],
-            d,
-            camera_offset,
-            s,
-        );
-    }
-
-    // --- Sell / Repair buttons (inside the side1 area). ---
-    // `shape_button_frame` (ShapeButtonClass::Draw 0x0069DEB0) picks the frame
-    // through SidebarGadgetState::repair_frame / sell_frame.
     let btn_depth = d - 0.00002;
-    let sell_frame = view.sell_button.frame_index as usize;
-    if let Some(sell) = atlas.sell_frames[sell_frame].or(atlas.sell_frames[0]) {
-        push_chrome(
-            &mut inst,
-            sell,
-            view.sell_button.rect.x,
-            view.sell_button.rect.y,
-            btn_depth,
-            camera_offset,
-            s,
-        );
-    }
-    let repair_frame = view.repair_button.frame_index as usize;
-    if let Some(repair) = atlas.repair_frames[repair_frame].or(atlas.repair_frames[0]) {
-        push_chrome(
-            &mut inst,
-            repair,
-            view.repair_button.rect.x,
-            view.repair_button.rect.y,
-            btn_depth,
-            camera_offset,
-            s,
-        );
-    }
-
-    // 653010/653100: draw and hit-test use the same loaded SHP canvas.
-    for i in 0..2 {
-        let button = &view.top_buttons[i];
-        if let Some(entry) = atlas.top_button_frames[i][button.frame_index as usize] {
-            push_chrome(
+    let button = |inst: &mut Vec<SpriteInstance>, entry: Option<SidebarChromeEntry>, rect: Rect| {
+        if let Some(entry) = entry {
+            push_chrome(inst, entry, rect.x, rect.y, btn_depth, camera_offset);
+        }
+    };
+    // One part after another in the layout's order, so a later part lies over
+    // an earlier one; a part the layout leaves out draws nothing.
+    for part in spec.parts_in_order() {
+        match part {
+            // DrawCreditsSHPBackground 6D0E60.
+            SidebarPart::Credits => {
+                if let Some(credits) = atlas.top_strip_thin {
+                    push_chrome(
+                        &mut inst,
+                        credits,
+                        layout.credits_x,
+                        layout.credits_y,
+                        d,
+                        camera_offset,
+                    );
+                }
+            }
+            // The credits number is text, drawn with the sidebar's labels.
+            SidebarPart::Money => {}
+            // RadarClass::Draw 653100.
+            SidebarPart::Top => {
+                if let Some(top) = atlas.top_strip_sidebar {
+                    push_chrome(&mut inst, top, layout.top_x, layout.top_y, d, camera_offset);
+                }
+            }
+            // 653010/653100: draw and hit-test use the same loaded SHP canvas.
+            SidebarPart::Diplomacy | SidebarPart::Options => {
+                let i = usize::from(part == SidebarPart::Options);
+                let top_button = &view.top_buttons[i];
+                button(
+                    &mut inst,
+                    atlas.top_button_frames[i][top_button.frame_index as usize],
+                    top_button.rect,
+                );
+            }
+            SidebarPart::Radar => {
+                if static_radar_fallback {
+                    push_chrome(
+                        &mut inst,
+                        atlas.radar,
+                        layout.radar_x,
+                        layout.radar_y,
+                        d,
+                        camera_offset,
+                    );
+                }
+            }
+            SidebarPart::Middle => push_chrome(
                 &mut inst,
-                entry,
-                button.rect.x,
-                button.rect.y,
-                btn_depth,
+                atlas.side1,
+                layout.side1_x,
+                layout.side1_y,
+                d,
                 camera_offset,
-                s,
-            );
+            ),
+            // `shape_button_frame` (ShapeButtonClass::Draw 0x0069DEB0) picks
+            // the frame through SidebarGadgetState::repair_frame / sell_frame.
+            SidebarPart::Repair => {
+                let frame = view.repair_button.frame_index as usize;
+                button(
+                    &mut inst,
+                    atlas.repair_frames[frame].or(atlas.repair_frames[0]),
+                    view.repair_button.rect,
+                );
+            }
+            SidebarPart::Sell => {
+                let frame = view.sell_button.frame_index as usize;
+                button(
+                    &mut inst,
+                    atlas.sell_frames[frame].or(atlas.sell_frames[0]),
+                    view.sell_button.rect,
+                );
+            }
+            SidebarPart::Tabs => {
+                for tab_btn in tabs {
+                    let idx = tab_btn.tab.tab_index();
+                    let frame = tab_btn.frame_index as usize;
+                    // Fall back to frame 0 if the requested frame is missing in MIX.
+                    let entry = atlas.tab_frames[idx][frame].or(atlas.tab_frames[idx][0]);
+                    if let Some(e) = entry {
+                        push_chrome(
+                            &mut inst,
+                            e,
+                            tab_btn.rect.x,
+                            tab_btn.rect.y,
+                            td,
+                            camera_offset,
+                        );
+                    }
+                }
+            }
+            SidebarPart::Cameos => {
+                // 6A6C30: row count is native capacity; pixel advance is
+                // SIDE2's loaded canvas height. SIDE3 and ADDON follow the
+                // last actual tile.
+                let cx = layout.strip_x;
+                if spec.columns() <= 2 {
+                    for row in 0..layout.side2_tile_count {
+                        let y = layout.cameo_grid_top + row as f32 * atlas.side2.pixel_size[1];
+                        push_chrome(&mut inst, atlas.side2, cx, y, d, camera_offset);
+                    }
+                } else {
+                    // VERA's columns: SIDE2 paints the original's two button
+                    // frames, so a row of three to five repeats one of them
+                    // per cell, scaled with the cameo it holds, instead of
+                    // stretching the painted pair out of shape. The panel's
+                    // own edges keep their width, so the border runs unbroken
+                    // down the strip.
+                    let art = atlas.side2.pixel_size;
+                    let row_h = spec.cameo_row_height.max(1.0);
+                    let inset = spec.cameo_inset_x;
+                    let pitch = spec.cameo_column_pitch.max(1.0);
+                    let cell = spec
+                        .cameo_cell_source_width
+                        .min((art[0] - inset).max(1.0))
+                        .max(1.0);
+                    let rail = (art[0] - inset - 2.0 * cell).max(0.0);
+                    let cell_art = atlas.side2.columns(inset, cell);
+                    let left_edge = atlas.side2.columns(0.0, inset);
+                    let right_edge = atlas.side2.columns(art[0] - rail, rail);
+                    for row in 0..layout.side2_tile_count {
+                        let y = layout.cameo_grid_top + row as f32 * row_h;
+                        for col in 0..spec.columns() {
+                            push_chrome_sized(
+                                &mut inst,
+                                cell_art,
+                                cx + inset + col as f32 * pitch,
+                                y,
+                                [pitch, row_h],
+                                d,
+                                camera_offset,
+                            );
+                        }
+                        push_chrome_sized(
+                            &mut inst,
+                            left_edge,
+                            cx,
+                            y,
+                            [inset, row_h],
+                            d,
+                            camera_offset,
+                        );
+                        if rail > 0.0 {
+                            push_chrome_sized(
+                                &mut inst,
+                                right_edge,
+                                cx + art[0] - rail,
+                                y,
+                                [rail, row_h],
+                                d,
+                                camera_offset,
+                            );
+                        }
+                    }
+                }
+                push_chrome(&mut inst, atlas.side3, cx, layout.side3_y, d, camera_offset);
+                if let Some(addon) = atlas.unknown_top_housing {
+                    push_chrome(
+                        &mut inst,
+                        addon,
+                        cx,
+                        layout.side3_y + atlas.side3.pixel_size[1],
+                        d,
+                        camera_offset,
+                    );
+                }
+                // Strip-scroll pair (R-DN +page left, R-UP -page right):
+                // 3-frame convention (0 = idle, 1 = pressed, 2 = disabled),
+                // selected by SidebarGadgetState::scroll_*_frame; the frame-0
+                // fallback only covers art missing from the MIX.
+                let down = view.scroll_down_button.frame_index as usize;
+                button(
+                    &mut inst,
+                    atlas.scroll_down_frames[down].or(atlas.scroll_down_frames[0]),
+                    view.scroll_down_button.rect,
+                );
+                let up = view.scroll_up_button.frame_index as usize;
+                button(
+                    &mut inst,
+                    atlas.scroll_up_frames[up].or(atlas.scroll_up_frames[0]),
+                    view.scroll_up_button.rect,
+                );
+            }
+            // powerp.shp strips stacked from the top.
+            SidebarPart::Power => render_power_bar(
+                &mut inst,
+                atlas,
+                spec,
+                layout,
+                power_bar_anim,
+                camera_offset,
+                d,
+            ),
         }
     }
-
-    // --- Strip-scroll pair (R-DN +page left, R-UP −page right) ---
-    // 3-frame R-UP/R-DN convention (0 = idle, 1 = pressed, 2 = disabled),
-    // selected by SidebarGadgetState::scroll_*_frame; frame-0 fallback only
-    // covers art missing from the MIX, exactly like repair/sell.
-    let scroll_down_rect = view.scroll_down_button.rect;
-    let scroll_up_rect = view.scroll_up_button.rect;
-    let down_frame = view.scroll_down_button.frame_index as usize;
-    if let Some(e) = atlas.scroll_down_frames[down_frame].or(atlas.scroll_down_frames[0]) {
-        push_chrome(
-            &mut inst,
-            e,
-            scroll_down_rect.x,
-            scroll_down_rect.y,
-            btn_depth,
-            camera_offset,
-            s,
-        );
-    }
-    let up_frame = view.scroll_up_button.frame_index as usize;
-    if let Some(e) = atlas.scroll_up_frames[up_frame].or(atlas.scroll_up_frames[0]) {
-        push_chrome(
-            &mut inst,
-            e,
-            scroll_up_rect.x,
-            scroll_up_rect.y,
-            btn_depth,
-            camera_offset,
-            s,
-        );
-    }
-
-    // --- Power bar meter (powerp.shp strips stacked from top) ---
-    render_power_bar(
-        &mut inst,
-        atlas,
-        spec,
-        layout,
-        power_bar_anim,
-        camera_offset,
-        d,
-    );
 
     inst
 }
 
 /// Render the vertical power bar meter by stacking powerp.shp strip tiles.
 ///
-/// Draws segments from top to bottom matching the original PowerClass::Draw_It:
-///   Empty (top)  = unused bar space (frame 0)
-///   Red          = deficit segments (frame 3)
-///   Yellow       = balance indicator (frame 2)
-///   Green        = surplus / consumed power (frame 1, with frame 4 blink)
+/// Draws segments from top to bottom as PowerClass::Draw 63FB20 does
+/// ([`PowerBarAnimState::visit_draw_segments`]): empty space (frame 0), the
+/// blink (frame 4) in place of the first lit segment, then the surplus over
+/// 100 (frame 1, +152C), the spare up to 100 (frame 2, +1530) and the drain
+/// (frame 3, +1534).
 ///
-/// Segment counts come from `PowerBarAnimState` which animates them
-/// one-at-a-time toward their targets for a smooth sliding effect.
+/// Segment counts come from `PowerBarAnimState`, which moves them one at a
+/// time toward their targets.
 fn render_power_bar(
     inst: &mut Vec<SpriteInstance>,
     atlas: &SidebarChromeAtlas,
@@ -255,7 +295,7 @@ fn render_power_bar(
     base_depth: f32,
 ) {
     let bar_x: f32 = layout.sidebar_x + spec.power_bar_x;
-    let bar_top: f32 = 227.0;
+    let bar_top: f32 = spec.power_bar_y;
     let tile_h: f32 = spec.power_bar_tile_height;
 
     if tile_h <= 0.0 || anim.max_segments() <= 0 {
@@ -279,6 +319,8 @@ fn render_power_bar(
     });
 }
 
+/// Ordinary gamemd chrome draws one render pixel per asset pixel;
+/// 6A5090/6A5130 change row capacity on resize, never artwork scale.
 fn push_chrome(
     instances: &mut Vec<SpriteInstance>,
     entry: crate::render::sidebar_chrome::SidebarChromeEntry,
@@ -286,11 +328,10 @@ fn push_chrome(
     y: f32,
     depth: f32,
     camera_offset: [f32; 2],
-    scale: f32,
 ) {
     instances.push(SpriteInstance {
         position: [x + camera_offset[0], y + camera_offset[1]],
-        size: [entry.pixel_size[0] * scale, entry.pixel_size[1] * scale],
+        size: entry.pixel_size,
         uv_origin: entry.uv_origin,
         uv_size: entry.uv_size,
         depth,
@@ -324,22 +365,32 @@ fn push_chrome_sized(
 // ---------------------------------------------------------------------------
 // Cameo icon instances
 // ---------------------------------------------------------------------------
-
 /// Horizontal padding around the ready text (each side, in native pixels).
-const READY_PAD_X: f32 = 2.0;
+pub(crate) const READY_PAD_X: f32 = 2.0;
 /// Vertical padding around the ready text (each side, in native pixels).
-const READY_PAD_Y: f32 = 1.0;
+pub(crate) const READY_PAD_Y: f32 = 1.0;
+
+/// VERA's own: the [`Fit`] that keeps a cameo's status label on one line on
+/// its cameo, `slot_w` less the strip's padding and less any queue `badge`
+/// sharing its row, so that a longer translation squeezes instead of running
+/// off the cameo or under the badge. Retail's labels fit at [`Fit::NONE`].
+/// The label's strip and its text take the same fit.
+pub(crate) fn status_label_fit(
+    font: &BitFont,
+    text: &str,
+    slot_w: f32,
+    badge: Option<&str>,
+) -> Fit {
+    let badge_w = badge.map_or(0.0, |badge| {
+        font.text_width(badge) as f32 + QUEUE_COUNT_PAD_X
+    });
+    font.fit_line(text, (slot_w - READY_PAD_X * 2.0 - badge_w).max(1.0) as u32)
+}
 
 /// Horizontal padding for queue count badge (native pixels, matches ComputeTextRect x_pad=2).
 const QUEUE_COUNT_PAD_X: f32 = 2.0;
 /// Vertical padding for queue count badge (native pixels, matches ComputeTextRect y_pad=1).
 const QUEUE_COUNT_PAD_Y: f32 = 1.0;
-
-/// Compute the text scale for cameo overlay text (READY, queue count).
-/// Uses full ui_scale so text stays proportional to the scaled cameos.
-fn ready_text_scale(ui_scale: f32) -> f32 {
-    ui_scale
-}
 
 /// The CSF labels shared by the cameo's single status strip and its glyphs.
 #[derive(Clone, Copy)]
@@ -348,6 +399,78 @@ pub(crate) struct CameoStatusLabels<'a> {
     pub hold: &'a str,
     pub charging: &'a str,
     pub active: &'a str,
+    /// Ares: each type's localized `Text.*` labels ([`ares_status_texts`]);
+    /// `None` unless Ares plays in the game (`RuleSet::ares`).
+    pub ares: Option<&'a AresStatusTexts>,
+}
+
+/// Each SuperWeaponType's localized NameReadiness texts, keyed by its
+/// upper-case section: Preparing, Hold, Ready, Charging, Active; an empty
+/// label resolves to no text.
+pub(crate) type AresStatusTexts = std::collections::HashMap<String, [String; 5]>;
+
+/// Resolve every type's Ares `Text.*` labels through the shared CSF owner,
+/// once per match (`install_world_presentation`).
+pub(crate) fn ares_status_texts(
+    rules: &crate::rules::ruleset::RuleSet,
+    text: impl Fn(&str) -> String,
+) -> AresStatusTexts {
+    rules
+        .super_weapons
+        .values()
+        .map(|sw| {
+            let texts = sw.ares_texts();
+            let labels = [
+                texts.preparing(),
+                texts.hold(),
+                texts.ready(),
+                texts.charging(),
+                texts.active(),
+            ];
+            (
+                sw.id.to_ascii_uppercase(),
+                labels.map(|label| {
+                    if label.is_empty() {
+                        String::new()
+                    } else {
+                        text(label)
+                    }
+                }),
+            )
+        })
+        .collect()
+}
+
+/// `SuperClass::NameReadiness6CC2B0` status label; `None` while it has no
+/// status text. Shared by the right cameo strip and the left sidebar button.
+/// When Ares plays in the game (`RuleSet::ares`, carried by `labels.ares`),
+/// Ares's replacement (hook 6CC2B0, Ares.dll 100356A0) returns the type's
+/// `Text.*` label, `Text.Preparing` without a status, and nothing for an
+/// empty label.
+pub(crate) fn superweapon_status_label<'a>(
+    section: Option<&str>,
+    display: crate::sim::superweapon::SuperWeaponDisplay,
+    labels: CameoStatusLabels<'a>,
+) -> Option<&'a str> {
+    use crate::sim::superweapon::SuperWeaponStatus;
+    if let (Some(texts), Some(section)) = (labels.ares, section)
+        && let Some(texts) = texts.get(&section.to_ascii_uppercase())
+    {
+        let text = &texts[match display.status {
+            None => 0,
+            Some(SuperWeaponStatus::Hold) => 1,
+            Some(SuperWeaponStatus::Ready) => 2,
+            Some(SuperWeaponStatus::Charging) => 3,
+            Some(SuperWeaponStatus::Active) => 4,
+        }];
+        return (!text.is_empty()).then_some(text.as_str());
+    }
+    display.status.map(|status| match status {
+        SuperWeaponStatus::Hold => labels.hold,
+        SuperWeaponStatus::Ready => labels.ready,
+        SuperWeaponStatus::Charging => labels.charging,
+        SuperWeaponStatus::Active => labels.active,
+    })
 }
 
 /// The same status selection sizes the dark strip and draws its text.
@@ -356,15 +479,7 @@ fn cameo_status_text<'a>(
     labels: CameoStatusLabels<'a>,
 ) -> Option<&'a str> {
     if let Some(display) = item.super_weapon_display {
-        // SuperClass::NameReadiness6CC2B0 owns held/drain status; raw Ready
-        // can stay set while draining and must not override this projection.
-        use crate::sim::superweapon::SuperWeaponStatus;
-        return display.status.map(|status| match status {
-            SuperWeaponStatus::Hold => labels.hold,
-            SuperWeaponStatus::Ready => labels.ready,
-            SuperWeaponStatus::Charging => labels.charging,
-            SuperWeaponStatus::Active => labels.active,
-        });
+        return superweapon_status_label(item.super_weapon_section.as_deref(), display, labels);
     }
     if item.is_ready {
         Some(labels.ready)
@@ -375,12 +490,86 @@ fn cameo_status_text<'a>(
     }
 }
 
-fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem) -> bool {
-    !matches!(
+/// Whether the status label is the `[esp+0x40]` text drawn before the clock.
+///
+/// `StripClass::Draw` draws that slot, production `TXT_READY` and every
+/// `SuperClass::NameReadiness` label, at `0x006A9D94..0x006A9E36` and only
+/// then the clock at `0x006A9E97`, so a held or charge-drain superweapon's
+/// clock covers its label. The production Hold label is resolved after the
+/// clock (`0x006A9ECC..0x006AA014`) and draws over it.
+fn status_text_precedes_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
+    item.super_weapon_display.is_some() || item.is_ready
+}
+
+/// Whether a Building or Defense cameo may draw a queue count at all.
+///
+/// gamemd's badge path resolves the requested type's House Factory with a
+/// hard-coded `BuildCat` 0 (`StripClass::Draw`, push at `0x006A9C52`, then
+/// Fetch_Factory `0x00500510`): every structure gets the Buildings Factory. A
+/// Building entry finds its own, which holds one build at a time, so its count
+/// is at most the held copy; a Defense entry never counts. The de-hard-coded
+/// lookup (Phobos' `StripClass_DrawStrip_FindFactoryDehardCode @ 0x006A9C54`,
+/// `src/Ext/Building/Hooks.cpp`) uses the building type's own Factory. It is
+/// unconditional under the `phobos` feature; a default build takes it with
+/// `[General] BuildingProductionQueue=`, the switch that lets structure strips
+/// stack copies, so gamemd's single-count badge stays without it.
+fn structure_queue_badges(state: &crate::app::state::AppState) -> bool {
+    cfg!(feature = "phobos")
+        || state
+            .rules()
+            .is_some_and(|rules| rules.general.building_production_queue)
+}
+
+fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem, structure_badges: bool) -> bool {
+    // VERA's Superweapon Limit: a superweapon cameo counts its charged shots
+    // once more than one waits. gamemd's has no count.
+    if item.is_superweapon {
+        return item.queued_count > 1;
+    }
+    let counts = !matches!(
         item.queue_category,
         crate::sim::production::ProductionCategory::Building
             | crate::sim::production::ProductionCategory::Defense
-    ) && (item.queued_count > 1 || (item.queued_count > 0 && !item.is_building_this_type))
+    ) || structure_badges;
+    // `Factory::CountType @ 0x004CA670` counts the held product as one when it
+    // is this type, so a count of one is a queued copy only while the held
+    // product is something else (`0x006A9C99..0x006A9CC3`).
+    counts && (item.queued_count > 1 || (item.queued_count > 0 && !item.is_held_this_type))
+}
+
+/// The top-right badge text: the queue count, or VERA's endless-build mark
+/// (`build_repeat`, Ctrl + left click) after it. The mark is not native.
+fn queue_badge_text(
+    state: &AppState,
+    item: &crate::ui::sidebar::SidebarItem,
+    has_queue_badge: bool,
+) -> Option<String> {
+    if !item.is_superweapon
+        && state
+            .match_state
+            .input
+            .build_repeat
+            .is_repeating(&item.type_id)
+    {
+        return Some(format!("{}{}", item.queued_count, ENDLESS_BUILD_MARK));
+    }
+    has_queue_badge.then(|| item.queued_count.to_string())
+}
+
+/// Shown after the queue count of a type that builds endlessly.
+const ENDLESS_BUILD_MARK: &str = "+";
+
+/// Whether a status label sits at the cameo's left edge instead of centered.
+///
+/// gamemd keeps two sidebar text slots. `[esp+0x40]` carries `TXT_READY`
+/// (`push 0xd53` at `0x006A982F`, taken only when `IsComplete 0x004CA130`
+/// answers) and every `SuperClass::NameReadiness 0x006CC2B0` label, including a
+/// held superweapon's; its draw at `0x006A9DAE..0x006A9E17` is always
+/// `cameo_x + 30` with flags `0x142`. Only the production Hold label, resolved
+/// separately at `0x006A9ECC`, reads the count-badge flag at `0x006A9EE4` and
+/// moves to `cameo_x + 2` with `0x42` (`0x006A9EF8..0x006A9EFE`).
+fn status_text_shifts_left(item: &crate::ui::sidebar::SidebarItem, has_queue_badge: bool) -> bool {
+    has_queue_badge && item.is_on_hold && !item.is_ready && item.super_weapon_display.is_none()
 }
 
 /// Whether a cameo draws the build clock. gamemd's strip draw sets its clock
@@ -401,7 +590,7 @@ fn shows_build_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
 /// keeps the base art and full-canvas overlays on the same pixel boundaries.
 /// The camera offset is added after screen-space rounding so the shader can
 /// subtract it without making fixed UI geometry depend on fractional panning.
-fn place_canvas_crop_in_slot(
+pub(crate) fn place_canvas_crop_in_slot(
     slot: Rect,
     canvas_size: [f32; 2],
     crop_origin: [f32; 2],
@@ -456,7 +645,7 @@ fn build_cameo_clock_instance(
     }
 }
 
-fn build_gclock_stage_instance(
+pub(crate) fn build_gclock_stage_instance(
     gclock_frames: &[SidebarChromeEntry],
     stage: i32,
     slot: Rect,
@@ -491,11 +680,57 @@ fn build_gclock_stage_instance(
 #[derive(Default)]
 pub(crate) struct SidebarCameoInstances {
     pub cameo: Vec<SpriteInstance>,
+    /// The hovered entry's outline, between the icon and the unavailable mask.
+    pub hover: Vec<SpriteInstance>,
     pub unavailable: Vec<SpriteInstance>,
     pub flash: Vec<SpriteInstance>,
     pub gclock: Vec<SpriteInstance>,
     pub queue_overlay: Vec<SpriteInstance>,
+    /// Strips behind the labels drawn before the clock.
+    pub label_overlay: Vec<SpriteInstance>,
+    /// Strips behind the production Hold label, drawn after the clock.
     pub overlay: Vec<SpriteInstance>,
+}
+
+/// The visible slot whose select button the mouse is over. Mouse_Enter6AB990
+/// and Mouse_Leave6AB9E0 keep that button's +0x34 flag; StripDraw6A972D
+/// reads it only for a filled slot and ignores it while input is locked
+/// (`[0xA8ED9C]`, 6A9734).
+fn hovered_cameo_slot(
+    gadgets: &crate::app::input::gadget_input::InGameGadgets,
+    entry_count: usize,
+    input_locked: bool,
+) -> Option<usize> {
+    let hovered = gadgets.focus.hovered?;
+    let slot = gadgets
+        .cameos
+        .iter()
+        .position(|&handle| handle == hovered)?;
+    (slot < entry_count && !input_locked).then_some(slot)
+}
+
+/// `XSurface::DrawRectEx @ 0x007BADC0`: a one-pixel outline whose last row
+/// and column lie inside the rectangle. StripDraw6A9AF8 draws the hovered
+/// 60x48 cameo slot with it; Phobos `SWButtonClass::Draw` uses the same rect.
+pub(crate) fn push_rect_outline(out: &mut Vec<SpriteInstance>, rect: Rect, tint: [f32; 3]) {
+    let border = 1.0;
+    for (x, y, w, h) in [
+        (rect.x, rect.y, rect.w, border),
+        (rect.x, rect.y + rect.h - border, rect.w, border),
+        (rect.x, rect.y, border, rect.h),
+        (rect.x + rect.w - border, rect.y, border, rect.h),
+    ] {
+        out.push(SpriteInstance {
+            position: [x, y],
+            size: [w, h],
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            depth: 0.00044,
+            tint,
+            alpha: 1.0,
+            ..Default::default()
+        });
+    }
 }
 
 /// Original shape point is the cameo top-left; the caller clips at +60/+48
@@ -544,6 +779,7 @@ pub(crate) fn build_sidebar_cameo_instances(
     let mut gclock_instances = Vec::new();
     let mut overlay_instances = Vec::new();
     let mut queue_overlay = Vec::new();
+    let mut label_overlay = Vec::new();
     let mut unavailable = Vec::new();
     let mut flash = Vec::new();
     let co = [
@@ -553,35 +789,56 @@ pub(crate) fn build_sidebar_cameo_instances(
     let chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
     let gclock_frames: &[SidebarChromeEntry] =
         chrome.map(|a| a.gclock_frames.as_slice()).unwrap_or(&[]);
-    for item in &view.items {
+    let mut hover = Vec::new();
+    let hovered_slot = hovered_cameo_slot(
+        &state.match_state.match_presentation.in_game_gadgets,
+        view.items.len(),
+        crate::app::input::campaign_input::is_locked(state),
+    );
+    // SetSidebarTextColor72F440 writes B0FA1C, which Draw packs at 6A9A4F.
+    let hover_tint = crate::render::sidebar_text::native_radar_outline_color(
+        crate::app::presentation::sidebar_render::current_sidebar_theme(state),
+    );
+    for (slot_index, item) in view.items.iter().enumerate() {
         let entry = if item.is_superweapon {
             atlas.superweapon(&item.type_id)
         } else {
             atlas.cameo(&item.type_id, item.alt_cameo)
         };
-        let Some(entry) = entry else {
-            continue;
-        };
         let slot = item.cameo_rect();
-        let Some(cameo_rect) = place_canvas_crop_in_slot(
-            slot,
-            entry.canvas_size,
-            entry.crop_origin,
-            entry.pixel_size,
-            co,
-        ) else {
-            continue;
-        };
-        instances.push(SpriteInstance {
-            position: [cameo_rect.x, cameo_rect.y],
-            size: [cameo_rect.w, cameo_rect.h],
-            uv_origin: entry.uv_origin,
-            uv_size: entry.uv_size,
-            depth: 0.00044,
-            tint: [1.0, 1.0, 1.0],
-            alpha: 1.0,
-            ..Default::default()
-        });
+        // StripDraw6A99F3 skips only the shape when an entry has no cameo;
+        // its outline, masks, clock and text still draw.
+        if let Some(entry) = entry
+            && let Some(cameo_rect) = place_canvas_crop_in_slot(
+                slot,
+                entry.canvas_size,
+                entry.crop_origin,
+                entry.pixel_size,
+                co,
+            )
+        {
+            instances.push(SpriteInstance {
+                position: [cameo_rect.x, cameo_rect.y],
+                size: [cameo_rect.w, cameo_rect.h],
+                uv_origin: entry.uv_origin,
+                uv_size: entry.uv_size,
+                depth: 0.00044,
+                tint: [1.0, 1.0, 1.0],
+                alpha: 1.0,
+                ..Default::default()
+            });
+        }
+        if hovered_slot == Some(slot_index) {
+            push_rect_outline(
+                &mut hover,
+                Rect {
+                    x: slot.x + co[0],
+                    y: slot.y + co[1],
+                    ..slot
+                },
+                hover_tint,
+            );
+        }
         if shows_build_clock(item)
             && let Some(instance) = build_cameo_clock_instance(gclock_frames, item, slot, co)
         {
@@ -603,27 +860,36 @@ pub(crate) fn build_sidebar_cameo_instances(
             }
         }
 
-        let has_queue_badge = shows_queue_badge(item);
+        let has_queue_badge = shows_queue_badge(item, structure_queue_badges(state));
 
         // Dark strip overlay behind the cameo status text (alpha 0xAF).
-        // When a queue badge is also present, the status strip shifts left.
+        // It follows the label it backs, so only the Hold strip shifts.
         if let Some(status_text) = cameo_status_text(item, labels)
             && state.renderer.bit_font.darken_texture().is_some()
         {
-            let s = state.match_state.match_presentation.ui_scale;
-            let ts = ready_text_scale(s);
-            let text_w = state.renderer.bit_font.text_width(status_text) as f32 * ts;
-            let strip_w = text_w + READY_PAD_X * 2.0 * ts;
+            let font = &state.renderer.bit_font;
+            let shifts_left = status_text_shifts_left(item, has_queue_badge);
+            let badge = shifts_left
+                .then(|| queue_badge_text(state, item, has_queue_badge))
+                .flatten();
+            let fit = status_label_fit(font, status_text, slot.w, badge.as_deref());
+            let text_w = font.fitted(fit, |font| font.text_width(status_text)) as f32;
+            let strip_w = text_w + READY_PAD_X * 2.0;
             // gamemd `ComputeTextRect` uses `cell_height + 2*y_pad` for the
             // strip height (cell_height includes the 1 px inter-line gap that
             // gamemd extends below the glyphs).
-            let strip_h = (state.renderer.bit_font.cell_height() + READY_PAD_Y * 2.0) * ts;
-            let strip_x = if has_queue_badge {
+            let strip_h = font.cell_height() + READY_PAD_Y * 2.0;
+            let strip_x = if shifts_left {
                 slot.x + co[0]
             } else {
                 slot.x + (slot.w - strip_w) * 0.5 + co[0]
             };
-            overlay_instances.push(SpriteInstance {
+            let strips = if status_text_precedes_clock(item) {
+                &mut label_overlay
+            } else {
+                &mut overlay_instances
+            };
+            strips.push(SpriteInstance {
                 position: [strip_x, slot.y + co[1]],
                 size: [strip_w, strip_h.min(slot.h)],
                 uv_origin: [0.0, 0.0],
@@ -638,14 +904,14 @@ pub(crate) fn build_sidebar_cameo_instances(
         // Dark strip overlay behind queue count badge (top-right, same alpha as Ready strip).
         // Original: ComputeTextRect(cameo_x+60, cameo_y+1, 0x242, x_pad=2, y_pad=1)
         // The dark rect extends x_pad (2px) past the cameo right edge.
-        if has_queue_badge && state.renderer.bit_font.darken_texture().is_some() {
-            let ts = ready_text_scale(state.match_state.match_presentation.ui_scale);
-            let count_str = format!("{}", item.queued_count);
-            let text_w = state.renderer.bit_font.text_width(&count_str) as f32 * ts;
-            let strip_w = text_w + QUEUE_COUNT_PAD_X * 2.0 * ts;
-            let strip_h = (state.renderer.bit_font.cell_height() + QUEUE_COUNT_PAD_Y * 2.0) * ts;
+        if let Some(count_str) = queue_badge_text(state, item, has_queue_badge)
+            && state.renderer.bit_font.darken_texture().is_some()
+        {
+            let text_w = state.renderer.bit_font.text_width(&count_str) as f32;
+            let strip_w = text_w + QUEUE_COUNT_PAD_X * 2.0;
+            let strip_h = state.renderer.bit_font.cell_height() + QUEUE_COUNT_PAD_Y * 2.0;
             // Right-align anchor at cameo right edge; strip extends x_pad past it.
-            let strip_x = slot.x + slot.w - text_w - QUEUE_COUNT_PAD_X * ts;
+            let strip_x = slot.x + slot.w - text_w - QUEUE_COUNT_PAD_X;
             queue_overlay.push(SpriteInstance {
                 position: [strip_x + co[0], slot.y + co[1]],
                 size: [strip_w, strip_h.min(slot.h)],
@@ -658,14 +924,85 @@ pub(crate) fn build_sidebar_cameo_instances(
             });
         }
     }
+    // StripDraw's empty-slot path (6A99BE -> 6A9B4B) paints the same flash
+    // darkening on a lit empty record.
+    if let Some(mask) = chrome.and_then(|atlas| atlas.darken.as_ref()) {
+        flash.extend(
+            view.flash_empty_slots
+                .iter()
+                .filter_map(|&slot| build_darken_instance(mask, slot, co, 4)),
+        );
+    }
     SidebarCameoInstances {
         cameo: instances,
+        hover,
         unavailable,
         flash,
         gclock: gclock_instances,
         queue_overlay,
+        label_overlay,
         overlay: overlay_instances,
     }
+}
+
+/// The observer strip's pictures, from the chrome atlas: each listed House's
+/// side background at its row pair, its flag 70 pixels right and down
+/// (`0x006AA0F1..0x006AA154`, `0x006AA1E3..0x006AA2C9`).
+pub(crate) fn build_observer_strip_instances(
+    state: &AppState,
+    view: &SidebarView,
+) -> Vec<SpriteInstance> {
+    let (Some(houses), Some(atlas)) = (view.observer.as_deref(), current_sidebar_chrome(state))
+    else {
+        return Vec::new();
+    };
+    let co = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ];
+    let art = &atlas.observer_art;
+    let mut out = Vec::new();
+    for house in houses {
+        let [x, y] = house.origin;
+        if let Some(&background) = art.background(house.side) {
+            push_chrome(&mut out, background, x, y, OBSERVER_BACKGROUND_DEPTH, co);
+        }
+        if let Some(&flag) = art.flag(house.country) {
+            push_chrome(&mut out, flag, x + 70.0, y + 70.0, OBSERVER_FLAG_DEPTH, co);
+        }
+    }
+    out
+}
+
+/// Over the strip's SIDE2 tiles, under its text.
+const OBSERVER_BACKGROUND_DEPTH: f32 = 0.00045;
+const OBSERVER_FLAG_DEPTH: f32 = 0.000449;
+
+/// The observer strip's texts in each House's colour (Fancy_Text_Print
+/// `0x004A61C0`, style `0x42`): the name at 8, 4 into the row pair, each
+/// line 17 pixels below the last (`0x006AA373..0x006AA583`).
+fn observer_strip_text(
+    font: &BitFont,
+    houses: &[crate::ui::sidebar::ObserverEntry],
+    co: [f32; 2],
+) -> Vec<SpriteInstance> {
+    let mut out = Vec::new();
+    for house in houses {
+        let tint = house.rgb.map(|c| f32::from(c) / 255.0);
+        let [x, y] = [house.origin[0] + 8.0, house.origin[1] + 4.0];
+        for (line, text) in std::iter::once(&house.name).chain(&house.lines).enumerate() {
+            out.extend(font.build_text(
+                text,
+                x,
+                y + line as f32 * 17.0,
+                1.0,
+                crate::render::sidebar_text::CREDITS_DEPTH,
+                tint,
+                co,
+            ));
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -674,8 +1011,11 @@ pub(crate) fn build_sidebar_cameo_instances(
 
 #[derive(Default)]
 pub(crate) struct SidebarTextInstances {
+    /// The production Hold label, drawn after the clock.
     pub status: Vec<SpriteInstance>,
     pub queue: Vec<SpriteInstance>,
+    /// Ready and superweapon labels, drawn before the clock.
+    pub label: Vec<SpriteInstance>,
 }
 
 pub(crate) fn build_sidebar_text_instances(
@@ -688,71 +1028,81 @@ pub(crate) fn build_sidebar_text_instances(
         // No retail FNT loaded; the native sidebar text path is unavailable.
         return SidebarTextInstances::default();
     }
-    let s = state.match_state.match_presentation.ui_scale;
-    let ts = ready_text_scale(s);
     let co = [
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
     ];
     let mut instances = Vec::new();
     let mut queue = Vec::new();
+    let mut label = Vec::new();
 
     for item in &view.items {
         let slot = item.rect;
 
-        let has_queue_badge = shows_queue_badge(item);
+        let has_queue_badge = shows_queue_badge(item, structure_queue_badges(state));
 
         // Cameo status text ("Ready" / "On Hold") — at the top of the cameo.
-        // When a queue badge is also shown, the status text shifts left to
-        // avoid overlap (original: x = cameo_x+2, flags 0x42 vs centered
-        // cameo_x+30, 0x142).
+        // Only the Hold label moves to the left edge, and only beside a queue
+        // badge; see `status_text_shifts_left`.
         if let Some(status_text) = cameo_status_text(item, labels) {
-            let text_w = state.renderer.bit_font.text_width(status_text) as f32 * ts;
-            let text_x = if has_queue_badge {
-                slot.x + READY_PAD_X * ts
+            let font = &state.renderer.bit_font;
+            let shifts_left = status_text_shifts_left(item, has_queue_badge);
+            let badge = shifts_left
+                .then(|| queue_badge_text(state, item, has_queue_badge))
+                .flatten();
+            let fit = status_label_fit(font, status_text, slot.w, badge.as_deref());
+            let text_w = font.fitted(fit, |font| font.text_width(status_text)) as f32;
+            // Residual: native truncates this halving; the float half
+            // places odd widths up to 1 px apart, which a player cannot see.
+            let text_x = if shifts_left {
+                slot.x + READY_PAD_X
             } else {
                 slot.x + (slot.w - text_w) * 0.5
             };
             // gamemd anchors text at `cameo_y + y_pad`; the strip extends
             // y_pad above and (cell_height - glyph_height + y_pad) below.
-            let text_y = slot.y + READY_PAD_Y * ts;
-            instances.extend(state.renderer.bit_font.build_text(
-                status_text,
-                text_x,
-                text_y,
-                ts,
-                0.00042,
-                ready_tint,
-                co,
-            ));
+            let text_y = slot.y + READY_PAD_Y;
+            let glyphs = if status_text_precedes_clock(item) {
+                &mut label
+            } else {
+                &mut instances
+            };
+            glyphs.extend(font.fitted(fit, |font| {
+                font.build_text(status_text, text_x, text_y, 1.0, 0.00042, ready_tint, co)
+            }));
         }
 
         // Queue count badge — right-aligned at top-right of cameo.
         // Original: ComputeTextRect(cameo_x+60, cameo_y+1, 0x242, 2, 1)
         // 0x242 = right-align. Uses same side-dependent color as Ready text.
-        if has_queue_badge {
-            let count_str = format!("{}", item.queued_count);
-            let text_w = state.renderer.bit_font.text_width(&count_str) as f32 * ts;
+        if let Some(count_str) = queue_badge_text(state, item, has_queue_badge) {
+            let text_w = state.renderer.bit_font.text_width(&count_str) as f32;
             // Right-align: text right edge at cameo right edge (anchor = cameo_x + 60).
             let text_x = slot.x + slot.w - text_w;
-            let text_y = slot.y + QUEUE_COUNT_PAD_Y * ts;
+            let text_y = slot.y + QUEUE_COUNT_PAD_Y;
             queue.extend(
                 state
                     .renderer
                     .bit_font
-                    .build_text(&count_str, text_x, text_y, ts, 0.00042, ready_tint, co),
+                    .build_text(&count_str, text_x, text_y, 1.0, 0.00042, ready_tint, co),
             );
         }
+    }
+    if let Some(houses) = view.observer.as_deref() {
+        instances.extend(observer_strip_text(&state.renderer.bit_font, houses, co));
     }
     SidebarTextInstances {
         status: instances,
         queue,
+        label,
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
-    use super::{build_gclock_instance, place_canvas_crop_in_slot};
+    use super::{
+        build_gclock_instance, hovered_cameo_slot, place_canvas_crop_in_slot, push_rect_outline,
+    };
     use crate::render::sidebar_chrome::SidebarChromeEntry;
     use crate::ui::sidebar::Rect;
 
@@ -787,6 +1137,44 @@ mod tests {
         // 54 * 1.25 is 67.5; deriving size from the shared rounded edges
         // intentionally produces 67 rather than independently rounding to 68.
         assert_eq!(with_camera.w, 67.0);
+    }
+
+    #[test]
+    fn hover_outline_marks_only_a_filled_slot_while_input_is_unlocked() {
+        use crate::ui::gadget::GadgetHandle;
+        let mut gadgets = crate::app::input::gadget_input::InGameGadgets::new();
+        gadgets.cameos = vec![GadgetHandle(7), GadgetHandle(8), GadgetHandle(9)];
+        gadgets.focus.hovered = Some(GadgetHandle(8));
+        assert_eq!(hovered_cameo_slot(&gadgets, 2, false), Some(1));
+        // 6A9727: a pooled select button past EntryCount draws nothing.
+        assert_eq!(hovered_cameo_slot(&gadgets, 1, false), None);
+        // 6A9734: the input lock hides the outline but keeps the hover.
+        assert_eq!(hovered_cameo_slot(&gadgets, 2, true), None);
+        gadgets.focus.hovered = Some(GadgetHandle(3));
+        assert_eq!(hovered_cameo_slot(&gadgets, 3, false), None);
+    }
+
+    #[test]
+    fn rect_outline_includes_the_last_row_and_column_like_draw_rect_ex() {
+        let mut out = Vec::new();
+        let slot = Rect {
+            x: 878.0,
+            y: 228.0,
+            w: 60.0,
+            h: 48.0,
+        };
+        push_rect_outline(&mut out, slot, [1.0, 0.0, 0.0]);
+        let edges: Vec<_> = out.iter().map(|i| (i.position, i.size)).collect();
+        // 7BADC0 strokes x..x+w-1 and y..y+h-1.
+        assert_eq!(
+            edges,
+            [
+                ([878.0, 228.0], [60.0, 1.0]),
+                ([878.0, 275.0], [60.0, 1.0]),
+                ([878.0, 228.0], [1.0, 48.0]),
+                ([937.0, 228.0], [1.0, 48.0]),
+            ]
+        );
     }
 
     #[test]
@@ -851,6 +1239,7 @@ mod tests {
         let project = |display, online| {
             let supers = [SuperWeaponView {
                 type_id: id,
+                use_ai_targeting: false,
                 display_name: "Drain".into(),
                 progress: 1.0,
                 is_ready: true,
@@ -858,6 +1247,10 @@ mod tests {
                 should_flash_tab: false,
                 can_fire: online,
                 can_afford: true,
+                constraints_blocked: false,
+                ares_refusal: None,
+                ready_shots: 0,
+                ares_show_cameo: true,
                 display,
             }];
             let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &supers);
@@ -874,7 +1267,6 @@ mod tests {
                 &[],
                 &[],
                 None,
-                &[],
                 Some(&interner),
                 &supers,
                 &SidebarGadgetState::default(),
@@ -894,6 +1286,7 @@ mod tests {
             hold: "On Hold",
             charging: "Charging",
             active: "Firestorm On",
+            ares: None,
         };
         let display = SuperWeaponDisplay {
             stage: 0,
@@ -954,9 +1347,81 @@ mod tests {
         assert_eq!(super::cameo_status_text(&item, labels), None);
     }
 
+    /// A status label wider than its cameo squeezes onto it, also clear of a
+    /// queue badge beside it; one that fits keeps its width.
+    #[test]
+    fn a_long_status_label_squeezes_onto_its_cameo_beside_the_badge() {
+        use super::{QUEUE_COUNT_PAD_X, READY_PAD_X, status_label_fit};
+        use crate::render::bit_font::Fit;
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let text = "[Ôñ Ĥöļð ~~~~~~~~]";
+        let natural = font.text_width(text) as f32;
+        let fits = natural + READY_PAD_X * 2.0;
+        assert_eq!(status_label_fit(&font, text, fits, None), Fit::NONE);
+        // The narrowest letters are as far as a label squeezes; past them it is cut.
+        let tightest = font.fitted(Fit::TIGHTEST, |font| font.text_width(text)) as f32;
+        assert!(tightest < natural);
+        for badge in [None, Some("3")] {
+            let badge_w = badge.map_or(0.0, |badge| {
+                font.text_width(badge) as f32 + QUEUE_COUNT_PAD_X
+            });
+            let slot_w = tightest + READY_PAD_X * 2.0 + badge_w;
+            let fit = status_label_fit(&font, text, slot_w, badge);
+            let width = font.fitted(fit, |font| font.text_width(text)) as f32;
+            assert!(fit > Fit::NONE, "{badge:?}");
+            assert!(
+                width <= slot_w - READY_PAD_X * 2.0 - badge_w,
+                "{badge:?}: {width}"
+            );
+        }
+    }
+
     /// The cameo status slot carries `TXT_HOLD` for suspended production, the
     /// same way it carries `TXT_READY` for a placement-ready building. Before
     /// this, a held or unaffordable item looked identical to an idle one.
+    /// Ares NameReadiness (hook 6CC2B0, 100356A0): per-type `Text.*`,
+    /// Text.Preparing without a status, nothing for an empty label.
+    #[test]
+    fn ares_status_label_reads_the_type_texts() {
+        use super::{CameoStatusLabels, ares_status_texts, superweapon_status_label};
+        use crate::sim::superweapon::{SuperWeaponDisplay, SuperWeaponStatus as S};
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[SuperWeaponTypes]\n0=Sonar\n[Sonar]\nText.Preparing=TXT_WAIT\n\
+                 Text.Hold=\nText.Ready=TXT_GO\n",
+            ))
+            .unwrap();
+        let texts = ares_status_texts(&rules, |label| format!("<{label}>"));
+        let labels = CameoStatusLabels {
+            ready: "Ready",
+            hold: "On Hold",
+            charging: "Charging",
+            active: "Active",
+            ares: Some(&texts),
+        };
+        let label = |section, status| {
+            let display = SuperWeaponDisplay {
+                stage: 0,
+                draw_progress: true,
+                status,
+            };
+            superweapon_status_label(section, display, labels)
+        };
+        assert_eq!(label(Some("sonar"), None), Some("<TXT_WAIT>"));
+        assert_eq!(label(Some("Sonar"), Some(S::Ready)), Some("<TXT_GO>"));
+        assert_eq!(
+            label(Some("Sonar"), Some(S::Hold)),
+            Some("<TXT_HOLD>"),
+            "an empty read keeps the constructor label"
+        );
+        assert_eq!(
+            label(Some("Sonar"), Some(S::Active)),
+            Some("<TXT_FIRESTORM_ON>")
+        );
+        assert_eq!(label(Some("Other"), Some(S::Ready)), Some("Ready"));
+    }
+
     #[test]
     fn cameo_status_text_covers_ready_and_hold() {
         use super::{CameoStatusLabels, cameo_status_text};
@@ -965,6 +1430,7 @@ mod tests {
             hold: "On Hold",
             charging: "Charging",
             active: "Active",
+            ares: None,
         };
 
         let mut item = crate::ui::sidebar::SidebarItem {
@@ -986,6 +1452,7 @@ mod tests {
             progress: 0.5,
             queued_count: 1,
             is_building_this_type: false,
+            is_held_this_type: false,
             is_ready: false,
             is_on_hold: false,
             is_armed: false,
@@ -1028,6 +1495,7 @@ mod tests {
             progress: 0.0,
             queued_count: 1,
             is_building_this_type: false,
+            is_held_this_type: false,
             is_ready: false,
             is_on_hold: false,
             is_armed: false,
@@ -1045,5 +1513,153 @@ mod tests {
         item.is_ready = true;
         item.progress = 1.0;
         assert!(!shows_build_clock(&item), "ready");
+    }
+
+    /// 0x006A9D94 draws Ready and every Super label before the 0x006A9E97
+    /// clock; the production Hold label waits for 0x006AA014.
+    #[test]
+    fn super_labels_precede_their_clock_and_production_hold_follows_it() {
+        use super::{shows_build_clock, status_text_precedes_clock};
+        use crate::sim::superweapon::{SuperWeaponDisplay, SuperWeaponStatus};
+        let mut held = badge_item(
+            crate::sim::production::ProductionCategory::Vehicle,
+            0,
+            false,
+            false,
+        );
+        held.is_on_hold = true;
+        assert!(shows_build_clock(&held) && !status_text_precedes_clock(&held));
+        let mut ready = held.clone();
+        ready.is_on_hold = false;
+        ready.is_ready = true;
+        assert!(status_text_precedes_clock(&ready));
+        let mut super_held = held.clone();
+        super_held.is_on_hold = false;
+        super_held.super_weapon_display = Some(SuperWeaponDisplay {
+            stage: 20,
+            draw_progress: true,
+            status: Some(SuperWeaponStatus::Hold),
+        });
+        assert!(shows_build_clock(&super_held) && status_text_precedes_clock(&super_held));
+    }
+
+    /// The `StripClass::Draw` badge inputs for one cameo.
+    fn badge_item(
+        category: crate::sim::production::ProductionCategory,
+        queued_count: usize,
+        is_building: bool,
+        is_held: bool,
+    ) -> crate::ui::sidebar::SidebarItem {
+        crate::ui::sidebar::SidebarItem {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: 60.0,
+                h: 48.0,
+            },
+            type_id: "GAPOWR".to_string(),
+            display_name: "GAPOWR".to_string(),
+            cost: Some(600),
+            has_cameo_art: true,
+            alt_cameo: false,
+            flash_darkened: false,
+            queue_category: category,
+            enabled: true,
+            at_build_limit: false,
+            progress: 0.0,
+            queued_count,
+            is_building_this_type: is_building,
+            is_held_this_type: is_held,
+            is_ready: false,
+            is_on_hold: false,
+            is_armed: false,
+            is_superweapon: false,
+            super_weapon_section: None,
+            super_weapon_display: None,
+        }
+    }
+
+    /// A structure cameo counts queued copies only where the badge can resolve
+    /// its Factory: gamemd keeps a hard-coded `BuildCat` there, and Phobos
+    /// de-hard-codes it at `0x006A9C54` for every Phobos build.
+    #[test]
+    fn structure_queue_badge_needs_the_phobos_factory_lookup() {
+        use super::shows_queue_badge;
+        use crate::sim::production::ProductionCategory::{Building, Defense, Vehicle};
+
+        let stacked = badge_item(Building, 2, true, true);
+        assert!(
+            !shows_queue_badge(&stacked, false),
+            "a default build never stacks structures"
+        );
+        assert!(shows_queue_badge(&stacked, true));
+        assert!(shows_queue_badge(&badge_item(Defense, 3, true, true), true));
+
+        let mobile = badge_item(Vehicle, 2, true, true);
+        assert!(shows_queue_badge(&mobile, false));
+        assert!(shows_queue_badge(&mobile, true));
+    }
+
+    /// gamemd shifts only the production Hold label. Ready and every
+    /// `SuperClass::NameReadiness` label — including a held superweapon's —
+    /// live in the other slot, which never reads the count badge.
+    #[test]
+    fn only_the_production_hold_label_shifts_left_beside_a_badge() {
+        use super::status_text_shifts_left;
+        let mut item = badge_item(
+            crate::sim::production::ProductionCategory::Vehicle,
+            2,
+            true,
+            true,
+        );
+        assert!(
+            !status_text_shifts_left(&item, true),
+            "not held, not shifted"
+        );
+        assert!(!status_text_shifts_left(&item, false));
+        item.is_on_hold = true;
+        assert!(status_text_shifts_left(&item, true));
+        assert!(
+            !status_text_shifts_left(&item, false),
+            "the count badge is half the rule"
+        );
+        item.is_ready = true;
+        assert!(
+            !status_text_shifts_left(&item, true),
+            "Ready takes the centered slot"
+        );
+        item.is_ready = false;
+        item.super_weapon_display = Some(crate::sim::superweapon::SuperWeaponDisplay {
+            status: Some(crate::sim::superweapon::SuperWeaponStatus::Hold),
+            ..Default::default()
+        });
+        assert!(
+            !status_text_shifts_left(&item, true),
+            "a held superweapon is the other slot"
+        );
+    }
+
+    /// A count of one is the held product rather than a queued copy whenever the
+    /// primary Factory holds this entry's type, whether that product is finished
+    /// or on hold: gamemd compares `Factory+0x58`'s type with the requested one
+    /// at `0x006A9CBF..0x006A9CC3` and draws nothing. Reading the building flag
+    /// instead left a bare `1` on a placement-ready structure.
+    #[test]
+    fn queue_badge_of_one_waits_for_a_copy_that_is_not_the_held_product() {
+        use super::shows_queue_badge;
+        use crate::sim::production::ProductionCategory::{Building, Vehicle};
+
+        assert!(!shows_queue_badge(
+            &badge_item(Building, 1, false, true),
+            true
+        ));
+        assert!(!shows_queue_badge(
+            &badge_item(Vehicle, 1, false, true),
+            false
+        ));
+        assert!(shows_queue_badge(
+            &badge_item(Vehicle, 1, false, false),
+            false
+        ));
     }
 }

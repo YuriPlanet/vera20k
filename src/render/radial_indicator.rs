@@ -167,6 +167,6 @@ impl RadialIndicatorDraw {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_render_a_r, tests_app_presentation, tests_render_s_z)))]
 #[path = "radial_indicator_tests.rs"]
 pub(crate) mod tests;

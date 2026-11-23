@@ -1,9 +1,8 @@
 //! App identity after the real prepare/commit load transaction, without GPU state.
-use super::{preferred_local_owner_for_sim, schedule_command_in_sim};
+use super::schedule_command_in_sim;
+use crate::app::match_runtime::state::scenario_local_owner;
 use crate::app::persistence::{LoadPreparationView, PreparedLoad, SaveRepository};
-use crate::map::houses::HouseRoster;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::command::Command;
 use crate::sim::house_state::HouseState;
@@ -64,20 +63,12 @@ fn saved_current_house_drives_app_fog_and_command_owner_after_load() {
         .simulation
         .session_mut_for_test()
         .set_current_house_for_test(Some(outgoing));
-    runtime.resources.rules = rules;
-    runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
-    runtime.resources.terrain_template = Some(ResolvedTerrainGrid::from_cells(8, 8, Vec::new()));
-    let outgoing_app_owner = "New Player";
-    let roster = HouseRoster::default();
+    runtime.resources_mut().rules = rules;
+    runtime.resources_mut().terrain_template =
+        Some(ResolvedTerrainGrid::from_cells(8, 8, Vec::new()));
     assert_eq!(
-        preferred_local_owner_for_sim(
-            &runtime.simulation,
-            Some(&runtime.resources.rules),
-            &roster,
-            Some(outgoing_app_owner),
-        )
-        .as_deref(),
-        Some(outgoing_app_owner)
+        scenario_local_owner(&runtime.simulation),
+        Some("New Player")
     );
 
     let prepared = PreparedLoad::from_repository(
@@ -88,16 +79,12 @@ fn saved_current_house_drives_app_fog_and_command_owner_after_load() {
     prepared.commit_into(&mut runtime);
     std::fs::remove_dir_all(directory).unwrap();
     assert_eq!(runtime.simulation.session().current_house(), Some(player));
-    let owner = preferred_local_owner_for_sim(
-        &runtime.simulation,
-        Some(&runtime.resources.rules),
-        &roster,
-        Some(outgoing_app_owner),
-    )
-    .unwrap();
+    let owner = scenario_local_owner(&runtime.simulation)
+        .unwrap()
+        .to_owned();
     assert_eq!(
         owner, "Player",
-        "the outgoing app identity must not survive saved current House replacement"
+        "the outgoing identity must not survive saved current House replacement"
     );
     let sim = &mut runtime.simulation;
     assert!(sim.prepare_fog_view_for(&owner));
@@ -106,52 +93,4 @@ fn saved_current_house_drives_app_fog_and_command_owner_after_load() {
     assert!(!sim.fog().is_cell_revealed(outgoing, 3, 4));
     assert!(schedule_command_in_sim(sim, &owner, Command::SetGameSpeed { speed: 4 }).is_some());
     assert_eq!(sim.pending_command_snapshot()[0].owner, player);
-}
-
-#[test]
-fn current_house_excludes_selection_and_debug_override_but_sandbox_keeps_both() {
-    use crate::map::entities::EntityCategory;
-    use crate::sim::combat::Health;
-    use crate::sim::game_entity::GameEntity;
-
-    let roster = HouseRoster::default();
-    let mut sim = Simulation::new();
-    let player = sim.intern("Player");
-    let selected = sim.intern("SelectedHouse");
-    let type_ref = sim.intern("TESTUNIT");
-    sim.houses_mut_for_test()
-        .register(HouseState::new(player, 0, None, true, 0, 10));
-    assert_eq!(
-        preferred_local_owner_for_sim(&sim, None, &roster, Some("SandboxHouse")).as_deref(),
-        Some("SandboxHouse"),
-        "identity-less development worlds retain the explicit preference"
-    );
-    let mut entity = GameEntity::new_at_frame_zero_for_test(
-        42,
-        1,
-        1,
-        0,
-        0,
-        selected,
-        Health::new(100),
-        type_ref,
-        EntityCategory::Unit,
-        0,
-        5,
-        false,
-    );
-    entity.selection.set_selected_for_test(true);
-    sim.entities_mut_for_test().insert(entity);
-    assert_eq!(
-        preferred_local_owner_for_sim(&sim, None, &roster, Some("SandboxHouse")).as_deref(),
-        Some("SelectedHouse"),
-        "sandbox selection preserves the existing precedence over its override"
-    );
-    sim.session_mut_for_test()
-        .set_current_house_for_test(Some(player));
-    assert_eq!(
-        preferred_local_owner_for_sim(&sim, None, &roster, Some("SandboxHouse")).as_deref(),
-        Some("Player"),
-        "ordinary identity cannot follow selection or a retained debug preference"
-    );
 }

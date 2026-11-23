@@ -1,0 +1,66 @@
+[
+  {
+    "name": "2p-outage-5s-idle",
+    "players": 2,
+    "apm": 0,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "outages": [
+          [
+            20000,
+            25000
+          ]
+        ]
+      }
+    }
+  },
+  {
+    "name": "2p-outage-5s-300apm",
+    "players": 2,
+    "apm": 300,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "outages": [
+          [
+            20000,
+            25000
+          ]
+        ]
+      }
+    }
+  },
+  {
+    "name": "30p-outage-5s-idle",
+    "players": 30,
+    "apm": 0,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "outages": [
+          [
+            20000,
+            25000
+          ]
+        ]
+      }
+    }
+  },
+  {
+    "name": "30p-outage-5s-300apm",
+    "players": 30,
+    "apm": 300,
+    "network": {
+      "link": {
+        "delay_ms": 20,
+        "outages": [
+          [
+            20000,
+            25000
+          ]
+        ]
+      }
+    }
+  }
+]

@@ -42,12 +42,17 @@ impl Flashing {
         self.frames = frames;
     }
 
+    /// Whether [`Self::tick`] counts: any nonzero countdown.
+    pub(crate) fn counting(&self) -> bool {
+        self.frames != 0
+    }
+
     /// Countdown `0x004CC770`: DEC runs for every nonzero signed dword,
     /// negative values included; zero is idle. Executed signed controls are
     /// in tools/spatial_oracle/team_creation (elite_flash rows). Returns
     /// whether it counted.
     pub(crate) fn tick(&mut self) -> bool {
-        if self.frames == 0 {
+        if !self.counting() {
             return false;
         }
         self.frames = self.frames.wrapping_sub(1);
@@ -92,7 +97,7 @@ impl crate::sim::world::Simulation {
                     entity.disguise_hides_house_from(
                         player,
                         Some(fog),
-                        Some(house_alliances.as_map()),
+                        Some(house_alliances),
                         interner,
                     )
                 });
@@ -109,8 +114,54 @@ impl crate::sim::world::Simulation {
         }
         substrate.entities.get_mut(id).unwrap().flash_base(frames);
     }
+
+    /// Phobos "Flashing Technos on selecting": the `ObjectClass_Select` hooks
+    /// at `0x005F46AE`/`0x005F4718` call `Flash(SelectionFlashDuration)` for a
+    /// newly selected object whose owner `IsControlledByCurrentPlayer`
+    /// (`0x0050B6F0`, [`Self::house_is_human_player`]).
+    /// `[AudioVisual] SelectionFlashDuration` above 0 is the only rules gate;
+    /// the `[Phobos] ShowFlashOnSelecting` client switch is the caller's, so
+    /// this runs only when the app has it enabled.
+    ///
+    /// `app::input::dispatch` calls this for the local input Select's new
+    /// members and, after each frame, for its logic Selects
+    /// (`LifecycleOutput::ObjectSelected`). RESIDUAL: native flashes a logic
+    /// Select inside the frame, before its Selected tag event; here the owner
+    /// is read after the frame. Presentation only.
+    #[cfg(feature = "phobos")]
+    pub fn flash_selected_for_current_player(
+        &mut self,
+        stable_ids: &[u64],
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let frames = rules.selection_flash.duration_frames;
+        if frames <= 0 {
+            return;
+        }
+        let flashing: Vec<u64> = stable_ids
+            .iter()
+            .copied()
+            .filter(|id| {
+                self.substrate
+                    .entities
+                    .get(*id)
+                    .is_some_and(|entity| self.house_is_human_player(entity.owner()))
+            })
+            .collect();
+        for id in flashing {
+            Self::flash_object(
+                &self.interner,
+                &self.session,
+                &self.fog,
+                &self.house_alliances,
+                &mut self.substrate,
+                id,
+                frames,
+            );
+        }
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 #[path = "flashing_tests.rs"]
 mod tests;

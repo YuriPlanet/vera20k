@@ -32,15 +32,14 @@
 //!   util/native_x87.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_superweapon))]
 #[path = "force_shield_tests.rs"]
 mod tests;
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::is_allied_with;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
-use crate::sim::superweapon::invulnerability::{InvulnKind, apply_invulnerability};
+use crate::sim::superweapon::invulnerability::{InvulnKind, techno_iron_curtain};
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 /// The coordinates the walk skips (`0x006CD1C8..0x006CD1FF`): `0x00B0C020`,
@@ -58,7 +57,7 @@ pub fn launch(
     target_rx: u16,
     target_ry: u16,
     sw_type: InternedId,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let general = &rules.general;
     let frame = sim.session.binary_frame();
@@ -109,18 +108,15 @@ pub fn launch(
     let terrain = sim.resolved_terrain.as_ref();
     let ground = crate::sim::projectile::cell_ground_coord(terrain, target_rx, target_ry);
     let centre = [ground.x, ground.y, ground.z];
-    let launcher = sim.interner.resolve(owner);
     let (ids, buildings): (Vec<u64>, Vec<(bool, [i32; 3])>) = sim
         .substrate
         .entities
         .values()
         .filter(|building| building.category() == EntityCategory::Structure)
         .map(|building| {
-            let allied = is_allied_with(
-                sim.house_alliances.as_map(),
-                sim.interner.resolve(building.owner()),
-                launcher,
-            );
+            let allied = sim
+                .house_alliances
+                .is_allied(&sim.interner, building.owner(), owner);
             let coords = crate::sim::movement::ground_pose::object_get_coords(building, terrain);
             (
                 building.stable_id(),
@@ -131,11 +127,14 @@ pub fn launch(
     let shielded = walk(centre, general.force_shield_radius, &buildings);
     for &index in &shielded {
         if let Some(building) = sim.substrate.entities.get_mut(ids[index]) {
-            apply_invulnerability(
+            let object = sim.interner.object_type(building.type_ref(), rules);
+            techno_iron_curtain(
                 building,
+                object,
                 frame,
                 general.force_shield_duration,
                 InvulnKind::ForceShield,
+                rules.ares(),
             );
         }
     }

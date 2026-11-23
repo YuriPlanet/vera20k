@@ -374,10 +374,30 @@ pub fn lepton_to_screen(rx: u16, ry: u16, sub_x: SimFixed, sub_y: SimFixed, z: u
 // Tests
 // ---------------------------------------------------------------------------
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
     use crate::util::fixed_math::SIM_ZERO;
+
+    /// The zero-height shortcut lands where the native x87 path does.
+    #[test]
+    fn zero_height_projection_matches_the_native_x87_path() {
+        assert_eq!(crate::util::native_x87::adjust_for_z_standard(0), 0);
+        for (x, y) in [
+            (i32::MIN, -1),
+            (-257, 255),
+            (0, 0),
+            (256, 4097),
+            (i32::MAX, 8_388_607),
+        ] {
+            let (sx, sy) = project_absolute_lepton_xy(x, y);
+            assert_eq!(
+                absolute_leptons_to_screen(x, y, 0),
+                (sx as f32, (sy + WORLD_ROW_BIAS_PX) as f32),
+                "{x},{y}"
+            );
+        }
+    }
 
     #[test]
     fn lepton_to_cell_truncates_toward_zero_and_packs_to_16_bits() {

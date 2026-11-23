@@ -104,7 +104,9 @@ pub(super) fn native_fixture(
     for y in 0..16 {
         for x in 0..16 {
             base.zone_ids_mut_for_test()[y * 16 + x] =
-                u16::from(row["split"].as_bool().unwrap_or(false) && x >= 8);
+                crate::sim::pathfinding::zone_map::ZoneId::from(
+                    row["split"].as_bool().unwrap_or(false) && x >= 8,
+                );
         }
     }
     for row in base.raw_zone_ids_by_row_mut_for_test() {

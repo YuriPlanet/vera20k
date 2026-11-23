@@ -165,15 +165,7 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
     let id = {
         let rt = &mut scene.runtime;
         rt.simulation
-            .spawn_object_with_overlay_registry(
-                "MTNK",
-                &owner_name,
-                75,
-                75,
-                0,
-                &rt.resources.rules,
-                &rt.resources.overlay_registry,
-            )
+            .spawn_object_with_map_overlays("MTNK", &owner_name, 75, 75, 0, &rt.resources.rules)
             .unwrap()
     };
     sample(&scene, id, &cases[0]);
@@ -204,16 +196,60 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
     let side = {
         let rt = &mut scene.runtime;
         rt.simulation
-            .spawn_object_with_overlay_registry(
-                "MTNK",
-                &owner_name,
-                78,
-                76,
-                0,
-                &rt.resources.rules,
-                &rt.resources.overlay_registry,
-            )
+            .spawn_object_with_map_overlays("MTNK", &owner_name, 78, 76, 0, &rt.resources.rules)
             .unwrap()
     };
     sample(&scene, side, &cases[2]);
+}
+
+/// Ares UnitClass_DrawVXL_Deactivated1004CEA0 (hook73C143): the dim factors
+/// replace the stock halving, EMP first, then the operator test.
+#[test]
+fn ares_deactivate_dims_replace_the_stock_unit_halving() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n1=ROBO\n[ROBO]\nOperator=_ANY_\n\
+         [AudioVisual]\nDeactivateDimPowered=.25\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    let owner = sim.intern("OWNER");
+    for (id, name) in [(1, "TANK"), (2, "ROBO")] {
+        let kind = sim.intern(name);
+        sim.entities_mut_for_test()
+            .insert(GameEntity::new_at_frame_zero_for_test(
+                id,
+                40,
+                50,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                kind,
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            ));
+    }
+    let light = crate::render::palette_light::PaletteLight::color_scheme([1000; 3], 1000);
+    let level = |sim: &Simulation, id: u64| {
+        let unit = crate::app::presentation::frame::ObjectRecord::of_test_sim(sim, &rules, id);
+        unit_voxel_effect_light(&unit, [1.; 3], light, Some(&rules), sim, 0)
+            .1
+            .brightness()
+    };
+    assert_eq!(level(&sim, 1), 1000);
+    for id in [1, 2] {
+        sim.entity_mut_for_test(id)
+            .unwrap()
+            .deactivated
+            .set_for_test(true);
+    }
+    assert_eq!(level(&sim, 1), 250, "DeactivateDimPowered, not 500");
+    assert_eq!(level(&sim, 2), 650, "an empty Operator hull uses 0.65");
+    sim.entity_mut_for_test(1)
+        .unwrap()
+        .set_emp_remaining_for_test(3);
+    assert_eq!(level(&sim, 1), 800, "EMP's 0.8 takes precedence");
 }

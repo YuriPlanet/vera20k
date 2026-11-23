@@ -8,8 +8,10 @@
 //! ## Dependency rules
 //! - Internal to sim/movement — called via re-exports in mod.rs.
 
+#[cfg(test)]
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::LocomotorKind;
+#[cfg(test)]
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 
@@ -97,6 +99,7 @@ impl DestinationTiming {
 /// write; the captured coordinate comes from the shared target +4C owner.
 /// No PathGrid is needed until the next ordinary Process (or the immediate
 /// Process specifically required by NULL-source Scatter51D478).
+#[cfg(test)]
 pub(crate) fn prepare_walk_destination(
     entities: &mut EntityStore,
     entity_id: u64,
@@ -113,7 +116,7 @@ pub(crate) fn prepare_walk_destination(
     if !entity
         .locomotor
         .as_ref()
-        .is_some_and(|l| l.active_kind() == LocomotorKind::Walk)
+        .is_some_and(|l| matches!(l.active_kind(), LocomotorKind::Walk | LocomotorKind::Mech))
     {
         return false;
     }
@@ -135,7 +138,7 @@ pub(crate) fn prepare_walk_destination(
 /// `0x00741C4F..0x00741C78`).
 pub(crate) fn enter_without_contact(entity: &GameEntity) -> bool {
     (entity.mission.effective().raw() == 7 || entity.mission.queued().raw() == 7)
-        && entity.radio_contacts.is_empty()
+        && entity.seldom.radio_contacts.is_empty()
 }
 
 /// The setters' one-word PathHead clear, which Enter (current or queued)

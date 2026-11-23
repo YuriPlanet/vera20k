@@ -4,8 +4,16 @@
 //! after late global references have been allocated. Missing sections and keys
 //! retain the already-live fields; native no-type sentinels resolve to null.
 
-use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
+use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::rules::sound_ini::SoundRegistry;
 use crate::util::native_x87::NativeF64Bits;
+
+/// VERA's bound on `CrateMinimum=` and `CrateMaximum=` (ReadInt at
+/// `0x0066BA50` and `0x0066BA70`), twice the 256-slot crate table. Each start
+/// crate calls the random placer (`0x0056BD40`), which tries up to 1000 cells
+/// until that table is full, so on a map with too few open cells to fill it a
+/// count near `i32::MAX` never finishes loading; retail allows 255.
+pub const CRATE_COUNT_LIMIT: i32 = 512;
 
 /// Every `[CrateRules]` field `RulesClass__ReadCrateRules @ 0x0066B900` reads,
 /// in its native read order.
@@ -27,19 +35,15 @@ pub struct CrateRules {
     pub water_crate_img: Option<String>,
     /// `HealCrateSound` -> `Rules+0x718`, a Voc index natively.
     ///
-    /// Native resolves the name through `VocClass__FindByName` at parse time and
-    /// keeps the PREVIOUS index when the lookup fails, so an unresolvable name
-    /// is indistinguishable from an absent key. A no-type sentinel is modelled
-    /// exactly — it retains the live value instead of clearing it. What cannot
-    /// be modelled here is an ordinary name that no sound defines: VERA has no
-    /// Voc registry at rules-parse time, so it stores the name and resolves at
-    /// use, where native would already have kept the earlier sound. Reaching
-    /// that needs two passes, the first naming a real sound and the second an
-    /// undefined one; recorded as a deferred DRIFT.
+    /// ReadCrateRules66BA08..66BA44 retains the previous fixed Voc index on
+    /// an empty or failed lookup. This is its canonical SOUNDMD identity;
+    /// registered `none` spellings are ordinary sounds (FindIndex7514D0).
+    /// The saved name distinguishes it from the old unchecked raw token.
+    #[serde(rename = "heal_crate_sound_binding")]
     pub heal_crate_sound: Option<String>,
-    /// `CrateMinimum` -> `Rules+0x1470`.
+    /// `CrateMinimum` -> `Rules+0x1470`, at most [`CRATE_COUNT_LIMIT`].
     pub minimum: i32,
-    /// `CrateMaximum` -> `Rules+0x1474`.
+    /// `CrateMaximum` -> `Rules+0x1474`, at most [`CRATE_COUNT_LIMIT`].
     pub maximum: i32,
     /// `CrateRadius` -> `Rules+0x172C`, read by `CCINIClass::ReadRange` and
     /// stored in leptons. Every radius crate effect compares a 3-D distance
@@ -102,6 +106,7 @@ impl CrateRules {
     pub(crate) fn apply_pass(
         &mut self,
         ini: &IniFile,
+        sounds: &SoundRegistry,
         mut resolve: impl FnMut(&IniSection, &str) -> Option<Option<String>>,
     ) {
         let Some(section) = ini.section("CrateRules") else {
@@ -125,21 +130,17 @@ impl CrateRules {
                 *target = overlay;
             }
         }
-        if section.is_present("HealCrateSound") {
-            // `if ((read == 0) || (index = VocClass__FindByName(), index == -1))
-            //  { index = previous; }` — a failed lookup RETAINS the live index
-            // rather than clearing it, so a no-type sentinel must not null the
-            // field the way the image keys above do.
-            let value = section.read_string("HealCrateSound", "", 0x80);
-            if !is_native_none_type_name(&value) {
-                self.heal_crate_sound = Some(value.to_ascii_uppercase());
-            }
-        }
+        self.heal_crate_sound =
+            sounds.read_rules_reference(section, "HealCrateSound", self.heal_crate_sound.take());
         if section.is_present("CrateMinimum") {
-            self.minimum = section.read_int("CrateMinimum", self.minimum);
+            self.minimum = section
+                .read_int("CrateMinimum", self.minimum)
+                .min(CRATE_COUNT_LIMIT);
         }
         if section.is_present("CrateMaximum") {
-            self.maximum = section.read_int("CrateMaximum", self.maximum);
+            self.maximum = section
+                .read_int("CrateMaximum", self.maximum)
+                .min(CRATE_COUNT_LIMIT);
         }
         // `CrateRadius` is stored in leptons; the stock `3.0` is three cells.
         // ReadRange owns the absent-key and `-1` sentinel cases itself, so this
@@ -187,7 +188,7 @@ impl CrateRules {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::*;
     use crate::rules::powerups::{POWERUP_HEAL_BASE, POWERUP_MONEY, POWERUP_VETERAN};
@@ -200,7 +201,17 @@ mod tests {
         for layer in &layers[1..] {
             stack.push(RulesLayerKind::Scenario, IniFile::from_str(layer));
         }
-        stack.process().unwrap().crate_rules().clone()
+        stack
+            .process_with_fixed_art_and_registry_state_recovering(
+                &IniFile::empty(),
+                Default::default(),
+                crate::rules::native_processing::RulesProcessContext::Ordinary,
+                &Default::default(),
+                &SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=HealCrate\n")),
+            )
+            .unwrap()
+            .crate_rules()
+            .clone()
     }
 
     fn parse(section: &str) -> CrateRules {
@@ -235,7 +246,7 @@ mod tests {
         assert_eq!(rules.radius, 768, "3.0 cells is 768 leptons");
         assert_eq!(f64::from_bits(rules.regen.bits()), 3.0);
         assert_eq!(rules.solo_crate_money, 5000);
-        assert_eq!(rules.heal_crate_sound.as_deref(), Some("HEALCRATE"));
+        assert_eq!(rules.heal_crate_sound.as_deref(), Some("HealCrate"));
         assert_eq!(
             rules.unit_crate_type, None,
             "`none` is the native no-type sentinel"
@@ -278,8 +289,18 @@ mod tests {
         assert_eq!(rules.minimum, 4);
     }
 
-    /// A failed `VocClass__FindByName` retains the live index, so a no-type
-    /// sentinel must not clear the sound the way the three image keys are.
+    #[test]
+    fn huge_crate_counts_stop_at_the_crate_bound() {
+        let rules =
+            parse_layers(&["[CrateRules]\nCrateMinimum=2147483647\nCrateMaximum=2147483647\n"]);
+        assert_eq!(
+            (rules.minimum, rules.maximum),
+            (CRATE_COUNT_LIMIT, CRATE_COUNT_LIMIT)
+        );
+    }
+
+    /// A failed Voc lookup retains the live index. These spellings clear an
+    /// image, but select a sound if the fixed catalog actually registers one.
     #[test]
     fn heal_crate_sound_sentinel_retains_the_live_value() {
         let rules = parse_layers(&[
@@ -289,13 +310,27 @@ mod tests {
 
         assert_eq!(
             rules.heal_crate_sound.as_deref(),
-            Some("HEALCRATE"),
+            Some("HealCrate"),
             "a sentinel keeps the previously resolved sound"
         );
         assert_eq!(
             rules.crate_img, None,
             "the image keys DO null on a sentinel — FindOrCreate has no retain branch"
         );
+        let sounds = SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=none\n1=<none>\n"));
+        let mut named = CrateRules::default();
+        named.apply_pass(
+            &IniFile::from_str("[CrateRules]\nHealCrateSound=none\n"),
+            &sounds,
+            |_, _| None,
+        );
+        assert_eq!(named.heal_crate_sound.as_deref(), Some("none"));
+        named.apply_pass(
+            &IniFile::from_str("[CrateRules]\nHealCrateSound=<none>\n"),
+            &sounds,
+            |_, _| None,
+        );
+        assert_eq!(named.heal_crate_sound.as_deref(), Some("<none>"));
     }
 
     /// The crate Types publish the factory's stored ID, the spelling of the

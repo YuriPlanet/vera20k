@@ -36,8 +36,10 @@ fn draws_centre_on_the_original_points() {
         let draws = ion_blast_draws(
             blasts.into_iter(),
             [int(&origin[0]) as f32, (int(&origin[1]) + 15) as f32],
+            [0.0, 0.0],
             [192.0, 128.0],
             detail as u32,
+            crate::render::native_z::DEFAULT_Z,
         );
         let centres: Vec<[i32; 2]> = draws
             .iter()

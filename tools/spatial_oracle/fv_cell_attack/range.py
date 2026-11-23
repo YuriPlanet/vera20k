@@ -14,6 +14,7 @@ import struct
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESP, UC_X86_REG_FPCW
 from tools.native_oracle import RET_MAGIC, run_checked, provenance
+from tools.native_oracle import require
 from tools.spatial_oracle import bridge_target_composed as composed
 from tools.spatial_oracle import mapgen_range
 from tools.spatial_oracle.building_body_rules import SP, dwords
@@ -108,7 +109,7 @@ def execute(row):
         m.invoke(0x4C9300, source + field, (facing,))
     slot = m.invoke(0x6F3330, source, (target,))
     assert slot == 0
-    assert m.read32(m.invoke(0x70E140, source, (slot,))) == weapon
+    require(m.read32(m.invoke(0x70E140, source, (slot,))) == weapon, 'native 0x70E140 returned an unexpected result')
     # Capture actual slot/FPCW/type tuning; no Range or MinimumRange override.
     projectile = m.read32(weapon + 0xA0)
     tuning = dict(source_type=m.string(typ + 0x24), weapon=m.string(weapon + 0x24),

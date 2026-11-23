@@ -3,7 +3,7 @@
 //! reversing those two replays is an explicit component-order negative control.
 
 use super::super::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectBodyDraw, PlannedObjectInstance, lower_object_instances,
+    NativeDisplayOrder, ObjectBodyDraw, OwnedPlannedObject, PlannedObjects, lower_object_instances,
 };
 use super::*;
 use crate::app::presentation::combat_lights::CombatLight;
@@ -11,7 +11,7 @@ use crate::app::presentation::detail::DetailState;
 use crate::render::combat_light::CombatLightRenderer;
 use crate::render::surface_line::{SurfaceDraw, SurfaceLineViewport};
 use crate::render::tactical_compat::{
-    SparkPointPlanes, SparkPointPreparation, prepare_spark_point, welding_tests as fixture,
+    SparkPointPreparation, prepare_spark_point, welding_tests as fixture,
 };
 use crate::render::tactical_draw_plan::SpriteEncoding;
 use crate::render::terrain_draw::TerrainDrawRenderer;
@@ -20,6 +20,8 @@ use crate::rules::ruleset::DetailRules;
 use crate::sim::projectile::ProjectileCoord;
 use crate::sim::world::display_layers::{DisplayLayer, DisplayLayers};
 
+// Ares simulates WeldingSys itself (hooks 0x62DF05, 0x62FD60) and builds no
+// ParticleClass children for this stock draw path.
 #[test]
 #[ignore = "requires retail assets and GPU; ordinary Engineer IFV children through the canonical builder, Detail traversal and shared composition"]
 fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_mutating_simulation() {
@@ -133,23 +135,24 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
     let size = [160, 120];
     let center = crate::util::lepton::absolute_leptons_to_screen(at.x, at.y, at.z);
     let view_camera = [center.0 - 80., center.1 - 60.];
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let order = NativeDisplayOrder::from_world(&sim, None);
     let lighting = crate::map::lighting::CellLightGrid::new();
     let house_colors = Default::default();
     let hidden = Default::default();
     let atlas = SpriteAtlas::from_test_entries(Default::default());
     let build = |detail: &RefCell<DetailState>, atlas: Option<&SpriteAtlas>| {
-        let mut parents = Vec::new();
+        let mut parents = PlannedObjects::default();
         build_display_effect_instances(
             &DisplayEffectInputs {
-                interpolation: None,
                 sim: &sim,
+                frame: &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
                 rules: &rules,
                 camera: view_camera,
                 render_size: size,
                 tactical: [0, 0, size[0], size[1]],
                 zoom: 1.,
                 axis: DepthAxis::NONE,
+                z_seed: crate::render::native_z::DEFAULT_Z,
                 atlas,
                 detail,
                 detail_level: 2,
@@ -165,6 +168,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
             &order,
             Default::default(),
         );
+        let parents = parents.into_owned();
         assert_eq!(
             sim.state_hash(),
             before_hash,
@@ -225,7 +229,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
     let detail = overflow_detail();
     let ordered = build(&detail, Some(&atlas));
     let has =
-        |parents: &[PlannedObjectInstance], id| parents.iter().any(|parent| parent.parent.id == id);
+        |parents: &[OwnedPlannedObject], id| parents.iter().any(|parent| parent.parent.id == id);
     assert_eq!(
         has(&ordered, system_id),
         control["draws"][0]["performance_passed"].as_bool().unwrap()
@@ -275,7 +279,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
                 (Some(ObjectBodyDraw::Surface(_)), 2) => false,
                 _ => true,
             });
-            let mut layers = lower_object_instances(parents);
+            let mut layers = lower_object_instances(parents.into());
             let mut records = Vec::new();
             for layer in &mut layers {
                 layer.light_record_base = records.len();
@@ -298,6 +302,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
                 &dv,
                 batch.camera_uniform(),
             );
+            terrain.bind_surface_line_a(&gpu.device, Some(&a));
             terrain.begin_surface_lines();
             for layer in &mut layers {
                 layer.line_batches = layer
@@ -319,17 +324,6 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
                                 zoom: 1.,
                             },
                             |_| false,
-                            |[x, y]| {
-                                u16::from(
-                                    a.sample_world(
-                                        x as f32 + view_camera[0].floor(),
-                                        y as f32 + view_camera[1].floor(),
-                                        view_camera[0],
-                                        view_camera[1],
-                                    )
-                                    .unwrap(),
-                                )
-                            },
                         )
                     })
                     .collect();
@@ -448,10 +442,10 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
             assert_eq!(system["clip"], particles["clip"]);
             batch.write_camera(&gpu.queue, camera(size));
             let mut display = DisplayLayers::default();
-            assert!(display.submit(1, Some(DisplayLayer::GROUND), &|_| 0));
+            assert!(display.submit(1, Some(DisplayLayer::GROUND)));
             let points = particles["points"].as_array().unwrap();
             for index in 0..points.len() {
-                assert!(display.submit(index as u64 + 2, Some(DisplayLayer::AIR), &|_| 0));
+                assert!(display.submit(index as u64 + 2, Some(DisplayLayer::AIR)));
             }
             let order = NativeDisplayOrder::from_display(&display);
             let mut parents = Vec::new();
@@ -486,7 +480,7 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
                 serde_json::json!(light.surface_index),
                 native_light["surface_index"]
             );
-            let mut parent = PlannedObjectInstance::object(
+            let mut parent = OwnedPlannedObject::object(
                 order.object_draw(1, SpriteEncoding::Plain).unwrap(),
                 Vec::new(),
             );
@@ -502,11 +496,10 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
                     fixture::command(point, draw, index),
                     &colors,
                     fixture::viewport(particles),
-                    SparkPointPlanes::Deferred,
                 )
                 .unwrap()
                 {
-                    let mut parent = PlannedObjectInstance::object(
+                    let mut parent = OwnedPlannedObject::object(
                         order
                             .object_draw(index as u64 + 2, SpriteEncoding::Plain)
                             .unwrap(),
@@ -518,7 +511,7 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
             }
             // Storage has no authority over Display or body execution order.
             parents.reverse();
-            let mut layers = lower_object_instances(parents);
+            let mut layers = lower_object_instances(parents.into());
             assert_eq!(layers[2].light_records.len(), 1);
             assert_eq!(
                 layers[3].surface_draws.len(),
@@ -551,6 +544,9 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
             );
             let a = fixture::plane(particles, "a");
             let z = fixture::plane(particles, "z");
+            terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |[x, y]| {
+                a[(y as u32 * size[0] + x as u32) as usize]
+            });
             terrain.begin_surface_lines();
             for layer in &mut layers {
                 layer.line_batches = layer
@@ -572,7 +568,6 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
                                 zoom: 1.,
                             },
                             |_| false,
-                            |[x, y]| a[(y as u32 * size[0] + x as u32) as usize],
                         )
                     })
                     .collect();

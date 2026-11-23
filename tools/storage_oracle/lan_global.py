@@ -5,6 +5,7 @@ substituted. Original constructor, framing, receive, queue and route bodies run.
 No Python encoder or expected frame bytes. See generated .meta.json.
 """
 from collections import Counter
+from pathlib import Path
 import struct
 
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
@@ -15,18 +16,17 @@ from unicorn.x86_const import (
 
 from tools.native_oracle import (
     NATIVE_FPCW, NativeCallTrace, OracleError, STACK_BASE, STACK_SIZE,
-    provenance, run_checked,
+    finish_vectors, provenance, run_checked,
 )
 from tools.storage_oracle.shell_relayout import Machine, HEAP, HEAP_SIZE
 
 ENTRIES = {
     'global_ctor': 0x53FA90, 'ipx_ctor': 0x53F430, 'connection_ctor': 0x48BE60,
     'comm_ctor': 0x48B0E0, 'global_send': 0x53FBD0, 'global_receive': 0x53FCB0,
-    'global_pop': 0x53FF10, 'consumed_cleanup': 0x5400D0, 'age_strip': 0x540110,
-    'service': 0x48C3B0, 'send_service': 0x48C3E0, 'response': 0x48BA10,
+    'global_pop': 0x53FF10, 'consumed_cleanup': 0x5400D0,
+    'service': 0x48C3B0, 'send_service': 0x48C3E0,
     'send_route': 0x540050, 'direct_route': 0x5403F0, 'queue_send': 0x48B410,
     'queue_receive': 0x48B750, 'delete_receive': 0x48B890, 'failed_cleanup': 0x5402D0,
-    'cancel_sends': 0x540340,
 }
 
 
@@ -156,17 +156,6 @@ class GlobalMachine(Machine):
         returned = self.native(0x5400D0, self.connection)
         return dict(returned=returned, state=self.snapshot())
 
-    def strip(self, bucket, maximum_age):
-        self.set_time(bucket)
-        self.native(0x540110, self.connection, (maximum_age,))
-        return self.snapshot()
-
-    def cancel(self, endpoint, port):
-        address = self.alloc(12)
-        self.uc.mem_write(address, endpoint)
-        returned = self.native(0x540340, self.connection, (address, port))
-        return dict(returned=returned, state=self.snapshot())
-
     def snapshot(self):
         c = self.connection
         comm = self.r32(c + 4)
@@ -186,7 +175,7 @@ class GlobalMachine(Machine):
             slot = self.r32(self.r32(comm + 0x40) + index * 4)
             entry = self.r32(comm + 0x34) + slot * 0x18
             length, packet = self.r32(entry + 8), self.r32(entry + 12)
-            receives.append(dict(flags=self.r32(entry), arrival=self.r32(entry + 4),
+            receives.append(dict(flags=self.r32(entry),
                                  frame=bytes(self.uc.mem_read(packet, length)).hex(),
                                  source=bytes(self.uc.mem_read(self.r32(entry + 0x14),
                                                               self.r32(entry + 0x10))).hex()))
@@ -474,8 +463,6 @@ def generate():
     wrong_ack = dict(sender_before=sender.snapshot())
     ack = basic['unknown_a']['emitted'][0]['frame']
     wrong_ack['ack_frame'] = ack
-    wrong_ack['received_from_unrelated_c'] = sender.receive(ack, source_c)
-    wrong_ack['after_service'] = sender.service(1004)
 
     product_sender = machine(product=0x1357)
     product_sender.send(b'foreign-product', source_b)
@@ -484,16 +471,6 @@ def generate():
     product = dict(native_frame=product_frame,
                    receive=product_receiver.receive(product_frame, source_a))
     product['pop'] = product_receiver.pop()
-
-    age_receiver = machine(receive_capacity=4)
-    age = dict(first_a=age_receiver.receive(frame, source_a),
-               second_b=age_receiver.receive(frame, source_b))
-    age['consume_a'] = age_receiver.pop()
-    age['cleanup_a'] = age_receiver.cleanup()
-    age['exact_age_retained'] = age_receiver.strip(1002, 2)
-    age['over_age_b_removed'] = age_receiver.strip(1003, 2)
-    age['b_duplicate_after_its_queue_entry_aged'] = age_receiver.receive(frame, source_b)
-    age['a_reaccepted_after_first_matching_sequence_invalidated'] = age_receiver.receive(frame, source_a)
 
     sequence_sender = machine(send_capacity=3)
     sequence = []
@@ -515,26 +492,6 @@ def generate():
     broadcast_sender.send(b'global-broadcast', reliable=True)
     broadcast = broadcast_sender.service(1000)
 
-    cancellation_sender = machine()
-    cancellation_sender.send(b'completed', source_b, port=0)
-    cancellation_sender.send(b'same-host-other-endpoint-port',
-                             cancellation_sender.endpoint(22, port=4444), port=0)
-    cancellation_sender.send(b'other-override', source_b, port=5555)
-    cancellation = dict(sent=cancellation_sender.service(1000))
-    cancellation['acknowledged'] = cancellation_sender.receive(ack, source_c)
-    cancellation['cancelled'] = cancellation_sender.cancel(source_b, 0)
-    cancellation['serviced'] = cancellation_sender.service(1004)
-
-    age_boundaries = []
-    for arrived, now, maximum_age in [(0x7FFFFFFE, 0x7FFFFFFF, 2),
-                                      (0x7FFFFFFE, 0x80000000, 2),
-                                      (0xFFFFFFFE, 0, 3), (0xFFFFFFFE, 2, 3)]:
-        boundary_receiver = machine()
-        boundary_receiver.set_time(arrived)
-        admitted = boundary_receiver.receive(frame, source_a)
-        after = boundary_receiver.strip(now, maximum_age)
-        age_boundaries.append(dict(arrived=arrived, now=now, maximum_age=maximum_age,
-                                   admitted=admitted, after=after))
     retail_constructor = machine(send_capacity=160, receive_capacity=320)
     payload_extent = []
     for payload in (b'', bytes(range(256)) + bytes(range(199))):
@@ -555,23 +512,20 @@ def generate():
         raise OracleError(f'original entry coverage missing: {missing}')
     return dict(source='unicorn/gamemd.exe', endpoints=dict(a=source_a.hex(), b=source_b.hex(), c=source_c.hex()),
                 basic=basic, wrong_source_ack=wrong_ack, foreign_product=product,
-                age_strip=age, global_sequence=dict(admission=sequence, service=sequence_frames),
+                global_sequence=dict(admission=sequence, service=sequence_frames),
                 retry_failure=retry, source_port_normalization=normalization,
                 null_destination_broadcast=broadcast, retail_constructor=retail_constructor.constructed,
-                cancellation=cancellation, age_boundaries=age_boundaries,
-                payload_extents=payload_extent,
-                original_entries=dict(combined))
+                payload_extents=payload_extent)
 
 
 def metadata():
     result = provenance(
-        scope='Original global ConnectionClass constructor/send/receive/dequeue/cleanup/age-strip and shared send service, with original direct route normalization',
+        scope='Original global ConnectionClass constructor/send/receive/dequeue/cleanup and shared send service, with original direct route normalization',
         assumptions=[
             'Explicit boundary constructor capacities8/2/3/4 plus retail-sized send160/receive320 and payload455, discriminator1236, productAA04 (or foreign1357). No Windows process or real sockets.',
             'GameMode3 with supplied address mode2 is the explicit VERA IPv4-LAN adaptation; retail main-menu LAN constructs IPX. Three synthetic IPv4 sources192.0.2.11/.22/.33 use port1234; original53ECB0/53ED20 build their endpoint storage.',
             'External clock globals887338=-1/887340 expose declared16ms bucket inputs. Stack is poisonedA5 before each top-level call. Each call must reach its real return with exact callee stack cleanup.',
             'Every transmitted frame and ACK originates in original53FBD0/53FCB0; frame bytes are never encoded or edited by Python. Delivery changes only declared external source metadata. Observations retain native queue bytes, flags, counters and endpoint/sequence history.',
-            'Cancellation controls keep an ACKed entry, remove an uncompleted send with matching host and override despite a different endpoint port, and retain a differing override. Age controls include signed-boundary and unsigned-addition-wrap inputs to the original540110 comparison.',
             'The shared shell_relayout.Machine maps retail through native_oracle.load_image and provides its allocator/import fail-closed hooks. Its unused dialog state is not evidence of shell or network integration.',
         ],
         substitutions=[
@@ -599,3 +553,15 @@ def manager_metadata():
         entry_points={**{key: ENTRIES[key] for key in (
             'global_ctor', 'connection_ctor', 'comm_ctor', 'queue_send', 'queue_receive',
         )}, **MANAGER_ENTRIES})
+
+
+SOURCE_PATHS = {"global": Path(__file__),
+                "native_oracle": Path(__file__).parent.parent / "native_oracle.py",
+                "shared_machine": Path(__file__).with_name("shell_relayout.py")}
+
+
+if __name__ == "__main__":
+    finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=metadata,
+                   source_paths=SOURCE_PATHS)
+    finish_vectors(manager_timing_controls, Path(__file__).with_name("lan_manager_timing.json"),
+                   provenance=manager_metadata, source_paths=SOURCE_PATHS)

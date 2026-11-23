@@ -6,6 +6,7 @@
 
 use super::LocomotorShotTarget;
 use crate::rules::locomotor_type::LocomotorKind;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::game_entity::GameEntity;
@@ -15,6 +16,95 @@ use crate::sim::world::{FrameEffects, Simulation};
 
 fn retail_rules() -> Option<RuleSet> {
     Some(crate::rules::retail_ini_fixture::retail_battle_rules()?.rules)
+}
+
+#[test]
+fn magnetron_ground_release_change_house_at_touchdown() {
+    use crate::rules::art_data::ArtRegistry;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
+    use crate::rules::retail_sources::select_ini;
+    use crate::rules::team_ai_ini::TeamAiIniRegistry;
+
+    let Some((_, assets)) = retail_assets() else {
+        return;
+    };
+    let battle = select_ini(&assets, "MPBattleMD.ini").unwrap();
+    let (mut rules, _, art, _) = retail_rules_owner(&assets)
+        .load_scenario(
+            NativeScenarioRulesPrefix::NonCampaign(Some(&battle.ini)),
+            &IniFile::empty(),
+        )
+        .unwrap()
+        .into_parts();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+
+    for change_house in [false, true] {
+        let (mut sim, grid, magnetron, tank) = lift(&rules);
+        let old_owner = entity(&sim, tank).owner();
+        let americans = sim.interner.get("Americans").unwrap();
+        sim.houses
+            .get_mut(&americans)
+            .unwrap()
+            .set_country_for_test(Some(americans));
+        let country = rules.country_index("Americans").unwrap().0;
+        let action = if change_house {
+            format!("14,0,{country}")
+        } else {
+            "0,0,0".into()
+        };
+        let map_text = format!(
+            "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+             [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+             [Basic]\nNewINIFormat=4\n\
+             [Triggers]\nTRANSFER=Americans,<none>,Transfer at touchdown,0,1,1,1,0\n\
+             [Events]\nTRANSFER=1,1,0,-1\n\
+             [Actions]\nTRANSFER=1,{action},0,0,0,0,A\n\
+             [Tags]\nTRANSFER_TAG=2,Transfer at touchdown,TRANSFER\n\
+             [CellTags]\n16017=TRANSFER_TAG\n"
+        );
+        let map = crate::map::map_file::MapFile::from_bytes(map_text.as_bytes()).unwrap();
+        let teams = TeamAiIniRegistry::from_sources(
+            &IniFile::empty(),
+            &map.ini,
+            RulePolicy::stock_multiplayer(),
+        );
+        sim.initialize_trigger_definitions(&map, &teams, None, None, None);
+        sim.install_authored_cell_trigger_tags(&map);
+        sim.attach_object_trigger_tag(tank, Some("TRANSFER_TAG"));
+        sim.classify_map_triggers(&rules);
+
+        assert_eq!(
+            crate::sim::movement::air_movement::current_fly_height(
+                entity(&sim, tank),
+                sim.resolved_terrain.as_ref(),
+            ),
+            0,
+            "release before the tank rises"
+        );
+        eprintln!("change_house={change_house}: ordering the Magnetron away");
+        move_away(&mut sim, magnetron);
+        assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
+            !entity(sim, tank).lift.swap_active()
+        }));
+        let tank = entity(&sim, tank);
+        assert_eq!((tank.position.rx(), tank.position.ry()), (17, 16));
+        assert_eq!(
+            tank.owner(),
+            if change_house { americans } else { old_owner }
+        );
+        assert_eq!(
+            tank.locomotor.as_ref().unwrap().active_kind(),
+            LocomotorKind::Drive
+        );
+        assert_eq!(
+            tank.air_tracker_cell(),
+            (0, 0),
+            "the landed tank has left the AircraftTracker"
+        );
+        eprintln!("change_house={change_house}: tank landed with Drive");
+    }
 }
 
 /// The flat arena: `Americans` (human) field the Magnetron, `Russians`
@@ -113,7 +203,7 @@ fn kill(sim: &mut Simulation, rules: &RuleSet, victim: u64, attacker: u64) {
                 },
             ),
         )],
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -203,7 +293,7 @@ fn pull_sensor_ship_across_cell(
     );
 }
 
-/// Imbue710000 preserves the sensor deposit; Jumpjet54AEC0 has no airborne
+/// Imbue710000 preserves the sensor circle; Jumpjet54AEC0 has no airborne
 /// PerCell. FootLimbo4DB376 removes at current GetCoords, not that old center.
 #[test]
 fn retail_lifted_destroyer_keeps_its_sensor_circle_until_real_lifecycle_callbacks() {
@@ -223,34 +313,21 @@ fn retail_lifted_destroyer_keeps_its_sensor_circle_until_real_lifecycle_callback
     // Keep the extra human house alive under the normal ShortGame option.
     spawn(&mut runtime.simulation, rules, "PCV", &enemy_name, 88, 49);
     // Physical bank and water, within MagneticBeam's stock 3..12 range.
-    // Spawn/Unlimbo supplies the deposit; no lift, head or sensor state is set.
+    // Spawn/Unlimbo supplies the circle; no lift, head or sensor state is set.
     let magnetron = spawn(&mut runtime.simulation, rules, "TELE", &enemy_name, 87, 50);
     let ship = spawn(&mut runtime.simulation, rules, "DEST", &player_name, 89, 54);
-    let origin = entity(&runtime.simulation, ship)
-        .sensor_deposit
-        .unwrap()
-        .center();
-    assert_eq!(origin, (89, 54));
+    let origin = (89, 54);
     let at = pull_sensor_ship_across_cell(runtime, magnetron, ship);
-    assert_eq!(
-        entity(&runtime.simulation, ship)
-            .sensor_deposit
-            .unwrap()
-            .center(),
-        origin,
-        "airborne cell crossing does not move the native sensor circle"
-    );
     let sim = &runtime.simulation;
-    let current_circle = sim.fog.sensor_circle_cells(at, radius);
+    let current_circle: Vec<_> = sim.fog.sensor_circle_cells(at, radius).collect();
     let old_only = sim
         .fog
         .sensor_circle_cells(origin, radius)
-        .into_iter()
         .find(|cell| !current_circle.contains(cell))
         .unwrap();
     assert!(
         sim.fog.has_sensor_for_house(player, old_only.0, old_only.1),
-        "the original circle still supplies submarine detection"
+        "airborne cell crossing does not move the native sensor circle"
     );
     assert!(sim.fog.has_sensor_for_house(player, origin.0, origin.1));
     let counters = sim.fog.sensors_by_house().clone();
@@ -261,16 +338,9 @@ fn retail_lifted_destroyer_keeps_its_sensor_circle_until_real_lifecycle_callback
         player,
         &runtime.resources.rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(runtime.simulation.fog.sensors_by_house(), &counters);
-    assert_eq!(
-        entity(&runtime.simulation, ship)
-            .sensor_deposit
-            .unwrap()
-            .center(),
-        origin
-    );
     // Unit's actual airborne damage/UnInit owns the current-coordinate remove.
     // Old-only coverage survives it natively; overlapping coverage is removed.
     kill(
@@ -367,10 +437,17 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
         }
     }
     assert!(captured, "the ground ship is captured through MindControl");
-    let origin = entity(&runtime.simulation, ship)
-        .sensor_deposit
-        .unwrap()
-        .center();
+    // Foot ChangeOwner4DBF81 re-adds for the captor at the current cell.
+    let origin = {
+        let captured = entity(&runtime.simulation, ship);
+        (captured.position.rx(), captured.position.ry())
+    };
+    assert!(
+        runtime
+            .simulation
+            .fog
+            .has_sensor_for_house(captor, origin.0, origin.1)
+    );
     let magnetron = spawn(
         &mut runtime.simulation,
         &runtime.resources.rules,
@@ -382,7 +459,6 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
     let at = pull_sensor_ship_across_cell(runtime, magnetron, ship);
     let held = entity(&runtime.simulation, ship);
     assert_eq!(held.owner(), captor);
-    assert_eq!(held.sensor_deposit.unwrap().center(), origin);
     assert_eq!(
         runtime
             .simulation
@@ -403,12 +479,15 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
             .unwrap()
             .sensors_sight,
     );
-    let current_circle = runtime.simulation.fog.sensor_circle_cells(at, radius);
+    let current_circle: Vec<_> = runtime
+        .simulation
+        .fog
+        .sensor_circle_cells(at, radius)
+        .collect();
     let old_only = runtime
         .simulation
         .fog
         .sensor_circle_cells(origin, radius)
-        .into_iter()
         .find(|cell| !current_circle.contains(cell))
         .unwrap();
     // No direct owner/lift writes: lethal damage frees the real capture node.
@@ -424,24 +503,22 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
     assert_eq!(freed.owner(), player);
     assert_eq!((freed.position.rx(), freed.position.ry()), at);
     assert_eq!(
-        freed.sensor_deposit.unwrap().center(),
-        at,
-        "restoration adds around the current cell after the owner flip"
-    );
-    assert_eq!(
         freed.navigation.neighbor_state().cell(),
         (origin.0 as i16, origin.1 as i16),
         "high-flight owner change preserves the distinct PerCell source"
     );
     assert!(sim.fog.has_sensor_for_house(captor, old_only.0, old_only.1));
     assert!(!sim.fog.has_sensor_for_house(captor, origin.0, origin.1));
-    assert!(sim.fog.has_sensor_for_house(player, at.0, at.1));
+    assert!(
+        sim.fog.has_sensor_for_house(player, at.0, at.1),
+        "restoration adds around the current cell after the owner flip"
+    );
     assert!(!sim.fog.has_sensor_for_house(player, old_only.0, old_only.1));
     assert!(
         freed.lift.source().is_none(),
         "the nested native NULL setter releases the hold"
     );
-    let old_circle = sim.fog.sensor_circle_cells(origin, radius);
+    let old_circle: Vec<_> = sim.fog.sensor_circle_cells(origin, radius).collect();
     let mut landed = false;
     for _ in 0..400 {
         runtime
@@ -452,7 +529,8 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
         if !ship.lift.swap_active()
             && ship.locomotor.as_ref().unwrap().active_kind() == LocomotorKind::Ship
         {
-            let center = ship.sensor_deposit.unwrap().center();
+            // Touchdown's PerCell adds at the landing cell.
+            let center = (ship.position.rx(), ship.position.ry());
             assert_eq!(
                 ship.navigation.neighbor_state().cell(),
                 (center.0 as i16, center.1 as i16)
@@ -460,7 +538,6 @@ fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
             let witness = sim
                 .fog
                 .sensor_circle_cells(center, radius)
-                .into_iter()
                 .find(|cell| current_circle.contains(cell) && !old_circle.contains(cell))
                 .expect("landing and restoration overlap beyond the old radius");
             let index =
@@ -545,14 +622,17 @@ fn retail_magnetron_pulls_a_tank_beside_itself_and_lets_go() {
 
     assert!(
         run_until(&mut sim, &rules, &grid, 600, |sim| {
-            entity(sim, tank).drop_credit.being_manipulated()
+            entity(sim, tank).seldom.drop_credit.being_manipulated()
         }),
         "the tank arrives and is let go"
     );
     let dropped = entity(&sim, tank);
     assert!(dropped.crash.is_crashing());
-    assert_eq!(dropped.drop_credit.manipulated_by(), Some(magnetron));
-    assert_eq!(dropped.drop_credit.warped_by_house(), Some(americans));
+    assert_eq!(dropped.seldom.drop_credit.manipulated_by(), Some(magnetron));
+    assert_eq!(
+        dropped.seldom.drop_credit.warped_by_house(),
+        Some(americans)
+    );
     assert_eq!(dropped.lift.source(), None);
     let holder = entity(&sim, magnetron);
     assert_eq!(holder.lift.target(), None);
@@ -645,8 +725,11 @@ fn retail_magnetron_lifts_a_docked_aircraft_through_its_attack_order() {
             let ammo = plane.ammo().expect("stock aircraft ammunition");
             fired |= ammo.current() < ammo.max();
             entered |= fired && plane.mission.current().known() == Some(MissionType::Enter);
-            let on_pad = plane.radio_contacts.contains(airfield)
-                && entity(sim, airfield).radio_contacts.contains(aircraft)
+            let on_pad = plane.seldom.radio_contacts.contains(airfield)
+                && entity(sim, airfield)
+                    .seldom
+                    .radio_contacts
+                    .contains(aircraft)
                 && air_movement::current_fly_height(plane, sim.resolved_terrain.as_ref()) == 0;
             if entered
                 && on_pad
@@ -788,11 +871,14 @@ fn retail_magnetron_lifts_a_docked_aircraft_through_its_attack_order() {
             "{aircraft_type}: chosen landing cell meets Aircraft State5's Wheel gate"
         );
         assert!(
-            !plane.radio_contacts.contains(airfield),
+            !plane.seldom.radio_contacts.contains(airfield),
             "{aircraft_type}: aircraft leaves pad contact"
         );
         assert!(
-            !entity(sim, airfield).radio_contacts.contains(aircraft),
+            !entity(sim, airfield)
+                .seldom
+                .radio_contacts
+                .contains(aircraft),
             "{aircraft_type}: airfield releases its dock"
         );
 
@@ -824,15 +910,18 @@ fn retail_magnetron_lifts_a_docked_aircraft_through_its_attack_order() {
             (
                 plane.locomotor.clone(),
                 plane.lift,
-                plane.drop_credit,
+                plane.seldom.drop_credit,
                 plane.navigation.nav_com(),
-                plane.radio_contacts.clone(),
+                plane.seldom.radio_contacts.clone(),
                 crate::sim::movement::ground_pose::position_world_coord(&plane.position),
             )
         };
         let saved_state = held_state(&runtime.simulation);
         let saved_holder_lift = entity(&runtime.simulation, magnetron).lift;
-        let saved_pad_contacts = entity(&runtime.simulation, airfield).radio_contacts.clone();
+        let saved_pad_contacts = entity(&runtime.simulation, airfield)
+            .seldom
+            .radio_contacts
+            .clone();
         let saved =
             crate::sim::snapshot::GameSnapshot::save(&runtime.simulation, 0, 0, "held aircraft", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&saved)
@@ -859,7 +948,7 @@ fn retail_magnetron_lifts_a_docked_aircraft_through_its_attack_order() {
         restored
             .restore_map_authority_after_snapshot_load(
                 &runtime.resources.rules,
-                &runtime.resources.overlay_registry,
+                runtime.resources.rules.overlay_registry(),
                 None,
             )
             .expect("restore retail map authority");
@@ -871,7 +960,8 @@ fn retail_magnetron_lifts_a_docked_aircraft_through_its_attack_order() {
         let live_dummy = runtime.simulation.effective_shared_cell_dummy();
         live_dummy.adopt_prepared_load_state(&restored.effective_shared_cell_dummy());
         restored.bind_shared_cell_dummy(live_dummy);
-        restored.install_fresh_process_main(runtime.simulation.main_rng());
+        // No app process cell here: the install writes a stand-in nothing reads.
+        restored.install_fresh_process_main(&crate::sim::rng::MainRng::new(0));
         restored.publish_scenario_started();
         runtime.replace_simulation(restored);
         assert_eq!(
@@ -884,7 +974,7 @@ fn retail_magnetron_lifts_a_docked_aircraft_through_its_attack_order() {
             saved_holder_lift
         );
         assert_eq!(
-            entity(&runtime.simulation, airfield).radio_contacts,
+            entity(&runtime.simulation, airfield).seldom.radio_contacts,
             saved_pad_contacts
         );
         eprintln!(
@@ -909,9 +999,9 @@ fn retail_magnetron_lifts_a_docked_aircraft_through_its_attack_order() {
             if !released && plane.lift.source().is_none() {
                 released = true;
                 assert_eq!(entity(sim, magnetron).lift.target(), None);
-                assert!(plane.drop_credit.being_manipulated());
-                assert_eq!(plane.drop_credit.manipulated_by(), Some(magnetron));
-                assert_eq!(plane.drop_credit.warped_by_house(), Some(enemy));
+                assert!(plane.seldom.drop_credit.being_manipulated());
+                assert_eq!(plane.seldom.drop_credit.manipulated_by(), Some(magnetron));
+                assert_eq!(plane.seldom.drop_credit.warped_by_house(), Some(enemy));
                 let active = plane.locomotor.as_ref().unwrap();
                 assert_eq!(active.active_kind(), LocomotorKind::Jumpjet);
                 assert!(active.jumpjet_runtime().unwrap().moving());
@@ -1035,10 +1125,9 @@ fn retail_tank_let_go_over_a_unit_crashes_onto_it() {
             .advance_app_frame(
                 &commands,
                 &rules,
-                None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("admitted drop frame");
         if !sim.substrate.entities.contains(tank) {
@@ -1222,7 +1311,7 @@ fn retail_drop_after_magnetron_expiry_uses_and_clears_the_falling_source() {
     let damage = entity(&sim, tank).health.current();
     sim.clear_lifecycle_test_events_for_test();
     kill(&mut sim, &rules, magnetron, tank);
-    assert_eq!(entity(&sim, tank).drop_credit.manipulated_by(), None);
+    assert_eq!(entity(&sim, tank).seldom.drop_credit.manipulated_by(), None);
     assert!(run_until(&mut sim, &rules, &grid, 400, |sim| !sim
         .substrate
         .entities
@@ -1259,10 +1348,13 @@ fn retail_tank_let_go_over_clear_ground_lands_and_drives_again() {
             );
         }
         let dropped = entity(&sim, tank);
-        assert!(dropped.drop_credit.being_manipulated(), "death {death}");
+        assert!(
+            dropped.seldom.drop_credit.being_manipulated(),
+            "death {death}"
+        );
         assert_eq!(dropped.lift.source(), None, "death {death}");
         assert_eq!(
-            dropped.drop_credit.manipulated_by(),
+            dropped.seldom.drop_credit.manipulated_by(),
             (!death).then_some(magnetron),
             "an expiring Magnetron leaves no credit (death {death})"
         );
@@ -1275,10 +1367,10 @@ fn retail_tank_let_go_over_clear_ground_lands_and_drives_again() {
         );
         let landed = entity(&sim, tank);
         assert_eq!(landed.health.current(), health, "death {death}");
-        assert!(!landed.crash.is_crashing() && !landed.drop_credit.being_manipulated());
+        assert!(!landed.crash.is_crashing() && !landed.seldom.drop_credit.being_manipulated());
         assert!(!landed.lift.may_end());
-        assert_eq!(landed.drop_credit.manipulated_by(), None);
-        assert_eq!(landed.drop_credit.warped_by_house(), None);
+        assert_eq!(landed.seldom.drop_credit.manipulated_by(), None);
+        assert_eq!(landed.seldom.drop_credit.warped_by_house(), None);
         let locomotor = landed.locomotor.as_ref().unwrap();
         assert_eq!(locomotor.active_kind(), LocomotorKind::Drive);
         assert!(locomotor.piggyback().is_none());
@@ -1308,7 +1400,7 @@ fn retail_tank_killed_in_the_air_is_uninit_at_once() {
             move_away(&mut sim, magnetron);
             assert!(
                 run_until(&mut sim, &rules, &grid, 5, |sim| {
-                    entity(sim, tank).drop_credit.being_manipulated()
+                    entity(sim, tank).seldom.drop_credit.being_manipulated()
                 }),
                 "the move order lets the tank go"
             );
@@ -1346,9 +1438,10 @@ fn retail_locomotor_arm_admission() {
             LocomotorShotTarget::Object(tank),
             strength,
             LocomotorKind::Jumpjet,
+            &crate::rules::jumpjet_params::JumpjetOverride::default(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(entity(&sim, tank).lift.swap_active(), lifted);
         assert_eq!(
@@ -1374,9 +1467,10 @@ fn retail_locomotor_arm_admission() {
             target,
             5000,
             LocomotorKind::Jumpjet,
+            &crate::rules::jumpjet_params::JumpjetOverride::default(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     };
     shoot(&mut sim, LocomotorShotTarget::Object(gi));
@@ -1398,7 +1492,7 @@ fn retail_locomotor_arm_admission() {
         released.lift.may_end(),
         "a grounded release lets the lift end"
     );
-    assert!(!released.crash.is_crashing() && !released.drop_credit.being_manipulated());
+    assert!(!released.crash.is_crashing() && !released.seldom.drop_credit.being_manipulated());
 }
 
 /// The lift queues Guard to commence (`0x00710386`) after leaving the team,
@@ -1424,9 +1518,10 @@ fn retail_lifted_team_member_commences_guard_at_once() {
         LocomotorShotTarget::Object(tank),
         4,
         LocomotorKind::Jumpjet,
+        &crate::rules::jumpjet_params::JumpjetOverride::default(),
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let lifted = entity(&sim, tank);
     assert!(lifted.lift.swap_active());
@@ -1461,9 +1556,10 @@ fn retail_magnetron_admission_reads_fractional_type_size() {
             LocomotorShotTarget::Object(tank),
             strength,
             LocomotorKind::Jumpjet,
+            &crate::rules::jumpjet_params::JumpjetOverride::default(),
             rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             entity(&sim, tank).lift.swap_active(),
@@ -1510,13 +1606,22 @@ fn lift_links_and_drop_credit_are_saved_and_hashed() {
         }),
         (tank, |entity, _, _| entity.lift.set_may_end_for_test(true)),
         (tank, |entity, _, _| {
-            entity.drop_credit.set_being_manipulated_for_test(true)
+            entity
+                .seldom
+                .drop_credit
+                .set_being_manipulated_for_test(true)
         }),
         (tank, |entity, other, _| {
-            entity.drop_credit.set_manipulated_by_for_test(Some(other))
+            entity
+                .seldom
+                .drop_credit
+                .set_manipulated_by_for_test(Some(other))
         }),
         (tank, |entity, _, house| {
-            entity.drop_credit.set_warped_by_house_for_test(Some(house))
+            entity
+                .seldom
+                .drop_credit
+                .set_warped_by_house_for_test(Some(house))
         }),
     ];
     for (id, write) in writes {
@@ -1533,8 +1638,96 @@ fn lift_links_and_drop_credit_are_saved_and_hashed() {
     assert_eq!(loaded.state_hash(), sim.state_hash());
     let held = entity(&loaded, tank);
     assert_eq!(held.lift.source(), Some(magnetron));
-    assert!(held.lift.may_end() && held.drop_credit.being_manipulated());
-    assert_eq!(held.drop_credit.manipulated_by(), Some(magnetron));
-    assert_eq!(held.drop_credit.warped_by_house(), Some(house));
+    assert!(held.lift.may_end() && held.seldom.drop_credit.being_manipulated());
+    assert_eq!(held.seldom.drop_credit.manipulated_by(), Some(magnetron));
+    assert_eq!(held.seldom.drop_credit.warped_by_house(), Some(house));
     assert_eq!(entity(&loaded, magnetron).lift.target(), Some(tank));
+}
+
+/// Phobos warhead `Jumpjet*` overrides apply while the Magnetron's new
+/// Jumpjet locomotor links; absent keys inherit the target type's block.
+#[cfg(feature = "phobos")]
+#[test]
+fn warhead_jumpjet_overrides_apply_to_the_installed_locomotor() {
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n\
+         [TANK]\nStrength=300\nSpeed=7\nSize=1\n\
+         JumpjetSpeed=30\nJumpjetClimb=5\nJumpjetCrash=5\nJumpjetHeight=500\n\
+         JumpjetAccel=2\nJumpjetWobbles=0.15\nJumpjetDeviation=40\n\
+         [Warheads]\n0=LIFT\n1=PLAIN\n\
+         [LIFT]\nIsLocomotor=yes\nLocomotor={92612C46-F71F-11D1-AC9F-006008055BB5}\n\
+         JumpjetTurnRate=9\nJumpjetSpeed=33\nJumpjetClimb=7.5\nJumpjetCrash=11\n\
+         JumpjetHeight=100\nJumpjetAccel=3.5\nJumpjetWobbles=.5\n\
+         JumpjetNoWobbles=yes\nJumpjetDeviation=77\n\
+         [PLAIN]\nIsLocomotor=yes\nLocomotor=Jumpjet\n",
+    ))
+    .unwrap();
+    let lift = |warhead_name: &str| {
+        let (mut sim, _) = arena(&rules);
+        let magnetron = spawn(&mut sim, &rules, "TANK", "Americans", 10, 16);
+        let tank = spawn(&mut sim, &rules, "TANK", "Russians", 16, 16);
+        let warhead = rules.warhead(warhead_name).unwrap();
+        sim.locomotor_detonation(
+            magnetron,
+            LocomotorShotTarget::Object(tank),
+            5000,
+            LocomotorKind::Jumpjet,
+            &warhead.jumpjet_override,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
+        let params = entity(&sim, tank)
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .jumpjet_runtime()
+            .unwrap()
+            .params();
+        params
+    };
+
+    let overridden = lift("LIFT");
+    assert_eq!(overridden.turn_rate(), 9);
+    assert_eq!(overridden.speed(), 33);
+    assert_eq!(f32::from_bits(overridden.climb_bits()), 7.5);
+    assert_eq!(f32::from_bits(overridden.crash_bits()), 11.0);
+    assert_eq!(
+        overridden.height(),
+        208,
+        "JumpjetHeight below the cell height floors at 208 leptons"
+    );
+    assert_eq!(f32::from_bits(overridden.accel_bits()), 3.5);
+    assert_eq!(f32::from_bits(overridden.wobbles_bits()), 0.5);
+    assert_eq!(overridden.deviation(), 77);
+    assert!(overridden.no_wobbles());
+
+    let inherited = lift("PLAIN");
+    assert_eq!(inherited.turn_rate(), 4);
+    assert_eq!(inherited.speed(), 30);
+    assert_eq!(inherited.height(), 500);
+    assert_eq!(inherited.deviation(), 40);
+    assert!(!inherited.no_wobbles());
+}
+
+/// The production attack path hands the fired warhead's Phobos `Jumpjet*`
+/// block to the lift (`run_special_detonation_arm` into Imbue `0x00710000`).
+#[cfg(feature = "phobos")]
+#[test]
+fn retail_magnetron_beam_carries_its_warhead_jumpjet_override() {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+        &crate::rules::ini_parser::IniFile::from_str("[LocomotorBeam]\nJumpjetSpeed=33\n"),
+    )
+    .map(|fixture| fixture.rules) else {
+        return;
+    };
+    let (sim, _, _, tank) = lift(&rules);
+    let params = entity(&sim, tank)
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .jumpjet_runtime()
+        .unwrap()
+        .params();
+    assert_eq!(params.speed(), 33);
 }

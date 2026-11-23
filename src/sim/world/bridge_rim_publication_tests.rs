@@ -146,8 +146,7 @@ fn bridge_rim_stock_damage_events_match_original_body_perpendicular_and_cleanup(
                 &mut sim,
                 &rules,
                 &[damage],
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let calls = hit["calls"].as_array().unwrap();
             assert_eq!(
@@ -241,7 +240,7 @@ fn bridge_rim_middle_section_fallout_and_restored_navigation() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     // Supply the intended ground victim before the existing Reveal clamps Z.
@@ -275,8 +274,7 @@ fn bridge_rim_middle_section_fallout_and_restored_navigation() {
             &mut sim,
             &rules,
             &[damage],
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let alive = sim
             .substrate
@@ -375,6 +373,7 @@ fn install_event31_cell_tags(sim: &mut Simulation, rules: &RuleSet, tags: &[(u16
         &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
         None,
         None,
+        None,
     );
     sim.install_authored_cell_trigger_tags(&map);
     sim.classify_map_triggers(rules);
@@ -398,8 +397,7 @@ fn rim_hit_raises(sim: &mut Simulation, rules: &RuleSet, coord: (u16, u16)) -> V
         sim,
         rules,
         &[damage],
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.tag_dispatch_trace_for_test()
         .iter()

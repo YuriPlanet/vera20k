@@ -280,7 +280,7 @@ fn nominal_active_counts_match_executed_native_histories() {
             entity.mark_nominal_survivor();
         }
         let entity = entity.clone();
-        let tracking = sim.houses.get_mut(&owner).unwrap().tracking_mut();
+        let tracking = sim.houses.get_mut(&owner).unwrap().tracking_mut_for_test();
         tracking.set_active_for_test(
             EntityCategory::Infantry,
             entity.type_ref(),
@@ -412,11 +412,7 @@ fn a_helipads_docks_follow_its_opening_capture_and_limbo() {
         .unwrap();
     assert_eq!(docks(&sim), (4, 0));
     let add_docks = |sim: &mut Simulation, house, docks| {
-        sim.houses
-            .get_mut(&house)
-            .unwrap()
-            .tracking_mut()
-            .add_airport_docks(docks);
+        sim.houses.get_mut(&house).unwrap().add_airport_docks(docks);
     };
     add_docks(&mut sim, first, -3);
     sim.change_owner_with_rules(
@@ -424,7 +420,7 @@ fn a_helipads_docks_follow_its_opening_capture_and_limbo() {
         second,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(docks(&sim), (-3, 4));
     add_docks(&mut sim, second, -2);
@@ -449,12 +445,12 @@ fn discarding_a_constructed_object_releases_its_tracking() {
     assert!(sim.discard_constructed_limbo(
         building,
         &rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(sim.discard_constructed_limbo(
         unit,
         &rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let tracking = sim.houses[&house].tracking();
     assert_eq!((tracking.buildings(), tracking.units_for_test()), (0, 0));
@@ -661,7 +657,7 @@ fn naval_tracking_retains_limbo_capture_and_reload_deletion_authority() {
         ),
         (2, 1)
     );
-    sim.techno_limbo_with_rules(boat, &rules, None);
+    sim.techno_limbo_with_rules(boat, &rules);
     assert_eq!(sim.houses[&first].tracking().active_for_test().0, 0);
     assert_eq!(
         sim.houses[&first].tracking().navy(),
@@ -688,7 +684,7 @@ fn naval_tracking_retains_limbo_capture_and_reload_deletion_authority() {
         .houses
         .get_mut(&second)
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .set_naval_land_for_test(1, 0, 0);
     assert_ne!(
         restored.state_hash(),
@@ -699,31 +695,31 @@ fn naval_tracking_retains_limbo_capture_and_reload_deletion_authority() {
         .houses
         .get_mut(&second)
         .unwrap()
-        .tracking_mut()
+        .tracking_mut_for_test()
         .set_naval_land_for_test(1, 1, 0);
-    let facts = restored
+    let facts = *restored
         .substrate
         .entities
         .get(boat)
         .unwrap()
-        .tracking_facts;
-    restored
+        .tracking_facts();
+    *restored
         .substrate
         .entities
         .get_mut(boat)
         .unwrap()
-        .tracking_facts = Default::default();
+        .tracking_facts_mut_for_test() = Default::default();
     assert_ne!(
         restored.state_hash(),
         expected_hash,
         "future removal admission also participates in the hash"
     );
-    restored
+    *restored
         .substrate
         .entities
         .get_mut(boat)
         .unwrap()
-        .tracking_facts = facts;
+        .tracking_facts_mut_for_test() = facts;
     assert_eq!(restored.state_hash(), expected_hash);
 
     for candidate in [&mut sim, &mut restored] {
@@ -740,4 +736,50 @@ fn naval_tracking_retains_limbo_capture_and_reload_deletion_authority() {
         assert_eq!(candidate.houses[&first].tracking().vehicles(), 0);
     }
     assert_eq!(sim.state_hash(), restored.state_hash());
+}
+
+/// `BuildingClass::ChangeOwner` (`0x00448C9A..0x00448CD6`): only a
+/// Construction Yard taken from a human player (`0x0050B6F0`) cancels that
+/// player's current building placement.
+#[test]
+fn a_captured_human_construction_yard_cancels_placement() {
+    use crate::sim::world::{FrameEffects, LifecycleOutput};
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[BuildingTypes]\n0=YARD\n1=PLANT\n[YARD]\nConstructionYard=yes\n[PLANT]\n",
+        ),
+        &IniFile::from_str("[YARD]\nFoundation=2x2\n[PLANT]\nFoundation=2x2\n"),
+    )
+    .unwrap();
+    let mut sim = Simulation::with_seed(3);
+    let human = sim.interner.intern("Americans");
+    let computer = sim.interner.intern("Russians");
+    sim.houses
+        .register(HouseState::new(human, 0, None, true, 0, 10));
+    sim.houses
+        .register(HouseState::new(computer, 1, None, false, 0, 10));
+    sim.session.set_current_house_for_test(Some(human));
+    let [yard, plant] = [("YARD", 10), ("PLANT", 14)].map(|(kind, rx)| {
+        sim.spawn_object_at_height(kind, "Americans", rx, 10, 0, 0, &rules)
+            .unwrap()
+    });
+    let capture = |sim: &mut Simulation, id, to| {
+        sim.lifecycle_outputs.clear_for_test();
+        sim.change_owner_with_rules(id, to, &rules, None, &mut FrameEffects::default());
+        sim.lifecycle_outputs
+            .as_slice()
+            .iter()
+            .copied()
+            .filter(|output| matches!(output, LifecycleOutput::ConstructionYardCaptured { .. }))
+            .collect::<Vec<_>>()
+    };
+    assert!(capture(&mut sim, plant, computer).is_empty());
+    assert_eq!(
+        capture(&mut sim, yard, computer),
+        [LifecycleOutput::ConstructionYardCaptured { owner: human }]
+    );
+    assert!(
+        capture(&mut sim, yard, human).is_empty(),
+        "a computer's yard"
+    );
 }

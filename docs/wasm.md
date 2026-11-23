@@ -1,0 +1,320 @@
+# Browser WebAssembly preview
+
+[English](wasm.md) | [简体中文](wasm.zh-CN.md)
+
+Wasm is an opt-in fourth build target alongside macOS, Windows and Linux. It
+uses the existing client, rules, simulation, menu and loading owners. The default
+browser package is single-player. Optional online transport uses the separate
+`wasm-net` feature; a successful build is not a completed browser play-test.
+
+## Build
+
+Requirements: stable Rust, Python 3.11 or newer, and `wasm-bindgen-cli` at the
+version recorded for `wasm-bindgen` in `Cargo.lock` (currently 0.2.127).
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.127 --locked
+python3 tools/wasm/build.py
+```
+
+The helper builds the client library as a `cdylib` with
+`--target wasm32-unknown-unknown --no-default-features --features wasm` and
+packages its bindings and an asset-free host into `target/wasm-dist/`. By default
+it uses the `wasm` profile, which players download: optimized for size, fat LTO,
+one codegen unit and no symbol names; it takes several times as long to build
+(on 2026-11-09 the single-player Wasm was 16.5 MB, 4.6 MB compressed with brotli, against 45.6 MB and 10.3 MB with `fast`). Use `--profile fast` while editing, or `--profile release`. It
+checks that the binding CLI matches the lockfile and sets an 8 MiB Wasm stack
+for the engine. It also builds `src/bin/snapshot-layout.rs` for the host first:
+the browser engine compiles in the saved-game layout id
+(`VERA20K_SNAPSHOT_LAYOUT`) instead of tracing its saved types at run time.
+Desktop artifact types, default features and build commands are unchanged.
+
+The browser engine embeds none of the interface's bundled fonts. They (Noto Sans,
+Noto Sans CJK and 19 script fonts, about 30 MB) and Unifont's CJK glyph table are
+copied with their licences to `pkg/fonts/`. The engine starts fetching Noto Sans
+and the glyph table, which draw GAME.FNT's missing letters, as soon as it
+loads, and `fonts_ready()` resolves once both have arrived: await it before
+`start_game` or `start_spawn`, which fail until then. It fetches each other font
+the first time text needs a character only that font draws, such as a Thai name
+in a chat. A host that serves the package must serve that folder too. Each URL
+carries its file's version, so a browser keeps the fonts across engine updates.
+The engine does not set a window icon in the browser build.
+
+For the optional online build:
+
+```sh
+python3 tools/wasm/build.py --network
+WS_PROXY_URL=wss://gateway.example.com python3 tools/wasm/build.py --network
+```
+
+`--network` selects `--features wasm-net`. `WS_PROXY_URL` is compiled into that
+build and defaults to `wss://wss.vera20k.com`; changing it requires rebuilding.
+A `-SPAWN` launch can name its own gateway with `[Relay] GatewayUrl`, which takes
+precedence for that match's relay traffic. The built-in lobby and LAN signaling
+always use the compiled origin.
+Supply a complete origin without a path, query, fragment or credentials. Only
+loopback development addresses may use `ws://`, for example
+`WS_PROXY_URL=ws://localhost:8788`. Desktop and single-player browser builds do
+not use this setting. Both modes write `target/wasm-dist/`; rebuilding the
+single-player package removes the network-only JavaScript and imports.
+
+The online package requires a separately running
+[WS/UDP gateway](../tools/wasm/gateway/README.md). Its default domain is a build
+setting, not a deployment guarantee. The gateway forwards each binary WS message
+as one unchanged UDP datagram, and proxies existing HTTPS lobby requests. Original
+game protocols and servers stay unchanged. See [network implementation](wasm-net.en.md)
+for ownership, compile boundaries and runtime acceptance requirements.
+
+The equivalent compilation command (without JS packaging) is:
+
+```sh
+python3 -m tools.cargo_run -- rustc -p vera20k --lib \
+  --target wasm32-unknown-unknown --no-default-features --features wasm \
+  --profile fast --locked --crate-type cdylib -- -C link-arg=-zstack-size=8388608
+```
+
+## Local preview
+
+```sh
+python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
+```
+
+Open `http://localhost:8000` in a browser with WebGPU or WebGL2. The page
+requires a secure context (HTTPS or localhost). Select an extracted retail
+Yuri's Revenge resource folder, then click Start. No game resources are included
+in the package. The single-player package uploads none; online play can share
+the selected map through the existing map-transfer protocol, while other retail
+assets stay local. Audio is prepared in that click to satisfy browser autoplay
+policy. Resource bytes are held in memory, so large installations need
+substantial browser memory.
+
+The host restores and queues settings/save writes in IndexedDB for this origin.
+The page shows storage failures and pending writes. Engine writes complete in
+memory before the asynchronous storage transaction completes; wait for the
+saved status before closing. Clearing site data removes these copies. Persistence
+callbacks report only `/saves/`, which is what `restore_user_file` accepts. The
+supplied page also registers the separate `set_replay_callback((name, bytes) => ...)`
+and keeps only the latest closed diagnostic replay segment in a separate IndexedDB
+database on this origin. Download the latest from **Local diagnostic replays**;
+these files are never restored into the engine or uploaded. Normal exit waits
+for both queues. A custom host that does not register a replay callback discards
+these segments. Imported retail resources are not persisted; they are read again on every visit. Where the
+browser has the File System Access API (Chrome, Edge), the launcher keeps a read
+handle to the chosen folder in a separate `vera20k-wasm-launcher` database and
+offers one-click Continue on the next visit; other browsers ask for the folder again.
+
+## Multi-threaded build (experimental)
+
+`--threads` runs each tick on a simulation Web Worker beside the draw, and its
+parallel work on a Rayon pool of Web Workers. It combines with `--network` and
+`--lan`, and needs a pinned nightly, because the standard library has to be
+rebuilt with Wasm atomics. Desktop and default browser builds stay on stable.
+The option stays out of the [build check](Networking.md#build-check): a threaded
+package plays with the same package built without it.
+
+```sh
+rustup toolchain install nightly-2026-10-15 --profile minimal --component rust-src --target wasm32-unknown-unknown
+python3 tools/wasm/build.py --threads
+python3 tools/wasm/serve.py
+```
+
+Shared memory requires cross-origin isolation, so the page must be served with
+`Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`. `serve.py` sends both; a plain
+`http.server` does not, and the host page then reports the missing headers when the pool fails to start.
+Other hosts must send them too and await `initThreadPool(workers)` after
+`init()`; without that call the package runs simulation work serially, on the
+main thread.
+
+Rendering, audio, input and the network session stay on the main thread, which
+never waits for another thread, because waiting there traps. A page can also run
+ticks on a simulation worker beside the draw, as the desktop simulation thread
+does ([The browser](sim-thread.md#the-browser)). It is off by default: call
+`set_simulation_thread("1")` before `start_game` or `start_spawn` (the supplied
+host takes `?simulation-thread=1`). A frame then goes to the worker when its tick
+costs more than publishing the frame; `"always"` lends every frame the worker can
+take and `"0"` keeps it off. While a tick
+runs, the page draws the last published frame and holds window events until the
+tick is back. Frames that tick on the main thread (all of them with the worker
+off; otherwise catch-up frames another follows, replays and network restores)
+spin while the pool works, running no engine code meanwhile. Results do not
+depend on the pool size or on where a tick ran. A panic or trap on the simulation
+worker, or a panic on a pool worker during its tick, is reported as
+`engine-error` at the next frame; one on a pool worker during a main-thread tick
+leaves the main thread spinning, so the tab freezes instead.
+
+## Compatibility boundary
+
+All browser implementations require both the `wasm` Cargo feature and the
+`wasm32-unknown-unknown` target. Enabling `wasm` on a desktop target still selects
+the desktop implementations. A browser build without `wasm` is rejected.
+
+- `util::time` re-exports the existing standard clocks on desktop and `web-time`
+  in the browser; simulation tick and RNG algorithms remain unchanged.
+- `util::file_system` re-exports standard file operations on desktop. Browser
+  imports live under `/retail`, mods under `/mods/<folder>`, saves under `/saves`,
+  and profiles under `/saves/profile`; MIX archives share imported bytes instead of
+  memory mapping.
+- Browser work runs serially through the existing parallel-work interface.
+  Native Rayon and worker-thread paths stay selected on desktop.
+- GPU acquisition yields through the existing initialization jobs. Rendering
+  uses an offscreen sRGB frame and a canvas presentation pass. Browser texture
+  uploads do not block waiting for GPU completion.
+- Without a WebGPU adapter the browser build falls back to WebGL2. WebGL2 has
+  no storage buffers, compute or reinterpreting texture views,
+  so the renderers that use them select render-target equivalents there
+  (`render::webgl`, `gpu::webgl_fallback`); every other device keeps its path.
+  A native test translates its shaders to GLSL ES 3.00, and
+  `VERA20K_TEST_WEBGL_FALLBACK=1` runs the GPU goldens through its passes on
+  a native device.
+- The browser entry supplies a canvas, status callback and storage callbacks;
+  the existing App retains startup and match lifecycle ownership.
+
+Only `wasm-net` together with the browser target enables Fetch, WS sockets and
+deferred network-loading waits. Desktop builds, including those enabling
+`wasm-net`, keep native UDP, blocking HTTPS and thread scheduling. The `wasm`
+single-player package still returns an explicit unsupported error at network
+entry points. Browser LAN discovery and direct UDP connections are not supported.
+
+The Generate Map dialog, which generates on a thread of its own, and synchronous
+GPU screenshot/capture are also unavailable in the browser. So are Choose Map's
+Online Maps row and the online login page's player counts, which the game reads
+from the lobby on threads of their own (`src/app/worker.rs`). A page makes a random
+map's file with `generate_map(input)` instead ([random maps](spawn.md#random-maps)):
+on the threaded package with its pool started it runs on a pool worker, otherwise
+on the page's thread.
+Shifted punctuation shortcuts on non-US keyboard layouts
+are not fully mapped. Chat edits take input-method text through a hidden textarea
+that the engine adds to the page while one is active (`src/web/ime.rs`), so a host
+page needs no markup for it. Large atlas work and synchronous save preparation can
+still hold the browser event loop; runtime/performance validation is outstanding.
+
+## Checks
+
+```sh
+python3 -m unittest tools.tests.test_cargo_run
+python3 -m tools.cargo_run -- test -p vera20k-core --lib --features wasm util::file_system::tests
+python3 -m tools.cargo_run -- test -p vera20k-core --lib --features wasm sim::parallel_web_tests
+python3 -m tools.cargo_run -- check -p vera20k --lib --bins
+python3 -m tools.cargo_run -- check -p vera20k --lib --bins --features wasm
+node --test tools/wasm/tests/*.test.cjs
+npm --prefix tools/wasm/gateway ci
+npm --prefix tools/wasm/gateway test
+python3 -m unittest tools.tests.test_wasm_build
+```
+
+The memory-filesystem tests check nested resources, shared archive bytes, missing
+files, directory creation, exclusive save creation and restored modification
+times. The serial-work test compares ordered results against native execution.
+The separate manual Wasm workflow packages single-player and online builds without
+changing desktop workflows. Network checks cover transport boundaries and platform
+isolation; full browser/browser and browser/desktop matches, convergence,
+reconnection and postmatch re-entry require actual play-tests. Browser rendered
+output, audio, persisted reload and save/load also require runtime validation.
+
+## Lifecycle callbacks
+
+Register `set_lifecycle_callback(callback)` after `init()` and before
+`start_game` or `start_spawn`. The callback receives a JavaScript object:
+
+```js
+set_lifecycle_callback(event => {
+    if (event.type === 'match-ended') {
+        showMatchResult(event.match);
+    } else if (event.type === 'engine-exited') {
+        // Flush the host's pending persistence writes before navigating.
+        showExitPage(event.reason, event.error);
+    } else if (event.type === 'engine-error') {
+        showFatalError(event.error);
+    }
+});
+```
+
+- `match-ended`: one event for each installed match that ends through the
+  scenario exit paths (win/loss, abort, disconnect or engine shutdown).
+  `match` contains `result`, `exit_code`, `mode`, `match_id`, `source_index`,
+  `frames`, `duration_seconds`, `opponents_left` and nullable `reason`, using
+  the existing external-launch result vocabulary, and nullable
+  `network_quality` (see below). It also includes `map`
+  (the consumed map source), nullable `map_name` (the map's `[Basic] Name`;
+  retail multiplayer maps usually have none), `local_house` (the local
+  house's simulation name), decimal-string `seed`,
+  and nullable `scores`. Score rows contain `house`, `country`, `survived`,
+  `kills`, `losses`, `built`, `raw_score` and `score`; they read the simulation's
+  finalized snapshot without new RNG draws. `scores: null` means no terminal
+  score snapshot was produced, including abort and cooperative paths.
+  `network_quality` is present for an online relay match only: the report a
+  lobby match's `finish` carries (`network_quality` in `docs/lobby-protocol.md`).
+  A watcher's report can also name the `failure` `watch_desync` or
+  `watch_lost`; a watcher sends no `finish`, so that list leaves them out.
+  These are wall-clock observations of this client; desktop `-SPAWN` writes
+  the same object into `spawn_result.json`, and every client logs it once as
+  `Network quality:` when the match returns its transport.
+  Ordinary menu launches keep their normal score/menu flow. A campaign
+  restart ends the match as `quit`; loading a saved game from inside a match
+  replaces it without a `match-ended`.
+- `engine-exited`: one terminal event after application teardown, with
+  `reason: "quit" | "match-ended" | "error"` and nullable error text. Missing
+  asset errors retain their error message when the player presses Quit.
+  Startup failure before a match starts emits no fictional `match-ended`.
+- `engine-error`: a best-effort panic notification with error text. It does
+  not promise orderly teardown. Browser termination or a Wasm trap that never
+  reaches the panic hook cannot guarantee a callback.
+
+A `start_spawn` launch skips the result-screen Continue button and campaign
+continuation. It freezes its result, completes the existing network finish/leave
+cleanup, delivers `match-ended`, and immediately requests engine shutdown;
+`engine-exited` follows. The old `spawn:finished:<json>` status notification is
+retained once for existing result consumers. A launch refused for its `ExpectedRulesDigest` adds
+`"failure": "rules_mismatch"` and the game's `rules_parts` to that report
+([rules parts](spawn.md#rules-parts)).
+
+Once `engine-exited` has returned, the same page may call `start_spawn` again:
+import the next launch's files with `import_spawn_file`, call `prepare_audio` and
+pass a new canvas. The imported retail files stay, so `import_file` is refused
+and changing the game folder needs a new page; `restore_user_file`, `version`, `probe` and
+`generate_map` work between launches, and each launch rereads the settings. The output
+`AudioContext` also stays, so a later launch needs no new user gesture. A launch's
+files under `/spawn` are removed when it exits. `can_start_spawn()` says whether
+another launch can start. It stays false while a game runs, after `start_game`
+and after a panic, which all need a new page/instance. Linear memory never
+shrinks, so a host may also want a new page once `memory.buffer.byteLength`
+nears the 4 GiB limit.
+
+### Mods and imports in parts
+
+The browser build plays a mod as the desktop does (`app::mods`, docs/modding.md):
+its files read as if copied on top of the game folder. The page has no Mods folder
+of the player's own, so it brings the mod a launch plays:
+
+- `import_mod_file(folder, name, bytes)` puts one file of a mod at
+  `/mods/<folder>/<name>`. Between launches, as `import_spawn_file`.
+- `set_mod(folder)` chooses the mod the next `start_spawn`, `start_game` or
+  `probe` plays (`null` for none). It is config.toml's `[paths] mod` on the
+  desktop, so a missing folder or a `Needs=` above this version starts the
+  original game and says why. `probe` then reports the mod's rules digest and
+  campaigns.
+- `remove_mod(folder)` drops a mod's files from engine memory before another is
+  imported. Linear memory does not shrink, but the next import reuses it.
+- A page plays one mod in one game and another, or none, in the next. Each start
+  sets the mod's map folder anew (`map::source::set_mod_dir`). The desktop's
+  start record (`mod-start.txt`) is not kept: a start that dies ends the page.
+
+Any file can also arrive in parts, so a large one need not be held whole in the
+page as well as in the engine: `import_begin(kind, name, length)` sets the bytes
+aside in engine memory, with `kind` `"retail"`, `"spawn"` or `"mod:<folder>"`
+under the same rules as the three import calls; `import_part(bytes)` fills them in
+order and returns `true` once the last part has stored the file. A page can yield
+between parts, so its own progress display keeps drawing.
+
+Calling Start from a lifecycle callback is rejected. Callback exceptions do
+not prevent shutdown; returned Promises are not awaited by Rust.
+
+After `engine-exited`, an engine that had started also sends the status
+`Exited`. The supplied host uses that status: it hides the game, waits for
+pending IndexedDB writes and then tries to close the tab, keeping a warning
+visible if storage failed. A hosting website may instead return to its own
+lobby once storage completes. Reloading discards imported retail bytes. Browser audio
+pumping pauses on engine exit; stopping winit alone would leave WebAudio alive.
+Desktop startup, scores, process exit codes and result-file writes are unchanged.

@@ -18,18 +18,133 @@ use crate::sim::world::ObjectSubstrate;
 /// `0x007416A0` → `RecordKill` only, `AircraftClass::Enter_Idle_Mode
 /// 0x004179FD/0x00417B88` → `Crash` slot `+0x3DC`, the off-playfield
 /// `UnInit` at `AircraftClass::AI 0x00414F93/0x00414FD1`) must not call it.
+///
+/// Ares FootClass_Destroyed (10049080, hook 0x4D98C0) rewrites the body: a
+/// `DontScore=` (TechnoType `+0xC9F`) or `Insignificant=` (`+0x232`) type is
+/// silent too, the line is the type's `EVA.Lost` (TypeExt `+0x394`; none for
+/// -1), a set SuppressUnitLost (TechnoExt `+0x9F`, the callers'
+/// `UnitLost.Suppress` test) silences it, and the line plays whether or not
+/// the radar event is admitted.
+///
+/// `ares` is the game's `RuleSet::ares_form()`: the Ares body, whose event
+/// carries the line and the radar flag ([`AresUnitLost`]), runs when it is
+/// set, and the stock body otherwise.
 pub(crate) fn death_announcement_event(
     obj: &crate::rules::object_type::ObjectType,
+    type_id: InternedId,
     category: EntityCategory,
     rx: u16,
     ry: u16,
     owner: InternedId,
+    ares: bool,
 ) -> Option<UnitLostEvent> {
-    (category != EntityCategory::Structure && !obj.spawned).then_some(UnitLostEvent {
+    if category == EntityCategory::Structure || obj.spawned {
+        return None;
+    }
+    if ares {
+        if obj.dont_score || obj.insignificant {
+            return None;
+        }
+        Some(UnitLostEvent {
+            rx,
+            ry,
+            owner,
+            type_id,
+            ares: Some(AresUnitLost {
+                eva: obj
+                    .unit_lost_eva()
+                    .unwrap_or(Some("EVA_UnitLost"))?
+                    .to_owned(),
+                radar_event: true,
+            }),
+        })
+    } else {
+        Some(UnitLostEvent {
+            rx,
+            ry,
+            owner,
+            type_id,
+            ares: None,
+        })
+    }
+}
+
+/// Ares BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760), the head
+/// of `BuildingClass::Death_Announcement @ 0x0044D760` (vt+0x3B8): unless the
+/// type is `DontScore=` or `Insignificant=`, a building with an `EVA.Lost`
+/// (buildings default to none) speaks it, without a radar event. The callers
+/// apply SuppressUnitLost; the world applies the human-owner gate.
+pub(crate) fn ares_building_lost_event(
+    obj: &crate::rules::object_type::ObjectType,
+    type_id: InternedId,
+    rx: u16,
+    ry: u16,
+    owner: InternedId,
+) -> Option<UnitLostEvent> {
+    if obj.dont_score || obj.insignificant {
+        return None;
+    }
+    Some(UnitLostEvent {
         rx,
         ry,
         owner,
+        type_id,
+        ares: Some(AresUnitLost {
+            eva: obj.unit_lost_eva().flatten()?.to_owned(),
+            radar_event: false,
+        }),
     })
+}
+
+impl crate::sim::world::Simulation {
+    /// `BuildingClass::Death_Announcement @ 0x0044D760` (vt+0x3B8) of
+    /// building `id`, from the Temporal erase (`0x0071AA3A`) and, under Ares,
+    /// from ReceiveDamage after DestructionEffects (10014520, hook
+    /// 0x44266B). When Ares plays (`RuleSet::ares_form`), its head (10013F10)
+    /// first speaks the type's `EVA.Lost` ([`ares_building_lost_event`])
+    /// unless SuppressUnitLost is set. Then, with a Killer, a current
+    /// player's building (`0x0050B6F0`) pushes the Cell of its +4C coordinate
+    /// (`0x00447E90`, no requester) onto the Spacebar ring (`0x00660B80`); no
+    /// EVA, no radar event.
+    pub(crate) fn building_death_announcement(
+        &mut self,
+        id: u64,
+        has_killer: bool,
+        unit_lost_suppressed: bool,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        if rules.ares_form()
+            && !unit_lost_suppressed
+            && let Some(entity) = self.substrate.entities.get(id)
+            && let Some(object) = self.object_type(entity.type_ref(), rules)
+            && let Some(event) = ares_building_lost_event(
+                object,
+                entity.type_ref(),
+                entity.position.rx(),
+                entity.position.ry(),
+                entity.owner(),
+            )
+        {
+            self.dispatch_unit_lost_events(&[event]);
+        }
+        if !has_killer {
+            return;
+        }
+        if let Some(entity) = self.substrate.entities.get(id)
+            && self.house_is_human_player(entity.owner())
+            && let Ok(coord) = self.navigation_target_coordinate(
+                crate::sim::components::NavTargetRef::Object { id },
+                None,
+                rules,
+            )
+        {
+            self.publish_trigger_effects([
+                crate::sim::trigger_runtime::TriggerEffect::RecentEventCell {
+                    cell: ((coord.x / 256) as i16, (coord.y / 256) as i16),
+                },
+            ]);
+        }
+    }
 }
 
 fn death_weapon_ftol_product_i32_f32(value: i32, multiplier: f32) -> Option<i32> {
@@ -76,12 +191,12 @@ pub(crate) fn death_arm_explodes(
 /// (`Rules+0xFDC`) at `ftol(Strength * 0.5)` (`0x0070D6FE..0x0070D71F`). No
 /// weapon fires nothing. The function has no `Explodes=` gate: the death arm
 /// gates it ([`death_arm_explodes`]); a crash impact calls it bare.
-pub(super) fn fire_death_weapon_payload(
-    rules: &RuleSet,
+pub(super) fn fire_death_weapon_payload<'r>(
+    rules: &'r RuleSet,
     obj: &ObjectType,
-    current_weapon: Option<&WeaponType>,
+    current_weapon: Option<&'r WeaponType>,
     interner: &mut StringInterner,
-) -> Option<(i32, InternedId, InternedId)> {
+) -> Option<DeathWeaponPayload<'r>> {
     let chosen = obj
         .death_weapon
         .as_deref()
@@ -90,22 +205,37 @@ pub(super) fn fire_death_weapon_payload(
     if let Some(weapon) = chosen {
         let damage =
             death_weapon_ftol_product_i32_f32(weapon.damage, obj.death_weapon_damage_modifier)?;
-        let warhead_ref = interner.intern(weapon.warhead.as_ref()?);
+        let warhead = interner.intern(weapon.warhead.as_ref()?);
         let weapon_ref = interner.intern(&weapon.id);
-        return Some((damage, warhead_ref, weapon_ref));
+        return Some(DeathWeaponPayload {
+            damage,
+            warhead,
+            weapon_ref,
+            weapon,
+        });
     }
     let fallback = rules
         .combat_damage
         .death_weapon
         .as_deref()
         .and_then(|weapon_id| rules.weapon(weapon_id))?;
-    let warhead_ref = interner.intern(fallback.warhead.as_ref()?);
+    let warhead = interner.intern(fallback.warhead.as_ref()?);
     let weapon_ref = interner.intern(&fallback.id);
-    Some((
-        death_weapon_half_strength(obj.strength)?,
-        warhead_ref,
+    Some(DeathWeaponPayload {
+        damage: death_weapon_half_strength(obj.strength)?,
+        warhead,
         weapon_ref,
-    ))
+        weapon: fallback,
+    })
+}
+
+/// [`fire_death_weapon_payload`]'s weapon: its damage, its warhead's and its
+/// own interned ids, and the type itself.
+pub(super) struct DeathWeaponPayload<'r> {
+    pub(super) damage: i32,
+    pub(super) warhead: InternedId,
+    pub(super) weapon_ref: InternedId,
+    pub(super) weapon: &'r WeaponType,
 }
 
 /// `TechnoClass::Fire_Death_Weapon @ 0x0070D690` with no extra damage: a real
@@ -126,9 +256,12 @@ pub(crate) fn death_weapon_detonation(
         combat_weapon::current_weapon(entity, object, &substrate.entities, rules, interner);
     let impact =
         crate::sim::movement::ground_pose::object_get_coords(entity, resolved_terrain.as_ref());
-    let (damage, warhead, weapon) =
-        fire_death_weapon_payload(rules, object, current_weapon, interner)?;
-    let kind = rules.weapon(interner.resolve(weapon))?;
+    let DeathWeaponPayload {
+        damage,
+        warhead,
+        weapon_ref,
+        weapon,
+    } = fire_death_weapon_payload(rules, object, current_weapon, interner)?;
     Some(ProjectileDetonation {
         projectile_id: id,
         source_id: id,
@@ -137,17 +270,17 @@ pub(crate) fn death_weapon_detonation(
         payload: ProjectilePayload::new(
             damage,
             warhead,
-            kind.projectile.as_deref().map(|id| interner.intern(id)),
-            kind.bright,
+            weapon.projectile.as_deref().map(|id| interner.intern(id)),
+            weapon.bright,
         )
-        .with_installed_weapon(Some(weapon)),
+        .with_installed_weapon(Some(weapon_ref)),
         reason: crate::sim::projectile::ProjectileDetonationReason::DeathWeapon,
     })
 }
 
-/// World-owned lifecycle work that brackets the native death helper for a
-/// concrete fatal receiver. Passenger teardown precedes the nested death
-/// weapon; represented UnInit follows it before the next outer receiver.
+/// World-owned lifecycle work at the concrete receiver's native boundaries.
+/// Building garrison ejection follows the shared Techno death arm; represented
+/// UnInit follows the concrete death effects before the next outer receiver.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FatalLifecycleStage {
     /// Surviving Techno ReceiveDamage postlude, before Infantry scatter and
@@ -156,11 +289,10 @@ pub enum FatalLifecycleStage {
     MaintainDamageSmoke {
         state: damage::DamageState,
     },
-    /// Before the death arm. `attacker` is the killing call's attacker, whom
-    /// a building's KillPassengers credits (`0x00441F27`).
-    BeforeDeathEffects {
-        attacker: Option<u64>,
-    },
+    /// Building442625..44264C: eject its garrison and switch off its light
+    /// after Techno death effects and saved-contact callbacks, immediately
+    /// before DestructionEffects442665. Cargo cleanup follows SpawnSurvivors.
+    BeforeBuildingDestruction,
     AfterDeathEffects,
 }
 
@@ -205,15 +337,7 @@ pub(super) fn throw_debris_for_death(
     if object_type.max_debris <= 0 {
         return;
     }
-    let debris_types: Vec<_> = object_type
-        .debris_types
-        .iter()
-        .map(|name| {
-            rules
-                .voxel_anim_type_id_by_name(name)
-                .map(|id| (id, rules.voxel_anim_type(id)))
-        })
-        .collect();
+    let debris_types = rules.object_debris_types(object_type);
     let data = DebrisTypeData {
         max_debris: object_type.max_debris,
         min_debris: object_type.min_debris,
@@ -296,32 +420,32 @@ impl crate::sim::voxel_anim::VoxelDebrisHost for DeathDebrisWorldHost<'_, '_> {
     fn construct_voxel(
         &mut self,
         type_id: crate::rules::voxel_anim_type::VoxelAnimTypeId,
-        voxel_type: &crate::rules::voxel_anim_type::VoxelAnimType,
         owner_house: Option<InternedId>,
         origin: glam::IVec3,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
         let admit_inline = world_receiver::callbacks_enabled(self.world);
         self.world.emit_debris_voxel(
             type_id,
-            voxel_type,
+            self.rules.voxel_anim_type(type_id),
             owner_house,
             origin,
             admit_inline,
             self.voxel_debris,
+            self.rules,
         )
     }
 }
 
 /// Shared list selection in Techno's death block and Infantry's Eaten arm
 /// (5197E5/51984D): one Main draw even for a singleton, none for an empty list.
-pub(crate) fn select_death_sound(
-    choices: &[String],
-    main_rng: &crate::sim::rng::MainRng,
-) -> Option<String> {
+pub(crate) fn select_death_sound<'a>(
+    choices: &'a [String],
+    main_rng: &mut crate::sim::rng::SimRng,
+) -> Option<&'a str> {
     if choices.is_empty() {
         None
     } else {
-        Some(choices[(main_rng.next_u32() % choices.len() as u32) as usize].clone())
+        Some(&choices[(main_rng.next_u32() % choices.len() as u32) as usize])
     }
 }
 
@@ -331,4 +455,59 @@ pub(crate) fn select_death_sound(
 pub(super) enum ConcreteDeathSmudgePlan {
     Infantry(crate::sim::world::InfantryDeathPostlude),
     Building,
+}
+
+/// Ares FootClass_Destroyed (10049080, hook 0x4D98C0) and
+/// BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760): a `DontScore=`
+/// type is silent, a Foot speaks its `EVA.Lost` (Initialize's `EVA_UnitLost`,
+/// or none) with a radar event, and a building only an `EVA.Lost` it sets,
+/// without one.
+#[cfg(test)]
+#[test]
+fn ares_unit_lost_lines_follow_eva_lost_and_the_score_gate() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use crate::rules::sound_ini::EvaRegistry;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let ini = IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n1=E2\n2=E3\n[BuildingTypes]\n0=POWR\n1=PILL\n\
+         [E1]\nStrength=1\n[E2]\nStrength=1\nDontScore=yes\n[E3]\nStrength=1\nEVA.Lost=none\n\
+         [POWR]\nStrength=1\n[PILL]\nStrength=1\nEVA.Lost=EVA_StructureSold\n",
+    );
+    let mut rules = RuleSet::from_ini(&ini).unwrap();
+    let eva = EvaRegistry::from_ini(&IniFile::from_str(
+        "[DialogList]\n0=EVA_UnitLost\n1=EVA_StructureSold\n\
+         [EVA_UnitLost]\nAllied=LOST\n[EVA_StructureSold]\nAllied=SOLD\n",
+    ));
+    rules.bind_type_eva_references(&ini, &eva);
+    let owner = InternedId::from_index(1);
+    let type_id = InternedId::from_index(2);
+    let object = |name: &str| rules.object(name).unwrap();
+    // The Ares part every event of an Ares game carries.
+    let line = |event: UnitLostEvent| {
+        let ares = event.ares.expect("an Ares event carries its line");
+        (ares.eva, ares.radar_event)
+    };
+    let foot = |name: &str| {
+        death_announcement_event(
+            object(name),
+            type_id,
+            EntityCategory::Infantry,
+            3,
+            4,
+            owner,
+            rules.ares_form(),
+        )
+        .map(line)
+    };
+    assert_eq!(foot("E1"), Some(("EVA_UnitLost".to_owned(), true)));
+    assert_eq!(foot("E2"), None);
+    assert_eq!(foot("E3"), None);
+    let building =
+        |name: &str| ares_building_lost_event(object(name), type_id, 3, 4, owner).map(line);
+    assert_eq!(building("POWR"), None);
+    assert_eq!(
+        building("PILL"),
+        Some(("EVA_StructureSold".to_owned(), false))
+    );
 }

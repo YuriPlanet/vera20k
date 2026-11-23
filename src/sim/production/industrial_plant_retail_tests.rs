@@ -47,6 +47,11 @@ fn stock_scene(root: &std::path::Path) -> HeadlessScenario {
         multi_engineer: false,
         harvester_truce: false,
         ally_change_allowed: true,
+        bans: Default::default(),
+        teams: None,
+        auto_balance: false,
+        queue: Vec::new(),
+        host_rules: Default::default(),
     };
     load_session(root, "XMP03T4.MAP", 0x1234_5678, launch).expect("stock Battle loads")
 }
@@ -180,7 +185,7 @@ fn stock_plant_gain_and_sale_preserve_tank_debt_and_settle_current_price() {
                     "NAINDP",
                     33,
                     92,
-                    Some(&scene.runtime.resources.overlay_registry),
+                    Some(scene.runtime.resources.rules.overlay_registry()),
                 )
                 .unwrap();
                 assert!(preview.valid);
@@ -244,7 +249,7 @@ fn stock_plant_gain_and_sale_preserve_tank_debt_and_settle_current_price() {
                     &commands,
                     22,
                     TickLane::Ordinary,
-                    FrameEffects::default().with_production_strip(&visits, &|_| {}),
+                    &mut FrameEffects::default().with_production_strip(&visits),
                 )
                 .expect("ordinary bound-resource frame");
             let sim = scene.sim();

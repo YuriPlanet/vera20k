@@ -3,9 +3,12 @@ use crate::headless_scenario::{HeadlessScenario, SIM_TICK_MS};
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::components::NavTargetRef;
 use crate::sim::world::TickLane;
-use crate::sim::world::bridge_test_evidence::load_anytown_concrete;
+use crate::sim::world::bridge_test_evidence::{
+    load_anytown_concrete, load_anytown_concrete_from_path,
+};
 use crate::util::fixed_math::SimFixed;
 use serde_json::{Value, json};
+use std::path::Path;
 
 type AmbientAnims = std::collections::BTreeSet<crate::sim::anim_class::AnimId>;
 
@@ -32,7 +35,7 @@ fn spawn_fv(scene: &mut HeadlessScenario, xyz: [i32; 3]) -> u64 {
             (xyz[1] / 256) as u16,
             128,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary FV bank placement");
     // Declared native Unlimbo coordinate input within this already admitted
@@ -77,7 +80,7 @@ fn mission_state(actor: &crate::sim::game_entity::GameEntity) -> Value {
         "queued":actor.mission.queued().raw(),"status":actor.mission.handler_state(),
         "mission_visit_count":actor.mission.ai_counter(),
         "dispatch":[dispatch.start_frame(),dispatch.delay()],
-        "rearm":[actor.rearm_timer.start_frame(),actor.rearm_timer.duration()]})
+        "rearm":[actor.seldom.rearm_timer.start_frame(),actor.seldom.rearm_timer.duration()]})
 }
 
 fn passive_scan_state(actor: &crate::sim::game_entity::GameEntity) -> Value {
@@ -184,7 +187,7 @@ fn paid_snapshot(
             "health":actor.health.current(),"mission":actor.mission.current().raw(),
             "queued":actor.mission.queued().raw(),
             "dispatch":[dispatch.start_frame(),dispatch.delay()],
-            "rearm":[actor.rearm_timer.start_frame(),actor.rearm_timer.duration()]},
+            "rearm":[actor.seldom.rearm_timer.start_frame(),actor.seldom.rearm_timer.duration()]},
         "nav_cell":nav(actor.navigation.nav_com()),
         "drive_destination":coordinate(actor.locomotor.as_ref().and_then(|l| l.selected_drive_runtime()).and_then(|r| r.retained()).and_then(|d| d.destination())),
         "drive_head":coordinate(actor.locomotor.as_ref().and_then(|l| l.selected_drive_runtime()).and_then(|r| r.retained()).and_then(|d| d.head_to())),
@@ -211,12 +214,35 @@ fn compare_fields(actual: &Value, expected: &Value, path: &str, errors: &mut Vec
     }
 }
 
-fn prepared_paid_scene(stage: &str) -> (HeadlessScenario, AmbientAnims) {
+fn retained_behind_animations(scene: &HeadlessScenario) -> AmbientAnims {
+    let Some(behind_type) = scene.runtime.resources.rules.general.behind.as_deref() else {
+        return AmbientAnims::new();
+    };
+    let sim = scene.sim();
+    sim.substrate
+        .anims
+        .iter()
+        .filter_map(|(id, anim)| {
+            let owner_retains_anim = anim
+                .owner_entity()
+                .and_then(|owner| sim.substrate.entities.get(owner))
+                .is_some_and(|owner| owner.behind_anim() == Some(*id));
+            (owner_retains_anim
+                && sim
+                    .resolve(anim.type_id())
+                    .eq_ignore_ascii_case(behind_type)
+                && !sim.substrate.pending_delete.contains_object(id))
+            .then_some(*id)
+        })
+        .collect()
+}
+
+fn prepared_paid_scene(stage: &str, map_path: Option<&Path>) -> (HeadlessScenario, AmbientAnims) {
     use crate::sim::world::bridge_test_evidence::{
         damage_anytown_concrete, repair_anytown_concrete,
     };
-    let mut scene = load_anytown_concrete();
-    let ambient_anims: AmbientAnims = scene
+    let mut scene = map_path.map_or_else(load_anytown_concrete, load_anytown_concrete_from_path);
+    let mut ambient_anims: AmbientAnims = scene
         .sim()
         .substrate
         .anims
@@ -236,12 +262,18 @@ fn prepared_paid_scene(stage: &str) -> (HeadlessScenario, AmbientAnims) {
     // physical map state. Finish prerequisite effects before supplying
     // the declared frame/RNG inputs; this is not whole-Scenario startup.
     for _ in 0..512 {
+        // TechnoClass::AI_Update @ 0x006FA24A..0x006FA30C may create the
+        // retained `[General] Behind=` Anim via UpdateBehindIndicator
+        // @ 0x0070F1D0 after map load. It persists while the owning Techno is
+        // hidden, so only the live owner-linked indicator joins the baseline;
+        // unrelated prerequisite effects still have to drain.
+        let behind_anims = retained_behind_animations(&scene);
         if scene
             .sim()
             .substrate
             .anims
             .iter()
-            .all(|(id, _)| ambient_anims.contains(id))
+            .all(|(id, _)| ambient_anims.contains(id) || behind_anims.contains(id))
             && scene.sim().substrate.pending_delete.is_empty()
         {
             break;
@@ -252,23 +284,25 @@ fn prepared_paid_scene(stage: &str) -> (HeadlessScenario, AmbientAnims) {
                 &[],
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
     }
+    let behind_anims = retained_behind_animations(&scene);
     assert!(
         scene
             .sim()
             .substrate
             .anims
             .iter()
-            .all(|(id, _)| ambient_anims.contains(id)),
+            .all(|(id, _)| ambient_anims.contains(id) || behind_anims.contains(id)),
         "{stage} prerequisite effects drain"
     );
     assert!(
         scene.sim().substrate.pending_delete.is_empty(),
         "{stage} prerequisite deletions drain"
     );
+    ambient_anims.extend(behind_anims);
     (scene, ambient_anims)
 }
 
@@ -289,7 +323,7 @@ fn command_paid_fv(
             .game_options_mut_for_test()
             .apply_in_game_speed(game_speed)
     );
-    sim.main_rng = crate::sim::rng::SimRng::new(0).into();
+    sim.main_rng = crate::sim::rng::SimRng::new(0);
     sim.mapgen_rng = crate::sim::rng::SimRng::new(0);
     sim.scenario_rng = crate::sim::rng::SimRng::new(scenario_seed);
     let id = spawn_fv(scene, xyz);
@@ -301,6 +335,7 @@ fn command_paid_fv(
     sim.session.set_binary_frame_for_test(1);
     let owner = sim.resolve(sim.session.current_house().unwrap()).to_owned();
     assert!(sim.apply_command_with_overlays(
+        None,
         &owner,
         &Command::ForceAttackCell {
             attacker_id: id,
@@ -308,8 +343,8 @@ fn command_paid_fv(
             target_ry: 54,
         },
         &runtime.resources.rules,
-        Some(&runtime.resources.overlay_registry),
-        crate::sim::world::FrameEffects::default(),
+        Some(runtime.resources.rules.overlay_registry()),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     id
 }
@@ -327,11 +362,33 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
         |path| std::fs::read_to_string(path).unwrap(),
     );
     let packet: Value = serde_json::from_str(&input).unwrap();
+    let outside: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fv_cell_attack/paid_conditional_v26.input.json",
+    ))
+    .unwrap();
     let mut errors = Vec::new();
     for case in packet["cases"].as_array().unwrap() {
         let stage = case["stage"].as_str().unwrap();
+        let outside_frames = outside["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|input| input["stage"] == stage)
+            .expect("declared outside calls")["frames"]
+            .as_array()
+            .unwrap();
         let physical_stage = case["physical_stage"].as_str().unwrap_or(stage);
-        let (mut scene, ambient_anims) = prepared_paid_scene(physical_stage);
+        let (mut scene, ambient_anims) = prepared_paid_scene(physical_stage, None);
+        // The packet declares the Scenario identity cursor before the FV
+        // constructor, as it declares the seed. The capture build's own map
+        // load supplied it; native whole-Scenario startup was not executed.
+        *scene.runtime.simulation.native_unique_ids_mut_for_test() = Some(
+            crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(
+                case["boundary"]["scenario_cursor_before_constructor"]
+                    .as_u64()
+                    .unwrap() as u32,
+            ),
+        );
         let id = command_paid_fv(
             &mut scene,
             serde_json::from_value(case["supplied_spawn"]["xyz"].clone()).unwrap(),
@@ -341,6 +398,12 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                 .expect("declared constructor Scenario seed"),
             case["options"]["game_speed"].as_u64().unwrap() as u8,
         );
+        // Native executes only the selected FV, its Bullets and new Anims
+        // (its Logic vector starts as the FV alone); the outside world's AI is
+        // the recorded raw Scenario Next calls (0x0065C780) before each pass.
+        // Keep the outside world physically present but out of Logic, and
+        // replay those calls below, so the FV's own draws read native words.
+        scene.runtime.simulation.set_logic_order_for_test(vec![id]);
         let mut actual_frames = Vec::new();
         let mut shots = Vec::new();
         let mut diagnostics = Vec::new();
@@ -363,12 +426,28 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                             .resolve(sim.substrate.entities.get(id).unwrap().owner())
                             .to_owned();
                         assert!(sim.apply_command_with_overlays(
+                            None,
                             &owner,
                             &Command::Stop { entity_id: id },
                             &runtime.resources.rules,
-                            Some(&runtime.resources.overlay_registry),
-                            crate::sim::world::FrameEffects::default(),
+                            Some(runtime.resources.rules.overlay_registry()),
+                            &mut crate::sim::world::FrameEffects::default(),
                         ));
+                    }
+                    let calls = &outside_frames[frame as usize - 1];
+                    assert_eq!(calls["logic_frame"], frame);
+                    assert_eq!(calls["suffix"], json!([]), "no outside suffix calls");
+                    for (call, native) in calls["prefix"].as_array().unwrap().iter().enumerate() {
+                        assert_eq!(native["stream"], "scenario");
+                        // A word other than the recorded one means the
+                        // selected owners drew a different count before it.
+                        let word = scene.runtime.simulation.scenario_rng.next_u32();
+                        if native["value"] != word {
+                            errors.push(format!(
+                                "{stage}/frame{frame}/outside{call}: Rust word {word}, native {}",
+                                native["value"]
+                            ));
+                        }
                     }
                     scene
                         .runtime
@@ -376,7 +455,7 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                             &[],
                             SIM_TICK_MS,
                             TickLane::Ordinary,
-                            crate::sim::world::FrameEffects::default(),
+                            &mut crate::sim::world::FrameEffects::default(),
                         )
                         .unwrap()
                 };
@@ -538,7 +617,7 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
                     NavTargetRef::cell(rx, ry),
                     rules,
                     true,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
             }
             if let Some(values) = row["input"].get("nav_queue") {
@@ -599,8 +678,8 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
                 .approach_foot_target(
                     id,
                     rules,
-                    Some(&runtime.resources.overlay_registry),
-                    crate::sim::world::FrameEffects::default(),
+                    Some(runtime.resources.rules.overlay_registry()),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             let actor = sim.substrate.entities.get(id).unwrap();
@@ -733,7 +812,7 @@ fn retail_fv_approaches_a_firing_cell_before_its_first_paid_step() {
             (xyz[1] / 256) as u16,
             128,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary FV bank placement");
     // Supplied native starting XYZ, in the same already-admitted Cell. Map
@@ -760,7 +839,7 @@ fn retail_fv_approaches_a_firing_cell_before_its_first_paid_step() {
             &[command],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     runtime
@@ -768,7 +847,7 @@ fn retail_fv_approaches_a_firing_cell_before_its_first_paid_step() {
             &[],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let actor = runtime.simulation.substrate.entities.get(id).unwrap();

@@ -127,14 +127,14 @@ impl RetailParachuteScene {
                     let terrain = sim.resolved_terrain().unwrap();
                     let ty = rules.object(type_id).unwrap();
                     let level = terrain.cell(x, y)?.level;
-                    let level_foundation = ty.foundation.cell_offsets().iter().all(|&(dx, dy)| {
+                    let level_foundation = ty.foundation.cell_offsets().all(|(dx, dy)| {
                         let xy = (i32::from(x) + i32::from(dx), i32::from(y) + i32::from(dy));
                         cell_is_in_playfield_height_aware(xy, sim.playfield_bounds(), Some(terrain))
                             && terrain
                                 .cell(xy.0 as u16, xy.1 as u16)
                                 .is_some_and(|cell| cell.level == level && cell.slope_type == 0)
                     });
-                    let clear_foundation = ty.foundation.cell_offsets().iter().all(|&(dx, dy)| {
+                    let clear_foundation = ty.foundation.cell_offsets().all(|(dx, dy)| {
                         clear_ground_rect(
                             sim,
                             CellRect::new(
@@ -150,14 +150,13 @@ impl RetailParachuteScene {
                     }
                     // This read-only candidate query is not a Build command. The
                     // initial-object constructor/Unlimbo below still admits the site.
-                    scene.runtime.simulation.spawn_object_with_overlay_registry(
+                    scene.runtime.simulation.spawn_object_with_map_overlays(
                         type_id,
                         &owner_name,
                         x,
                         y,
                         0,
                         &scene.runtime.resources.rules,
-                        &scene.runtime.resources.overlay_registry,
                     )
                 })
                 .unwrap_or_else(|| panic!("a real foundation must admit initial {type_id}"))
@@ -192,7 +191,7 @@ impl RetailParachuteScene {
                 &due,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary bound frame");
         assert!(
@@ -294,7 +293,12 @@ impl RetailParachuteScene {
             .collect();
         assert_eq!(planes.len(), 1);
         let plane = planes[0];
-        let passengers = plane.passenger_role.cargo().unwrap().passengers().to_vec();
+        let passengers = plane
+            .passenger_role()
+            .cargo()
+            .unwrap()
+            .passengers()
+            .to_vec();
         assert_eq!(passengers.len(), PAYLOAD, "physical American payload");
         for &id in &passengers {
             let passenger = sim.entities().get(id).unwrap();

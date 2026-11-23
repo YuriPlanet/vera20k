@@ -16,6 +16,7 @@ from tools.rules_oracle.bridge_child_sound import sections
 from tools.spatial_oracle.refinery_dock import place_building, cell
 from tools.spatial_oracle.tag_lifecycle import REGISTRIES, initialize_registries
 from tools.spatial_oracle.unit_source_scatter import SCENARIO
+from tools.native_oracle import require
 
 BLD, HOUSE, SP = engineer.BLD, engineer.HOUSE, engineer.SP
 BEGIN, END = 0x44A1E8, 0x44A22C
@@ -27,7 +28,7 @@ def signed(u, address):
 
 
 class Fixture(engineer.EngineerJoinedFixture):
-    def __init__(self, inputs):
+    def __init__(self, inputs, *, prepare_cold_houses=None, native_base_reservations=False):
         self.sale_calls = []
         self.live_triggers = []
         self.houses = {'OLD': HOUSE}
@@ -44,6 +45,19 @@ class Fixture(engineer.EngineerJoinedFixture):
             ('tag', 'tag_trigger_base', 'trigger', 'logic_tags', 'map_tags', 'cell_tags')})
         self.checked_vtables = [(address, native.file_span(native.image_bytes(), address, length)[1])
             for address, length in ((0x7E3EBC, 0x500), (0x7EA8A0, 0x200))]
+        # A joined scenario may need independent Houses before the first
+        # Building can publish state. Keep this preparation in the same owner
+        # and preserve its roster through placement and GrandOpening.
+        self.owner_houses = [HOUSE]
+        if prepare_cold_houses is not None:
+            self.phase = 'cold_house_prior'
+            prepare_cold_houses(self)
+        if native_base_reservations:
+            self.phase = 'cold_base_prior'
+            # HouseCtor4F5C42/4F5C5A constructs Base at+5700. In particular
+            # its+20 vector is used by BuildingDetach456509 during UnInit.
+            for house in self.owner_houses:
+                construction.invoke(u, 0x42E6F0, house + 0x5700)
         self.phase = 'building_constructor'
         construction.invoke(u, 0x43B740, BLD, self.types['GAPOWR'], HOUSE)
         self.constructor_loss_field = signed(u, BLD + 0x53C)
@@ -62,7 +76,11 @@ class Fixture(engineer.EngineerJoinedFixture):
             for x in range(10, 12):
                 u.mem_write(cell(x, y) + 0xE4, dwords(BLD))
         self.house_prior(HOUSE, (BLD,))
-        self.owner_houses = [HOUSE]
+        if native_base_reservations:
+            self.phase = 'building_base_prior'
+            # Original Mark reservation owner, after the supplied admitted
+            # Building/Cell prior and before the first opening's consumers.
+            construction.invoke(u, 0x455F10, BLD, 0)
         self.phase = 'grand_opening_prior'
         construction.invoke(u, construction.GRAND_OPENING, BLD, 0)
         assert u.mem_read(BLD + 0x6E4, 1)[0] == 1
@@ -171,12 +189,12 @@ def read_definitions(inputs, definitions):
         triggers[name] = pointer
     m.make_ini(definitions)
     for pointer in triggers.values():
-        assert m.invoke(0x727240, pointer, (INI,)) & 255
+        require(m.invoke(0x727240, pointer, (INI,)) & 255, 'native 0x727240 returned an unexpected result')
     tags = {}
     for name in definitions.get('Tags', {}):
         pointer = m.alloc(0x100)
         m.invoke(0x6E5B60, pointer, (m.cstring(name),))
-        assert m.invoke(m.read32(m.read32(pointer) + 0x64), pointer, (INI,)) & 255
+        require(m.invoke(m.read32(m.read32(pointer) + 0x64), pointer, (INI,)) & 255, f'{name}: tag INI read refused')
         tags[name] = pointer
     return tags
 
@@ -224,19 +242,25 @@ def prepare_c4(inputs):
     inputs.sale_c4 = dict(name=name, keys=physical[name])
 
 
+def prepare_new_country(inputs):
+    """The existing sale callback's distinct country, read by native code."""
+    if not hasattr(inputs, 'sale_new_country'):
+        inputs.sale_new_country = inputs.alloc(0x400)
+        inputs.invoke(0x5113F0, inputs.sale_new_country, (inputs.cstring('SaleNewCountry'),))
+    inputs.make_ini({'SaleNewCountry': {'CostBuildingsMult': '0.75'}})
+    for register, value in ((UC_X86_REG_EBX, inputs.sale_new_country),
+            (UC_X86_REG_ESI, INI), (UC_X86_REG_EDI, inputs.sale_new_country + 0x24),
+            (UC_X86_REG_ESP, SP)):
+        inputs.u.reg_write(register, value)
+    native.run_checked(inputs.u, 0x511BC1, 0x511BE0)
+    return inputs.sale_new_country
+
+
 def execute(inputs, case):
     if case.get('destroy_attached'):
         prepare_c4(inputs)
-    if case.get('new_house') and not hasattr(inputs, 'sale_new_country'):
-        inputs.sale_new_country = inputs.alloc(0x400)
-        inputs.invoke(0x5113F0, inputs.sale_new_country, (inputs.cstring('SaleNewCountry'),))
     if case.get('new_house'):
-        inputs.make_ini({'SaleNewCountry': {'CostBuildingsMult': '0.75'}})
-        for register, value in ((UC_X86_REG_EBX, inputs.sale_new_country),
-                (UC_X86_REG_ESI, INI), (UC_X86_REG_EDI, inputs.sale_new_country + 0x24),
-                (UC_X86_REG_ESP, SP)):
-            inputs.u.reg_write(register, value)
-        native.run_checked(inputs.u, 0x511BC1, 0x511BE0)
+        prepare_new_country(inputs)
     tags = read_definitions(inputs, case.get('definitions', {}))
     f = Fixture(inputs)
     if case.get('new_house'):

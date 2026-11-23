@@ -308,7 +308,7 @@ fn assert_selected_inputs(rules: &RuleSet, actor: &str, type_fields: &Value, exp
     assert_eq!(object.strength, integer(&type_fields["strength"]));
     let art = super::fire_coord::firer_art(rules, object).unwrap();
     assert_eq!(
-        <[i32; 3]>::from(art.primary_fire_flh),
+        <[i32; 3]>::from(object.weapon_flh(0, false)),
         xyz(&type_fields["primary_flh"])
     );
     assert_eq!(art.turret_offset, integer(&type_fields["turret_offset"]));
@@ -375,6 +375,8 @@ fn rules_for_birth(retail: &RetailBattleRules, actor: &str, input: &Value) -> Ru
         )));
         // Parse the declared ART string through the production owner. Never
         // install row.physical_flh or row.beam.source as an implementation input.
+        rules = RuleSet::from_ini_with_fixed_art_for_test(&retail.processed_rules, &art)
+            .expect("controlled radiation-beam rules");
         rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
     }
     rules
@@ -435,11 +437,7 @@ fn assert_native_births(
         let name = input["name"].as_str().unwrap();
         let rules = rules_for_birth(retail, actor, input);
         assert_eq!(
-            <[i32; 3]>::from(
-                super::fire_coord::firer_art(&rules, rules.object(actor).unwrap())
-                    .unwrap()
-                    .primary_fire_flh
-            ),
+            <[i32; 3]>::from(rules.object(actor).unwrap().weapon_flh(0, false)),
             xyz(&row["physical_flh"]),
             "{name} original ART reader"
         );
@@ -454,12 +452,14 @@ fn assert_native_births(
         source_entity
             .body_facing
             .snap(u16::try_from(integer(&input["heading"])).unwrap(), 200);
-        assert_eq!(source_entity.weapon_burst.index(), integer(&input["burst"]));
+        assert_eq!(
+            source_entity.seldom.weapon_burst.index(),
+            integer(&input["burst"])
+        );
         assert_eq!(source_entity.veterancy.rank(), 0, "{name} rookie input");
         let facing_before = source_entity.body_facing;
         let rng_before = &native["birth_rng_before"];
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng_before["scenario"].as_str().unwrap());
         sim.mapgen_rng =
@@ -474,6 +474,7 @@ fn assert_native_births(
             source,
             ProjectileTarget::Entity(target),
             mode,
+            None,
         );
         let [LifecycleOutput::RadiationBeamCreated(birth)] = sim.lifecycle_outputs.as_slice()
         else {
@@ -552,9 +553,224 @@ fn assert_native_births(
             "{name} facing timer unchanged"
         );
         assert_eq!(
-            source_entity.weapon_burst.index(),
+            source_entity.seldom.weapon_burst.index(),
             integer(&input["burst"]),
             "{name} burst unchanged"
         );
     }
+}
+
+fn eruption_rules() -> Option<RetailBattleRules> {
+    crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&IniFile::from_str(
+        "[DESO]\nPrimary=RadEruptionWeapon\n\n[RadEruptionWeapon]\nIsRadEruption=yes\nAreaFire=no\n",
+    ))
+}
+
+/// SpawnRadEruption @ 0x006FD800 through FireAt (`0x006FF5EE`). Retail
+/// sets `IsRadEruption=no`; this map layer turns it on and makes the weapon
+/// an ordinary attack, not AreaFire's own-cell shot.
+#[test]
+fn an_eruption_shot_creates_eight_kind2_beams_around_the_firer() {
+    let Some(patched) = eruption_rules() else {
+        return;
+    };
+    let rules = &patched.rules;
+    let weapon = rules.weapon("RadEruptionWeapon").unwrap();
+    assert!(weapon.is_rad_eruption && !weapon.is_rad_beam);
+    let warhead = rules.warhead(weapon.warhead.as_deref().unwrap()).unwrap();
+    assert_eq!(warhead.cell_spread_f64, 10.0);
+
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xC29D_E500);
+    sim.fog = FogState::new(32, 32);
+    let owner = sim.interner.intern("Americans");
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let source = sim
+        .spawn_object("DESO", "Americans", 16, 16, 64, rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("MTNK", "Russians", 18, 16, 192, rules)
+        .unwrap();
+    sim.fog.mark_visible_for_owner(owner, 18, 16);
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Attack {
+            attacker_id: source,
+            target_id: target
+        },
+        Some(rules),
+    ));
+    sim.lifecycle_outputs.clear_for_test();
+    let grid = sim.path_grid_snapshot().unwrap();
+    for _ in 0..32 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+        if !sim
+            .fire_events
+            .iter()
+            .any(|shot| shot.attacker_id == source)
+        {
+            continue;
+        }
+        let from = super::world_fire::object_get_coords(&sim, source).unwrap();
+        let births: Vec<_> = sim
+            .lifecycle_outputs
+            .iter()
+            .filter_map(|output| match output {
+                LifecycleOutput::RadiationBeamCreated(birth) => Some(*birth),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(births.len(), 8);
+        for birth in &births {
+            assert!(birth.eruption);
+            assert_eq!(
+                (birth.from, birth.z_adjust, birth.color),
+                (from, 0, [0, 255, 0])
+            );
+        }
+        return;
+    }
+    panic!("the eruption DESO did not fire within 32 ticks");
+}
+
+/// Original SpawnRadEruption @ 0x006FD800 (procedural_drawing_oracle/
+/// rad_eruption): target cell order, Map/Cell centre heights including the
+/// stamped dummy, Main draw order and count, and the inert 0.0 travel scale.
+#[test]
+fn native_eruption_births_and_main_draws_match_the_original() {
+    let Some(patched) = eruption_rules() else {
+        return;
+    };
+    let rules = &patched.rules;
+    let weapon = rules.weapon("RadEruptionWeapon").unwrap();
+    let rows =
+        crate::test_fixture::json("tools/procedural_drawing_oracle/rad_eruption.json")["rows"]
+            .as_array()
+            .unwrap();
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let warhead = rules.warhead(weapon.warhead.as_deref().unwrap()).unwrap();
+        assert_eq!(
+            warhead.cell_spread_f64 as i64,
+            input["spread"].as_i64().unwrap()
+        );
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xC29D_E500);
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        for cell in input["cells"].as_array().unwrap() {
+            let [x, y] = [0, 1].map(|axis| cell["xy"][axis].as_u64().unwrap() as u16);
+            let cell_mut = terrain.cell_mut_for_test(x, y).unwrap();
+            cell_mut.level = cell["level"].as_u64().unwrap() as u8;
+            cell_mut.slope_type = cell["slope"].as_u64().unwrap() as u8;
+        }
+        let source = place_native_actor(&mut sim, rules, "DESO", "Americans", &input["source"]);
+        sim.main_rng =
+            SimRng::from_native_state_hex_for_test(row["main_rng_before"].as_str().unwrap());
+        sim.lifecycle_outputs.clear_for_test();
+        super::radiation_beam::erupted(&mut sim, rules, source, weapon);
+        let births: Vec<_> = sim
+            .lifecycle_outputs
+            .iter()
+            .map(|output| match output {
+                LifecycleOutput::RadiationBeamCreated(birth) => *birth,
+                other => panic!("{name}: {other:?}"),
+            })
+            .collect();
+        let expected = row["births"].as_array().unwrap();
+        assert_eq!(births.len(), expected.len(), "{name}");
+        for (birth, native) in births.iter().zip(expected) {
+            assert_eq!(integer(&native["kind"]), 2);
+            assert_eq!(native["travel_scale_f64_le_hex"], "0000000000000000");
+            let amplitude =
+                u64::from_str_radix(native["amplitude_f64_le_hex"].as_str().unwrap(), 16)
+                    .unwrap()
+                    .swap_bytes();
+            assert_eq!(
+                (birth.from, birth.to, birth.z_adjust, birth.color),
+                (
+                    coordinate(&native["source"]),
+                    coordinate(&native["target"]),
+                    integer(&native["z_adjust"]),
+                    rgb(&native["rgb"]),
+                ),
+                "{name}"
+            );
+            assert_eq!(
+                (birth.duration, birth.amplitude.bits(), birth.eruption),
+                (integer(&native["duration"]), amplitude, true),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            sim.main_rng.logical_state(),
+            SimRng::from_native_state_hex_for_test(row["main_rng_after"].as_str().unwrap())
+                .logical_state(),
+            "{name}: Main draw count and order"
+        );
+    }
+}
+
+/// Ares TechnoClass_FireRadBeam1/2 (Ares.dll 10056010/10056080, hooks
+/// 0x6FD64A/0x6FD79C): GetFLH takes FireAt's weapon index, and Beam.Color,
+/// Beam.Duration and Beam.Amplitude replace the stock colour, 15 and 40;
+/// Beam.IsHouseColor keeps the firer House's colour.
+#[test]
+fn ares_beam_keys_and_weapon_index_shape_the_copied_beam() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[InfantryTypes]\n0=BEAMER\n1=MARK\n[BEAMER]\nPrimary=TINT\nSecondary=HOUSE\n\
+             [MARK]\n[Radiation]\nRadColor=0,255,0\n\
+             [TINT]\nIsRadBeam=yes\nBeam.Color=10,20,30\nBeam.Duration=7\nBeam.Amplitude=12.5\n\
+             [HOUSE]\nIsRadBeam=yes\nBeam.IsHouseColor=yes\n",
+        ),
+        &IniFile::from_str("[BEAMER]\nPrimaryFireFLH=0,0,0\nSecondaryFireFLH=200,0,100\n"),
+    )
+    .unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let source = sim
+        .spawn_object("BEAMER", "Americans", 16, 16, 64, &rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("MARK", "Russians", 20, 16, 0, &rules)
+        .unwrap();
+    let mut birth = |index: i32, weapon: &str| {
+        sim.lifecycle_outputs.clear_for_test();
+        super::radiation_beam::create(
+            &mut sim,
+            &rules,
+            source,
+            ProjectileTarget::Entity(target),
+            CopiedBeamMode::Radiation,
+            Some((index, rules.weapon(weapon).unwrap())),
+        );
+        let [LifecycleOutput::RadiationBeamCreated(birth)] = sim.lifecycle_outputs.as_slice()
+        else {
+            panic!("one copied beam");
+        };
+        *birth
+    };
+    let tinted = birth(0, "TINT");
+    assert_eq!(tinted.color, [10, 20, 30]);
+    assert_eq!(tinted.duration, 7);
+    assert_eq!(f64::from_bits(tinted.amplitude.bits()), 12.5);
+    assert_eq!(
+        tinted.house_color,
+        super::radiation_beam::BeamHouseColor::None
+    );
+    let house = birth(1, "HOUSE");
+    assert_eq!((house.duration, house.color), (15, [0, 255, 0]));
+    assert_eq!(
+        house.house_color,
+        super::radiation_beam::BeamHouseColor::House
+    );
+    assert_ne!(
+        house.from,
+        birth(0, "HOUSE").from,
+        "FireAt's index picks the FLH"
+    );
 }

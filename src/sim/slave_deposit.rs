@@ -25,7 +25,7 @@ impl SlaveDepositQuery<'_> {
     /// The caller tests both child+2DC and master+2D8 before6B0880. An
     /// existing empty manager remains admitted to the geometry/lookup body.
     pub(crate) fn master(&self, slave: u64) -> Option<u64> {
-        let master = self.entities.get(slave)?.slave.owner()?;
+        let master = self.entities.get(slave)?.seldom.slave.owner()?;
         self.entities
             .get(master)?
             .slave_manager

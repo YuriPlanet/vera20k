@@ -18,10 +18,17 @@ fn frames(sim: &Simulation, rules: &RuleSet, carrier: u64, hover: Option<u64>) -
         sim.mapgen_rng().native_state_hex(),
         entity.spawn_manager.clone(),
     );
-    let result = super::ui_overlays::scale_pip_draws(sim, entity, hover, Some(OWNER), rules)
-        .into_iter()
-        .map(|pip| pip.frame)
-        .collect();
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, rules);
+    let result = super::ui_overlays::scale_pip_draws(
+        sim,
+        frame.object(carrier).unwrap(),
+        hover,
+        sim.interner().get(OWNER),
+        rules,
+    )
+    .into_iter()
+    .map(|pip| pip.frame)
+    .collect();
     assert_eq!(
         before,
         (
@@ -137,10 +144,9 @@ fn stock_carrier_pips_follow_construction_sortie_recall_reload_and_selection() {
             .advance_app_frame(
                 &[],
                 rules,
-                None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("ordinary stock Carrier frame");
         fired |= result
@@ -321,7 +327,7 @@ fn stock_carrier_spawner_fire_reveals_to_its_human_victim() {
                 &commands,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let manager = scene

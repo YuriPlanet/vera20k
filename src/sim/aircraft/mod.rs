@@ -10,6 +10,7 @@
 
 mod airfield;
 pub mod attack_mission;
+pub mod carryall;
 pub mod drop_payload;
 pub(crate) mod enter_mission;
 pub(crate) mod fire_at;
@@ -21,22 +22,25 @@ pub(crate) use idle_entry::record_idle_calls_for_test;
 pub(crate) use idle_entry::{enter_idle_mode_after_attack, enter_idle_mode_for};
 pub(crate) mod landing_base;
 mod leave_map;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod leave_map_tests;
 pub(crate) mod move_mission;
 pub mod paradrop_mission;
 mod patrol_mission;
 mod retreat_mission;
 pub(crate) mod spyplane_mission;
+mod trailer;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod ai_head_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod dock_cycle_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod release_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 mod team_strike_tests;
+#[cfg(all(test, tests_sim_a_b))]
+mod trailer_tests;
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -91,7 +95,7 @@ pub fn tick_aircraft_missions(
     order
         .into_iter()
         // This batch fixture has no resident overlay table.
-        .filter(|&id| dispatch_mission(sim, id, rules, ObjectAiCtx::default()).is_some())
+        .filter(|&id| dispatch_mission(sim, id, rules, &mut ObjectAiCtx::default()).is_some())
         .collect()
 }
 
@@ -170,7 +174,8 @@ pub(crate) fn restart_patrol_after_restore(entity: &mut GameEntity) {
 /// before locomotor Process (`+0x40`), so the handlers' Scenario draws and
 /// NavCom reservations interleave with the other objects' AI in Logic order.
 ///
-/// The handlers: Mission_Move (`0x004166E0`, [`move_mission`]),
+/// The handlers: Mission_Move (`0x004166E0`, [`move_mission`]; a Carryall's
+/// `0x00416D50`, [`carryall`]),
 /// Mission_Attack (`0x00417FE0`, [`attack_mission`]), Mission_Guard for
 /// Guard and Sticky and Mission_AreaGuard ([`guard_mission`]), Mission_Enter
 /// ([`enter_mission`]), Mission_Hunt (`0x00414A80`, [`hunt_mission`]),
@@ -200,7 +205,7 @@ pub(crate) fn dispatch_mission(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) -> Option<DamageCommitReceipt> {
     let now = sim.session.binary_frame();
     let entity = sim.substrate.entities.get(id)?;
@@ -211,21 +216,26 @@ pub(crate) fn dispatch_mission(
     let delay = match entity.mission.current().known() {
         Some(MissionType::Move) => {
             let state = handler_state(entity);
-            let (next, delay) = sim.aircraft_move(id, state, rules, registry, ctx.effects);
+            // The Move slot `0x004166C0`: a `Carryall=` type (Type+0xDFC)
+            // tail-jumps to Mission_Move_Carryall `0x00416D50`.
+            let (next, delay) = if sim.is_carryall(id, rules) {
+                sim.aircraft_move_carryall(id, state, rules, &mut ctx.effects)
+            } else {
+                sim.aircraft_move(id, state, rules, &mut ctx.effects)
+            };
             write_state(&mut sim.substrate, id, state, next);
             delay
         }
         Some(MissionType::Attack) => {
             let state = handler_state(entity);
-            let Some((next, delay)) = attack_visit(sim, id, state, rules, registry, ctx.effects)
-            else {
+            let Some((next, delay)) = attack_visit(sim, id, state, rules, &mut ctx.effects) else {
                 // The strike writes its own state and epilogue
                 // (`combat::aircraft_release`).
                 return Some(sim.commit_fire_visit(
                     crate::sim::combat::world_fire::FireVisit::AircraftStrike(id),
                     rules,
                     registry,
-                    ctx.effects,
+                    &mut ctx.effects,
                 ));
             };
             write_state(&mut sim.substrate, id, state, next);
@@ -235,24 +245,24 @@ pub(crate) fn dispatch_mission(
             sim.aircraft_mission_guard(id, rules, ctx)
         }
         Some(MissionType::AreaGuard) => sim.aircraft_mission_area_guard(id, rules, ctx),
-        Some(MissionType::Enter) => sim.aircraft_mission_enter(id, rules, registry, ctx.effects),
+        Some(MissionType::Enter) => sim.aircraft_mission_enter(id, rules, &mut ctx.effects),
         Some(MissionType::Hunt) => sim.aircraft_mission_hunt(id, rules, ctx),
         Some(MissionType::Patrol) => sim.aircraft_mission_patrol(id, rules, ctx),
-        Some(MissionType::Retreat) => retreat_mission::retreat(sim, id, rules, ctx.effects),
+        Some(MissionType::Retreat) => retreat_mission::retreat(sim, id, rules, &mut ctx.effects),
         Some(MissionType::Unload) => {
-            crate::sim::transport_unload::mission_unload(sim, id, rules, registry, ctx.effects)
+            crate::sim::transport_unload::mission_unload(sim, id, rules, registry, &mut ctx.effects)
         }
         Some(MissionType::ParadropApproach) => {
-            paradrop_mission::approach(sim, id, rules, ctx.effects)
+            paradrop_mission::approach(sim, id, rules, &mut ctx.effects)
         }
         Some(MissionType::ParadropOverfly) => {
-            paradrop_mission::overfly(sim, id, rules, registry, ctx.effects)
+            paradrop_mission::overfly(sim, id, rules, &mut ctx.effects)
         }
         Some(MissionType::SpyplaneApproach) => {
-            spyplane_mission::approach(sim, id, rules, ctx.effects)
+            spyplane_mission::approach(sim, id, rules, &mut ctx.effects)
         }
         Some(MissionType::SpyplaneOverfly) => {
-            spyplane_mission::overfly(sim, id, rules, ctx.effects)
+            spyplane_mission::overfly(sim, id, rules, &mut ctx.effects)
         }
         Some(
             MissionType::Capture | MissionType::Sabotage | MissionType::Eaten | MissionType::Rescue,
@@ -307,7 +317,8 @@ pub(crate) fn queue_mission(
 /// `read` and left `next`. Those handlers write it only where it changes,
 /// and never after their `Enter_Idle_Mode(0, 1)` (vt+0x484), whose Commence
 /// zeroes it. The stores are the handlers' own: Mission_Move_NonCarryall
-/// (`0x004166E0`) at `0x0041675D..0x00416AB6`, Mission_Attack (`0x00417FE0`)
+/// (`0x004166E0`) at `0x0041675D..0x00416AB6`, Mission_Move_Carryall
+/// (`0x00416D50`) at `0x00416EFF..0x004172A6`, Mission_Attack (`0x00417FE0`)
 /// at `0x0041801B..0x00418D17`.
 fn write_state(substrate: &mut crate::sim::world::ObjectSubstrate, id: u64, read: u8, next: u8) {
     if next != read
@@ -325,8 +336,7 @@ fn attack_visit(
     id: u64,
     state: u8,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Option<(u8, i32)> {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         attack_mission::enter_attack_state(entity, state);
@@ -338,7 +348,7 @@ fn attack_visit(
         // Each strike state opens with its own Target and Ammo test
         // (`attack_mission::strike_leaves`).
         4..=9 => return None,
-        10 => sim.aircraft_exit(id, rules, registry, frame_effects),
+        10 => sim.aircraft_exit(id, rules, frame_effects),
         // State 2 (`0x00418D1D`) is the epilogue alone. Mission_Attack runs
         // as the Attack mission's handler, so its epilogue reads Attack's
         // Rate.

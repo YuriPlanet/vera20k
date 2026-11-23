@@ -1,8 +1,9 @@
-# Ares builtin warhead AttachEffect
+# Ares builtin AttachEffect
 
-The `ares` feature enables ordinary ground-victim AttachEffect lifetime and
-its ordered Foot speed and Techno firepower multipliers. Without the feature there is no attachment vector, update,
-damage pre-effect or animation root in the game. Ares snapshots include the new
+When a game plays Ares ([Ares](ares.md)), every build runs ordinary ground-victim
+and type-owned self effects, with ordered Foot speed, Techno firepower/armor/ROF and
+temporary cloakability. A game without Ares has no attachment vector, update,
+damage pre-effect or animation root. Snapshots include the new
 state in the automatic snapshot layout digest; old layouts are rejected.
 
 ## Owners and order
@@ -12,18 +13,23 @@ the existing House admission function, rather than maintaining separate copies.
 WarheadExt constructor `10051890` supplies the defaults. Reader `10058A50` reads
 the 15 AttachEffect keys in native order through the existing Ares scalar readers
 and registered AnimType lookup. Missing and invalid keys retain the live value.
+`AttachEffect.Damage`, `AttachEffect.DamageDelay` and `AttachEffect.Warhead`
+(the residual-damage idea of `Misc/AttachEffect.cpp`) are commented out in
+the source and absent from `10058A50`; installed Ares reads them nowhere, so
+an attached effect deals no damage over time and VERA reads neither key.
 `RuleSet` projects that configuration; its animation enters the existing asset
 closure and physical frame-bound binding before simulation construction.
 
 `GameEntity::attach_effects` owns the ordered instances and hidden-animation
-flag corresponding to TechnoExt+20. Each instance retains its warhead identity,
+flag corresponding to TechnoExt+20. Each instance retains its descriptor identity
+(warhead or category-qualified TechnoType),
 animation, remaining duration and first source House. It is saved and hashed.
 There is no additional timer, effect list or pointer registry elsewhere.
 
 Installed Bullet hook `46920B -> 100536E0` captures the live firer's House before
 EMP callbacks, then calls AttachEffect `10052700` after EMP and before ordinary
-damage, including zero-damage hits. Both effects call the one ground collector
-`10076660` port. House, health, live/limbo, absolute verse and the native Iron
+damage, including zero-damage hits. Both effects call the one collector
+`10076660` port (cell lists plus the in-air FootClass pass). House, health, live/limbo, absolute verse and the native Iron
 Curtain timer decide admission; EMP immunity does not reject AttachEffect.
 
 Attach `10058520` resets noncumulative durations without replacing their first
@@ -55,7 +61,7 @@ the permanent crate baseline (Ares TechnoExt+90) separate from the derived
 Foot+580 output; only its methods write those private fields. The derived
 cache is saved and hashed, and rules-bound snapshot restoration rejects a
 cache inconsistent with its baseline and retained effects. The automatic
-layout digest changes for Ares saves; the feature-off layout stays unchanged.
+layout digest covers the cache.
 
 New attachments aggregate after animation construction (`1005869F`). Common
 update compacts all expired instances before one recomputation (`10058F79`),
@@ -69,7 +75,7 @@ Speed1 goes directly to481D52 after testing the permanent baseline, bypassing
 stock Aircraft exclusion. Speed2 rejects WhatAmI3, which the original vtables
 identify as AircraftType, not Aircraft2. Supported ground-display Foot actors
 (Unit1, Aircraft2 and Infantry15) therefore share the Ares baseline admission.
-The default build retains both original Aircraft exclusions. A small production
+A game without Ares retains both original Aircraft exclusions. A small production
 class/baseline table checks both profiles; no aircraft flight-speed or natural
 crate-reachability equivalence follows from this admission check.
 
@@ -112,7 +118,7 @@ There is no second per-shot/target-scan multiplier or effect list.
 
 The accepted crate recipient recomputes immediately before its callback and
 the next recipient, as `1005F997..1005F99D` does. Ares Firepower1 bypasses the
-stock Is_Armed exclusion after its baseline test; the default build keeps that
+stock Is_Armed exclusion after its baseline test; a game without Ares keeps that
 exclusion. Refresh, pointer expiry, visibility and destruction retain the
 existing no-aggregate boundaries. Expiry and actual Discard removal recompute
 once through the same owner used by speed.
@@ -128,14 +134,13 @@ injected. Native coverage excludes whole FireAt, Bullet/health commit and the
 scan scheduler. The separate Rust production integration follows a real parent
 Bullet through the effect, next shot/HP, shared scan debit and recovery.
 Both named firepower tests passed in the integrated R25 Ares-enabled run.
-That batch exited 101 on seven unrelated fixture checks; feature-OFF validation
-and optimized production acceptance remain pending.
+That batch exited 101 on seven unrelated fixture checks; optimized production
+acceptance remains pending.
 
-Ares saves retain the private optional derived firepower value and validate it
+Saves retain the private optional derived firepower value and validate it
 against the permanent baseline plus canonical ordered entries before restore.
-The automatic layout digest changes for Ares only. The default build's state,
-serde fields and hash stream remain unchanged; effective and baseline values
-that differ add an Ares-only hash record. Pending-delete actors retain native
+A game without Ares keeps its hash stream; effective and baseline values that
+differ add an Ares-only hash record. Pending-delete actors retain native
 DTOR's no-recompute behavior.
 
 ## Evidence and limits
@@ -152,12 +157,93 @@ RNG, rendering, constructor and Detach cascades are not native-emulated here;
 Rust integration exercises the production owners separately. No whole-mod or
 pixel-parity claim follows from these controls.
 
-The current chain admits only identity armor/ROF multipliers,
-with Cloakable, ForceDecloak and TemporalHidesAnim disabled. Other nonneutral aggregate
-consumers, self-effects/Delay/InitialDelay, Temporal hide behavior and airborne
-half-distance collection remain later mechanisms, not silently visual-only
+`ForceDecloak` calls the existing `CloakRuntime::start_uncloaking` owner after
+new-entry animation/aggregate work or noncumulative refresh. Installed Ares
+`AttachEffectTypeClass::Attach` (`0x100586A4..0x100586C0`) calls stock
+`StartUncloaking` (`0x007036C0`) with the sound-suppression argument set.
+States 1/2 enter uncloaking; states 0/3 retain their clock and progress. Effect
+expiry does not reverse that transition. No additional cloak timer or state is
+introduced, and a game without Ares keeps the stock reader/dispatch.
+
+Ground-warhead armor effects use the existing crate-multiplier owner for both
+the permanent crate baseline and effective armor. Ares `RecalculateStats`
+(`0x100460A0`, armor loop `0x10046192..0x10046199`) starts from Ext+88,
+multiplies ordered effects and publishes Techno+158. The existing retail
+ReceiveDamage and EstimateDamage consumers read that effective value. The
+Armor1/Armor2 crate hooks (`0x1005F840`/`0x1005F870`,
+[Ares Crates.cpp](https://github.com/Ares-Developers/Ares/blob/master/src/Misc/Crates.cpp))
+test/write the baseline, then recompute before the next recipient. Expiry and
+DiscardOnEntry restore the baseline through the shared attachment lifecycle.
+Both baseline and effective armor are saved, hashed and validated on restore;
+the added saved field is Ares-only. A game Ares does not play in keeps its state and hashes.
+
+The current chain admits effects with TemporalHidesAnim disabled. Temporal
+hide behavior and airborne half-distance collection remain later mechanisms, not silently visual-only
 effects. Their active callers keep the wider compatibility goal open. The
 shared collector retains its documented fractional-distance rounding residual.
 No explicit RNG draw or timer is added beyond actual positive-duration visits;
 the existing Anim constructor owns its own RNG, and synchronous UnInit owns
 detach/expiry work. Manual game acceptance remains pending.
+
+## Self effects and temporary cloakability
+
+TechnoTypeExt's embedded descriptor (constructor `0x1003CA84`) uses the same
+`ReadINI` reader (`0x10058A50`, caller `0x1003E8D4`) as warheads. Retained
+layers, defaults and registered animation lookup use the existing rules owner.
+`Cloakable.Allowed` defaults to true (`0x1003C9D7`, read at `0x1003EBEF`).
+
+The existing attachment owner stores the initial/repeat wait, applied or
+disabled state. Installed allocation `0x10042CD7` seeds the wait with INT_MAX;
+update `0x10058F82..0x10058FE7` substitutes InitialDelay on first use. Positive
+waits decrement on actual actor visits; zero attempts the shared Attach owner,
+and negative waits remain pending. Limbo, passengers and the chrono latch pause
+the entire update. Deactivation expires the current type-owned entry, and
+expiry installs Delay before the same visit's pending-state handling. Removal
+with DiscardOnEntry does not reset the applied state (`0x100588E0`).
+
+RecalculateStats (`0x100460A0`, cloak OR at `0x1004617D`) projects temporary
+cloakability from the canonical effect vector into the existing stealth owner.
+It preserves the permanent crate grant; Cloak1 (`0x1005F8D0`) separately checks
+type/rank capability, that permanent grant and Cloakable.Allowed. Expiry keeps
+the normal cloak clock running through its uncloak transition. Serialization,
+hashing and restore consistency checks cover the wait and derived ability.
+
+The existing Foot cloak producer consumes that capability. Installed
+ShouldNotCloak (`0x10043A40`) checks the actual held parachute animation,
+Allowed, deactivation, EMP, paralysis and chrono state. CloakStop uses the
+existing Is_Moving query (`0x10048250`); the normal timers, combat range query
+and cloak transitions retain their existing owners. Intrinsic self-cloaking
+does not apply the stock ground-height restriction (`0x10043990`).
+
+This covers the unarmed ground self-cloaker path. Power-dependent and
+deployed-only cloak, custom cloak stages/height and sound overrides, driver-loss and
+CloakSkipTimer producers, passive-generator height admission, and building
+cloak AI still need their own chains. Configurations using those mechanisms
+are not established as equivalent by this change. No new RNG draws are added;
+effect animations retain the existing constructor and detach lifecycle.
+
+## Attached reload time
+
+The same attachment owner folds `AttachEffect.ROFMultiplier` from the shared
+descriptor reader (`0x10058AF4`, descriptor+28). Installed Ares
+`TechnoExt::RecalculateStats` (`0x10046184..0x1004618B`) starts at one and
+spills binary64 after each ordered factor, then commits Ext+78 at
+`0x10046130..0x10046134`. The derived value is saved, hashed and checked
+against the canonical entries on restore. It uses the existing creation,
+expiry and DiscardOnEntry recomputation boundaries, including self effects.
+
+The shared `TechnoClass::GetROF` port consumes it at the installed
+`TechnoClass_GetROF_AttachEffect` hook (`0x10047A40`, original site `0x6FD0BF`):
+after loading weapon ROF, before multiplying House bias and adding jitter.
+Applying it to the final integer reload would give different results. The
+building hook (`0x10047A60`, site `0x6FCFA4`) bypasses the original Ammo>1
+return. Sonic/live-particle and mid-burst returns do not reach the ROF hook.
+FireAt, C4 and gunner handover all use the existing snapshot/query owner.
+Application and expiry never rewrite an already-running rearm timer, matching
+the [Ares reload sampling rule](https://ares-developers.github.io/Ares-docs/new/attacheffect.html).
+
+Two focused regressions cover four executed native numeric controls, the
+stock results/RNG without Ares, and a real Bullet/FireAt/ObjectAI expiry plus
+save/restore chain. No mod assets, native harness or execution corpus is added.
+This does not implement the separately documented MobileFire=no stop-rearm
+caller; the selected ground weapon caller uses MobileFire's default yes.

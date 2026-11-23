@@ -8,7 +8,7 @@ use super::DispatchPath;
 use super::ordinary;
 use super::ramp_repair::Family;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "damage_dispatch_tests.rs"]
 mod tests;
 
@@ -18,6 +18,7 @@ pub(crate) struct CellFields {
     pub tile: i32,
     pub overlay: i32,
     pub level: u8,
+    pub fixed_deck_z: Option<i32>,
 }
 
 /// The live cell reads ApplyDamageToCell's driver selection makes.
@@ -51,9 +52,10 @@ fn in_height_window(fields: CellFields, impact_z_leptons: i32) -> bool {
     }
     let ground_level = i32::from(fields.level as i8);
     let level_height = crate::util::lepton::LEPTONS_PER_LEVEL as i32;
-    let deck_height = crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
-    impact_z_leptons > (ground_level - 2) * level_height + deck_height
-        && impact_z_leptons <= (ground_level + 1) * level_height + deck_height
+    let deck_z = fields.fixed_deck_z.unwrap_or_else(|| {
+        ground_level * level_height + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+    });
+    impact_z_leptons > deck_z - 2 * level_height && impact_z_leptons <= deck_z + level_height
 }
 
 /// The caller has already admitted SpecialFlags::DestroyableBridges and Wall.

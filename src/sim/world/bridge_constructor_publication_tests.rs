@@ -75,7 +75,7 @@ fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
     let original_cases = corpus["cases"].as_array().unwrap();
     assert_eq!(original_cases.len(), 36);
     for original in original_cases {
-        let (mut sim, rules, registry) = fixture();
+        let (mut sim, rules, _registry) = fixture();
         match original["kind"].as_str().unwrap() {
             "terrain" => {
                 sim.terrain_objects
@@ -107,7 +107,6 @@ fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: Some(&registry),
             collapsed: false,
         };
         let handle = host
@@ -168,6 +167,34 @@ fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
 }
 
 #[test]
+fn live_bridge_constructor_restores_raised_deck_on_steep_slope() {
+    let (mut sim, rules, _) = fixture();
+    let coord = (16, 16);
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    let anchor = terrain.native_cell_identity((16, 16));
+    // A collapsed segment retains the authored deck but has no live structure.
+    terrain.set_authored_high_bridge_deck(anchor, 14);
+    let cell = terrain.cell_mut_for_test(coord.0, coord.1).unwrap();
+    // The fixed base and local level can coincide while the ground slopes.
+    cell.level = 10;
+    cell.slope_type = 9;
+    assert!(!cell.bridge_facts.has_structural_bridge());
+
+    LivePublication {
+        frame_effects: crate::sim::world::FrameEffects::default(),
+        sim: &mut sim,
+        rules: &rules,
+        collapsed: false,
+    }
+    .construct_bridge_overlay((16, 16), 24, -1)
+    .unwrap();
+
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    assert_eq!(sim.cell_overlay(anchor).overlay_id, Some(24));
+    assert_eq!(terrain.corrected_high_bridge_deck_level(coord), Some(14));
+}
+
+#[test]
 fn live_bridge_constructor_side_cells_restore_deck_without_overlay_sprites() {
     use crate::map::entities::EntityCategory;
     use crate::sim::world::{PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest};
@@ -183,12 +210,11 @@ fn live_bridge_constructor_side_cells_restore_deck_without_overlay_sprites() {
     // reader and is not a claim of full native Engineer traversal coverage.
     for original in &corpus["cases"].as_array().unwrap()[8..12] {
         assert_eq!(original["kind"], "success");
-        let (mut sim, rules, registry) = fixture();
+        let (mut sim, rules, _registry) = fixture();
         LivePublication {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: Some(&registry),
             collapsed: false,
         }
         .construct_bridge_overlay((16, 16), original["overlay_id"].as_u64().unwrap() as u8, -1)
@@ -284,14 +310,13 @@ fn constructor_side_admission_matches_original_foot_receiver() {
     assert_eq!(rows.len(), 6);
     for row in rows {
         let input = &row["input"];
-        let (mut sim, rules, registry) = fixture_with_rules(
+        let (mut sim, rules, _registry) = fixture_with_rules(
             "[InfantryTypes]\n0=ENGINEER\n[ENGINEER]\nEngineer=yes\nSpeedType=Foot\n",
         );
         LivePublication {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: Some(&registry),
             collapsed: false,
         }
         .construct_bridge_overlay((16, 16), 25, -1)
@@ -323,7 +348,7 @@ fn constructor_side_admission_matches_original_foot_receiver() {
             cell.bridge_facts.raw_flags = flags;
             // Original674000 reads Foot=1.0 for the Clear0/Road1 cells in
             // this corpus; the fixture catalog only recalculates its body.
-            cell.speed_costs.foot = Some(100);
+            cell.speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::ONE);
             sim.substrate.raw_cell_occupation.mark_ground(
                 x,
                 y,
@@ -393,7 +418,6 @@ fn constructor_side_admission_matches_original_foot_receiver() {
                     previous_cell: None,
                 },
                 &rules,
-                Some(&registry),
             )
             .unwrap();
         assert_eq!(
@@ -407,7 +431,7 @@ fn constructor_side_admission_matches_original_foot_receiver() {
 
 #[test]
 fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects() {
-    let (mut sim, rules, registry) = fixture();
+    let (mut sim, rules, _registry) = fixture();
     // Isolate the constructor/deferred-drain chain from Logic55B29A's
     // independently tested120-frame578100 sweep, whose map queries may
     // legitimately restamp the shared Dummy's coordinate.
@@ -417,7 +441,6 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: Some(&registry),
             collapsed: false,
         };
         host.construct_bridge_overlay(requested, 24, -1).unwrap();
@@ -428,7 +451,7 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
         object.set_owner_for_test(sim.interner.intern("Americans"));
         // This test isolates constructor/deferred-drain effects, including
         // the retained Dummy. Supply no unrelated native sight walk.
-        object.sight.set_vision_range_for_test(0);
+        object.seldom.sight.set_vision_range_for_test(0);
         sim.substrate.entities.insert(object);
         sim.reveal(id);
         if index == 0 {
@@ -464,6 +487,11 @@ fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
     sim.session.set_binary_frame_for_test(1);
     sim.fog = crate::sim::vision::FogState::new(33, 33);
     let owner = sim.interner.intern("Americans");
+    // A human player's house: its client map is the plane under test.
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     let type_ref = sim.interner.intern("E1");
     let mut object =
         crate::sim::game_entity::GameEntity::test_default(101, "E1", "Americans", 16, 16);
@@ -501,7 +529,7 @@ fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
 
 #[test]
 fn live_bridge_constructor_restamp_updates_the_state_byte_axis() {
-    let (mut sim, rules, registry) = fixture();
+    let (mut sim, rules, _registry) = fixture();
     let render = |sim: &Simulation| {
         crate::sim::bridge_state::cell_render_state(
             sim.overlay_grid.as_ref().unwrap().cell(16, 16),
@@ -519,7 +547,6 @@ fn live_bridge_constructor_restamp_updates_the_state_byte_axis() {
             frame_effects: crate::sim::world::FrameEffects::default(),
             sim: &mut sim,
             rules: &rules,
-            registry: Some(&registry),
             collapsed: false,
         };
         host.construct_bridge_overlay((16, 16), 25, -1).unwrap();
@@ -529,7 +556,6 @@ fn live_bridge_constructor_restamp_updates_the_state_byte_axis() {
         frame_effects: crate::sim::world::FrameEffects::default(),
         sim: &mut sim,
         rules: &rules,
-        registry: Some(&registry),
         collapsed: false,
     };
     host.construct_bridge_overlay((16, 16), 24, -1).unwrap();

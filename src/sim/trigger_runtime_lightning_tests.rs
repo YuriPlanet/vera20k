@@ -13,7 +13,7 @@ fn action(kind: i32, waypoint: u32) -> RuntimeAction {
         params: vec!["0".into(); 6],
         waypoint_index: Some(waypoint),
     };
-    RuntimeDefinitions::default().resolve_action(entry, None, None)
+    RuntimeDefinitions::default().resolve_action(entry, None, None, None)
 }
 
 fn run(
@@ -32,7 +32,7 @@ fn run(
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -111,7 +111,7 @@ fn numeric_action(kind: i32, value: &str) -> RuntimeAction {
         .unwrap()
         .entries()[0]
         .clone();
-    RuntimeDefinitions::default().resolve_action(entry, None, None)
+    RuntimeDefinitions::default().resolve_action(entry, None, None, None)
 }
 
 fn scenario_hash(sim: &Simulation) -> String {

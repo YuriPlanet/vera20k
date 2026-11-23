@@ -12,11 +12,12 @@ fn pip_frames(scene: &MindScene, hovered: Option<u64>) -> Vec<usize> {
     let Some(controller) = sim.entities().get(scene.mind()) else {
         return Vec::new();
     };
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(sim, scene.rules());
     super::scale_pip_draws(
         sim,
-        controller,
+        frame.object(scene.mind()).unwrap(),
         hovered,
-        Some(sim.interner().resolve(controller.owner())),
+        Some(controller.owner()),
         scene.rules(),
     )
     .into_iter()
@@ -33,7 +34,7 @@ fn stock_selected_mastermind_submits_real_capture_count_and_overload_pips() {
     let mut observed_counts = BTreeSet::new();
     scene.capture_four_observing(|scene| {
         let controller = scene.simulation().entities().get(scene.mind()).unwrap();
-        if controller.selection.is_selected() {
+        if controller.seldom.selection.is_selected() {
             let count = scene.victims().len();
             let mut expected = vec![0; 3];
             expected[..count.min(3)].fill(1);
@@ -52,7 +53,7 @@ fn stock_selected_mastermind_submits_real_capture_count_and_overload_pips() {
         .unwrap()
         .owner();
     let controller = scene.simulation().entities().get(scene.mind()).unwrap();
-    assert!(controller.selection.is_selected());
+    assert!(controller.seldom.selection.is_selected());
     assert!(controller.lifecycle.object_alive() && !controller.lifecycle.in_limbo());
     assert_eq!(
         controller.health.current(),
@@ -71,11 +72,15 @@ fn stock_selected_mastermind_submits_real_capture_count_and_overload_pips() {
     // three ordinary slots, then IsOverloading4726C0 adds exactly one idle
     // overload slot. Exercise the same status submission used by rendering,
     // after actual FireAt/CaptureUnit and ordinary selection/body admission.
+    let frame = crate::app::presentation::frame::PresentationFrame::of_test(
+        scene.simulation(),
+        scene.rules(),
+    );
     let frames: Vec<_> = crate::app::presentation::ui_overlays::scale_pip_draws(
         scene.simulation(),
-        controller,
+        frame.object(scene.mind()).unwrap(),
         None,
-        Some(scene.simulation().interner().resolve(owner)),
+        Some(owner),
         scene.rules(),
     )
     .into_iter()
@@ -98,6 +103,7 @@ fn stock_selected_mastermind_submits_real_capture_count_and_overload_pips() {
             .entities()
             .get(scene.mind())
             .unwrap()
+            .seldom
             .selection
             .is_selected()
     );
@@ -456,8 +462,8 @@ fn stock_fatal_overload_releases_real_captives_and_retires_rings_and_sparks() {
             for &id in &scene.targets() {
                 let actor = scene.simulation().entities().get(id).unwrap();
                 assert_eq!(actor.owner(), original);
-                assert_eq!(actor.mind_control.controller(), None);
-                assert!(!actor.mind_control.is_mind_controlled());
+                assert_eq!(actor.seldom.mind_control.controller(), None);
+                assert!(!actor.seldom.mind_control.is_mind_controlled());
             }
             assert!(
                 captive_ring_ids(&scene).is_empty(),
@@ -569,7 +575,10 @@ fn internal_snapshot_continues_real_overload_links_rocking_and_next_pulse() {
         for &id in &scene.targets() {
             let a = scene.simulation().entities().get(id).unwrap();
             let b = restored.simulation().entities().get(id).unwrap();
-            assert_eq!((a.owner(), a.mind_control), (b.owner(), b.mind_control));
+            assert_eq!(
+                (a.owner(), a.seldom.mind_control),
+                (b.owner(), b.seldom.mind_control)
+            );
         }
         if live.health.current() < health {
             saw_next_pulse = true;

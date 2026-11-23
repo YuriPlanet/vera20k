@@ -36,6 +36,34 @@ pub(crate) struct CellClassProjectionView {
 /// own authority. Their shared allocation keeps one live identity safe to carry
 /// through app loading workers without copying native's global mutable object
 /// architecture.
+///
+/// The Dummy is saved simulation state ([`SavedSharedCellDummy`]) written
+/// through `&self`, because a miss stamp is part of the lookup itself: every
+/// `Get_CellClass` port ([`NativeCellQuery::lookup`],
+/// [`ResolvedTerrainGrid::native_cell_identity`] and their callers) is a
+/// query, reached through `&ResolvedTerrainGrid` or `&Simulation` from the
+/// simulation, the path and target batches on the worker pool, and the
+/// presentation and input. A retained `NativeCellIdentity::Dummy` reads the
+/// latest stamp, as native's aliased object does, so the code that reads a
+/// Dummy and the code that stamps it must reach the same object; owning it
+/// by `&mut` would make every map read exclusive.
+///
+/// The rules:
+/// - Only the simulation thread stamps or writes the canonical Dummy.
+/// - A pooled task, and a presentation or input read of the live simulation,
+///   that can miss runs inside [`Self::detached`] (or
+///   [`Self::detached_stamps`]), which keeps its stamps on its own thread, or
+///   queries through [`NativeCellQuery::isolated`], which stamps a fork.
+/// - Only stamps are private to a detached run. Every other word (flags,
+///   anchor, overlay, smudge, tube, neighbour count, level) is written by
+///   code that holds `&mut` of the grid, an overlay, smudge or occupation
+///   owner or the Simulation, or by map load on a Dummy no task holds.
+///
+/// A task that broke them would race on saved state, and peers would
+/// desync. The client crate's `architecture_guards::shared_state::
+/// pool_entries_say_how_their_tasks_treat_the_cell_dummy` pins every engine
+/// file that enters the worker pool, each with what its tasks do about the
+/// Dummy, so a new parallel caller has to say which rule it follows.
 #[derive(Debug, Clone)]
 pub struct SharedCellDummy {
     state: Arc<SharedCellDummyState>,
@@ -60,6 +88,19 @@ struct SharedCellDummyState {
     tube_index: AtomicI16,
     /// Retained wrapping CellClass+122; ctor47BD34 initializes zero.
     neighbor_count: AtomicU8,
+}
+
+/// Exact continuation of the fallback Cell, independent of its process identity.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SavedSharedCellDummy {
+    cell: u64,
+    land_type: i32,
+    raw_flags: u32,
+    native_anchor: Option<NativeCellIdentity>,
+    overlay: u64,
+    smudge: u64,
+    tube_index: i16,
+    neighbor_count: u8,
 }
 
 thread_local! {
@@ -201,14 +242,23 @@ impl NativeAllocatedCellCursor {
         terrain: &ResolvedTerrainGrid,
         size_width: i32,
     ) -> Option<NativeCellIdentity> {
-        let index = self.y.wrapping_mul(512).wrapping_add(self.x);
-        let selected = (0..0x40000)
-            .contains(&index)
-            .then(|| terrain.native_fixed_cell_index((index % 512) as i16, (index / 512) as i16))
-            .flatten()
+        let grid = terrain.cell_grid();
+        let index = self.y.wrapping_shl(grid.shift()).wrapping_add(self.x);
+        let selected = grid
+            .coord_from_index(i64::from(index))
+            .and_then(|(x, y)| terrain.native_fixed_cell_index(x as i16, y as i16))
             .map(NativeCellIdentity::Real);
         self.advance(size_width);
         selected
+    }
+
+    /// The coordinate the cursor stands on, then [`Self::advance`]: the walk
+    /// without its cell lookup, for the Size diamond's walk, which knows where
+    /// `Next`'s null falls (`map::playfield::SizeDiamond::allocated_cells`).
+    pub(crate) fn take_coord(&mut self, size_width: i32) -> (i32, i32) {
+        let at = (self.x, self.y);
+        self.advance(size_width);
+        at
     }
 
     /// Next578290's step past the current position.
@@ -254,6 +304,19 @@ impl<'a> NativeCellQuery<'a> {
         }
     }
 
+    /// A simulation lookup driven by one client's input (PlayerPtr, the
+    /// selection). Offline games and their replays share that input, so a
+    /// miss stamps the shared Dummy (`0x00ABDC50`) as native does. VERA
+    /// network adaptation: peers differ in it, so a network game stamps a
+    /// fork, whose coordinate no retained target reads.
+    pub fn for_local_input(terrain: &'a ResolvedTerrainGrid, network: bool) -> Self {
+        if network {
+            Self::isolated(terrain)
+        } else {
+            Self::canonical(terrain)
+        }
+    }
+
     pub fn terrain(&self) -> &'a ResolvedTerrainGrid {
         self.terrain
     }
@@ -276,11 +339,10 @@ impl<'a> NativeCellQuery<'a> {
 
     pub fn lookup_world(&self, x: i32, y: i32) -> NativeCellIdentity {
         let (x, y) = (x / 256, y / 256);
-        let index = y.wrapping_mul(512).wrapping_add(x);
-        if (0..0x40000).contains(&index)
-            && let Some(real) = self
-                .terrain
-                .native_fixed_cell_index((index % 512) as i16, (index / 512) as i16)
+        let grid = self.terrain.cell_grid();
+        let index = y.wrapping_shl(grid.shift()).wrapping_add(x);
+        if let Some((rx, ry)) = grid.coord_from_index(i64::from(index))
+            && let Some(real) = self.terrain.native_fixed_cell_index(rx as i16, ry as i16)
         {
             return NativeCellIdentity::Real(real);
         }
@@ -310,7 +372,7 @@ impl<'a> NativeCellQuery<'a> {
         self.lookup((x.wrapping_add(dx as i16), y.wrapping_add(dy as i16)))
     }
 
-    pub(crate) fn ground_fields(&self, cell: NativeCellIdentity) -> (u8, u8) {
+    pub fn ground_fields(&self, cell: NativeCellIdentity) -> (u8, u8) {
         match cell {
             NativeCellIdentity::Real(_) => self.terrain.native_cell_ground_fields(cell),
             NativeCellIdentity::Dummy => {
@@ -395,6 +457,46 @@ impl SharedCellDummy {
                 neighbor_count: AtomicU8::new(self.neighbor_count()),
             }),
         }
+    }
+
+    pub(crate) fn saved_continuation(&self) -> SavedSharedCellDummy {
+        SavedSharedCellDummy {
+            cell: self.cell_word(),
+            land_type: self.land_type(),
+            raw_flags: self.raw_flags(),
+            native_anchor: self.native_anchor(),
+            overlay: self.state.overlay.load(Ordering::Relaxed),
+            smudge: self.state.smudge.load(Ordering::Relaxed),
+            tube_index: self.raw_tube_index(),
+            neighbor_count: self.neighbor_count(),
+        }
+    }
+
+    pub(crate) fn restore_saved_continuation(
+        &self,
+        saved: SavedSharedCellDummy,
+        terrain: &ResolvedTerrainGrid,
+    ) -> Result<(), &'static str> {
+        if let Some(NativeCellIdentity::Real(index)) = saved.native_anchor
+            && !terrain
+                .cells()
+                .get(index)
+                .is_some_and(|cell| terrain.cell(cell.rx, cell.ry).is_some())
+        {
+            return Err("fallback Cell anchor is not allocated");
+        }
+        if u8::try_from(saved.land_type)
+            .ok()
+            .and_then(LandType::from_index)
+            .is_none()
+        {
+            return Err("fallback Cell LandType is invalid");
+        }
+        if ((saved.cell >> 40) as u8) > super::build::MAX_TMP_RAMP_TYPE {
+            return Err("fallback Cell slope is outside the native table");
+        }
+        self.apply_saved_continuation(saved);
+        Ok(())
     }
 
     /// Every modeled byte, as [`Self::fork_query_identity`] copies them: a test
@@ -486,29 +588,22 @@ impl SharedCellDummy {
     /// Publish an already validated post-Resize candidate onto the retained
     /// process identity. Preserve its later lookup effects; do not reset twice.
     pub fn adopt_prepared_load_state(&self, prepared: &Self) {
+        self.apply_saved_continuation(prepared.saved_continuation());
+    }
+
+    fn apply_saved_continuation(&self, saved: SavedSharedCellDummy) {
         self.state
             .land_type
-            .store(prepared.land_type(), Ordering::Relaxed);
-        let word = prepared.cell_word();
-        self.update_cell_word(|_| word);
-        self.state.overlay.store(
-            prepared.state.overlay.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-        self.state.smudge.store(
-            prepared.state.smudge.load(Ordering::Relaxed),
-            Ordering::Relaxed,
-        );
-        self.state
-            .raw_flags
-            .store(prepared.raw_flags(), Ordering::Relaxed);
-        self.write_native_anchor(prepared.native_anchor());
+            .store(saved.land_type, Ordering::Relaxed);
+        self.update_cell_word(|_| saved.cell);
+        self.state.overlay.store(saved.overlay, Ordering::Relaxed);
+        self.state.smudge.store(saved.smudge, Ordering::Relaxed);
+        self.write_raw_flags(saved.raw_flags);
+        self.write_native_anchor(saved.native_anchor);
         self.state
             .neighbor_count
-            .store(prepared.neighbor_count(), Ordering::Relaxed);
-        self.state
-            .tube_index
-            .store(prepared.raw_tube_index(), Ordering::Relaxed);
+            .store(saved.neighbor_count, Ordering::Relaxed);
+        self.write_raw_tube_index(saved.tube_index);
     }
 
     /// Stamp only CellClass+0x24, preserving the live level and slope bytes.
@@ -520,8 +615,8 @@ impl SharedCellDummy {
     /// Run `work` with this Dummy's packed coordinate/level/slope word private
     /// to the current thread: its stamps and reads use a copy of the shared
     /// word taken now, and the shared word stays as it is. Path searches and
-    /// candidate scores within one target scan (`movement::path_batch`,
-    /// `greatest_threat::flat_scores`) stamp
+    /// target scans running side by side (`movement::path_batch`,
+    /// `techno_ai::scan_batch`, `greatest_threat::flat_scores`) stamp
     /// through it, so they neither race on the Dummy nor change what later
     /// lookups on the simulation thread see.
     ///
@@ -529,6 +624,12 @@ impl SharedCellDummy {
     /// thread: a worker waiting on nested parallel work can run another
     /// task there, so starting from the enclosing copy would make a run's
     /// start depend on where it landed. The enclosing copy resumes after.
+    ///
+    /// Only the coordinate/level/slope word is private to the run: work
+    /// inside it may read the other words but must not write them (see the
+    /// type's rules). The run finds its copy by this Dummy's address, so a
+    /// query that stamps a fork ([`NativeCellQuery::isolated`]) is not
+    /// redirected.
     pub fn detached<R>(&self, work: impl FnOnce() -> R) -> R {
         self.detached_stamps(work).0
     }
@@ -808,9 +909,9 @@ pub(super) fn native_resolved_cell_index(
     x: i32,
     y: i32,
 ) -> Option<usize> {
-    let linear = crate::map::cell_index::cell_linear_index(x, y)?;
-    let rx = (linear % crate::map::cell_index::CELL_ROW_STRIDE) as usize;
-    let ry = (linear / crate::map::cell_index::CELL_ROW_STRIDE) as usize;
+    let grid = crate::map::cell_index::CellGrid::for_extent(width, height);
+    let (rx, ry) = grid.canonical_coord(x, y)?;
+    let (rx, ry) = (usize::from(rx), usize::from(ry));
     if rx >= usize::from(width) || ry >= usize::from(height) {
         return None;
     }
@@ -821,8 +922,20 @@ pub(super) fn native_resolved_cell_index(
 }
 
 impl ResolvedTerrainGrid {
+    /// Derived from this grid's existing rectangle; no global map mode is retained.
+    pub fn cell_grid(&self) -> crate::map::cell_index::CellGrid {
+        crate::map::cell_index::CellGrid::for_extent(self.width, self.height)
+    }
+
     pub fn shared_cell_dummy(&self) -> SharedCellDummy {
         self.shared_cell_dummy.clone()
+    }
+
+    /// Give this grid its own Dummy, a copy of the one it shared: a
+    /// presentation copy of the world (`Simulation::presentation_copy`) must
+    /// not read the live Dummy the simulation stamps while it ticks.
+    pub(crate) fn fork_cell_dummy(&mut self) {
+        self.shared_cell_dummy = self.shared_cell_dummy.fork_query_identity();
     }
 
     /// Resolve one already-narrowed native fixed-grid coordinate to an
@@ -832,7 +945,7 @@ impl ResolvedTerrainGrid {
         native_resolved_cell_index(
             self.width,
             self.height,
-            self.native_allocated.as_deref(),
+            self.native_allocated.as_deref().map(Vec::as_slice),
             self.cells.len(),
             i32::from(x),
             i32::from(y),
@@ -849,6 +962,18 @@ impl ResolvedTerrainGrid {
             },
             NativeCellIdentity::Real,
         )
+    }
+
+    /// The index of the real cell at `coord` ([`Self::native_cell_coord`])
+    /// on a regular terrain, whose real cells each have their own
+    /// coordinate, the one their index gives: a real cell is at `coord`
+    /// exactly when it has this index. `None` on any other terrain, or when
+    /// no real cell is at `coord`.
+    pub(crate) fn regular_cell_index(&self, (x, y): (i16, i16)) -> Option<usize> {
+        let width = usize::from(self.width);
+        let (x, y) = (usize::try_from(x).ok()?, usize::try_from(y).ok()?);
+        let index = y * width + x;
+        (x < width && index < self.cells.len() && self.is_regular()).then_some(index)
     }
 
     pub(crate) fn native_cell_coord(&self, cell: NativeCellIdentity) -> (i16, i16) {
@@ -995,7 +1120,7 @@ impl ResolvedTerrainGrid {
     pub(crate) fn write_native_cell_level(&mut self, cell: NativeCellIdentity, level: u8) {
         match cell {
             NativeCellIdentity::Real(index) => {
-                self.cells[index].level = level;
+                self.set_cell_level(index, level);
                 self.cells[index].refresh_current_height_projection();
             }
             NativeCellIdentity::Dummy => self.shared_cell_dummy.set_level(level as i8),
@@ -1019,7 +1144,7 @@ impl ResolvedTerrainGrid {
     /// map lookups. Load-local owners may snapshot this once so later overlay
     /// writes do not need to keep an immutable borrow of the live terrain grid.
     pub(crate) fn native_allocation_mask(&self) -> Option<&[bool]> {
-        self.native_allocated.as_deref()
+        self.native_allocated.as_deref().map(Vec::as_slice)
     }
 
     pub fn bind_shared_cell_dummy(&mut self, shared_cell_dummy: SharedCellDummy) {
@@ -1037,7 +1162,7 @@ impl ResolvedTerrainGrid {
         if let Some(index) = native_resolved_cell_index(
             self.width,
             self.height,
-            self.native_allocated.as_deref(),
+            self.native_allocated.as_deref().map(Vec::as_slice),
             self.cells.len(),
             x,
             y,
@@ -1088,7 +1213,7 @@ impl ResolvedTerrainGrid {
     /// outside the fixed array instead of reproducing native out-of-array UB.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn cellclass_allocation_probe(&self, x: i32, y: i32) -> bool {
-        let Some((rx, ry)) = crate::map::cell_index::canonical_cell_coord(x, y) else {
+        let Some((rx, ry)) = self.cell_grid().canonical_coord(x, y) else {
             return false;
         };
         self.cell(rx, ry).is_some()
@@ -1114,7 +1239,7 @@ impl ResolvedTerrainGrid {
                 mask[usize::from(ry) * usize::from(self.width) + usize::from(rx)] = true;
             }
         }
-        self.native_allocated = Some(mask);
+        self.native_allocated = Some(mask.into());
         self.allocation_caches = Default::default();
     }
 

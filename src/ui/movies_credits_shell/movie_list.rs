@@ -8,18 +8,16 @@
 //! obfuscated `[Network] NetID` (owned by the options profile), and are raised
 //! by `0x005FBF80` whenever Play_Movie resolves a campaign movie name.
 
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale, dlu_rect,
-};
-use crate::ui::shell::list::{ListMetrics, ListScrollInteraction, ShellListGeometry};
+use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
+
+use crate::ui::shell::controller::DialogController;
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::{RectPx, dlu_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use std::time::{Duration, Instant};
+use vera20k_gui::shell::list::list_box_rect;
 
-pub const MOVIE_LIST_DIALOG: DialogId = DialogId(0x0129);
+pub const MOVIE_LIST_DIALOG: DialogResourceId = DialogResourceId(0x0129);
 
-/// Owner-draw ListBox `0x744`.
-pub const MOVIE_LIST_CONTROL: u16 = 0x0744;
 /// Play Movie button `0x745`.
 pub const PLAY_MOVIE_CONTROL: u16 = 0x0745;
 /// Status help the shell writes to `0x695` while the list is hovered.
@@ -33,20 +31,13 @@ pub const MOVIE_LIST_PROMPT_KEY: &str = "GUI:SelectMovie";
 pub const MOVIE_LIST_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: MOVIE_LIST_DIALOG,
     title_key: "GUI:Blank",
-    stacked: &[MenuPageButtonSpec {
-        id: PLAY_MOVIE_CONTROL,
-        dlu_top: 122,
-        csf_key: "GUI:PlayMovie",
-        tooltip_key: "GUI:PlayMovie",
-        result: None,
-    }],
-    back: MenuPageButtonSpec {
-        id: 0x0686,
-        dlu_top: 346,
-        csf_key: "GUI:Back",
-        tooltip_key: "STT:MsnDltButtonBack",
-        result: Some(-1),
-    },
+    stacked: &[MenuPageButtonSpec::new(
+        PLAY_MOVIE_CONTROL,
+        122,
+        "GUI:PlayMovie",
+        "GUI:PlayMovie",
+    )],
+    back: MenuPageButtonSpec::new(0x0686, 346, "GUI:Back", "STT:MsnDltButtonBack").returning(-1),
 };
 
 /// Dialog `0x129` geometry. The list `0x744` and prompt `0x40C` are in none
@@ -68,133 +59,94 @@ pub fn compute_movie_list_layout(screen_w: u32, screen_h: u32) -> MovieListLayou
     }
 }
 
-/// The responsive variant of [`compute_movie_list_layout`]: the verified
-/// 800x600 `0x129` scaled to fit the window, keeping its shape. Identity at the
-/// base size. Rows grow with the scale, so the list shows the rows it shows at
-/// 800x600.
-pub fn compute_responsive_movie_list_layout(screen_w: u32, screen_h: u32) -> MovieListLayout {
-    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    let base = compute_movie_list_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32);
-    MovieListLayout {
-        page: menu_page::compute_responsive_layout(&MOVIE_LIST_PAGE, screen_w, screen_h),
-        list: base.list.scaled_rects(scale),
-        prompt: base.prompt.scaled_rects(scale),
-    }
+vera20k_gui::scaled_rects!(MovieListLayout { page, list, prompt });
+
+/// The list box (subclass `0x0061A948`) as a `List` node under `parent`:
+/// window `rect` (its `Rect` the paint surface, [`list_box_rect`]), `rows`
+/// the page paints itself, `selected` and `top`. The node holds the selection from then
+/// on: the subclass's LB_SETCURSEL handler (`0x0061A534..0x0061A5F5`) always
+/// returns 0, so the proc's fallback `LB_SETCURSEL(0)` never runs and a
+/// fresh process opens with nothing selected.
+pub fn build_family_list(
+    gui: &mut Gui,
+    parent: NodeId,
+    rect: RectPx,
+    rows: usize,
+    selected: Option<usize>,
+    top: usize,
+) -> Option<NodeId> {
+    let node = gui.create(NodeKind::List, Some(parent)).ok()?;
+    gui.set(node, Prop::Rect, Value::Rect(list_box_rect(rect)))
+        .ok()?;
+    set_family_list(gui, node, rows, selected, top);
+    Some(node)
 }
 
-/// One `0x129` instance: rows from `0x005FC000` and the subclass selection.
-#[derive(Debug, Clone)]
-pub struct MovieListState {
-    pub rows: Vec<MovieEntry>,
-    /// Subclass current selection (`-1` = none). Its LB_SETCURSEL handler
-    /// (`0x0061A534..0x0061A5F5`) always returns 0, so the proc's fallback
-    /// `LB_SETCURSEL(0)` never runs: a fresh process opens with nothing
-    /// selected.
-    pub selected: Option<usize>,
-    pub top: usize,
-    /// Previous press for the ListBox class's `CS_DBLCLKS` detection.
-    pub last_press: Option<(Instant, i32, i32)>,
-    /// Scrollbar capture and arrow repeat (`0x0061C690`).
-    pub scroll: ListScrollInteraction,
+/// The host's own change of the list's rows, selection and top.
+pub fn set_family_list(
+    gui: &mut Gui,
+    node: NodeId,
+    rows: usize,
+    selected: Option<usize>,
+    top: usize,
+) {
+    let int = |v: usize| Value::Int(i32::try_from(v).unwrap_or(i32::MAX));
+    let _ = gui.set(node, Prop::RowCount, int(rows));
+    let _ = gui.set(node, Prop::Selected, selected.map_or(Value::Int(-1), int));
+    let _ = gui.set(node, Prop::Top, int(top));
 }
 
-impl MovieListState {
-    /// Populate and apply the retained `DAT_00825C80` selection.
-    pub fn open(progress: MovieProgress, retained_selection: i32) -> Self {
-        let rows = active_movie_entries(progress);
-        let selected = usize::try_from(retained_selection)
-            .ok()
-            .filter(|index| *index < rows.len());
-        Self {
-            rows,
-            selected,
-            top: 0,
-            last_press: None,
-            scroll: ListScrollInteraction::default(),
-        }
-    }
+/// The family page `dialog`'s `List` node, wherever its instance sits on
+/// the stack.
+pub fn find_family_list(controller: &DialogController, dialog: DialogResourceId) -> Option<NodeId> {
+    let root = controller.root_in(dialog)?;
+    let gui = controller.gui();
+    gui.tree()
+        .children(root)
+        .ok()?
+        .iter()
+        .copied()
+        .find(|node| gui.tree().kind(*node) == Ok(NodeKind::List))
+}
 
-    /// List and scrollbar geometry. The shared geometry takes the paint
-    /// surface, one pixel wider and taller than the `0x744` window, which
-    /// reproduces the retail frames: a scrollbar only above 15 rows, at
-    /// `x + w - 20` and 20 wide, a 202 px thumb for 17 rows.
-    pub fn geometry(&self, list: RectPx, metrics: ListMetrics) -> ShellListGeometry {
-        ShellListGeometry::new(
-            RectPx::new(list.x, list.y, list.w + 1, list.h + 1),
-            self.rows.len(),
-            self.top,
-            metrics,
-        )
-    }
+/// The row the family page `dialog`'s list has selected.
+pub fn family_list_selected(
+    controller: &DialogController,
+    dialog: DialogResourceId,
+) -> Option<usize> {
+    controller
+        .gui()
+        .list_view(find_family_list(controller, dialog)?)?
+        .selected
+}
 
-    /// A press on the scrollbar child: capture it, step an arrow or jump the
-    /// track. Returns `false` when the press is not on the scrollbar.
-    pub fn scroll_press(
-        &mut self,
-        list: RectPx,
-        metrics: ListMetrics,
-        x: i32,
-        y: i32,
-        now: Instant,
-    ) -> bool {
-        let geometry = self.geometry(list, metrics);
-        let Some(part) = geometry.scroll_part_at(x, y) else {
-            return false;
-        };
-        self.scroll.press(part, geometry, &mut self.top, y, now);
-        true
+/// The family page `dialog`'s `List` node, built with `rows`, `selected`
+/// and `top` as a new instance's when the dialog instance has none yet; its
+/// window follows `rect`.
+pub fn family_list_node(
+    controller: &mut DialogController,
+    dialog: DialogResourceId,
+    rect: RectPx,
+    (rows, selected, top): (usize, Option<usize>, usize),
+) -> Option<NodeId> {
+    if let Some(node) = find_family_list(controller, dialog) {
+        let _ = controller
+            .gui_mut()
+            .set(node, Prop::Rect, Value::Rect(list_box_rect(rect)));
+        return Some(node);
     }
+    let root = controller.root_in(dialog)?;
+    build_family_list(controller.gui_mut(), root, rect, rows, selected, top)
+}
 
-    /// Pointer motion while the scrollbar may hold capture (thumb drag).
-    pub fn scroll_pointer_moved(&mut self, list: RectPx, metrics: ListMetrics, x: i32, y: i32) {
-        let geometry = self.geometry(list, metrics);
-        self.scroll.pointer_moved(geometry, &mut self.top, x, y);
-    }
+/// One `0x129` instance's rows, from `0x005FC000`.
+pub type MovieListState = Vec<MovieEntry>;
 
-    /// Arrow auto-repeat; returns whether the list changed.
-    pub fn scroll_poll(
-        &mut self,
-        list: RectPx,
-        metrics: ListMetrics,
-        x: i32,
-        y: i32,
-        now: Instant,
-    ) -> bool {
-        if self.scroll.repeat_at().is_none() {
-            return false;
-        }
-        let geometry = self.geometry(list, metrics);
-        self.scroll.poll(geometry, &mut self.top, x, y, now)
-    }
-
-    /// Whether a press is the second click of a double-click
-    /// ([`crate::ui::shell::list::is_double_click`]).
-    pub fn is_double_click(
-        &mut self,
-        now: Instant,
-        x: i32,
-        y: i32,
-        limits: (Duration, i32, i32),
-    ) -> bool {
-        crate::ui::shell::list::is_double_click(&mut self.last_press, now, x, y, limits)
-    }
-
-    /// Row under a pointer press (`0x0061A948`): `client_y / 19 + top`,
-    /// without a border correction, ignoring presses below the last row. The
-    /// scrollbar is its own child window, so presses on it never reach the
-    /// list.
-    pub fn row_at(&self, list: RectPx, metrics: ListMetrics, x: i32, y: i32) -> Option<usize> {
-        if !list.contains(x, y)
-            || self
-                .geometry(list, metrics)
-                .scrollbar
-                .is_some_and(|bar| bar.contains(x, y))
-        {
-            return None;
-        }
-        let row = ((y - list.y) / metrics.row_h) as usize + self.top;
-        (row < self.rows.len()).then_some(row)
-    }
+/// The row the retained `DAT_00825C80` selection names, if any.
+pub fn retained_movie_row(rows: &[MovieEntry], retained_selection: i32) -> Option<usize> {
+    usize::try_from(retained_selection)
+        .ok()
+        .filter(|index| *index < rows.len())
 }
 
 /// One row of the retail movie table.
@@ -283,22 +235,52 @@ pub fn active_movie_entries(progress: MovieProgress) -> Vec<MovieEntry> {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    use vera20k_gui::{DialogKind, InputEvent, MouseButton, UiEvent};
+
+    /// A retail `0x129` list as the page builds it, with nothing selected.
+    fn list_page() -> (Gui, NodeId) {
+        let mut gui = Gui::new(8);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        let list = active_movie_entries(MovieProgress::default());
+        let node = build_family_list(
+            &mut gui,
+            root,
+            compute_movie_list_layout(800, 600).list,
+            list.len(),
+            retained_movie_row(&list, -1),
+            0,
+        )
+        .unwrap();
+        gui.push_dialog(root, DialogKind::Page).unwrap();
+        (gui, node)
+    }
+
+    /// The row a press at `now` selects, as the list reports it.
+    fn press(gui: &mut Gui, x: i32, y: i32, now: u64) -> Option<u32> {
+        let button = MouseButton::Left;
+        gui.input(InputEvent::PointerDown { x, y, button }, now);
+        gui.input(InputEvent::PointerUp { x, y, button }, now);
+        gui.drain_events()
+            .into_iter()
+            .find_map(|event| match event {
+                UiEvent::ListSelected { row, .. } => Some(row),
+                _ => None,
+            })
+    }
 
     #[test]
     fn second_press_inside_the_double_click_window_is_not_a_selection_press() {
-        let limits = (Duration::from_millis(500), 4, 4);
-        let mut list = MovieListState::open(MovieProgress::default(), -1);
-        let t0 = Instant::now();
-        assert!(!list.is_double_click(t0, 150, 137, limits));
-        assert!(list.is_double_click(t0 + Duration::from_millis(300), 151, 138, limits));
+        let (mut gui, _) = list_page();
+        assert_eq!(press(&mut gui, 150, 137, 0), Some(0));
+        assert_eq!(press(&mut gui, 151, 138, 300), None);
         // The double-click ended the sequence: a third press starts anew.
-        assert!(!list.is_double_click(t0 + Duration::from_millis(400), 151, 138, limits));
+        assert_eq!(press(&mut gui, 151, 138, 400), Some(0));
         // Too slow or too far is a fresh press.
-        assert!(!list.is_double_click(t0 + Duration::from_millis(1000), 151, 138, limits));
-        assert!(!list.is_double_click(t0 + Duration::from_millis(1100), 160, 138, limits));
+        assert_eq!(press(&mut gui, 151, 138, 1000), Some(0));
+        assert_eq!(press(&mut gui, 160, 138, 1100), Some(0));
     }
 
     #[test]
@@ -317,21 +299,6 @@ mod tests {
             layout.page.button_rect(0x0686),
             Some(RectPx::new(644, 535, 156, 42))
         );
-    }
-
-    #[test]
-    fn press_hit_uses_client_y_without_border_correction() {
-        let list = RectPx::new(120, 128, 399, 304);
-        let state = MovieListState::open(MovieProgress::default(), -1);
-        assert_eq!(state.row_at(list, ListMetrics::RETAIL, 150, 128), Some(0));
-        assert_eq!(state.row_at(list, ListMetrics::RETAIL, 150, 146), Some(0));
-        assert_eq!(
-            state.row_at(list, ListMetrics::RETAIL, 150, 147),
-            None,
-            "row 1 does not exist"
-        );
-        assert_eq!(state.row_at(list, ListMetrics::RETAIL, 119, 130), None);
-        assert_eq!(state.row_at(list, ListMetrics::RETAIL, 519, 130), None);
     }
 
     fn files(progress: MovieProgress) -> Vec<&'static str> {

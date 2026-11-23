@@ -57,8 +57,17 @@ fn spawn(
 
 fn construct(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, kind: &str) -> u64 {
     let name = sim.interner.resolve(owner).to_owned();
-    sim.construct_object_limbo_at_height(kind, &name, 0, 0, 0, 0, rules, FrameEffects::default())
-        .unwrap()
+    sim.construct_object_limbo_at_height(
+        kind,
+        &name,
+        0,
+        0,
+        0,
+        0,
+        rules,
+        &mut FrameEffects::default(),
+    )
+    .unwrap()
 }
 
 fn active(sim: &Simulation) -> Vec<(u64, String, InternedId, (i16, i16))> {
@@ -100,7 +109,7 @@ fn apply(
 ) -> bool {
     let ini = IniFile::from_str(&format!("[Actions]\nA=1,{kind},0,{value},0,0,0,0,Z\n"));
     let entry = crate::map::actions::parse_actions(&ini)["A"].entries()[0].clone();
-    let action = RuntimeDefinitions::default().resolve_action(entry, None, None);
+    let action = RuntimeDefinitions::default().resolve_action(entry, None, None, None);
     sim.apply_live_trigger_action(
         &action,
         TriggerActionContext {
@@ -111,7 +120,7 @@ fn apply(
         &mut Vec::new(),
         rules,
         Some(registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -135,7 +144,7 @@ fn live126_recreates_all_four_initial_categories_after_real_cleanup_in_record_or
         );
         assert_eq!(sim.houses[&houses[0]].initial_techno_record_count(), 4);
         for &id in &ids {
-            sim.uninit_with_context(id, UninitContext::new(&rules, Some(&registry)));
+            sim.uninit_with_context(id, UninitContext::new(&rules));
         }
         sim.flush_pending_delete();
         assert!(active(&sim).is_empty());
@@ -146,7 +155,12 @@ fn live126_recreates_all_four_initial_categories_after_real_cleanup_in_record_or
         }
         install(&mut sim, &rules, 0);
         sim.session.set_binary_frame_for_test(16);
-        sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
+        sim.raise_house_tags(
+            houses[0],
+            &rules,
+            Some(&registry),
+            &mut FrameEffects::default(),
+        );
         let restored = active(&sim);
         assert_eq!(restored.len(), 4);
         for ((id, kind, owner, cell), (expected, at)) in restored.iter().zip(original) {
@@ -216,7 +230,12 @@ fn refused_placement_continues_with_next_record_and_following_trigger_action() {
     record(&mut sim, houses[0], "TAGUNIT", (15, 15));
     install(&mut sim, &rules, 0);
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(
+        houses[0],
+        &rules,
+        Some(&registry),
+        &mut FrameEffects::default(),
+    );
     let restored = active(&sim);
     assert_eq!(restored.len(), 2);
     assert!(restored.iter().any(|row| row.0 == block));
@@ -251,7 +270,12 @@ fn restore126_always_constructs_a_new_unit_even_when_the_original_is_present() {
     crate::sim::world::Simulation::retain_initial_house_technos(&sim.substrate, &mut sim.houses);
     install(&mut sim, &rules, 0);
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(
+        houses[0],
+        &rules,
+        Some(&registry),
+        &mut FrameEffects::default(),
+    );
     let restored = active(&sim);
     assert_eq!(restored.len(), 2);
     let new = restored.iter().find(|row| row.0 != old).unwrap();
@@ -310,7 +334,7 @@ fn restore130_still_repairs_only_existing_buildings() {
 }
 
 #[test]
-fn foot_and_building_clearance_submit_the_same_native_no_bridge_nearby_arguments() {
+fn foot_and_building_clearance_submit_the_same_native_nearby_arguments() {
     use crate::rules::locomotor_type::{MovementZone, SpeedType};
     use crate::sim::find_nearby_cell::NearbyFootprint;
     use fresh_oracle_seam::FreshCallRecord;
@@ -326,7 +350,8 @@ fn foot_and_building_clearance_submit_the_same_native_no_bridge_nearby_arguments
             if building { "CABHUT" } else { "TAGUNIT" },
         );
         // Supplied callee answer; expected arguments come from458CE0..458D2D
-        // and4DF71A..4DF76A, including literal0 at458CF8/4DF732.
+        // and4DF71A..4DF76A. FNPC reads argument 12 (literal 1 at 458CEF and
+        // 4DF729) as its bridge allow flag at 0x0056DE6C.
         fresh_oracle_seam::install_nearby_only(vec![Some((16, 15))]);
         let placed = if building {
             sim.place_building_with_cleared_foundation(
@@ -335,7 +360,7 @@ fn foot_and_building_clearance_submit_the_same_native_no_bridge_nearby_arguments
                 0,
                 &rules,
                 Some(&registry),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         } else {
             sim.place_foot_with_cleared_cell(
@@ -344,7 +369,7 @@ fn foot_and_building_clearance_submit_the_same_native_no_bridge_nearby_arguments
                 0,
                 &rules,
                 Some(&registry),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         };
         let (records, unused) = fresh_oracle_seam::finish();
@@ -363,7 +388,7 @@ fn foot_and_building_clearance_submit_the_same_native_no_bridge_nearby_arguments
                 movement_zone: MovementZone::Normal,
                 bridge_aware_zone: false,
                 footprint: NearbyFootprint::SINGLE,
-                allow_bridge_cells: false,
+                allow_bridge_cells: true,
                 check_height: false,
                 check_occupancy: false,
                 target_cell: None,
@@ -409,6 +434,7 @@ fn failed_foot_unlimbo_retires_new_object_and_restores_old_raw_location() {
         .entities
         .get_mut(created)
         .unwrap()
+        .seldom
         .discovery
         .set_owned_by_current_house_for_test(true);
     assert!(!sim.fog.is_cell_revealed(houses[0], 15, 15));
@@ -419,7 +445,7 @@ fn failed_foot_unlimbo_retires_new_object_and_restores_old_raw_location() {
             0,
             &rules,
             Some(&registry),
-            FrameEffects::default()
+            &mut FrameEffects::default()
         )
         .is_none()
     );

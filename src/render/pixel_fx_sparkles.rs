@@ -3,17 +3,16 @@
 //! for the full reverse-engineering and the design doc at
 //! docs/plans/2026-05-18-pixel-fx-sparkle-design.md.
 //!
-//! Stateless / hash-derived: each visible water or ore cell, every frame,
-//! hashes (cell_coord, cycle_index) to derive sub-pixel position, peak
-//! colour noise, lerp speed, and timer-init for the current cycle, then
-//! computes the sparkle's current RGB analytically. No per-cell persistent
-//! state.
+//! Each visited water or ore cell keeps gamemd's `PixelFXClass` state
+//! ([`PixelFxCells`]): a random wait, then one pulse from the dim base colour
+//! to the bright peak and back, then a new wait at a new spot. A cell draws
+//! nothing while it waits.
 //!
 //! ## Dependency rules
 //! - Part of render/ — reads sim/ state through immutable references only.
 //!   No writes to sim. No coupling to GPU types beyond SpriteInstance.
 
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::map::terrain::iso_to_screen;
 use crate::render::batch::SpriteInstance;
 use crate::sim::intern::InternedId;
@@ -71,32 +70,9 @@ const ORE: SparkleParams = SparkleParams {
     lerp_speed_max: 30,
 };
 
-/// Average cycle length for the stateless cycle-bucket approximation.
-/// gamemd's per-cycle duration is (timer_init 0..4095 ms) + (active
-/// 0x2000/lerp_speed ms). Avg ≈ 2048 + 430 = 2478 ms. Round to 2500 for
-/// both species (coincidentally similar). See design doc §Cycle bucketing.
-const WATER_CYCLE_BUCKET_MS: u64 = 2500;
-const ORE_CYCLE_BUCKET_MS: u64 = 2500;
-
-/// Splitmix64 — Vigna's PRNG, used here as a one-shot 64→64 bit hash.
-/// Three operations: add, xor-shift-multiply (×2). Well-distributed; avalanche
-/// quality is more than enough for "looks random per pixel."
-#[inline]
-fn splitmix64(mut x: u64) -> u64 {
-    x = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    x ^ (x >> 31)
-}
-
-/// Pack cell coordinates into a 64-bit key for hashing. Layout puts rx in
-/// the high 16 bits of the upper 32, ry in the high 16 bits of the lower 32,
-/// leaving the low 32 bits as a 0 sentinel that the caller can XOR with
-/// cycle_index when mixing per-cycle entropy.
-#[inline]
-fn coord_key(rx: u16, ry: u16) -> u64 {
-    ((rx as u64) << 32) | ((ry as u64) << 16)
-}
+/// `TimerInitMask` (`+0x1C`) of both tables: the wait before a pulse is
+/// `rand() & 0xFFF` milliseconds.
+const TIMER_INIT_MASK: u32 = 0xFFF;
 
 /// Ping-pong lerp between base (dim) and peak (bright) colors.
 ///
@@ -109,125 +85,168 @@ fn coord_key(rx: u16, ry: u16) -> u64 {
 ///
 /// where `lerp = phase & 0xFFF`, optionally flipped if bit 0x1000 is set.
 #[inline]
-fn ping_pong_lerp(phase: u32, base: [u8; 3], peak: [u8; 3]) -> [u8; 3] {
-    let mut lerp = phase & 0xFFF;
+fn ping_pong_lerp(phase: u32, base: [i32; 3], peak: [i32; 3]) -> [i32; 3] {
+    let mut lerp = (phase & 0xFFF) as i32;
     if (phase & 0x1000) != 0 {
         lerp = 0x1000 - lerp;
     }
     let inv = 0x1000 - lerp;
-    let blend = |b: u8, p: u8| -> u8 {
-        // (base * inv + peak * lerp) >> 12. Use u32 to avoid overflow
-        // (255 * 0x1000 = 1,044,480, fits in u32 easily).
-        (((b as u32) * inv + (p as u32) * lerp) >> 12) as u8
-    };
-    [
-        blend(base[0], peak[0]),
-        blend(base[1], peak[1]),
-        blend(base[2], peak[2]),
-    ]
+    // Signed `IMUL` and `SAR 0xC`, as `Update_Color` computes each channel.
+    std::array::from_fn(|i| (base[i] * inv + peak[i] * lerp) >> 12)
 }
 
-/// Extract a per-cycle sub-pixel offset (sub_x, sub_y) from the seed bits.
-/// Ranges match gamemd's PixelFXClass::Init (report §6.1):
-///   sub_x ∈ [-31, 32] (6 bits → bias by -0x1F)   (L10)
-///   sub_y ∈ [-15, 16] (5 bits → bias by -0x0F)   (L11)
-#[inline]
-fn sub_pos_from_seed(s: u64) -> (i32, i32) {
-    let sub_x = ((s & 0x3F) as i32) - 0x1F;
-    let sub_y = (((s >> 6) & 0x1F) as i32) - 0x0F;
-    (sub_x, sub_y)
+/// One cell's `PixelFXClass` (0x3C bytes, held at `CellClass+0xFC`). The
+/// field comments give each member's native offset.
+#[derive(Debug, Clone, Copy, Default)]
+struct PixelFx {
+    /// `+0x04..+0x0C`, the colour the last `Update_Color` left.
+    current: [i32; 3],
+    /// `+0x10`, 0..=0x2000 over one pulse.
+    phase: i32,
+    /// `+0x14`, phase per millisecond.
+    lerp_speed: i32,
+    /// `+0x18..+0x20`.
+    peak: [i32; 3],
+    /// `+0x24..+0x2C`.
+    base: [i32; 3],
+    /// `+0x30`, `+0x34`: the pixel's offset from the cell's centre.
+    offset: [i32; 2],
+    /// `+0x38`, the wait in milliseconds before the pulse shows.
+    timer: i32,
 }
 
-/// Extract this cycle's LerpSpeed, biased into the species range.
-/// gamemd uses `rand() % (max - min + 1) + min` — we mirror that. Uses
-/// 4 bits of entropy starting at bit 23, leaving bits 11-22 for timer_init.
-/// (L4 for water, L9 for ore)
-#[inline]
-fn lerp_speed_from_seed(s: u64, params: &SparkleParams) -> u32 {
-    let range_span = params.lerp_speed_max - params.lerp_speed_min + 1;
-    let raw = (s >> 23) & 0xF;
-    params.lerp_speed_min + (raw as u32) % range_span
-}
-
-/// Extract this cycle's timer_init offset (0..4095 ms).
-/// gamemd: `rand() & 0xFFF` — we do the same. Uses 12 bits starting at bit 11.
-/// (L5/L26)
-#[inline]
-fn timer_init_from_seed(s: u64) -> u32 {
-    ((s >> 11) & 0xFFF) as u32
-}
-
-/// Compute this cycle's peak RGB with per-channel noise subtract.
-/// gamemd applies `mask = (1 << color_noise_bits) - 1`, then per channel:
-///   peak[i] -= mask & rand_bits
-///   rand_bits >>= color_noise_bits
-/// We use 5 bits per channel from bit 27 onwards (15 bits total). For ore
-/// (color_noise_bits = 0), no noise is applied. (L3, L8)
-#[inline]
-fn peak_with_noise(s: u64, params: &SparkleParams) -> [u8; 3] {
-    if params.color_noise_bits == 0 {
-        return params.peak_rgb;
+impl PixelFx {
+    /// `PixelFXClass::Init @ 0x00631D40`, four `rand` draws (three for ore,
+    /// which has no colour noise).
+    fn init(&mut self, params: &SparkleParams, rand: &mut CrtRand) {
+        let r = rand.next();
+        self.offset = [(r & 0x3F) as i32 - 0x1F, ((r >> 5) & 0x1F) as i32 - 0xF];
+        self.peak = params.peak_rgb.map(i32::from);
+        if params.color_noise_bits != 0 {
+            let shift = u32::from(params.color_noise_bits);
+            let mask = (1u32 << shift) - 1;
+            let r = rand.next();
+            self.peak[0] -= (r & mask) as i32;
+            self.peak[1] -= ((r >> shift) & mask) as i32;
+            self.peak[2] -= ((r >> (2 * shift)) & mask) as i32;
+        }
+        self.base = params.base_rgb.map(i32::from);
+        self.current = self.base;
+        self.phase = 0;
+        let span = params.lerp_speed_max - params.lerp_speed_min + 1;
+        self.lerp_speed = (rand.next() % span + params.lerp_speed_min) as i32;
+        self.timer = (rand.next() & TIMER_INIT_MASK) as i32;
     }
-    let mask = (1u32 << params.color_noise_bits) - 1;
-    let bits = s >> 27;
-    let n0 = (bits as u32) & mask;
-    let n1 = ((bits >> params.color_noise_bits) as u32) & mask;
-    let n2 = ((bits >> (params.color_noise_bits * 2)) as u32) & mask;
-    [
-        params.peak_rgb[0].saturating_sub(n0 as u8),
-        params.peak_rgb[1].saturating_sub(n1 as u8),
-        params.peak_rgb[2].saturating_sub(n2 as u8),
-    ]
+
+    /// `PixelFXClass::Tick_Timer @ 0x00631EE0`: true once the wait is over,
+    /// and on every pass after it until the next `Init`.
+    fn tick_timer(&mut self, delta_ms: u32) -> bool {
+        self.timer = self.timer.wrapping_sub(delta_ms as i32);
+        if self.timer < 1 {
+            self.timer = 0;
+            return true;
+        }
+        false
+    }
+
+    /// `PixelFXClass::Update_Color @ 0x00631E50`.
+    fn update_color(&mut self, delta_ms: u32) {
+        self.phase = self
+            .phase
+            .wrapping_add(self.lerp_speed.wrapping_mul(delta_ms as i32))
+            .min(0x2000);
+        let phase = self.phase as u32;
+        self.current = ping_pong_lerp(phase, self.base, self.peak);
+    }
 }
 
-/// Compute the cell bounds (inclusive) of the visible viewport.
-///
-/// Camera is in world pixels (top-left corner of viewport). vsw and vsh are
-/// the effective viewport width and height in world pixels (already
-/// zoom-corrected by the caller). Returns (rx_min, ry_min, rx_max, ry_max),
-/// clamped to map bounds [0, map_w) and [0, map_h).
-///
-/// Iso cells are 60 wide × 30 tall (CELL_WIDTH × CELL_HEIGHT in render). We
-/// add a 2-cell margin on every side so partially-visible cells at the edges
-/// are included. (L27 — sparkles should appear at viewport edges.)
-#[inline]
-fn viewport_cell_bounds(
-    camera_x: f32,
-    camera_y: f32,
-    vsw: f32,
-    vsh: f32,
-    map_w: u16,
-    map_h: u16,
-) -> (u16, u16, u16, u16) {
-    const MARGIN_CELLS: i32 = 2;
+/// The MSVC CRT `rand` (`_rand`) PixelFX draws from. Presentation only: it is
+/// never the simulation's random stream.
+#[derive(Debug, Clone, Copy)]
+struct CrtRand(u32);
 
-    // World-pixel viewport rect → approximate cell range. Iso conversion is
-    // approximate (we over-include because of the diamond shape) but cheap
-    // and correct: the gate inside compute_sparkle_for_cell handles cells
-    // outside the actual viewport via the screen position check.
-    let rx_min =
-        (((camera_x / TILE_WIDTH).floor() as i32) - MARGIN_CELLS).clamp(0, map_w as i32 - 1) as u16;
-    let rx_max = ((((camera_x + vsw) / TILE_WIDTH).ceil() as i32) + MARGIN_CELLS)
-        .clamp(0, map_w as i32 - 1) as u16;
-    let ry_min = (((camera_y / TILE_HEIGHT).floor() as i32) - MARGIN_CELLS)
-        .clamp(0, map_h as i32 - 1) as u16;
-    let ry_max = ((((camera_y + vsh) / TILE_HEIGHT).ceil() as i32) + MARGIN_CELLS)
-        .clamp(0, map_h as i32 - 1) as u16;
-    (rx_min, ry_min, rx_max, ry_max)
+impl Default for CrtRand {
+    /// The CRT's seed before any `srand`.
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+impl CrtRand {
+    fn next(&mut self) -> u32 {
+        self.0 = self.0.wrapping_mul(214_013).wrapping_add(2_531_011);
+        (self.0 >> 16) & 0x7FFF
+    }
+}
+
+/// The sparkle pass's retained state: each visited cell's PixelFX (gamemd
+/// keeps it at `CellClass+0xFC` until the map is freed), the `rand` stream,
+/// and the last pass's clock (`DAT_00B0E640`).
+#[derive(Debug, Default)]
+pub struct PixelFxCells {
+    cells: std::collections::HashMap<(u16, u16), PixelFx>,
+    rand: CrtRand,
+    last_ms: u32,
+}
+
+impl PixelFxCells {
+    /// A new map frees its cells and their PixelFX; the clock and the `rand`
+    /// stream are process globals and stay.
+    pub fn clear_on_load(&mut self) {
+        self.cells.clear();
+    }
+}
+
+/// The cells `DrawPixelFXSparkles @ 0x006D7840` visits, in its order, for a
+/// view whose top-left world pixel is `camera` and whose size is `view`
+/// world pixels, on a map of `Size=` width and height `map_size`.
+///
+/// gamemd is handed the tactical rectangle (`0x006D491F..0x006D4924`), so it
+/// starts from the view origin's cell on the Z=0 plane (the pixel-to-coordinate
+/// transform `0x006D78CC..0x006D7962`,
+/// [`crate::map::terrain::screen_to_plane_leptons`]),
+/// two cells back along X. It walks `height / 15 + 17` rows of
+/// `width / 60 + 4` cells (`0x006D7983..0x006D79C5`): row `r` starts `r / 2`
+/// cells along X and `(r + 1) / 2` along Y from there (`0x006D79CF..
+/// 0x006D7A05`), and each step to the right is one cell along X and one back
+/// along Y (`0x006D7BB8..0x006D7BC1`). The extra rows reach raised cells
+/// drawn up into the view. Cells off the map's `Size=` diamond are passed by
+/// (`MapClass::In_Bounds @ 0x00568300`, `0x006D7A28`). The cell words wrap as
+/// gamemd's 16-bit ones do.
+fn sparkle_cells(
+    camera: [f32; 2],
+    view: [f32; 2],
+    map_size: (i32, i32),
+) -> impl Iterator<Item = (u16, u16)> {
+    let origin = crate::map::terrain::screen_to_plane_leptons(camera[0], camera[1]);
+    let start = ((origin.x / 256) as i16).wrapping_sub(2);
+    let start_y = (origin.y / 256) as i16;
+    let rows = view[1] as i32 / 15 + 17;
+    let columns = view[0] as i32 / 60 + 4;
+    (0..rows.max(0)).flat_map(move |row| {
+        let x = start.wrapping_add((row / 2) as i16);
+        let y = start_y.wrapping_add(((row + 1) / 2) as i16);
+        (0..columns.max(0)).filter_map(move |column| {
+            let cell = (x.wrapping_add(column as i16), y.wrapping_sub(column as i16));
+            if !crate::map::playfield::size_diamond_contains(map_size.0, map_size.1, cell) {
+                return None;
+            }
+            Some((u16::try_from(cell.0).ok()?, u16::try_from(cell.1).ok()?))
+        })
+    })
 }
 
 /// All read-only state the sparkle pass needs. Borrowed for the duration of
 /// the build call; nothing escapes the function.
 pub struct SparkleInput<'a> {
-    /// Authoritative sim-time clock in milliseconds. Caller passes
-    /// `Simulation.session.total_sim_ms` (pre-computed each tick by the sim).
-    /// Deterministic across clients on the same tick — replays look identical.
-    pub clock_ms: u64,
-    /// From the live `[Options] DetailLevel != 0` projection. If false, build
-    /// returns an empty Vec. (L22)
+    /// The wall clock in milliseconds (`timeGetTime`, `0x006D7896`).
+    pub wall_ms: u32,
+    /// The pass's two opening gates: the published frame rate is not below
+    /// `Game__GetMinFrameRate @ 0x0055AF60`, and `[Options] DetailLevel` is
+    /// not 0. If false, build returns an empty Vec and leaves the clock.
     pub enable_extra_animations: bool,
-    /// Local player's interned house ID for the sight check (L19). None when
-    /// no map is loaded or no owner can be resolved — gate then fails.
+    /// Local player's interned house ID, whose map the gate reads (L19). None
+    /// when no map is loaded or no owner can be resolved — gate then fails.
     pub local_owner_id: Option<InternedId>,
     /// True when sandbox-mode visibility bypass is active; sight gate (L19/L21)
     /// becomes a no-op when set. Mirrors the existing terrain-pass pattern.
@@ -241,8 +260,8 @@ pub struct SparkleInput<'a> {
     pub camera_y: f32,
     pub viewport_w: f32,
     pub viewport_h: f32,
-    pub map_w: u16,
-    pub map_h: u16,
+    /// The map's `Size=` width and height (`MapClass+0xF4`, `+0xF8`).
+    pub map_size: (i32, i32),
     /// White-texel UV coords; for `SelectionOverlay::white_texture()` which
     /// is a 1×1 texture, this is the full (0,0) → (1,1) rect.
     pub white_uv_origin: [f32; 2],
@@ -256,7 +275,12 @@ pub struct SparkleInput<'a> {
 ///   - "viewport clip" — handled by depth/scissor, not a per-cell check.
 ///
 /// Returns (is_ore, params) when the cell qualifies; None otherwise.
-fn gate_cell(rx: u16, ry: u16, input: &SparkleInput<'_>) -> Option<(bool, &'static SparkleParams)> {
+fn gate_cell(
+    rx: u16,
+    ry: u16,
+    input: &SparkleInput<'_>,
+    cells: &NativeCellQuery<'_>,
+) -> Option<(bool, &'static SparkleParams)> {
     let cell = input.resolved_terrain.cell(rx, ry)?;
     let has_ore = ore_value_nonzero(rx, ry, input);
     // L17: `CMP dword ptr [ESI + 0xEC], 0x2` @ 0x006D7A6C, the cell's
@@ -272,9 +296,15 @@ fn gate_cell(rx: u16, ry: u16, input: &SparkleInput<'_>) -> Option<(bool, &'stat
         return None; // L18
     }
 
+    // L19 / L21: the local player's map, not its sight. gamemd asks for the
+    // ground-open bit (`Cell+0x12C & 0x10`, `0x006D7A4F`) and that the cell is
+    // not shrouded (`CellClass::IsShrouded @ 0x00487950`, `0x006D7A5F`), so
+    // open water out of every unit's sight still sparkles.
     if !input.sandbox_full_visibility {
-        let owner_id = input.local_owner_id?; // L19 / L21
-        if !input.fog.is_cell_visible(owner_id, rx, ry) {
+        let owner_id = input.local_owner_id?;
+        if !input.fog.is_ground_open(owner_id, rx, ry)
+            || crate::sim::vision::cell_is_shrouded(input.fog, cells, owner_id, (rx, ry))
+        {
             return None;
         }
     }
@@ -301,72 +331,69 @@ fn ore_value_nonzero(rx: u16, ry: u16, input: &SparkleInput<'_>) -> bool {
         .is_some_and(|f| f.tiberium)
 }
 
-/// Compute one cell's sparkle for the given clock time. Returns None when
-/// the cell doesn't qualify (gate fails). Caller pushes the returned
-/// SpriteInstance into a Vec.
+/// One cell's turn in the pass (`0x006D7A9A..0x006D7BB4`): create its
+/// PixelFX, or re-arm one whose pulse reached 0x2000 (`0x006D7AD7`), run its
+/// wait down (`0x006D7AF7`), and once the wait is over advance the pulse and
+/// draw its pixel (`0x006D7B65..0x006D7BB4`) if that pixel lies in the
+/// tactical rectangle (`0x006D7B41..0x006D7B5C`). Returns None
+/// when the cell doesn't qualify or shows nothing this pass.
 fn compute_sparkle_for_cell(
     rx: u16,
     ry: u16,
-    clock_ms: u64,
+    delta_ms: u32,
     input: &SparkleInput<'_>,
+    cells: &NativeCellQuery<'_>,
+    fx: &mut PixelFxCells,
 ) -> Option<SpriteInstance> {
-    let (_is_ore, params) = gate_cell(rx, ry, input)?;
-    let bucket_ms = if _is_ore {
-        ORE_CYCLE_BUCKET_MS
-    } else {
-        WATER_CYCLE_BUCKET_MS
+    let (_is_ore, params) = gate_cell(rx, ry, input, cells)?;
+    let PixelFxCells {
+        cells: fx_cells,
+        rand,
+        ..
+    } = fx;
+    let sparkle = match fx_cells.entry((rx, ry)) {
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            let mut sparkle = PixelFx::default();
+            sparkle.init(params, rand);
+            entry.insert(sparkle)
+        }
+        std::collections::hash_map::Entry::Occupied(entry) => {
+            let sparkle = entry.into_mut();
+            if sparkle.phase >= 0x2000 {
+                sparkle.init(params, rand);
+            }
+            sparkle
+        }
     };
+    if !sparkle.tick_timer(delta_ms) {
+        return None;
+    }
 
-    // L26: per-cell offset hashed from coord-only key, breaks global beat sync.
-    let cell_offset_ms = splitmix64(coord_key(rx, ry)) % bucket_ms;
-    let shifted_t = clock_ms + cell_offset_ms;
-    let cycle_index = shifted_t / bucket_ms;
-    let cycle_pos_ms = shifted_t % bucket_ms;
-
-    // L24: re-randomize sub-pos, color noise, lerp speed, timer_init each cycle
-    // by mixing cycle_index into the seed.
-    let s = splitmix64(coord_key(rx, ry) ^ cycle_index);
-
-    let (sub_x, sub_y) = sub_pos_from_seed(s);
-    let timer_init_ms = timer_init_from_seed(s);
-    let lerp_speed = lerp_speed_from_seed(s, params);
-    let peak = peak_with_noise(s, params);
-
-    let active_duration_ms = 0x2000u32 / lerp_speed;
-
-    // L23: cells START dim each cycle (during the timer_init wait, draw base).
-    // L25: most of cycle is dim — peak is brief mid-active.
-    // After active phase ends, sit at base until bucket boundary.
-    let current_rgb = if (cycle_pos_ms as u32) < timer_init_ms {
-        params.base_rgb
-    } else if (cycle_pos_ms as u32) < timer_init_ms + active_duration_ms {
-        let active_progress = cycle_pos_ms as u32 - timer_init_ms;
-        let phase = (active_progress * lerp_speed) & 0x1FFF;
-        ping_pong_lerp(phase, params.base_rgb, peak)
-    } else {
-        params.base_rgb
-    };
-
-    // Cell center in screen pixels. iso_to_screen returns the NW corner of
-    // the cell's bounding diamond; shift by half a tile to land on the centre.
-    // Elevation is taken from the resolved terrain cell.
+    // The cell's tile rectangle centre plus the sparkle's offset. iso_to_screen
+    // returns the NW corner of the cell's bounding diamond; shift by half a
+    // tile to land on the centre. Elevation is taken from the resolved terrain
+    // cell.
     let cell = input.resolved_terrain.cell(rx, ry)?;
     let (sx_nw, sy_nw) = iso_to_screen(rx, ry, cell.level);
-    let screen_x = sx_nw + TILE_WIDTH / 2.0;
-    let screen_y = sy_nw + TILE_HEIGHT / 2.0;
+    let x = sx_nw + TILE_WIDTH / 2.0 + sparkle.offset[0] as f32;
+    let y = sy_nw + TILE_HEIGHT / 2.0 + sparkle.offset[1] as f32;
+    // Only a pixel inside the tactical rectangle advances and draws.
+    if !(input.camera_x..input.camera_x + input.viewport_w).contains(&x)
+        || !(input.camera_y..input.camera_y + input.viewport_h).contains(&y)
+    {
+        return None;
+    }
+    sparkle.update_color(delta_ms);
+    let channel = |value: i32| value.clamp(0, 255) as f32 / 255.0;
 
     // Emit (L12: 1×1 size; L28: alpha=1.0 opaque).
     Some(SpriteInstance {
-        position: [screen_x + sub_x as f32, screen_y + sub_y as f32],
+        position: [x, y],
         size: [1.0, 1.0],
         uv_origin: input.white_uv_origin,
         uv_size: input.white_uv_size,
         depth: SPARKLE_DEPTH,
-        tint: [
-            current_rgb[0] as f32 / 255.0,
-            current_rgb[1] as f32 / 255.0,
-            current_rgb[2] as f32 / 255.0,
-        ],
+        tint: sparkle.current.map(channel),
         alpha: 1.0,
         ..Default::default()
     })
@@ -377,36 +404,145 @@ fn compute_sparkle_for_cell(
 /// Returns an empty Vec if `enable_extra_animations` is off — checked up-front
 /// so the viewport iteration is skipped entirely (zero work). (L22)
 ///
-/// Cell iteration uses the module's own viewport-cell bounds computation; we
-/// don't reuse the terrain pass's iteration to keep the sparkle module
-/// self-contained (see design doc §Architectural Decisions).
-pub fn build_sparkle_instances(input: &SparkleInput<'_>) -> Vec<SpriteInstance> {
+/// The cells come from gamemd's own walk, [`sparkle_cells`].
+pub fn build_sparkle_instances(
+    input: &SparkleInput<'_>,
+    fx: &mut PixelFxCells,
+) -> Vec<SpriteInstance> {
     if !input.enable_extra_animations {
         return Vec::new();
     }
-    let clock_ms = input.clock_ms;
-    let (rx_min, ry_min, rx_max, ry_max) = viewport_cell_bounds(
-        input.camera_x,
-        input.camera_y,
-        input.viewport_w,
-        input.viewport_h,
-        input.map_w,
-        input.map_h,
-    );
-    let mut out: Vec<SpriteInstance> = Vec::with_capacity(256);
-    for ry in ry_min..=ry_max {
-        for rx in rx_min..=rx_max {
-            if let Some(inst) = compute_sparkle_for_cell(rx, ry, clock_ms, input) {
-                out.push(inst);
-            }
-        }
-    }
-    out
+    // `0x006D7896..0x006D78B7`: the time since the last pass, at most 1 s.
+    let delta_ms = input.wall_ms.wrapping_sub(fx.last_ms).min(1000);
+    fx.last_ms = input.wall_ms;
+    // The draw's own query: a miss stamps its dummy, not the simulation's.
+    let cells = NativeCellQuery::isolated(input.resolved_terrain);
+    sparkle_cells(
+        [input.camera_x, input.camera_y],
+        [input.viewport_w, input.viewport_h],
+        input.map_size,
+    )
+    .filter_map(|(rx, ry)| compute_sparkle_for_cell(rx, ry, delta_ms, input, &cells, fx))
+    .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_walk_reaches_every_cell_centred_in_a_view_away_from_the_map_corner() {
+        // A 200 x 200 map seen from world pixel (3000, 3300), 800 x 600 pixels:
+        // the view's cells, all on the map, lie around rx 160..190, ry 45..80.
+        let (camera, view, size) = ([3000.0, 3300.0], [800.0, 600.0], (200, 200));
+        let walked: std::collections::BTreeSet<_> = sparkle_cells(camera, view, size).collect();
+        let mut in_view = 0;
+        for rx in 0..=400_u16 {
+            for ry in 0..=400_u16 {
+                let (x, y) = iso_to_screen(rx, ry, 0);
+                let (x, y) = (x + TILE_WIDTH / 2.0, y + TILE_HEIGHT / 2.0);
+                if (camera[0]..camera[0] + view[0]).contains(&x)
+                    && (camera[1]..camera[1] + view[1]).contains(&y)
+                {
+                    in_view += 1;
+                    assert!(walked.contains(&(rx, ry)), "({rx}, {ry}) is in view");
+                }
+            }
+        }
+        assert!(in_view > 200, "{in_view} cells in view");
+    }
+
+    #[test]
+    fn open_water_out_of_every_units_sight_still_sparkles() {
+        // One water cell, (20, 12), drawn centred on world pixel (240, 510), on
+        // a map its viewer has explored but sees none of.
+        const SIDE: u16 = 32;
+        let cells = (0..SIDE)
+            .flat_map(|ry| {
+                (0..SIDE).map(move |rx| {
+                    let mut cell = crate::map::resolved_terrain::test_smudge_cell(rx, ry);
+                    if (rx, ry) == (20, 12) {
+                        cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+                    }
+                    cell
+                })
+            })
+            .collect();
+        let terrain = ResolvedTerrainGrid::from_cells(SIDE, SIDE, cells);
+        let owner = InternedId::from_index(1);
+        let mut fog = FogState::new(SIDE, SIDE);
+        fog.reveal_all_for_owner(owner);
+        assert!(!fog.is_cell_visible(owner, 20, 12));
+        let mut input = SparkleInput {
+            wall_ms: 0,
+            enable_extra_animations: true,
+            local_owner_id: Some(owner),
+            sandbox_full_visibility: false,
+            resolved_terrain: &terrain,
+            overlays: &OverlayGrid::new(SIDE, SIDE),
+            overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry::empty(),
+            occupancy: &OccupancyGrid::default(),
+            fog: &fog,
+            camera_x: 0.0,
+            camera_y: 300.0,
+            viewport_w: 800.0,
+            viewport_h: 600.0,
+            map_size: (16, 16),
+            white_uv_origin: [0.0; 2],
+            white_uv_size: [1.0; 2],
+        };
+        // Passes 16 ms apart: the cell waits up to 4095 ms, drawing nothing,
+        // then pulses.
+        let mut fx = PixelFxCells::default();
+        let passes: Vec<_> = (1..=400)
+            .map(|pass| {
+                input.wall_ms = pass * 16;
+                build_sparkle_instances(&input, &mut fx)
+            })
+            .collect();
+        assert!(passes[0].is_empty(), "the first pass falls in the wait");
+        let shown: Vec<_> = passes.into_iter().flatten().collect();
+        assert!(!shown.is_empty());
+        for sparkle in shown {
+            let [x, y] = sparkle.position;
+            assert!(
+                (x - 240.0).abs() <= 32.0 && (y - 510.0).abs() <= 16.0,
+                "({x}, {y})"
+            );
+        }
+    }
+
+    /// `PixelFXClass::Tick_Timer @ 0x00631EE0` gates the pixel write: calm
+    /// water shows nothing while its sparkle waits, then one pulse from the
+    /// dim base to the bright peak and back, then nothing again.
+    #[test]
+    fn a_water_sparkle_shows_only_while_it_pulses() {
+        let mut fx = PixelFxCells::default();
+        let mut sparkle = PixelFx::default();
+        sparkle.init(&WATER, &mut fx.rand);
+        let wait = sparkle.timer;
+        let pulse_ms = (0x2000 + sparkle.lerp_speed - 1) / sparkle.lerp_speed;
+        let mut colours = Vec::new();
+        let mut shown_at = Vec::new();
+        for ms in 1..=(wait + pulse_ms + 50) {
+            if sparkle.phase >= 0x2000 {
+                break;
+            }
+            if sparkle.tick_timer(1) {
+                sparkle.update_color(1);
+                colours.push(sparkle.current);
+                shown_at.push(ms);
+            }
+        }
+        assert_eq!(
+            shown_at.first(),
+            Some(&wait.max(1)),
+            "nothing shows during the wait"
+        );
+        assert_eq!(colours.last(), Some(&[40, 40, 80]), "the pulse ends dim");
+        let brightest = colours.iter().map(|rgb| rgb[2]).max().unwrap();
+        assert!(brightest > 190, "{brightest}");
+    }
 
     #[test]
     fn lerp_at_phase_0_is_base() {
@@ -434,36 +570,5 @@ mod tests {
             let falling = ping_pong_lerp(0x1000 + x, base, peak);
             assert_eq!(rising, falling, "asymmetry at x={:#x}", x);
         }
-    }
-
-    #[test]
-    fn cell_offset_breaks_sync_for_neighbours() {
-        // L26: adjacent cells must produce different cell_offset_ms at the
-        // same clock_ms (else they'd peak together → visible map-wide pulse).
-        let bucket = WATER_CYCLE_BUCKET_MS;
-        let off_a = splitmix64(coord_key(50, 50)) % bucket;
-        let off_b = splitmix64(coord_key(51, 50)) % bucket;
-        let off_c = splitmix64(coord_key(50, 51)) % bucket;
-        assert_ne!(off_a, off_b);
-        assert_ne!(off_a, off_c);
-        // Spread check: over many neighbour pairs, average offset diff
-        // should be > bucket/8 (catches degenerate hashes).
-        let mut diff_sum: u64 = 0;
-        let mut count = 0u64;
-        for x in 0u16..20 {
-            for y in 0u16..20 {
-                let a = splitmix64(coord_key(x, y)) % bucket;
-                let b = splitmix64(coord_key(x + 1, y)) % bucket;
-                diff_sum += a.abs_diff(b);
-                count += 1;
-            }
-        }
-        let avg = diff_sum / count;
-        assert!(
-            avg > bucket / 8,
-            "avg neighbour offset diff too small: {} < {}",
-            avg,
-            bucket / 8
-        );
     }
 }

@@ -84,9 +84,9 @@ impl<'a> HouseUiSources<'a> {
 /// The running match's UI name for `owner` (House+0x1602A), as every
 /// House-named message reads it.
 pub(crate) fn house_ui_name(state: &AppState, owner: InternedId) -> Option<String> {
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.presentation()?.simulation;
     let country = sim.houses().get(&owner)?.country();
-    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+    let computer = state.csf_text("TXT_COMPUTER");
     Some(
         HouseUiSources::from_state(state, &computer).ui_name(sim, owner, country, |country| {
             country_display_name(state, sim, country)

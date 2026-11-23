@@ -7,6 +7,7 @@ use super::{FrameEffects, SimSoundEvent, Simulation};
 use crate::map::map_file::MapFile;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -71,7 +72,7 @@ fn scene(recruitable: bool, tagged: bool) -> Option<Scene> {
         .as_bytes(),
     )
     .unwrap();
-    let teams = TeamAiIniRegistry::from_sources(&aimd, &map.ini, true);
+    let teams = TeamAiIniRegistry::from_sources(&aimd, &map.ini, RulePolicy::stock_multiplayer());
     assert!(teams.fixed_source_is_complete());
     // Only terrain, ore, initial Houses and finished refinery placement are
     // arena priors. No slave, node, mission, Tag or callback is installed.
@@ -112,8 +113,8 @@ fn scene(recruitable: bool, tagged: bool) -> Option<Scene> {
             );
         }
     }
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
-    sim.initialize_trigger_definitions(&map, &teams, None, None);
+    sim.install_team_ai_registry(&teams, &rules);
+    sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     sim.classify_map_triggers(&rules);
     let team_type = sim.interner.get("FREE_SLAVES_TEAM").unwrap();
     let master = sim
@@ -135,7 +136,7 @@ fn scene(recruitable: bool, tagged: bool) -> Option<Scene> {
     for id in slaves {
         let slave = sim.entities().get(id).unwrap();
         assert!(slave.lifecycle.in_limbo());
-        assert_eq!(slave.slave.owner(), Some(master));
+        assert_eq!(slave.seldom.slave.owner(), Some(master));
         assert_eq!(sim.interner.resolve(slave.type_ref()), "SLAV");
     }
     Some(Scene {
@@ -186,7 +187,7 @@ impl Scene {
                 self.team_type,
                 &self.rules,
                 Some(&self.overlays),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("authored TeamType and Country resolve")
     }
@@ -215,7 +216,7 @@ impl Scene {
                 for id in self.slaves {
                     assert_eq!(self.sim.object_has_trigger_tag(id), tagged);
                     assert_eq!(
-                        self.sim.entities().get(id).unwrap().slave.owner(),
+                        self.sim.entities().get(id).unwrap().seldom.slave.owner(),
                         Some(self.master)
                     );
                 }
@@ -242,7 +243,9 @@ impl Scene {
         for _ in 0..512 {
             self.frame();
             let master = self.sim.entities().get(self.master);
-            if let Some(charge) = master.and_then(|master| master.pending_c4_detonation.pending()) {
+            if let Some(charge) =
+                master.and_then(|master| master.building.pending_c4_detonation.pending())
+            {
                 assert_eq!(charge.source_entity_id(), Some(tanya));
                 planted = true;
             }
@@ -288,11 +291,14 @@ impl Scene {
                 .is_none_or(|master| master.slave_manager.is_none())
         );
         for id in self.slaves {
-            assert_eq!(self.sim.entities().get(id).unwrap().slave.owner(), None);
+            assert_eq!(
+                self.sim.entities().get(id).unwrap().seldom.slave.owner(),
+                None
+            );
         }
         assert_eq!(self.sim.sound_events.iter().filter(|event| matches!(event,
             SimSoundEvent::VocAt { sound_id, .. }
-                if Some(sound_id.as_str()) == self.rules.general.slaves_free_sound.as_deref()
+                if Some(sound_id.name_in(&self.rules)) == self.rules.general.slaves_free_sound.as_deref()
         )).count(), 1, "the first freed slave owns the liberation sound");
     }
 }
@@ -391,7 +397,7 @@ fn retail_harvest_mission_refuses_the_slave_team_recruitment() {
     assert_eq!(s.sim.team_script_vm.team(team).unwrap().member_count(), 0);
     for id in s.slaves {
         let slave = s.sim.entities().get(id).unwrap();
-        assert_eq!(slave.slave.owner(), Some(s.master));
+        assert_eq!(slave.seldom.slave.owner(), Some(s.master));
         assert!(!s.sim.object_has_trigger_tag(id));
     }
 }

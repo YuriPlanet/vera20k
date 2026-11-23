@@ -43,7 +43,7 @@ fn install(sim: &mut Simulation, rules: &RuleSet, event_record: &str) -> usize {
 /// Cases about the current player's side fallback take that identity off.
 fn without_stored_disguise(sim: &mut Simulation, actor: u64) {
     let entity = sim.substrate.entities.get_mut(actor).unwrap();
-    entity.disguise.as_mut().unwrap().clear_unit();
+    entity.seldom.disguise.as_mut().unwrap().clear_unit();
 }
 
 fn rng(sim: &Simulation) -> [String; 3] {
@@ -104,6 +104,7 @@ fn spy_house_event_reads_forced_display_owner_and_first_country_house() {
             .entities
             .get_mut(actor)
             .unwrap()
+            .seldom
             .disguise
             .as_mut()
             .unwrap();
@@ -157,6 +158,47 @@ fn spy_house_event_reads_forced_display_owner_and_first_country_house() {
     }
 }
 
+/// The native `fallback_player` row: an undisguised agent matches through
+/// PlayerPtr's Country, so only that client's trigger state would change.
+/// Network games skip the fallback; that state now feeds the match checksum.
+#[test]
+fn network_spy_house_event_has_no_current_player_fallback() {
+    let (mut sim, rules, _, houses) = fixture();
+    let actor = sim
+        .spawn_object("SPY", "House0", 15, 15, 0, &rules)
+        .unwrap();
+    let live = install(&mut sim, &rules, "1,53,0,7");
+    let disguise = sim.substrate.entities.get_mut(actor).unwrap();
+    disguise
+        .seldom
+        .disguise
+        .as_mut()
+        .unwrap()
+        .acquire(0, None, None);
+    sim.session.set_current_house_for_test(Some(houses[1]));
+    let occurs = |sim: &mut Simulation| {
+        let input = TagEventInput {
+            kind: 53,
+            actor: Some(actor),
+            ..Default::default()
+        };
+        sim.has_occurred(0, input, None, &mut false, &rules, live)
+    };
+    assert!(occurs(&mut sim));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+    assert!(!occurs(&mut sim));
+    // A live trigger's own state is a match-checksum term.
+    let fold = |runtime: &TriggerRuntime| {
+        let mut checksum = crate::sim::multiplayer_checksum::RetailChecksumAccumulator::new();
+        runtime.fold_match_checksum(0, &mut checksum);
+        checksum.value()
+    };
+    let before = fold(&sim.trigger_runtime);
+    sim.trigger_runtime.triggers[live].as_mut().unwrap().enabled ^= true;
+    assert_ne!(fold(&sim.trigger_runtime), before);
+}
+
 #[test]
 fn agent_arrival_keeps_the_cached_tag_for_linked_house_then_type_events() {
     let (mut sim, rules, registry, houses) = fixture();
@@ -185,7 +227,7 @@ fn agent_arrival_keeps_the_cached_tag_for_linked_house_then_type_events() {
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     let native = native_spy_entry();
@@ -315,10 +357,9 @@ fn retail_spy_house_entry_survives_restore_and_reaches_the_message_consumer() {
                 .advance_app_frame(
                     &std::mem::take(&mut commands),
                     &rules,
-                    Some(&registry),
                     67,
                     crate::sim::world::TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             assert!(output.tick.frame_committed);
@@ -349,6 +390,29 @@ fn retail_spy_house_entry_survives_restore_and_reaches_the_message_consumer() {
     }
     assert_eq!(histories[0], histories[1]);
     assert_eq!(sim.trigger_runtime, loaded.trigger_runtime);
+}
+
+/// The forced type's PlayerPtr-side fallback (event 54, MakeupKit copies)
+/// would answer each client's own side; a network game answers the worn type
+/// alone, whichever House is local.
+#[test]
+fn network_forced_disguise_type_has_no_current_player_fallback() {
+    let (mut sim, rules, _, houses) = fixture();
+    let actor = sim
+        .spawn_object("SPY", "House0", 15, 15, 0, &rules)
+        .unwrap();
+    without_stored_disguise(&mut sim, actor);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+    let answers = [(houses[1], 0), (houses[2], 1)].map(|(local, side)| {
+        sim.houses
+            .get_mut(&local)
+            .unwrap()
+            .set_side_index_for_test(side);
+        sim.session.set_current_house_for_test(Some(local));
+        sim.forced_disguise_type(actor, &rules)
+    });
+    assert_eq!(answers, [None, None]);
 }
 
 #[test]
@@ -386,6 +450,7 @@ fn forced_defaults_and_makeup_kit_copy_use_the_same_retained_type_owner() {
         .entities
         .get_mut(target)
         .unwrap()
+        .seldom
         .disguise
         .as_mut()
         .unwrap()
@@ -396,11 +461,37 @@ fn forced_defaults_and_makeup_kit_copy_use_the_same_retained_type_owner() {
         .entities
         .get(actor)
         .unwrap()
+        .seldom
         .disguise
         .as_ref()
         .unwrap();
     assert_eq!(disguise.type_id(), sim.interner.get("E2"));
     assert_eq!(disguise.house(), Some(houses[1]));
+}
+
+/// A disguise put on is a new look for the presentation's atlas check
+/// (`Simulation::take_looks`); a write that changes no look, and a removal,
+/// are none.
+#[test]
+fn a_disguise_put_on_is_a_new_look_and_a_hit_or_a_death_is_not() {
+    use crate::sim::Touched;
+    let (mut sim, rules, _, _) = fixture();
+    let actor = sim
+        .spawn_object("SPY", "House0", 15, 15, 0, &rules)
+        .unwrap();
+    let target = sim.spawn_object("E2", "House1", 16, 15, 0, &rules).unwrap();
+    let bystander = sim.spawn_object("E1", "House0", 17, 15, 0, &rules).unwrap();
+    sim.take_looks();
+    sim.substrate
+        .entities
+        .get_mut(target)
+        .unwrap()
+        .health
+        .set(50);
+    sim.despawn_entity(bystander);
+    assert_eq!(sim.take_looks().entities, Touched::Ids(Vec::new()));
+    sim.disguise_as(actor, Some(target), true, &rules);
+    assert_eq!(sim.take_looks().entities, Touched::Ids(vec![actor]));
 }
 
 #[test]
@@ -416,7 +507,7 @@ fn non_agent_arrival_does_not_raise_the_spy_cell_event() {
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(!sim.trigger_runtime.globals_set.contains(&7));
@@ -462,7 +553,7 @@ fn spy_type_event_uses_forced_identity_side_fallback_and_native_persistence_gate
         if let Some(name) = stored {
             let typ = sim.interner.get(name).unwrap();
             let entity = sim.substrate.entities.get_mut(actor).unwrap();
-            let disguise = entity.disguise.as_mut().unwrap();
+            let disguise = entity.seldom.disguise.as_mut().unwrap();
             disguise.acquire(0, Some(typ), None);
             disguise.receive_damage_reveal(0, 1, EntityCategory::Infantry);
             assert!(!disguise.is_disguised(), "GetDisguise(1) ignores the flag");
@@ -562,7 +653,7 @@ fn agent_arrival_delivers_cell_spy_event_after_snapshot_and_cleans_up_one_shot()
             crate::sim::movement::PerCellReason::TurnComplete,
             &rules,
             Some(&registry),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert!(!sim.trigger_runtime.globals_set.contains(&7));
@@ -571,7 +662,7 @@ fn agent_arrival_delivers_cell_spy_event_after_snapshot_and_cleans_up_one_shot()
             crate::sim::movement::PerCellReason::Arrival,
             &rules,
             Some(&registry),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -604,29 +695,29 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
     // Supply the AIR registration boundary. This check is about the map's
     // display cursor, not an emulated aircraft/locomotor transition.
     crate::sim::world::Simulation::submit_object_display(
-        &sim.interner,
-        &sim.terrain_objects,
         &mut sim.substrate,
         air,
         crate::sim::world::display_layers::DisplayLayer::AIR,
-        &rules,
     );
     sim.substrate
         .entities
         .get_mut(air)
         .unwrap()
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(true);
     sim.substrate
         .entities
         .get_mut(known)
         .unwrap()
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(true);
     sim.substrate
         .entities
         .get_mut(unknown)
         .unwrap()
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(false);
     for cell in [(14, 15), (23, 15), (23, 23), (8, 11)] {
@@ -639,7 +730,7 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
         .unwrap()
         .set_map_is_clear_for_test(true);
     let rng_before = rng(&sim);
-    sim.grow_shroud(UninitContext::new(&rules, Some(&registry)));
+    sim.grow_shroud(UninitContext::new(&rules));
     assert!(sim.fog.is_ground_unshrouded(houses[0], 14, 15));
     assert!(!sim.fog.is_ground_unshrouded(houses[0], 23, 15));
     assert!(!sim.fog.is_ground_unshrouded(houses[0], 23, 23));
@@ -654,7 +745,12 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
     );
     sim.fog.set_ground_bits_for_test(houses[0], 8, 11, 8);
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(houses[1], &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(
+        houses[1],
+        &rules,
+        Some(&registry),
+        &mut FrameEffects::default(),
+    );
     assert!(!sim.fog.is_ground_unshrouded(houses[0], 8, 11));
     assert!(sim.trigger_runtime.globals_set.contains(&7));
 }

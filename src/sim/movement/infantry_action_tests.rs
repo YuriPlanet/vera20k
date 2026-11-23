@@ -23,13 +23,10 @@ fn cheer_matches_original_admission_and_shared_do_action_clock() {
              Ready=100,6,6\nIdle1=100,6,6\nIdle2=100,6,6\n\
              Die1=100,6,6\nCheer=100,{count},6\n"
         ));
-        let (mut sim, mut rules, _) =
+        let (mut sim, rules, _) =
             crate::sim::world::entry_test_fixture::fixture_with_rules_and_fixed_art("", &art);
-        // The original control supplies Type+E3C's signed action bank. ART
-        // metadata alone does not bind that bank, as the app loader does.
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
+        // The original control supplies Type+E3C's signed action bank through
+        // the same fixed-ART read as the loader.
         assert_eq!(
             i64::from(
                 rules
@@ -60,7 +57,7 @@ fn cheer_matches_original_admission_and_shared_do_action_clock() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -97,7 +94,7 @@ fn cheer_matches_original_admission_and_shared_do_action_clock() {
             id,
             input["bypass_admission"].as_bool().unwrap_or(false),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         let actor = sim.substrate.entities.get(id).unwrap();
         let after = &row["after"];
@@ -150,7 +147,7 @@ fn do_action_refuses_unchanged_and_uninterruptible_actions() {
 /// The retail `[RocketeerSequence]` (artmd.ini) with the Hover record's
 /// value as given; `WALKJET` flies the Jumpjet locomotor without `JumpJet=`.
 fn rocketeer_rules(hover: &str) -> RuleSet {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+    let ini = IniFile::from_str(
         "[InfantryTypes]\n0=JUMPJET\n1=WALKJET\n\
          [JUMPJET]\nStrength=125\nJumpJet=yes\nBalloonHover=yes\nCrashable=yes\n\
          Locomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\nSpeedType=Hover\n\
@@ -159,8 +156,7 @@ fn rocketeer_rules(hover: &str) -> RuleSet {
          [WALKJET]\nStrength=125\nImage=JUMPJET\nBalloonHover=yes\n\
          Locomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\nSpeedType=Hover\n\
          MovementZone=Fly\nJumpjetSpeed=30\nJumpjetHeight=500\n",
-    ))
-    .unwrap();
+    );
     let art = IniFile::from_str(&format!(
         "[JUMPJET]\nSequence=RocketeerSequence\n\
          [RocketeerSequence]\nReady=0,1,1\nGuard=0,1,1\nProne=86,1,6\nWalk=8,6,6\n\
@@ -170,11 +166,8 @@ fn rocketeer_rules(hover: &str) -> RuleSet {
          Tumble=340,15,0\nAirDeathStart=340,8,0\nAirDeathFalling=348,1,0\n\
          AirDeathFinish=349,6,0\nParadrop=418,1,0\nCheer=419,8,0,E\nPanic=8,6,6\n"
     ));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.replace_art_registry_for_test(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    let registry = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art);
-    rules.replace_animation_sequences_for_test(
-        crate::rules::animation_sequence::build_animation_sequence_catalog(&rules, Some(&registry)),
-    );
     rules
 }
 
@@ -208,7 +201,7 @@ fn rocketeer(input: &Value) -> (Simulation, RuleSet, u64) {
             64,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("rocketeer");
     let height = input["height"].as_i64().unwrap_or(500) as i32;
@@ -325,7 +318,7 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
                         request,
                         force,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 assert_eq!(accepted, output["accepted"].as_bool().unwrap(), "{name}");
@@ -334,14 +327,17 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
                 id,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             "sequencer" => {
                 // The object turn (`infantry_action_turn`) follows the
                 // sequencer with the locomotion actions, which this row does
                 // not run.
-                let removed =
-                    sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default());
+                let removed = sim.infantry_sequencer(
+                    id,
+                    &rules,
+                    &mut crate::sim::world::FrameEffects::default(),
+                );
                 let native_removed = output["recorded"]
                     .as_array()
                     .unwrap()
@@ -369,7 +365,7 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
                     DO_FIRE_FLY,
                     false,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             }
@@ -445,21 +441,17 @@ fn the_default_arm_follows_the_native_sequencer_tables() {
 /// destination and IsMoving byte (+0x34) keep the constructor's null and
 /// false, as in a row without motion.
 fn walk_consumer(input: &Value) -> (Simulation, RuleSet, u64) {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+    let ini = IniFile::from_str(
         "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\nSpeed=4\n\
          Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}\nMovementZone=Infantry\n",
-    ))
-    .unwrap();
+    );
     let mut text = String::from("[E1]\nSequence=SuppliedSequence\n[SuppliedSequence]\n");
     for name in crate::rules::infantry_sequence::NATIVE_SEQUENCE_NAMES {
         text.push_str(&format!("{name}=0,6,0\n"));
     }
     let art = IniFile::from_str(&text);
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.replace_art_registry_for_test(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    let registry = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art);
-    rules.replace_animation_sequences_for_test(
-        crate::rules::animation_sequence::build_animation_sequence_catalog(&rules, Some(&registry)),
-    );
     let mut sim = Simulation::with_seed(0);
     sim.session.set_binary_frame_for_test(100);
     let house = sim.interner.intern("Americans");
@@ -476,7 +468,7 @@ fn walk_consumer(input: &Value) -> (Simulation, RuleSet, u64) {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("infantryman");
     let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -525,7 +517,12 @@ fn walk_locomotion_actions_match_original_consumer_rows() {
     for row in corpus.iter().filter(|row| row["input"]["consumer"] == true) {
         let name = row["input"].to_string();
         let (mut sim, rules, id) = walk_consumer(&row["input"]);
-        sim.infantry_movement_actions(id, &rules, None, crate::sim::world::FrameEffects::default());
+        sim.infantry_movement_actions(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(
             entity.mission_leaf.as_infantry().unwrap().doing(),
@@ -576,11 +573,8 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
     else {
         return;
     };
-    let mut rules = RuleSet::from_ini(&retail_rules).unwrap();
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&retail_rules, &retail_art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&retail_art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&retail_art),
-    );
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/infantry_default_motion.json",
     ))
@@ -638,7 +632,7 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -664,7 +658,7 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
                     &rules,
                     false,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap()
             );
@@ -695,7 +689,7 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
         );
         let rng_before = sim.rng_state();
         assert!(
-            !sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default()),
+            !sim.infantry_sequencer(id, &rules, &mut crate::sim::world::FrameEffects::default()),
             "{name}: retained owner"
         );
         assert_eq!(
@@ -729,9 +723,6 @@ fn retail_full_slaves_remap_walk_before_fear_and_keep_the_action_clock_on_refusa
     };
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     assert_eq!(rules.object("SLAV").unwrap().storage, 4);
     let bank = rules.animation_sequence("SLAV").unwrap();
     assert_eq!(bank.infantry_action(3).unwrap().start_frame, 8);
@@ -758,11 +749,11 @@ fn retail_full_slaves_remap_walk_before_fear_and_keep_the_action_clock_on_refusa
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
-        actor.slave = SlaveLink::for_test(
+        actor.seldom.slave = SlaveLink::for_test(
             owner.then_some(123),
             vec![
                 CargoBale {
@@ -785,7 +776,7 @@ fn retail_full_slaves_remap_walk_before_fear_and_keep_the_action_clock_on_refusa
         let old_stage = actor.native_stage().clone();
         let rng = sim.rng_state();
         assert_eq!(
-            sim.infantry_do_action(id, request, false, &rules, FrameEffects::default())
+            sim.infantry_do_action(id, request, false, &rules, &mut FrameEffects::default())
                 .unwrap(),
             accepted,
             "{kind}, owner={owner}, cargo={amount}, fear={fear}, current={current}, request={request}"
@@ -816,9 +807,6 @@ fn retail_slave_shovel_completion_follows_the_effective_mission() {
     };
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let shovel = rules
         .animation_sequence("SLAV")
         .unwrap()
@@ -843,7 +831,7 @@ fn retail_slave_shovel_completion_follows_the_effective_mission() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -865,7 +853,7 @@ fn retail_slave_shovel_completion_follows_the_effective_mission() {
             92,
             1,
         ));
-        assert!(!sim.infantry_sequencer(id, &rules, FrameEffects::default()));
+        assert!(!sim.infantry_sequencer(id, &rules, &mut FrameEffects::default()));
         assert_eq!(
             doing(&sim, id),
             expected,

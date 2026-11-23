@@ -18,6 +18,7 @@ from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_EBP,
     UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_EDI, UC_X86_REG_EIP,
     UC_X86_REG_ESI, UC_X86_REG_ESP)
 from tools.native_oracle import SCRATCH, RET_MAGIC, finish_vectors, provenance, run_checked
+from tools.native_oracle import require
 from tools.spatial_oracle.aircraft_fire_location import Fixture, SCENARIO, cell
 from tools.spatial_oracle.map_queries import dwords, packed
 from tools.spatial_oracle.team_creation import u32, i32
@@ -2807,7 +2808,7 @@ def build_type_record_controls():
         u.mem_write(actor+0x21C,dwords(house));actors[category]=actor
         targets={label:m.read32(vtable+offset) for label,offset in (('what_am_i',0x2C),('get_type',0x84))}
         targets['type_array_index']=m.read32(m.read32(types[category])+0x40)
-        assert m.invoke(targets['get_type'],actor)==types[category]
+        require(m.invoke(targets['get_type'],actor)==types[category], f'{category}: get_type returned another type')
         virtuals[category]=dict(vtable=f'0x{vtable:08X}',supplied_type_offset=hex(type_offset),
             original_what_am_i=m.invoke(targets['what_am_i'],actor),
             entries={label:hex(pc) for label,pc in targets.items()},

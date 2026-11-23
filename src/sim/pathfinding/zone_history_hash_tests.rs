@@ -97,6 +97,7 @@ fn fingerprint_tracks_original_edge_order_and_native_threat_seed() {
         record.parent,
         record.zone_type,
         seed,
+        crate::map::cell_index::CellGrid::Retail,
     ));
     variant.replace_hierarchy(hierarchy);
     assert_ne!(initial, hash(&variant));

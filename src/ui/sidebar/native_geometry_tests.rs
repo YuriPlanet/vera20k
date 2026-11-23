@@ -12,6 +12,8 @@ struct LayoutCase {
     tactical: [i32; 4],
     body: [i32; 4],
     globals: [i32; 15],
+    /// GetVisibleSlotCount 6AC430, the select buttons Activate 6A8330 adds.
+    visible_slots: usize,
 }
 #[derive(Deserialize)]
 struct LayoutPacket {
@@ -43,7 +45,6 @@ fn view(screen: [i32; 2], side: usize, count: usize, scroll: usize) -> SidebarVi
     let options: Vec<_> = (0..count)
         .map(|i| BuildOption {
             type_id: interner.intern(&format!("T{i}")),
-            display_name: format!("T{i}"),
             cost: 1,
             object_category: ObjectCategory::Building,
             queue_category: ProductionCategory::Building,
@@ -69,7 +70,6 @@ fn view(screen: [i32; 2], side: usize, count: usize, scroll: usize) -> SidebarVi
         &options,
         &[],
         None,
-        &[],
         Some(&interner),
         &[],
         &gadget,
@@ -128,6 +128,13 @@ fn native_21_screen_and_theme_layouts_drive_actual_view() {
             c.screen,
             c.side
         );
+        assert_eq!(
+            2 * l.side2_tile_count,
+            c.visible_slots,
+            "{:?}/{}",
+            c.screen,
+            c.side
+        );
         assert_eq!(v.items[0].rect.y, g[7] as f32 + 1.0);
         assert_eq!([v.items[0].rect.w, v.items[0].rect.h], [60., 48.]);
         assert!(
@@ -143,10 +150,6 @@ fn native_21_screen_and_theme_layouts_drive_actual_view() {
         let empty = view(c.screen, c.side, 0, usize::MAX);
         assert_eq!(empty.layout.side2_tile_count, l.side2_tile_count);
         assert_eq!(empty.scroll_rows, 0);
-        assert!(!empty.cycle_owner_button.rect.contains(
-            empty.cycle_owner_button.rect.x,
-            empty.cycle_owner_button.rect.y
-        ));
     }
 }
 #[test]
@@ -241,4 +244,22 @@ fn retail_allied_control_capture_anchors_connect_to_hit_rects() {
             h: 108.
         }
     );
+}
+
+/// `RadarClass::Init_For_House @ 0x00652E90` writes MapAreaX 16 in both its
+/// GDI and NOD arms (`0x00652ECF`, `0x00652F13`); only the two top buttons
+/// move between them, so the aperture is the same for both tables.
+#[test]
+fn radar_aperture_is_the_same_in_the_gdi_and_nod_tables() {
+    let aperture = Rect {
+        x: 648.,
+        y: 49.,
+        w: 140.,
+        h: 108.,
+    };
+    for gdi_positions in [true, false] {
+        let spec =
+            SidebarChromeLayoutSpec::for_theme_and_positions(SidebarTheme::Soviet, gdi_positions);
+        assert_eq!(radar_minimap_rect_with_spec(800., spec), aperture);
+    }
 }

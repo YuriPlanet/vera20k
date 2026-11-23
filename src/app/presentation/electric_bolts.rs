@@ -1,7 +1,8 @@
 //! EBolt4C2830 reverse tactical traversal and4C29E0 scene cleanup. These
 //! copied effects have no Abstract ID or save record. Only a Unit's FireAt
 //! bolt links to its source ([`ElectricBolts::follow_owners`]). Unlike lasers
-//! they age on each tactical composite, even without Logic.
+//! they age on each tactical composite, even without Logic; a draw between
+//! composites shows the last one's lines ([`ElectricBolts::shown`]).
 
 use crate::render::electric_bolt::{ElectricBoltDraw, ElectricBoltPalette};
 use crate::render::surface_line::{SurfaceLine, SurfaceLineViewport};
@@ -30,6 +31,8 @@ pub(crate) struct ElectricBoltObservation {
 pub(crate) struct ElectricBolts {
     live: Vec<Bolt>,
     lines: Vec<SurfaceLine>,
+    /// The camera `lines` are projected through.
+    camera: [i32; 2],
 }
 
 impl ElectricBolts {
@@ -90,6 +93,7 @@ impl ElectricBolts {
         mut visible: impl FnMut(&ElectricBoltBirth) -> bool,
     ) -> &[SurfaceLine] {
         self.lines.clear();
+        self.camera = viewport.camera;
         for bolt in self.live.iter_mut().rev() {
             if bolt.decay != 0 {
                 let draw = ElectricBoltDraw {
@@ -98,6 +102,7 @@ impl ElectricBolts {
                     z_adjust: bolt.birth.z_adjust,
                     phase: bolt.phase,
                     alternate_color: bolt.birth.alternate_color,
+                    colors: bolt.birth.colors,
                 };
                 // EBoltMgr::UpdateAndDrawAll @ 0x004C2830 calls Draw4C1F20
                 // before incrementing phase at4C293D, then shifts decay at
@@ -122,6 +127,17 @@ impl ElectricBolts {
         &self.lines
     }
 
+    /// The last composite's lines under the current camera.
+    pub(crate) fn shown(&mut self, camera: [i32; 2]) -> &[SurfaceLine] {
+        if camera != self.camera {
+            for line in &mut self.lines {
+                line.follow_camera(self.camera, camera);
+            }
+            self.camera = camera;
+        }
+        &self.lines
+    }
+
     pub(crate) fn observations(&self) -> impl Iterator<Item = ElectricBoltObservation> + '_ {
         self.live.iter().map(|bolt| ElectricBoltObservation {
             birth_frame: bolt.birth.frame,
@@ -142,6 +158,6 @@ impl ElectricBolts {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 #[path = "electric_bolt_lifetime_tests.rs"]
 mod tests;

@@ -62,6 +62,118 @@ fn load_pass<'a>(
 }
 
 #[test]
+#[ignore = "requires GPU; wheel zoom native-world camera, clipped resolve and frame-size UI"]
+fn production_world_zoom_resolves_before_screen_fixed_ui() {
+    let gpu = Gpu::new();
+    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    let size = [12, 8];
+    let mut zoom =
+        super::upscale_pass::WorldZoomPass::new(&gpu.device, &gpu.queue, format, [10, 8], 1.25);
+    zoom.set_view(&gpu.device, &gpu.queue, size, 0.8, false);
+    let source_size = zoom.source_size();
+    assert_eq!(source_size, [15, 10]);
+    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    batch.write_camera(
+        &gpu.queue,
+        super::batch::CameraUniform {
+            zoom: 0.8,
+            ..camera(size)
+        },
+    );
+    batch.set_native_world_resolution(&gpu.queue, source_size);
+    assert_eq!(batch.camera_uniform().screen_size, [15.0, 10.0]);
+    assert_eq!(batch.camera_uniform().zoom, 1.0);
+    assert_eq!(batch.ui_camera_uniform().screen_size, [12.0, 8.0]);
+    let mut composition =
+        super::combat_light::CombatLightRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    composition.prepare_with_device(
+        &gpu.device,
+        &gpu.queue,
+        &[],
+        source_size.map(|v| v as f32),
+        [0.0; 2],
+        1.0,
+    );
+    let red =
+        batch.create_texture_on_device(&gpu.device, &gpu.queue, &[255, 0, 0, 255], 1, 1, None);
+    let green =
+        batch.create_texture_on_device(&gpu.device, &gpu.queue, &[0, 255, 0, 255], 1, 1, None);
+    let native = buffer(
+        &gpu,
+        &[SpriteInstance {
+            size: source_size.map(|v| v as f32),
+            uv_size: [1.0; 2],
+            tint: [1.0; 3],
+            alpha: 1.0,
+            ..Default::default()
+        }],
+    );
+    let ui = buffer(
+        &gpu,
+        &[SpriteInstance {
+            position: [9.0, 0.0],
+            size: [3.0, 8.0],
+            uv_size: [1.0; 2],
+            tint: [1.0; 3],
+            alpha: 1.0,
+            ..Default::default()
+        }],
+    );
+    let tactical = [0, 1, 9, 7];
+    let clip = zoom.world_clip(tactical);
+    assert_eq!(clip, [0, 1, 12, 9]);
+    let cv = composition.composition_view();
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    clear(
+        &mut encoder,
+        &cv,
+        zoom.depth_view(),
+        65535,
+        wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+    );
+    {
+        let mut pass = load_pass(&mut encoder, &cv, zoom.depth_view());
+        pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
+        batch.draw_passthrough_range(&mut pass, &red, &native, 0, 1);
+    }
+    zoom.composite(
+        &gpu.device,
+        &mut encoder,
+        composition.composition_texture(),
+        tactical,
+        wgpu::Color::BLACK,
+    );
+    {
+        let mut pass = load_pass(&mut encoder, zoom.color_view(), zoom.frame_depth_view());
+        batch.draw_with_buffer_ui_passthrough(&mut pass, &green, &ui, 1);
+    }
+    let reads = [gpu.read(&mut encoder, zoom.color_texture())];
+    let output = gpu.finish(encoder, &reads, size);
+    for y in 0..size[1] {
+        for x in 0..size[0] {
+            let expected = if x >= 9 {
+                [0, 255, 0, 255]
+            } else if y >= 1 {
+                [0, 0, 255, 255]
+            } else {
+                [0, 0, 0, 255]
+            };
+            let offset = ((y * size[0] + x) * 4) as usize;
+            assert_eq!(
+                &output[0][offset..offset + 4],
+                &expected,
+                "frame pixel {x},{y}"
+            );
+        }
+    }
+    batch.write_camera(&gpu.queue, camera(size));
+    assert_eq!(
+        batch.camera_uniform().screen_size,
+        batch.ui_camera_uniform().screen_size
+    );
+}
+
+#[test]
 #[ignore = "requires GPU; native A body/shadow colors, raw stores, source holes and depth rejects"]
 fn production_a_blitters_preserve_raw_surface_pixels_through_holes_and_depth_rejects() {
     let native = fixture();
@@ -303,9 +415,12 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
         wgpu::util::TextureDataOrder::LayerMajor,
         &[0],
     );
+    // Tile pages are encoded, like the production tile atlas's.
+    let tile_page =
+        batch.create_encoded_texture_on_device(&gpu.device, &gpu.queue, &[200, 100, 50, 255], 1, 1);
     let tmp = batch.create_zdepth_bind_group_on_device(
         &gpu.device,
-        &texture.view,
+        &tile_page.view,
         &zero.create_view(&Default::default()),
     );
     let voxel = batch.create_unit_atlas_texture_on_device(&gpu.device, &gpu.queue, 1, 1, &[1]);
@@ -343,7 +458,14 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
             let mut source =
                 ShroudBuffer::fixture(&gpu.device, &gpu.queue, virtual_size, scroll, &a);
             assert_eq!(
-                source.sample_world(scroll[0], scroll[1], scroll[0], scroll[1]),
+                source.read_world(
+                    &gpu.device,
+                    &gpu.queue,
+                    scroll[0],
+                    scroll[1],
+                    scroll[0],
+                    scroll[1]
+                ),
                 Some(a[0]),
                 "the production source defaults to native A"
             );
@@ -353,10 +475,33 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
             source.set_translucent_fog(&gpu.queue, translucent);
             if translucent {
                 assert_ne!(
-                    source.sample_world(scroll[0], scroll[1], scroll[0], scroll[1]),
+                    source.read_world(
+                        &gpu.device,
+                        &gpu.queue,
+                        scroll[0],
+                        scroll[1],
+                        scroll[0],
+                        scroll[1]
+                    ),
                     Some(a[0])
                 );
             }
+            // The plane's lattice starts at the floored scroll; off it reads
+            // the neutral 127. The lift is the one readbacks apply.
+            let cpu_a = |world: [f32; 2]| {
+                let [x, y] = [0, 1].map(|axis| (world[axis] - scroll[axis].floor()).floor() as i64);
+                if x < 0
+                    || y < 0
+                    || x >= i64::from(virtual_size[0])
+                    || y >= i64::from(virtual_size[1])
+                {
+                    return 127;
+                }
+                crate::render::shroud_buffer::fog_lifted_a(
+                    a[(y * i64::from(virtual_size[0]) + x) as usize],
+                    if translucent { 500 } else { 1000 },
+                )
+            };
             // Every iteration replaces the source view, even at identical size.
             batch.bind_shroud(&gpu.device, Some(&source));
             let instance = SpriteInstance {
@@ -408,14 +553,10 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
                             let a = if disabled {
                                 127
                             } else {
-                                source
-                                    .sample_world(
-                                        (x as f32 + 0.5) / zoom + cam.camera_pos[0],
-                                        (y as f32 + 0.5) / zoom + cam.camera_pos[1],
-                                        scroll[0],
-                                        scroll[1],
-                                    )
-                                    .unwrap_or(127)
+                                cpu_a([
+                                    (x as f32 + 0.5) / zoom + cam.camera_pos[0],
+                                    (y as f32 + 0.5) / zoom + cam.camera_pos[1],
+                                ])
                             };
                             let offset = ((y * size[0] + x) * 4) as usize;
                             // The elective style has no native color golden.
@@ -440,153 +581,6 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
                     }
                 }
             }
-        }
-    }
-}
-
-#[test]
-#[ignore = "requires GPU timestamps; run optimized for live A source cost at production batch sizes"]
-fn production_a_blitter_workload_timing() {
-    let gpu = Gpu::with_features(wgpu::Features::TIMESTAMP_QUERY);
-    let size = [1280, 720];
-    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    batch.write_camera(&gpu.queue, camera(size));
-    let texture = batch.create_texture_on_device(
-        &gpu.device,
-        &gpu.queue,
-        &[200, 100, 50, 255],
-        1,
-        1,
-        Some(&[1]),
-    );
-    let pixels = (0..size[0] * size[1])
-        .map(|i| [0, 63, 127][(i as usize / 16) % 3])
-        .collect::<Vec<_>>();
-    let mut source = ShroudBuffer::fixture(&gpu.device, &gpu.queue, size, [0.0; 2], &pixels);
-    source.set_translucent_fog(&gpu.queue, true);
-    let color = gpu.target(size, format);
-    let cv = color.create_view(&Default::default());
-    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-    let dv = depth.create_view(&Default::default());
-    let queries = gpu.device.create_query_set(&wgpu::QuerySetDescriptor {
-        label: Some("Shared A world blitter pass timestamps"),
-        ty: wgpu::QueryType::Timestamp,
-        count: 2,
-    });
-    let resolved = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: 16,
-        usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
-        mapped_at_creation: false,
-    });
-    let read = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: 16,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    for count in [1_000u32, 20_000] {
-        let instances = (0..count)
-            .map(|i| SpriteInstance {
-                position: [(i % 80 * 16) as f32, ((i / 80) % 45 * 16) as f32],
-                size: [16.0; 2],
-                uv_size: [1.0; 2],
-                tint: [1.0; 3],
-                alpha: 1.0,
-                palette_light: PaletteLight::color_scheme([1000; 3], 1000),
-                ..Default::default()
-            })
-            .collect::<Vec<_>>();
-        let instances = buffer(&gpu, &instances);
-        for live in [false, true] {
-            batch.bind_shroud(&gpu.device, if live { Some(&source) } else { None });
-            let mut cpu_ms = Vec::new();
-            let mut gpu_ms = Vec::new();
-            let mut completed_ms = Vec::new();
-            for frame in 0..22 {
-                let start = std::time::Instant::now();
-                let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                {
-                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Actual shared-A world source batch"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: &cv,
-                            resolve_target: None,
-                            depth_slice: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &dv,
-                            depth_ops: Some(wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(1.0),
-                                store: wgpu::StoreOp::Store,
-                            }),
-                            stencil_ops: None,
-                        }),
-                        timestamp_writes: Some(wgpu::RenderPassTimestampWrites {
-                            query_set: &queries,
-                            beginning_of_pass_write_index: Some(0),
-                            end_of_pass_write_index: Some(1),
-                        }),
-                        occlusion_query_set: None,
-
-
-multiview_mask: None,
-                    });
-                    batch.draw_passthrough_range(&mut pass, &texture, &instances, 0, count);
-                }
-                encoder.resolve_query_set(&queries, 0..2, &resolved, 0);
-                encoder.copy_buffer_to_buffer(&resolved, 0, &read, 0, 16);
-                let command = encoder.finish();
-                let encode_ms = start.elapsed().as_secs_f64() * 1000.0;
-                let submitted = std::time::Instant::now();
-                let submission = gpu.queue.submit([command]);
-                let (tx, rx) = std::sync::mpsc::channel();
-                read.slice(..)
-                    .map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
-                gpu.device
-                    .poll(wgpu::PollType::Wait {
-                        submission_index: Some(submission),
-                        timeout: Some(std::time::Duration::from_secs(60)),
-                    })
-                    .unwrap();
-                rx.recv().unwrap().unwrap();
-                let bytes = read.slice(..).get_mapped_range();
-                let ticks = bytemuck::cast_slice::<u8, u64>(&bytes);
-                // Some Metal drivers expose timestamp queries but return an
-                // unsupported sentinel. Never report such values as zero cost;
-                // retain submit-to-completion wall timing independently.
-                let valid = ticks[0] != 0 && ticks[1] != u64::MAX && ticks[1] > ticks[0];
-                if frame >= 2 {
-                    cpu_ms.push(encode_ms);
-                    completed_ms.push(submitted.elapsed().as_secs_f64() * 1000.0);
-                    if valid {
-                        gpu_ms.push(
-                            (ticks[1] - ticks[0]) as f64
-                                * f64::from(gpu.queue.get_timestamp_period())
-                                / 1_000_000.0,
-                        );
-                    }
-                }
-                drop(bytes);
-                read.unmap();
-            }
-            let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
-            let gpu_time = if gpu_ms.len() == 20 {
-                format!("{:.4}", mean(&gpu_ms))
-            } else {
-                "unavailable".into()
-            };
-            eprintln!(
-                "A_BLITTER_TIMING count={count} live_a={live} frames=20 encode_mean_ms={:.4} completed_mean_ms={:.4} gpu_mean_ms={gpu_time} valid_gpu_samples={}",
-                mean(&cpu_ms),
-                mean(&completed_ms),
-                gpu_ms.len()
-            );
         }
     }
 }

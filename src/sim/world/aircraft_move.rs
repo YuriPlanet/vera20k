@@ -4,14 +4,13 @@
 //! live objects and NavCom reservations; the search and the Rate epilogue
 //! draw Scenario RNG. Executable witnesses: tools/spatial_oracle/aircraft_move.*.
 use super::{FrameEffects, Simulation};
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::aircraft::{enter_idle_mode_for, move_mission};
 use crate::sim::components::NavTargetRef;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::{ground_pose, motion_query, nav_target_coordinate};
 
-#[cfg(test)]
+#[cfg(test)] // shared by test groups
 #[path = "aircraft_move_tests.rs"]
 pub(crate) mod tests;
 
@@ -28,8 +27,7 @@ impl Simulation {
         id: u64,
         state: u8,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (u8, i32) {
         move_mission::move_visit(
             state,
@@ -37,8 +35,28 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                registry,
-                effects,
+                effects: effects.reborrow(),
+            },
+        )
+    }
+
+    /// One `Mission_Move_Carryall @ 0x00416D50` visit of the Carryall `id`
+    /// from `state` (`aircraft::carryall`): Mission+0xBC and the frames it
+    /// returns.
+    pub(crate) fn aircraft_move_carryall(
+        &mut self,
+        id: u64,
+        state: u8,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> (u8, i32) {
+        crate::sim::aircraft::carryall::move_visit(
+            state,
+            &mut WorldMove {
+                sim: self,
+                id,
+                rules,
+                effects: effects.reborrow(),
             },
         )
     }
@@ -168,7 +186,6 @@ struct WorldMove<'a> {
     sim: &'a mut Simulation,
     id: u64,
     rules: &'a RuleSet,
-    registry: Option<&'a OverlayTypeRegistry>,
     effects: FrameEffects<'a>,
 }
 
@@ -192,7 +209,7 @@ impl move_mission::MoveHost for WorldMove<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        enter_idle_mode_for(self.sim, self.id, self.rules, self.registry, self.effects);
+        enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.effects);
     }
 
     fn assign_attack_cell(&mut self) {
@@ -200,7 +217,7 @@ impl move_mission::MoveHost for WorldMove<'_> {
             .sim
             .aircraft_find_attack_cell(self.id, self.nav(), self.rules);
         self.sim
-            .assign_aircraft_destination(self.id, cell, self.rules, self.effects);
+            .assign_aircraft_destination(self.id, cell, self.rules, &mut self.effects);
     }
 
     fn move_to_nav_com(&mut self) {
@@ -236,5 +253,202 @@ impl move_mission::MoveHost for WorldMove<'_> {
             self.id,
             MissionType::Move,
         )
+    }
+}
+
+impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
+    fn nav_com(&mut self) -> Option<NavTargetRef> {
+        self.nav()
+    }
+
+    fn nav_is_unit(&mut self, id: u64) -> bool {
+        self.sim
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.category() == crate::map::entities::EntityCategory::Unit)
+    }
+
+    fn enter_idle_mode(&mut self) {
+        enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.effects);
+    }
+
+    fn tote_target(&mut self) -> Option<u64> {
+        self.sim.carryall_tote_target(self.id, self.rules)
+    }
+
+    fn contact(&mut self) -> Option<u64> {
+        self.sim
+            .substrate
+            .entities
+            .get(self.id)
+            .and_then(|entity| entity.seldom.radio_contacts.slot(0))
+    }
+
+    fn transmit_to_contact(
+        &mut self,
+        message: crate::sim::radio::RadioMessage,
+    ) -> crate::sim::radio::RadioResponse {
+        crate::sim::radio::transmit_to_contact(
+            self.sim,
+            self.id,
+            message,
+            self.rules,
+            &mut self.effects,
+        )
+    }
+
+    fn transmit(
+        &mut self,
+        message: crate::sim::radio::RadioMessage,
+        to: u64,
+    ) -> crate::sim::radio::RadioResponse {
+        crate::sim::radio::transmit(
+            self.sim,
+            self.id,
+            to,
+            message,
+            crate::sim::radio::RadioPayload::default(),
+            self.rules,
+            &mut self.effects,
+        )
+    }
+
+    fn clear_destination(&mut self) {
+        self.sim
+            .assign_aircraft_destination(self.id, None, self.rules, &mut self.effects);
+    }
+
+    fn assign_attack_cell(&mut self) {
+        move_mission::MoveHost::assign_attack_cell(self);
+        // `0x00416EE4..0x00416EF5` rereads the team and the NavCom after the
+        // destination setter.
+        if let Some((team, _)) = self.sim.team_script_vm.team_for_member(self.id) {
+            let target = self
+                .nav()
+                .map(|nav| crate::sim::combat::TargetKind::from(nav).into());
+            self.sim
+                .team_assign_mission_target(team, target, self.rules, &mut self.effects);
+        }
+    }
+
+    fn move_to_nav_center(&mut self) {
+        let nav = self.nav().expect("state 1 moves with a NavCom");
+        let coord = self
+            .sim
+            .fire_location_center(nav)
+            .expect("live aircraft NavCom coordinate");
+        self.sim
+            .aircraft_locomotor_move_to(self.id, coord, self.rules);
+    }
+
+    fn land_zone_clear(&mut self) -> bool {
+        let nav = self.nav().expect("asked with a Cell NavCom");
+        self.sim.foot_land_zone_clear(self.id, nav, self.rules)
+    }
+
+    fn descending(&mut self) -> bool {
+        crate::sim::movement::air_movement::fly_status(
+            self.sim.substrate.entities.get(self.id).unwrap(),
+        ) == Some(1)
+    }
+
+    fn nav_in_own_cell(&mut self) -> bool {
+        let Some(NavTargetRef::Object { id }) = self.nav() else {
+            return false;
+        };
+        let entities = &self.sim.substrate.entities;
+        let cell = |id| {
+            entities.get(id).map(|entity| {
+                let at = ground_pose::position_world_coord(&entity.position);
+                ((at.x / 256) as i16, (at.y / 256) as i16)
+            })
+        };
+        cell(id) == cell(self.id)
+    }
+
+    fn set_transition_ready(&mut self, ready: bool) {
+        if let Some(entity) = self.sim.substrate.entities.get_mut(self.id) {
+            entity
+                .mission_leaf
+                .set_aircraft_transition_ready(u8::from(ready));
+        }
+    }
+
+    fn is_moving(&mut self) -> bool {
+        motion_query::is_moving(self.sim.substrate.entities.get(self.id).unwrap()) == Some(true)
+    }
+
+    fn loaded(&mut self) -> bool {
+        self.sim
+            .substrate
+            .entities
+            .get(self.id)
+            .is_some_and(|entity| entity.passenger_role().passenger_count() != 0)
+    }
+
+    fn pending_entry(&mut self) -> bool {
+        self.sim
+            .substrate
+            .entities
+            .get(self.id)
+            .is_some_and(|entity| entity.pending_entry.get().is_some())
+    }
+
+    fn mark(&mut self, down: bool) {
+        if down {
+            self.sim.foot_mark_put(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
+        } else {
+            self.sim.foot_mark_remove(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
+        }
+    }
+
+    fn unload(&mut self) {
+        self.sim.carryall_unload(
+            self.id,
+            self.rules,
+            Some(self.rules.overlay_registry()),
+            &mut self.effects,
+        );
+    }
+
+    fn unit_below(&mut self) -> Option<u64> {
+        let entity = self.sim.substrate.entities.get(self.id)?;
+        let at = ground_pose::position_world_coord(&entity.position);
+        let cell = ((at.x / 256) as i16, (at.y / 256) as i16);
+        let bridge = self.sim.resolved_terrain.as_ref().is_some_and(|terrain| {
+            terrain.native_cell_flags(terrain.native_cell_identity(cell)) & 0x100 != 0
+        });
+        let layer = if bridge {
+            crate::sim::movement::locomotor::MovementLayer::Bridge
+        } else {
+            crate::sim::movement::locomotor::MovementLayer::Ground
+        };
+        self.sim.substrate.occupancy.first_category_on_layer(
+            cell.0 as u16,
+            cell.1 as u16,
+            layer,
+            crate::map::entities::EntityCategory::Unit,
+            &self.sim.substrate.entities,
+        )
+    }
+
+    fn pick_up(&mut self, unit: u64) {
+        self.sim
+            .carryall_pick_up(self.id, unit, self.rules, &mut self.effects);
+    }
+
+    fn epilogue(&mut self) -> i32 {
+        move_mission::MoveHost::epilogue(self)
     }
 }

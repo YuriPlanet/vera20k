@@ -3,19 +3,33 @@
 //!
 //! A store that routes every `&mut` to its objects through itself notes each
 //! hand-out, so a product derived from those objects (the movement pass's
-//! blocker plane, the kept Ground display sort keys, the pointer-expiry
-//! listener index) re-derives only what was noted instead of walking the
-//! world. A log records the hand-out, not a
+//! blocker plane, the pointer-expiry listener index) re-derives only what was
+//! noted instead of walking the world. A log records the hand-out, not a
 //! change, so it over-reports, which is harmless. Transient: never saved,
 //! never hashed, and no simulation result reads it.
+//!
+//! A store may also keep a narrower log of the same kind, noted only where
+//! one kind of fact is written: the entity and anim stores' look logs, which
+//! the presentation's atlas check reads (`Simulation::take_looks`).
 
 /// What a reader takes from a log.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Touched {
+pub enum Touched {
     /// Anything may have changed: rebuild from the store.
     All,
     /// Only these ids (unsorted, repeats possible).
     Ids(Vec<u64>),
+}
+
+impl Touched {
+    /// Fold a later take into this one, as if both had been one take.
+    pub fn absorb(&mut self, later: Touched) {
+        match (&mut *self, later) {
+            (Touched::All, _) => {}
+            (this, Touched::All) => *this = Touched::All,
+            (Touched::Ids(ids), Touched::Ids(more)) => ids.extend(more),
+        }
+    }
 }
 
 /// One reader's log.
@@ -152,14 +166,4 @@ impl<const N: usize> PartialEq for TouchLogs<N> {
 
 impl<const N: usize> Eq for TouchLogs<N> {}
 
-/// Whether debug builds compare each read of a kept product (the movement
-/// pass's derived inputs, the kept Ground sort keys, the pointer-expiry
-/// listeners, a path batch's entry facts) with a fresh derivation.
-/// Never in release. On in debug unless `VERA20K_SKIP_LIVE_READ_CHECK` is set,
-/// which scale instruments use to time without the rebuilds the checks cost.
-/// It only removes assertions, so it cannot change a result.
-pub(crate) fn live_read_check_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    cfg!(debug_assertions)
-        && *ENABLED.get_or_init(|| std::env::var_os("VERA20K_SKIP_LIVE_READ_CHECK").is_none())
-}
+pub use crate::util::debug_checks::live_read_check_enabled;

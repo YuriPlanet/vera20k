@@ -25,6 +25,7 @@ from unicorn.x86_const import (
 from tools.native_oracle import (
     RET_MAGIC, STACK_BASE, STACK_SIZE, NativeCallTrace, finish_vectors, provenance, run_checked,
 )
+from tools.native_oracle import require
 from tools.sidebar_oracle.geometry import machine, put32, read
 from tools.spatial_oracle.cost_of import VTABLE, f32
 from tools.spatial_oracle.building_body_rules import (
@@ -915,7 +916,7 @@ class ReadyBuildingFixture:
                     balance=get(factory + 0x60), timer=bytes(u.mem_read(factory + 0x2C, 12)).hex()))
             if get(factory + 0x24) == 54:
                 break
-        assert self.invoke(0x4CA130, factory) & 255
+        require(self.invoke(0x4CA130, factory) & 255, 'native 0x4CA130 returned an unexpected result')
         product = self.invoke(0x4CA160, factory)
         self.products[name] = product
         self.identities[product] = name + '_product'

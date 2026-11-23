@@ -6,8 +6,8 @@
 //! without stepping (0x75BF85..0x75BFA6).
 //! - Trigger: a walking infantryman under an EMP effect.
 //! - Effect: it keeps stepping, and its Walk sequence, instead of freezing.
-//! - Frequency: none with retail data: VERA has no EMP timer and no stock
-//!   weapon mounts EMPuls (`warhead_type.rs`).
+//! - Frequency: none with retail data: `EMEffect=` is set only on the
+//!   `EMPuls` warhead and no stock weapon mounts it (`warhead_type.rs`).
 //! - Risk: modded EMP warheads.
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::sim::game_entity::GameEntity;
@@ -18,17 +18,33 @@ use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
 /// stops a positive Foot speed and clears +68A. Refusal and Stop owners do not
 /// share this tail. Native controls: foot_scold_latch.json paid_tails.
 pub(super) fn finish_idle(entity: &mut GameEntity) {
-    if !entity.locomotor.as_ref().is_some_and(|loco| {
-        loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk
-            && loco.step_head().is_none()
-            && loco.walk_destination().is_none()
-    }) {
+    if !idle_walk(entity) {
         return;
     }
     if entity.foot_speed.speed_fraction_is_positive() {
         entity.foot_speed.set_speed_fraction(SIM_ZERO);
     }
     entity.navigation.path_runtime_mut().clear_scold_latch();
+}
+
+/// Whether [`finish_idle`] changes `entity`: an idle Walk with a positive
+/// speed or a set scold latch.
+pub(super) fn finish_idle_writes(entity: &GameEntity) -> bool {
+    idle_walk(entity)
+        && (entity.foot_speed.speed_fraction_is_positive()
+            || entity.navigation.path_runtime().scold_latch_raw() != 0)
+}
+
+/// A Walk with no head and no destination, which [`finish_idle`] serves.
+fn idle_walk(entity: &GameEntity) -> bool {
+    entity.locomotor.as_ref().is_some_and(|loco| {
+        matches!(
+            loco.active_kind(),
+            crate::rules::locomotor_type::LocomotorKind::Walk
+                | crate::rules::locomotor_type::LocomotorKind::Mech
+        ) && loco.step_head().is_none()
+            && loco.walk_destination().is_none()
+    })
 }
 
 /// Publish Foot speed/facing and the provisional numeric step. The caller owns
@@ -38,6 +54,9 @@ pub(super) fn advance(
     entity: &mut GameEntity,
     adjusted_speed: SimFixed,
     prone_crawls: Option<bool>,
+    // Phobos `ProneSpeed`: the resolved multiplier, `None` for the retail
+    // integer arms.
+    prone_multiplier: Option<f64>,
     native_frame: u32,
     terrain: Option<&ResolvedTerrainGrid>,
     grid: Option<&PathGrid>,
@@ -51,9 +70,11 @@ pub(super) fn advance(
     let speed = super::foot_speed::owner_current_speed_from_native_fraction(
         adjusted_speed,
         entity.foot_speed.native_applied_fraction(),
+        entity.phobos_speed_multiplier(),
     );
     let speed = prone_crawls.map_or(speed, |crawls| {
-        crate::sim::infantry::apply_prone_speed(SimFixed::from_num(speed), crawls).to_num::<i32>()
+        crate::sim::infantry::apply_prone_speed(SimFixed::from_num(speed), crawls, prone_multiplier)
+            .to_num::<i32>()
     });
     entity.navigation.path_runtime_mut().clear_blockage(); //75BFD1; retain grace timer.
     let current = super::ground_pose::position_world_xy(&entity.position);
@@ -87,6 +108,6 @@ pub(super) fn advance(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "walk_step_tests.rs"]
 mod tests;

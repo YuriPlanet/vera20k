@@ -5,23 +5,33 @@
 //! IPv4 endpoints here are VERA's LAN transport adaptation: retail's Network
 //! menu uses IPX sockets. No legacy IPX socket or address protocol is included.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
-use super::reliable::{Delivery, RetryTiming, SendQueue, connection_prefix, sequence};
-
-mod loading_observation;
-pub use loading_observation::{LoadingObservation, LoadingObservationLog};
+use super::reliable::{
+    Delivery, LAN_PRODUCT_ID, RetryTiming, SendQueue, connection_prefix, sequence,
+};
 
 pub const GLOBAL_HEADER_LEN: usize = 16;
 pub const GLOBAL_DISCRIMINATOR: u16 = 0x1236;
 
-/// `0x00540B40 -> 0x0053FA90`: the global queue has160 send and320 receive
-/// slots, with455-byte application messages and a separate product word.
+/// `0x00540B40 -> 0x0053FA90`: the global queue has 160 send and 320 receive
+/// slots and 455-byte application messages. Its frames put the discriminator
+/// first and the product word after the connection prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlobalConfig {
     pub discriminator: u16,
-    pub product_id: u16,
     pub max_payload_bytes: usize,
     pub send_capacity: usize,
     pub receive_capacity: usize,
@@ -40,7 +50,6 @@ impl Default for GlobalConfig {
     fn default() -> Self {
         Self {
             discriminator: GLOBAL_DISCRIMINATOR,
-            product_id: 0xaa04,
             max_payload_bytes: 455,
             send_capacity: 160,
             receive_capacity: 320,
@@ -50,8 +59,7 @@ impl Default for GlobalConfig {
 }
 
 /// Native stores a12-byte destination and its independent port override on
-/// each send entry. In particular, cancellation compares host and override,
-/// not the port already present in the endpoint (`0x00540340/0x0053EF30`).
+/// each send entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlobalDestination {
     Broadcast {
@@ -72,16 +80,15 @@ impl GlobalDestination {
             port_override: 0,
         }
     }
+}
 
-    fn host_and_override(self) -> (Ipv4Addr, u16) {
-        match self {
-            Self::Broadcast { port_override } => (Ipv4Addr::BROADCAST, port_override),
-            Self::Direct {
-                endpoint,
-                port_override,
-            } => (*endpoint.ip(), port_override),
-        }
+/// The UDP endpoint an address and its port override name: a nonzero
+/// override replaces the address's own port.
+pub fn with_port_override(mut endpoint: SocketAddrV4, port_override: u16) -> SocketAddrV4 {
+    if port_override != 0 {
+        endpoint.set_port(port_override);
     }
+    endpoint
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -133,7 +140,6 @@ pub struct GlobalMessageRef<'a> {
 struct ReceivedEntry {
     frame: Vec<u8>,
     source: SocketAddrV4,
-    arrived: u32,
     consumed: bool,
 }
 
@@ -154,6 +160,22 @@ struct SeenMessage {
     sequence: u32,
 }
 
+/// The contiguous wire sequences of one `send_reliable_batch`. A reset
+/// restarts the sequences, and no holder reads its batch after one: a
+/// campaign result or narrative hold ends before its match transport resets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GlobalBatch {
+    first: u32,
+    count: u32,
+}
+
+impl GlobalBatch {
+    /// The batch's wire sequences, in recipient order.
+    pub(super) fn sequences(self) -> impl Iterator<Item = u32> {
+        (0..self.count).map(move |offset| self.first.wrapping_add(offset))
+    }
+}
+
 /// One aggregate send queue/response history, with unknown-source receive
 /// admission. This object is carried from lobby through loading and gameplay.
 #[derive(Debug)]
@@ -166,7 +188,10 @@ pub struct GlobalChannel {
     next_seen: usize,
     total_received: u32,
     responses: VecDeque<GlobalResponseTime>,
-    loading_observation: Option<LoadingObservationLog>,
+    // Sequences of the latest reliable sends retired by their ACK, capped at
+    // the send capacity. A batch whose record is pushed out reads undelivered;
+    // its holder polls every frame, so it has read the batch by then.
+    acknowledged: VecDeque<u32>,
 }
 
 impl GlobalChannel {
@@ -199,7 +224,7 @@ impl GlobalChannel {
             next_seen: 0,
             total_received: 0,
             responses: VecDeque::new(),
-            loading_observation: None,
+            acknowledged: VecDeque::new(),
         }
     }
 
@@ -213,13 +238,12 @@ impl GlobalChannel {
         self.timing = timing;
     }
 
-    pub fn require_authenticated_acknowledgments(&mut self) {
-        self.config.acknowledgments = GlobalAcknowledgments::AuthenticatedSource;
+    pub fn retry_delta(&self) -> u32 {
+        self.timing.retry_delta
     }
 
-    /// Read-only capture fact from the actual ACK matching policy.
-    pub fn authenticated_acknowledgments(&self) -> bool {
-        self.config.acknowledgments == GlobalAcknowledgments::AuthenticatedSource
+    pub fn require_authenticated_acknowledgments(&mut self) {
+        self.config.acknowledgments = GlobalAcknowledgments::AuthenticatedSource;
     }
 
     pub fn available_send_slots(&self) -> usize {
@@ -230,30 +254,6 @@ impl GlobalChannel {
     }
     pub fn pop_response_time(&mut self) -> Option<GlobalResponseTime> {
         self.responses.pop_front()
-    }
-
-    /// Explicit capture opt-in; observations never participate in admission,
-    /// retry, ACK matching, row mutation or the simulation hash.
-    pub fn observe_loading(&mut self) {
-        self.loading_observation
-            .get_or_insert_with(Default::default);
-    }
-
-    pub fn loading_observation(&self) -> Option<&LoadingObservationLog> {
-        self.loading_observation.as_ref()
-    }
-
-    pub fn observe_loading_application(
-        &mut self,
-        source: usize,
-        sequence: u32,
-        percent: i32,
-        displayed: f64,
-        applied: bool,
-    ) {
-        if let Some(log) = self.loading_observation.as_mut() {
-            log.application(source, sequence, percent, displayed, applied);
-        }
     }
 
     pub const fn discriminator(&self) -> u16 {
@@ -276,6 +276,35 @@ impl GlobalChannel {
 
     pub fn queued_receive_count(&self) -> usize {
         self.receive.len()
+    }
+
+    /// Acknowledge an exact application-registered receipt from a preceding
+    /// LAN scope, without feeding its data or sequence into the new channel.
+    pub(super) fn acknowledge_retired_receipt(
+        &self,
+        source: SocketAddrV4,
+        frame: &[u8],
+        receipts: &[GlobalMessage],
+        send: impl FnOnce(GlobalDestination, &[u8]),
+    ) -> bool {
+        if frame.len() < GLOBAL_HEADER_LEN
+            || frame[..2] != self.config.discriminator.to_le_bytes()
+            || frame[2] != Delivery::Reliable.wire_kind()
+        {
+            return false;
+        }
+        let seq = sequence(frame);
+        let product_id = u16::from_le_bytes([frame[14], frame[15]]);
+        if !receipts.iter().any(|receipt| {
+            receipt.source == source
+                && receipt.sequence == seq
+                && receipt.product_id == product_id
+                && receipt.payload == frame[GLOBAL_HEADER_LEN..]
+        }) {
+            return false;
+        }
+        send(GlobalDestination::direct(source), &self.frame(2, seq, &[]));
+        true
     }
 
     /// Manager5410F0 and global53FBD0: broadcast is unacknowledged, even when
@@ -303,11 +332,57 @@ impl GlobalChannel {
             sequence_override
         };
         let frame = self.frame(kind, outgoing_sequence, payload);
-        let admitted = self.send.enqueue(frame, destination);
-        if admitted && let Some(log) = self.loading_observation.as_mut() {
-            log.admitted(payload, destination, outgoing_sequence, kind == 0);
+        self.send.enqueue(frame, destination)
+    }
+
+    /// Queue one reliable payload to every recipient, or nothing when they do
+    /// not all fit. Consecutive enqueues take consecutive sequences.
+    pub fn send_reliable_batch(
+        &mut self,
+        payload: &[u8],
+        recipients: &[SocketAddrV4],
+    ) -> Option<GlobalBatch> {
+        if self.available_send_slots() < recipients.len() {
+            return None;
         }
-        admitted
+        let batch = GlobalBatch {
+            first: self.next_send_sequence(),
+            count: u32::try_from(recipients.len()).ok()?,
+        };
+        for &endpoint in recipients {
+            // Only the first send can fail: the payload is the same, and
+            // every recipient has a slot.
+            if !self.send(
+                payload,
+                GlobalDestination::direct(endpoint),
+                Delivery::Reliable,
+                0,
+            ) {
+                return None;
+            }
+        }
+        Some(batch)
+    }
+
+    /// Every send of the batch was ACKed. Other sends never count, and a
+    /// discarded or cancelled one never reads delivered.
+    pub fn batch_delivered(&self, batch: GlobalBatch) -> bool {
+        batch
+            .sequences()
+            .all(|sequence| self.acknowledged.contains(&sequence))
+    }
+
+    /// Frame a one-shot control whose sender is about to reset its channel.
+    /// An ACK could no longer be consumed, so this does not occupy the
+    /// reliable queue or advance its sequence.
+    pub(super) fn terminal_frame(&self, payload: &[u8]) -> Option<Vec<u8>> {
+        (payload.len() <= self.config.max_payload_bytes).then(|| {
+            self.frame(
+                Delivery::Unreliable.wire_kind(),
+                self.next_send_sequence(),
+                payload,
+            )
+        })
     }
 
     /// Global53FCB0 accepts new sources. It compares the discriminator, not
@@ -318,7 +393,6 @@ impl GlobalChannel {
         source: SocketAddrV4,
         source_port_override: u16,
         frame: &[u8],
-        now_ticks: u32,
         send: &mut impl FnMut(GlobalDestination, &[u8]),
     ) -> Result<GlobalReceiveOutcome, GlobalReceiveError> {
         if frame.len() < GLOBAL_HEADER_LEN {
@@ -332,33 +406,27 @@ impl GlobalChannel {
             });
         }
         let incoming_sequence = sequence(frame);
-        let mut normalized_source = source;
-        if source_port_override != 0 {
-            normalized_source.set_port(source_port_override);
-        }
+        let normalized_source = with_port_override(source, source_port_override);
         if frame[2] == 2 {
-            // Original53FCF9..53FD2F deliberately does not compare source.
-            // The online adaptation has authenticated source identities:
-            // another admitted member cannot acknowledge this destination.
+            // Original53FCF9..53FD2F deliberately does not compare source, so
+            // any LAN host could cancel a direct lobby, GO or map message by
+            // guessing its sequence. VERA adaptation: a direct message needs
+            // an ACK from its destination's address; any host still answers
+            // a broadcast. The online adaptation has authenticated source
+            // identities: another admitted member cannot acknowledge this
+            // destination, and nothing acknowledges a broadcast.
             let strict = self.config.acknowledgments == GlobalAcknowledgments::AuthenticatedSource;
             let matched = self
                 .send
-                .acknowledge(incoming_sequence, strict, |destination| {
-                    if !strict {
-                        return true;
+                .acknowledge(incoming_sequence, strict, |destination| match destination {
+                    GlobalDestination::Direct { endpoint, .. } if !strict => {
+                        endpoint.ip() == source.ip()
                     }
-                    match destination {
-                        GlobalDestination::Direct {
-                            mut endpoint,
-                            port_override,
-                        } => {
-                            if port_override != 0 {
-                                endpoint.set_port(port_override);
-                            }
-                            endpoint == normalized_source
-                        }
-                        GlobalDestination::Broadcast { .. } => false,
-                    }
+                    GlobalDestination::Direct {
+                        endpoint,
+                        port_override,
+                    } => with_port_override(endpoint, port_override) == normalized_source,
+                    GlobalDestination::Broadcast { .. } => !strict,
                 });
             if strict && !matched {
                 return Err(GlobalReceiveError::UnmatchedAcknowledgment);
@@ -384,7 +452,6 @@ impl GlobalChannel {
             self.receive.push_back(ReceivedEntry {
                 frame: frame.to_vec(),
                 source: normalized_source,
-                arrived: now_ticks,
                 consumed: false,
             });
             self.total_received = self.total_received.wrapping_add(1);
@@ -422,16 +489,17 @@ impl GlobalChannel {
     ) -> bool {
         let observe = self.config.acknowledgments == GlobalAcknowledgments::AuthenticatedSource;
         let responses = &mut self.responses;
+        let acknowledged = &mut self.acknowledged;
         let capacity = self.config.send_capacity;
-        let loading = &mut self.loading_observation;
         if !self.send.service(
             now_ticks,
             self.timing,
             send,
             &mut |destination, sequence, elapsed| {
-                if let Some(log) = loading.as_mut() {
-                    log.retired(destination, sequence);
+                if acknowledged.len() == capacity {
+                    acknowledged.pop_front();
                 }
+                acknowledged.push_back(sequence);
                 if observe {
                     // Derived observations are bounded by the send owner's cap.
                     // Startup consumes them every service pass; no history is
@@ -498,48 +566,16 @@ impl GlobalChannel {
         before - self.receive.len()
     }
 
-    /// Global540110 uses a signed strict comparison after wrapping addition.
-    /// It invalidates the first equal sequence in the ring, irrespective of
-    /// endpoint, even when a different source's ring slot is the first match.
-    pub fn strip_aged(&mut self, now_ticks: u32, maximum_age: u32) -> usize {
-        let before = self.receive.len();
-        self.receive.retain(|entry| {
-            if (entry.arrived.wrapping_add(maximum_age) as i32) < now_ticks as i32 {
-                if let Some(seen) = self
-                    .seen
-                    .iter_mut()
-                    .find(|seen| seen.sequence == sequence(&entry.frame))
-                {
-                    seen.sequence = u32::MAX;
-                }
-                false
-            } else {
-                true
-            }
-        });
-        before - self.receive.len()
-    }
-
-    /// Global540340 compares host bytes plus the separately stored override.
-    pub fn cancel_sends_to(&mut self, host: Ipv4Addr, port_override: u16) -> usize {
-        self.send
-            .cancel(|destination| destination.host_and_override() == (host, port_override))
-    }
-
-    /// VERA direct-LAN lifecycle cancellation includes the UDP port. Several
-    /// admitted clients may share one host; native540340's host-only match
-    /// remains available for its original consumers above.
+    /// Cancels the unacknowledged direct sends to `endpoint`, override
+    /// applied; like global `0x00540340`, an ACKed send stays to be retired.
+    /// VERA adaptation: native matches host and override only, but several
+    /// admitted direct-LAN clients may share one host.
     pub fn cancel_sends_to_endpoint(&mut self, endpoint: SocketAddrV4) -> usize {
         self.send.cancel(|destination| match destination {
             GlobalDestination::Direct {
-                endpoint: mut sent,
+                endpoint: sent,
                 port_override,
-            } => {
-                if port_override != 0 {
-                    sent.set_port(port_override);
-                }
-                sent == endpoint
-            }
+            } => with_port_override(sent, port_override) == endpoint,
             GlobalDestination::Broadcast { .. } => false,
         })
     }
@@ -547,12 +583,12 @@ impl GlobalChannel {
     fn frame(&self, kind: u8, sequence: u32, payload: &[u8]) -> Vec<u8> {
         let mut frame =
             connection_prefix(self.config.discriminator, kind, sequence, 2 + payload.len());
-        frame[14..16].copy_from_slice(&self.config.product_id.to_le_bytes());
+        frame[14..16].copy_from_slice(&LAN_PRODUCT_ID.to_le_bytes());
         frame[GLOBAL_HEADER_LEN..].copy_from_slice(payload);
         frame
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_net))]
 #[path = "global_tests.rs"]
 mod tests;

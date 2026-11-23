@@ -55,8 +55,9 @@
 //! - Anim, Bullet and Wave types do not bind AmbientSound
 //!   (dormant: no retail one sets it).
 
-use super::{FrameEffects, SimSoundEvent, Simulation};
-use crate::rules::ruleset::RuleSet;
+use super::{FrameEffects, SimSoundEvent, Simulation, TriggerSoundTarget};
+use crate::rules::ruleset::{RuleSet, SoundName};
+use crate::rules::sound_ini::SoundReference;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::DriveCoord;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -69,7 +70,7 @@ const AMBIENT_SOUND_TAG: u64 = 1 << 59;
 const CUSTOM_SOUND_TAG: u64 = 1 << 58;
 
 /// The owner of an object's `+0x3C` AmbientSound handle.
-pub(crate) const fn ambient_sound_owner(object: u64) -> u64 {
+pub const fn ambient_sound_owner(object: u64) -> u64 {
     object | AMBIENT_SOUND_TAG
 }
 
@@ -79,7 +80,7 @@ pub(crate) const fn custom_sound_owner(object: u64) -> u64 {
 }
 
 /// The object whose `+0x3C` or `+0x50` handle `owner` names.
-pub(crate) const fn object_sound_object(owner: u64) -> Option<u64> {
+pub const fn object_sound_object(owner: u64) -> Option<u64> {
     if owner & (AMBIENT_SOUND_TAG | CUSTOM_SOUND_TAG) != 0 {
         Some(owner & !(AMBIENT_SOUND_TAG | CUSTOM_SOUND_TAG))
     } else {
@@ -88,8 +89,48 @@ pub(crate) const fn object_sound_object(owner: u64) -> Option<u64> {
 }
 
 impl Simulation {
+    /// Keep existing named requests, while numeric trigger slots reach the
+    /// local playback owner without becoming a process-dependent name.
+    pub(crate) fn emit_trigger_sound(
+        &mut self,
+        reference: &SoundReference,
+        target: TriggerSoundTarget,
+    ) {
+        let SoundReference::Name(sound_id) = reference else {
+            self.sound_events.emit(SimSoundEvent::TriggerAudio {
+                reference: reference.clone(),
+                target,
+            });
+            return;
+        };
+        self.sound_events.emit(match target {
+            TriggerSoundTarget::Centered => SimSoundEvent::VocCentered {
+                sound_id: SoundName::Unlisted(sound_id.as_str().into()),
+            },
+            TriggerSoundTarget::Coordinate { coordinate, flags } => SimSoundEvent::VocAtCoord {
+                sound_id: SoundName::Unlisted(sound_id.as_str().into()),
+                coordinate,
+                flags,
+            },
+            TriggerSoundTarget::Object { owner, world } => SimSoundEvent::AnimationStarted {
+                anim_id: owner,
+                sound_id: SoundName::Unlisted(sound_id.as_str().into()),
+                world,
+            },
+            TriggerSoundTarget::Eva => SimSoundEvent::TriggerAudio {
+                reference: reference.clone(),
+                target,
+            },
+        });
+    }
+
     /// `ObjectClass::AI`'s sound block for one visit of a Techno or Terrain.
-    pub(crate) fn object_ai_sounds(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    pub(crate) fn object_ai_sounds(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
         // `+0x1F4` and `+0x64` are read before `Location`, so an object
         // with neither costs no coordinate.
         let ambient = self.object_ambient_sound(id, rules);
@@ -102,17 +143,19 @@ impl Simulation {
         if let Some(sound_id) = ambient {
             self.sound_events.emit(SimSoundEvent::AnimationStarted {
                 anim_id: ambient_sound_owner(id),
-                sound_id: sound_id.to_owned(),
+                sound_id: rules.sound_name(sound_id),
                 world,
             });
             effects.flush_sound(self, rules);
         }
         if let Some(sound_id) = self.object_custom_sounds.get(&id).cloned() {
-            self.sound_events.emit(SimSoundEvent::AnimationStarted {
-                anim_id: custom_sound_owner(id),
-                sound_id,
-                world,
-            });
+            self.emit_trigger_sound(
+                &sound_id,
+                TriggerSoundTarget::Object {
+                    owner: custom_sound_owner(id),
+                    world,
+                },
+            );
             effects.flush_sound(self, rules);
         }
     }
@@ -123,37 +166,60 @@ impl Simulation {
     ///Map/ground/bridge or custom-object lookup. Voc750E20 receives flags0.
     pub(crate) fn trigger_play_sound_at_random_waypoint(
         &mut self,
-        sound: Option<&str>,
+        sound: Option<&SoundReference>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
-        let mut candidates = Vec::new();
-        for index in 0..crate::map::waypoints::WAYPOINT_SLOT_COUNT as i32 {
-            if self.session.waypoint_is_valid(index) {
-                candidates.push(self.session.waypoint_cell(index).expect("valid slot"));
-                if candidates.len() == 400 {
-                    break;
+        // Ares 3.0 TActionClass_PlayAudioAtRandomWP (10039B60, hook 0x6E1780,
+        // #1004906) replaces the scan: every defined slot is a candidate,
+        // without the 400 cap, and no candidate means no draw and no sound.
+        let cell = if rules.ares() {
+            let candidates: Vec<i32> = (0..crate::map::waypoints::WAYPOINT_SLOT_COUNT as i32)
+                .filter(|&index| self.session.waypoint_is_valid(index))
+                .collect();
+            if candidates.is_empty() {
+                return true;
+            }
+            let selected = self
+                .scenario_rng
+                .next_range_i32_inclusive(0, candidates.len() as i32 - 1);
+            let Some(cell) = usize::try_from(selected)
+                .ok()
+                .and_then(|index| candidates.get(index))
+                .and_then(|&index| self.session.waypoint_cell(index))
+            else {
+                return true;
+            };
+            cell
+        } else {
+            let mut candidates = Vec::new();
+            for index in 0..crate::map::waypoints::WAYPOINT_SLOT_COUNT as i32 {
+                if self.session.waypoint_is_valid(index) {
+                    candidates.push(self.session.waypoint_cell(index).expect("valid slot"));
+                    if candidates.len() == 400 {
+                        break;
+                    }
                 }
             }
-        }
-        let selected = self
-            .scenario_rng
-            .next_range_i32_inclusive(0, candidates.len() as i32 - 1);
-        let cell = if candidates.is_empty() && selected == 0 {
-            //4068F0 initializes the original100 CellStruct scratch entries.
-            (0, 0)
-        } else if let Some(cell) = usize::try_from(selected)
-            .ok()
-            .and_then(|index| candidates.get(index))
-        {
-            *cell
-        } else {
-            //RESIDUAL: no-waypoint result-1 reads before native's scratch
-            //array. Keep the real RNG request and Execute's unconditional
-            //AL1 (6DE836), while skipping audio with an undefined coordinate.
-            //A Vec also avoids native stack corruption when its
-            //400-entry admission exceeds that100-entry scratch allocation.
-            return true;
+            let selected = self
+                .scenario_rng
+                .next_range_i32_inclusive(0, candidates.len() as i32 - 1);
+            if candidates.is_empty() && selected == 0 {
+                //4068F0 initializes the original100 CellStruct scratch entries.
+                (0, 0)
+            } else if let Some(cell) = usize::try_from(selected)
+                .ok()
+                .and_then(|index| candidates.get(index))
+            {
+                *cell
+            } else {
+                //RESIDUAL: no-waypoint result-1 reads before native's scratch
+                //array. Keep the real RNG request and Execute's unconditional
+                //AL1 (6DE836), while skipping audio with an undefined coordinate.
+                //A Vec also avoids native stack corruption when its
+                //400-entry admission exceeds that100-entry scratch allocation.
+                return true;
+            }
         };
         let coordinate = crate::sim::cell_kernel::cell_center(
             crate::sim::cell_kernel::CellCoordinate {
@@ -163,28 +229,30 @@ impl Simulation {
             0,
         );
         if let Some(sound_id) = sound {
-            self.sound_events.emit(SimSoundEvent::VocAtCoord {
-                sound_id: sound_id.to_owned(),
-                coordinate: DriveCoord {
-                    x: coordinate.x,
-                    y: coordinate.y,
-                    z: 0,
+            self.emit_trigger_sound(
+                sound_id,
+                TriggerSoundTarget::Coordinate {
+                    coordinate: DriveCoord {
+                        x: coordinate.x,
+                        y: coordinate.y,
+                        z: 0,
+                    },
+                    flags: 0,
                 },
-                flags: 0,
-            });
+            );
             effects.flush_sound(self, rules);
         }
         true
     }
 
-    /// TAction 99's body: see the module doc. `sound` is the action's
-    /// resolved `+0x90` (`None` for -1).
+    /// TAction 99's body: see the module doc. Offline `sound` is the resolved
+    /// +90; network playback retains the authored name/slot (`None` for -1).
     pub(crate) fn trigger_play_sound_at_waypoint(
         &mut self,
-        sound: Option<&str>,
+        sound: Option<&SoundReference>,
         waypoint: Option<u32>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some([x, y, z]) =
             waypoint.and_then(|index| self.trigger_waypoint_location(index as i32))
@@ -200,11 +268,13 @@ impl Simulation {
             return true;
         }
         if let Some(sound_id) = sound {
-            self.sound_events.emit(SimSoundEvent::VocAtCoord {
-                sound_id: sound_id.to_owned(),
-                coordinate: DriveCoord { x, y, z },
-                flags: 1,
-            });
+            self.emit_trigger_sound(
+                sound_id,
+                TriggerSoundTarget::Coordinate {
+                    coordinate: DriveCoord { x, y, z },
+                    flags: 1,
+                },
+            );
             effects.flush_sound(self, rules);
         }
         true
@@ -218,7 +288,7 @@ impl Simulation {
         &mut self,
         waypoint: Option<u32>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some([x, y, z]) =
             waypoint.and_then(|index| self.trigger_waypoint_location(index as i32))
@@ -282,7 +352,10 @@ impl Simulation {
     }
 
     /// `ObjectClass::Set_Custom_Sound @ 0x005F6CB0`.
-    fn set_custom_sound(&mut self, object: u64, sound: Option<&str>) {
+    fn set_custom_sound(&mut self, object: u64, sound: Option<&SoundReference>) {
+        // The object's next visit plays the sound (`ObjectClass::AI
+        // @ 0x005F3E70`); a sleeping one must take it (`world::idle_sleep`).
+        self.substrate.entities.wake(object);
         match sound {
             Some(sound_id) => {
                 self.object_custom_sounds
@@ -341,6 +414,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "object_sound_tests.rs"]
 mod tests;

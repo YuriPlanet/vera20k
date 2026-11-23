@@ -4,6 +4,97 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
 use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
 
+#[test]
+fn ordinary_anim_damage_uses_optional_ares_warhead_and_owner() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
+         [TARGET]\nStrength=1000\nArmor=light\n[Animations]\n0=PULSE\n\
+         [CombatDamage]\nFlameDamage2=FALLBACK\n[Warheads]\n0=FALLBACK\n1=CUSTOM\n\
+         [FALLBACK]\nCellSpread=.3\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [CUSTOM]\nCellSpread=.3\n\
+         Verses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n",
+    );
+    let art = IniFile::from_str("[PULSE]\nRate=900\nEnd=4\nDamage=10\nWarhead=CUSTOM\n");
+    let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+        .process_with_fixed_art(&art)
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    registry.bind_anim_frame_count_for_test("PULSE", 4);
+    rules.install_art_data(registry);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let invoker = sim.interner.get("Americans").unwrap();
+    let mut targets = Vec::new();
+    for (x, explicit_owner) in [(20, true), (30, false)] {
+        let target = sim
+            .spawn_object("TARGET", "Russians", x, 20, 0, &rules)
+            .unwrap();
+        let coord = crate::sim::movement::ground_pose::position_world_coord(
+            &sim.entities().get(target).unwrap().position,
+        );
+        let world = AnimWorldCoord {
+            x: coord.x,
+            y: coord.y,
+            z: coord.z,
+        };
+        let (rx, ry, sx, sy, z) = world.to_cell_sub_z();
+        let pulse = sim.interner.intern("PULSE");
+        let anim = sim
+            .spawn_anim_at_world(
+                &rules,
+                AnimClassSpawnDescriptor::new(pulse, rx, ry, sx, sy, z),
+                world,
+            )
+            .unwrap();
+        sim.set_anim_owner_object(anim, Some(target), &rules);
+        if explicit_owner {
+            sim.substrate.set_anim_owner_house(anim, invoker);
+        }
+        targets.push(target);
+    }
+    let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
+        for _ in 0..6 {
+            sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 22);
+        }
+    });
+    assert!(
+        !visits.is_empty(),
+        "ordinary AnimAI must reach the real area receiver"
+    );
+    for target in targets {
+        let health = sim.entities().get(target).unwrap().health.current();
+        if rules.ares_form() {
+            assert_eq!(
+                health, 1000,
+                "CUSTOM has zero effectiveness, unlike FALLBACK"
+            );
+        } else {
+            assert!(
+                health < 1000,
+                "stock AnimAI keeps its effective FlameDamage2"
+            );
+        }
+    }
+    for visit in visits {
+        assert_eq!(
+            visit["no_source"], true,
+            "neither animation owner is an attacker"
+        );
+        if rules.ares_form() {
+            assert_eq!(visit["warhead"], "CUSTOM");
+            assert_eq!(
+                visit["no_source_house"], false,
+                "explicit and attached owners both propagate"
+            );
+        } else {
+            assert_eq!(visit["warhead"], "FALLBACK");
+            assert_eq!(visit["no_source_house"], true);
+        }
+    }
+}
+
 struct Scene {
     sim: Simulation,
     rules: RuleSet,
@@ -29,9 +120,7 @@ fn retail_scene(extra: &str) -> Option<Scene> {
         .unwrap()
         .into_parts();
     rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
-    rules
-        .bind_authored_load_anim("FIRE3", &assets, ".sno", "SNOW")
-        .unwrap();
+    rules.bind_authored_load_anim("FIRE3", &assets, ".sno", "SNOW");
     let registry = rules.overlay_registry().clone();
     let mut sim = Simulation::with_seed(0x424647);
     sim.session.set_map_width_for_test(64);
@@ -139,6 +228,42 @@ fn retail_cell_anim_damage_reaches_terrain_only_after_the_due_timer_and_receiver
     }
 }
 
+/// AnimClass::AI `0x00424538..0x0042455E`: an anim owned by a Terrain object
+/// (WhatAmI 0x24) adds five times its Damage per damage step (`0x007E3568` =
+/// 5.0).
+#[test]
+fn a_tree_owned_anim_adds_five_times_its_damage() {
+    let accumulator = |scene: &Scene| {
+        f64::from_bits(
+            scene
+                .sim
+                .anim(scene.anim)
+                .unwrap()
+                .damage_accumulator
+                .bits(),
+        )
+    };
+    let mut gained = Vec::new();
+    for attach in [false, true] {
+        let Some(mut scene) = retail_scene("") else {
+            return;
+        };
+        if attach {
+            assert!(
+                scene
+                    .sim
+                    .set_anim_owner_object(scene.anim, Some(scene.tree), &scene.rules)
+            );
+        }
+        scene.sim.substrate.set_anim_no_effects(scene.anim, true);
+        let before = accumulator(&scene);
+        advance(&mut scene, 3);
+        gained.push(accumulator(&scene) - before);
+    }
+    assert!(gained[0] > 0.0, "{gained:?}");
+    assert!((gained[1] - 5.0 * gained[0]).abs() < 1e-9, "{gained:?}");
+}
+
 #[test]
 fn saved_cell_anim_keeps_its_debited_fraction_timer_and_type_reference() {
     let Some(mut scene) = retail_scene("[Fire2]\nCellSpread=1\nPercentAtMax=1\n") else {
@@ -238,7 +363,14 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
     // Exercise the existing Next owner: identity/NoEffects survive; +188 resets.
     scene
         .sim
-        .switch_anim_type(scene.anim, "FIRE3", &scene.rules, None);
+        .switch_anim_type(
+            scene.anim,
+            "FIRE3",
+            &scene.rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
     let anim = scene.sim.anim(scene.anim).unwrap();
     assert_eq!(anim.damage_accumulator, NativeF64Bits::POSITIVE_ZERO);
     assert!(anim.no_effects());
@@ -263,4 +395,91 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
             .health(),
         health
     );
+}
+
+/// A unit attaches `HEALRING`, an animation with `Damage=1` and
+/// `Weapon=HealAura`. That weapon's warhead is 0% against every armor
+/// and only carries an AttachEffect, so the aura must not damage anything --
+/// in particular the war factory the freshly built unit is sitting on.
+#[test]
+fn attached_heal_anim_weapon_never_damages_nearby_objects() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [VehicleTypes]\n0=TARGET\n\
+         [TARGET]\nStrength=1000\nArmor=light\n\
+         [Animations]\n0=HEALRING\n\
+         [CombatDamage]\nFlameDamage2=FALLBACK\n\
+         [Warheads]\n0=FALLBACK\n1=HealAuraWH\n\
+         [FALLBACK]\nCellSpread=3.2\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [HealAuraWH]\nCellSpread=3.2\nVerses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n\
+         AffectsAllies=yes\nAffectsEnemies=no\n\
+         [WeaponTypes]\n0=HealAura\n\
+         [HealAura]\nDamage=0\nWarhead=HealAuraWH\nAreaFire=yes\n",
+    );
+    let art = IniFile::from_str("[HEALRING]\nRate=400\nEnd=4\nDamage=1\nWeapon=HealAura\n");
+    let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+        .process_with_fixed_art(&art)
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    registry.bind_anim_frame_count_for_test("HEALRING", 4);
+    rules.install_art_data(registry);
+    if rules.ares_form() {
+        let cfg = rules.art().anim_runtime_config("HEALRING").unwrap();
+        assert_eq!(
+            cfg.ares_weapon.as_deref(),
+            Some("HealAura"),
+            "the animation's Weapon= must survive rule processing"
+        );
+    }
+    assert_eq!(
+        rules.weapon("HealAura").is_some(),
+        rules.ares_form(),
+        "only Ares reads the explicit WeaponTypes list"
+    );
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let target = sim
+        .spawn_object("TARGET", "Russians", 20, 20, 0, &rules)
+        .unwrap();
+    let coord = crate::sim::movement::ground_pose::position_world_coord(
+        &sim.entities().get(target).unwrap().position,
+    );
+    let world = AnimWorldCoord {
+        x: coord.x,
+        y: coord.y,
+        z: coord.z,
+    };
+    let (rx, ry, sx, sy, z) = world.to_cell_sub_z();
+    let anim_type = sim.interner.intern("HEALRING");
+    let anim = sim
+        .spawn_anim_at_world(
+            &rules,
+            AnimClassSpawnDescriptor::new(anim_type, rx, ry, sx, sy, z),
+            world,
+        )
+        .unwrap();
+    sim.set_anim_owner_object(anim, Some(target), &rules);
+    let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
+        for _ in 0..6 {
+            sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 22);
+        }
+    });
+    let health = sim.entities().get(target).unwrap().health.current();
+    let warheads: Vec<_> = visits.iter().map(|v| v["warhead"].clone()).collect();
+    if rules.ares_form() {
+        assert_eq!(
+            health, 1000,
+            "the healing aura must not damage nearby objects (warheads: {warheads:?})"
+        );
+        assert!(!warheads.is_empty(), "the aura must still fire its weapon");
+        assert!(
+            warheads.iter().all(|w| w == "HealAuraWH"),
+            "the healing warhead must be used, not the FlameDamage2 fallback: {warheads:?}"
+        );
+    } else {
+        assert!(health < 1000, "stock animations use FlameDamage2");
+        assert!(warheads.iter().all(|warhead| warhead == "FALLBACK"));
+    }
 }

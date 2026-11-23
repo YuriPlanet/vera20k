@@ -4,6 +4,7 @@
 //! does not replay the Engineer acquisition/base-building campaign opening.
 
 use super::*;
+use crate::rules::rule_policy::RulePolicy;
 
 #[test]
 fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
@@ -37,15 +38,12 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
         .unwrap()
         .into_parts();
     rules.install_art_data(retail_ini_fixture::art_registry(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let overlay =
         crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&processed, Some(&art));
     let ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .expect("retail AIMD parses")
         .ini;
-    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, false);
+    let registry = TeamAiIniRegistry::from_sources(&ai, &map.ini, RulePolicy::stock_campaign());
     let discovered_actions = map.actions["065C3EDC"].entries();
     assert_eq!(
         discovered_actions
@@ -89,6 +87,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
         .into_fresh_staged_simulation(
             &descriptor,
             FreshScenarioPrefix::Campaign {
+                network: None,
                 native_rules_receipt: receipt,
                 rules: &rules,
                 map_data: &map,
@@ -123,8 +122,14 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
     sim.set_playfield_size_height_for_test(Some(map.header.height as i32));
     assert!(sim.rebuild_dynamic_navigation(&rules));
     sim.session.install_waypoints(&map.waypoints);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
-    sim.initialize_trigger_definitions(&map, &registry, Some(audio.eva()), Some(audio.sounds()));
+    sim.install_team_ai_registry(&registry, &rules);
+    sim.initialize_trigger_definitions(
+        &map,
+        &registry,
+        Some(audio.eva()),
+        Some(audio.sounds()),
+        None,
+    );
 
     let tank = map
         .entities
@@ -205,7 +210,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
             67,
             TickLane::Ordinary,
             true,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary campaign fixture frame");
         heard_stallone |= sim.sound_events().iter().any(
@@ -231,7 +236,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
         starting_hp,
         "MindControl does not damage the tank"
     );
-    assert_eq!(tank.mind_control.controller(), Some(controller));
+    assert_eq!(tank.seldom.mind_control.controller(), Some(controller));
     assert_eq!(tank.owner(), americans);
     assert!(
         sim.trigger_runtime

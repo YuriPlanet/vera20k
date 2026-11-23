@@ -121,6 +121,55 @@ pub enum SequenceKind {
     AirDeathFinish,
 }
 
+impl SequenceKind {
+    /// Map a native `Sequence` name (the `DiscardOn.Sequences` token) to the
+    /// ported kind. `ready`/`guard` both drive `Stand` and `fireup` drives
+    /// `Attack`; native sequences VERA does not model (`carry`, `tumble`,
+    /// `wetdie1`, `wetdie2`) answer `None`.
+    pub fn from_native_name(name: &str) -> Option<Self> {
+        Some(match name.trim().to_ascii_lowercase().as_str() {
+            "ready" | "guard" => Self::Stand,
+            "prone" => Self::Prone,
+            "walk" => Self::Walk,
+            "fireup" => Self::Attack,
+            "fireprone" => Self::FireProne,
+            "secondaryfire" => Self::SecondaryFire,
+            "secondaryprone" => Self::SecondaryProne,
+            "down" => Self::Down,
+            "crawl" => Self::Crawl,
+            "up" => Self::Up,
+            "idle1" => Self::Idle1,
+            "idle2" => Self::Idle2,
+            "die1" => Self::Die1,
+            "die2" => Self::Die2,
+            "die3" => Self::Die3,
+            "die4" => Self::Die4,
+            "die5" => Self::Die5,
+            "deploy" => Self::Deploy,
+            "deployed" => Self::Deployed,
+            "deployedfire" => Self::DeployedFire,
+            "deployedidle" => Self::DeployedIdle,
+            "undeploy" => Self::Undeploy,
+            "paradrop" => Self::Paradrop,
+            "cheer" => Self::Cheer,
+            "panic" => Self::Panic,
+            "shovel" => Self::Shovel,
+            "fly" => Self::Fly,
+            "hover" => Self::Hover,
+            "firefly" => Self::FireFly,
+            "tread" => Self::Tread,
+            "swim" => Self::Swim,
+            "wetattack" => Self::WetAttack,
+            "wetidle1" => Self::WetIdle1,
+            "wetidle2" => Self::WetIdle2,
+            "airdeathstart" => Self::AirDeathStart,
+            "airdeathfalling" => Self::AirDeathFalling,
+            "airdeathfinish" => Self::AirDeathFinish,
+            _ => return None,
+        })
+    }
+}
+
 /// How a sequence behaves when it reaches its last frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LoopMode {
@@ -213,6 +262,92 @@ pub struct SequenceSet {
     /// body-frame counter on `GameEntity`.
     #[serde(default)]
     shp_vehicle_cadence: Option<FootBodyCadence>,
+    /// The UnitType's ART death layout a running death counter draws.
+    #[serde(default)]
+    shp_vehicle_death: Option<ShpVehicleDeathFrames>,
+    /// The UnitType's ART firing layout a running firing counter draws.
+    #[serde(default)]
+    shp_vehicle_fire: Option<ShpVehicleFireFrames>,
+    /// A `Turret=yes` SHP Unit's thirty-two turret frames. The Unit draw
+    /// picks one from the turret heading; see [`ShpVehicleTurret`].
+    #[serde(default)]
+    shp_vehicle_turret: Option<ShpVehicleTurret>,
+}
+
+/// UnitType's ART `StartDeathFrame=` (`+0xE34`), `DeathFrames=` (`+0xE20`)
+/// and `DeathFrameRate=` (`+0xE24`, at least 1), as
+/// `UnitClass::Draw_Body_And_Turret` reads them (`0x0073C6B7..0x0073C6D1`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ShpVehicleDeathFrames {
+    start: i32,
+    frames: i32,
+    rate: i32,
+}
+
+impl ShpVehicleDeathFrames {
+    pub(crate) const fn new(start: i32, frames: i32, rate: i32) -> Self {
+        Self {
+            start,
+            frames,
+            rate: if rate < 1 { 1 } else { rate },
+        }
+    }
+
+    /// The raw image for a death counter: StartDeathFrame plus the counter
+    /// over DeathFrameRate (signed), held on the last of DeathFrames. It has
+    /// no facing.
+    pub fn image(self, counter: i32) -> i32 {
+        let step = counter / self.rate;
+        self.start
+            .wrapping_add(step.min(self.frames.wrapping_sub(1)))
+    }
+
+    /// Every image [`Self::image`] reaches, StartDeathFrame onwards.
+    pub fn images(self) -> std::ops::Range<i32> {
+        self.start..self.start.saturating_add(self.frames.max(0))
+    }
+}
+
+/// UnitType's ART `StartFiringFrame=` (`+0xE30`) and the signed
+/// `FiringFrames=` byte (`+0xE5D`), as `UnitClass::Draw_Body_And_Turret`
+/// reads them (`0x0073C655..0x0073C672`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ShpVehicleFireFrames {
+    start: i32,
+    frames: i32,
+}
+
+impl ShpVehicleFireFrames {
+    pub(crate) const fn new(start: i32, frames: i32) -> Self {
+        Self { start, frames }
+    }
+
+    /// The image for a firing counter in facing bucket `slot`:
+    /// StartFiringFrame plus FiringFrames times the bucket plus half the
+    /// counter, unbounded. The counter is seeded from the actual type's
+    /// FiringFrames, so under Ares the water type
+    /// (`UnitClass_DrawSHP_ChangeType1`) can step past its own block.
+    pub fn image(self, slot: i32, counter: i32) -> i32 {
+        self.start
+            .wrapping_add(self.frames.wrapping_mul(slot))
+            .wrapping_add(counter / 2)
+    }
+}
+
+/// Frame block one SHP Unit's turret occupies inside its own body SHP.
+///
+/// A `Turret=yes` SHP Unit draws thirty-two turret frames, one per 11.25° of
+/// turret heading, from its own body SHP starting at `WalkFrames * 8`
+/// (UnitClass SHP draw `0x0073CCF7..0x0073CD03`). The frames share the body's
+/// draw point; `TurretOffset` does not apply.
+///
+/// With `WalkFrames=22`, frames 0..175 walk and 176..207 are the turret.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ShpVehicleTurret {
+    /// First turret frame, in the body SHP's own frame numbering.
+    pub start_frame: u16,
+    /// Facing frames in the block: `SHP_TURRET_FACING_FRAMES`.
+    pub facings: u16,
 }
 
 /// Rules-owned divisors consumed by the shared Foot body counter.
@@ -245,6 +380,9 @@ impl SequenceSet {
             sequences: BTreeMap::new(),
             infantry_actions: None,
             shp_vehicle_cadence: None,
+            shp_vehicle_death: None,
+            shp_vehicle_fire: None,
+            shp_vehicle_turret: None,
         }
     }
 
@@ -285,6 +423,31 @@ impl SequenceSet {
         self.shp_vehicle_cadence
     }
 
+    pub(crate) fn set_shp_vehicle_death(&mut self, death: ShpVehicleDeathFrames) {
+        self.shp_vehicle_death = Some(death);
+    }
+
+    pub fn shp_vehicle_death(&self) -> Option<ShpVehicleDeathFrames> {
+        self.shp_vehicle_death
+    }
+
+    pub(crate) fn set_shp_vehicle_fire(&mut self, fire: ShpVehicleFireFrames) {
+        self.shp_vehicle_fire = Some(fire);
+    }
+
+    pub fn shp_vehicle_fire(&self) -> Option<ShpVehicleFireFrames> {
+        self.shp_vehicle_fire
+    }
+
+    pub(crate) fn set_shp_vehicle_turret(&mut self, turret: ShpVehicleTurret) {
+        self.shp_vehicle_turret = Some(turret);
+    }
+
+    /// The turret frame block a `Turret=yes` SHP Unit draws over its body.
+    pub fn shp_vehicle_turret(&self) -> Option<ShpVehicleTurret> {
+        self.shp_vehicle_turret
+    }
+
     /// Add a sequence definition.
     pub fn insert(&mut self, kind: SequenceKind, def: SequenceDef) {
         self.sequences.insert(kind, def);
@@ -315,22 +478,21 @@ impl SequenceSet {
 /// on an app-side atlas refresh before their animation or death timing advances.
 pub(crate) fn build_animation_sequence_catalog(
     rules: &crate::rules::ruleset::RuleSet,
-    infantry_sequences: Option<&crate::rules::infantry_sequence::InfantrySequenceRegistry>,
 ) -> BTreeMap<String, SequenceSet> {
     let mut catalog = BTreeMap::new();
 
     for type_id in &rules.infantry_ids {
-        let Some(object) = rules.object(type_id) else {
+        let Some(object) =
+            rules.object_in_category(crate::rules::object_type::ObjectCategory::Infantry, type_id)
+        else {
             continue;
         };
-        let sequence_name = rules
-            .art()
-            .resolve_metadata_entry(&object.id, &object.image)
-            .and_then(|entry| entry.sequence.as_deref());
-        let sequence_set = sequence_name
-            .and_then(|name| infantry_sequences?.get(&name.to_ascii_uppercase()))
-            .map(crate::rules::infantry_sequence::build_sequence_set)
-            .unwrap_or_else(default_infantry_sequences);
+        // ReadSequenceData523D00 has already updated the native type's bank.
+        // Neither an Image change nor late ART binding may replay that read.
+        let sequence_set = object
+            .infantry_sequence_bank()
+            .expect("InfantryType constructor owns a sequence bank")
+            .sequence_set();
         catalog.insert(object.id.clone(), sequence_set);
     }
 
@@ -377,6 +539,7 @@ pub(crate) fn build_animation_sequence_catalog(
                 } else {
                     None
                 },
+                object.has_turret,
             ),
         );
     }

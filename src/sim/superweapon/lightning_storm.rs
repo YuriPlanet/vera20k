@@ -25,6 +25,10 @@
 //! computer house fires its own at its rally target unless one rages
 //! (`ai_fire.rs`).
 //!
+//! When Ares plays, `Type=LightningStorm` goes to SW_LightningStorm, whose
+//! Activate and hooks rewrite Start, Process, CreateCloudBolt and
+//! GroundStrike while its storm is current: the child module `ares`.
+//!
 //! Evidence: instruction reading at the addresses cited here. Native
 //! execution (`tools/superweapon_oracle.py`, replayed in
 //! `lightning_storm_tests.rs`): Start's retargets, countdown minimum, empty
@@ -106,6 +110,10 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
 
+mod ares;
+pub(crate) use ares::bolt_explosion as ares_bolt_explosion;
+pub(super) use ares::{abort_fire as ares_abort_fire, launch as ares_launch};
+
 /// The empty cell `0x00A9F9F8`, `(0, 0)`: Start draws a cell for it, and the
 /// end of a storm writes it.
 const EMPTY_CELL: (i16, i16) = (0, 0);
@@ -121,8 +129,8 @@ const DEBRIS_LANDS: [i32; 4] = [1, 3, 4, 11];
 const DEBRIS_COUNT: (i32, i32) = (2, 4);
 
 /// The storm's globals. Owned here; the world hash folds the fields in
-/// declaration order.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+/// declaration order, the Ares ones only once set (the `Hash` impl below).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LightningStorm {
     /// `0x00A9FAB4` (`LightningStorm::IsActive @ 0x0053A100`): the storm
     /// rages.
@@ -145,6 +153,38 @@ pub struct LightningStorm {
     clouds_present: Vec<AnimId>,
     /// CloudsManifesting (`0x00A9FA60`): every cloud until it strikes.
     clouds_manifesting: Vec<AnimId>,
+    /// Ares: SW_LightningStorm::CurrentLightningStorm (`100C1C8C`), the
+    /// Super (owner, type) whose SWTypeExt the storm hooks read, from its
+    /// Activate until the storm ends. Unset, the hooks keep the stock bodies
+    /// (a trigger's storm).
+    #[serde(default)]
+    ares_super: Option<(InternedId, InternedId)>,
+    /// That type's `Light.*`, which UpdateLighting (hook 53C280) applies
+    /// while the storm rages.
+    #[serde(default)]
+    ares_light: Option<crate::rules::superweapon_type::AresSuperWeaponLighting>,
+}
+
+/// The stock globals hash as the derived hash did, in declaration order; an
+/// Ares storm adds its own fold, so a game without one keeps its state
+/// hash's stream.
+impl std::hash::Hash for LightningStorm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.active.hash(state);
+        self.time_to_end.hash(state);
+        self.deferment.hash(state);
+        self.duration.hash(state);
+        self.start_frame.hash(state);
+        self.cell.hash(state);
+        self.owner.hash(state);
+        self.clouds_present.hash(state);
+        self.clouds_manifesting.hash(state);
+        if self.ares_super.is_some() || self.ares_light.is_some() {
+            b"ares-lightning-storm-v1".hash(state);
+            self.ares_super.hash(state);
+            self.ares_light.hash(state);
+        }
+    }
 }
 
 /// The values `SuperWeaponEffects::ResetAll @ 0x00539760` leaves at each
@@ -162,6 +202,8 @@ impl Default for LightningStorm {
             owner: None,
             clouds_present: Vec::new(),
             clouds_manifesting: Vec::new(),
+            ares_super: None,
+            ares_light: None,
         }
     }
 }
@@ -170,6 +212,13 @@ impl LightningStorm {
     /// The storm's house, `0x00A9FACC`, while a storm counts down or rages.
     pub(crate) fn owner(&self) -> Option<InternedId> {
         self.owner
+    }
+
+    /// CurrentLightningStorm's `Light.*`, none without one.
+    pub(crate) fn ares_light(
+        &self,
+    ) -> Option<crate::rules::superweapon_type::AresSuperWeaponLighting> {
+        self.ares_super.and(self.ares_light)
     }
 }
 
@@ -255,6 +304,12 @@ pub(crate) fn start(
     mut cell: (i16, i16),
     owner: Option<InternedId>,
 ) {
+    if rules.ares_form()
+        && let Some(storm) = ares::current(sim, rules)
+    {
+        ares::start(sim, rules, storm, duration, deferment, cell, owner);
+        return;
+    }
     if cell == EMPTY_CELL
         && !sim.map_cell_in_bounds(cell)
         && let Some([_, _, width, height]) = sim.map_rect()
@@ -295,16 +350,12 @@ pub(crate) fn start(
     // suppress other Houses' retained outages. Their own Defeated test below
     // remains authoritative. Source: original gamemd.exe539FD3..53A002.
     let local_player_defeated =
-        !sim.session.game_mode().is_network() && sim.local_player_defeated();
+        !sim.session.execution_topology().is_lockstep() && sim.local_player_defeated();
     // HouseClass::Array, in creation order.
     for index in 0..sim.houses.order().len() {
         let house = sim.houses.order()[index];
         if let Some(owner) = owner
-            && crate::map::houses::is_allied_with(
-                sim.house_alliances.as_map(),
-                sim.interner.resolve(owner),
-                sim.interner.resolve(house),
-            )
+            && sim.house_alliances.is_allied(&sim.interner, owner, house)
         {
             continue;
         }
@@ -320,7 +371,19 @@ pub(crate) fn start(
             .house_mut(house)
             .start_radar_outage(frame, duration);
     }
-    let radar_viewers = if sim.session.game_mode().is_network() {
+    recheck_viewer_radar(sim);
+    sim.update_lighting();
+    if rules.general.lightning_print_text {
+        sim.sound_events.emit(SimSoundEvent::LightningStormBegan);
+    }
+    // The full-screen redraw (`0x0053A082`) is presentation.
+}
+
+/// Start's player radar recheck (`PlayerPtr+0x5779`), shared with the Ares
+/// redirect. A network game rechecks every human House's radar, so no
+/// peer's state depends on which House is its own.
+fn recheck_viewer_radar(sim: &mut Simulation) {
+    let radar_viewers = if sim.session.execution_topology().is_lockstep() {
         sim.houses
             .order()
             .iter()
@@ -337,11 +400,6 @@ pub(crate) fn start(
     for viewer in radar_viewers {
         sim.power_states.house_mut(viewer).recheck_radar();
     }
-    sim.update_lighting();
-    if rules.general.lightning_print_text {
-        sim.sound_events.emit(SimSoundEvent::LightningStormBegan);
-    }
-    // The full-screen redraw (`0x0053A082`) is presentation.
 }
 
 /// `LightningStorm::Process @ 0x0053A6C0` from its storm work (`0x0053A74C`)
@@ -362,12 +420,68 @@ pub(crate) fn start(
 ///    warns under `LightningPrintText=` (`0x0053AAE9`,
 ///    [`SimSoundEvent::LightningStormApproaching`]).
 ///
+/// When Ares plays the list work (steps 1 and 2) is always
+/// [`ares::process_lists`], and an Ares storm's rest is [`ares::process`].
+///
 /// Returns whether a strike changed a bridge.
 pub(super) fn process(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
+) -> bool {
+    let bridge_changed = if rules.ares_form() {
+        ares::process_lists(sim, rules, overlay_registry, frame_effects)
+    } else {
+        process_lists(sim, rules, overlay_registry, frame_effects)
+    };
+    if rules.ares_form()
+        && let Some(storm) = ares::current(sim, rules)
+    {
+        ares::process(sim, rules, storm);
+        return bridge_changed;
+    }
+
+    let frame = sim.session.binary_frame() as i32;
+    let storm = &sim.lightning_storm;
+    if storm.active && !storm.time_to_end {
+        if storm.duration != -1 && storm.start_frame.wrapping_add(storm.duration) < frame {
+            sim.lightning_storm.time_to_end = true;
+            return bridge_changed;
+        }
+        let general = &rules.general;
+        if frame.checked_rem(general.lightning_hit_delay) == Some(0) {
+            let cell = sim.lightning_storm.cell;
+            create_cloud_bolt(sim, rules, cell);
+        }
+        if frame.checked_rem(general.lightning_scatter_delay) == Some(0) {
+            scatter(sim, rules);
+        }
+        return bridge_changed;
+    }
+
+    let storm = &mut sim.lightning_storm;
+    if storm.deferment > 0 {
+        storm.deferment -= 1;
+        if storm.deferment == 0 {
+            let (duration, cell, owner) = (storm.duration, storm.cell, storm.owner);
+            start(sim, rules, duration, 0, cell, owner);
+        } else if storm.deferment % APPROACHING_INTERVAL == 0 && rules.general.lightning_print_text
+        {
+            sim.sound_events
+                .emit(SimSoundEvent::LightningStormApproaching);
+        }
+    }
+    bridge_changed
+}
+
+/// Process's list work (`0x0053A74C..0x0053A8F8`), steps 1 and 2, when Ares
+/// does not play.
+fn process_lists(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let mut bridge_changed = false;
     let mut index = sim.lightning_storm.clouds_manifesting.len();
@@ -409,37 +523,6 @@ pub(super) fn process(
             {
                 sim.lightning_storm.clouds_present.remove(index);
             }
-        }
-    }
-
-    let frame = sim.session.binary_frame() as i32;
-    let storm = &sim.lightning_storm;
-    if storm.active && !storm.time_to_end {
-        if storm.duration != -1 && storm.start_frame.wrapping_add(storm.duration) < frame {
-            sim.lightning_storm.time_to_end = true;
-            return bridge_changed;
-        }
-        let general = &rules.general;
-        if frame.checked_rem(general.lightning_hit_delay) == Some(0) {
-            let cell = sim.lightning_storm.cell;
-            create_cloud_bolt(sim, rules, cell);
-        }
-        if frame.checked_rem(general.lightning_scatter_delay) == Some(0) {
-            scatter(sim, rules);
-        }
-        return bridge_changed;
-    }
-
-    let storm = &mut sim.lightning_storm;
-    if storm.deferment > 0 {
-        storm.deferment -= 1;
-        if storm.deferment == 0 {
-            let (duration, cell, owner) = (storm.duration, storm.cell, storm.owner);
-            start(sim, rules, duration, 0, cell, owner);
-        } else if storm.deferment % APPROACHING_INTERVAL == 0 && rules.general.lightning_print_text
-        {
-            sim.sound_events
-                .emit(SimSoundEvent::LightningStormApproaching);
         }
     }
     bridge_changed
@@ -520,6 +603,27 @@ impl StormCell {
         }
     }
 
+    fn surface_z(
+        &self,
+        terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+        ground: i32,
+    ) -> i32 {
+        if !self.bridge {
+            return ground;
+        }
+        let deck = self
+            .real
+            .then(|| {
+                terrain?
+                    .corrected_high_bridge_deck_level((self.coords.0 as u16, self.coords.1 as u16))
+            })
+            .flatten();
+        deck.map_or_else(
+            || ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS),
+            |level| i32::from(level) * GROUND_LEVEL_HEIGHT_LEPTONS,
+        )
+    }
+
     /// The cell's centre at `z` (`(coord << 8) + 0x80` on both axes).
     fn centre(&self, z: i32) -> [i32; 3] {
         [
@@ -540,6 +644,12 @@ impl StormCell {
 /// 0)` and listed as manifesting and present. (The coordinate is compared with
 /// the zero coordinate `0x00A9FA30` first, which a cell centre never is.)
 pub(crate) fn create_cloud_bolt(sim: &mut Simulation, rules: &RuleSet, cell: (i16, i16)) {
+    if rules.ares_form()
+        && let Some(storm) = ares::current(sim, rules)
+    {
+        ares::create_cloud_bolt(sim, rules, storm, cell);
+        return;
+    }
     let target = StormCell::of(&get_cellclass_fallback(
         sim.resolved_terrain.as_ref(),
         i32::from(cell.0),
@@ -552,17 +662,12 @@ pub(crate) fn create_cloud_bolt(sim: &mut Simulation, rules: &RuleSet, cell: (i1
         .and_then(|bolt| rules.art().anim_runtime_config(bolt))
         .and_then(|config| config.raw_shp_height)
         .unwrap_or(0);
+    let ground = target.level.wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS);
     let z = target
-        .level
-        .wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS)
+        .surface_z(sim.resolved_terrain.as_ref(), ground)
         .wrapping_add(crate::util::lepton::native_pixel_height_leptons(
             image_height / 2,
-        ))
-        .wrapping_add(if target.bridge {
-            BRIDGE_DECK_HEIGHT_LEPTONS
-        } else {
-            0
-        });
+        ));
     let coords = [
         i32::from(cell.0) * 256 + 128,
         i32::from(cell.1) * 256 + 128,
@@ -605,8 +710,13 @@ pub(super) fn ground_strike(
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     [x, y, _]: [i32; 3],
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
+    if rules.ares_form()
+        && let Some(storm) = ares::current(sim, rules)
+    {
+        return ares::ground_strike(sim, rules, overlay_registry, storm, [x, y], frame_effects);
+    }
     let general = &rules.general;
     let (target, centre) = {
         let terrain = sim.resolved_terrain.as_ref();
@@ -634,16 +744,8 @@ pub(super) fn ground_strike(
         );
     }
 
-    let strike = target.centre(
-        target
-            .level
-            .wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS)
-            .wrapping_add(if target.bridge {
-                BRIDGE_DECK_HEIGHT_LEPTONS
-            } else {
-                0
-            }),
-    );
+    let ground = target.level.wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS);
+    let strike = target.centre(target.surface_z(sim.resolved_terrain.as_ref(), ground));
     let sounds = &general.lightning_sounds;
     if !sounds.is_empty() {
         let pick = sim.superweapon_rng().next_u32() % sounds.len() as u32;
@@ -654,7 +756,7 @@ pub(super) fn ground_strike(
         }
         .to_cell_sub_z();
         sim.sound_events.emit(SimSoundEvent::VocAt {
-            sound_id: sounds[pick as usize].clone(),
+            sound_id: rules.sound_name(&sounds[pick as usize]),
             audible_to: None,
             rx,
             ry,
@@ -676,6 +778,7 @@ pub(super) fn ground_strike(
             land,
             coordinate,
             coordinate,
+            false,
         ) {
             crate::sim::world::damage_consequences::admit_explosion_effect(sim, rules, effect);
         }
@@ -702,9 +805,11 @@ pub(super) fn ground_strike(
             coordinate,
             general.lightning_damage,
             warhead,
+            true,
             (crate::sim::combat::RAD_NO_ATTACKER, house, warhead_ref),
             frame_effects,
-        );
+        )
+        .bridge_state_changed;
     } else {
         log::warn!(
             "Lightning warhead '{}' not found in rules",

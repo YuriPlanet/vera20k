@@ -19,7 +19,7 @@ fn action(kind: i32, value: i32) -> RuntimeAction {
         .unwrap()
         .entries()[0]
         .clone();
-    RuntimeDefinitions::default().resolve_action(entry, None, None)
+    RuntimeDefinitions::default().resolve_action(entry, None, None, None)
 }
 
 fn run(sim: &mut Simulation, action: &RuntimeAction, rules: Option<&RuleSet>) -> bool {
@@ -33,7 +33,7 @@ fn run(sim: &mut Simulation, action: &RuntimeAction, rules: Option<&RuleSet>) ->
         &mut Vec::new(),
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -197,6 +197,8 @@ fn all_five_original_stop_controls_only_mark_alive_same_cell_systems() {
     }
 }
 
+// Ares simulates retail BigGreySmokeSys itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
 #[test]
 fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_retirement() {
     let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
@@ -214,7 +216,7 @@ fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_r
         &mut sim,
         &rules,
         id,
-        crate::sim::world::UninitContext::with_rules(&rules)
+        crate::sim::world::UninitContext::new(&rules)
     ));
     let system = sim.particle_systems().get(id).unwrap();
     assert!(!system.done_spawning());
@@ -248,7 +250,7 @@ fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_r
                 world,
                 &rules,
                 id,
-                crate::sim::world::UninitContext::with_rules(&rules),
+                crate::sim::world::UninitContext::new(&rules),
             );
             world.process_pending_delete();
         }

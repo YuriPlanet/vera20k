@@ -27,7 +27,10 @@ struct Params {
     white_height: u32,
     origin_x: u32,
     origin_y: u32,
-    _pad2: [u32; 2],
+    /// The battlefield's first row in the retained column.
+    field_y: u32,
+    /// The rows the warp turns, from the battlefield's first.
+    rows: u32,
 }
 
 pub(crate) struct ChronoScreenRenderer {
@@ -50,7 +53,8 @@ impl ChronoScreenRenderer {
             depth_or_array_layers: 1,
         };
         let format = source.format();
-        let encoded_format = format.remove_srgb_suffix();
+        let encoded_format = super::webgl::encoded_format(&gpu.device, format);
+        let webgl = super::gpu::webgl_fallback(&gpu.device);
         let snapshot = gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Chrono native retained scene"),
             size: extent,
@@ -74,13 +78,24 @@ impl ChronoScreenRenderer {
             mapped_at_creation: false,
         });
         // One immutable retail table owner; do not regenerate sin/cos.
-        let trig = gpu
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Chrono shared retail trig table"),
-                contents: crate::util::native_trig::RETAIL_SINE_TABLE,
-                usage: wgpu::BufferUsages::STORAGE,
-            });
+        // WebGL2 has no storage buffers; the same bytes become a data texture.
+        let trig = (!webgl).then(|| {
+            gpu.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Chrono shared retail trig table"),
+                    contents: crate::util::native_trig::RETAIL_SINE_TABLE,
+                    usage: wgpu::BufferUsages::STORAGE,
+                })
+        });
+        let trig_table = webgl.then(|| {
+            super::webgl::table_texture(
+                &gpu.device,
+                &gpu.queue,
+                "Chrono shared retail trig table",
+                wgpu::TextureFormat::R32Float,
+                crate::util::native_trig::RETAIL_SINE_TABLE,
+            )
+        });
         let layout = gpu
             .device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -109,10 +124,18 @@ impl ChronoScreenRenderer {
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                        ty: if webgl {
+                            wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            }
+                        } else {
+                            wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            }
                         },
                         count: None,
                     },
@@ -132,7 +155,11 @@ impl ChronoScreenRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: trig.as_entire_binding(),
+                    resource: match (&trig, &trig_table) {
+                        (Some(trig), _) => trig.as_entire_binding(),
+                        (None, Some(table)) => wgpu::BindingResource::TextureView(table),
+                        (None, None) => unreachable!("one trig table owner"),
+                    },
                 },
             ],
         });
@@ -140,7 +167,7 @@ impl ChronoScreenRenderer {
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("Chrono native screen shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("chrono_screen.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(shader_source(webgl).into()),
             });
         let pipeline_layout = gpu
             .device
@@ -191,7 +218,7 @@ impl ChronoScreenRenderer {
         self.extent.width == tactical[2]
             && self.extent.height == source.height()
             && self.origin[0] == tactical[0]
-            && self.encoded_format == source.format().remove_srgb_suffix()
+            && self.encoded_format.remove_srgb_suffix() == source.format().remove_srgb_suffix()
     }
 
     pub(crate) fn capture(&self, encoder: &mut wgpu::CommandEncoder, source: &wgpu::Texture) {
@@ -207,6 +234,7 @@ impl ChronoScreenRenderer {
         target: &wgpu::Texture,
         draw: ChronoScreenDraw,
         tactical: [u32; 4],
+        bar_under: bool,
     ) {
         let (mode, weight, amplitude) = match draw {
             ChronoScreenDraw::Warp { step, duration } => {
@@ -234,7 +262,8 @@ impl ChronoScreenRenderer {
                 white_height: tactical[3],
                 origin_x: self.origin[0],
                 origin_y: self.origin[1],
-                _pad2: [0; 2],
+                field_y: tactical[1],
+                rows: warp_rows(self.extent.height, tactical, bar_under),
             }),
         );
         let view = target.create_view(&wgpu::TextureViewDescriptor {
@@ -265,6 +294,50 @@ multiview_mask: None,
     }
 }
 
+/// The WebGL2 fallback reads the trig table from a data texture and the
+/// retained scene through its sRGB view (see `render::webgl`).
+pub(crate) fn shader_source(webgl: bool) -> String {
+    const SOURCE: &str = include_str!("chrono_screen.wgsl");
+    if !webgl {
+        return SOURCE.to_owned();
+    }
+    let source = super::webgl::encoded_shader(
+        SOURCE,
+        &[
+            (
+                "@group(0) @binding(2) var<storage, read> trig: array<f32>;",
+                "@group(0) @binding(2) var trig_table: texture_2d<f32>;",
+            ),
+            (
+                "let colour = textureLoad(snapshot, sampled, 0);",
+                "let colour = fallback_load_encoded(textureLoad(snapshot, sampled, 0));",
+            ),
+            (
+                "return vec4(vec3<f32>(components) / vec3(31.0,63.0,31.0), 1.0);",
+                "return fallback_store_encoded(vec4(vec3<f32>(components) / vec3(31.0,63.0,31.0), 1.0));",
+            ),
+        ],
+    );
+    format!(
+        "{}\nfn trig_at(index: u32) -> f32 {{ return textureLoad(trig_table, fallback_table_texel(index), 0).r; }}\n{}",
+        super::webgl::TABLE_WGSL,
+        super::webgl::index_calls(&source, "trig", "trig_at")
+    )
+}
+
+/// The rows the warp turns. The original's surface is the battlefield with
+/// the command bar under it, and `7F5BFC` leaves the bar's 32 rows at the
+/// foot of the surface alone. A layout with no bar under the battlefield has
+/// no rows to leave: the warp takes the battlefield's own.
+fn warp_rows(surface_height: u32, tactical: [u32; 4], bar_under: bool) -> u32 {
+    let [_, top, _, height] = tactical;
+    if bar_under {
+        surface_height.saturating_sub(top).saturating_sub(32)
+    } else {
+        height
+    }
+}
+
 fn draw_amplitude(step: i32) -> f32 {
     let mut velocity = 0.0_f64;
     let mut amplitude = 0.0_f64;
@@ -280,4 +353,19 @@ fn draw_amplitude(step: i32) -> f32 {
     let value = X87Chop53::load_f64(NativeF64Bits::from_bits(amplitude.to_bits()))
         .expect("finite chrono amplitude");
     f32::from_bits(X87Chop53::store_f32_masked_chop(value).bits())
+}
+
+#[cfg(all(test, tests_render_a_r))]
+mod tests {
+    use super::warp_rows;
+
+    #[test]
+    fn the_warp_leaves_only_a_bar_under_the_battlefield() {
+        // The original: every surface row but the bar's 32, at any sidebar size.
+        assert_eq!(warp_rows(600, [0, 0, 632, 568], true), 568);
+        assert_eq!(warp_rows(1200, [0, 0, 1264, 1136], true), 1168);
+        // The bar on top, or left out: the battlefield's own rows.
+        assert_eq!(warp_rows(600, [168, 32, 632, 568], false), 568);
+        assert_eq!(warp_rows(600, [0, 0, 632, 600], false), 600);
+    }
 }

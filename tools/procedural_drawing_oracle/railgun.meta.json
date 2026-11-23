@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Railgun line damage, ParticleSystem constructor, AI_Railgun lay/laser and Railgun particle AI to expiry",
+  "assumptions": [
+    "Physical RULESMD/LANGRULE/MPBattleMD layers through SparkBirth read retail SmallRailgunSys and SmallRailgunPart with the original type readers 6440A0/6442D0 and 644BE0/644F50.",
+    "Whole ParticleSystem 62DC50 runs with no target object, owner or House and the target coordinate FireAt passes. Live Logic 55B5FF..55B61B runs every visit; the system AI, laser constructor, particle constructor 62B5E0 and particle AI 62C3A0 execute unchanged on the flat-cell fixture.",
+    "Scenario RNG starts from the SparkBirth seed; Main is asserted unchanged. Each laser constructor call records its 16 raw argument dwords."
+  ],
+  "substitutions": [
+    "Reuse SparkBirth allocator, cached INI and flat-cell world; prepare_spark_capacity supplies the empty LaserDraw vector 0xABC878.",
+    "Line damage replaces only the three object virtuals (WhatAmI, GetCoords, ReceiveDamage) with recording stubs; cell lookup, ground height, Lerp, Sqrt_Approx and the hit list execute unchanged.",
+    "Line damage runs whole 70C690 with a stub firer, weapon (AmbientDamage 150) and stub Technos linked into the flat cells; GetCoords returns Location and ReceiveDamage records its arguments without running. Fixture positions come from an exact-distance search, never from expected outputs."
+  ],
+  "entry_points": {
+    "line_damage": "0x0070C690",
+    "system_ctor": "0x0062DC50",
+    "system_ai": "0x0062FD60",
+    "railgun_ai": "0x0062F230",
+    "laser_ctor": "0x0054FE60",
+    "particle_ctor": "0x0062B5E0",
+    "particle_ai": "0x0062C3A0",
+    "logic": "0x0055B5FF"
+  },
+  "reproduction_commands": {
+    "working_directory": "repository root with the configured retail installation",
+    "check": "python -m tools.procedural_drawing_oracle.railgun --check",
+    "write": "python -m tools.procedural_drawing_oracle.railgun --write"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.railgun",
+  "payload_sha256": "b989b05b581e05c0541cc62e60a8da7a30b4d244d7d8903461a01e1b43bf0eaa"
+}

@@ -173,6 +173,9 @@ fn status_two_fires_from_the_native_stage() {
 /// one of the retail types bound with the row's frame count; a row with no
 /// frames uses no anim, which VERA reads as finished (its stage is then its
 /// frame count, 0, so the stage-5 row is replayed through the test alone).
+// Stock PsyDom Start/Process (0x0053AE50, 0x0053AF40); installed Ares runs
+// SW_PsychicDominator's state machine (10070BA0) and Fire hook (10037840)
+// instead. Ares coverage: `ares_stock_types_tests`.
 #[test]
 fn retail_process_steps_match_native() {
     let Some(rules) = retail_rules() else {
@@ -235,7 +238,7 @@ fn retail_process_steps_match_native() {
             &mut sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let state = sim.psychic_dominator;
@@ -582,6 +585,9 @@ fn dominator_lighting_read_matches_native() {
 /// click while it runs is refused and keeps its charge. The tint fades back
 /// at `DominatorAmbientChangeRate=` and the Dominator ends when the ambient
 /// is back.
+// Stock PsyDom Start/Process (0x0053AE50, 0x0053AF40); installed Ares runs
+// SW_PsychicDominator's state machine (10070BA0) and Fire hook (10037840)
+// instead. Ares coverage: `ares_stock_types_tests`.
 #[test]
 fn retail_dominator_strike_captures_the_block() {
     let Some(rules) = retail_rules() else {
@@ -668,7 +674,7 @@ fn retail_dominator_strike_captures_the_block() {
     let struck_at = frames;
     for id in [tank, conscript, squad[0], squad[1], own] {
         assert_eq!(owner_name(&sim, id), "Americans");
-        let link = &sim.substrate.entities.get(id).unwrap().mind_control;
+        let link = &sim.substrate.entities.get(id).unwrap().seldom.mind_control;
         assert!(link.is_mind_controlled() && link.controller().is_none());
         assert!(attached_anim(&sim, id, "MINDANIMR"), "{id} ringed");
     }
@@ -679,6 +685,7 @@ fn retail_dominator_strike_captures_the_block() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .mind_control
                 .is_mind_controlled()
         );
@@ -697,7 +704,7 @@ fn retail_dominator_strike_captures_the_block() {
         400
     );
     // The player's captives take no Hunt.
-    let mission = sim.substrate.entities.get(tank).unwrap().mission;
+    let mission = sim.substrate.entities.get(tank).unwrap().mission.clone();
     assert_ne!(mission.queued().known(), Some(MissionType::Hunt));
 
     // A save mid-strike restores the Dominator and its captives.
@@ -714,11 +721,12 @@ fn retail_dominator_strike_captures_the_block() {
     for id in [tank, conscript] {
         let entity = loaded.substrate.entities.get(id).unwrap();
         assert_eq!(
-            entity.mind_control,
-            sim.substrate.entities.get(id).unwrap().mind_control
+            entity.seldom.mind_control,
+            sim.substrate.entities.get(id).unwrap().seldom.mind_control
         );
         assert!(
-            entity.mind_control.is_mind_controlled() && entity.mind_control.controller().is_none()
+            entity.seldom.mind_control.is_mind_controlled()
+                && entity.seldom.mind_control.controller().is_none()
         );
     }
 
@@ -779,6 +787,7 @@ fn retail_dominator_strike_captures_the_block() {
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .mind_control
             .is_mind_controlled()
     );
@@ -804,7 +813,7 @@ fn retail_computer_dominator_sends_its_captives_hunting() {
         sw_type,
         TARGET,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         true,
     ));
     let mut frames = 0;
@@ -815,7 +824,7 @@ fn retail_computer_dominator_sends_its_captives_hunting() {
     }
     for id in [tank, gi] {
         assert_eq!(owner_name(&sim, id), "Russians");
-        let mission = sim.substrate.entities.get(id).unwrap().mission;
+        let mission = sim.substrate.entities.get(id).unwrap().mission.clone();
         assert!(
             [mission.current().known(), mission.queued().known()]
                 .contains(&Some(MissionType::Hunt)),
@@ -853,7 +862,7 @@ fn retail_computer_aims_its_dominator_at_the_group() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(sim.psychic_dominator.status_number(), 1);
@@ -870,7 +879,7 @@ fn retail_computer_aims_its_dominator_at_the_group() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.super_weapons[&russians][&sw_type].is_ready);
     assert_eq!(sim.psychic_dominator.cell(), cell);
@@ -883,7 +892,7 @@ fn retail_computer_aims_its_dominator_at_the_group() {
     }
     for id in group {
         assert_eq!(owner_name(&sim, id), "Russians");
-        let mission = sim.substrate.entities.get(id).unwrap().mission;
+        let mission = sim.substrate.entities.get(id).unwrap().mission.clone();
         assert!(
             [mission.current().known(), mission.queued().known()]
                 .contains(&Some(MissionType::Hunt)),
@@ -913,7 +922,7 @@ fn retail_dominator_takes_a_captive_from_its_controller() {
         tank,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(owner_name(&sim, tank), "YuriCountry");
     assert!(attached_anim(&sim, tank, "MINDANIM"));
@@ -926,7 +935,13 @@ fn retail_dominator_takes_a_captive_from_its_controller() {
         assert!(frames < 200, "no strike");
     }
     assert_eq!(owner_name(&sim, tank), "Americans");
-    let link = &sim.substrate.entities.get(tank).unwrap().mind_control;
+    let link = &sim
+        .substrate
+        .entities
+        .get(tank)
+        .unwrap()
+        .seldom
+        .mind_control;
     assert!(link.is_mind_controlled() && link.controller().is_none());
     let manager = sim
         .substrate

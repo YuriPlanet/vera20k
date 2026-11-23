@@ -5,7 +5,9 @@
 //! inclusive sorted ranged draws, and rejection sampling.
 
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use crate::util::sync::Mutex;
 
 use crate::rng_continuation::MapGenRngContinuation;
 use crate::util::native_random;
@@ -115,13 +117,54 @@ pub struct SimRng {
     disabled: u8,
     index_a: i32,
     index_b: i32,
-    state: Vec<u32>,
+    /// Held inline, so a copy (a local anim's constructor stream, a scan's
+    /// disguise roll) is a memcpy and not a heap allocation. Saved, traced
+    /// and hashed as the `Vec<u32>` it once was: a length, then the words.
+    #[serde(with = "table")]
+    state: [u32; RNG_TABLE_LEN],
 }
 
-/// Owner of process Main886B88. Simulation, frontend and retained playback
-/// capabilities address the same cell; sharing never copies its cursor.
-/// Main remains outside Scenario saves and the deterministic world hash.
-#[derive(Debug)]
+/// The RNG table's wire form: a sequence, as a `Vec<u32>` writes and reads
+/// it, so saves made while the table was a `Vec` load unchanged. A table of
+/// another length is refused when it is read.
+mod table {
+    use super::RNG_TABLE_LEN;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub(super) fn serialize<S: Serializer>(
+        words: &[u32; RNG_TABLE_LEN],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(words)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<[u32; RNG_TABLE_LEN], D::Error> {
+        let words = Vec::<u32>::deserialize(deserializer)?;
+        // The save-layout tracer reads one made-up word.
+        if crate::util::save_codec::layout::describing() {
+            return Ok([0; RNG_TABLE_LEN]);
+        }
+        words.try_into().map_err(|words: Vec<u32>| {
+            serde::de::Error::custom(format!(
+                "the random number table holds {} words, not {RNG_TABLE_LEN}",
+                words.len()
+            ))
+        })
+    }
+}
+
+/// Owner of the app's process Main886B88 cell. It sits behind a lock because
+/// two threads draw it: the frontend and presentation on the main thread, and
+/// the audio output thread, which draws playlist picks on refill through a
+/// retained [`MainRngDraws`]. A scenario's simulation owns its Main as a plain
+/// [`SimRng`] drawn through `&mut`, seeded from this cell at install
+/// ([`crate::sim::world::Simulation::install_fresh_process_main`]), so the
+/// simulation thread and the app share no RNG (docs/sim-thread.md). Main
+/// remains outside Scenario saves and the deterministic world hash. A clone
+/// shares this one cell.
+#[derive(Debug, Clone)]
 pub struct MainRng {
     state: Arc<Mutex<SimRng>>,
 }
@@ -138,44 +181,14 @@ impl MainRng {
         }
     }
 
-    /// Bind another owner slot at a process/scenario handoff. The native
-    /// object stays in place, including draws made while a load is prepared.
-    pub(super) fn shared_owner(&self) -> Self {
-        Self {
-            state: Arc::clone(&self.state),
-        }
-    }
-
-    /// Stage a transactional saved-load candidate. Draws made while the load
-    /// is prepared advance this copy; `install_from` moves it into the process
-    /// cell on commit, and a rejected load drops it with the cell untouched.
-    pub(super) fn staged_copy(&self) -> Self {
-        self.state.lock().expect("Main RNG poisoned").clone().into()
-    }
-
-    /// Move the finished bootstrap cursor into the retained process cell.
-    /// The app must synchronously cancel outgoing playback before this seam;
-    /// the staged bootstrap must have relinquished its terrain draw handles.
-    pub(super) fn install_from(&self, staged: Self) {
-        if Arc::ptr_eq(&self.state, &staged.state) {
-            return;
-        }
-        let state = Arc::try_unwrap(staged.state)
-            .expect("fresh Main bootstrap has no retained draw capabilities")
-            .into_inner()
-            .expect("Main RNG poisoned");
-        *self.state.lock().expect("Main RNG poisoned") = state;
+    /// Move a finished bootstrap or loaded cursor into the process cell. The
+    /// app must synchronously cancel outgoing playback before this seam.
+    pub(super) fn install(&self, cursor: SimRng) {
+        *self.state.lock().expect("Main RNG poisoned") = cursor;
     }
 
     pub fn next_u32(&self) -> u32 {
         self.state.lock().expect("Main RNG poisoned").next_u32()
-    }
-
-    pub(crate) fn next_range_i32_inclusive(&self, low: i32, high: i32) -> i32 {
-        self.state
-            .lock()
-            .expect("Main RNG poisoned")
-            .next_range_i32_inclusive(low, high)
     }
 
     /// Observe one coherent boundary while callback draws can run elsewhere.
@@ -186,6 +199,12 @@ impl MainRng {
             .logical_state()
     }
 
+    /// A detached, draw-free cursor checkpoint. It never grants another live
+    /// owner of the process cell.
+    pub fn checkpoint(&self) -> SimRng {
+        self.state.lock().expect("Main RNG poisoned").clone()
+    }
+
     pub fn state(&self) -> u64 {
         self.state.lock().expect("Main RNG poisoned").state()
     }
@@ -193,25 +212,6 @@ impl MainRng {
     #[cfg(any(test, feature = "test-support"))]
     pub fn native_state_hex(&self) -> String {
         self.logical_state().native_state_hex()
-    }
-
-    /// An explicitly detached test reference, never a live draw capability.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn snapshot_for_test(&self) -> SimRng {
-        self.state.lock().expect("Main RNG poisoned").clone()
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn into_rng_for_test(self) -> SimRng {
-        Arc::try_unwrap(self.state)
-            .expect("test Main has no retained draw capabilities")
-            .into_inner()
-            .expect("Main RNG poisoned")
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn index_b(&self) -> i32 {
-        self.logical_state().index_b
     }
 }
 
@@ -223,30 +223,9 @@ impl From<SimRng> for MainRng {
     }
 }
 
-// Native fixture adapters only. The live Simulation field is serde-skipped:
-// saves never serialize or replace process Main886B88.
-#[cfg(any(test, feature = "test-support"))]
-impl serde::Serialize for MainRng {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serde::Serialize::serialize(&*self.state.lock().expect("Main RNG poisoned"), serializer)
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl<'de> serde::Deserialize<'de> for MainRng {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        <SimRng as serde::Deserialize>::deserialize(deserializer).map(Self::from)
-    }
-}
-
-/// Retained process Main draws. Clone shares the owner's cell; it cannot
-/// seed, replace, borrow simulation state or expose an independent cursor.
+/// Retained draws on the app's process Main cell, for the main thread and
+/// the audio output thread. Clone shares the owner's cell; it cannot seed,
+/// replace, borrow simulation state or expose an independent cursor.
 #[derive(Clone)]
 pub struct MainRngDraws {
     state: Arc<Mutex<SimRng>>,
@@ -303,13 +282,20 @@ impl SimRngLogicalState {
 }
 
 impl SimRng {
+    /// Reject malformed external cursor checkpoints before any indexed draw.
+    /// The table's length was checked when it was read.
+    pub fn valid_checkpoint(&self) -> bool {
+        (0..RNG_TABLE_LEN as i32).contains(&self.index_a)
+            && (0..RNG_TABLE_LEN as i32).contains(&self.index_b)
+    }
+
     /// Create a new RNG with the given seed.
     pub fn new(seed: u64) -> Self {
         Self {
             disabled: 0,
             index_a: 0,
             index_b: native_random::LAG as i32,
-            state: Vec::from(native_random::seeded_words(seed as u32)),
+            state: native_random::seeded_words(seed as u32),
         }
     }
 
@@ -323,7 +309,7 @@ impl SimRng {
             disabled,
             index_a: i32::try_from(index_a).expect("MapGen cursor A fits native i32"),
             index_b: i32::try_from(index_b).expect("MapGen cursor B fits native i32"),
-            state: Vec::from(words),
+            state: words,
         }
     }
 
@@ -395,19 +381,33 @@ impl SimRng {
             disabled: bytes[0],
             index_a: word(4) as i32,
             index_b: word(8) as i32,
-            state: (12..0x3f4).step_by(4).map(word).collect(),
+            state: std::array::from_fn(|i| word(12 + i * 4)),
+        }
+    }
+
+    /// A stream whose next draws are `draws`, in order: the lead cursor starts
+    /// at word 0 and the lagged one at word 125, over zeros. For a test that
+    /// needs a draw no seed reaches, such as `i32::MIN`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_next_draws_for_test(draws: &[u32]) -> Self {
+        assert!(draws.len() <= 125, "the lagged words must stay zero");
+        let mut state = [0; RNG_TABLE_LEN];
+        state[..draws.len()].copy_from_slice(draws);
+        Self {
+            disabled: 0,
+            index_a: 0,
+            index_b: 125,
+            state,
         }
     }
 
     /// Copy every logical field into immutable boundary evidence.
     pub fn logical_state(&self) -> SimRngLogicalState {
-        let mut words = [0; RNG_TABLE_LEN];
-        words.copy_from_slice(&self.state);
         SimRngLogicalState {
             disabled: self.disabled,
             index_a: self.index_a,
             index_b: self.index_b,
-            words,
+            words: self.state,
         }
     }
 
@@ -430,6 +430,8 @@ impl SimRng {
     }
 
     /// Hash the complete RNG state for deterministic replay/desync checks.
+    /// An array hashes as its slice, the length and then the words, as the
+    /// `Vec` the table once was did.
     pub fn hash_state(&self, hasher: &mut impl Hasher) {
         self.disabled.hash(hasher);
         self.index_a.hash(hasher);
@@ -573,11 +575,20 @@ impl SimRng {
     /// the cursor a variable amount and desyncs every later consumer that tick.
     /// Returns 0 for `n == 0` (the original would divide-by-zero here; callers
     /// guard with `.max(1)`, so this branch never fires on stock systems).
+    /// A raw `i32::MIN` over `n == u32::MAX` (a divisor of -1, as `MaxEC=-1`
+    /// gives) overflows gamemd's IDIV; this returns the true remainder, 0.
+    ///
+    /// Draws that take the absolute value first (`CDQ; XOR; SUB; CDQ; IDIV`),
+    /// such as Gas drift and the Spark burst size and Z velocity, use
+    /// [`abs_before_modulo`] instead: for a raw `i32::MIN` its remainder stays
+    /// negative.
     pub fn next_raw_abs_modulo(&mut self, n: u32) -> u32 {
         if n == 0 {
             return 0;
         }
-        ((self.next_u32() as i32) % n as i32).unsigned_abs()
+        (self.next_u32() as i32)
+            .wrapping_rem(n as i32)
+            .unsigned_abs()
     }
 
     /// Raw signed remainder draw: `(next_u32() as i32) % n`, one draw, may be
@@ -587,16 +598,25 @@ impl SimRng {
     /// no absolute value): a negative remainder yields a negative offset, so the
     /// output spans `-(n-1)..=n-1`. Same single-draw cursor advance as
     /// `next_raw_abs_modulo`; the only difference is the sign is preserved.
-    /// Returns 0 for `n == 0`.
+    /// Returns 0 for `n == 0`, and the true remainder 0 where gamemd's IDIV
+    /// overflows (a raw `i32::MIN` over a divisor of -1).
     pub fn next_raw_modulo_signed(&mut self, n: u32) -> i32 {
         if n == 0 {
             return 0;
         }
-        (self.next_u32() as i32) % n as i32
+        (self.next_u32() as i32).wrapping_rem(n as i32)
+    }
+
+    /// `Randomizer::RandomDouble` (YRpp `Helpers/Randomizer.h`):
+    /// `RandomRanged(1, INT_MAX) / (INT_MAX + 1)`, one inclusive-range draw
+    /// into `[1/2^31, 1)`. Phobos probability gates (`ArmorMultiplier.Chance`,
+    /// `Critical.Chance`) compare against it.
+    pub fn random_double(&mut self) -> f64 {
+        f64::from(self.next_range_i32_inclusive(1, i32::MAX)) / 2_147_483_648.0
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::{MainRng, SimRng, trace_draws};
 
@@ -692,7 +712,7 @@ mod tests {
                 disabled: bytes[0],
                 index_a: word(4) as i32,
                 index_b: word(8) as i32,
-                state: (0..250).map(|i| word(12 + i * 4)).collect(),
+                state: std::array::from_fn(|i| word(12 + i * 4)),
             }
         }
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -810,6 +830,25 @@ mod tests {
         let mut reference = SimRng::new(1);
         reference.next_u32();
         assert_eq!(a.state(), reference.state());
+    }
+
+    /// A raw `i32::MIN` over a divisor of -1 (`MaxEC=-1`) overflows gamemd's
+    /// IDIV; both helpers return the true remainder, 0, after their one draw.
+    #[test]
+    fn raw_modulo_of_min_by_minus_one_is_zero() {
+        for signed in [false, true] {
+            let mut rng = SimRng::new(1);
+            let (a, b) = (rng.index_a as usize, rng.index_b as usize);
+            rng.state[a] = rng.state[b] ^ 0x8000_0000;
+            let mut twin = rng.clone();
+            if signed {
+                assert_eq!(rng.next_raw_modulo_signed(u32::MAX), 0);
+            } else {
+                assert_eq!(rng.next_raw_abs_modulo(u32::MAX), 0);
+            }
+            assert_eq!(twin.next_u32(), 0x8000_0000);
+            assert_eq!(rng.state(), twin.state());
+        }
     }
 
     #[test]
@@ -937,5 +976,82 @@ mod tests {
             }
         }
         assert_eq!(compared, 98);
+    }
+
+    /// `RandomDouble` is one `RandomRanged(1, INT_MAX)` draw scaled by
+    /// `2^31`, so it advances the shared cursor exactly like that draw.
+    #[test]
+    fn random_double_consumes_one_inclusive_range_draw() {
+        let mut doubled = SimRng::new(0x5EED);
+        let mut ranged = SimRng::new(0x5EED);
+        let value = doubled.random_double();
+        let raw = ranged.next_range_i32_inclusive(1, i32::MAX);
+        assert_eq!(value, f64::from(raw) / 2_147_483_648.0);
+        assert!((0.0..1.0).contains(&value), "{value}");
+        assert_eq!(
+            doubled.native_state_hex(),
+            ranged.native_state_hex(),
+            "same cursor advance"
+        );
+    }
+
+    /// The table as it was saved while it was a `Vec<u32>`, under the same
+    /// serde names, so its bytes, traced layout and hash are the old ones.
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[serde(rename = "SimRng")]
+    struct VecTableRng {
+        disabled: u8,
+        index_a: i32,
+        index_b: i32,
+        state: Vec<u32>,
+    }
+
+    #[test]
+    fn the_inline_table_keeps_the_vec_bytes_layout_and_hash() {
+        use crate::util::save_codec;
+        use std::hash::Hasher;
+
+        let mut rng = SimRng::new(0x5EED);
+        for _ in 0..77 {
+            rng.next_u32();
+        }
+        let old = VecTableRng {
+            disabled: rng.disabled,
+            index_a: rng.index_a,
+            index_b: rng.index_b,
+            state: rng.state.to_vec(),
+        };
+        let old_bytes = save_codec::serialize(&old).unwrap();
+        assert_eq!(save_codec::serialize(&rng).unwrap(), old_bytes);
+        let loaded: SimRng = save_codec::deserialize(&old_bytes).unwrap();
+        assert_eq!(loaded.logical_state(), rng.logical_state());
+        assert_eq!(
+            save_codec::layout::describe::<SimRng>().unwrap(),
+            save_codec::layout::describe::<VecTableRng>().unwrap()
+        );
+
+        let mut new_hash = std::collections::hash_map::DefaultHasher::new();
+        rng.hash_state(&mut new_hash);
+        let mut old_hash = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&old.disabled, &mut old_hash);
+        std::hash::Hash::hash(&old.index_a, &mut old_hash);
+        std::hash::Hash::hash(&old.index_b, &mut old_hash);
+        std::hash::Hash::hash(&old.state, &mut old_hash);
+        assert_eq!(new_hash.finish(), old_hash.finish());
+    }
+
+    #[test]
+    fn a_table_of_another_length_is_refused_when_read() {
+        let short = VecTableRng {
+            disabled: 0,
+            index_a: 0,
+            index_b: 0,
+            state: vec![1; 249],
+        };
+        let bytes = crate::util::save_codec::serialize(&short).unwrap();
+        let error = crate::util::save_codec::deserialize::<SimRng>(&bytes)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("holds 249 words, not 250"), "{error}");
     }
 }

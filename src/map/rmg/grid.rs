@@ -2,11 +2,13 @@
 //!
 //! Phases mutate `GridCell`s (the subset of cell state the generator reads or
 //! writes); `emit` projects the grid into a `MapFile` at the end. Iteration
-//! order is load-bearing: every per-cell RNG draw happens in `DiamondScan`
-//! order, so a different traversal silently reorders the whole draw stream.
+//! order is load-bearing: every per-cell RNG draw happens in
+//! [`RmgGrid::native_cells`] order, so a different traversal silently
+//! reorders the whole draw stream.
 
+use super::MapGeometry;
 use super::tiles::TILE_UNASSIGNED;
-
+use crate::map::playfield::{AllocatedCellWalk, SizeDiamond};
 use crate::util::direction::DIRECTION_DELTAS;
 
 /// One generated cell — the fields the generation phases touch.
@@ -59,14 +61,13 @@ pub enum CellRef {
     Border,
 }
 
-/// Working grid, indexed by the same linear (x, y) scheme as the scratch
-/// array. Cells outside the map's valid band read as `None`, which is what
-/// terminates the native iteration.
+/// Working grid, addressed by the same (x, y) as the scratch array but stored
+/// diagonal-major ([`RmgGrid::slot`]). Cells outside the map's valid band
+/// read as `None`, which is what terminates the native iteration.
 #[derive(Debug, Clone)]
 pub struct RmgGrid {
     width: usize,
-    diamond_min: i32,
-    diamond_max: i32,
+    diamond: SizeDiamond,
     cells: Vec<GridCell>,
     /// The shared out-of-band fallback cell. The original returns one static
     /// cell for every invalid lookup, writing the requested coordinate into
@@ -79,12 +80,23 @@ pub struct RmgGrid {
 }
 
 impl RmgGrid {
+    /// Allocate the working cells for a generated map.
+    pub fn from_geometry(geometry: MapGeometry) -> Self {
+        Self::allocate(geometry.stride(), geometry.size_diamond())
+    }
+
+    /// Build a fixture with an independently sized square and diamond.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(width: usize, diamond_min: i32, diamond_max: i32) -> Self {
+        Self::allocate(width, SizeDiamond::from_bounds(diamond_min, diamond_max))
+    }
+
+    fn allocate(width: usize, diamond: SizeDiamond) -> Self {
         Self {
             width,
-            diamond_min,
-            diamond_max,
-            cells: vec![GridCell::default(); width * width],
+            diamond,
+            // Diagonal-major (see `slot`): rows of constant x + y, 2W of them.
+            cells: vec![GridCell::default(); 2 * width * width],
             // Original Cell constructor47BC11 writesFFFF, not zero;
             // startup565060 and Resize5670F2 construct the shared Dummy.
             // RMG599E70 resets only allocated iterator cells. Native input
@@ -102,33 +114,37 @@ impl RmgGrid {
         self.width
     }
 
+    /// The edge of the "whole map" rects and packed cell ids the phases use:
+    /// the original's 512-cell array (`0x200`), which every native size fits.
+    /// VERA extension: a grid wider than that (Giant and up) uses its own
+    /// width, so those maps grow lakes, rivers and bridges past cell 512.
+    pub fn whole_extent(&self) -> i32 {
+        (self.width as i32).max(0x200)
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn diamond_bounds(&self) -> (i32, i32) {
-        (self.diamond_min, self.diamond_max)
+        self.diamond.bounds()
     }
 
     /// Whether a cell exists at this coordinate — the allocation predicate
     /// the original uses when building the map (asymmetric diamond band).
     pub fn is_valid(&self, x: i32, y: i32) -> bool {
-        self.diamond_min < x + y
-            && x - y < self.diamond_min
-            && y - x < self.diamond_min
-            && x + y <= self.diamond_max
-            && self.in_bounds(x, y)
+        self.diamond.contains(x, y) && self.in_bounds(x, y)
     }
 
     fn in_bounds(&self, x: i32, y: i32) -> bool {
-        x >= 0 && y >= 0 && (x as usize) < self.width && (y as usize) < self.width
+        in_bounds(self.width, x, y)
     }
 
     pub fn get(&self, x: i32, y: i32) -> Option<&GridCell> {
-        self.is_valid(x, y)
-            .then(|| &self.cells[y as usize * self.width + x as usize])
+        self.is_valid(x, y).then(|| &self.cells[self.slot(x, y)])
     }
 
     pub fn get_mut(&mut self, x: i32, y: i32) -> Option<&mut GridCell> {
         self.is_valid(x, y)
-            .then(move || &mut self.cells[y as usize * self.width + x as usize])
+            .then(|| self.slot(x, y))
+            .map(move |slot| &mut self.cells[slot])
     }
 
     /// The original's cell-pointer lookup, kept as a held reference: an
@@ -178,7 +194,21 @@ impl RmgGrid {
             self.is_valid(x, y),
             "a held cell reference names a valid cell"
         );
-        y as usize * self.width + x as usize
+        self.slot(x, y)
+    }
+
+    /// Storage slot of an in-bounds cell: diagonal-major, `(x + y) * W + x`.
+    ///
+    /// [`Self::native_cells`] walks anti-diagonals `(x + 1, y - 1)`, so this
+    /// puts consecutive cells of that scan in consecutive slots; the row-major
+    /// `y * W + x` put each one a whole row apart and missed the cache on
+    /// every step of the shore tiler's full-map passes. The linear scratch
+    /// walks that read the grid (`PartitionRegions @ 0x0058CF90`, the hill
+    /// corner morph) take those misses instead, but once per stage rather than
+    /// after every blob. A storage choice only: cells are still addressed by
+    /// `(x, y)`, so no value or order changes.
+    fn slot(&self, x: i32, y: i32) -> usize {
+        slot(self.width, x, y)
     }
 
     /// Cell lookup with the original's fallback semantics: an invalid
@@ -211,86 +241,65 @@ impl RmgGrid {
         (x + dx, y + dy)
     }
 
-    /// All existing cells in native scan order. The scan's rows always stay
-    /// inside the off-axis bounds, so the first coordinate past the far
-    /// diagonal is where the original's null-cell check stops it.
-    pub fn native_cells(&self) -> NativeCells {
-        NativeCells {
-            scan: DiamondScan::new(self.diamond_min),
-            diamond_max: self.diamond_max,
-        }
+    /// All existing cells in native scan order: the allocated-cell walk
+    /// ([`SizeDiamond::allocated_cells`]). On a Size at least two wide its
+    /// rows stay inside the off-axis bounds, so the first coordinate past the
+    /// far diagonal is where the original's null-cell check stops it.
+    pub fn native_cells(&self) -> AllocatedCellWalk {
+        self.diamond.allocated_cells()
+    }
+
+    /// Each cell of [`Self::native_cells`] with its coordinate, in that
+    /// order. A grid built from its map geometry holds every cell the walk
+    /// names.
+    pub fn cells_in_native_order(&self) -> impl Iterator<Item = ((i32, i32), &GridCell)> {
+        self.native_cells()
+            .filter_map(|(x, y)| Some(((x, y), self.get(x, y)?)))
+    }
+
+    /// Mutable variant of [`Self::cells_in_native_order`].
+    pub fn cells_in_native_order_mut(
+        &mut self,
+    ) -> impl Iterator<Item = ((i32, i32), &mut GridCell)> {
+        let walk = self.native_cells();
+        let width = self.width;
+        let mut unvisited: &mut [GridCell] = &mut self.cells;
+        let mut first_unvisited = 0;
+        walk.filter(move |&(x, y)| in_bounds(width, x, y))
+            .filter_map(move |(x, y)| {
+                // The walk raises x + y from row to row and x within a row, so
+                // its storage slots only grow: each cell is split off the part
+                // of the grid the walk has not reached yet.
+                let slot = slot(width, x, y);
+                let (_, rest) = std::mem::take(&mut unvisited).split_at_mut(slot - first_unvisited);
+                let (cell, rest) = rest.split_first_mut()?;
+                unvisited = rest;
+                first_unvisited = slot + 1;
+                Some(((x, y), cell))
+            })
     }
 }
 
-/// Iterator over valid cell coordinates in native order.
-pub struct NativeCells {
-    scan: DiamondScan,
-    diamond_max: i32,
+fn in_bounds(width: usize, x: i32, y: i32) -> bool {
+    x >= 0 && y >= 0 && (x as usize) < width && (y as usize) < width
 }
 
-impl Iterator for NativeCells {
-    type Item = (i32, i32);
-
-    fn next(&mut self) -> Option<(i32, i32)> {
-        let (x, y) = self.scan.next_coord();
-        (x + y <= self.diamond_max).then_some((x, y))
-    }
+/// Storage slot of an in-bounds cell; see [`RmgGrid::slot`].
+fn slot(width: usize, x: i32, y: i32) -> usize {
+    (x + y) as usize * width + x as usize
 }
 
-/// The native cell-iteration order: anti-diagonal rows of the isometric map.
-///
-/// State machine transcribed from the original iterator: start at
-/// `(x=1, y=d)`, walk each row by `(x+1, y-1)`, and when a row of `rem + 1`
-/// cells is exhausted start the next row from the swapped coordinate with a
-/// parity rule choosing between `x = old_y + 1` (row length `d`) and
-/// `y = old_x + 1` (row length `d - 1`... `d`). The machine itself never
-/// stops; the caller stops at the first coordinate that has no cell.
-#[derive(Debug, Clone)]
-pub struct DiamondScan {
-    d: i32,
-    x: i32,
-    y: i32,
-    rem: i32,
-}
-
-impl DiamondScan {
-    pub fn new(d: i32) -> Self {
-        Self {
-            d,
-            x: 1,
-            y: d,
-            rem: d - 1,
-        }
-    }
-
-    /// The next coordinate in native order. Infinite by design — the caller
-    /// owns termination (the original stops on the first null cell).
-    pub fn next_coord(&mut self) -> (i32, i32) {
-        let current = (self.x, self.y);
-        if self.rem != 0 {
-            self.x += 1;
-            self.y -= 1;
-            self.rem -= 1;
-        } else {
-            let (old_x, old_y) = (self.x, self.y);
-            // Swap, then nudge one axis by parity of (x + y - d - 1).
-            self.x = old_y;
-            self.y = old_x;
-            if (old_y + old_x - self.d - 1) & 1 == 0 {
-                self.rem = self.d - 2;
-                self.x = old_y + 1;
-            } else {
-                self.rem = self.d - 1;
-                self.y = old_x + 1;
-            }
-        }
-        current
-    }
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whole_extent_is_native_until_the_grid_outgrows_it() {
+        // Very Large at 30 players (stride 481) keeps the original 0x200; a
+        // Colossal grid (1017) must reach its own far edge.
+        assert_eq!(RmgGrid::new(481, 0, 0).whole_extent(), 0x200);
+        assert_eq!(RmgGrid::new(1017, 0, 0).whole_extent(), 1017);
+    }
 
     #[test]
     fn step_masks_the_direction_like_the_original() {
@@ -298,13 +307,13 @@ mod tests {
         assert_eq!(RmgGrid::step(5, 5, 8 + 2), (6, 5), "dir & 7 wraps");
     }
 
-    /// Hand-walked from the original iterator's state machine with d = 4.
-    /// Rows alternate d and d-1 cells; anti-diagonal sums increase by one per
-    /// row. Any deviation here reorders every per-cell draw in the pipeline.
+    /// Hand-walked from the original iterator's state machine with Size
+    /// width 4. Rows alternate 4 and 3 cells; anti-diagonal sums increase by
+    /// one per row, and the walk stops past the far diagonal (8). Any
+    /// deviation here reorders every per-cell draw in the pipeline.
     #[test]
     fn scan_order_matches_the_native_state_machine() {
-        let mut scan = DiamondScan::new(4);
-        let seq: Vec<(i32, i32)> = (0..14).map(|_| scan.next_coord()).collect();
+        let seq: Vec<(i32, i32)> = RmgGrid::new(16, 4, 8).native_cells().collect();
         assert_eq!(
             seq,
             vec![
@@ -324,6 +333,27 @@ mod tests {
                 (5, 3), // row sum 8, 3 cells
             ]
         );
+    }
+
+    /// The cell iterators visit the walk's coordinates in its order, and each
+    /// yields the cell the coordinate names.
+    #[test]
+    fn cell_iterators_follow_the_native_walk() {
+        let mut grid = RmgGrid::new(16, 4, 8);
+        let walk: Vec<(i32, i32)> = grid.native_cells().collect();
+        let mut visited = Vec::new();
+        for (coord, cell) in grid.cells_in_native_order_mut() {
+            cell.tile = coord.0 * 100 + coord.1;
+            visited.push(coord);
+        }
+        assert_eq!(visited, walk);
+        assert_eq!(grid.get(3, 4).unwrap().tile, 304);
+        let read: Vec<_> = grid
+            .cells_in_native_order()
+            .map(|(coord, cell)| (coord, cell.tile))
+            .collect();
+        let expected: Vec<_> = walk.iter().map(|&(x, y)| ((x, y), x * 100 + y)).collect();
+        assert_eq!(read, expected);
     }
 
     #[test]
@@ -347,6 +377,16 @@ mod tests {
         grid.get_mut(3, 2).unwrap().tile = 42;
         assert_eq!(grid.get(3, 2).unwrap().tile, 42);
         assert_eq!(grid.get(2, 3).unwrap().tile, TILE_UNASSIGNED);
+
+        // A fixture may allocate a smaller square than its logical diamond.
+        let scratch = crate::map::rmg::RmgScratch::new(4, 4, 12);
+        let mut grid = RmgGrid::new(4, 4, 12);
+        assert!(scratch.in_diamond(5, 3));
+        assert!(grid.native_cells().any(|cell| cell == (5, 3)));
+        assert!(grid.get(5, 3).is_none());
+        let held = grid.cell_ref(5, 3);
+        assert_eq!(held, CellRef::Border);
+        assert_eq!(grid.ref_coord(held), (5, 3));
     }
 
     #[test]

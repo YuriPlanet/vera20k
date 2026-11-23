@@ -66,8 +66,14 @@ impl DetailState {
     /// Fill_In_Data6850F5..685110 calls 55AF40/55AF50 with retained Rules
     /// values. These setters preserve the counter, sample timer and latch.
     pub(crate) fn configure_normal(&mut self, rules: &DetailRules) {
-        self.minimum = rules.min_frame_rate_normal as u32;
+        self.set_min_frame_rate(rules.min_frame_rate_normal);
         self.buffer = rules.buffer_zone_width as u32;
+    }
+
+    /// `Game__SetMinFrameRate @ 0x0055AF40` stores 829FF4 alone; the
+    /// counter, sample timer and reduced latch stay as they are.
+    pub(crate) fn set_min_frame_rate(&mut self, minimum: i32) {
+        self.minimum = minimum as u32;
     }
 
     /// Logic55AFB3..55AFD3 increments ABCD40 before the Logic body runs.
@@ -106,6 +112,13 @@ impl DetailState {
         self.frame_rate
     }
 
+    /// Whether minimum + buffer wraps (signed INI values). Each
+    /// [`Self::minimum_frame_rate`] query can then flip the latch, so two
+    /// draws with the same inputs need not agree.
+    pub(crate) fn threshold_wraps(&self) -> bool {
+        self.minimum.checked_add(self.buffer).is_none()
+    }
+
     pub(crate) fn observation(&self) -> DetailObservation {
         DetailObservation {
             frame_rate: self.frame_rate,
@@ -140,7 +153,7 @@ impl DetailState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use serde_json::{Value, json};

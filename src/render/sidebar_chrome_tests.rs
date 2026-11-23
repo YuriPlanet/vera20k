@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use super::{
-    SidebarSideRoute, build_gclock_cpu_atlas, is_generic_sidebar_shp_name,
+    SidebarSideRoute, SidebarThemeRoute, build_gclock_cpu_atlas, is_generic_sidebar_shp_name,
     resolve_sidebar_asset_in_order,
 };
 use crate::app::presentation::sidebar_build::build_gclock_instance;
@@ -15,6 +15,41 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::sidebar_chrome::SidebarTheme;
 use crate::ui::sidebar::Rect;
 use crate::util::config::GameConfig;
+
+/// A game Ares plays in by its keys alone, read the stock way, has no Side
+/// extensions, so its sides draw the stock sidebar instead of stopping the
+/// match load; a game that ships `ares.mix` keeps each side's own MIX group
+/// (Ares1002FA00). A fourth side takes the nonzero geometry (6A5090) only on
+/// the Ares arm, as it did in each build before.
+#[test]
+fn only_a_side_with_a_retained_configuration_draws_the_ares_sidebar() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch;
+    let keys = IniFile::from_str("[HTNK]\nImmuneToAbduction=yes\n");
+    let Some(keys_only) = retail_battle_rules_for_map_with_patch("Hills.mmx", &keys) else {
+        return;
+    };
+    assert!(keys_only.rules.ares());
+    assert_eq!(
+        super::ares_sidebar_config(&keys_only.rules, 0).is_some(),
+        keys_only.rules.reads_ares_way()
+    );
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(ares_mix) = retail_battle_rules_for_map_with_patch("Hills.mmx", &IniFile::empty())
+    else {
+        return;
+    };
+    let config = |side| super::ares_sidebar_config(&ares_mix.rules, side);
+    assert_eq!(
+        [config(0), config(1), config(2)],
+        [Some((1, false)), Some((2, false)), Some((2, true))]
+    );
+    assert_eq!(
+        super::sidebar_theme_for_side(3, false),
+        SidebarTheme::Allied
+    );
+    assert_eq!(super::sidebar_theme_for_side(3, true), SidebarTheme::Soviet);
+}
 
 fn retail_ra2_dir() -> PathBuf {
     std::env::var_os("RA2_DIR")
@@ -84,6 +119,39 @@ fn resolved_shp<'a>(route: SidebarSideRoute<'a>, name: &str) -> (&'a str, ShpFil
     let resolved = route.resolve_generic_shp(name).expect(name);
     let shp = ShpFile::from_bytes(resolved.bytes).expect(name);
     (resolved.archive_name, shp)
+}
+
+#[test]
+fn non_ares_clock_uses_valid_mod_art_ahead_of_the_named_side() {
+    use crate::assets::asset_manager::test_support::{
+        TestDirectory, audio_test_install, make_new_format_mix_bytes,
+    };
+
+    let install = audio_test_install("sidebar-clock-stock");
+    let addon = TestDirectory::new("sidebar-clock-mod");
+    let mut shape = [0u8; 33];
+    for offset in [2, 4, 6, 12, 14] {
+        shape[offset] = 1;
+    }
+    shape[28] = 32;
+    shape[32] = 1;
+    let side = make_new_format_mix_bytes("GCLOCK2.SHP", &shape);
+    install.write_mix("ra2.mix", "sidec01.mix", &side);
+    shape[32] = 2;
+    addon.write_mix("expandmd01.mix", "GCLOCK2.SHP", &shape);
+    std::fs::write(addon.path().join("GCLOCK2.SHP"), b"bad loose SHP").unwrap();
+
+    let assets = AssetManager::with_mod(
+        install.path(),
+        Some(addon.path()),
+        MediaArchiveMode::STOCK_DIGITAL,
+    )
+    .unwrap();
+    let route = SidebarSideRoute::for_theme(&assets, SidebarTheme::Allied);
+    let palette = Palette::from_bytes(&[0; 768]).unwrap();
+    let clock = build_gclock_cpu_atlas(route, &palette).unwrap();
+    assert_eq!(clock.source_archive, "expandmd01.mix");
+    assert_eq!(clock.indices, [2]);
 }
 
 fn atlas_cell_has_alpha(
@@ -285,102 +353,130 @@ fn original_n1_tables_drive_sidebar_palette_and_skip_alpha() {
     }
 }
 
+/// LoadSHPs 0x006A5AB7..0x006A5BDB finds the observer strip's pictures
+/// outside the side archives (retail LOCALMD.MIX), with their palettes.
+#[test]
+#[ignore = "requires the configured stock retail RA2/YR install"]
+fn retail_observer_art_finds_every_background_and_flag() {
+    let assets = AssetManager::new(&retail_ra2_dir(), MediaArchiveMode::STOCK_DIGITAL)
+        .expect("load retail asset stack");
+    let mix = assets.archive("sidec01.mix").expect("sidec01.mix");
+    let art = super::observer_art::load(SidebarThemeRoute {
+        assets: &assets,
+        mix,
+        mix_name: "sidec01.mix",
+        ares: false,
+    });
+    for side in 0..3 {
+        assert!(art.background(side).is_some(), "side {side}");
+    }
+    for country in (-3..=9).filter(|&country| country != -1) {
+        assert!(art.flag(country).is_some(), "flag {country}");
+    }
+    assert!(art.flag(-1).is_none());
+}
+
 #[test]
 #[ignore = "requires the configured stock retail RA2/YR install"]
 fn retail_modal_backgrounds_use_ui_palette_for_every_theme_and_size() {
-    #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
     let mut assets = AssetManager::new(&retail_ra2_dir(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-    for (theme, mix_index, archive_name, names, palette_name, old_palette_name) in [
-        (
-            SidebarTheme::Allied,
-            1,
-            "sidec01.mix",
-            ("BKGDLG.SHP", "BKGDMD.SHP", "BKGDSM.SHP"),
-            "UIBKGD.PAL",
-            "SIDEBAR.PAL",
-        ),
-        (
-            SidebarTheme::Soviet,
-            2,
-            "sidec02.mix",
-            ("BKGDLG.SHP", "BKGDMD.SHP", "BKGDSM.SHP"),
-            "UIBKGD.PAL",
-            "SIDEBAR.PAL",
-        ),
-        (
-            SidebarTheme::Yuri,
-            2,
-            "sidec02md.mix",
-            ("BKGDLGY.SHP", "BKGDMDY.SHP", "BKGDSMY.SHP"),
-            "UIBKGDY.PAL",
-            "RADARYURI.PAL",
-        ),
-    ] {
-        // An Ares build resolves sidebar palettes through the Side MIX group
-        // that scenario start registers (534FA0); install it as play does.
-        #[cfg(feature = "ares")]
-        assert!(assets.activate_sidebar_archives(mix_index).unwrap());
-        #[cfg(not(feature = "ares"))]
-        let _ = mix_index;
-        let archive = assets.archive(archive_name).unwrap();
-        let (entries, identity) = super::in_game_shell::load_backgrounds(
-            &assets,
-            archive,
-            archive_name,
-            names,
-            super::SidebarArtNames::for_yuri(theme == SidebarTheme::Yuri).background_palette,
-        )
-        .unwrap();
-        assert_eq!(identity.logical_name, palette_name);
-        #[cfg(feature = "ares")]
-        let (raw_palette, palette_source) = {
-            let resolved = assets.resolve_ref(palette_name).unwrap();
-            (resolved.bytes, resolved.source_archive)
-        };
-        #[cfg(not(feature = "ares"))]
-        let (raw_palette, palette_source) =
-            (archive.get_by_name(palette_name).unwrap(), archive_name);
-        assert_eq!(identity.source_archive.as_deref(), Some(palette_source));
-        let old_palette =
-            super::decode_sidebar_palette(archive.get_by_name(old_palette_name).unwrap()).unwrap();
-        for (name, entry) in [names.0, names.1, names.2].into_iter().zip(entries) {
-            let entry = entry.unwrap();
-            let shp = ShpFile::from_bytes(archive.get_by_name(name).unwrap()).unwrap();
-            let frame = &shp.frames[0];
-            assert_eq!((frame.frame_x, frame.frame_y), (0, 0));
-            assert_eq!(
-                (frame.frame_width, frame.frame_height),
-                (shp.width, shp.height)
-            );
-            assert_eq!(entry.rgba.len(), frame.pixels.len() * 4);
-            // Compare every production pixel to the retail palette triplet's
-            // original72ADE0 six-bit expansion and N=1 RGB565 store. The shared
-            // converter arithmetic also has native palette.json coverage above.
-            for (&index, rgba) in frame.pixels.iter().zip(entry.rgba.as_chunks::<4>().0) {
-                assert_eq!(rgba[3], if index == 0 { 0 } else { 255 });
-                if index == 0 {
-                    continue;
-                }
-                let p = &raw_palette[index as usize * 3..][..3];
-                let expected = ((u16::from(p[0]) >> 1) << 11)
-                    | (u16::from(p[1]) << 5)
-                    | (u16::from(p[2]) >> 1);
-                let actual = ((u16::from(rgba[0]) >> 3) << 11)
-                    | ((u16::from(rgba[1]) >> 2) << 5)
-                    | (u16::from(rgba[2]) >> 3);
-                assert_eq!(actual, expected, "{archive_name}/{name}, index{index}");
+    // The stock pass runs first, before any Side MIX group is registered.
+    for ares in [false, true] {
+        for (theme, mix_index, archive_name, names, palette_name, old_palette_name) in [
+            (
+                SidebarTheme::Allied,
+                1,
+                "sidec01.mix",
+                ("BKGDLG.SHP", "BKGDMD.SHP", "BKGDSM.SHP"),
+                "UIBKGD.PAL",
+                "SIDEBAR.PAL",
+            ),
+            (
+                SidebarTheme::Soviet,
+                2,
+                "sidec02.mix",
+                ("BKGDLG.SHP", "BKGDMD.SHP", "BKGDSM.SHP"),
+                "UIBKGD.PAL",
+                "SIDEBAR.PAL",
+            ),
+            (
+                SidebarTheme::Yuri,
+                2,
+                "sidec02md.mix",
+                ("BKGDLGY.SHP", "BKGDMDY.SHP", "BKGDSMY.SHP"),
+                "UIBKGDY.PAL",
+                "RADARYURI.PAL",
+            ),
+        ] {
+            // When Ares plays in the game (`RuleSet::ares`), sidebar palettes
+            // resolve through the Side MIX group that scenario start registers
+            // (534FA0); install it as play does.
+            if ares {
+                assert!(assets.activate_sidebar_archives(mix_index).unwrap());
             }
-            let old = super::render_shp(&shp, &old_palette, 0).unwrap();
-            assert_ne!(
-                entry.rgba, old.rgba,
-                "{archive_name}/{name}: old radar palette must differ"
-            );
+            let archive = assets.archive(archive_name).unwrap();
+            let (entries, _, identity) = super::in_game_shell::load_backgrounds(
+                SidebarThemeRoute {
+                    assets: &assets,
+                    mix: archive,
+                    mix_name: archive_name,
+                    ares,
+                },
+                names,
+                super::SidebarArtNames::for_yuri(theme == SidebarTheme::Yuri).background_palette,
+            )
+            .unwrap();
+            assert_eq!(identity.logical_name, palette_name);
+            let (raw_palette, palette_source) = if ares {
+                let resolved = assets.resolve_ref(palette_name).unwrap();
+                (resolved.bytes, resolved.source_archive)
+            } else {
+                (archive.get_by_name(palette_name).unwrap(), archive_name)
+            };
+            assert_eq!(identity.source_archive.as_deref(), Some(palette_source));
+            let old_palette =
+                super::decode_sidebar_palette(archive.get_by_name(old_palette_name).unwrap())
+                    .unwrap();
+            for (name, entry) in [names.0, names.1, names.2].into_iter().zip(entries) {
+                let entry = entry.unwrap();
+                let shp = ShpFile::from_bytes(archive.get_by_name(name).unwrap()).unwrap();
+                let frame = &shp.frames[0];
+                assert_eq!((frame.frame_x, frame.frame_y), (0, 0));
+                assert_eq!(
+                    (frame.frame_width, frame.frame_height),
+                    (shp.width, shp.height)
+                );
+                assert_eq!(entry.rgba.len(), frame.pixels.len() * 4);
+                // Compare every production pixel to the retail palette triplet's
+                // original72ADE0 six-bit expansion and N=1 RGB565 store. The shared
+                // converter arithmetic also has native palette.json coverage above.
+                for (&index, rgba) in frame.pixels.iter().zip(entry.rgba.as_chunks::<4>().0) {
+                    assert_eq!(rgba[3], if index == 0 { 0 } else { 255 });
+                    if index == 0 {
+                        continue;
+                    }
+                    let p = &raw_palette[index as usize * 3..][..3];
+                    let expected = ((u16::from(p[0]) >> 1) << 11)
+                        | (u16::from(p[1]) << 5)
+                        | (u16::from(p[2]) >> 1);
+                    let actual = ((u16::from(rgba[0]) >> 3) << 11)
+                        | ((u16::from(rgba[1]) >> 2) << 5)
+                        | (u16::from(rgba[2]) >> 3);
+                    assert_eq!(actual, expected, "{archive_name}/{name}, index{index}");
+                }
+                let old = super::render_shp(&shp, &old_palette, 0).unwrap();
+                assert_ne!(
+                    entry.rgba, old.rgba,
+                    "{archive_name}/{name}: old radar palette must differ"
+                );
+            }
         }
     }
 }
 
+/// The housing's GPU replay of each history, read back.
 #[test]
-#[ignore = "requires the configured original stock retail archives"]
+#[ignore = "requires the configured original stock retail archives and a wgpu adapter"]
 fn retail_radar_histories_match_original_4912b0_stores() {
     use crate::util::sha256::sha256_hex;
     use serde::Deserialize;
@@ -409,6 +505,12 @@ fn retail_radar_histories_match_original_4912b0_stores() {
     ))
     .unwrap();
     let assets = AssetManager::new(&retail_ra2_dir(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+    let batch = crate::render::batch::BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    );
     for c in packet.cases {
         let archive = assets.archive(&c.archive).unwrap();
         let raw = archive.get_by_name(&c.name).unwrap();
@@ -440,9 +542,15 @@ fn retail_radar_histories_match_original_4912b0_stores() {
             "closing overwrites minimap before first zero frame"
         );
         for seq in c.sequences {
-            let mut radar =
-                crate::render::radar::anim::RadarPresentation::new(frames.clone(), 168, 110)
-                    .unwrap();
+            let mut radar = crate::render::radar::anim::RadarAnimState::new(
+                &gpu.device,
+                &gpu.queue,
+                &batch,
+                frames.clone(),
+                168,
+                110,
+            )
+            .unwrap();
             for (step, (&frame, expected)) in
                 seq.frames.iter().zip(&seq.output_rgb565_sha256).enumerate()
             {
@@ -456,11 +564,13 @@ fn retail_radar_histories_match_original_4912b0_stores() {
                         "one native draw per history step"
                     );
                     let _ = radar.set_has_radar(frame > previous);
-                    assert!(radar.advance_draw((step as u64 - 1) * 64));
+                    radar.tick(1, (step as u64 - 1) * 64);
                 }
-                let bytes: Vec<u8> = radar
-                    .surface
-                    .rgba
+                let mut encoder = gpu.device.create_command_encoder(&Default::default());
+                radar.encode_paints(&gpu.device, &gpu.queue, &batch, &mut encoder);
+                let read = gpu.read(&mut encoder, radar.texture().view.texture());
+                let shown = gpu.finish(encoder, &[read], [168, 110]).remove(0);
+                let bytes: Vec<u8> = shown
                     .as_chunks::<4>()
                     .0
                     .iter()

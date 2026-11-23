@@ -140,10 +140,9 @@ fn retail_concrete_hut_damage_matches_native_both_huts_and_three_states() {
             damage_ordinary(
                 &mut runtime.simulation,
                 &runtime.resources.rules,
-                Some(&runtime.resources.overlay_registry),
                 (87, 54),
                 crate::sim::bridge_state::ramp_repair::Family::High,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         }
@@ -163,7 +162,10 @@ fn retail_concrete_hut_damage_matches_native_both_huts_and_three_states() {
             case["hut"][1].as_u64().unwrap() as u16,
         );
         assert!(crate::sim::world::bridge_orchestrator::dispatch_bridge_collapse_from_hut_with_overlay_registry(
-            sim, &runtime.resources.rules, hut, Some(&runtime.resources.overlay_registry), crate::sim::world::FrameEffects::default()
+            sim,
+            &runtime.resources.rules,
+            hut,
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         assert_eq!(
             json!({"main":sim.main_rng,"scenario":sim.scenario_rng,"mapgen":sim.mapgen_rng}),
@@ -231,7 +233,7 @@ fn retail_concrete_collapse_rechecks_an_incoming_drive_head() {
             53,
             0,
             rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("native fixture Road resident");
     let entity = sim.substrate.entities.get_mut(tank).unwrap();
@@ -258,14 +260,12 @@ fn retail_concrete_collapse_rechecks_an_incoming_drive_head() {
         impact_z_leptons: 416,
         is_ion_cannon: false,
     };
-    let registry = &runtime.resources.overlay_registry;
     assert!(
         !crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(
             sim,
             rules,
             &[event],
-            Some(registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default(),
         )
     );
     assert_eq!(
@@ -281,8 +281,7 @@ fn retail_concrete_collapse_rechecks_an_incoming_drive_head() {
             sim,
             rules,
             &[event],
-            Some(registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default(),
         )
     );
     assert_eq!(
@@ -328,7 +327,7 @@ fn force_fire_scene() -> (HeadlessScenario, u64, String) {
             50,
             128,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("ordinary bank placement");
     export(&scene, "attack_before_command");
@@ -349,7 +348,7 @@ fn force_fire_scene() -> (HeadlessScenario, u64, String) {
             std::slice::from_ref(&command),
             SIM_TICK_MS,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     export(&scene, "attack_command_applied");
@@ -367,7 +366,7 @@ fn retail_force_fire_emits_native_muzzle_from_real_command() {
                 &[],
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
     });
@@ -437,7 +436,7 @@ fn retail_force_fire_collapses_concrete_then_engineer_rebuilds_it() {
                 &[],
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         for shot in output
@@ -505,7 +504,7 @@ fn retail_force_fire_collapses_concrete_then_engineer_rebuilds_it() {
                 &[],
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert!(

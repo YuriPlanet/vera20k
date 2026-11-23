@@ -17,8 +17,14 @@ const FAR: (u16, u16) = (60, 60);
 /// Retail rules on a Size64x64 diamond in128x128 storage: the human current house
 /// `Americans` and the computer houses `Russians` and `Confederation`.
 fn world() -> Option<(RuleSet, Simulation, InternedId)> {
-    use crate::sim::superweapon::chronosphere_tests::{retail_rules_binding, world_with};
-    let (rules, mut sim, americans) = world_with(retail_rules_binding(&[])?, 128, &[]);
+    use crate::sim::superweapon::chronosphere_tests::retail_rules_binding;
+    Some(world_on(retail_rules_binding(&[])?))
+}
+
+/// [`world`] under `rules`.
+pub(super) fn world_on(rules: RuleSet) -> (RuleSet, Simulation, InternedId) {
+    use crate::sim::superweapon::chronosphere_tests::world_with;
+    let (rules, mut sim, americans) = world_with(rules, 128, &[]);
     //578350 starts at(1,SizeW), not at a rectangular grid's first cell.
     //Native Size64x64 spans packed coordinates1..127, just as the existing
     //shroud_refresh Size6x4 fixture uses10x10 storage for its allocated walk.
@@ -50,7 +56,7 @@ fn world() -> Option<(RuleSet, Simulation, InternedId)> {
         .collect();
     assert!(allocated.contains(&SITE) && allocated.contains(&FAR));
     assert!(!allocated.contains(&(0, 0)));
-    Some((rules, sim, americans))
+    (rules, sim, americans)
 }
 
 fn radar_events(sim: &Simulation) -> Vec<RadarEventRequest> {
@@ -118,13 +124,13 @@ fn a_computer_houses_opening_shows_the_current_house_its_sight_until_it_dies() {
     }
     assert!(!sim.fog.is_cell_revealed(americans, FAR.0, FAR.1));
 
-    // The frame pass keeps the owner's own sight, which its Unlimbo opened
-    // on its map, and leaves this one in place.
+    // The frame pass leaves this one in place. The computer owner is no
+    // client, so its Unlimbo opened no map of its own (`0x005678E0`'s gate).
     let russians = sim.interner.get("Russians").unwrap();
     let config = sim.sight_reveal_config(&rules);
     sim.refresh_fog(&config, &rules);
-    assert!(sim.fog.sight_is_latched(id, russians));
-    assert!(!sim.fog.sight_is_latched(id, americans));
+    assert!(!sim.fog.sight_is_latched(id, russians));
+    assert!(!sim.fog.by_owner().contains_key(&russians));
     for &(x, y) in &cells {
         assert!(sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
     }
@@ -150,14 +156,14 @@ fn a_computer_houses_opening_shows_the_current_house_its_sight_until_it_dies() {
         false,
         &mut Vec::new(),
         |_, _| {},
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     for &(x, y) in &cells {
         assert!(sim.fog.is_cell_revealed(americans, x, y), "{x},{y}");
         assert!(!sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
     }
-    sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
 }
 
@@ -176,7 +182,13 @@ fn captures_keep_the_sight_and_a_shroud_reset_shows_it_again() {
     // ChangeOwner's ReReveal(0, 0, 0, 0) keeps it; the reopening for another
     // computer house raises the radar event alone.
     sim.sound_events.clear_for_test();
-    sim.change_owner_with_rules(id, confederation, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(
+        id,
+        confederation,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert_eq!(
         sim.substrate.entities.get(id).unwrap().owner(),
         confederation
@@ -197,7 +209,7 @@ fn captures_keep_the_sight_and_a_shroud_reset_shows_it_again() {
 
     // The human's capture raises no radar event and keeps the sight too.
     sim.sound_events.clear_for_test();
-    sim.change_owner_with_rules(id, americans, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(id, americans, &rules, None, &mut FrameEffects::default());
     assert!(radar_events(&sim).is_empty());
     assert_eq!(sim.fog.alternate_sight_admissions_for_test(), &admitted);
 
@@ -208,10 +220,10 @@ fn captures_keep_the_sight_and_a_shroud_reset_shows_it_again() {
         false,
         &mut Vec::new(),
         |_, _| {},
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     assert_eq!(sim.fog.alternate_sight_admissions_for_test(), &admitted);
-    sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     for &(x, y) in &cells {
         assert!(sim.fog.is_cell_revealed(americans, x, y), "{x},{y}");
@@ -262,7 +274,7 @@ fn an_allys_building_shows_both_sights_and_takes_both_back() {
         false,
         &mut Vec::new(),
         |_, _| {},
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     assert!(
@@ -275,7 +287,7 @@ fn an_allys_building_shows_both_sights_and_takes_both_back() {
         assert!(!sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
         assert_eq!(counter(&sim, americans, (x, y)), 0, "{x},{y}");
     }
-    sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     for &(x, y) in &cells {
         assert!(sim.fog.is_cell_revealed(americans, x, y), "{x},{y}");
         assert!(!sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
@@ -328,7 +340,7 @@ fn a_computer_buildings_death_takes_its_sight_off_the_current_houses_map_twice()
             arg6: false,
         },
     );
-    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
     assert!(
         sim.substrate
             .entities
@@ -389,7 +401,7 @@ fn a_sold_allys_building_leaves_its_shared_sight_counted() {
         assert_eq!(counter(&sim, confederation, cell), -2, "{cell:?}");
     }
 
-    sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     sim.refresh_fog(&config, &rules);
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     assert!(
@@ -433,7 +445,7 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let (revealed, calls) = trace_reveal_calls(|| {
@@ -445,7 +457,7 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     });
     assert_eq!(revealed, Some(id));
@@ -455,12 +467,12 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
     );
     let russians = sim.interner.get("Russians").unwrap();
     assert!(
-        sim.fog.sight_is_latched(id, russians),
-        "70AF50 caches before Map admission"
+        !sim.fog.sight_is_latched(id, russians),
+        "a computer house is no client"
     );
     assert!(
-        sim.fog.is_cell_revealed(russians, SITE.0, SITE.1),
-        "logical query projection is retained"
+        !sim.fog.by_owner().contains_key(&russians),
+        "a computer house has no map"
     );
     let building = sim.substrate.entities.get(id).unwrap();
     assert_eq!((building.position.rx(), building.position.ry()), SITE);
@@ -477,7 +489,7 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
     }
     assert!(!sim.fog.is_cell_revealed(americans, FAR.0, FAR.1));
 
-    sim.grand_opening(id, false, false, &rules, None, FrameEffects::default());
+    sim.grand_opening(id, false, false, &rules, None, &mut FrameEffects::default());
     for &cell in &cells {
         assert_eq!(counter(&sim, americans, cell), -2, "{cell:?}");
     }
@@ -488,9 +500,9 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
         false,
         &mut Vec::new(),
         |_, _| {},
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
-    sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     for &(x, y) in &cells {
         assert_eq!(counter(&sim, americans, (x, y)), 0, "{x},{y}");
@@ -522,7 +534,7 @@ fn whole_map_reentry_skips_a_later_site_limboed_by_discovery() {
           [Tags]\nSHROUD_TAG=0,Reshroud,SHROUD\nSEEN_TAG=0,Seen,SEEN\n",
     )
     .unwrap();
-    sim.initialize_trigger_definitions(&map, &Default::default(), None, None);
+    sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
     sim.classify_map_triggers(&rules);
     let mut sites = Vec::new();
     for (owner, cell) in [("Russians", SITE), ("Confederation", (75, 45))] {
@@ -535,7 +547,7 @@ fn whole_map_reentry_skips_a_later_site_limboed_by_discovery() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(
@@ -547,13 +559,13 @@ fn whole_map_reentry_skips_a_later_site_limboed_by_discovery() {
                 0,
                 PlacementEvidence::EvaluateMark,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             Some(id)
         );
         let site = sim.substrate.entities.get(id).unwrap();
         assert!(site.building_up());
-        assert!(!site.discovery.discovered_by_current_house());
+        assert!(!site.seldom.discovery.discovered_by_current_house());
         assert!(!sim.fog.holds_alternate_sight(id, americans));
         sim.attach_object_trigger_tag(id, Some("SEEN_TAG"));
         sites.push(id);
@@ -562,7 +574,7 @@ fn whole_map_reentry_skips_a_later_site_limboed_by_discovery() {
     // Run the actual pre-object trigger poll. Action51 calls4ADCD0; the
     // first site's discovery fires shared Tag32/6E2050. Its C4 receiver
     // synchronously UnInits both sites (44269A), before the later ordinal.
-    sim.poll_triggers_for_master_frame(&rules, None, FrameEffects::default());
+    sim.poll_triggers_for_master_frame(&rules, None, &mut FrameEffects::default());
     for &id in &sites {
         let site = sim.substrate.entities.get(id).unwrap();
         assert!(site.lifecycle.in_limbo() && site.health.current() <= 0);
@@ -582,10 +594,9 @@ fn whole_map_reentry_skips_a_later_site_limboed_by_discovery() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(rules.overlay_registry()),
             67,
             crate::sim::world::TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     for id in sites {
@@ -707,8 +718,7 @@ fn no_edge_make_enemy_counts_reveal_to_all_sight_again() {
             computer,
             player,
             &rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
             false,
         );
     }
@@ -724,9 +734,9 @@ fn no_edge_make_enemy_counts_reveal_to_all_sight_again() {
         false,
         &mut Vec::new(),
         |_, _| {},
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
-    sim.techno_limbo_with_context(id, UninitContext::with_rules(&rules));
+    sim.techno_limbo_with_context(id, UninitContext::new(&rules));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     let config = sim.sight_reveal_config(&rules);
     sim.refresh_fog(&config, &rules);
@@ -780,8 +790,7 @@ fn make_enemy_alternate_reveal_restores_the_released_client_cache() {
         computer,
         player,
         &rules,
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     );
     let restored = sim.fog.source_sight(id, player).unwrap();
@@ -808,7 +817,7 @@ fn make_enemy_alternate_reveal_restores_the_released_client_cache() {
         player,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     );
     assert!(sim.house_alliances.as_map()["RUSSIANS"].contains("AMERICANS"));

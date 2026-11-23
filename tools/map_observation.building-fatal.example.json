@@ -1,5 +1,5 @@
 {
-  "schema_version": "vera20k.map-observation-profile.v2",
+  "schema_version": "vera20k.map-observation-profile.v3",
   "launch": {
     "mode": {
       "class": "Battle",
@@ -157,7 +157,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "QueueProduction": {
-          "type_id": 272
+          "type_id": "GAPOWR"
         }
       }
     },
@@ -166,7 +166,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "PlaceReadyBuilding": {
-          "type_id": 272,
+          "type_id": "GAPOWR",
           "rx": 31,
           "ry": 89
         }
@@ -177,7 +177,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "QueueProduction": {
-          "type_id": 275
+          "type_id": "GAPILE"
         }
       }
     },
@@ -187,7 +187,10 @@
       "payload": {
         "Attack": {
           "attacker_id": 1374,
-          "target_id": 1428
+          "target_id": {
+            "type_id": "GAPOWR",
+            "owner": "VERA-OBSERVER"
+          }
         }
       }
     },
@@ -196,7 +199,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "PlaceReadyBuilding": {
-          "type_id": 275,
+          "type_id": "GAPILE",
           "rx": 31,
           "ry": 85
         }
@@ -227,5 +230,9 @@
       32,
       90
     ]
+  ],
+  "cursor_position": [
+    720,
+    556
   ]
 }

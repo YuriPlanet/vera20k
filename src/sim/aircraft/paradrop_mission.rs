@@ -49,7 +49,7 @@ pub(super) fn approach(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return APPROACH_FRAMES;
@@ -87,8 +87,7 @@ pub(super) fn overfly(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return OVERFLY_FRAMES;
@@ -96,7 +95,7 @@ pub(super) fn overfly(
     entity.mission_leaf.set_aircraft_action_latch(true);
     let target = entity.attack_target.target();
     let carrying = entity
-        .passenger_role
+        .passenger_role()
         .cargo()
         .is_some_and(|cargo| cargo.count() > 0);
     let Some(target) = target.filter(|_| carrying) else {
@@ -131,7 +130,7 @@ pub(super) fn overfly(
         )
     });
     if over_playfield {
-        super::drop_payload::drop_payload(sim, id, rules, registry, frame_effects);
+        super::drop_payload::drop_payload(sim, id, rules, frame_effects);
     }
     OVERFLY_FRAMES
 }
@@ -139,10 +138,14 @@ pub(super) fn overfly(
 /// Overfly's way out (`0x00415A0A..0x00415A33`): the latch cleared, no
 /// Target (vt+0x3C8(NULL)), no destination (vt+0x480(NULL, 1)) and Retreat
 /// queued.
-fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: FrameEffects<'_>) {
+fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: &mut FrameEffects<'_>) {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission_leaf.set_aircraft_action_latch(false);
-        crate::sim::mission::concrete_effects::represented_assign_target(entity, None);
+        crate::sim::mission::concrete_effects::represented_assign_target(
+            entity,
+            None,
+            rules.ares_form(),
+        );
     }
     sim.assign_aircraft_destination(id, None, rules, frame_effects);
     super::queue_mission(&mut sim.substrate, id, MissionType::Retreat);

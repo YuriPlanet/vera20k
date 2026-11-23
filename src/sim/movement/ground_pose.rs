@@ -170,6 +170,10 @@ impl Position {
         path_grid: Option<&PathGrid>,
     ) {
         let world_xy = position_world_xy(self);
+        if on_bridge && let Some(deck) = corrected_deck_z_at_xy(world_xy, terrain) {
+            self.put_z(deck.wrapping_add(height));
+            return;
+        }
         let ground = ground_at(world_xy, terrain, path_grid).unwrap_or(Ok(0));
         if let Some(ground) = supported_ground(ground, world_xy) {
             self.put_z(z_at_height(ground, height, on_bridge));
@@ -183,6 +187,23 @@ impl Position {
     /// places Z at height 0.
     pub(crate) fn store_cell_level(&mut self, cell_level: u8, on_bridge: bool) {
         self.z = super::movement_bridge::stored_level(cell_level, on_bridge);
+    }
+
+    /// [`Self::store_cell_level`] for a cell that may carry a fixed
+    /// high-bridge deck (`deck`, in whole levels): an OnBridge object stands
+    /// at that deck, not at the cell's own ground plus four. Every mover that
+    /// enters a cell stores its level through this, so the level agrees with
+    /// the Z [`Self::set_height`] gives.
+    pub(crate) fn store_cell_level_on_deck(
+        &mut self,
+        cell_level: u8,
+        on_bridge: bool,
+        deck: Option<i16>,
+    ) {
+        match deck.filter(|_| on_bridge) {
+            Some(deck) => self.store_cell_level(deck as u8, false),
+            None => self.store_cell_level(cell_level, on_bridge),
+        }
     }
 
     /// SetLocation of `coord` ([`Self::put_location`]) with the level its Z
@@ -287,8 +308,10 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .ok_or("Object navigation-cell query requires the native map")?;
-        let cells = NativeCellQuery::canonical(terrain);
-        Ok(cells.lookup(((coordinate.x / 256) as i16, (coordinate.y / 256) as i16)))
+        Ok(navigation_cell_lookup(
+            coordinate,
+            &NativeCellQuery::canonical(terrain),
+        ))
     }
 
     /// ObjectClass::SetZ5F6060 writes only Object+A4. A marked owner runs
@@ -301,7 +324,7 @@ impl Simulation {
         z: i32,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let marked = self
             .substrate
@@ -329,9 +352,42 @@ impl Simulation {
 /// simulation callbacks use the canonical retained Dummy and its lookup order.
 pub fn query_ground_height(cells: &NativeCellQuery<'_>, point: DriveCoord) -> Result<i32, String> {
     let cell = cells.lookup_world(point.x, point.y);
+    ground_height_in_cell(cells, cell, point)
+}
+
+fn ground_height_in_cell(
+    cells: &NativeCellQuery<'_>,
+    cell: NativeCellIdentity,
+    point: DriveCoord,
+) -> Result<i32, String> {
     let (level, slope) = cells.ground_fields(cell);
     ground_height_leptons(level, slope, point.x, point.y)
         .map_err(|error| format!("native ground query: {error:?}"))
+}
+
+/// Surface Z in leptons for a caller that already knows its layer. Keep the
+/// Map578080 lookup and its Dummy identity even on a corrected bridge.
+pub fn query_surface_z(
+    cells: &NativeCellQuery<'_>,
+    point: DriveCoord,
+    on_bridge: bool,
+) -> Result<i32, String> {
+    let cell = cells.lookup_world(point.x, point.y);
+    if on_bridge && let Some(deck) = corrected_deck_z(cells.terrain(), cell) {
+        return Ok(deck);
+    }
+    let ground = ground_height_in_cell(cells, cell, point)?;
+    Ok(z_at_height(ground, 0, on_bridge))
+}
+
+/// Deck Z for a caller that samples ground before its separate bridge lookup
+/// (e.g. FootClass click input at 0x004DE242).
+pub(crate) fn deck_surface_z(
+    cells: &NativeCellQuery<'_>,
+    cell: NativeCellIdentity,
+    ground: i32,
+) -> i32 {
+    corrected_deck_z(cells.terrain(), cell).unwrap_or_else(|| z_at_height(ground, 0, true))
 }
 
 /// Object+1BC receiver5F6960 performs two Map565730 lookups from physical
@@ -350,6 +406,9 @@ pub(crate) fn query_object_cell_height(
     on_bridge: bool,
 ) -> i32 {
     let cell = query_object_cell(cells, physical);
+    if on_bridge && let Some(deck) = cells.terrain().corrected_high_bridge_deck_at(cell) {
+        return i32::from(deck);
+    }
     i32::from(cells.ground_fields(cell).0 as i8) + if on_bridge { 4 } else { 0 }
 }
 
@@ -362,9 +421,34 @@ pub(crate) fn terrain_projection_differs(cells: &NativeCellQuery<'_>, [x, y]: [i
         i32::from(crate::util::lepton::lepton_to_cell_packed(x)),
         i32::from(crate::util::lepton::lepton_to_cell_packed(y)),
     );
-    crate::sim::find_nearby_cell::project_world_coordinate_with_lookup(x, y, |cx, cy| {
-        cells.projection_view(cx, cy)
-    }) != cell
+    crate::sim::find_nearby_cell::project_world_coordinate_with_terrain(
+        x,
+        y,
+        Some(cells.terrain()),
+        |cx, cy| cells.projection_view(cx, cy),
+    ) != cell
+}
+
+/// The terrain exit that the Event IDLE (`0x004C752A..0x004C7577`) and
+/// DEPLOY (`0x004C7719..0x004C775C`) arms share. Off a bridge (`+0x8C`), the
+/// cell at the actor's Location (`0x00565730`) is flat (slope byte `+0x11C`
+/// is 0) and [`terrain_projection_differs`] (vt+0x2B0) finds its screen
+/// projection in another cell: the event then ends at `0x004C8109` with no
+/// effect.
+pub(crate) fn event_hidden_flat_cell(sim: &Simulation, id: u64) -> bool {
+    let (Some(terrain), Some(actor)) = (
+        sim.resolved_terrain.as_ref(),
+        sim.substrate.entities.get(id),
+    ) else {
+        return false;
+    };
+    if actor.on_bridge() {
+        return false;
+    }
+    let cells = NativeCellQuery::canonical(terrain);
+    let [x, y] = position_world_xy(&actor.position);
+    cells.ground_fields(cells.lookup_world(x, y)).1 == 0
+        && terrain_projection_differs(&cells, [x, y])
 }
 
 /// Foot+BC4DDC40(false) -> Object5F6A70. The navigation coordinate can be a
@@ -382,15 +466,55 @@ pub(crate) fn navigation_should_be_on_bridge(
     if in_tube {
         return Ok(false);
     }
-    let head_ground = query_ground_height(cells, navigation)?;
-    let current_ground = query_ground_height(cells, current)?;
+    let head_cell = cells.lookup_world(navigation.x, navigation.y);
+    let head_ground = ground_height_in_cell(cells, head_cell, navigation)?;
+    let current_cell = cells.lookup_world(current.x, current.y);
+    let current_ground = ground_height_in_cell(cells, current_cell, current)?;
     if !on_bridge && current_ground.wrapping_sub(head_ground) > 3 * GROUND_LEVEL_HEIGHT_LEPTONS {
         return Ok(cells.flags(cells.lookup_world(navigation.x, navigation.y)) & 0x100 != 0);
     }
     if on_bridge && head_ground.wrapping_sub(current_ground) > 3 * GROUND_LEVEL_HEIGHT_LEPTONS {
-        return Ok(false);
+        // Object5F6A70's ground rise also fires between two cells of a flat
+        // span over a depression. Keep the deck layer for a corrected span.
+        return Ok(adjacent_matching_bridge_decks(
+            cells,
+            current_cell,
+            head_cell,
+        ));
     }
     Ok(on_bridge)
+}
+
+fn adjacent_matching_bridge_decks(
+    cells: &NativeCellQuery<'_>,
+    current: NativeCellIdentity,
+    head: NativeCellIdentity,
+) -> bool {
+    use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+
+    let terrain = cells.terrain();
+    let current_deck = terrain.corrected_high_bridge_deck_at(current);
+    let head_deck = terrain.corrected_high_bridge_deck_at(head);
+    if current_deck.is_none() && head_deck.is_none() {
+        return false;
+    }
+    if !matches!(
+        (current, head),
+        (NativeCellIdentity::Real(_), NativeCellIdentity::Real(_))
+    ) || cells.flags(current) & BRIDGE_FLAG_STRUCTURAL == 0
+        || cells.flags(head) & BRIDGE_FLAG_STRUCTURAL == 0
+    {
+        return false;
+    }
+    let (x, y) = cells.coord(current);
+    let (hx, hy) = cells.coord(head);
+    let stock_deck = |cell| {
+        i16::from(cells.ground_fields(cell).0 as i8)
+            + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16
+    };
+    x.abs_diff(hx).max(y.abs_diff(hy)) == 1
+        && current_deck.unwrap_or_else(|| stock_deck(current))
+            == head_deck.unwrap_or_else(|| stock_deck(head))
 }
 
 /// The world XY of an object's Location (`ObjectClass+0x9C`, `+0xA0`) from
@@ -455,6 +579,14 @@ pub(crate) fn foot_set_location(
     let changed = position_world_coord(&entity.position) != coord;
     entity.position.put_location(coord);
     if changed {
+        // Ares 3.0 FootClass_SetLocation_Parasite (1005CA50, hook 0x4DB87E),
+        // ahead of the riders: the parasite eating this Foot takes the new
+        // Location through its own SetLocation.
+        if rules.ares_form()
+            && let Some(eater) = entities.get(id).and_then(|victim| victim.parasite.eater())
+        {
+            foot_set_location(entities, eater, coord, rules, interner);
+        }
         crate::sim::passenger::open_topped_riders_follow(entities, id, rules, interner);
     }
 }
@@ -501,6 +633,11 @@ pub(crate) fn object_ground_z_leptons(
     terrain: Option<&ResolvedTerrainGrid>,
 ) -> i32 {
     let [x, y] = position_world_xy(&entity.position);
+    if entity.on_bridge()
+        && let Some(deck) = corrected_deck_z_at_xy([x, y], terrain)
+    {
+        return deck;
+    }
     terrain
         .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
         .and_then(|cell| ground_height_leptons(cell.level, cell.slope_type, x, y).ok())
@@ -553,7 +690,7 @@ fn foundation_center_xy(
 pub fn object_center_xy(entity: &crate::sim::game_entity::GameEntity) -> [i32; 2] {
     let location = position_world_xy(&entity.position);
     if entity.category() == crate::map::entities::EntityCategory::Structure {
-        foundation_center_xy(location, entity.type_facts.foundation())
+        foundation_center_xy(location, entity.seldom.type_facts.foundation())
     } else {
         location
     }
@@ -634,8 +771,18 @@ pub fn target_get_coords(
                 ))
             } else {
                 // Terrain7F522C+48 inherits Object5F65A0: its constructor's
-                // retained Location survives ground changes and expiry.
-                let coord = world.terrain_objects.objects().get(&id)?.world_coord();
+                // retained Location survives ground changes and expiry. So
+                // does VoxelAnim7F6318+48, an AttachedSystem's owner
+                // (`0x007498A5`): only its flight tail moves Location.
+                if let Some(terrain) = world.terrain_objects.objects().get(&id) {
+                    let coord = terrain.world_coord();
+                    return Some(DriveCoord {
+                        x: coord.x,
+                        y: coord.y,
+                        z: coord.z,
+                    });
+                }
+                let coord = world.substrate.voxel_anims.get(id)?.world_coord();
                 Some(DriveCoord {
                     x: coord.x,
                     y: coord.y,
@@ -646,7 +793,7 @@ pub fn target_get_coords(
     }
 }
 
-/// Target virtual+58: Object410540 forwards virtual+48; Cell486900 uses
+/// Target virtual+58: Object410540 forwards virtual+48; Cell486890 uses
 /// structural bridge height. FireAt70BCB0 and planning Foot4D8560 share it.
 pub(crate) fn target_get_target_coords(
     target: crate::sim::combat::TargetKind,
@@ -723,7 +870,7 @@ impl Simulation {
                     entity.category() == crate::map::entities::EntityCategory::Structure
                 })
                 .map(|building| {
-                    let (width, height) = building.type_facts.foundation().dimensions();
+                    let (width, height) = building.seldom.type_facts.foundation().dimensions();
                     (i32::from(width), i32::from(height))
                 }),
             crate::sim::combat::TargetKind::Cell(..) => None,
@@ -782,8 +929,29 @@ pub(crate) fn ground_surface_z_at(
     terrain: Option<&ResolvedTerrainGrid>,
     path_grid: Option<&PathGrid>,
 ) -> Option<i32> {
+    if on_bridge && let Some(deck) = corrected_deck_z_at_xy(world_xy, terrain) {
+        return Some(deck);
+    }
     let ground = supported_ground(ground_at(world_xy, terrain, path_grid)?, world_xy)?;
     Some(z_at_height(ground, 0, on_bridge))
+}
+
+fn corrected_deck_z_at_xy(
+    world_xy: [i32; 2],
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> Option<i32> {
+    let [x, y] = world_xy;
+    let packed = crate::util::lepton::lepton_to_cell_packed;
+    let terrain = terrain?;
+    let index = terrain.native_fixed_cell_index(packed(x), packed(y))?;
+    corrected_deck_z(terrain, NativeCellIdentity::Real(index))
+}
+
+/// Retained live high-bridge Z for a caller that already resolved its Cell.
+pub fn corrected_deck_z(terrain: &ResolvedTerrainGrid, cell: NativeCellIdentity) -> Option<i32> {
+    terrain
+        .corrected_high_bridge_deck_at(cell)
+        .map(|level| i32::from(level) * GROUND_LEVEL_HEIGHT_LEPTONS)
 }
 
 /// `ObjectClass::SetHeight @ 0x005F5FA0`'s Z for a sampled ground: the
@@ -819,7 +987,7 @@ impl Simulation {
         coord: DriveCoord,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let marked = self
             .substrate
@@ -854,17 +1022,16 @@ impl Simulation {
         id: u64,
         height: i32,
         rules: &crate::rules::ruleset::RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
-        let context = crate::sim::world::UninitContext::new(rules, registry).with_effects(effects);
+        let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         let marked = self
             .substrate
             .entities
             .get(id)
             .is_some_and(|entity| entity.lifecycle.cell_marked());
         if marked {
-            self.unmark_entity_remove(id, context);
+            self.unmark_entity_remove(id, context.reborrow());
         }
         Self::set_object_height_unmarked(&mut self.substrate, &self.resolved_terrain, id, height);
         if marked {
@@ -894,4 +1061,34 @@ impl Simulation {
             .position
             .set_height(on_bridge, height, resolved_terrain.as_ref(), None);
     }
+}
+
+/// Object+1C4 (`ObjectClass::GetCell @ 0x005F6A10`) for a live object in the
+/// caller's own Cell query: virtual+4C with a null requester
+/// ([`super::navcom::object_navigation_coordinate`]), then one lookup.
+pub fn entity_navigation_cell_identity(
+    entity: &crate::sim::game_entity::GameEntity,
+    cells: &NativeCellQuery<'_>,
+    rules: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
+) -> Result<NativeCellIdentity, String> {
+    let coordinate = super::navcom::object_navigation_coordinate(
+        entity,
+        None,
+        Some(cells.terrain()),
+        rules,
+        || Err("a null requester has no coordinate".into()),
+    )?;
+    Ok(navigation_cell_lookup(coordinate, cells))
+}
+
+/// GetCell's tail (`0x005F6A1F..0x005F6A5A`): the XY truncated toward zero to
+/// signed cell words, then one Map5657A0 lookup.
+fn navigation_cell_lookup(
+    coordinate: DriveCoord,
+    cells: &NativeCellQuery<'_>,
+) -> NativeCellIdentity {
+    cells.lookup(((coordinate.x / 256) as i16, (coordinate.y / 256) as i16))
 }

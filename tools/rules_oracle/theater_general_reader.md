@@ -124,10 +124,11 @@ are −1/−2, while a *present* malformed ordinary value can deliberately parse
 Keep consumer projections explicit. Checked `u16` conversion remains suitable
 for the existing presentation-facing optional fields; negative and oversized
 values become absent there. Signed ordinal resolution must reject negative
-values before indexing and avoid wrapping oversized values. The existing
-`HighBridgeRimTiles::from_ini` already uses signed `read_int(key, -1)` for all
-ten pieces and must retain that behavior. This corpus does not justify
-replacing its signed identities with the narrower presentation fields.
+values before indexing and avoid wrapping oversized values. `load_theater`
+reads the ten pieces once, signed, through `HighBridgeRimTiles::read`
+(`read_int(key, -1)`); the bounded `BridgeMiddle1/2` view is projected from
+those values. This corpus does not justify replacing the signed identities
+with the narrower presentation fields.
 
 The native `DestroyableCliffs=-2` default is distinct even though the current
 optional resolved cliff-range projection maps either negative sentinel to

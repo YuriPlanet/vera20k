@@ -204,18 +204,26 @@ pub fn remove_ini_keys(content: &[u8], section: &str, keys: &[&str]) -> Vec<u8> 
 /// which re-creates the section after the others.
 pub fn replace_ini_section(content: &[u8], section: &str, values: &[(&str, &str)]) -> Vec<u8> {
     let target_section = section.trim();
-    let mut in_target_section = false;
+    let kept = remove_ini_sections(content, |name| name.eq_ignore_ascii_case(target_section));
+    set_ini_values(&kept, section, values)
+}
+
+/// Drop every section whose trimmed name `remove` accepts, its header and
+/// all its lines. Lines before the first section and every other section
+/// keep their bytes and order.
+pub fn remove_ini_sections(content: &[u8], remove: impl Fn(&str) -> bool) -> Vec<u8> {
+    let mut in_removed_section = false;
     let mut kept = Vec::with_capacity(content.len());
     for (text, terminator) in split_lines(content) {
         if let Some(name) = std::str::from_utf8(text).ok().and_then(section_header_name) {
-            in_target_section = name.eq_ignore_ascii_case(target_section);
+            in_removed_section = remove(name);
         }
-        if !in_target_section {
+        if !in_removed_section {
             kept.extend_from_slice(text);
             kept.extend_from_slice(terminator);
         }
     }
-    set_ini_values(&kept, section, values)
+    kept
 }
 
 /// Terminator for lines this writer *adds* (an inserted key or a created
@@ -274,7 +282,7 @@ fn key_name_bytes(line: &[u8]) -> Option<&str> {
     std::str::from_utf8(&line[..equals]).ok().and_then(key_name)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 

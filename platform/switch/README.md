@@ -1,7 +1,7 @@
 # VERA20k Switch 移植
 
 这是原生 Horizon / 大气层移植入口，使用独立 Cargo workspace 构建。
-当前分支为 `feature/switch-wgpu29`，客户端版本为 `0.0.3 beta`。本分支也调整了共享
+当前分支为 `feature/yuris-wgpu30`，Switch 客户端版本为 `0.0.2`。本分支也调整了共享
 渲染代码及桌面依赖；Horizon 专用依赖补丁通过生成的 Switch Cargo 配置启用。
 
 客户端包含菜单、战役、遭遇战、音频和账号 SaveData 支持，仍处于实验阶段。
@@ -27,10 +27,9 @@
 python3 build.py --client
 ```
 
-当前客户端版本为 `0.0.3 beta`，NSP 命名格式为
-`dist/vera20-client-v<VERSION>.nsp`，本版产物为
-`dist/vera20-client-v0.0.3.nsp`，标题 ID
-`0100f52556458000`。运行日志在客体 `sdmc:/switch/vera20k/logs/client.log`，
+NSP 命名格式为 `dist/ver20k-Yuris-Revenge-v<VERSION>.nsp`，
+本版产物为 `dist/ver20k-Yuris-Revenge-v0.0.2.nsp`，标题 ID
+`0100f52556454000`。运行日志在客体 `sdmc:/switch/vera20k/logs/client.log`，
 错误结果在 `sdmc:/switch/vera20k/client.last-error.txt`。资源优先从包内 RomFS
 读取，配置和日志目录为
 `sdmc:/switch/vera20k`。存档根为 `vera20k-user:/saves`，挂载到所选账号的
@@ -57,9 +56,8 @@ python3 build.py --client --nsp \
 `ra2.mix`、`ra2md.mix`（小写文件名）；指定目录的全部文件和子目录原样入包，
 因此请只放需要随包携带的资源。原始资源留在本机，不加入 Git。
 
-客户端链接构建默认打入游戏资源，并按 `vera20-client-v<VERSION>.nsp` 命名。
-NSP 大小取决于实际资源目录，旧版固定大小和 SHA256 不再适用于 `0.0.3 beta`；
-每次构建后请以 `dist/vera20-client-v0.0.3.nsp` 的 `stat` / `sha256sum` 结果为准。
+客户端链接构建默认打入游戏资源，并按 `ver20k-Yuris-Revenge-v<VERSION>.nsp` 命名。
+NSP 大小取决于实际资源目录，每次构建后请以对应 NSP 的 `stat` / `sha256sum` 结果为准。
 构建也会生成诊断 NRO；NRO 本身不内置这些资源。
 
 客户端挂载 `romfs:/`；没有配置覆盖时优先从包内读取资源，找不到包内资源时
@@ -69,7 +67,7 @@ NSP 大小取决于实际资源目录，旧版固定大小和 SHA256 不再适�
 旧 `config.toml` 的 `[paths] ra2_dir` 继续具有优先权；
 测试包内资源时，应先备份并移开旧配置，让默认资源发现生效。
 
-已在独立 Eden 配置下验证：SD 中没有 `game` 目录，NSP 能启动完整主菜单并
+此前曾在独立 Eden 配置下验证：SD 中没有 `game` 目录，NSP 能启动完整主菜单并
 进入 URBAN 遭遇战，完整侧栏和单位可见。首次配置需沿用现有的
 `disable_macro_jit=true` / `disable_macro_hle=true`，同时将各自的
 `\default` 设为 `false`，否则 Eden 会恢复默认值。
@@ -88,18 +86,16 @@ Escape；确认后的 UTF-8 文本提交给当前聊天、玩家名或联机输�
 键盘。键盘打开时会带入编辑框现有内容，确认后替换而不是追加（聊天类输入框仍为追加）。
 USB 键盘本身仍可直接输入。
 
-`v0.0.3 beta` 手柄映射：左摇杆移动指针，右摇杆平移镜头；十字键上／下选择
+手柄映射中，左摇杆移动指针，右摇杆平移镜头。十字键上／下选择
 编队 1／2，左为警戒（G），右为路径点模式（Z）。选中单位后，按住 R 再按
 上／下可建立编队 1／2；按住十字键右并依次点击地面设置路径点，松开后执行。
 X 为部署（D），Y 为切换同盟（A），L／R 为 Shift／Ctrl，ZL／ZR 为 Tab／Space，
 Plus／Minus 为 Escape／F10。以上功能遵循当前游戏热键配置；剧情用实体 Plus
 跳过，不添加屏幕 `+` 按钮。
 
-Horizon 对局呈现默认设置 30 FPS 上限；可在主菜单 `Options → Vera Options →
-Developer Options` 勾选 `60 FPS Limit`，切换为 60 FPS 上限，取消勾选恢复 30。
-选择保存在 `VERA.INI` 的 `[VERA] Switch60Fps=`，切换即时生效，只影响画面
-呈现，不改变模拟速度或屏幕刷新率；实际帧率仍取决于性能。原有 `FPS Counter`
-保持每次启动默认隐藏。所有呈现路径都接入
+Horizon 对局呈现默认上限为 30 FPS。勾选 `Options → Display →
+High Refresh Rate in Battle` 可切换到 60 FPS。设置保存为 `[VERA] HighRefreshRateInBattle=`，
+旧配置的 `Switch60Fps=` 仍可作为默认值。此项只控制呈现节奏。所有呈现路径都接入
 SaltyNX 共享页上报，无服务时跳过；已有 NX-FPS 上报者活跃时交由它负责。
 外部插件读数、实际帧率及用户存档隔离仍需用最终 NSP 在真机确认。
 
@@ -215,8 +211,8 @@ VERA_RETAIL_DIR=/path/to/retail bash run_eden.sh --gpu
 
 `dist/vera20k-gpu.nro` 通过 Switch 原生 `NWindow` 直接调用项目的
 `src/render/gpu.rs`，不复制 GPU 初始化和取帧实现。
-当前分支已升级到 wgpu 29.0.4 / Vulkan-only；编译检查通过，仍需在 Eden 和真机
-复验最终 NSP。以下是 wgpu 27 阶段已建立的生产渲染路径回归证据：带补丁的
+当前分支使用 wgpu 30.0.1 和 Horizon Vulkan 补丁。最终 NSP 仍需在 Eden 和真机
+复验。以下是 wgpu 27 阶段已建立的生产渲染路径回归证据：带补丁的
 Eden master 通过 NVK 使用生产 `BatchRenderer` 显示 12 个合成 RGBA 精灵。
 像素回读覆盖透明边缘、纹理颜色、全部实例以及相机平移和 2 倍缩放。
 同一 GPU 探针还从模拟器内的 `temperat.mix` 经生产
@@ -300,7 +296,7 @@ python3 deploy_ftp.py --host "$SWITCH_FTP_HOST" --port 5000
 python3 deploy_ftp.py --host "$SWITCH_FTP_HOST" --port 5000 --client
 ```
 
-它按 `dist/vera20-client-*.nsp` 取最新包，随包生成并上传 `.sha256`，
+它按 `dist/ver20k-Yuris-Revenge-v*.nsp` 选包，随包生成并上传 `.sha256`，
 同样走临时文件加逐字节回读；不要用手动复制绕过这道校验。
 
 分别从 hbmenu 启动 NRO、从主菜单启动已安装的 NSP，按 A 后按 `+` 退出。
@@ -323,7 +319,7 @@ NRO 与 NSP 分别写 `sdmc:/switch/vera20k/core-probe-{nro,nsp}.txt`。
 | MIX、INI、模拟核心 / Rayon | 核心 NSP 已通过模拟器和真机验证；范围为合成资源与空场景 |
 | Switch SDL2 / EGL / GLES 库 | 早期核心图形探针需要对应 portlibs |
 | Switch 原生窗口 / EGL / GLES2 图形层 | 已在 NRO 和 NSP 的 Eden 运行中画出 1280×720 画面；尚不是 Vera 生产渲染器 |
-| wgpu 29.0.4 | 桌面使用 29；Switch 固定 29.0.4、Vulkan-only 并使用 Horizon 补丁。核心与客户端编译通过，真实地图和完整客户端仍需最终 NSP 真机复验 |
+| wgpu 30.0.1 | Switch 使用 Vulkan 和仓库内的 Horizon 补丁，完整客户端仍需真机复验 |
 | rodio 0.22 / cpal 0.17 | 使用 Horizon 补丁后依赖编译检查通过；尚未链接和播放声音 |
 | 桌面 winit / Wayland / rustix | 无法直接用于 Horizon；包含窗口栈的实际依赖检查在 rustix 0.38 报错，winit 本身也没有 Horizon backend |
 | Switch NVK 静态驱动 | 已从 Mesa `606441c90e` 交叉编译，生成本地化 `libvulkan_bh.a`；实例、能力枚举、Vi 表面和逻辑设备已通过 |
@@ -342,8 +338,9 @@ python3 build.py --check-client-deps --without-winit
 ```
 
 检查从桌面 Cargo.toml 读取依赖，并锁定桌面 Cargo.lock 中的对应版本。
-上游的 libc、memmap2、wgpu 29.0.4、raw-window-handle、cpal 补丁仅通过生成的 Switch
-配置启用。当前分支的共享渲染 API 和桌面依赖也有调整，桌面平台兼容性需要单独验证。
+生成的 Switch Cargo 配置启用固定版本的 libc、memmap2、raw-window-handle 和 cpal 补丁。
+构建脚本校验 wgpu 30.0.1 源码包的 SHA-256 后应用 `third_party/wgpu-30.0.1-horizon.patch`。
+Horizon 使用解压后的模组目录，桌面端支持 ZIP 模组导入。
 补丁源码和许可来源见 `UPSTREAM.md`。
 
 顶层 MIX 使用 mmap，影片解码直接使用 MIX 内的共享切片，不再复制整段 BIK；

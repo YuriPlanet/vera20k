@@ -20,6 +20,10 @@ fn scene(rules: &RuleSet, selected_target: bool) -> (Simulation, u64, u64) {
     let owner = sim.interner().get("Americans").unwrap();
     sim.session_mut_for_test()
         .set_current_house_for_test(Some(owner));
+    // The corpus is a multiplayer session (XMP03T4), so Foot's shroud rung
+    // (`0x004DDED0`), a campaign's only, does not apply.
+    sim.session_mut_for_test()
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.fog_mut_for_test().reveal_all_for_owner(owner);
     let miner = sim
         .spawn_object("CMIN", "Americans", 10, 10, 0, rules)
@@ -27,14 +31,14 @@ fn scene(rules: &RuleSet, selected_target: bool) -> (Simulation, u64, u64) {
     let enemy = sim
         .spawn_object("MTNK", "Russians", 20, 10, 0, rules)
         .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(miner)
+    sim.entity_mut_for_test(miner)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
-    sim.entities_mut_for_test()
-        .get_mut(enemy)
+    sim.entity_mut_for_test(enemy)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(selected_target);
     (sim, miner, enemy)
@@ -88,6 +92,9 @@ fn retail_unarmed_ctrl_click_matches_original_selection_and_navigation() {
         assert!(!crate::sim::combat::combat_weapon::is_armed(
             actor,
             retail.rules.object("CMIN").unwrap(),
+            sim.entities(),
+            &retail.rules,
+            sim.interner(),
         ));
         let before = sim.state_hash();
         let rng = sim.rng_state();
@@ -104,6 +111,7 @@ fn retail_unarmed_ctrl_click_matches_original_selection_and_navigation() {
             modifier,
             false,
             false,
+            &mut Default::default(),
         );
         let expected_cursor = match row["cursor"]["output"]["cursor_row"].as_u64().unwrap() {
             17 => CursorId::Select,

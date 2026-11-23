@@ -48,7 +48,7 @@ pub(in crate::app) fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Sim
             .entities()
             .get(engineer)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .is_inside_transport()
         {
             break;
@@ -59,13 +59,12 @@ pub(in crate::app) fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Sim
         sim.entities()
             .get(engineer)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .inside_transport_id()
             == Some(ifv)
     );
     let tank = sim.spawn_object("MTNK", OWNER, 17, 16, 64, rules).unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .health
         .set_for_test(100);
@@ -294,6 +293,7 @@ fn retail_engineer_ifv_offers_normal_repair_cursor_on_damaged_friend() {
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
     assert_eq!(cursor_id_for_feedback(feedback), Some(CursorId::Repair));
@@ -306,78 +306,81 @@ fn retail_engineer_ifv_offers_normal_repair_cursor_on_damaged_friend() {
 
 #[test]
 fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &retail.rules;
-    let (mut sim, ifv, tank) = repair_ifv(rules);
-    let already_sent = repair_click(&sim, rules, ifv, tank);
-    sim.entities_mut_for_test()
-        .get_mut(ifv)
-        .unwrap()
-        .berserk
-        .set_active_for_test(true);
-    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/bunker_attack_action.json",
-    ))
-    .unwrap();
-    let control = native["repair_rows"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["input"]["name"] == "berserk_friend")
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = &retail.rules;
+        let (mut sim, ifv, tank) = repair_ifv(rules);
+        let already_sent = repair_click(&sim, rules, ifv, tank);
+        sim.entity_mut_for_test(ifv)
+            .unwrap()
+            .berserk
+            .set_active_for_test(true);
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/bunker_attack_action.json",
+        ))
         .unwrap();
-    assert_eq!(control["action"], 29);
-    assert_eq!(control["cursor"]["output"]["cursor_row"], 33);
-    assert!(!control["trace"].to_string().contains("command_sink"));
-    let hover = HoverTargetKindWithId {
-        kind: HoverTargetKind::FriendlyUnit,
-        stable_id: tank,
-    };
-    let prior = sim.state_hash();
-    let feedback = capability_cursor_for_hover(
-        &sim,
-        &[ifv],
-        Some(ifv),
-        &hover,
-        Some(rules),
-        None,
-        crate::app::input::context_order::OrderModifier::Normal,
-        false,
-        false,
-    );
-    assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
-    assert_eq!(cursor_id_for_feedback(feedback), Some(CursorId::Repair));
-    // DetermineAction still answers Repair29, which dispatches (the click is
-    // consumed and the action-line timer starts), but Unit738890 refuses the
-    // berserk IFV, so it sends nothing.
-    assert!(
-        sim.click_order_receivers(&[ifv]).is_empty(),
-        "native Unit738890 refuses berserk clicks"
-    );
-    let owner = sim.entities().get(ifv).unwrap().owner();
-    assert_eq!(
-        berserk_selection_click(&sim, rules, &[ifv], Some(&hover), (0, 0), owner),
-        LeftRelease::Dispatch
-    );
-    // Over itself the healer arm answers Select (`0x0073FE3B`), since the
-    // berserk base answer (0) skips the self action.
-    let over_itself = HoverTargetKindWithId {
-        kind: HoverTargetKind::FriendlyUnit,
-        stable_id: ifv,
-    };
-    assert_eq!(
-        berserk_selection_click(&sim, rules, &[ifv], Some(&over_itself), (0, 0), owner),
-        LeftRelease::Select
-    );
-    assert_eq!(sim.state_hash(), prior);
-    // The refusal belongs to ClickedAction, not Event::Execute. An event
-    // already published before the actor became berserk is still received.
-    assert!(sim.apply_command(OWNER, &already_sent, Some(rules)));
-    assert_eq!(
-        sim.entities().get(ifv).unwrap().attack_target.target(),
-        Some(TargetKind::Entity(tank))
-    );
+        let control = native["repair_rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == "berserk_friend")
+            .unwrap();
+        assert_eq!(control["action"], 29);
+        assert_eq!(control["cursor"]["output"]["cursor_row"], 33);
+        assert!(!control["trace"].to_string().contains("command_sink"));
+        let hover = HoverTargetKindWithId {
+            kind: HoverTargetKind::FriendlyUnit,
+            stable_id: tank,
+        };
+        let prior = sim.state_hash();
+        let feedback = capability_cursor_for_hover(
+            &sim,
+            &[ifv],
+            Some(ifv),
+            &hover,
+            Some(rules),
+            None,
+            crate::app::input::context_order::OrderModifier::Normal,
+            false,
+            false,
+            &mut Default::default(),
+        );
+        assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
+        assert_eq!(cursor_id_for_feedback(feedback), Some(CursorId::Repair));
+        // DetermineAction still answers Repair29, which dispatches (the click is
+        // consumed and the action-line timer starts), but Unit738890 refuses the
+        // berserk IFV, so it sends nothing.
+        assert!(
+            sim.click_order_receivers(&[ifv], ares_way).is_empty(),
+            "native Unit738890 refuses berserk clicks"
+        );
+        let owner = sim.entities().get(ifv).unwrap().owner();
+        assert_eq!(
+            berserk_selection_click(&sim, rules, &[ifv], Some(&hover), (0, 0), owner),
+            LeftRelease::Dispatch
+        );
+        // Over itself the healer arm answers Select (`0x0073FE3B`), since the
+        // berserk base answer (0) skips the self action.
+        let over_itself = HoverTargetKindWithId {
+            kind: HoverTargetKind::FriendlyUnit,
+            stable_id: ifv,
+        };
+        assert_eq!(
+            berserk_selection_click(&sim, rules, &[ifv], Some(&over_itself), (0, 0), owner),
+            LeftRelease::Select
+        );
+        assert_eq!(sim.state_hash(), prior);
+        // The refusal belongs to ClickedAction, not Event::Execute. An event
+        // already published before the actor became berserk is still received.
+        assert!(sim.apply_command(OWNER, &already_sent, Some(rules)));
+        assert_eq!(
+            sim.entities().get(ifv).unwrap().attack_target.target(),
+            Some(TargetKind::Entity(tank))
+        );
+    }
 }
 
 /// A repair IFV being erased by a Chrono Legionnaire keeps the Repair cursor,
@@ -392,60 +395,63 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
 /// MissionClass::AI, so the IFV never repairs and Attack stays queued.
 #[test]
 fn retail_warped_engineer_ifv_repair_click_is_accepted_then_dropped() {
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &retail.rules;
-    let (mut sim, ifv, tank) = repair_ifv(rules);
-    sim.entities_mut_for_test()
-        .get_mut(ifv)
-        .unwrap()
-        .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(99));
-    assert!(sim.entities().get(ifv).unwrap().is_warped_out());
-    let hover = HoverTargetKindWithId {
-        kind: HoverTargetKind::FriendlyUnit,
-        stable_id: tank,
-    };
-    let feedback = capability_cursor_for_hover(
-        &sim,
-        &[ifv],
-        Some(ifv),
-        &hover,
-        Some(rules),
-        None,
-        crate::app::input::context_order::OrderModifier::Normal,
-        false,
-        false,
-    );
-    assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
-    assert_eq!(sim.click_order_receivers(&[ifv]), [ifv]);
-    let command = repair_click(&sim, rules, ifv, tank);
-    assert!(sim.apply_command(OWNER, &command, Some(rules)));
-    let attack =
-        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Attack);
-    let ifv_state = |sim: &Simulation| {
-        let ifv = sim.entities().get(ifv).unwrap();
-        (ifv.attack_target.target(), ifv.mission.queued())
-    };
-    assert_eq!(ifv_state(&sim), (Some(TargetKind::Entity(tank)), attack));
-    let grid = sim.path_grid_snapshot().unwrap();
-    let before = sim.entities().get(tank).unwrap().health.current();
-    sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
-    assert_eq!(
-        ifv_state(&sim),
-        (None, attack),
-        "the frozen prologue drops TarCom; MissionClass::AI never runs"
-    );
-    for _ in 0..120 {
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = &retail.rules;
+        let (mut sim, ifv, tank) = repair_ifv(rules);
+        sim.entity_mut_for_test(ifv)
+            .unwrap()
+            .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(99));
+        assert!(sim.entities().get(ifv).unwrap().is_warped_out());
+        let hover = HoverTargetKindWithId {
+            kind: HoverTargetKind::FriendlyUnit,
+            stable_id: tank,
+        };
+        let feedback = capability_cursor_for_hover(
+            &sim,
+            &[ifv],
+            Some(ifv),
+            &hover,
+            Some(rules),
+            None,
+            crate::app::input::context_order::OrderModifier::Normal,
+            false,
+            false,
+            &mut Default::default(),
+        );
+        assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
+        assert_eq!(sim.click_order_receivers(&[ifv], ares_way), [ifv]);
+        let command = repair_click(&sim, rules, ifv, tank);
+        assert!(sim.apply_command(OWNER, &command, Some(rules)));
+        let attack =
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Attack);
+        let ifv_state = |sim: &Simulation| {
+            let ifv = sim.entities().get(ifv).unwrap();
+            (ifv.attack_target.target(), ifv.mission.queued())
+        };
+        assert_eq!(ifv_state(&sim), (Some(TargetKind::Entity(tank)), attack));
+        let grid = sim.path_grid_snapshot().unwrap();
+        let before = sim.entities().get(tank).unwrap().health.current();
         sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+        assert_eq!(
+            ifv_state(&sim),
+            (None, attack),
+            "the frozen prologue drops TarCom; MissionClass::AI never runs"
+        );
+        for _ in 0..120 {
+            sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+        }
+        assert!(sim.entities().get(ifv).unwrap().is_warped_out());
+        assert_eq!(ifv_state(&sim), (None, attack));
+        assert_eq!(
+            sim.entities().get(tank).unwrap().health.current(),
+            before,
+            "a warped-out IFV must not repair"
+        );
     }
-    assert!(sim.entities().get(ifv).unwrap().is_warped_out());
-    assert_eq!(ifv_state(&sim), (None, attack));
-    assert_eq!(
-        sim.entities().get(tank).unwrap().health.current(),
-        before,
-        "a warped-out IFV must not repair"
-    );
 }
 
 /// Shared ordinary input fixture: real boarding, normal repair dispatch and
@@ -457,6 +463,18 @@ pub(in crate::app) struct OrdinaryWeldingScene {
     pub target: u64,
     pub system: u64,
     pub first_repair_health: i32,
+}
+
+/// The WeldingSys's sparks: ParticleClass children, or under Ares the Spark
+/// records the system keeps itself (hooks 0x62DF05, 0x62FD60).
+fn welding_has_children(system: &crate::sim::particles::ParticleSystem) -> bool {
+    if system
+        .ares()
+        .is_some_and(|ares| !ares.particles().is_empty())
+    {
+        return true;
+    }
+    !system.particles().is_empty()
 }
 
 pub(in crate::app) fn ordinary_welding_children(rules: &RuleSet) -> OrdinaryWeldingScene {
@@ -511,7 +529,7 @@ pub(in crate::app) fn ordinary_welding_children(rules: &RuleSet) -> OrdinaryWeld
         if sim
             .particle_systems()
             .get(first_system)
-            .is_some_and(|system| !system.particles().is_empty())
+            .is_some_and(welding_has_children)
         {
             break;
         }
@@ -522,7 +540,7 @@ pub(in crate::app) fn ordinary_welding_children(rules: &RuleSet) -> OrdinaryWeld
         .get(first_system)
         .expect("the first system still lives");
     assert!(
-        !system.particles().is_empty(),
+        welding_has_children(system),
         "ordinary Logic must create real Welding children"
     );
     assert_eq!(
@@ -562,7 +580,7 @@ fn retail_engineer_ifv_plain_repair_click_reaches_attack_mission_and_heals() {
             Some(system) => {
                 drained_after_emission |= system.spark_spawn_frames() <= 0
                     && system.done_spawning()
-                    && !system.particles().is_empty();
+                    && welding_has_children(system);
             }
             None => retired = true,
         }
@@ -592,8 +610,7 @@ fn retail_far_repair_click_drives_into_range_and_heals_without_ctrl() {
     let rules = &retail.rules;
     let (mut sim, ifv, _) = repair_ifv(rules);
     let far = sim.spawn_object("MTNK", OWNER, 25, 16, 64, rules).unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(far)
+    sim.entity_mut_for_test(far)
         .unwrap()
         .health
         .set_for_test(100);
@@ -621,147 +638,197 @@ fn retail_far_repair_click_drives_into_range_and_heals_without_ctrl() {
 
 #[test]
 fn retail_repair_click_preserves_native_modifier_and_target_controls() {
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &retail.rules;
-    let (mut sim, ifv, tank) = repair_ifv(rules);
-    let owner = sim.entities().get(ifv).unwrap().owner();
-    let hover = HoverTargetKindWithId {
-        kind: HoverTargetKind::FriendlyUnit,
-        stable_id: tank,
-    };
-    let packet: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/bunker_attack_action.json",
-    ))
-    .unwrap();
-    for (modifier, name) in [
-        (OrderModifier::Normal, "damaged_friend"),
-        (OrderModifier::ForceFire, "ctrl_friend"),
-        (OrderModifier::ForceMove, "alt_friend"),
-        (OrderModifier::GuardArea, "ctrl_alt_friend"),
-        (OrderModifier::Shift, "shift_friend"),
-    ] {
-        let native = packet["repair_rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|row| row["input"]["name"] == name)
-            .unwrap();
-        let dispatch = unit_repair_branch_orders(
-            &sim,
-            rules,
-            &[ifv],
-            &[ifv],
-            &hover,
-            owner,
-            modifier,
-            OrderMode::Move,
-            false,
-        );
-        let native_orders: Vec<_> = native["trace"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|entry| entry["kind"] == "command_sink")
-            .collect();
-        assert_eq!(dispatch.commands.len(), native_orders.len(), "{name}");
-        if !native_orders.is_empty() {
-            assert_eq!(native_orders[0]["mission"], 1);
-            assert!(
-                matches!(dispatch.commands[0], Command::Attack { .. }),
-                "{name}"
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = &retail.rules;
+        let (mut sim, ifv, tank) = repair_ifv(rules);
+        let owner = sim.entities().get(ifv).unwrap().owner();
+        let hover = HoverTargetKindWithId {
+            kind: HoverTargetKind::FriendlyUnit,
+            stable_id: tank,
+        };
+        let packet: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/bunker_attack_action.json",
+        ))
+        .unwrap();
+        for (modifier, name) in [
+            (OrderModifier::Normal, "damaged_friend"),
+            (OrderModifier::ForceFire, "ctrl_friend"),
+            (OrderModifier::ForceMove, "alt_friend"),
+            (OrderModifier::GuardArea, "ctrl_alt_friend"),
+            (OrderModifier::Shift, "shift_friend"),
+        ] {
+            let native = packet["repair_rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["input"]["name"] == name)
+                .unwrap();
+            let dispatch = unit_repair_branch_orders(
+                &sim,
+                rules,
+                &[ifv],
+                &[ifv],
+                &hover,
+                owner,
+                modifier,
+                OrderMode::Move,
+                false,
             );
+            let native_orders: Vec<_> = native["trace"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|entry| entry["kind"] == "command_sink")
+                .collect();
+            // Ares 1004E5A0 (hook 0x73FDBD): Alt answers Select and Ctrl+Alt's
+            // GuardArea keeps its own path, so neither repairs.
+            let expected = if ares_way && matches!(name, "alt_friend" | "ctrl_alt_friend") {
+                0
+            } else {
+                native_orders.len()
+            };
+            assert_eq!(dispatch.commands.len(), expected, "{name}");
+            if expected != 0 {
+                assert_eq!(native_orders[0]["mission"], 1);
+                assert!(
+                    matches!(dispatch.commands[0], Command::Attack { .. }),
+                    "{name}"
+                );
+            }
         }
-    }
-    assert_eq!(
-        sim.unit_repair_action(ifv, tank, owner, rules),
-        Some(UnitRepairAction::Repair)
-    );
-    assert_eq!(
-        sim.unit_repair_action(ifv, ifv, owner, rules),
-        Some(UnitRepairAction::Select)
-    );
-    let wrong_owner = sim.interner().get("Russians").unwrap();
-    assert_eq!(sim.unit_repair_action(ifv, tank, wrong_owner, rules), None);
-    sim.entities_mut_for_test()
-        .get_mut(tank)
-        .unwrap()
-        .health
-        .set_for_test(rules.object("MTNK").unwrap().strength);
-    assert!(
-        unit_repair_branch_orders(
+        assert_eq!(
+            sim.unit_repair_action(
+                ifv,
+                tank,
+                owner,
+                crate::sim::world::HealArmKeys::default(),
+                rules
+            ),
+            Some(UnitRepairAction::Repair)
+        );
+        assert_eq!(
+            sim.unit_repair_action(
+                ifv,
+                ifv,
+                owner,
+                crate::sim::world::HealArmKeys::default(),
+                rules
+            ),
+            Some(UnitRepairAction::Select)
+        );
+        let wrong_owner = sim.interner().get("Russians").unwrap();
+        assert_eq!(
+            sim.unit_repair_action(
+                ifv,
+                tank,
+                wrong_owner,
+                crate::sim::world::HealArmKeys::default(),
+                rules
+            ),
+            None
+        );
+        sim.entity_mut_for_test(tank)
+            .unwrap()
+            .health
+            .set_for_test(rules.object("MTNK").unwrap().strength);
+        assert!(
+            unit_repair_branch_orders(
+                &sim,
+                rules,
+                &[ifv],
+                &[ifv],
+                &hover,
+                owner,
+                OrderModifier::Normal,
+                OrderMode::Move,
+                false
+            )
+            .commands
+            .is_empty()
+        );
+        sim.entity_mut_for_test(tank)
+            .unwrap()
+            .health
+            .set_for_test(100);
+        let enemy = sim
+            .spawn_object("MTNK", "Russians", 23, 16, 64, rules)
+            .unwrap();
+        sim.entity_mut_for_test(enemy)
+            .unwrap()
+            .health
+            .set_for_test(100);
+        assert_eq!(
+            sim.unit_repair_action(
+                ifv,
+                enemy,
+                owner,
+                crate::sim::world::HealArmKeys::default(),
+                rules
+            ),
+            Some(UnitRepairAction::Move)
+        );
+        let enemy_hover = HoverTargetKindWithId {
+            kind: HoverTargetKind::EnemyUnit,
+            stable_id: enemy,
+        };
+        let move_dispatch = unit_repair_branch_orders(
             &sim,
             rules,
             &[ifv],
             &[ifv],
-            &hover,
+            &enemy_hover,
             owner,
             OrderModifier::Normal,
             OrderMode::Move,
-            false
-        )
-        .commands
-        .is_empty()
-    );
-    sim.entities_mut_for_test()
-        .get_mut(tank)
-        .unwrap()
-        .health
-        .set_for_test(100);
-    let enemy = sim
-        .spawn_object("MTNK", "Russians", 23, 16, 64, rules)
-        .unwrap();
-    sim.entities_mut_for_test()
-        .get_mut(enemy)
-        .unwrap()
-        .health
-        .set_for_test(100);
-    assert_eq!(
-        sim.unit_repair_action(ifv, enemy, owner, rules),
-        Some(UnitRepairAction::Move)
-    );
-    let enemy_hover = HoverTargetKindWithId {
-        kind: HoverTargetKind::EnemyUnit,
-        stable_id: enemy,
-    };
-    let move_dispatch = unit_repair_branch_orders(
-        &sim,
-        rules,
-        &[ifv],
-        &[ifv],
-        &enemy_hover,
-        owner,
-        OrderModifier::Normal,
-        OrderMode::Move,
-        false,
-    );
-    assert_eq!(move_dispatch.commands.len(), 1);
-    assert!(
-        matches!(move_dispatch.commands[0], Command::Move { entity_id, .. } if entity_id == ifv)
-    );
-    sim.house_alliances_mut_for_test()
-        .entry(OWNER.to_ascii_uppercase())
-        .or_default()
-        .insert("RUSSIANS".to_string());
-    assert_eq!(
-        sim.unit_repair_action(ifv, enemy, owner, rules),
-        Some(UnitRepairAction::Repair),
-        "the actor's one-way alliance is the native query"
-    );
-    let empty = sim.spawn_object("FV", OWNER, 20, 20, 64, rules).unwrap();
-    assert_eq!(sim.unit_repair_action(empty, tank, owner, rules), None);
-    let (sim, gi_ifv, tank) = boarded_ifv(rules, "E1");
-    assert_eq!(
-        sim.unit_repair_action(
-            gi_ifv,
-            tank,
-            sim.entities().get(gi_ifv).unwrap().owner(),
-            rules
-        ),
-        None,
-        "a different passenger must not inherit Engineer repair admission"
-    );
+            false,
+        );
+        assert_eq!(move_dispatch.commands.len(), 1);
+        assert!(
+            matches!(move_dispatch.commands[0], Command::Move { entity_id, .. } if entity_id == ifv)
+        );
+        sim.house_alliances_mut_for_test()
+            .entry(OWNER.to_ascii_uppercase())
+            .or_default()
+            .insert("RUSSIANS".to_string());
+        assert_eq!(
+            sim.unit_repair_action(
+                ifv,
+                enemy,
+                owner,
+                crate::sim::world::HealArmKeys::default(),
+                rules
+            ),
+            Some(UnitRepairAction::Repair),
+            "the actor's one-way alliance is the native query"
+        );
+        let empty = sim.spawn_object("FV", OWNER, 20, 20, 64, rules).unwrap();
+        assert_eq!(
+            sim.unit_repair_action(
+                empty,
+                tank,
+                owner,
+                crate::sim::world::HealArmKeys::default(),
+                rules
+            ),
+            None
+        );
+        let (sim, gi_ifv, tank) = boarded_ifv(rules, "E1");
+        assert_eq!(
+            sim.unit_repair_action(
+                gi_ifv,
+                tank,
+                sim.entities().get(gi_ifv).unwrap().owner(),
+                crate::sim::world::HealArmKeys::default(),
+                rules
+            ),
+            None,
+            "a different passenger must not inherit Engineer repair admission"
+        );
+    }
 }
 
 #[test]
@@ -772,8 +839,7 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
     let rules = &retail.rules;
     let (mut sim, ifv, tank) = repair_ifv(rules);
     let command = repair_click(&sim, rules, ifv, tank);
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .health
         .set_for_test(rules.object("MTNK").unwrap().strength);
@@ -791,10 +857,9 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
     depart_cargo_head(
         &mut sim,
         rules,
-        None,
         ifv,
         DepartureRoute::Vehicle,
-        |sim, passenger| {
+        |sim, passenger, _| {
             let position = exit_cell_position(sim, passenger, 16, 15, 0);
             reveal_unloaded_passenger(
                 sim,
@@ -804,10 +869,10 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
                 position,
                 crate::sim::world::PlacementEvidence::MarkSucceeded,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         },
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(sim.entities().get(ifv).unwrap().current_weapon_number(), 0);
@@ -821,9 +886,11 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
 
 #[test]
 fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(
-        &crate::sim::arena_fixture::clear_ground_ini(
-            "[VehicleTypes]\n0=REPAIRER\n1=TANK\n2=ORGANIC\n\
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::sim::arena_fixture::clear_ground_ini(
+                "[VehicleTypes]\n0=REPAIRER\n1=TANK\n2=ORGANIC\n\
              [BuildingTypes]\n0=DEPLOYED\n1=ORDINARY\n\
              [REPAIRER]\nStrength=100\nPrimary=Fix\nSpeed=5\n\
              [TANK]\nStrength=100\nArmor=heavy\nSpeed=5\n\
@@ -833,65 +900,633 @@ fn unit_repair_vehicle_class_matches_fire_error_including_undeploy_building() {
              [Fix]\nDamage=-50\nRange=5\nOmniFire=yes\nProjectile=Invisible\nWarhead=Mechanical\n\
              [Invisible]\nInviso=yes\n\
              [Mechanical]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        ),
-        &crate::rules::ini_parser::IniFile::from_str(
-            "[DEPLOYED]\nFoundation=1x1\n[ORDINARY]\nFoundation=1x1\n",
-        ),
-    )
-    .unwrap();
-    let mut sim = Simulation::new();
-    let owner = sim.intern(OWNER);
-    sim.session_mut_for_test()
-        .set_current_house_for_test(Some(owner));
-    sim.houses_mut_for_test()
-        .register(HouseState::new(owner, 0, None, true, 0, 10));
-    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.intern_rule_type_ids(&rules);
-    sim.resolve_type_handles(&rules);
-    let actor = sim
-        .spawn_object("REPAIRER", OWNER, 10, 10, 64, &rules)
+            ),
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[DEPLOYED]\nFoundation=1x1\n[ORDINARY]\nFoundation=1x1\n",
+            ),
+        )
         .unwrap();
-    let mut targets = Vec::new();
-    for (kind, cell) in [
-        ("TANK", (11, 10)),
-        ("ORGANIC", (11, 11)),
-        ("DEPLOYED", (12, 10)),
-        ("ORDINARY", (12, 11)),
-    ] {
-        let target = sim
-            .spawn_object(kind, OWNER, cell.0, cell.1, 64, &rules)
+        let mut sim = Simulation::new();
+        let owner = sim.intern(OWNER);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        sim.houses_mut_for_test()
+            .register(HouseState::new(owner, 0, None, true, 0, 10));
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let actor = sim
+            .spawn_object("REPAIRER", OWNER, 10, 10, 64, &rules)
             .unwrap();
-        sim.entities_mut_for_test()
-            .get_mut(target)
-            .unwrap()
-            .health
-            .set_for_test(50);
-        targets.push(target);
+        let mut targets = Vec::new();
+        for (kind, cell) in [
+            ("TANK", (11, 10)),
+            ("ORGANIC", (11, 11)),
+            ("DEPLOYED", (12, 10)),
+            ("ORDINARY", (12, 11)),
+        ] {
+            let target = sim
+                .spawn_object(kind, OWNER, cell.0, cell.1, 64, &rules)
+                .unwrap();
+            sim.entity_mut_for_test(target)
+                .unwrap()
+                .health
+                .set_for_test(50);
+            targets.push(target);
+        }
+        assert_eq!(
+            sim.unit_repair_action(
+                actor,
+                targets[0],
+                owner,
+                crate::sim::world::HealArmKeys::default(),
+                &rules
+            ),
+            Some(UnitRepairAction::Repair)
+        );
+        assert_eq!(
+            sim.unit_repair_action(
+                actor,
+                targets[1],
+                owner,
+                crate::sim::world::HealArmKeys::default(),
+                &rules
+            ),
+            // Ares 1004E5A0 (hook 0x73FDBD) drops the vt+80 vehicle test: any
+            // damaged ally the warhead reaches is repaired.
+            Some(if ares_way {
+                UnitRepairAction::Repair
+            } else {
+                UnitRepairAction::Select
+            })
+        );
+        assert_eq!(
+            sim.unit_repair_action(
+                actor,
+                targets[2],
+                owner,
+                crate::sim::world::HealArmKeys::default(),
+                &rules
+            ),
+            Some(UnitRepairAction::Repair)
+        );
+        assert_eq!(
+            sim.unit_repair_action(
+                actor,
+                targets[3],
+                owner,
+                crate::sim::world::HealArmKeys::default(),
+                &rules
+            ),
+            ares_way.then_some(UnitRepairAction::Repair)
+        );
+        use crate::sim::combat::fire_error::FireError;
+        assert_eq!(
+            sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[2]), true,),
+            FireError::Ok,
+            "the same native Building vt+80 fact must reach UnitFireError"
+        );
+        // Ares 3.0 UnitClass_CanFire_Heal (1004E540, hook 0x741113) replaces the
+        // vt+80 call with the health-ratio test alone, so a damaged NonVehicle
+        // Unit may be repaired.
+        assert_eq!(
+            sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[1]), true,),
+            if ares_way {
+                FireError::Ok
+            } else {
+                FireError::Illegal
+            }
+        );
     }
+}
+
+/// Ares 1004E5A0 (hook 0x73FDBD): the repair IFV still repairs a damaged
+/// ally, but a GuardArea base action keeps its own path, a held ForceMove key
+/// answers Select, and so does a sound ally, where the stock arm kept the base
+/// action.
+#[test]
+fn ares_repair_ifv_selects_a_sound_ally_and_under_alt() {
+    use crate::sim::world::HealArmKeys;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, ifv, tank) = repair_ifv(rules);
+    let owner = sim.interner().get(OWNER).unwrap();
+    let action = |sim: &Simulation, keys| sim.unit_repair_action(ifv, tank, owner, keys, rules);
     assert_eq!(
-        sim.unit_repair_action(actor, targets[0], owner, &rules),
+        action(&sim, HealArmKeys::default()),
         Some(UnitRepairAction::Repair)
     );
+    let alt = HealArmKeys {
+        force_move: true,
+        guard_area: false,
+        moves: true,
+    };
+    assert_eq!(action(&sim, alt), Some(UnitRepairAction::Select));
+    let guard = HealArmKeys {
+        force_move: true,
+        guard_area: true,
+        moves: false,
+    };
+    assert_eq!(action(&sim, guard), None);
+    let strength = rules.object("MTNK").unwrap().strength;
+    sim.entity_mut_for_test(tank)
+        .unwrap()
+        .health
+        .set_for_test(strength);
     assert_eq!(
-        sim.unit_repair_action(actor, targets[1], owner, &rules),
+        action(&sim, HealArmKeys::default()),
         Some(UnitRepairAction::Select)
     );
+}
+
+/// Ares 1004E2E0 (hook 0x51E710): an Infantryman with a healing weapon heals
+/// a damaged ally its warhead's Verses reach, with InfantryHeal (0x5A) over an
+/// Infantry and UnitRepair (0x5B) over a vehicle, unless Alt is held. Here two
+/// unarmed civilians carry `Heal` (Organic, which no retail type allocates
+/// before the map pass, so the patch restates it) and `RepairBullet`.
+#[test]
+fn ares_healer_infantry_heal_what_their_warhead_reaches() {
+    use crate::sim::world::{HealArmKeys, InfantryHealAction};
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[CIV1]\nPrimary=Heal\nElitePrimary=Heal\n\
+             [CIV2]\nPrimary=RepairBullet\nElitePrimary=RepairBullet\n\
+             [Heal]\nDamage=-50\nProjectile=Invisible\nWarhead=Organic\nRange=2\n\
+             [Organic]\nVerses=100%,100%,100%,0%,0%,0%,0%,0%,0%,0%,100%\n",
+        ),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, _ifv, tank) = boarded_ifv(rules, "ENGINEER");
+    let medic = sim.spawn_object("CIV1", OWNER, 18, 18, 64, rules).unwrap();
+    let mechanic = sim.spawn_object("CIV2", OWNER, 19, 18, 64, rules).unwrap();
+    let hurt = sim.spawn_object("E1", OWNER, 20, 18, 64, rules).unwrap();
+    sim.entity_mut_for_test(hurt)
+        .unwrap()
+        .health
+        .set_for_test(50);
+    let owner = sim.interner().get(OWNER).unwrap();
+    let heal = |sim: &Simulation, actor, target, keys| {
+        sim.infantry_heal_action(actor, target, owner, keys, rules)
+    };
+    let keys = HealArmKeys::default();
     assert_eq!(
-        sim.unit_repair_action(actor, targets[2], owner, &rules),
-        Some(UnitRepairAction::Repair)
+        heal(&sim, medic, hurt, keys),
+        Some(InfantryHealAction::Heal { organic: true })
     );
     assert_eq!(
-        sim.unit_repair_action(actor, targets[3], owner, &rules),
-        None
-    );
-    use crate::sim::combat::fire_error::FireError;
-    assert_eq!(
-        sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[2]), true, None),
-        FireError::Ok,
-        "the same native Building vt+80 fact must reach UnitFireError"
+        heal(&sim, medic, tank, keys),
+        Some(InfantryHealAction::Select),
+        "Organic is 0% on heavy"
     );
     assert_eq!(
-        sim.selected_weapon_fire_error(&rules, actor, TargetKind::Entity(targets[1]), true, None),
-        FireError::Illegal
+        heal(&sim, mechanic, tank, keys),
+        Some(InfantryHealAction::Heal { organic: false })
+    );
+    let alt = HealArmKeys {
+        force_move: true,
+        guard_area: false,
+        moves: true,
+    };
+    assert_eq!(heal(&sim, mechanic, tank, alt), None);
+    let hover = HoverTargetKindWithId {
+        kind: HoverTargetKind::FriendlyUnit,
+        stable_id: tank,
+    };
+    assert_eq!(
+        capability_cursor_for_hover(
+            &sim,
+            &[mechanic],
+            Some(mechanic),
+            &hover,
+            Some(rules),
+            None,
+            crate::app::input::context_order::OrderModifier::Normal,
+            false,
+            false,
+            &mut Default::default(),
+        ),
+        CursorFeedbackKind::AresAction(0x5B)
+    );
+}
+
+/// What a lone selected healer clicked on itself shows and sends
+/// (`InfantryClass::What_Action_OnObject` 0x51E748): the cursor, the click
+/// its ClickedAction makes of the answer, and the lone selection's release.
+fn healer_self_click(
+    rules: &RuleSet,
+    healer_type: &str,
+) -> (
+    CursorFeedbackKind,
+    Option<Command>,
+    Option<Option<Command>>,
+    u64,
+) {
+    use crate::app::input::cursor::{ActionDistanceTarget, select_best_for_action};
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x0051_E748);
+    let owner = sim.interner().get(OWNER).unwrap();
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    let healer = sim
+        .spawn_object(healer_type, OWNER, 9, 9, 0, rules)
+        .unwrap();
+    sim.entity_mut_for_test(healer)
+        .unwrap()
+        .seldom
+        .selection
+        .set_selected_for_test(true);
+    let best = select_best_for_action(
+        &sim,
+        &[healer],
+        ActionDistanceTarget::Object(healer),
+        Some(rules),
+    );
+    let hover = HoverTargetKindWithId {
+        kind: HoverTargetKind::FriendlyUnit,
+        stable_id: healer,
+    };
+    let cursor = capability_cursor_for_hover(
+        &sim,
+        &[healer],
+        best,
+        &hover,
+        Some(rules),
+        None,
+        OrderModifier::Normal,
+        false,
+        false,
+        &mut Default::default(),
+    );
+    let click = object_attack_click_command(
+        &sim,
+        rules,
+        &crate::rules::overlay_types::OverlayTypeRegistry::empty(),
+        owner,
+        OrderMode::Move,
+        OrderModifier::Normal,
+        false,
+        healer,
+        healer,
+    );
+    let release = lone_self_healer_guard(&sim, &sim.control_projection(), rules, &[healer], healer);
+    (cursor, click, release, healer)
+}
+
+const HEALER_PATCH: &str = "[CIV1]\nPrimary=Heal\nElitePrimary=Heal\n\
+     [Heal]\nDamage=-50\nProjectile=Invisible\nWarhead=Organic\nRange=2\n";
+
+/// A healer infantryman clicked on itself answers GuardArea (0x51E748) and
+/// guards its own area through Foot's AreaGuard case (0x4D7543). No retail
+/// infantryman heals, so a civilian carries `Heal` here.
+#[test]
+fn a_healer_infantryman_clicked_on_itself_guards_its_area() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(HEALER_PATCH),
+    ) else {
+        return;
+    };
+    assert!(!retail.rules.ares());
+    let (cursor, click, release, healer) = healer_self_click(&retail.rules, "CIV1");
+    let guard = Command::Guard {
+        entity_id: healer,
+        target: Some(crate::sim::combat::TargetKind::Entity(healer)),
+    };
+    assert_eq!(cursor, CursorFeedbackKind::GuardArea);
+    assert_eq!(click, Some(guard.clone()));
+    assert_eq!(release, Some(Some(guard)));
+}
+
+/// Ares' heal hook (0x51E710, 1004E2E0) reaches the same GuardArea for the
+/// healer itself; `NoSelfGuardArea=yes` (hook 0x51E748, 10049710) skips it,
+/// so that healer answers NoMove over itself as an unarmed infantryman does.
+#[test]
+fn ares_no_self_guard_area_keeps_a_healer_off_its_own_guard() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(&format!(
+            "{HEALER_PATCH}[CIV2]\nPrimary=Heal\nElitePrimary=Heal\nNoSelfGuardArea=yes\n"
+        )),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    assert!(rules.ares());
+    let (cursor, click, release, _) = healer_self_click(rules, "CIV1");
+    assert_eq!(cursor, CursorFeedbackKind::GuardArea);
+    assert!(matches!(click, Some(Command::Guard { .. })), "{click:?}");
+    assert!(
+        matches!(release, Some(Some(Command::Guard { .. }))),
+        "{release:?}"
+    );
+    let (cursor, click, release, _) = healer_self_click(rules, "CIV2");
+    assert_eq!(cursor, CursorFeedbackKind::Invalid);
+    assert!(
+        matches!(
+            click,
+            Some(Command::Move { .. } | Command::MoveToObject { .. })
+        ),
+        "{click:?}"
+    );
+    assert_eq!(release, None);
+}
+
+/// The player's and a rival house on open skirmish ground, with what a healer
+/// infantryman shows and sends over a target (InfantryClass What_Action's
+/// healer arm).
+struct HealerArena {
+    sim: Simulation,
+    owner: crate::sim::intern::InternedId,
+}
+
+impl HealerArena {
+    fn new(rules: &RuleSet) -> Self {
+        let mut sim = Simulation::new();
+        for (name, side) in [(OWNER, 0), ("Russians", 1)] {
+            let house = sim.intern(name);
+            sim.houses_mut_for_test()
+                .register(HouseState::new(house, side, None, true, 0, 10));
+        }
+        let owner = sim.interner().get(OWNER).unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        // Outside a campaign Foot's shroud rung leaves the base action alone.
+        sim.session_mut_for_test()
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        crate::sim::arena_fixture::flat_arena(&mut sim, rules);
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        Self { sim, owner }
+    }
+
+    fn cursor(
+        &self,
+        rules: &RuleSet,
+        selected: &[u64],
+        target: u64,
+        kind: HoverTargetKind,
+        modifier: OrderModifier,
+    ) -> CursorFeedbackKind {
+        capability_cursor_for_hover(
+            &self.sim,
+            selected,
+            Some(selected[0]),
+            &HoverTargetKindWithId {
+                kind,
+                stable_id: target,
+            },
+            Some(rules),
+            None,
+            modifier,
+            false,
+            false,
+            &mut Default::default(),
+        )
+    }
+
+    fn click(
+        &self,
+        rules: &RuleSet,
+        healer: u64,
+        target: u64,
+        kind: HoverTargetKind,
+        modifier: OrderModifier,
+    ) -> AttackDispatch {
+        unit_repair_branch_orders(
+            &self.sim,
+            rules,
+            &[healer],
+            &[healer],
+            &HoverTargetKindWithId {
+                kind,
+                stable_id: target,
+            },
+            self.owner,
+            modifier,
+            OrderMode::Move,
+            false,
+        )
+    }
+}
+
+/// Without Ares a healer infantryman heals a damaged Infantryman
+/// (`0x0051E73C`): Heal shows SetCursorFromAction's row 0x3C, and Infantry
+/// ClickedAction (`0x0051F190`) sends it as Attack. Over any other ally, Ctrl
+/// included, the arm answers Select (`0x0051E78B`), and the release selects.
+#[test]
+fn a_stock_healer_infantryman_heals_a_hurt_infantryman_and_selects_the_rest() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(HEALER_PATCH),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    assert!(!rules.ares());
+    let mut arena = HealerArena::new(rules);
+    let medic = arena
+        .sim
+        .spawn_object("CIV1", OWNER, 9, 9, 0, rules)
+        .unwrap();
+    let hurt = arena
+        .sim
+        .spawn_object("E1", OWNER, 10, 9, 0, rules)
+        .unwrap();
+    let tank = arena
+        .sim
+        .spawn_object("MTNK", OWNER, 11, 11, 0, rules)
+        .unwrap();
+    arena
+        .sim
+        .entity_mut_for_test(hurt)
+        .unwrap()
+        .health
+        .set_for_test(50);
+    let friendly = HoverTargetKind::FriendlyUnit;
+    assert_eq!(
+        arena.cursor(rules, &[medic], hurt, friendly, OrderModifier::Normal),
+        CursorFeedbackKind::Heal
+    );
+    assert_eq!(
+        cursor_id_for_feedback(CursorFeedbackKind::Heal),
+        Some(CursorId::NoTogglePower)
+    );
+    let heal = arena.click(rules, medic, hurt, friendly, OrderModifier::Normal);
+    assert!(
+        matches!(heal.commands.as_slice(), [Command::Attack { attacker_id, target_id }]
+            if *attacker_id == medic && *target_id == hurt),
+        "{:?}",
+        heal.commands
+    );
+    assert_eq!(
+        arena.cursor(rules, &[medic], tank, friendly, OrderModifier::ForceFire),
+        CursorFeedbackKind::FriendlyUnit
+    );
+    let select = arena.click(rules, medic, tank, friendly, OrderModifier::ForceFire);
+    assert!(select.selects && select.commands.is_empty());
+    // Its Select ends the rows before the Grinder's (`0x0051F0AF`).
+    let grinder = arena
+        .sim
+        .spawn_object("YAGRND", OWNER, 14, 14, 0, rules)
+        .unwrap();
+    let structure = HoverTargetKind::FriendlyStructure;
+    assert_eq!(
+        arena.cursor(rules, &[medic], grinder, structure, OrderModifier::Normal),
+        CursorFeedbackKind::FriendlyUnit
+    );
+    assert!(
+        arena
+            .click(rules, medic, grinder, structure, OrderModifier::Normal)
+            .selects
+    );
+    // A berserk healer's arm still runs over its base action 0.
+    arena
+        .sim
+        .entity_mut_for_test(medic)
+        .unwrap()
+        .berserk
+        .set_active_for_test(true);
+    let over_tank = HoverTargetKindWithId {
+        kind: friendly,
+        stable_id: tank,
+    };
+    assert_eq!(
+        berserk_selection_click(
+            &arena.sim,
+            rules,
+            &[medic],
+            Some(&over_tank),
+            (11, 11),
+            arena.owner
+        ),
+        LeftRelease::Select
+    );
+}
+
+/// Over an object of a house it is not allied with, a tree's null House
+/// included, a healer infantryman answers AttackSupport (`0x0051E797`): the
+/// arrow, and Foot's case 0x3B (`0x004D74E0`) puts the healer on Area Guard
+/// of itself, as its Primary heals.
+#[test]
+fn a_healer_infantryman_guards_itself_over_an_enemy_or_a_tree() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(HEALER_PATCH),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut arena = HealerArena::new(rules);
+    let medic = arena
+        .sim
+        .spawn_object("CIV1", OWNER, 9, 9, 0, rules)
+        .unwrap();
+    let enemy = arena
+        .sim
+        .spawn_object("E1", "Russians", 11, 9, 0, rules)
+        .unwrap();
+    assert_eq!(
+        crate::sim::terrain_spawn::construct_terrain_objects(
+            &mut arena.sim,
+            &[crate::map::overlay::TerrainObject {
+                rx: 9,
+                ry: 12,
+                name: "TREE01".into(),
+            }],
+            rules,
+            false,
+        ),
+        1
+    );
+    let tree = arena.sim.terrain_objects().id_at((9, 12)).unwrap();
+    let guard = Command::Guard {
+        entity_id: medic,
+        target: Some(crate::sim::combat::TargetKind::Entity(medic)),
+    };
+    let enemy_kind = HoverTargetKind::EnemyUnit;
+    assert_eq!(
+        arena.cursor(rules, &[medic], enemy, enemy_kind, OrderModifier::Normal),
+        CursorFeedbackKind::Default
+    );
+    let click = arena.click(rules, medic, enemy, enemy_kind, OrderModifier::Normal);
+    assert!(click.consumed);
+    assert_eq!(click.commands, [guard.clone()]);
+    let tree = crate::sim::combat::TargetKind::Entity(tree);
+    assert_eq!(
+        attack_action(&arena.sim, rules, medic, &tree, true, None),
+        AttackAction::AttackSupport
+    );
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::empty();
+    let click = attack_branch_orders(
+        &arena.sim,
+        rules,
+        &[medic],
+        tree,
+        true,
+        OrderMode::Move,
+        &registry,
+    );
+    assert_eq!(click.commands, [guard]);
+}
+
+/// A healing Engineer among several selected objects answers NoMove under
+/// Ctrl over itself: Ctrl forces Techno's attack rung, which the Engineer
+/// refuses (`0x0051E6B4..0x0051E6D5`) before the healer's self arm. Alone it
+/// answers Self over itself first (`0x007000B9`), so the arm guards.
+#[test]
+fn a_healing_engineer_in_a_group_refuses_ctrl_over_itself() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(&format!(
+            "{HEALER_PATCH}[ENGINEER]\nPrimary=Heal\nElitePrimary=Heal\n"
+        )),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut arena = HealerArena::new(rules);
+    let engineer = arena
+        .sim
+        .spawn_object("ENGINEER", OWNER, 9, 9, 0, rules)
+        .unwrap();
+    let gi = arena
+        .sim
+        .spawn_object("E1", OWNER, 10, 9, 0, rules)
+        .unwrap();
+    let own = HoverTargetKind::FriendlyUnit;
+    let ctrl = OrderModifier::ForceFire;
+    assert_eq!(
+        arena.cursor(rules, &[engineer, gi], engineer, own, ctrl),
+        CursorFeedbackKind::Invalid
+    );
+    let click = object_attack_click_command(
+        &arena.sim,
+        rules,
+        &crate::rules::overlay_types::OverlayTypeRegistry::empty(),
+        arena.owner,
+        OrderMode::Move,
+        ctrl,
+        false,
+        engineer,
+        engineer,
+    );
+    assert!(
+        matches!(
+            click,
+            Some(Command::Move { entity_id, .. } | Command::MoveToObject { entity_id, .. })
+                if entity_id == engineer
+        ),
+        "{click:?}"
+    );
+    assert_eq!(
+        arena.cursor(rules, &[engineer], engineer, own, ctrl),
+        CursorFeedbackKind::GuardArea
     );
 }

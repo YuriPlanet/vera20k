@@ -40,6 +40,7 @@ fn spawn_prerequisite_factory(sim: &mut Simulation, rules: &RuleSet) {
 
 #[test]
 fn house_prerequisites_match_executed_controls() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let data = crate::test_fixture::json("tools/rules_oracle/ares_prerequisites.json");
     let entry = |code: i64| match code {
         code if code >= 0 => Prerequisite::Building(code as i32),
@@ -204,6 +205,7 @@ fn lifecycle_world(query_section: &str) -> (Simulation, RuleSet, InternedId) {
 
 #[test]
 fn generic_member_follows_capture_and_limbo_through_existing_owners() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = lifecycle_world("TechLevel=1\nPrerequisite=custom");
     let other = sim.interner.get("H1").unwrap();
     let product = rules.object("Q").unwrap();
@@ -212,18 +214,18 @@ fn generic_member_follows_capture_and_limbo_through_existing_owners() {
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
     );
-    sim.change_owner_with_rules(member, owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(member, owner, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::Yes
     );
-    sim.change_owner_with_rules(member, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(member, other, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
     );
-    sim.change_owner_with_rules(member, owner, &rules, None, FrameEffects::default());
-    sim.techno_limbo_with_rules(member, &rules, None);
+    sim.change_owner_with_rules(member, owner, &rules, None, &mut FrameEffects::default());
+    sim.techno_limbo_with_rules(member, &rules);
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
@@ -245,8 +247,7 @@ fn generic_member_follows_capture_and_limbo_through_existing_owners() {
     );
     sim.process_pending_delete_with(
         &rules,
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         1,
         sim.session.started(),
     );
@@ -260,16 +261,26 @@ fn generic_member_follows_capture_and_limbo_through_existing_owners() {
 
 #[test]
 fn alternate_follows_owned_limbo_acquisition_and_destruction() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = lifecycle_world("TechLevel=1\nPrerequisite=custom");
     let product = rules.object("Q").unwrap();
     let alternate = sim
-        .construct_object_limbo_at_height("ALT", "H1", 0, 0, 0, 0, &rules, FrameEffects::default())
+        .construct_object_limbo_at_height(
+            "ALT",
+            "H1",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            &mut FrameEffects::default(),
+        )
         .unwrap();
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
     );
-    sim.change_owner_with_rules(alternate, owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(alternate, owner, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::Yes
@@ -281,7 +292,7 @@ fn alternate_follows_owned_limbo_acquisition_and_destruction() {
             .active_count(EntityCategory::Unit, type_id),
         0
     );
-    sim.discard_constructed_limbo(alternate, &rules, FrameEffects::default());
+    sim.discard_constructed_limbo(alternate, &rules, &mut FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
@@ -290,24 +301,43 @@ fn alternate_follows_owned_limbo_acquisition_and_destruction() {
 
 #[test]
 fn generic_override_precedes_tech_and_prerequisites_then_checks_build_limit() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = lifecycle_world(
         "TechLevel=-1\nPrerequisite=MISSING\nPrerequisiteOverride=custom\nBuildLimit=1",
     );
     let product = rules.object("Q").unwrap();
     let alternate = sim
-        .construct_object_limbo_at_height("ALT", "H0", 0, 0, 0, 0, &rules, FrameEffects::default())
+        .construct_object_limbo_at_height(
+            "ALT",
+            "H0",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            &mut FrameEffects::default(),
+        )
         .unwrap();
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::Yes
     );
-    sim.construct_object_limbo_at_height("Q", "H0", 0, 0, 0, 0, &rules, FrameEffects::default())
-        .unwrap();
+    sim.construct_object_limbo_at_height(
+        "Q",
+        "H0",
+        0,
+        0,
+        0,
+        0,
+        &rules,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::AtLimit
     );
-    sim.discard_constructed_limbo(alternate, &rules, FrameEffects::default());
+    sim.discard_constructed_limbo(alternate, &rules, &mut FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
@@ -316,6 +346,7 @@ fn generic_override_precedes_tech_and_prerequisites_then_checks_build_limit() {
 
 #[test]
 fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = prerequisite_rules_with_factory(IniFile::from_str(
         "[Countries]\n0=C1\n\
          [BuildingTypes]\n0=HOST\n1=UPGRADE\n2=OTHER\n\
@@ -358,15 +389,10 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
             0,
             0,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
-    assert!(sim.try_install_building_upgrade(
-        temporary,
-        host,
-        &rules,
-        UninitContext::with_rules(&rules),
-    ));
+    assert!(sim.try_install_building_upgrade(temporary, host, &rules, UninitContext::new(&rules),));
     assert!(
         !sim.entities()
             .get(temporary)
@@ -376,14 +402,13 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
     );
     sim.process_pending_delete_with(
         &rules,
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         1,
         sim.session.started(),
     );
     assert!(sim.entities().get(temporary).is_none());
     admission(&sim, CanBuild::No);
-    sim.change_owner_with_rules(host, owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(host, owner, &rules, None, &mut FrameEffects::default());
     admission(&sim, CanBuild::Yes);
     let upgrade = sim.interner.get("UPGRADE").unwrap();
     assert_eq!(
@@ -392,16 +417,20 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
             .active_count(EntityCategory::Structure, upgrade),
         0
     );
-    sim.change_owner_with_rules(host, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(host, other, &rules, None, &mut FrameEffects::default());
     admission(&sim, CanBuild::No);
-    sim.change_owner_with_rules(host, owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(host, owner, &rules, None, &mut FrameEffects::default());
     admission(&sim, CanBuild::Yes);
-    assert_eq!(sim.power_down_building_upgrade(host, &rules), Some(upgrade));
+    assert_eq!(
+        sim.power_down_building_upgrade(host, &rules, &mut Default::default()),
+        Some(upgrade)
+    );
     admission(&sim, CanBuild::No);
 }
 
 #[test]
 fn installed_upgrade_scan_does_not_filter_online_health_or_selling() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::mission::MissionDispatchTimer;
     use crate::sim::mission::state::MissionTestFixture;
 
@@ -454,4 +483,110 @@ fn installed_upgrade_scan_does_not_filter_online_health_or_selling() {
         CanBuild::Yes,
         "the installed host's health, online and Selling state are unread"
     );
+}
+
+/// Ares `PrerequisitesMet @ 10021CA0`, CanBuild's human arm: any one of the
+/// type's lists (`Prerequisite.Lists=` / `Prerequisite.List#=`, read by
+/// `1003DFB0`) on the map admits it, not only `Prerequisite=`.
+#[test]
+fn any_prerequisite_list_admits_a_human() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let (mut sim, rules, owner) = lifecycle_world(
+        "TechLevel=1\nPrerequisite=MISSING\nPrerequisite.Lists=1\nPrerequisite.List1=MEMBER",
+    );
+    let product = rules.object("Q").unwrap();
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, false, false),
+        CanBuild::No
+    );
+    sim.spawn_object("MEMBER", "H0", 10, 10, 0, &rules).unwrap();
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, false, false),
+        CanBuild::Yes
+    );
+}
+
+/// RequirementsMet's Ares head (`10021FF0`): a theater outside
+/// `Prerequisite.RequiredTheaters` is Unbuildable, missing
+/// `Prerequisite.StolenTechs` bits are Incomplete (negative and >= 32
+/// indexes are dropped), and an owned `Prerequisite.Negative` entry forbids
+/// the type ahead of both other answers.
+#[test]
+fn ares_requirement_gates_answer_in_dll_order() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let (mut sim, rules, owner) = lifecycle_world(
+        "TechLevel=1\nPrerequisite.RequiredTheaters=SNOW,lunar\n\
+         Prerequisite.Negative=MEMBER\nPrerequisite.StolenTechs=3,-1,40",
+    );
+    let product = rules.object("Q").unwrap();
+    let status =
+        |sim: &Simulation| requirements_met(sim, &rules, owner, &sim.houses[&owner], product);
+    sim.session.set_theater_for_test("TEMPERATE".into());
+    assert_eq!(status(&sim), RequirementStatus::Unbuildable);
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, false, false),
+        CanBuild::No
+    );
+    sim.session.set_theater_for_test("LUNAR".into());
+    assert_eq!(status(&sim), RequirementStatus::Incomplete);
+    sim.houses.get_mut(&owner).unwrap().steal_ares_tech(1 << 3);
+    assert_eq!(status(&sim), RequirementStatus::Complete);
+    sim.spawn_object("MEMBER", "H0", 10, 10, 0, &rules).unwrap();
+    assert_eq!(status(&sim), RequirementStatus::Forbidden);
+}
+
+/// Ares 10024F80 (hook 0x50B370) counts the factory's held object once under
+/// a positive limit: the house's counters already hold it.
+#[test]
+fn check_build_limit_counts_the_held_object_once() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let (mut sim, rules, owner) = lifecycle_world("BuildLimit=2");
+    let product = rules.object("Q").unwrap();
+    sim.construct_object_limbo_at_height(
+        "Q",
+        "H0",
+        0,
+        0,
+        0,
+        0,
+        &rules,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
+    let q = sim.interner.get("Q").unwrap();
+    assert!(sim.production.factories_mut().test_enqueue_kernel(
+        owner,
+        ProductionCategory::Vehicle,
+        q,
+        1,
+        0
+    ));
+    assert!(!check_build_limit(&sim, &rules, owner, product));
+    sim.construct_object_limbo_at_height(
+        "Q",
+        "H0",
+        0,
+        0,
+        0,
+        0,
+        &rules,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
+    assert!(check_build_limit(&sim, &rules, owner, product));
+}
+
+/// Under its limit a type is still at it without a usable factory
+/// (10024F80's FindFactory 10020D40 answer below 3).
+#[test]
+fn check_build_limit_needs_a_usable_factory() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = prerequisite_rules_with_factory(IniFile::from_str(
+        "[Countries]\n0=C1\n[VehicleTypes]\n0=Q\n[Q]\nStrength=100\nBuildLimit=2\n",
+    ));
+    let (mut sim, owner) = sim_for(&json!({}), &rules);
+    let product = rules.object("Q").unwrap();
+    assert!(check_build_limit(&sim, &rules, owner, product));
+    spawn_prerequisite_factory(&mut sim, &rules);
+    assert!(!check_build_limit(&sim, &rules, owner, product));
 }

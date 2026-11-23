@@ -17,12 +17,12 @@
 //! tools/spatial_oracle/fly_map_edge.py runs the map-edge admission, which
 //! [`fly_map_edge`] replays; aircraft_crash.py the dead fall.
 //!
-//! RESIDUAL: the spin (`0x004CE5A0`). Power_Off (`0x004CFD20`) starts it on
-//! a moving Fly, with two Scenario draws, and then the unpowered fall
-//! (`Simulation::fly_crash_fall`) drops it. Both are unreachable natively:
-//! only an EMP powers off an aircraft, and EMPulseClass's constructor
+//! The spin step (`0x004CE5A0`, [`Simulation::fly_spin_step`]) turns a Fly
+//! that Power_Off (`0x004CFD20`, [`Simulation::fly_power_off`]) set spinning.
+//! Stock play powers off no aircraft: EMPulseClass's constructor
 //! (`0x004C52B0`) has no caller or pointer in the executable (rulesmd's
-//! `[EMPuls]` says it is disabled in code).
+//! `[EMPuls]` says it is disabled in code). Ares EMP's Deactivate powers
+//! off one at height 0.
 //!
 //! Horizontal_Step ends by deselecting another house's object over the
 //! player's shroud ([`Simulation::deselect_over_player_shroud`]).
@@ -48,7 +48,7 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::util::native_x87::NativeF64Bits;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "fly_process_tests.rs"]
 mod tests;
 
@@ -123,6 +123,7 @@ pub(crate) fn fly_map_edge(
         return (pushed, true);
     }
     let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
+        crate::map::cell_index::CellGrid::for_map_size(edge.width, edge.height),
         rng,
         pushed.x,
         pushed.y,
@@ -146,6 +147,7 @@ impl Simulation {
     ///   `FlyRuntime::restore_flight_level`);
     /// - the queued mission commenced when ready, unless it lands or takes
     ///   off (`0x004CCB84..0x004CCBAD`: vt+0x200, vt+0x1EC);
+    /// - the spin step (`0x004CCBB8`, [`Self::fly_spin_step`]);
     /// - UpdateFlightMotion ([`Self::fly_update_flight_motion`]), whose dead
     ///   fall may end in the impact the object turn commits;
     /// - nothing more unpowered or no longer alive (`0x004CCBC4..0x004CCBE6`);
@@ -162,7 +164,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> AirMovementTickStats {
         let mut stats = AirMovementTickStats::default();
         let flight_level = self.fly_type_flight_level(id, rules);
@@ -180,11 +182,26 @@ impl Simulation {
         };
         state.restore_flight_level(flight_level);
         let in_phase = state.has_phase_callback();
+        // Ares 3.0 FlyLocomotionClass_ILocomotion_Process_HunterSeeker
+        // (1004D7A0, hook 0x4CCB84) runs first; a reacquired hunter stops
+        // landing.
+        let in_phase = if rules.ares() && self.ares_hunter_seeker_process(id, rules, frame_effects)
+        {
+            self.substrate
+                .entities
+                .get(id)
+                .and_then(|entity| entity.locomotor.as_ref())
+                .and_then(|locomotor| locomotor.fly_runtime())
+                .is_some_and(|state| state.has_phase_callback())
+        } else {
+            in_phase
+        };
         if living && !in_phase && self.mission_ready_to_commence(id, rules) {
             let _ = self
                 .substrate
                 .mission_commence_exact(id, self.session.binary_frame());
         }
+        self.fly_spin_step(id);
         if self.fly_update_flight_motion(id, rules, registry, frame_effects) {
             stats.impact = true;
             return stats;
@@ -219,8 +236,39 @@ impl Simulation {
         {
             self.complete_fly_phase(id, rules, registry, frame_effects);
         }
-        self.fly_playfield_latch(id, rules, registry, frame_effects);
+        self.fly_playfield_latch(id, rules, frame_effects);
         stats
+    }
+
+    /// The spin step (`0x004CE5A0`): a spinning Fly whose owner's Health is
+    /// above 0 turns, while unpowered (Is_Powered `0x004CFD90`, the base
+    /// flag), the owner's PrimaryFacing by SpinRate (FacingClass Current
+    /// `0x004C93D0`, Set_Current `0x004C9300`), or stops spinning once power
+    /// is back ([`FlyRuntime::spin_step`]). The ActivateVeins that ends the
+    /// spin (`0x00486920` on the owner's cell) acts only on the veins overlay
+    /// (index 0x7E) that retail maps never place: dormant, not run.
+    ///
+    /// [`FlyRuntime::spin_step`]: crate::sim::movement::fly_height::FlyRuntime::spin_step
+    fn fly_spin_step(&mut self, id: u64) {
+        let frame = self.session.binary_frame();
+        let Some(entity) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .filter(|entity| entity.health.current() > 0)
+        else {
+            return;
+        };
+        let Some(turn) = entity.locomotor.as_mut().and_then(|locomotor| {
+            let powered = locomotor.is_powered();
+            locomotor
+                .fly_runtime_mut()
+                .and_then(|state| state.spin_step(powered))
+        }) else {
+            return;
+        };
+        let current = entity.body_facing.current(frame);
+        entity.body_facing.snap(current.wrapping_add(turn), frame);
     }
 
     /// `0x004CD600`, the flight itself:
@@ -239,7 +287,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -265,8 +313,13 @@ impl Simulation {
         {
             state.prepare_process(mission);
         }
-        if self.fly_crash_fall(id, rules, registry, frame_effects) {
+        if self.fly_crash_fall(id, rules, frame_effects) {
             return true;
+        }
+        // Ares 3.0 FlyLocomotionClass_sub_4CD600_HunterSeeker_UpdateTarget
+        // (1004DA90, hook 0x4CD9C8).
+        if rules.ares() {
+            self.ares_hunter_seeker_update_target(id, rules);
         }
         self.substrate.fly_guard_to_move(id);
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -299,7 +352,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         self.foot_mark_remove(id, rules, registry, frame_effects);
@@ -384,7 +437,7 @@ impl Simulation {
                 .approach(distance, object.slowdown_distance, object.pitch_angle);
         }
         if self.fly_landing_trigger(id) {
-            self.begin_fly_landing(id, rules, registry, frame_effects);
+            self.begin_fly_landing(id, rules, frame_effects);
         }
         if let Some(entity) = self.substrate.entities.get_mut(id)
             && entity.health.current() > 0
@@ -572,7 +625,7 @@ impl Simulation {
         may_slow: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> i32 {
         let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -603,7 +656,7 @@ impl Simulation {
 
         let mut aim = coord;
         if !hunter_seeker && let Some(building) = self.fly_building_at(coord) {
-            if entity.radio_contacts.contains(building) {
+            if entity.seldom.radio_contacts.contains(building) {
                 if let Some(dock) = crate::sim::movement::building_dock_coordinate(
                     &self.substrate.entities,
                     building,
@@ -678,6 +731,32 @@ impl Simulation {
             (!locked).then_some(toward)
         };
 
+        // Ares 3.0 FlyLocomotionClass_sub_4CEFB0_HunterSeeker (1004DC30,
+        // hook 0x4CF3D0) takes the height block of a hunter with a Target.
+        // Its detonation leaves the step (0x4CF5F2) with the facings the
+        // two blocks above have already set.
+        let ares_level = if rules.ares() {
+            match self.ares_hunter_seeker_height(id, rules) {
+                crate::sim::hunter_seeker::HunterSeekerHeight::Stock => None,
+                crate::sim::hunter_seeker::HunterSeekerHeight::Level(level) => Some(level),
+                crate::sim::hunter_seeker::HunterSeekerHeight::Detonate => {
+                    let entity = self.substrate.entities.get_mut(id).unwrap();
+                    if let Some(primary) = primary {
+                        entity.body_facing.set(primary, frame);
+                    }
+                    if let Some(secondary) = secondary {
+                        entity.ensure_fly_secondary_facing();
+                        if let Some(facing) = entity.barrel_facing.as_mut() {
+                            facing.set(secondary, frame);
+                        }
+                    }
+                    self.ares_hunter_seeker_detonate(id, rules, registry, frame_effects);
+                    return 0;
+                }
+            }
+        } else {
+            None
+        };
         let flight_level = self.fly_type_flight_level(id, rules);
         let entity = self.substrate.entities.get(id).unwrap();
         let state = entity
@@ -706,6 +785,7 @@ impl Simulation {
         } else {
             flight_level
         };
+        let level = ares_level.unwrap_or(level);
         let slow = air_movement::fly_speed_facts(
             entity,
             distance,
@@ -739,7 +819,7 @@ impl Simulation {
             state.slow_for_arrival(distance);
         }
         if land {
-            self.begin_fly_landing(id, rules, registry, frame_effects);
+            self.begin_fly_landing(id, rules, frame_effects);
         }
         // 0x004CF55D..0x004CF5EC: the owner test is 0x0050B6F0.
         self.deselect_over_player_shroud(id, Self::house_is_human_player);
@@ -755,12 +835,9 @@ impl Simulation {
     /// `FootClass::Stun @ 0x004D5660`) and UnInit (vt+0xF8). Without MapClass
     /// authority (headless fixtures) nothing happens.
     ///
-    /// RESIDUAL: a passenger infantry of a `Civilian=` type that is no
-    /// survivor (`0x00413CD0`: InfantryType `+0xEC1`, Infantry `+0x6D9`) sets
-    /// its house's CiviliansEvacuated (`+0x1F9`), which VERA does not
-    /// represent. Trigger: a retreating transport aircraft carrying
-    /// civilians off the map, in campaigns. Effect: the trigger event that
-    /// reads the flag does not fire.
+    /// Before Team/teardown, a qualifying Civilian passenger sets its own
+    /// House's CiviliansEvacuated byte (4CD580..4CD58F), later read by
+    /// event18. Source: original gamemd.exe instructions.
     ///
     /// RESIDUAL: each passenger is deleted at once (`0x004CD5AE`); VERA
     /// UnInits it, which announces the same expiry but removes the object at
@@ -770,8 +847,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(bounds) = self.playfield_bounds else {
             return;
@@ -798,24 +874,30 @@ impl Simulation {
         if !retreat {
             return;
         }
-        let context = super::UninitContext::new(rules, registry).with_effects(frame_effects);
+        let mut context = super::UninitContext::new(rules).with_effects(frame_effects);
         while let Some((passenger, _)) = self
             .substrate
             .entities
             .get_mut(id)
-            .and_then(|owner| owner.passenger_role.cargo_mut())
+            .and_then(|owner| owner.passenger_role_mut().cargo_mut())
             .and_then(|cargo| cargo.unload_first())
         {
+            if self.is_evacuation_civilian(passenger, rules) {
+                let owner = self.substrate.entities.get(passenger).unwrap().owner();
+                if let Some(house) = self.houses.get_mut(&owner) {
+                    house.mark_civilians_evacuated();
+                }
+            }
             self.team_script_vm.mark_member_team_leaving_map(passenger);
             // RemoveFirstPassenger leaves the passenger's own hold for its
             // teardown.
             if let Some(passenger) = self.substrate.entities.get_mut(passenger) {
-                passenger.passenger_role.clear_carrier_relation();
+                passenger.passenger_role_mut().clear_carrier_relation();
             }
-            self.uninit_with_context(passenger, context);
+            self.uninit_with_context(passenger, context.reborrow());
         }
         self.team_script_vm.mark_member_team_leaving_map(id);
-        self.techno_death_stun(id, context);
+        self.stun(id, context.reborrow());
         self.uninit_with_context(id, context);
     }
 }

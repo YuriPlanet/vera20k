@@ -102,7 +102,7 @@ fn dispatch(
     let action = sim
         .trigger_runtime
         .definitions
-        .resolve_action(entry, None, None);
+        .resolve_action(entry, None, None, None);
     assert_eq!(action.reference, reference);
     assert_eq!(action.value, Some(value));
     let context = sim.trigger_action_context(0, None, TagEventInput::default(), rules);
@@ -113,7 +113,7 @@ fn dispatch(
         &mut effects,
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     // The production frame output is the authoritative receipt queue.
     sim.publish_trigger_effects(effects);

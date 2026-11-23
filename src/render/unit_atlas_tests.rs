@@ -61,6 +61,52 @@ fn retail_jumpjet_unit_demand_includes_native_shadow_stencils() {
     }
 }
 
+/// A Magnetron's `IsLocomotor=` Jumpjet lifts any vehicle, whose shadow
+/// Unit73C1D2's suffix then draws at the slope of the cell below (base
+/// Shadow_Matrix 0x0055A7D0): unmasked high above it, and in the grounded
+/// entry (73C468) on the ground. A Hover victim and a Drive victim over a
+/// ramp both need a resident native stencil for each.
+#[test]
+fn retail_lifted_vehicles_keep_native_shadow_stencils_on_their_cell_slope() {
+    use crate::render::foot_depth::DepthCell;
+    use crate::render::unit_shadow::{UnitShadowContext, pose};
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules};
+    let Some(battle) = retail_battle_rules() else {
+        return;
+    };
+    let (_, assets) = retail_assets().expect("retail assets for the loaded rules");
+    let [x, y] = [10 * 256 + 128; 2];
+    for (type_id, ramp) in [("ROBO", 0), ("HTNK", 1)] {
+        let demand = UnitAtlasDemand {
+            ground: BTreeSet::from([type_id.to_string()]),
+            ..Default::default()
+        };
+        let (keys, _) = needed_unit_keys(&demand, &assets, Some(&battle.rules));
+        let model = UnitModel::load(&assets, type_id, Some(&battle.rules)).unwrap();
+        let floor = crate::util::lepton::ground_height_leptons(0, ramp, x, y).unwrap();
+        for height in [0, 500] {
+            let key = pose(
+                UnitShadowContext {
+                    xyz: [x, y, floor + height],
+                    on_bridge: false,
+                    marked: true,
+                    primary_facing: 0x4000,
+                },
+                |coord| DepthCell {
+                    coord,
+                    ramp,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .key(type_id);
+            assert!(keys.contains(&key), "{key:?} resident");
+            let (_, bounds) = model.render(&key, None, None, &mut None).unwrap();
+            assert!(bounds.is_some(), "{key:?} native stencil");
+        }
+    }
+}
+
 /// Aircraft DrawIt4148A0 reaches the shared Foot shadow owner. An ordinary
 /// retail Harrier therefore needs a shadow resident alongside its body.
 #[test]
@@ -227,7 +273,7 @@ fn gsi_13_07_no_spawn_alt_composite_seeds_32_facings_by_17_slopes() {
     for facing in (0..=248).step_by(8) {
         for slope_type in 0..=16 {
             assert!(needed.contains(&UnitSpriteKey {
-                type_id: "DREDWO".to_string(),
+                type_id: "DREDWO".into(),
                 turret_index: 0,
                 facing,
                 layer: VxlLayer::Composite,
@@ -328,110 +374,77 @@ fn test_pad_layer_to_union_bounds() {
     assert_eq!(padded_turret.palette_indices[turret_pix], 200);
 }
 
+/// Admitting a world's voxel models draws no picture. The first lookup of a
+/// key draws it once, as `TechnoClass::Draw @ 0x00706640` renders a cache
+/// miss (`0x00706ED0`) and later hits blit the stored image (`0x00707480`);
+/// the picture is the one the model renders for that key. A key the model
+/// does not draw stays absent and draws nothing.
 #[test]
-fn forced_overflow_plan_keeps_every_sprite_in_bounds() {
-    let dimensions = vec![(6, 4); 4];
-    let plan = plan_sprite_pages(&dimensions, 8).expect("forced overflow must be pageable");
-
-    assert!(plan.page_heights.len() >= 2);
-    assert_eq!(plan.placements.len(), dimensions.len());
-
-    assert!(plan.page_width <= 8);
-    assert!(plan.page_heights.iter().all(|&height| height <= 8));
-
-    let mut seen = vec![false; dimensions.len()];
-    for (placement_index, placement) in plan.placements.iter().enumerate() {
-        let (width, height) = dimensions[placement.sprite_index];
-        assert!(!seen[placement.sprite_index]);
-        seen[placement.sprite_index] = true;
-        assert!(placement.x + width <= plan.page_width);
-        assert!(placement.y + height <= plan.page_heights[placement.page]);
-        for other in plan.placements.iter().skip(placement_index + 1) {
-            if placement.page != other.page {
-                continue;
-            }
-            let (other_width, other_height) = dimensions[other.sprite_index];
-            let separated = placement.x + width <= other.x
-                || other.x + other_width <= placement.x
-                || placement.y + height <= other.y
-                || other.y + other_height <= placement.y;
-            assert!(separated, "page placements must not overlap");
-        }
-
-        let page_width = plan.page_width as f32;
-        let page_height = plan.page_heights[placement.page] as f32;
-        let uv_origin = [
-            placement.x as f32 / page_width,
-            placement.y as f32 / page_height,
-        ];
-        let uv_size = [width as f32 / page_width, height as f32 / page_height];
-        assert!(uv_origin.into_iter().all(f32::is_finite));
-        assert!(uv_size.into_iter().all(f32::is_finite));
-        assert!(uv_origin[0] >= 0.0 && uv_origin[1] >= 0.0);
-        assert!(uv_origin[0] + uv_size[0] <= 1.0);
-        assert!(uv_origin[1] + uv_size[1] <= 1.0);
-    }
-    assert!(seen.into_iter().all(|value| value));
-}
-
-#[test]
-fn incremental_repack_plan_retains_old_unloading_referent() {
-    let make_cached = |type_id: &str| CachedUnitSprite {
-        key: UnitSpriteKey {
-            type_id: type_id.into(),
-            turret_index: 0,
-            facing: 0,
-            layer: VxlLayer::Composite,
-            frame: 0,
-            slope_type: 0,
-            barrel_pitch: 0,
-        },
-        pixels: vec![1; 24],
-        width: 6,
-        height: 4,
-        offset_x: 0.0,
-        offset_y: 0.0,
-        native_draw_bounds: Some([-4, -4, 14, 12]),
-        shadow_center: None,
+fn admitted_models_draw_each_picture_on_its_first_lookup() {
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules};
+    let Some(battle) = retail_battle_rules() else {
+        return;
     };
-    // CMON is CMIN's stock UnloadingClass referent. It may be absent from the
-    // current live-key collector but must remain in the rendered cache.
-    let cached = vec![make_cached("CMON"), make_cached("CMIN")];
-    let plan = plan_cached_sprite_pages(&cached, 8).expect("both cached sprites must repack");
-    let retained = plan
-        .placements
-        .iter()
-        .map(|placement| cached[placement.sprite_index].key.type_id.as_str())
-        .collect::<HashSet<_>>();
+    let (_, assets) = retail_assets().expect("retail assets for the loaded rules");
+    let rules = Some(&battle.rules);
+    let mut entity =
+        crate::sim::game_entity::GameEntity::test_default(1, "HTNK", "Americans", 5, 5);
+    entity.set_category_for_test(crate::map::entities::EntityCategory::Unit);
+    entity.set_is_voxel_for_test(true);
+    let mut world = crate::sim::entity_store::EntityStore::new();
+    world.insert(entity);
+    let interner = crate::sim::intern::test_interner();
 
-    assert_eq!(retained, HashSet::from(["CMON", "CMIN"]));
-}
+    let mut atlas = None;
+    admit_world_models(&mut atlas, &world, &assets, rules, Some(&interner), 8192);
+    let atlas = atlas.expect("a voxel world makes the atlas");
+    assert!(atlas_covers_world(
+        Some(&atlas),
+        &world,
+        rules,
+        Some(&interner)
+    ));
+    let drawn = |atlas: &UnitAtlas| {
+        let statistics = atlas.statistics().unwrap();
+        (
+            statistics.resident_sprite_count,
+            statistics.last_build_rasterized_sprite_count,
+        )
+    };
+    assert_eq!(drawn(&atlas), (0, 0), "admission draws no picture");
 
-#[test]
-fn page_plan_has_no_u8_page_cap() {
-    let dimensions = vec![(8, 8); 257];
-    let plan = plan_sprite_pages(&dimensions, 8).expect("257 pages must remain addressable");
-
-    assert_eq!(plan.page_heights.len(), 257);
+    let key = UnitSpriteKey {
+        type_id: "HTNK".into(),
+        turret_index: 0,
+        facing: 64,
+        layer: VxlLayer::Turret,
+        frame: 0,
+        slope_type: 3,
+        barrel_pitch: 0,
+    };
+    let entry = atlas.get(&key).expect("a Rhino turret on a ramp");
+    assert_eq!(atlas.get(&key), Some(entry), "a hit draws nothing again");
+    assert_eq!(drawn(&atlas), (1, 1));
+    let model = UnitModel::load(&assets, "HTNK", rules).unwrap();
+    let vpl = VplFile::from_bytes(assets.get_ref("VOXELS.VPL").unwrap()).unwrap();
+    let (sprite, bounds) = model.render(&key, Some(&vpl), None, &mut None).unwrap();
+    assert_eq!(entry.native_draw_bounds, bounds);
     assert_eq!(
-        plan.placements.iter().map(|placement| placement.page).max(),
-        Some(256)
+        atlas
+            .resident
+            .borrow()
+            .rendered_by_key(&key)
+            .unwrap()
+            .pixels,
+        sprite.palette_indices
     );
-    assert_eq!(plan.placements.len(), dimensions.len());
-}
 
-#[test]
-fn page_plan_rejects_an_individually_oversized_sprite() {
-    let err = plan_sprite_pages(&[(9, 1)], 8).expect_err("oversized sprite must not be clipped");
-    assert_eq!(
-        err,
-        UnitAtlasPackError::SpriteExceedsTextureLimit {
-            sprite_index: 0,
-            width: 9,
-            height: 1,
-            limit: 8,
-        }
-    );
+    let between_facings = UnitSpriteKey {
+        facing: 4,
+        ..key.clone()
+    };
+    assert_eq!(atlas.get(&between_facings), None);
+    assert_eq!(drawn(&atlas), (1, 1));
 }
 
 #[test]
@@ -448,35 +461,6 @@ fn unit_barrel_pitches_walk_the_unlimbo_turn() {
     let half = unit_barrel_pitches(128);
     assert_eq!(half.len(), 17);
     assert_eq!((half[8], half[9], half[16]), (-8, 23, 16));
-}
-
-#[test]
-fn barrel_image_keeps_its_first_drawn_pitch() {
-    let key = |type_id: &str, facing| UnitSpriteKey {
-        type_id: type_id.into(),
-        turret_index: 0,
-        facing,
-        layer: VxlLayer::Turret,
-        frame: 0,
-        slope_type: 0,
-        barrel_pitch: 0,
-    };
-    let mut pitches = BarrelImagePitches::default();
-    // The first unit drawn under a key fixes its image; later ones reuse it.
-    assert_eq!(pitches.pitch(&key("MTNK", 32), None, 0), 0);
-    assert_eq!(pitches.pitch(&key("MTNK", 32), None, -1), 0);
-    assert_eq!(pitches.pitch(&key("MTNK", 40), None, -1), -1);
-    assert_eq!(pitches.pitch(&key("MTNK", 40), None, 0), -1);
-    // A TurretOffset type keys the hull's facing too; each type has its own.
-    assert_eq!(pitches.pitch(&key("MTNK", 32), Some(0), -1), -1);
-    assert_eq!(pitches.pitch(&key("HTNK", 32), None, -1), -1);
-    let mut different_turret = key("MTNK", 32);
-    different_turret.turret_index = 1;
-    assert_eq!(pitches.pitch(&different_turret, None, -2), -2);
-    assert_eq!(pitches.pitch(&key("MTNK", 32), None, -2), 0);
-    // A new scenario starts empty.
-    pitches.clear();
-    assert_eq!(pitches.pitch(&key("MTNK", 32), None, -1), -1);
 }
 
 /// gamemd's voxel loader names a vehicle's models from its rules `Image=`
@@ -720,7 +704,8 @@ fn retail_ifv_atlas_covers_all_turrets_without_replicating_its_hull() {
     let (keys, _) = needed_unit_keys(&demand, &assets, Some(&battle.rules));
     let count = |layer| keys.iter().filter(|key| key.layer == layer).count();
     assert_eq!(count(VxlLayer::Body), 32 * 17);
-    assert_eq!(count(VxlLayer::Shadow), 32 * 17);
+    // Flight and grounded stencils for the Magnetron's lift.
+    assert_eq!(count(VxlLayer::Shadow), 2 * 32 * 17);
     assert_eq!(count(VxlLayer::Turret), 4 * 32 * 17);
     assert_eq!(
         keys.iter()
@@ -807,7 +792,7 @@ fn retail_ifv_models_draw_four_distinct_guns_and_share_body_and_shadow() {
     let vpl = VplFile::from_bytes(assets.get_ref("VOXELS.VPL").unwrap()).unwrap();
     let mut pose = None;
     let mut key = UnitSpriteKey {
-        type_id: "FV".to_string(),
+        type_id: "FV".into(),
         turret_index: 0,
         facing: 64,
         layer: VxlLayer::Body,
@@ -847,6 +832,51 @@ fn retail_ifv_models_draw_four_distinct_guns_and_share_body_and_shadow() {
 }
 
 #[test]
+fn stock_count_shrink_keeps_the_loaded_native_turret() {
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules_for_map_with_patch};
+    use crate::rules::voxel_frame_catalog::voxel_turret_index;
+
+    let Some(battle) = retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &IniFile::from_str("[FV]\nTurretCount=1\nRepairTurretWeapon=0\nRepairTurretIndex=3\n"),
+    ) else {
+        return;
+    };
+    let (_, assets) = retail_assets().unwrap();
+    let rules = &battle.rules;
+    let object = rules.object("FV").unwrap();
+    assert!(!rules.ares());
+    assert_eq!(object.turret_count, 1);
+    let physical =
+        crate::rules::voxel_asset_catalog::load_voxel_model(&assets, "FV", Some(rules)).unwrap();
+    assert_eq!(
+        physical.indexed_count(),
+        4,
+        "retail FV loads four native slots first"
+    );
+    let current = object.gunner_turrets.turret_for_weapon(0);
+    assert_eq!(voxel_turret_index("FV", Some(rules), current), 3);
+    let model = UnitModel::load(&assets, "FV", Some(rules)).unwrap();
+    assert_eq!(model.guns.len(), 4);
+    let demand = UnitAtlasDemand {
+        ground: BTreeSet::from(["FV".to_owned()]),
+        ..Default::default()
+    };
+    let (keys, _) = needed_unit_keys(&demand, &assets, Some(rules));
+    let key = UnitSpriteKey {
+        type_id: "FV".into(),
+        turret_index: current,
+        facing: 64,
+        layer: VxlLayer::Turret,
+        frame: 0,
+        slope_type: 0,
+        barrel_pitch: 0,
+    };
+    assert!(keys.contains(&key));
+    assert!(model.render(&key, None, None, &mut None).is_some());
+}
+
+#[test]
 fn indexed_model_loader_requires_turret_pairs_but_allows_absent_barrels() {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::retail_ini_fixture::retail_assets;
@@ -855,7 +885,9 @@ fn indexed_model_loader_requires_turret_pairs_but_allows_absent_barrels() {
     };
     for (name, turret, gattling, missing, bad_barrel, expected_guns) in [
         ("valid", true, false, None, false, Some(2)),
-        ("no-turret-flag", false, false, None, true, Some(2)),
+        // ObjectType5F827E/5F8287 branches before the indexed loop: a
+        // Turret=no Unit never loads FVTUR1, regardless of TurretCount.
+        ("no-turret-flag", false, false, None, true, Some(0)),
         (
             "missing-turret",
             true,
@@ -921,12 +953,12 @@ fn kirov_direct_matrix_requires_hva_and_wraps_its_native_frame() {
     .unwrap();
     let lighting = crate::render::vxl_raster::VxlLighting::Diffuse;
     let (first, bounds) = model
-        .render_matrix(matrix, 0, true, lighting, Some(&vpl))
+        .render_matrix(matrix, 0, true, lighting, Some(&vpl), false, None)
         .unwrap();
     assert!(bounds.is_some());
     let frames = model.body.as_ref().unwrap().hva().unwrap().frame_count;
     let (wrapped, wrapped_bounds) = model
-        .render_matrix(matrix, frames, true, lighting, Some(&vpl))
+        .render_matrix(matrix, frames, true, lighting, Some(&vpl), false, None)
         .unwrap();
     assert_eq!(first.palette_indices, wrapped.palette_indices);
     assert_eq!(bounds, wrapped_bounds);
@@ -943,257 +975,227 @@ fn kirov_direct_matrix_requires_hva_and_wraps_its_native_frame() {
     let model = UnitModel::load(&no_hva, "ZBOMB", None).unwrap();
     assert!(
         model
-            .render_matrix(matrix, 0, true, lighting, Some(&vpl))
+            .render_matrix(matrix, 0, true, lighting, Some(&vpl), false, None)
             .is_none(),
         "Bullet LoadVoxelAssets requires both main files"
     );
     assert!(
         model
-            .render_matrix(matrix, 0, false, lighting, Some(&vpl))
+            .render_matrix(matrix, 0, false, lighting, Some(&vpl), false, None)
             .is_some(),
         "the explicit debris no-HVA caller still uses the same raster owner"
     );
 }
 
-/// The atlas preloads the models a scenario's computer teams are authored to
-/// recruit, so a team arriving mid-match finds its sprites already resident.
+/// VoxelAnim749CCF/749DCE submit one physical section to the existing
+/// shadow/body owners, without HVA; 749D9F still selects section0's lighting.
 #[test]
-fn authored_team_rosters_admit_only_the_models_they_recruit() {
-    use crate::rules::ini_parser::IniFile;
-    use crate::rules::object_type::ObjectCategory;
-    use crate::rules::ruleset::RuleSet;
-    use crate::rules::team_ai_ini::TeamAiDefinitionSource;
-    use crate::sim::intern::StringInterner;
-    use crate::sim::team_script_vm::{
-        TeamMemberTypeIdentity, TeamScriptVm, TeamTaskForceDefinition, TeamTaskForceEntry,
+fn tumble_selects_one_physical_section_for_body_and_shadow() {
+    let fixture = crate::test_fixture::json("tools/voxel_oracle/aircraft_shadow.json");
+    let decode = |key| {
+        fixture["generated"][key]
+            .as_str()
+            .unwrap()
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect::<Vec<_>>()
     };
+    let mut bytes = decode("vxl");
+    let tailers = bytes.len() - 4 * 92;
+    // Authored input: give the selected limb its own bounds so using section0
+    // for either crop or shadow is observable. No numeric golden is invented.
+    for offset in [64, 76] {
+        let at = tailers + 2 * 92 + offset;
+        let value = f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) + 12.0;
+        bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    let directory = crate::map::source::test_support::TestDirectory::new("tumble-section");
+    std::fs::write(directory.path().join("MULTI.VXL"), &bytes).unwrap();
+    std::fs::write(directory.path().join("MULTI.HVA"), decode("hva")).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(directory.path());
+    let model = UnitModel::load(&assets, "MULTI", None).unwrap();
+    let vpl = VplFile::from_bytes(&decode("vpl")).unwrap();
+    let matrix = vxl_raster::projectile_voxel_matrix(
+        crate::sim::projectile::ProjectileVelocity::new(3, -2, 1),
+    )
+    .unwrap();
+    let (body, shadow) = UnitModel::render_tumble(
+        model.body.as_ref().unwrap(),
+        2,
+        matrix,
+        Some(&vpl),
+        false,
+        None,
+    )
+    .unwrap();
+    let shadow = shadow.unwrap();
+    let (other, other_shadow) = UnitModel::render_tumble(
+        model.body.as_ref().unwrap(),
+        0,
+        matrix,
+        Some(&vpl),
+        false,
+        None,
+    )
+    .unwrap();
+    let other_shadow = other_shadow.unwrap();
+    assert_ne!(body.palette_indices, other.palette_indices);
+    assert_ne!(
+        (shadow.offset_x, shadow.offset_y),
+        (other_shadow.offset_x, other_shadow.offset_y)
+    );
 
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "\
-[VehicleTypes]
-0=TANK
-[AircraftTypes]
-0=HYD
-[InfantryTypes]
-0=E1
-[BuildingTypes]
-0=NAPOWR
-1=NATNT
-
-[NAPOWR]
-[NATNT]
-TurretAnimIsVoxel=yes
-TurretAnim=NTNTBARL
-",
-    ))
-    .expect("team roster rules should parse");
-
-    // The closure owns the interner while the roster is written, so the
-    // assertions below can read it back.
-    let (interner, teams) = {
-        let mut interner = StringInterner::new();
-        let mut member = |name: &str, category| TeamMemberTypeIdentity {
-            category,
-            id: interner.intern(name),
-        };
-        let mut teams = TeamScriptVm::default();
-        for (id, entries) in [
-            (
-                "Roster",
-                vec![
-                    member("TANK", ObjectCategory::Vehicle),
-                    member("HYD", ObjectCategory::Aircraft),
-                    member("E1", ObjectCategory::Infantry),
-                    member("NAPOWR", ObjectCategory::Building),
-                    member("NATNT", ObjectCategory::Building),
-                    // A name the rules never registered contributes no model.
-                    member("MISSING", ObjectCategory::Vehicle),
-                ],
-            ),
-            ("Duplicated", vec![member("TANK", ObjectCategory::Vehicle)]),
-        ] {
-            let task_force_id = interner.intern(id);
-            teams.register_task_force(TeamTaskForceDefinition {
-                id: task_force_id,
-                group: -1,
-                entries: entries
-                    .into_iter()
-                    .map(|member_type| TeamTaskForceEntry {
-                        member_type,
-                        count: 1,
-                    })
-                    .collect(),
-                source: TeamAiDefinitionSource::Scenario,
-            });
-        }
-        (interner, teams)
+    let (paint, stencil) =
+        UnitModel::tumble_images(model.body.as_ref().unwrap(), 2, matrix, Some(&vpl), false)
+            .unwrap();
+    let vxl_raster::VoxelImage::Paint {
+        raster: paint_raster,
+        hva,
+        ..
+    } = paint
+    else {
+        panic!("selected encoded section must reach the ordinary GPU preparation");
     };
-
-    let demand = UnitAtlasDemand::of_authored_teams(&teams, &rules, &interner);
-    assert!(demand.contains(VoxelModel::Ground("TANK")));
-    assert!(demand.contains(VoxelModel::Air("HYD")));
-    assert!(
-        demand.contains(VoxelModel::Turret("NATNT")),
-        "an authored voxel-turret building preloads its gun model"
-    );
-    assert!(
-        !demand.contains(VoxelModel::Ground("E1")),
-        "infantry draws SHP sprites, not a voxel model"
-    );
-    assert!(
-        !demand.contains(VoxelModel::Ground("NAPOWR")),
-        "a type with no voxel body and no voxel turret adds nothing"
-    );
-    assert!(
-        !demand.contains(VoxelModel::Ground("MISSING")),
-        "an unresolvable team member cannot request a model"
+    assert!(hva.is_none());
+    assert_eq!(
+        paint_raster
+            .sections
+            .iter()
+            .map(|(index, _)| *index)
+            .collect::<Vec<_>>(),
+        [2]
     );
     assert_eq!(
-        demand,
-        UnitAtlasDemand::of_authored_teams(&teams, &rules, &interner),
-        "the roster's duplicate rows collapse into one model"
+        paint_raster.pages,
+        crate::render::vxl_normals::diffuse_pages(4, glam::Mat3::from_mat4(matrix))
+    );
+    let Some(vxl_raster::VoxelImage::Stencil {
+        raster: shadow_raster,
+        ..
+    }) = stencil
+    else {
+        panic!("selected section must reach the existing stencil preparation");
+    };
+    assert_eq!(shadow_raster.limb, 2);
+    assert!(
+        UnitModel::render_tumble(
+            model.body.as_ref().unwrap(),
+            -1,
+            matrix,
+            Some(&vpl),
+            false,
+            None
+        )
+        .is_none()
+    );
+    assert!(
+        UnitModel::tumble_images(model.body.as_ref().unwrap(), 4, matrix, Some(&vpl), false)
+            .is_none()
+    );
+
+    // Unselected geometry cannot enlarge the crop. The selected tailer's
+    // transform and normals mode are ignored by this no-HVA/diffuse caller.
+    for offset in [64, 76] {
+        let at = tailers + offset;
+        let value = f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) + 100.0;
+        bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes[tailers + 2 * 92 + 28..tailers + 2 * 92 + 32].copy_from_slice(&80f32.to_le_bytes());
+    bytes[tailers + 2 * 92 + 91] = 2;
+    std::fs::write(directory.path().join("OTHER.VXL"), &bytes).unwrap();
+    let changed = UnitModel::load(
+        &AssetManager::from_loose_root_for_test(directory.path()),
+        "OTHER",
+        None,
+    )
+    .unwrap();
+    let (changed_body, changed_shadow) = UnitModel::render_tumble(
+        changed.body.as_ref().unwrap(),
+        2,
+        matrix,
+        Some(&vpl),
+        false,
+        None,
+    )
+    .unwrap();
+    let (changed_image, _) =
+        UnitModel::tumble_images(changed.body.as_ref().unwrap(), 2, matrix, Some(&vpl), false)
+            .unwrap();
+    let vxl_raster::VoxelImage::Paint {
+        raster: changed_raster,
+        ..
+    } = changed_image
+    else {
+        panic!("changed unselected section must not reject native paint");
+    };
+    assert_eq!(
+        paint_raster.pages, changed_raster.pages,
+        "diffuse lighting still uses section0"
+    );
+    assert_eq!(body.palette_indices, changed_body.palette_indices);
+    assert_eq!(
+        (body.offset_x, body.offset_y, body.width, body.height),
+        (
+            changed_body.offset_x,
+            changed_body.offset_y,
+            changed_body.width,
+            changed_body.height
+        )
+    );
+    let changed_shadow = changed_shadow.unwrap();
+    assert_eq!(shadow.palette_indices, changed_shadow.palette_indices);
+    assert_eq!(
+        (shadow.offset_x, shadow.offset_y),
+        (changed_shadow.offset_x, changed_shadow.offset_y)
+    );
+
+    // A preview fallback retains the same physical selection.
+    let mut legacy = VxlFile::from_bytes(&bytes).unwrap();
+    legacy.limbs[2].native_spans = None;
+    let params = VxlRenderParams {
+        section: Some(2),
+        ..Default::default()
+    };
+    assert_eq!(
+        vxl_raster::prepare_limb_data(&legacy, None, &params)
+            .0
+            .len(),
+        1
     );
 }
 
-/// The load-time preload also admits what each participating House can build
-/// from its own country's roster, so the first harvester or defense structure
-/// a match produces does not open a growth page mid-game.
+/// A placed sprite waits for its upload as the resident cache's pixels
+/// themselves, not a second copy of them.
 #[test]
-fn participating_country_rosters_admit_only_buildable_voxel_models() {
-    use crate::rules::ini_parser::IniFile;
-    use crate::rules::ruleset::RuleSet;
-    use crate::sim::house_state::HouseState;
-    use crate::sim::houses::Houses;
-    use crate::sim::intern::StringInterner;
-
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "\
-[Countries]
-0=AMER
-1=RUS
-2=CIV
-[AMER]
-ParentCountry=AMER
-[RUS]
-ParentCountry=RUS
-[CIV]
-ParentCountry=CIV
-[VehicleTypes]
-0=GRIZ
-1=APOC
-2=FORBID
-3=GATED
-4=NEUTRALUNIT
-5=CIVCAR
-[AircraftTypes]
-0=ORCA
-[InfantryTypes]
-0=E1
-[BuildingTypes]
-0=NATURRET
-1=NAPOWR
-
-[GRIZ]
-Owner=AMER
-[APOC]
-Owner=RUS
-[FORBID]
-Owner=AMER
-ForbiddenHouses=AMER
-[GATED]
-Owner=AMER
-RequiredHouses=RUS
-[NEUTRALUNIT]
-Owner=CIV
-DoubleOwned=yes
-[CIVCAR]
-Owner=CIV
-[ORCA]
-Owner=AMER
-[E1]
-Owner=AMER
-[NATURRET]
-Owner=AMER
-TurretAnimIsVoxel=yes
-TurretAnim=NTURRET
-[NAPOWR]
-Owner=AMER
-",
-    ))
-    .expect("country roster rules should parse");
-
-    let mut interner = StringInterner::new();
-    let amer = interner.intern("AMER");
-    let rus = interner.intern("RUS");
-    let civ = interner.intern("CIV");
-    let mut houses = Houses::default();
-    houses.register(HouseState::new(
-        interner.intern("Player"),
-        0,
-        Some(amer),
-        true,
-        0,
-        10,
+fn a_placed_sprite_waits_for_its_upload_without_a_copy() {
+    let atlas = UnitAtlas::from_test_sprites(vec![CachedUnitSprite {
+        key: UnitSpriteKey {
+            type_id: "staged".into(),
+            turret_index: 0,
+            facing: 0,
+            layer: VxlLayer::Body,
+            frame: 0,
+            slope_type: 0,
+            barrel_pitch: 0,
+        },
+        pixels: vec![1, 2, 3, 4],
+        width: 2,
+        height: 2,
+        offset_x: 0.,
+        offset_y: 0.,
+        native_draw_bounds: None,
+        shadow_center: None,
+        pool_bytes: 0,
+    }]);
+    let resident = atlas.resident.borrow();
+    let [pending] = resident.uploads.as_slice() else {
+        panic!("one sprite placed, one upload staged");
+    };
+    let staged = pending.texels.bytes(&resident.rendered_cache);
+    assert_eq!(staged, [1, 2, 3, 4]);
+    assert!(std::ptr::eq(
+        staged,
+        resident.rendered_cache[0].pixels.as_slice()
     ));
-    houses.register(HouseState::new(
-        interner.intern("Computer1"),
-        1,
-        Some(rus),
-        false,
-        0,
-        10,
-    ));
-    houses.register(HouseState::new(
-        interner.intern("Neutral"),
-        2,
-        Some(civ),
-        false,
-        0,
-        10,
-    ));
-    houses
-        .get_mut(&interner.intern("Neutral"))
-        .expect("passive house registered")
-        .make_multiplay_passive();
-
-    let skirmish = UnitAtlasDemand::of_participating_houses(&houses, &rules, &interner, true);
-    assert!(skirmish.contains(VoxelModel::Ground("GRIZ")));
-    assert!(skirmish.contains(VoxelModel::Ground("APOC")));
-    assert!(
-        skirmish.contains(VoxelModel::Air("ORCA")),
-        "an aircraft joins the air set"
-    );
-    assert!(
-        skirmish.contains(VoxelModel::Turret("NATURRET")),
-        "a building without a voxel body still preloads its voxel gun"
-    );
-    assert!(
-        skirmish.contains(VoxelModel::Ground("NEUTRALUNIT")),
-        "DoubleOwned belongs to every house in a multiplayer match"
-    );
-    assert!(
-        !skirmish.contains(VoxelModel::Ground("FORBID")),
-        "ForbiddenHouses removes the type from the only country that owns it"
-    );
-    assert!(
-        !skirmish.contains(VoxelModel::Ground("GATED")),
-        "RequiredHouses names a country that cannot own the type"
-    );
-    assert!(
-        !skirmish.contains(VoxelModel::Ground("CIVCAR")),
-        "a passive House sits the match out"
-    );
-    assert!(
-        !skirmish.contains(VoxelModel::Ground("E1")),
-        "infantry draws SHP sprites, not a voxel model"
-    );
-    assert!(
-        !skirmish.contains(VoxelModel::Ground("NAPOWR")),
-        "a type with no voxel body and no voxel turret adds nothing"
-    );
-    let campaign = UnitAtlasDemand::of_participating_houses(&houses, &rules, &interner, false);
-    assert!(
-        !campaign.contains(VoxelModel::Ground("NEUTRALUNIT")),
-        "DoubleOwned is a multiplayer-only override"
-    );
 }

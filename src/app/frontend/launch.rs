@@ -17,12 +17,45 @@ use crate::app::diagnostics::tactical_capture::profile::{
     CHECKPOINT_RADAR_ONLINE_V2, SealedJsonFile, TacticalCaptureContract, TacticalCaptureProfile,
     validate_new_output_directory,
 };
-use crate::app::frontend::startup_options::{RetailStartupOptions, consume_retail_switches};
+use crate::app::frontend::startup_options::{
+    RetailStartupOptions, StartupExit, consume_retail_switches,
+};
 use crate::skirmish_launch::SkirmishLaunchSession;
 
 use crate::app::diagnostics::tactical_capture::session::MapCaptureProfile;
 
 const TACTICAL_CAPTURE_FLAG: &str = "--tactical-capture";
+
+/// Standalone replay verification runs before window, audio, profile or online
+/// service startup. Retail bytes are opened read-only by the existing loader.
+pub fn try_replay_verify<I>(args: I) -> Option<Result<i32>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
+    if args.next().as_deref() != Some(OsStr::new("--replay-verify")) {
+        return None;
+    }
+    Some((|| {
+        let path = PathBuf::from(args.next().context("--replay-verify needs a replay file")?);
+        ensure!(
+            args.next().as_deref() == Some(OsStr::new("--ra2-dir")),
+            "usage: vera20k --replay-verify <replay.json> --ra2-dir <retail-directory>"
+        );
+        let retail_dir = PathBuf::from(args.next().context("--ra2-dir needs a retail directory")?);
+        ensure!(
+            args.next().is_none(),
+            "unexpected replay verification argument"
+        );
+        let replay = crate::sim::replay::ReplayLog::load(&path)?;
+        let map_sha256 = replay.standalone_startup()?.map_sha256();
+        let map_beside = map_beside_replay(&path, &replay.header.map_name, map_sha256)?;
+        let receipt =
+            crate::sim::replay::ReplayRunner::verify(&retail_dir, &replay, map_beside.as_deref())?;
+        println!("{}", serde_json::to_string(&receipt)?);
+        Ok(0)
+    })())
+}
 
 /// The installer runs this before normal application startup. Keep its argument
 /// boundary here with the other launch modes: game-folder values must bypass
@@ -49,17 +82,315 @@ where
     })())
 }
 
+/// `vera20k --check-language <vera20k.<tag>.ini>`: print what a language file
+/// leaves untranslated or gets wrong ([`crate::i18n::check`]). Exits 0 when it
+/// is complete, 1 otherwise.
+pub fn try_language_check<I>(args: I) -> Option<Result<i32>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
+    if args.next().as_deref() != Some(OsStr::new("--check-language")) {
+        return None;
+    }
+    Some((|| {
+        let path = PathBuf::from(
+            args.next()
+                .context("usage: vera20k --check-language <vera20k.<tag>.ini>")?,
+        );
+        ensure!(args.next().is_none(), "--check-language takes one file");
+        let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+        let text = String::from_utf8(bytes)
+            .with_context(|| format!("{} is not UTF-8 text", path.display()))?;
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let report = crate::i18n::check(&name, &text);
+        print!("{report}");
+        Ok(if report.complete() { 0 } else { 1 })
+    })())
+}
+
+/// `vera20k --version` (docs/spawn.md, "Version"): print the build's version
+/// as one JSON line and exit, without a game folder. Headless, like `--probe`.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub fn try_version<I>(args: I) -> Option<Result<i32>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
+    if args.next().as_deref() != Some(OsStr::new("--version")) {
+        return None;
+    }
+    Some((|| {
+        ensure!(args.next().is_none(), "usage: vera20k --version");
+        print_version()
+    })())
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn print_version() -> Result<i32> {
+    let report = crate::app::spawn_probe::version_report();
+    println!("{}", serde_json::to_string(&report)?);
+    Ok(0)
+}
+
+/// `vera20k --probe [--ra2-dir <dir>] [--map <path>]` (docs/spawn.md): print
+/// one JSON object describing what a spawn launch on this installation is
+/// checked against, then exit. Headless: no logger, window or audio. `--mod
+/// <folder>` and `--no-mod` choose the mod as they do for that launch, and
+/// `--ares <Auto|On|Off>` the Ares setting spawn.ini's `[Settings] Ares=` will.
+/// `vera20k --probe --version` prints what `--version` does: a launcher asks
+/// that way because a build from before `--version` refuses the probe
+/// argument instead of starting the game.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub fn try_probe<I>(args: I) -> Option<Result<i32>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
+    if args.next().as_deref() != Some(OsStr::new("--probe")) {
+        return None;
+    }
+    let args: Vec<OsString> = args.collect();
+    if args.iter().any(|arg| arg == OsStr::new("--version")) {
+        return Some((|| {
+            ensure!(args.len() == 1, "usage: vera20k --probe --version");
+            print_version()
+        })());
+    }
+    Some((|| {
+        let (mod_switch, mut args) = crate::app::mods::take_switch(args)?;
+        let ares = match args.iter().position(|arg| arg == OsStr::new("--ares")) {
+            Some(at) => {
+                let setting = args
+                    .get(at + 1)
+                    .and_then(|value| value.to_str())
+                    .and_then(crate::util::ares_launch::AresSetting::parse)
+                    .context("\"--ares\" needs Auto, On or Off")?;
+                args.drain(at..=at + 1);
+                Some(setting)
+            }
+            None => None,
+        };
+        let (ra2_dir, map) = parse_probe_args(args.into_iter())?;
+        let report = crate::app::spawn_probe::run_desktop(
+            ra2_dir.as_deref(),
+            map.as_deref(),
+            mod_switch.as_ref(),
+            ares,
+        )?;
+        println!("{}", serde_json::to_string(&report)?);
+        Ok(0)
+    })())
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn parse_probe_args(
+    args: impl Iterator<Item = OsString>,
+) -> Result<(Option<PathBuf>, Option<PathBuf>)> {
+    const USAGE: &str = "usage: vera20k --probe [--ra2-dir <retail-directory>] [--map <map-file>]";
+    let mut args = args;
+    let (mut ra2_dir, mut map) = (None, None);
+    while let Some(flag) = args.next() {
+        let slot = if flag == OsStr::new("--ra2-dir") {
+            &mut ra2_dir
+        } else if flag == OsStr::new("--map") {
+            &mut map
+        } else {
+            bail!("unexpected probe argument {flag:?}; {USAGE}");
+        };
+        ensure!(slot.is_none(), "{flag:?} given twice; {USAGE}");
+        *slot =
+            Some(PathBuf::from(args.next().with_context(|| {
+                format!("{flag:?} needs a value; {USAGE}")
+            })?));
+    }
+    Ok((ra2_dir, map))
+}
+
+/// `vera20k --generate-map (--code <VR1-…> | --sed <file>) --output <path>`
+/// (docs/spawn.md, "Random maps"): write the random map a share code or
+/// `.SED` file describes to `output` and print one JSON line reporting it.
+/// Headless, like `--probe`; `--mod <folder>` and `--no-mod` choose the mod.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub fn try_generate_map<I>(args: I) -> Option<Result<i32>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
+    if args.next().as_deref() != Some(OsStr::new("--generate-map")) {
+        return None;
+    }
+    Some((|| {
+        let (mod_switch, args) = crate::app::mods::take_switch(args.collect())?;
+        let (input, output) = parse_generate_map_args(args.into_iter())?;
+        let input = match input {
+            GenerateMapInput::Code(code) => code,
+            GenerateMapInput::Sed(path) => {
+                let bytes =
+                    std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+                String::from_utf8(bytes)
+                    .with_context(|| format!("{} is not UTF-8 text", path.display()))?
+            }
+        };
+        let report =
+            crate::app::random_map_file::run_desktop(&input, &output, mod_switch.as_ref())?;
+        println!("{}", serde_json::to_string(&report)?);
+        Ok(0)
+    })())
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[derive(Debug, PartialEq, Eq)]
+enum GenerateMapInput {
+    Code(String),
+    Sed(PathBuf),
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn parse_generate_map_args(
+    args: impl Iterator<Item = OsString>,
+) -> Result<(GenerateMapInput, PathBuf)> {
+    const USAGE: &str = "usage: vera20k --generate-map (--code <VR1-…> | --sed <file>) \
+                         --output <map-file> [--no-mod]";
+    let mut args = args;
+    let (mut input, mut output) = (None, None);
+    while let Some(flag) = args.next() {
+        let value = args
+            .next()
+            .with_context(|| format!("{flag:?} needs a value; {USAGE}"))?;
+        let given = if flag == OsStr::new("--code") {
+            let code = value
+                .into_string()
+                .map_err(|_| anyhow::anyhow!("the share code is not Unicode text; {USAGE}"))?;
+            input.replace(GenerateMapInput::Code(code)).is_some()
+        } else if flag == OsStr::new("--sed") {
+            input
+                .replace(GenerateMapInput::Sed(PathBuf::from(value)))
+                .is_some()
+        } else if flag == OsStr::new("--output") {
+            output.replace(PathBuf::from(value)).is_some()
+        } else {
+            bail!("unexpected argument {flag:?}; {USAGE}");
+        };
+        ensure!(!given, "give one --code or --sed and one --output; {USAGE}");
+    }
+    Ok((
+        input.with_context(|| format!("give --code or --sed; {USAGE}"))?,
+        output.with_context(|| format!("give --output; {USAGE}"))?,
+    ))
+}
+
 #[derive(Debug)]
 pub enum AppLaunchMode {
     /// Ordinary launch, carrying whatever the retail switch table decided.
     Interactive(RetailStartupOptions),
     /// CnCNet's offline launch contract; configuration is read before creating a window.
     Spawn(RetailStartupOptions),
-    /// A help switch: print usage and terminate before any window is created,
-    /// exactly as native's switch parser makes `WinMain` bail.
-    Usage,
+    /// Watch a strictly reconstructed recording through the normal renderer.
+    Replay(ReplayLaunchRequest),
+    /// A help switch or an invalid `-X` tail: print its text and terminate
+    /// before any window is created, exactly as native's switch parser makes
+    /// `WinMain` bail.
+    Exit(StartupExit),
     ShellCapture(ShellCaptureRequest),
     TacticalCapture(TacticalCaptureRequest),
+    /// A hidden run that draws one map's picture for the setup screens.
+    MapPicture(crate::app::map_picture::MapPictureRequest),
+}
+
+#[derive(Debug)]
+pub struct ReplayLaunchRequest {
+    pub(crate) replay: std::sync::Arc<crate::sim::replay::ReplayLog>,
+    pub(crate) retail_dir: PathBuf,
+    pub(crate) capture_output: Option<PathBuf>,
+    pub(crate) replay_sha256: String,
+    /// The recorded map beside the replay file or one folder up: a -SPAWN
+    /// game's map exists in no game folder. A file with other bytes is ignored.
+    pub(crate) map_beside: Option<String>,
+}
+
+/// The replay's own folder, then the one above it. A `-SPAWN` launch keeps
+/// its map beside `spawn.ini` in the folder it runs in (`resolve_client_map`),
+/// and the game writes its replays to `replays/` there.
+fn map_beside_replay(replay: &Path, map_name: &str, map_sha256: &str) -> Result<Option<String>> {
+    // A rooted path's scenario name is only its file name, so a logical
+    // name with a directory must keep resolving through the game folder.
+    if map_name.contains(['/', '\\']) {
+        return Ok(None);
+    }
+    Ok(replay
+        .canonicalize()?
+        .ancestors()
+        .skip(1)
+        .take(2)
+        .map(|directory| directory.join(map_name))
+        .find(|map| {
+            std::fs::read(map)
+                .is_ok_and(|bytes| crate::util::sha256::sha256_hex(&bytes) == map_sha256)
+        })
+        .and_then(|map| map.to_str().map(str::to_owned)))
+}
+
+fn parse_replay_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
+    let mut args = args.into_iter();
+    ensure!(
+        args.next().as_deref() == Some(OsStr::new("--replay")),
+        "--replay must be first"
+    );
+    let path = PathBuf::from(args.next().context("--replay needs a replay file")?);
+    ensure!(
+        args.next().as_deref() == Some(OsStr::new("--ra2-dir")),
+        "usage: vera20k --replay <replay.json> --ra2-dir <retail-directory> [--replay-capture <new.png>]"
+    );
+    let retail_dir = PathBuf::from(args.next().context("--ra2-dir needs a retail directory")?)
+        .canonicalize()
+        .context("replay retail directory")?;
+    ensure!(retail_dir.is_dir(), "replay retail path is not a directory");
+    let capture_output = match args.next() {
+        None => None,
+        Some(flag) => {
+            ensure!(
+                flag == OsStr::new("--replay-capture"),
+                "unexpected replay argument"
+            );
+            let output = PathBuf::from(
+                args.next()
+                    .context("--replay-capture needs a new PNG path")?,
+            );
+            ensure!(
+                output.is_absolute() && output.extension() == Some(OsStr::new("png")),
+                "replay capture needs an absolute .png path"
+            );
+            let parent = output
+                .parent()
+                .context("replay capture parent")?
+                .canonicalize()?;
+            ensure!(
+                !parent.ancestors().any(|dir| dir.join(".git").exists()),
+                "replay capture output must be outside a source checkout"
+            );
+            let output = parent.join(output.file_name().context("replay capture filename")?);
+            ensure!(
+                !output.exists() && !output.with_extension("json").exists(),
+                "replay capture output already exists"
+            );
+            Some(output)
+        }
+    };
+    ensure!(args.next().is_none(), "unexpected replay argument");
+    let (replay, replay_sha256) = crate::sim::replay::ReplayLog::load_bound(&path)?;
+    let map_sha256 = replay.standalone_startup()?.map_sha256();
+    let map_beside = map_beside_replay(&path, &replay.header.map_name, map_sha256)?;
+    Ok(AppLaunchMode::Replay(ReplayLaunchRequest {
+        map_beside,
+        replay: std::sync::Arc::new(replay),
+        retail_dir,
+        capture_output,
+        replay_sha256,
+    }))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,11 +428,18 @@ pub struct TacticalCaptureRequest {
     profile: CaptureProfile,
     contract: SealedJsonFile<TacticalCaptureContract>,
     output_dir: PathBuf,
+    /// `--ares`: the Ares setting this start uses, as a `-SPAWN` launch's
+    /// `[Settings] Ares=` gives one; a capture reads no VERA.INI.
+    ares: Option<crate::util::ares_launch::AresSetting>,
 }
 
 impl TacticalCaptureRequest {
     pub fn checkpoint(&self) -> TacticalCaptureCheckpoint {
         self.checkpoint
+    }
+
+    pub(crate) fn ares_setting(&self) -> Option<crate::util::ares_launch::AresSetting> {
+        self.ares
     }
 
     pub(crate) fn profile(&self) -> Result<&TacticalCaptureProfile> {
@@ -188,6 +526,16 @@ where
     I: IntoIterator<Item = OsString>,
 {
     let args: Vec<OsString> = args.into_iter().collect();
+    // The menus start this run with a map name that must reach it untouched.
+    if crate::app::map_picture::is_invocation(args.iter().cloned()) {
+        return crate::app::map_picture::parse_args(args).map(AppLaunchMode::MapPicture);
+    }
+    if args
+        .iter()
+        .any(|arg| arg == OsStr::new("--replay") || arg == OsStr::new("--replay-capture"))
+    {
+        return parse_replay_args(args);
+    }
     // Native's table scans every argument, which is safe there because native
     // has no option that takes a following value. VERA's capture modes do, and
     // the `-CD` search is a substring match, so an output path such as
@@ -208,8 +556,8 @@ where
     }
     // This is the only process-argument owner for retail startup decisions.
     let (retail_options, args) = consume_retail_switches(args);
-    if retail_options.usage_requested {
-        return Ok(AppLaunchMode::Usage);
+    if let Some(exit) = retail_options.exit {
+        return Ok(AppLaunchMode::Exit(exit));
     }
     let spawn_count = args
         .iter()
@@ -252,6 +600,7 @@ fn parse_tactical_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
     let mut profile_path = None;
     let mut contract_path = None;
     let mut output_dir = None;
+    let mut ares = None;
 
     while let Some(flag) = args.next() {
         let flag = flag
@@ -281,6 +630,15 @@ fn parse_tactical_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
                         .ok_or_else(|| anyhow::anyhow!("missing value after --output"))?,
                 ),
                 "--output",
+            )?,
+            "--ares" => set_once(
+                &mut ares,
+                crate::util::ares_launch::AresSetting::parse(&next_utf8(
+                    &mut args,
+                    "value after --ares",
+                )?)
+                .context("\"--ares\" needs Auto, On or Off")?,
+                "--ares",
             )?,
             _ => bail!("unknown tactical-capture option {flag:?}"),
         }
@@ -317,6 +675,7 @@ fn parse_tactical_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
         profile,
         contract,
         output_dir,
+        ares,
     }))
 }
 
@@ -336,12 +695,197 @@ fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn version_dispatch_is_strict_and_only_first() {
+        let args = |list: &[&str]| list.iter().map(OsString::from).collect::<Vec<_>>();
+        assert!(try_version(args(&["-WIN", "--version"])).is_none());
+        assert!(try_version(args(&["--probe", "--version"])).is_none());
+        assert!(
+            try_version(args(&["--version", "--extra"]))
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            try_probe(args(&["--probe", "--version", "--no-mod"]))
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            try_probe(args(&["--probe", "--map", "m.ini", "--version"]))
+                .unwrap()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn probe_dispatch_is_strict_and_only_first() {
+        let args = |list: &[&str]| list.iter().map(OsString::from).collect::<Vec<_>>();
+        assert!(try_probe(args(&["-WIN", "--probe"])).is_none());
+        assert!(try_probe(args(&["-SPAWN"])).is_none());
+        for bad in [
+            &["--bogus"][..],
+            &["--map"],
+            &["--ra2-dir"],
+            &["--map", "a", "--map", "b"],
+            &["--ra2-dir", "a", "-WIN"],
+        ] {
+            assert!(parse_probe_args(args(bad).into_iter()).is_err(), "{bad:?}");
+        }
+        assert_eq!(
+            parse_probe_args(args(&["--map", "m.ini", "--ra2-dir", "r"]).into_iter()).unwrap(),
+            (Some(PathBuf::from("r")), Some(PathBuf::from("m.ini")))
+        );
+        assert_eq!(parse_probe_args(std::iter::empty()).unwrap(), (None, None));
+        // The interactive parser does not treat --probe as a launch mode.
+        assert!(!matches!(
+            parse_launch_args(args(&["--probe"])),
+            Ok(AppLaunchMode::Spawn(_))
+        ));
+    }
+
+    #[test]
+    fn generate_map_takes_one_input_and_an_output() {
+        let args = |list: &[&str]| list.iter().map(OsString::from).collect::<Vec<_>>();
+        assert!(try_generate_map(args(&["--probe"])).is_none());
+        for bad in [
+            &["--code", "VR1-A"][..],
+            &["--output", "m.yrm"],
+            &["--code", "VR1-A", "--sed", "s.sed", "--output", "m.yrm"],
+            &["--code", "VR1-A", "--output"],
+            &["--code", "VR1-A", "--output", "m.yrm", "--map", "x"],
+        ] {
+            assert!(
+                parse_generate_map_args(args(bad).into_iter()).is_err(),
+                "{bad:?}"
+            );
+        }
+        assert_eq!(
+            parse_generate_map_args(args(&["--output", "m.yrm", "--sed", "s.sed"]).into_iter())
+                .unwrap(),
+            (
+                GenerateMapInput::Sed(PathBuf::from("s.sed")),
+                PathBuf::from("m.yrm")
+            )
+        );
+    }
+
+    #[test]
+    fn standalone_replay_dispatch_is_strict_and_does_not_enter_interactive_startup() {
+        assert!(try_replay_verify([OsString::from("-WIN")]).is_none());
+        assert!(
+            try_replay_verify([OsString::from("--replay-verify")])
+                .unwrap()
+                .is_err()
+        );
+        let bad = ["--replay-verify", "record.json", "--password", "unused"];
+        assert!(
+            try_replay_verify(bad.into_iter().map(OsString::from))
+                .unwrap()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn rendered_replay_routes_exact_values_and_requires_standalone_startup_and_new_output() {
+        let root = test_directory("replay-cd-values");
+        let path = root.join("record-cd.json");
+        let log = crate::sim::replay::ReplayLog::new(crate::sim::replay::ReplayHeader {
+            version: crate::sim::replay::REPLAY_VERSION,
+            tick_hz: 45,
+            seed: 7,
+            map_name: "XMP03T4.MAP".into(),
+            rules_hash: 0,
+            pixel_conversion_bounds: Default::default(),
+        });
+        std::fs::write(&path, serde_json::to_vec(&log).unwrap()).unwrap();
+        let mut args = vec![
+            OsString::from("--replay"),
+            path.into_os_string(),
+            OsString::from("--ra2-dir"),
+            root.clone().into_os_string(),
+        ];
+        assert!(
+            parse_launch_args(args.clone())
+                .unwrap_err()
+                .to_string()
+                .contains("no standalone startup")
+        );
+        let output = root.join("capture.png");
+        std::fs::write(&output, b"preserve").unwrap();
+        args.extend([
+            OsString::from("--replay-capture"),
+            output.clone().into_os_string(),
+        ]);
+        assert!(
+            parse_launch_args(args)
+                .unwrap_err()
+                .to_string()
+                .contains("already exists")
+        );
+        assert_eq!(std::fs::read(output).unwrap(), b"preserve");
+        assert!(parse_launch_args([OsString::from("--replay-capture")]).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_replay_uses_the_map_beside_it_only_when_present() {
+        let root = test_directory("replay-map-beside");
+        let replay = root.join("replay.json");
+        std::fs::write(&replay, b"{}").unwrap();
+        let sha256 = crate::util::sha256::sha256_hex(b"map");
+        assert_eq!(
+            map_beside_replay(&replay, "spawnmap.ini", &sha256).unwrap(),
+            None
+        );
+        std::fs::create_dir(root.join("Maps")).unwrap();
+        std::fs::write(root.join("Maps/spawnmap.ini"), b"map").unwrap();
+        assert_eq!(
+            map_beside_replay(&replay, "Maps/spawnmap.ini", &sha256).unwrap(),
+            None
+        );
+        let map = root.join("spawnmap.ini");
+        std::fs::write(&map, b"other").unwrap();
+        assert_eq!(
+            map_beside_replay(&replay, "spawnmap.ini", &sha256).unwrap(),
+            None
+        );
+        std::fs::write(&map, b"map").unwrap();
+        let found = map_beside_replay(&replay, "spawnmap.ini", &sha256)
+            .unwrap()
+            .unwrap();
+        assert_eq!(PathBuf::from(found), map.canonicalize().unwrap());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A `-SPAWN` game saves its replay to `replays/` in the folder that
+    /// holds its `spawnmap.ini`; two folders up is not searched.
+    #[test]
+    fn a_spawn_games_replay_finds_the_map_in_the_folder_above() {
+        let root = test_directory("replay-map-above");
+        std::fs::create_dir_all(root.join("game/replays")).unwrap();
+        let replay = root.join("game/replays/replay_tick90_1.json");
+        std::fs::write(&replay, b"{}").unwrap();
+        let sha256 = crate::util::sha256::sha256_hex(b"map");
+        std::fs::write(root.join("spawnmap.ini"), b"map").unwrap();
+        assert_eq!(
+            map_beside_replay(&replay, "spawnmap.ini", &sha256).unwrap(),
+            None
+        );
+        let map = root.join("game/spawnmap.ini");
+        std::fs::write(&map, b"map").unwrap();
+        let found = map_beside_replay(&replay, "spawnmap.ini", &sha256)
+            .unwrap()
+            .unwrap();
+        assert_eq!(PathBuf::from(found), map.canonicalize().unwrap());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn test_directory(label: &str) -> PathBuf {
         let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -393,6 +937,19 @@ mod tests {
         );
         assert_eq!(request.map_profile().unwrap().value.ticks, 30);
         assert!(request.profile().is_err());
+        assert_eq!(request.ares_setting(), None);
+        let mut off = args.clone();
+        off.extend(["--ares".into(), "off".into()]);
+        let AppLaunchMode::TacticalCapture(request) = parse_launch_args(off.clone()).unwrap()
+        else {
+            panic!("wrong capture lifecycle");
+        };
+        assert_eq!(
+            request.ares_setting(),
+            Some(crate::util::ares_launch::AresSetting::Off)
+        );
+        off.extend(["--ares".into(), "On".into()]);
+        assert!(parse_launch_args(off).is_err());
         std::fs::create_dir(&output).unwrap();
         assert!(parse_launch_args(args).is_err());
         std::fs::remove_dir(&output).unwrap();

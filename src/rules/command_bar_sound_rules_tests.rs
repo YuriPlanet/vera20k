@@ -31,6 +31,42 @@ Sounds=unregistered_sample
 ";
 
 #[test]
+fn generic_click_uses_registered_ids_and_retains_the_previous_rules_pass() {
+    // Rules666039=-1; AudioVisual66AD24..66AD56 retains the prior Voc ID
+    // when ReadString128 or FindIndex7514D0 fails.
+    let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(SOUND_CATALOG)));
+    let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+        IniFile::from_str("[General]\nFixtureOnly=1\n[AudioVisual]\nGenericClick=Unregistered\n"),
+        None,
+        IniFile::empty(),
+        sounds,
+        Default::default(),
+    )
+    .unwrap();
+    let invalid = owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::NonCampaign(None),
+            &IniFile::empty(),
+        )
+        .unwrap()
+        .into_parts()
+        .0;
+    assert_eq!(invalid.general.generic_click_sound, None);
+
+    let mode = IniFile::from_str("[AudioVisual]\nGenericClick=mApOpEn\n");
+    let map = IniFile::from_str("[AudioVisual]\nGenericClick=Unknown\n");
+    let retained = owner
+        .load_scenario(NativeScenarioRulesPrefix::NonCampaign(Some(&mode)), &map)
+        .unwrap()
+        .into_parts()
+        .0;
+    assert_eq!(
+        retained.general.generic_click_sound.as_deref(),
+        Some("MapOpen")
+    );
+}
+
+#[test]
 fn command_bar_sounds_start_invalid_and_wait_for_registered_binding() {
     let defaults = GeneralRules::default();
     assert_eq!(defaults.gui_open_sound(), None, "constructor665892=-1");

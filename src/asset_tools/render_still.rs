@@ -35,6 +35,7 @@ use std::path::{Path, PathBuf};
 use crate::asset_tools::canvas::{self, Rgba, SheetCell};
 use crate::asset_tools::identify;
 use crate::asset_tools::report::{ErrorReport, PaletteChoice, RenderOutputs, RenderReport};
+use crate::asset_tools::sanitise_name;
 use crate::asset_tools::verb_render::RenderOptions;
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::{Color, Palette};
@@ -170,7 +171,7 @@ pub fn run_pcx(
     let mut still = build_pcx_still(resolved.bytes, name, opts)?;
     warnings.append(&mut still.warnings);
 
-    let sanitised = sanitise_name(name);
+    let sanitised = sanitise_name(name, FALLBACK_DIR_NAME);
     let dir = prepare_output_dir(&opts.out, &sanitised)?;
     let png_path = dir.join(still_png_name(&sanitised));
     save(&png_path, &still.image)?;
@@ -383,7 +384,7 @@ pub fn run_pal(
     let mut render = build_pal_render(bytes, name, &source_archive, opts, house)?;
     warnings.append(&mut render.warnings);
 
-    let sanitised = sanitise_name(name);
+    let sanitised = sanitise_name(name, FALLBACK_DIR_NAME);
     let dir = prepare_output_dir(&opts.out, &sanitised)?;
 
     let base_path = dir.join(grid_png_name(&sanitised));
@@ -957,26 +958,6 @@ fn save(path: &Path, image: &Rgba) -> Result<(), ErrorReport> {
     })
 }
 
-/// Replace every character outside `[A-Za-z0-9._-]` so the name is safe as a
-/// directory and filename component on any platform.
-fn sanitise_name(name: &str) -> String {
-    let sanitised: String = name
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-') {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if sanitised.is_empty() {
-        FALLBACK_DIR_NAME.to_string()
-    } else {
-        sanitised
-    }
-}
-
 /// `<out>/render/<sanitised>/`, absolutised so the reported paths do not depend
 /// on the reader's working directory.
 fn render_dir(out: &Path, sanitised: &str) -> PathBuf {
@@ -1055,7 +1036,7 @@ fn fit_scale(w: u32, h: u32, requested: u32) -> Option<u32> {
     Some(scale)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 
@@ -1528,13 +1509,6 @@ mod tests {
     }
 
     // --- output paths ------------------------------------------------------
-
-    #[test]
-    fn sanitise_name_keeps_safe_characters_and_replaces_the_rest() {
-        assert_eq!(sanitise_name("sidebar.pal"), "sidebar.pal");
-        assert_eq!(sanitise_name("ra2\\dir/na me:x*?"), "ra2_dir_na_me_x__");
-        assert_eq!(sanitise_name(""), FALLBACK_DIR_NAME);
-    }
 
     #[test]
     fn generated_output_predicate_matches_only_our_own_files() {

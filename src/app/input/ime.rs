@@ -1,310 +1,246 @@
-//! OS input-method admission and committed-text routing.
+//! OS input-method (IME) text entry for chat and chooser edits.
 //!
-//! Winit reports committed composition text separately from physical key
-//! events. Route it through the same per-control insertion paths as ordinary
-//! text so native limits, filters and notifications remain authoritative.
+//! gamemd removes its main window's input context when it creates the window
+//! (CreateMainWindow `0x00777D80`: ImmGetContext, then
+//! `ImmAssociateContext(hWnd, 0)`), restores it when the in-game chat edit
+//! opens (MessageListClass::AddEdit `0x005D4210` calls `0x00778180`) and
+//! removes it again on every edit end (`0x007781A0`, from Input `0x005D4510`'s
+//! end paths and Start_Scenario `0x00683E6B`). The shell's NewEdits are child
+//! windows, which that call leaves alone. A finished character arrives as
+//! WM_IME_CHAR: the main window queues it at `0x00B730EC`
+//! (Game__MainWindowProc `0x007775C0`) and the chat pre-hook `0x0055E420`
+//! feeds each queued unit to Input first; NewEdit `0x00614B30` widens it
+//! (`0x007781B0`) and inserts it through its WM_CHAR path. The focused NewEdit
+//! paints the open composition (`0x00777EA0`) at its caret (`0x00623880`).
+//!
+//! VERA20k takes the composition and the finished text from winit's `Ime`
+//! events, and asks for an input method only while an edit takes keys:
+//! the in-game line, the WOL lobby (`0x10F`), the WOL game room and LAN setup
+//! (C2/C9, BC/BD), the LAN lobby (BB), and Choose Map's search line. Finished
+//! text goes through each screen's own text path, as WM_IME_CHAR does.
+//!
+//! Player-name edits take no input method: NewEdit `0x00614B30` drops units at
+//! or above 0x100 from them (`0x00615226..0x0061527A`, the byte-only filter),
+//! so gamemd lets in typed keys as code-page bytes but no widened
+//! input-method character such as Chinese.
+//!
+//! RESIDUAL: native's other NewEdits (login, page, buddy, saved-game
+//! descriptions) also take IME input; here they keep plain key text. In
+//! battle, native leaves the composition to the system's default IME window
+//! (OwnerDraw__ServiceIMEMessage `0x00778030` passes the composition messages
+//! to DefWindowProc). winit hides that window, so VERA20k draws the
+//! composition after the typed text in the NewEdit composition colour.
+//!
+//! winit's web backend has no input-method support; in the browser `web::ime`
+//! supplies these same events. RESIDUAL: there the candidate window opens at
+//! the edit's left end plus the composition, not after the typed text.
+//!
+//! ## Dependency rules
+//! - Part of the app layer — may depend on everything.
 
-use crate::app::{App, AppState};
-use crate::ui::game_screen::GameScreen;
-use winit::dpi::{PhysicalPosition, PhysicalSize, Position, Size};
+use crate::app::AppState;
+use crate::ui::shell::geom::RectPx;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::event::Ime;
 
-/// Identifies the focused edit, so switching between two edits is visible as
-/// a change even though both keep IME enabled.
-///
-/// The address of the edit's focus flag is stable for as long as that control
-/// exists and needs no per-state label field.
+/// The composition colour `[0xAC4618]`, COLORREF `0x9F9F` that
+/// ShellDialog__SubclassChildByClass `0x0060F9A0` sets.
+pub(crate) const COMPOSITION_RGB: [u8; 3] = [0x9F, 0x9F, 0x00];
+
+/// An edit that takes IME input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct FocusedEdit(usize);
-
-/// The focused edit plus the text the OS keyboard should start from.
-struct ActiveEdit {
-    identity: FocusedEdit,
-    text: String,
+pub(crate) enum ImeTarget {
+    InGameChat,
+    WolLobbyEdit,
+    SetupChat,
+    LanLobbyChat,
+    ChooseMapSearch,
+    #[cfg(target_os = "horizon")]
+    SkirmishPlayerName,
 }
 
-fn flag(edit: &impl EditFocus) -> Option<ActiveEdit> {
-    edit.focus_flag().then(|| ActiveEdit {
-        identity: FocusedEdit(edit as *const _ as usize),
-        text: edit.text(),
-    })
+/// Process-local input-method state. Presentation-only: never serialized or
+/// read by the deterministic simulation.
+#[derive(Debug, Default)]
+pub(crate) struct ImeState {
+    /// The value last handed to `Window::set_ime_allowed`.
+    allowed: bool,
+    target: Option<ImeTarget>,
+    /// The composition string `0x00B73318`, in UTF-16 units.
+    composition: Vec<u16>,
+    /// The composition cursor `0x00B73568`, in UTF-16 units.
+    cursor: usize,
+    /// The area last handed to `Window::set_ime_cursor_area`.
+    area: Option<RectPx>,
 }
 
-/// The edit that accepts text and currently owns focus, if any.
-fn focused_edit(state: &AppState) -> Option<ActiveEdit> {
-    if crate::app::frontend::shell_transition::blocks_shell_input(state) {
+impl ImeState {
+    /// The open composition and its cursor, when `target` owns it.
+    pub(crate) fn composition(&self, target: ImeTarget) -> Option<(&[u16], usize)> {
+        (self.target == Some(target) && !self.composition.is_empty())
+            .then_some((self.composition.as_slice(), self.cursor))
+    }
+
+    /// The open composition and its cursor, whichever edit owns it (the
+    /// focused edit of the screen that routed the input method).
+    pub(crate) fn open_composition(&self) -> Option<(&[u16], usize)> {
+        let target = self.target?;
+        self.composition(target)
+    }
+
+    /// While a composition is open, keys go to the input method (Windows
+    /// delivers them as VK_PROCESSKEY), not to the edit.
+    pub(crate) fn composing(&self) -> bool {
+        !self.composition.is_empty()
+    }
+
+    /// OwnerDraw__CancelIMEComposition `0x00777E00`.
+    fn cancel(&mut self) {
+        self.composition.clear();
+        self.cursor = 0;
+    }
+}
+
+/// The edit that takes keys now, with its rectangle in window pixels.
+/// The dialogs the key dispatch serves first leave none.
+fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
+    #[cfg(target_os = "horizon")]
+    if state.platform.window_active
+        && crate::ui::skirmish_shell::page::player_name_focused(&state.frontend.shell_controller)
+    {
+        // Horizon uses system software keyboard, which ignores the candidate position.
+        return Some((ImeTarget::SkirmishPlayerName, RectPx { x: 0, y: 0, w: 1, h: 1 }));
+    }
+    if state.main_menu_dialog_open()
+        || crate::app::input::coop_score::active(state)
+        || crate::app::frontend::preview_zoom::is_open(state)
+    {
         return None;
     }
-    if state.frontend.screen == GameScreen::InGame
-        && state.match_state.match_presentation.message_list.editing()
-    {
-        return Some(ActiveEdit {
-            identity: FocusedEdit(
-                &state.match_state.match_presentation.message_list as *const _ as usize,
-            ),
-            text: String::new(),
-        });
-    }
-    if crate::app::input::coop_score::active(state) {
-        return state
-            .frontend
-            .coop_score_page
-            .as_ref()
-            .and_then(|page| flag(&page.ui.chat.edit));
-    }
-    if let Some(dialog) = state.frontend.network_options.as_ref() {
-        if dialog.pending_message().is_some() {
-            return None;
-        }
-        return flag(&dialog.socket)
-            .or_else(|| flag(&dialog.destination))
-            .or_else(|| flag(&dialog.port));
-    }
-    if state.frontend.screen == GameScreen::MainMenu && state.frontend.shell_route.lan_lobby() {
-        let runtime = state.frontend.lan.as_ref()?;
-        if runtime.modal.is_some() || !runtime.lobby.enabled {
-            return None;
-        }
-        return flag(&runtime.lobby.name).or_else(|| flag(&runtime.lobby.chat.edit));
-    }
-    if state.frontend.screen == GameScreen::MainMenu
-        && state.frontend.shell_route.network_setup()
-        && state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .is_none()
-    {
-        let ui = state.frontend.multiplayer_setup.as_ref()?;
-        if ui.focused_control != crate::ui::multiplayer_setup::CHAT {
-            return None;
-        }
-        return flag(&ui.chat.edit);
-    }
-    if App::native_skirmish_shell_active(state) {
-        if let Some(browser) = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_ref()
-        {
-            if browser.prompt.is_some() {
-                return None;
-            }
-            return flag(&browser.description_edit);
-        }
-        if state.frontend.skirmish_shell_state.player_name_edit.focused {
-            return flag(&state.frontend.skirmish_shell_state.player_name_edit);
-        }
-    }
-    if state.frontend.screen == GameScreen::InGame
-        && matches!(
-            state.match_state.match_presentation.in_game_menu,
-            crate::ui::pause_menu::InGameMenuState::SavedGame(_)
-        )
-    {
-        let browser = state
-            .match_state
-            .match_presentation
-            .saved_game_browser
-            .as_ref()?;
-        if browser.prompt.is_some() {
-            return None;
-        }
-        return flag(&browser.description_edit);
-    }
-    if crate::app::shell_wol::text_input_active(state) {
-        return Some(ActiveEdit {
-            identity: FocusedEdit(&state.frontend.wol as *const _ as usize),
-            text: String::new(),
-        });
-    }
-    None
+    [
+        (
+            ImeTarget::InGameChat,
+            crate::app::input::messages::ime_edit_rect(state),
+        ),
+        (
+            ImeTarget::LanLobbyChat,
+            crate::app::shell_lan::ime_chat_rect(state),
+        ),
+        (
+            ImeTarget::SetupChat,
+            crate::app::input::multiplayer_setup::ime_chat_rect(state),
+        ),
+        (
+            ImeTarget::WolLobbyEdit,
+            crate::app::shell_wol::lobby::ime_edit_rect(state),
+        ),
+        (
+            ImeTarget::ChooseMapSearch,
+            crate::app::App::choose_map_search_ime_rect(state),
+        ),
+    ]
+    .into_iter()
+    .find_map(|(target, rect)| rect.map(|rect| (target, rect)))
 }
 
-/// Empty the focused edit before the ordinary insertion path runs, so the
-/// keyboard's fully edited value replaces the old text.
-///
-/// Only the fields the software keyboard is opened for are listed. These edits
-/// have no selection range, so they are cleared outright; an edit that does
-/// support selection keeps that mechanism instead.
-#[cfg(target_os = "horizon")]
-fn select_focused_edit_for_replacement(state: &mut AppState) {
-    fn clear(edit: &mut crate::ui::skirmish_shell::SavedSeedDescriptionEdit) {
-        if edit.focused {
-            edit.set_units_limited(std::iter::empty::<u16>(), 0);
-        }
+/// Ask for an input method exactly while a supported edit takes keys
+/// (`0x00778180` / `0x007781A0`), and keep the system's candidate window at
+/// that edit.
+pub(crate) fn sync(state: &mut AppState) {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    for ime in crate::web::ime::take_events() {
+        event(state, ime);
     }
-    if App::native_skirmish_shell_active(state) {
-        let shell = &mut state.frontend.skirmish_shell_state;
-        if let Some(browser) = shell.saved_seed_browser.as_mut() {
-            if browser.prompt.is_none() {
-                clear(&mut browser.description_edit);
-                if browser.description_edit.focused {
-                    return;
-                }
-            }
-        }
-        if shell.player_name_edit.focused {
-            shell.player_name_edit.focus_select_all();
-            return;
-        }
+    let found = target(state);
+    let target = found.map(|(target, _)| target);
+    let platform = &mut state.platform;
+    let ime = &mut platform.ime;
+    let focus_changed = ime.target != target;
+    if focus_changed {
+        ime.cancel();
+        ime.target = target;
     }
-    if let Some(dialog) = state.frontend.network_options.as_mut() {
-        if dialog.pending_message().is_none() {
-            for edit in [&mut dialog.socket, &mut dialog.destination, &mut dialog.port] {
-                clear(edit);
-            }
-        }
-    }
-}
-
-pub(crate) trait EditFocus {
-    fn focus_flag(&self) -> bool;
-    /// The edit's current content, so the OS keyboard can start from it
-    /// instead of appending to whatever the player typed last time.
-    fn text(&self) -> String;
-}
-
-impl EditFocus for crate::ui::skirmish_shell::PlayerNameEditState {
-    fn focus_flag(&self) -> bool {
-        self.focused
-    }
-    fn text(&self) -> String {
-        self.text.clone()
-    }
-}
-
-impl EditFocus for crate::ui::skirmish_shell::SavedSeedDescriptionEdit {
-    fn focus_flag(&self) -> bool {
-        self.focused
-    }
-    fn text(&self) -> String {
-        self.display_text()
-    }
-}
-
-/// Whether an edit that accepts text currently owns focus.
-pub(crate) fn text_input_active(state: &AppState) -> bool {
-    focused_edit(state).is_some()
-}
-
-/// Insert one committed string into whichever edit owned focus when the IME
-/// produced it. Returns true when an owner consumed the event.
-pub(crate) fn commit(state: &mut AppState, text: &str) -> bool {
-    if text.is_empty() || !text_input_active(state) {
-        return false;
-    }
-
-    // Horizon: the software keyboard opens pre-filled with the edit's content
-    // and returns the whole edited value. Select everything before handing it
-    // to the ordinary insertion path, which then consumes the selection and
-    // replaces the old text instead of appending to it. Desktop keeps plain
-    // per-character insertion because it has physical keys.
-    #[cfg(target_os = "horizon")]
-    select_focused_edit_for_replacement(state);
-
-    if state.frontend.screen == GameScreen::InGame
-        && state.match_state.match_presentation.message_list.editing()
-    {
-        crate::app::input::chat::commit_text(state, text);
-        state.platform.window.request_redraw();
-        return true;
-    }
-    if crate::app::input::coop_score::active(state) {
-        crate::app::input::coop_score::key_press(state, None, Some(text));
-        return true;
-    }
-    if state.frontend.network_options.is_some() {
-        crate::app::input::network_options::key_press(state, None, Some(text));
-        return true;
-    }
-    if state.frontend.screen == GameScreen::MainMenu && state.frontend.shell_route.lan_lobby() {
-        crate::app::shell_lan::key_press(state, None, Some(text));
-        return true;
-    }
-    if state.frontend.screen == GameScreen::MainMenu
-        && state.frontend.shell_route.network_setup()
-        && state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .is_none()
-    {
-        crate::app::input::multiplayer_setup::key_press(state, None, Some(text));
-        return true;
-    }
-    if App::native_skirmish_shell_active(state) {
-        if state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .is_some()
-        {
-            App::handle_saved_seed_browser_key(state, None, Some(text));
-            state.platform.window.request_redraw();
-            return true;
-        }
-        if state.frontend.skirmish_shell_state.player_name_edit.focused {
-            return App::handle_skirmish_shell_text_input(state, text);
-        }
-    }
-    if state.frontend.screen == GameScreen::InGame
-        && matches!(
-            state.match_state.match_presentation.in_game_menu,
-            crate::ui::pause_menu::InGameMenuState::SavedGame(_)
-        )
-    {
-        App::saved_game_key(state, None, Some(text));
-        return true;
-    }
-    if crate::app::shell_wol::commit_text(state, text) {
-        return true;
-    }
-    false
-}
-
-/// Keep the platform IME context aligned with edit focus. Desktop backends use
-/// this to start/stop composition; Horizon uses the same signal to open its
-/// software keyboard once per focus acquisition.
-pub(crate) fn sync_window(state: &mut AppState) {
-    let focused = if state.platform.window_active {
-        focused_edit(state)
-    } else {
-        None
-    };
-    let active = focused.is_some();
-    // Reopening when a *different* edit takes focus matters as much as the
-    // first one: the software keyboard is a one-shot modal, so a player who
-    // taps a second text field needs it raised again even though IME stayed
-    // enabled the whole time.
-    let identity = focused.as_ref().map(|edit| edit.identity);
-    let changed =
-        active != state.platform.ime_allowed || identity != state.platform.ime_focus;
-    if changed {
-        state.platform.ime_allowed = active;
-        state.platform.ime_focus = identity;
-        // A focused edit opens the keyboard pre-filled with its own content,
-        // so confirming replaces the value instead of appending to it. The
-        // setter is a Horizon-backend extension, absent from desktop winit.
+    if ime.allowed != target.is_some() || (cfg!(target_os = "horizon") && focus_changed) {
+        ime.allowed = target.is_some();
+        ime.area = None;
         #[cfg(target_os = "horizon")]
-        state.platform.window.set_ime_initial_text(
-            focused.as_ref().map_or("", |edit| edit.text.as_str()),
+        platform.window.set_ime_initial_text(if target == Some(ImeTarget::SkirmishPlayerName) {
+            &state.frontend.skirmish_shell_state.player_name
+        } else {
+            ""
+        });
+        platform.window.set_ime_allowed(ime.allowed);
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        crate::web::ime::set_allowed(ime.allowed);
+    }
+    if let Some((_, rect)) = found
+        && ime.area != Some(rect)
+    {
+        ime.area = Some(rect);
+        platform.window.set_ime_cursor_area(
+            PhysicalPosition::new(rect.x, rect.y),
+            PhysicalSize::new(rect.w.max(1) as u32, rect.h.max(1) as u32),
         );
-        state.platform.window.set_ime_allowed(active);
-        if active {
-            state.platform.ime_cursor = None;
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        crate::web::ime::set_area(rect.x, rect.y, rect.w.max(1) as u32, rect.h.max(1) as u32);
+    }
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    if ime.allowed {
+        crate::web::ime::keep_focus();
+    }
+}
+
+/// One winit `Ime` event.
+pub(crate) fn event(state: &mut AppState, event: Ime) {
+    match event {
+        Ime::Preedit(text, cursor) => {
+            let ime = &mut state.platform.ime;
+            ime.composition = text.encode_utf16().collect();
+            // winit reports the cursor as byte offsets, or none when hidden.
+            ime.cursor = cursor
+                .and_then(|(start, _)| text.get(..start))
+                .map_or(ime.composition.len(), |prefix| {
+                    prefix.encode_utf16().count()
+                });
+            if target(state).is_some_and(|(target, _)| target == ImeTarget::InGameChat) {
+                crate::app::input::chat::composition_changed(state);
+            }
         }
+        Ime::Commit(text) => {
+            state.platform.ime.cancel();
+            commit(state, &text);
+        }
+        Ime::Disabled => state.platform.ime.cancel(),
+        Ime::Enabled => {}
     }
-    if !active {
-        return;
-    }
-    let (x, y) = state.window_cursor_position();
-    let cursor = (x.round() as i32, y.round() as i32);
-    if state.platform.ime_cursor != Some(cursor) {
-        state.platform.ime_cursor = Some(cursor);
-        state.platform.window.set_ime_cursor_area(
-            Position::Physical(PhysicalPosition::new(cursor.0, cursor.1)),
-            Size::Physical(PhysicalSize::new(1, 1)),
-        );
+    state.platform.window.request_redraw();
+}
+
+/// WM_IME_CHAR's consumers: each screen's own text path.
+fn commit(state: &mut AppState, text: &str) {
+    match target(state).map(|(target, _)| target) {
+        Some(ImeTarget::InGameChat) => crate::app::input::chat::commit_text(state, text),
+        Some(ImeTarget::LanLobbyChat) => crate::app::shell_lan::key_press(state, None, Some(text)),
+        Some(ImeTarget::SetupChat) => {
+            crate::app::input::multiplayer_setup::key_press(state, None, Some(text))
+        }
+        Some(ImeTarget::WolLobbyEdit) => {
+            crate::app::shell_wol::lobby::key_press(state, None, Some(text))
+        }
+        Some(ImeTarget::ChooseMapSearch) => {
+            crate::app::App::choose_map_search_text(state, text);
+        }
+        #[cfg(target_os = "horizon")]
+        Some(ImeTarget::SkirmishPlayerName) => {
+            let frontend = &mut state.frontend;
+            crate::ui::skirmish_shell::page::replace_player_name(
+                &mut frontend.shell_controller,
+                &mut frontend.skirmish_shell_state,
+                text,
+                |text| state.renderer.bit_font.text_width(text),
+            );
+            state.platform.window.set_ime_initial_text(&frontend.skirmish_shell_state.player_name);
+        }
+        None => {}
     }
 }

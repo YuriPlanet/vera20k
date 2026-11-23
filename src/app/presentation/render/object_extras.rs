@@ -1,12 +1,96 @@
 //! Replay clock, wrench, rank, health, scale pips and lines in Extras order.
 //! Other status families retain their existing owners and open parity bounds.
-use super::draw_plan_lowering::{ObjectExtrasRun, ObjectLayerPass};
+use super::draw_plan_lowering::{FrameHealthBar, ObjectExtrasRun, ObjectLayerPass};
 use crate::app::presentation::sidebar_render::begin_main_load_pass;
 use crate::app::presentation::ui_overlays::StatusTextRun;
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::selection_overlay::SelectionOverlay;
 use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::terrain_draw::{PackedCompositePiece, PackedSpriteKind, TerrainDrawRenderer};
+
+/// Wheel zoom has no stock YR equivalent. Health strips rasterize after world
+/// resampling: mobile strips keep their pixel size; building strips follow the
+/// projected roof. Keep retained parent order and one upload;
+/// removing these ranges also suppresses the initial Building Extras visit.
+/// At native zoom the original interleaved Display replay stays authoritative.
+pub(super) fn defer_health_to_frame(layer: &mut ObjectLayerPass, camera: [f32; 2], zoom: f32) {
+    if zoom == 1.0 {
+        return;
+    }
+    for run in &mut layer.extras_runs {
+        let ObjectExtrasRun::Status {
+            background,
+            shield_background,
+            fills,
+            ..
+        } = run
+        else {
+            continue;
+        };
+        if background.is_none() && shield_background.is_none() && fills.start == fills.end {
+            continue;
+        }
+        let health = FrameHealthBar {
+            background: background.take(),
+            shield_background: shield_background.take(),
+            fills: std::mem::replace(fills, fills.start..fills.start),
+        };
+        let first = health
+            .background
+            .or(health.shield_background)
+            .unwrap_or(health.fills.start);
+        let origin = layer.extras_instances[first as usize].position;
+        let frame_origin: [f32; 2] =
+            std::array::from_fn(|axis| ((origin[axis] - camera[axis]) * zoom + 0.5).floor());
+        for index in health
+            .background
+            .into_iter()
+            .chain(health.shield_background)
+            .chain(health.fills.clone())
+        {
+            let instance = &mut layer.extras_instances[index as usize];
+            // The producer compensates mobile pips and zoomed-out building
+            // health by 1/zoom; other building rows retain world dimensions.
+            // Snap on the FINAL lattice, never on the native world target.
+            // Quantize one common origin and the integer local offsets:
+            // independently rounding large world coordinates at a half-pixel
+            // tie gives adjacent pips different results after f32 cancellation.
+            for axis in 0..2 {
+                let offset = ((instance.position[axis] - origin[axis]) * zoom).round();
+                instance.position[axis] = camera[axis] + (frame_origin[axis] + offset) / zoom;
+                instance.size[axis] = (instance.size[axis] * zoom).round() / zoom;
+            }
+        }
+        layer.frame_health.push(health);
+    }
+}
+
+/// Final-frame health keeps the same PIPBRD/E00 and PIPS/600 material owner
+/// as native Extras. Zoomed health is UI above the completed battlefield,
+/// before timers/chrome; it never passes through the world filter twice.
+pub(super) fn draw_frame_health<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    batch: &'a BatchRenderer,
+    overlay: Option<&'a SelectionOverlay>,
+    buffer: Option<&'a wgpu::Buffer>,
+    layer: &ObjectLayerPass,
+    cameras: [&'a wgpu::BindGroup; 2],
+) {
+    let (Some(overlay), Some(buffer)) = (overlay, buffer) else {
+        return;
+    };
+    for health in &layer.frame_health {
+        draw_health_bar(
+            pass,
+            batch,
+            overlay,
+            buffer,
+            [health.background, health.shield_background],
+            health.fills.clone(),
+            cameras,
+        );
+    }
+}
 
 /// Native6F5190/70A990/6F64A0: rank and PIPBRD E00 consume A (493DF0);
 /// PIPS/PIPS2 600 bypasses A (4912B0). Neither shape reads or writes Z. Commands
@@ -26,7 +110,7 @@ pub(super) fn draw_object_extras(
     let mut next = 0;
     while next < layer.extras_runs.len() {
         if let ObjectExtrasRun::Lines { batch, .. } = &layer.extras_runs[next] {
-            terrain.draw_surface_lines(encoder, color, *batch);
+            terrain.draw_surface_lines(encoder, color, std::slice::from_ref(batch));
             next += 1;
             continue;
         }
@@ -127,23 +211,64 @@ pub(super) fn draw_status_runs(
             continue;
         }
         let end = rank_run_end(runs, next);
-        let run = &runs[next];
-        draw_status_prefix(&mut pass, batch, overlay, buffer, run, (end - next) as u32);
-        let ObjectExtrasRun::Status { self_heal, .. } = run else {
-            unreachable!("line parents fence status attachment passes");
-        };
-        if let (Some(index), Some(shape)) = (self_heal, overlay.pips()) {
-            assert_eq!(
-                instances[*index as usize].draw_state.native_selector_bits(),
-                0
-            );
-            batch.draw_with_buffer_passthrough_range(&mut pass, shape.texture(), buffer, *index, 1);
-        }
-        draw_status_group(&mut pass, batch, overlay, buffer, font, run);
+        draw_status_run(
+            &mut pass,
+            batch,
+            overlay,
+            buffer,
+            font,
+            instances,
+            &runs[next],
+            (end - next) as u32,
+        );
         next = end;
     }
     drop(pass);
     terrain.note_external_passes(encoder, 1);
+}
+
+/// One status parent without a pulse marker: only ordinary stores, which
+/// compose in submission order inside any main load pass. `rank_count`
+/// extends its rank pip over that many following rank-only parents.
+pub(super) fn draw_status_run<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    batch: &'a BatchRenderer,
+    overlay: &'a SelectionOverlay,
+    buffer: &'a wgpu::Buffer,
+    font: Option<&'a BatchTexture>,
+    instances: &[SpriteInstance],
+    run: &ObjectExtrasRun,
+    rank_count: u32,
+) {
+    draw_status_prefix(pass, batch, overlay, buffer, run, rank_count);
+    let ObjectExtrasRun::Status { self_heal, .. } = run else {
+        unreachable!("line parents fence status attachment passes");
+    };
+    if let (Some(index), Some(shape)) = (self_heal, overlay.pips()) {
+        assert_eq!(
+            instances[*index as usize].draw_state.native_selector_bits(),
+            0
+        );
+        batch.draw_with_buffer_passthrough_range(pass, shape.texture(), buffer, *index, 1);
+    }
+    draw_status_group(pass, batch, overlay, buffer, font, run);
+}
+
+/// Whether this status parent's self-heal marker is a packed composite,
+/// which needs passes of its own rather than ordinary stores.
+pub(super) fn has_pulse_marker(run: &ObjectExtrasRun, instances: &[SpriteInstance]) -> bool {
+    pulse_marker(run, instances).is_some()
+}
+
+/// Every pixel one status parent's stores can reach, or `None` when none is
+/// visible.
+pub(super) fn status_footprint(
+    terrain: &TerrainDrawRenderer,
+    tactical: [u32; 4],
+    run: &ObjectExtrasRun,
+    instances: &[SpriteInstance],
+) -> Option<[u32; 4]> {
+    terrain.sprites_footprint(status_instances(run, instances), tactical)
 }
 
 fn pulse_marker<'a>(
@@ -170,6 +295,7 @@ fn status_instances<'a>(
     let ObjectExtrasRun::Status {
         bomb_clock,
         wrench,
+        power_off,
         rank,
         background,
         shield_background,
@@ -178,17 +304,20 @@ fn status_instances<'a>(
         self_heal,
         group_rectangles,
         group_text,
+        digital_text,
+        digital_shapes,
         talk_bubble,
         ..
     } = run
     else {
-        unreachable!("a pulse belongs to a status run");
+        unreachable!("only a status run has status instances");
     };
     let mut first = u32::MAX;
     let mut last = 0;
     for index in [
         *bomb_clock,
         *wrench,
+        *power_off,
         *rank,
         *background,
         *shield_background,
@@ -200,6 +329,14 @@ fn status_instances<'a>(
     {
         first = first.min(index);
         last = last.max(index + 1);
+    }
+    for (_, index) in digital_shapes {
+        first = first.min(*index);
+        last = last.max(*index + 1);
+    }
+    for (rectangles, text) in digital_text {
+        first = first.min(rectangles.start);
+        last = last.max(text.end);
     }
     for range in [fills, scale, group_rectangles, group_text] {
         if !range.is_empty() {
@@ -221,7 +358,9 @@ fn draw_status_prefix<'a>(
     let ObjectExtrasRun::Status {
         bomb_clock,
         wrench,
+        power_off,
         rank,
+        rank_insignia,
         background,
         shield_background,
         fills,
@@ -239,25 +378,29 @@ fn draw_status_prefix<'a>(
         //6F5340: MOUSEPAL N1, E00/493DF0 consumes A and bypasses Z.
         batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
     }
-    if let (Some(index), Some(shape)) = (rank, overlay.pips()) {
+    // Ares 10049FE0 draws POWEROFF.SHP after the wrench with the same flags
+    // (`power_off` is `None` unless the Rules were read the Ares way).
+    if let (Some(index), Some(shape)) = (power_off, overlay.power_off()) {
+        batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
+    }
+    // A custom insignia rank was cut from its own SHP; binding the PIPS strip
+    // would stretch that whole strip over the insignia's quad.
+    let rank_shape = match rank_insignia {
+        Some(name) => overlay.insignia_shape(name),
+        None => overlay.pips(),
+    };
+    if let (Some(index), Some(shape)) = (rank, rank_shape) {
         batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, rank_count);
     }
-    if let Some(shape) = overlay.pipbrd() {
-        // Both health and Phobos shield borders are PIPBRD/E00. Their UVs
-        // belong to this texture, independently of the following PIPS fills.
-        for index in [background, shield_background].into_iter().flatten() {
-            batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
-        }
-    }
-    if let Some(shape) = overlay.pips() {
-        batch.draw_with_buffer_passthrough_range(
-            pass,
-            shape.texture(),
-            buffer,
-            fills.start,
-            fills.end - fills.start,
-        );
-    }
+    draw_health_bar(
+        pass,
+        batch,
+        overlay,
+        buffer,
+        [*background, *shield_background],
+        fills.clone(),
+        [batch.camera_bind_group(), batch.surface_camera_bind_group()],
+    );
     if let Some(shape) = overlay.scale_pips() {
         //709A90 physical PIPS2 uses plain600 neutral-A/no-Z stores.
         batch.draw_with_buffer_passthrough_range(
@@ -266,6 +409,35 @@ fn draw_status_prefix<'a>(
             buffer,
             scale.start,
             scale.end - scale.start,
+        );
+    }
+}
+
+/// Native6F64A0: PIPBRD E00 reads A; PIPS600 bypasses it. Both bypass Z.
+fn draw_health_bar<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    batch: &'a BatchRenderer,
+    overlay: &'a SelectionOverlay,
+    buffer: &'a wgpu::Buffer,
+    backgrounds: [Option<u32>; 2],
+    fills: std::ops::Range<u32>,
+    cameras: [&'a wgpu::BindGroup; 2],
+) {
+    if let Some(shape) = overlay.pipbrd() {
+        // Both health and Phobos shield borders are PIPBRD/E00. Their UVs
+        // belong to this texture, independently of the following PIPS fills.
+        for index in backgrounds.into_iter().flatten() {
+            batch.draw_passthrough_range_bound(pass, shape.texture(), buffer, cameras[0], index, 1);
+        }
+    }
+    if let Some(shape) = overlay.pips() {
+        batch.draw_passthrough_range_bound(
+            pass,
+            shape.texture(),
+            buffer,
+            cameras[1],
+            fills.start,
+            fills.end - fills.start,
         );
     }
 }
@@ -281,6 +453,8 @@ fn draw_status_group<'a>(
     let ObjectExtrasRun::Status {
         group_rectangles,
         group_text,
+        digital_text,
+        digital_shapes,
         talk_bubble,
         ..
     } = run
@@ -297,7 +471,28 @@ fn draw_status_group<'a>(
         buffer,
         group_rectangles.clone(),
         group_text.clone(),
+        batch.surface_camera_bind_group(),
     );
+    // Phobos DigitalDisplay, then VERA's Convenience Help rows: each entry's
+    // backing then glyphs in list order, using the same GAME.FNT material.
+    for (rectangles, text) in digital_text {
+        draw_status_text_material(
+            pass,
+            batch,
+            overlay.white_texture(),
+            font,
+            buffer,
+            rectangles.clone(),
+            text.clone(),
+            batch.surface_camera_bind_group(),
+        );
+    }
+    #[cfg(feature = "phobos")]
+    for (catalog, index) in digital_shapes {
+        if let Some(shape) = overlay.digital_shape(*catalog as usize) {
+            batch.draw_with_buffer_passthrough_range(pass, shape.texture(), buffer, *index, 1);
+        }
+    }
     if let (Some(index), Some(shape)) = (talk_bubble, overlay.talk_bubble()) {
         //6F5EDE flags600: ordinary centered, opaque plain53-row Convert,
         //no A/Z access. The existing passthrough material owns this path.
@@ -319,6 +514,7 @@ pub(super) fn draw_building_status_text(
     buffer: Option<&wgpu::Buffer>,
     font: Option<&BatchTexture>,
     runs: &[StatusTextRun],
+    camera: &wgpu::BindGroup,
 ) {
     let (Some(overlay), Some(buffer)) = (overlay, buffer) else {
         return;
@@ -337,6 +533,7 @@ pub(super) fn draw_building_status_text(
             buffer,
             run.rectangles.clone(),
             run.text.clone(),
+            camera,
         );
     }
     drop(pass);
@@ -353,19 +550,22 @@ fn draw_status_text_material<'a>(
     buffer: &'a wgpu::Buffer,
     rectangles: std::ops::Range<u32>,
     text: std::ops::Range<u32>,
+    camera: &'a wgpu::BindGroup,
 ) {
-    batch.draw_with_buffer_passthrough_range(
+    batch.draw_passthrough_range_bound(
         pass,
         white,
         buffer,
+        camera,
         rectangles.start,
         rectangles.end - rectangles.start,
     );
     if let Some(font) = font {
-        batch.draw_with_buffer_passthrough_range(
+        batch.draw_passthrough_range_bound(
             pass,
             font,
             buffer,
+            camera,
             text.start,
             text.end - text.start,
         );
@@ -379,7 +579,9 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
     let ObjectExtrasRun::Status {
         bomb_clock: None,
         wrench: None,
+        power_off: None,
         rank: Some(first),
+        rank_insignia: first_insignia,
         background: None,
         shield_background: None,
         fills,
@@ -404,7 +606,9 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
     while let Some(ObjectExtrasRun::Status {
         bomb_clock: None,
         wrench: None,
+        power_off: None,
         rank: Some(index),
+        rank_insignia,
         background: None,
         shield_background: None,
         fills,
@@ -421,6 +625,7 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
             || !group_rectangles.is_empty()
             || !group_text.is_empty()
             || *index != *first + (end - start) as u32
+            || rank_insignia != first_insignia
         {
             break;
         }
@@ -428,3 +633,7 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
     }
     end
 }
+
+#[cfg(all(test, tests_app_presentation_render))]
+#[path = "object_extras_tests.rs"]
+mod tests;

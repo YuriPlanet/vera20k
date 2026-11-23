@@ -12,6 +12,10 @@
 //! `g_MuteSWLaunches` label is wrong), and the connection nodes
 //! `[0xA8DA78]`; it refuses pages only from a match.
 
+use crate::ui::wol_account::NAME_LIMIT;
+use crate::ui::wol_options::WolPreferences;
+use crate::util::native_string::wcs_starts_with_ignore_case;
+
 /// The localized command words the parser compares against.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WolChatCommands {
@@ -41,23 +45,6 @@ pub(crate) enum WolChatLine {
 }
 
 const SPACE: u16 = b' ' as u16;
-
-fn ascii_lower(unit: u16) -> u16 {
-    if (0x41..0x5B).contains(&unit) {
-        unit + 0x20
-    } else {
-        unit
-    }
-}
-
-/// `007DDE80` in the C locale: ASCII-only case folding.
-fn starts_with_ignore_case(line: &[u16], prefix: &[u16]) -> bool {
-    line.len() >= prefix.len()
-        && line
-            .iter()
-            .zip(prefix)
-            .all(|(a, b)| ascii_lower(*a) == ascii_lower(*b))
-}
 
 fn skip_spaces(rest: &[u16]) -> &[u16] {
     let start = rest
@@ -131,7 +118,7 @@ pub(crate) fn parse_lobby(
         (&filters.buddy, WolChatFilter::Buddy),
         (&filters.clan, WolChatFilter::Clan),
     ] {
-        if !word.is_empty() && starts_with_ignore_case(line, word) {
+        if !word.is_empty() && wcs_starts_with_ignore_case(line, word) {
             return WolLobbyChatLine::Filter(filter);
         }
     }
@@ -154,15 +141,16 @@ fn parse_page_or_reply(
     commands: &WolChatCommands,
     last_pager_known: bool,
 ) -> Option<WolChatLine> {
-    if !commands.page.is_empty() && starts_with_ignore_case(line, &commands.page) {
+    if !commands.page.is_empty() && wcs_starts_with_ignore_case(line, &commands.page) {
         let rest = skip_spaces(&line[commands.page.len()..]);
-        // 0078A78C..A7B6: at most 11 name units are copied; 0078A7E0 then
-        // accepts at most 10 (`cmp ebp, 0xa; jle`).
-        let (name, rest) = take_word(rest, 11);
+        // 0078A78C..A7B6 copy at most 11 name units and 0078A7E0 accepts
+        // at most 10 (`cmp ebp, 0xa; jle`). VERA deviation: the lobby's
+        // names run to 24 units, so 25 are copied and 24 accepted.
+        let (name, rest) = take_word(rest, NAME_LIMIT + 1);
         let text = skip_spaces(rest);
         return Some(if name.is_empty() {
             WolChatLine::Notice("TXT_NO_NAME_SPECIFIED")
-        } else if name.len() > 10 {
+        } else if name.len() > NAME_LIMIT {
             WolChatLine::Notice("TXT_NAME_TOO_LONG")
         } else if text.is_empty() {
             WolChatLine::Notice("TXT_CANT_SEND_BLANK_PAGE")
@@ -173,7 +161,8 @@ fn parse_page_or_reply(
             }
         });
     }
-    let reply_long = !commands.reply.is_empty() && starts_with_ignore_case(line, &commands.reply);
+    let reply_long =
+        !commands.reply.is_empty() && wcs_starts_with_ignore_case(line, &commands.reply);
     let reply_short = !commands.reply_short.is_empty() && line.starts_with(&commands.reply_short);
     if reply_long || reply_short {
         // 0078A9B0: the long word's length is used only for an exact-case
@@ -201,7 +190,8 @@ fn parse_locate_or_say(line: &[u16], commands: &WolChatCommands) -> WolChatLine 
     if !commands.online.is_empty() && line.starts_with(&commands.online) {
         let rest = skip_spaces(&line[commands.online.len()..]);
         // 0078A517: `cmp ebx, 0xa; jge` stops after ten units, silently.
-        let (name, _) = take_word(rest, 10);
+        // VERA deviation: after the lobby's 24-unit names.
+        let (name, _) = take_word(rest, NAME_LIMIT);
         return if name.is_empty() {
             WolChatLine::Notice("TXT_NO_NAME")
         } else {
@@ -223,6 +213,7 @@ pub(crate) fn trim_line_end(text: &[u16]) -> &[u16] {
 }
 
 /// Chat-log colors of the C2 echo lines (BGR-ordered native values).
+/// `SAY_COLOR` is `[0x7EEF44]`, also the LAN lobbies' and BC6's echo.
 pub(crate) const SAY_COLOR: u32 = 0x40FFFF;
 pub(crate) const PRIVATE_COLOR: u32 = 0xFF8080;
 pub(crate) const EMOTE_COLOR: u32 = 0x3050FF;
@@ -257,6 +248,10 @@ pub(crate) const PUBLIC_COLOR: u32 = 0xF0F0;
 pub(crate) const OPERATOR_COLOR: u32 = 0xFFFF00;
 /// The page sink's white (`[0x007EEF40]`).
 pub(crate) const PAGE_COLOR: u32 = 0xFF_FFFF;
+/// VERA: the lobby's line that a player's game differs from the host's
+/// (another version, build or rules), red, as the CnCNet client shows its
+/// modified-files warning. Not native.
+pub(crate) const WARNING_COLOR: u32 = 0x40_40FF;
 
 /// The sender record a sink receives (`User*`): flags `+0x00`, name
 /// `+0x24`, clan `+0x2E`.
@@ -275,6 +270,21 @@ pub(crate) struct WolDisplayFilters {
     /// `DisplayBuddies` `[0xB76AF0]` and `DisplayClan` `[0xB73AD0]`.
     pub(crate) buddies: bool,
     pub(crate) clan: bool,
+}
+
+impl WolDisplayFilters {
+    /// The live preferences the sinks read. The modern pages hide the
+    /// language, buddy and clan boxes, so a filter saved earlier could hide
+    /// chat with no way to undo it: they read all four as showing every line.
+    /// The retail pages read them as saved.
+    pub(crate) fn new(preferences: &WolPreferences, modern: bool) -> Self {
+        Self {
+            latin: preferences.display_latin != 0 || modern,
+            asian: preferences.display_asian != 0 || modern,
+            buddies: preferences.display_buddies && !modern,
+            clan: preferences.display_clan && !modern,
+        }
+    }
 }
 
 /// The language gate inlined in every chat, action and page sink (its
@@ -360,9 +370,50 @@ pub(crate) fn received_line(
     (line, color)
 }
 
-#[cfg(test)]
+/// VERA20K Online's chat lobby starts each line with its local time,
+/// `HH:MM `: when the service sent it (`sent_at`, Unix seconds), else `now`.
+/// Not native: `0x113` lines carry no time. Blank rows stay blank, and a
+/// local time the platform cannot give adds nothing.
+pub(crate) fn timed_line(text: Vec<u16>, sent_at: Option<u64>, now: u64) -> Vec<u16> {
+    if text.iter().all(|unit| matches!(unit, 0 | 9 | 10 | 13 | 32)) {
+        return text;
+    }
+    let Some((hour, minute)) =
+        crate::util::native_file_time::local_hour_minute(sent_at.unwrap_or(now))
+    else {
+        return text;
+    };
+    let mut line: Vec<u16> = format!("{hour:02}:{minute:02} ").encode_utf16().collect();
+    line.extend(text);
+    line
+}
+
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lobby_lines_start_with_the_local_time_the_service_sent_them() {
+        let clock = |seconds| {
+            let (hour, minute) =
+                crate::util::native_file_time::local_hour_minute(seconds).expect("local time");
+            format!("{hour:02}:{minute:02}")
+        };
+        // 2026-07-30 13:45:12 UTC, and a notice set two hours earlier.
+        let now = 1_785_419_112;
+        let set = now - 2 * 60 * 60;
+        let line =
+            |text: &str, sent_at| String::from_utf16_lossy(&timed_line(w(text), sent_at, now));
+        assert_eq!(
+            line("[VERA20k] : Restart soon.", Some(set)),
+            format!("{} [VERA20k] : Restart soon.", clock(set))
+        );
+        assert_eq!(
+            line("[Boris] : hi", None),
+            format!("{} [Boris] : hi", clock(now))
+        );
+        assert_eq!(line("\n", None), "\n", "the welcome's blank row");
+    }
 
     fn w(text: &str) -> Vec<u16> {
         text.encode_utf16().collect()
@@ -458,6 +509,26 @@ mod tests {
     }
 
     #[test]
+    fn saved_filters_hide_no_chat_on_the_modern_pages() {
+        let saved = WolPreferences {
+            display_asian: 0,
+            display_latin: 0,
+            display_buddies: true,
+            ..WolPreferences::default()
+        };
+        let tanya = sender("Tanya", "", false);
+        let passes = |modern, text: &str| {
+            let filters = WolDisplayFilters::new(&saved, modern);
+            language_gate(&tanya, false, &w(text), filters)
+                && buddy_clan_gate(&tanya, Some(""), &[], filters, true)
+        };
+        for text in ["hi", "\u{4f60}"] {
+            assert!(passes(true, text), "{text}");
+            assert!(!passes(false, text), "{text}");
+        }
+    }
+
+    #[test]
     fn received_lines_take_their_sink_format_and_color() {
         let text = w("hi");
         let user = sender("Boris", "", false);
@@ -489,7 +560,7 @@ mod tests {
     }
 
     #[test]
-    fn page_takes_a_name_of_at_most_ten_units_and_needs_text() {
+    fn page_takes_a_vera_name_of_at_most_24_units_and_needs_text() {
         let c = commands();
         assert_eq!(
             parse(&w("/PAGE  bob   hi there"), &c, false),
@@ -498,15 +569,16 @@ mod tests {
                 text: w("hi there")
             }
         );
+        let longest = "Commander_Tanya_of_Allie";
         assert_eq!(
-            parse(&w("/page abcdefghij x"), &c, false),
+            parse(&w(&format!("/page {longest} x")), &c, false),
             WolChatLine::Page {
-                name: w("abcdefghij"),
+                name: w(longest),
                 text: w("x")
             }
         );
         assert_eq!(
-            parse(&w("/page abcdefghijk x"), &c, false),
+            parse(&w(&format!("/page {longest}s x")), &c, false),
             WolChatLine::Notice("TXT_NAME_TOO_LONG")
         );
         assert_eq!(
@@ -546,12 +618,12 @@ mod tests {
     }
 
     #[test]
-    fn locate_is_case_sensitive_and_truncates_names_to_ten_units() {
+    fn locate_is_case_sensitive_and_truncates_names_to_24_units() {
         let c = commands();
         assert_eq!(
-            parse(&w("/locate abcdefghijkl"), &c, false),
+            parse(&w("/locate Commander_Tanya_of_Allies"), &c, false),
             WolChatLine::Locate {
-                name: w("abcdefghij")
+                name: w("Commander_Tanya_of_Allie")
             }
         );
         assert_eq!(

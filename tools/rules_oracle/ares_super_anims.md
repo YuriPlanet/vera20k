@@ -1,6 +1,7 @@
 # Ares building SuperAnim selection
 
-This mechanism adds the installed Ares building-animation path behind `ares`.
+This mechanism adds the installed Ares building-animation path, which every
+build takes in a game that ships `ares.mix` ([Ares](../../docs/ares.md)).
 The original retail path still compares the Super Type enum with the building's
 primary definition index. Ares replaces that loop; changing the retail comparison
 would be an incorrect stock fix.
@@ -79,9 +80,8 @@ Reproduce only this corpus:
 python -m tools.rules_oracle.ares_super_anims --ares-dll <Ares.dll> --gamemd-exe <gamemd.exe> --check
 ```
 
-Ares-only persisted fields change that build's saved layout; the existing save
-layout guard rejects incompatible saves. The OFF struct layout/hash path is
-unchanged. This is not a rendered parity claim or exhaustive Ares SW support.
+Ares-only persisted fields changed the saved layout; the existing save
+layout guard rejects incompatible saves. This is not a rendered parity claim or exhaustive Ares SW support.
 
 The SuperWeapons restore owner also rejects a nonzero retained launch count
 without a last-launch frame. Native 100226D0 writes both together; admitting

@@ -15,12 +15,17 @@ use crate::sim::world::common_raw_test_terrain_cell;
 use crate::util::save_codec;
 
 fn rules(bind_warp_art: bool) -> RuleSet {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+    rules_with(bind_warp_art, "")
+}
+
+/// [`rules`] with `extra` appended to its rules INI.
+fn rules_with(bind_warp_art: bool, extra: &str) -> RuleSet {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[General]\nWarpOut=WARPOUT\n\n[InfantryTypes]\n0=CLEG\n\n\
          [VehicleTypes]\n0=CMON\n\n\
          [CLEG]\nStrength=100\nSpeed=4\nSensorsSight=1\nSpeedType=Foot\nMovementZone=Infantry\n\n\
-         [CMON]\nStrength=100\nSpeed=4\nSensorsSight=1\n\n[Clear]\nFoot=100%\n",
-    ))
+         [CMON]\nStrength=100\nSpeed=4\nSensorsSight=1\n\n[Clear]\nFoot=100%\n{extra}",
+    )))
     .unwrap();
     let mut art = ArtRegistry::from_ini(&IniFile::from_str(
         "[WARPOUT]\nFlat=yes\nTranslucent=yes\nRate=120\n",
@@ -128,7 +133,7 @@ fn relocation_constructs_departure_and_arrival_warp_anims_in_the_mover_turn() {
     let mut sim = relocating_legionnaire((8, 9));
     let warp_out = sim.intern("WARPOUT");
 
-    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let anims: Vec<_> = sim
@@ -196,7 +201,7 @@ fn teleport_without_relocation_keeps_incoming_bullet_target() {
         sim.projectiles.spawn(99, shot);
         let expected = sim.projectiles.get(99).unwrap().clone();
 
-        sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+        sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
             .unwrap();
 
         assert_eq!(sim.projectiles.get(99), Some(&expected));
@@ -269,7 +274,7 @@ fn teleport_target_loss_and_pointer_expiry_match_native_controls() {
             });
             let repair = |sim: &mut Simulation| {
                 if expire {
-                    sim.detach_all_pointer_expired(1, &rules, None, FrameEffects::default());
+                    sim.detach_all_pointer_expired(1, &rules, &mut FrameEffects::default());
                 } else {
                     sim.lose_projectile_targets(1, &rules);
                 }
@@ -352,7 +357,7 @@ fn retail_cmin_teleport_preserves_departure_cell_through_guidance_and_snapshot()
     admit_fired_bullet(&mut sim, &rules, weapon, bullet_id, bullet);
     let original = sim.projectiles.get(bullet_id).unwrap().clone();
 
-    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let mut expected = original;
@@ -394,7 +399,7 @@ fn retail_cmin_teleport_preserves_departure_cell_through_guidance_and_snapshot()
         assert!(world.object_ai_visit_one(
             bullet_id,
             Some(&rules),
-            techno_ai::ObjectAiCtx::default()
+            &mut techno_ai::ObjectAiCtx::default()
         ));
         let advanced = world.projectiles.get(bullet_id).unwrap();
         assert_eq!(advanced.position(), translated(&flight["candidate"]));
@@ -444,7 +449,7 @@ fn teleport_object_turn_moves_retained_foot_neighbor_counts() {
             .is_some()
     );
     sim.foot_neighbors_after_unlimbo(1, &rules);
-    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
     let plane = sim
         .overlay_grid
@@ -488,13 +493,54 @@ fn warp_moves_a_units_occupation_through_the_mark_pair() {
     let mut sim = relocating_chrono_unit((8, 9));
     assert_ne!(raw_bits(&sim, (5, 5)) & 0x20, 0);
 
-    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     assert_eq!(raw_bits(&sim, (5, 5)) & 0x20, 0);
     assert_ne!(raw_bits(&sim, (8, 9)) & 0x20, 0);
     assert!(!sim.substrate.occupancy.contains_entity(5, 5, 1));
     assert!(sim.substrate.occupancy.contains_entity(8, 9, 1));
+}
+
+/// Teleport Process runs the arrival Per_Cell_Process (`0x0071971C`) before
+/// its own Stop_Moving (`0x00719725`), so the Unit's own-cell arm reads
+/// Is_Moving set (`0x0073AE65`): a unit warped onto a cell its Can_Enter_Cell
+/// refuses keeps its strength, and the request is retired by the turn's end.
+#[test]
+fn a_warp_arrival_skips_the_units_own_cell_arm() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=CMON\n[CMON]\nStrength=100\nSpeed=4\nSensorsSight=1\n\
+         [Clear]\nFoot=100%\n[CombatDamage]\nC4Warhead=Super\n[Warheads]\n0=Super\n\
+         [Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .unwrap();
+    let mut sim = relocating_chrono_unit((8, 9));
+    install_destination_cells(&mut sim, &rules);
+    let zero = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    terrain.cell_mut_for_test(8, 9).unwrap().speed_costs =
+        crate::rules::terrain_rules::SpeedCostProfile {
+            foot: zero,
+            track: zero,
+            wheel: zero,
+            float: zero,
+            amphibious: zero,
+            float_beach: zero,
+            hover: zero,
+            winged: zero,
+        };
+
+    sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
+        .unwrap();
+
+    let unit = sim.substrate.entities.get(1).unwrap();
+    assert_eq!((unit.position.rx(), unit.position.ry()), (8, 9));
+    assert_eq!(unit.health.current(), 100);
+    assert!(sim.combat_light_requests.as_slice().is_empty());
+    assert_eq!(
+        crate::sim::movement::motion_query::is_moving(unit),
+        Some(false)
+    );
 }
 
 /// The same Mark pair moves an infantryman's cell list entry but not his raw
@@ -510,7 +556,7 @@ fn warp_moves_an_infantrymans_list_entry_and_leaves_his_raw_bit() {
     assert_ne!(origin_bits, 0);
     assert_eq!(raw_bits(&sim, (8, 9)), 0);
 
-    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     assert_eq!(raw_bits(&sim, (5, 5)), origin_bits, "the origin keeps it");
@@ -549,7 +595,7 @@ fn the_warp_restores_its_attackers_suspended_missions() {
     });
     sim.substrate.entities.insert(attacker);
 
-    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let attacker = sim.substrate.entities.get(2).unwrap();
@@ -581,7 +627,7 @@ fn a_restored_destination_warps_at_the_teleport_process_entry() {
         .navigation
         .set_pending_destination_setter_for_test(true);
 
-    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let mover = sim.substrate.entities.get(1).unwrap();
@@ -591,26 +637,27 @@ fn a_restored_destination_warps_at_the_teleport_process_entry() {
 }
 
 /// Supplied Clear-overlay inputs exercise the production callback context,
-/// not a native overlay-admission golden. Restore must validate its borrowed
-/// registry before changing Mission, NavCom, reservations or any RNG stream.
+/// not a native overlay-admission golden. Restore must validate the rules'
+/// overlay table before changing Mission, NavCom, reservations or any RNG
+/// stream.
 #[test]
 fn restoration_callbacks_forward_overlay_inputs_before_any_destination_write() {
-    use crate::rules::overlay_types::OverlayTypeRegistry;
     use crate::sim::components::NavTargetRef;
     use crate::sim::mission::authority::MissionAuthorityError;
     use crate::sim::mission::state::MissionTestFixture;
     use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 
+    // `rules` reads no OverlayTypes, so it cannot read the cell's overlay;
+    // `overlay_rules` reads the one the cell holds.
     let rules = rules(false);
-    let registry = OverlayTypeRegistry::from_ini(
-        &IniFile::from_str(
-            "[OverlayTypes]\n0=RESTORE_OVERLAY\n[RESTORE_OVERLAY]\nLand=Clear\n\
-             [Clear]\nFoot=100%\n",
-        ),
-        None,
+    let overlay_rules = rules_with(
+        false,
+        "[OverlayTypes]\n0=RESTORE_OVERLAY\n[RESTORE_OVERLAY]\nLand=Clear\n",
     );
-    let overlay = registry.id_for_name("RESTORE_OVERLAY").unwrap();
-    let unregistered = OverlayTypeRegistry::from_ini(&IniFile::from_str(""), None);
+    let overlay = overlay_rules
+        .overlay_registry()
+        .id_for_name("RESTORE_OVERLAY")
+        .unwrap();
     let destination = NavTargetRef::cell(12, 7);
 
     let mut sim = relocating_legionnaire((8, 9));
@@ -643,33 +690,26 @@ fn restoration_callbacks_forward_overlay_inputs_before_any_destination_write() {
         sim.rng_state(),
     );
 
-    for missing in [None, Some(&unregistered)] {
-        let result = sim.mission_restore_represented(
-            1,
-            &rules,
-            missing,
-            crate::sim::world::FrameEffects::default(),
-        );
-        assert!(matches!(
-            result,
-            Err(MissionAuthorityError::AuthorityUnavailable(_))
-        ));
-        assert_eq!(
-            (
-                save_codec::serialize(sim.substrate.entities.get(1).unwrap()).unwrap(),
-                save_codec::serialize(&sim.substrate.raw_cell_occupation).unwrap(),
-                sim.rng_state(),
-            ),
-            before,
-            "unavailable inputs refuse before the Restore transaction"
-        );
-    }
+    let result =
+        sim.mission_restore_represented(1, &rules, &mut crate::sim::world::FrameEffects::default());
+    assert!(matches!(
+        result,
+        Err(MissionAuthorityError::AuthorityUnavailable(_))
+    ));
+    assert_eq!(
+        (
+            save_codec::serialize(sim.substrate.entities.get(1).unwrap()).unwrap(),
+            save_codec::serialize(&sim.substrate.raw_cell_occupation).unwrap(),
+            sim.rng_state(),
+        ),
+        before,
+        "unavailable inputs refuse before the Restore transaction"
+    );
 
     let result = sim.mission_restore_represented(
         1,
-        &rules,
-        Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &overlay_rules,
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(result.unwrap());
     let mover = sim.substrate.entities.get(1).unwrap();
@@ -702,7 +742,7 @@ fn an_armed_warp_waits_while_a_drive_piggyback_is_active() {
         .unwrap();
     assert!(locomotor.begin_piggyback(LocomotorKind::Drive, 0));
 
-    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
     let mover = sim.substrate.entities.get_mut(1).unwrap();
     assert_eq!((mover.position.rx(), mover.position.ry()), (5, 5));
@@ -715,7 +755,7 @@ fn an_armed_warp_waits_while_a_drive_piggyback_is_active() {
     if locomotor.active_kind() == LocomotorKind::Drive {
         assert!(locomotor.end_piggyback().is_some());
     }
-    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
     let mover = sim.substrate.entities.get(1).unwrap();
     assert_eq!((mover.position.rx(), mover.position.ry()), (8, 9));

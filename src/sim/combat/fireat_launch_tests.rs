@@ -123,8 +123,7 @@ fn attack_aim_duel(corpus: &serde_json::Value) -> Option<(Duel, u64, u64)> {
             source_id,
             Some(super::TargetKind::Entity(target_id)),
             &duel.rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("original Unit Assign_Target receiver");
     Some((duel, source_id, target_id))
@@ -138,7 +137,7 @@ fn begin_native_aim_motion(duel: &mut Duel, target_id: u64) {
         crate::sim::components::NavTargetRef::Cell { rx: 87, ry: 53 },
         &duel.rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     let target = duel.sim.substrate.entities.get_mut(target_id).unwrap();
     target
@@ -225,8 +224,7 @@ fn original_aim_query_reads_live_motion_rank_and_facing_without_mutation() {
             source,
             None,
             &duel.rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_read_only_native_aim(
@@ -268,7 +266,7 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
         },
         &duel.rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let bullets: Vec<_> = duel
         .sim
@@ -320,8 +318,7 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
             source,
             None,
             &duel.rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_read_only_native_aim(&duel, source, null);
@@ -340,7 +337,7 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
         },
         &duel.rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         duel.sim
@@ -413,7 +410,7 @@ fn target_uninit_clears_tarcom_before_aim_query_and_physical_removal() {
     for _ in 0..3 {
         duel.sim.scenario_rng.next_u32();
     }
-    duel.sim.main_rng = SimRng::new(0).into();
+    duel.sim.main_rng = SimRng::new(0);
     duel.sim.mapgen_rng = SimRng::new(0);
     assert_rng(&duel.sim, &expiry["rng_before"], "before UnInit");
     assert_timer(&duel.sim, before_timer);
@@ -457,8 +454,7 @@ fn target_uninit_clears_tarcom_before_aim_query_and_physical_removal() {
     assert_read_only_native_aim(&duel, source, expected);
     duel.sim.process_pending_delete_with(
         &duel.rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         1,
         false,
     );

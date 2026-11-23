@@ -101,8 +101,7 @@ fn native_foot_archive_expiry_matches_all_22_original_class_rows() {
                 PointerExpiryControl::Uninit
             },
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let listener = sim.substrate.entities.get(1).unwrap();
         let archive = if row["archive"] == 0 {

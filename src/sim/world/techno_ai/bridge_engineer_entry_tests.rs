@@ -114,14 +114,15 @@ fn capture_probe(
     let actor = sim.entities().get(engineer).unwrap();
     let owner = sim.interner.resolve(actor.owner()).to_owned();
     assert!(sim.apply_command_with_overlays(
+        None,
         &owner,
         &Command::CaptureBuilding {
             engineer_id: engineer,
             target_building_id: hut
         },
         &resources.rules,
-        Some(&resources.overlay_registry),
-        crate::sim::world::FrameEffects::default(),
+        Some(resources.rules.overlay_registry()),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     let mut snapshot = zone_snapshot(sim, name);
     let actor = sim.entities().get(engineer).unwrap();
@@ -146,7 +147,7 @@ fn capture_probe(
         "team_present":sim.team_script_vm.team_for_member(engineer).is_some(),
         "navigation_coord":navigation_coord, "destination_coord":destination,
         "current_coord":crate::sim::movement::ground_pose::position_world_coord(&actor.position),
-        "allow_destination_fringe":sim.foot_allows_outside_playfield(engineer).unwrap(),
+        "allow_destination_fringe":sim.foot_allows_outside_playfield(engineer, object.is_train).unwrap(),
     });
     eprintln!("BRIDGE_ENGINEER_PROBE {name}: {query}");
     let before = sim
@@ -197,7 +198,7 @@ fn retail_hills_engineer_cliff_start_is_rejected() {
             74,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .unwrap()
     });
@@ -330,7 +331,7 @@ fn retail_hills_engineer_enters_hut_and_repairs() {
             start.1,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .unwrap();
     let command = CommandEnvelope::new(
@@ -355,7 +356,7 @@ fn retail_hills_engineer_enters_hut_and_repairs() {
                 },
                 crate::headless_scenario::SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let actor = runtime.simulation.entities().get(engineer);
@@ -443,7 +444,7 @@ fn retail_hills_engineer_enters_hut_and_repairs() {
                     &[],
                     crate::headless_scenario::SIM_TICK_MS,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             std::mem::swap(&mut runtime.simulation, &mut second);

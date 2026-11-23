@@ -3,7 +3,7 @@
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::terrain::iso_to_screen;
 use crate::render::batch::{BatchRenderer, InstanceBufferPool, SpriteInstance};
-use crate::render::selection_overlay::CenteredShapeStrip;
+use crate::render::selection_overlay::{CenteredShapeStrip, placement_cell_draws};
 use crate::render::shroud_buffer::ShroudBuffer;
 use crate::render::terrain_draw_gpu_tests::{
     Gpu, assert_native_color_and_depth, camera, clear, encoded,
@@ -29,7 +29,7 @@ fn ordinary_frame(
             &commands,
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
 }
@@ -181,7 +181,7 @@ fn retail_placement_matches_original_cell_and_foundation_raster() {
         "GAPOWR",
         106,
         34,
-        Some(&scene.runtime.resources.overlay_registry),
+        Some(scene.runtime.resources.rules.overlay_registry()),
     )
     .unwrap();
     assert!(!preview.valid);
@@ -233,7 +233,8 @@ fn retail_placement_matches_original_cell_and_foundation_raster() {
                 // Independent original caller camera, actual loaded map/paid
                 // preview, and production X-outer traversal, with no fitted
                 // cell positions or native-admission input in this scene.
-                let instances = shape.build_building_preview(&preview);
+                let instances = shape
+                    .build_building_preview(&placement_cell_draws(Some(&preview), None, true), 1.0);
                 assert_eq!(instances.len(), 4);
                 assert_eq!(
                     row["native_order"],
@@ -259,29 +260,25 @@ fn retail_placement_matches_original_cell_and_foundation_raster() {
                 match input["flags"].as_u64().unwrap() {
                     0 => Vec::new(),
                     4 => {
-                        // Pending producer remains outside the active chain.
-                        // Consume this original component as frame1 resource,
-                        // geometry and material coverage, not pending parity.
+                        // The pending grid's flag-4 cell through production.
                         assert_eq!(row["draws"][0]["frame"], 1);
-                        let anchor = &row["draws"][0]["point"];
-                        let mut instance = shape
-                            .instance(
-                                1,
-                                (
-                                    anchor[0].as_i64().unwrap() as f32 + cam.camera_pos[0],
-                                    anchor[1].as_i64().unwrap() as f32 + cam.camera_pos[1],
-                                ),
-                                0.0,
-                            )
-                            .unwrap();
-                        instance.palette_light =
-                            crate::render::palette_light::PaletteLight::plain(53, 1000);
-                        vec![instance]
+                        let pending = production::BuildingPlacementPreview {
+                            cells: vec![cell],
+                            ..preview.clone()
+                        };
+                        let draws = placement_cell_draws(None, Some(&pending), true);
+                        shape.build_building_preview(&draws, 1.0)
                     }
-                    2 => vec![
-                        shape.building_placement_instance(cell).unwrap();
-                        input["repeat"].as_u64().unwrap() as usize
-                    ],
+                    2 => {
+                        let current = production::BuildingPlacementPreview {
+                            cells: vec![cell],
+                            wall_autofill_cells: Vec::new(),
+                            ..preview.clone()
+                        };
+                        let draws = placement_cell_draws(Some(&current), None, true);
+                        let instance = shape.build_building_preview(&draws, 1.0)[0];
+                        vec![instance; input["repeat"].as_u64().unwrap() as usize]
+                    }
                     other => panic!("uncovered marker input {other}"),
                 }
             };
@@ -382,13 +379,12 @@ fn paid_refinery_centering_and_free_unit(
     let foundation = rules.object(name).unwrap().foundation.clone();
     let selector = match &foundation {
         crate::rules::foundation::Foundation::Stock(index) => *index,
-        #[cfg(feature = "ares")]
         _ => panic!("retail fixture must retain a stock foundation"),
     };
     assert_eq!(selector, 12);
     assert_eq!(rules.building_free_unit(name), Some("CMIN"));
     assert_eq!(
-        serde_json::json!(foundation.cell_offsets()),
+        serde_json::json!(foundation.cell_offsets().collect::<Vec<_>>()),
         centering["building"]["offsets"]
     );
     ordinary_frame(scene, Some(Command::QueueProduction { type_id: refinery }));
@@ -436,7 +432,7 @@ fn paid_refinery_centering_and_free_unit(
             name,
             origin.0,
             origin.1,
-            Some(&scene.runtime.resources.overlay_registry),
+            Some(scene.runtime.resources.rules.overlay_registry()),
         )
         .unwrap()
     };

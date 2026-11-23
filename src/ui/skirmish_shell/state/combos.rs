@@ -1,242 +1,69 @@
-//! Combo-box item, dropdown, scrollbar, and selection helpers for the skirmish shell.
+//! The skirmish shell's combo rows: their items, selections and what a pick
+//! does to the session. The widgets themselves are [`super::super::page`]'s.
 
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::{
-    HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, SKIRMISH_PLAYER_SLOT_COUNT,
+    HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, SKIRMISH_MAX_SLOT_COUNT,
+    SKIRMISH_PLAYER_SLOT_COUNT,
 };
-use crate::ui::shell::combobox::ComboPopup;
 
-use super::super::layout::{
-    DropdownMetrics, RectPx, SkirmishShellLayout, combo_arrow_hit_rect, combo_face_rect,
-};
-use super::super::scroll::ScrollModel;
+use super::super::layout::{RectPx, SEAT_MENU, SkirmishShellLayout, TEAM_MENU};
 use super::{
-    DropdownScrollDragState, DropdownScrollbarPart, DropdownScrollbarPressState, OpenComboDropdown,
     SkirmishAiRowType, SkirmishComboId, SkirmishComboItem, SkirmishCountryChoice,
-    SkirmishShellOpponent, SkirmishShellState, SkirmishShellUiSound, inactive_ai_team_default,
-    player_row_visible,
+    SkirmishShellOpponent, SkirmishShellState, inactive_ai_team_default, player_row_visible,
 };
 
-pub fn combo_rect(layout: &SkirmishShellLayout, id: SkirmishComboId) -> Option<RectPx> {
-    match id {
-        SkirmishComboId::AiType(idx) => layout.rows.ai_type_combos.get(idx).copied(),
-        SkirmishComboId::Side(row) => layout.rows.side_combos.get(row).copied(),
-        SkirmishComboId::Color(row) => layout.color_combos.get(row).copied(),
-        SkirmishComboId::Start(row) => layout.rows.start_combos.get(row).copied(),
-        SkirmishComboId::Team(row) => layout.rows.team_combos.get(row).copied(),
-    }
-}
-
-pub fn combo_dropdown_rect(
-    state: &SkirmishShellState,
+/// The control rect of `id`'s player row; `None` while VERA's scrollbar
+/// shows other computer rows.
+pub fn combo_rect(
     layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
+    state: &SkirmishShellState,
     id: SkirmishComboId,
 ) -> Option<RectPx> {
-    Some(combo_popup(state, layout, maps, id, 0)?.rect)
-}
-
-fn combo_popup(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-    top_index: usize,
-) -> Option<ComboPopup> {
-    if !combo_enabled(state, maps, id) {
-        return None;
+    match id {
+        SkirmishComboId::TeamMenu => return layout.statics.get(TEAM_MENU),
+        SkirmishComboId::SeatMenu => return layout.statics.get(SEAT_MENU),
+        _ => {}
     }
-    let rect = combo_rect(layout, id)?;
-    let item_count = combo_items(state, maps, id).len() as i32;
-    if item_count == 0 {
-        return None;
+    let slot = state.row_slot(combo_player_row(id)?, layout.shown_rows)?;
+    match id {
+        SkirmishComboId::AiType(_) => layout.rows.ai_type_combos.get(slot.checked_sub(1)?),
+        SkirmishComboId::Side(_) => layout.rows.side_combos.get(slot),
+        SkirmishComboId::Color(_) => layout.color_combos.get(slot),
+        SkirmishComboId::Start(_) => layout.rows.start_combos.get(slot),
+        SkirmishComboId::Team(_) => layout.rows.team_combos.get(slot),
+        SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => None,
     }
-    Some(ComboPopup::new(
-        combo_face_rect(rect, layout.scale),
-        layout.scale,
-        item_count as usize,
-        combo_dropdown_max_visible_rows(id) as usize,
-        top_index,
-    ))
+    .copied()
 }
 
 pub const fn combo_dropdown_max_visible_rows(id: SkirmishComboId) -> i32 {
     match id {
         SkirmishComboId::Side(_) => 7,
         SkirmishComboId::Color(_) | SkirmishComboId::Start(_) => 9,
-        SkirmishComboId::AiType(_) | SkirmishComboId::Team(_) => 0,
+        SkirmishComboId::AiType(_) | SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => 0,
+        // VERA: past eight starts the Team list runs A to O, so it scrolls
+        // at nine rows instead of running over the status line. gamemd's
+        // five rows never reach the cap.
+        SkirmishComboId::Team(_) => 9,
     }
 }
 
-pub fn combo_dropdown_visible_row_count(
-    state: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
+/// A row's colour as the lobby shows it: a listed priority is itself, and
+/// anything else falls back onto YR's eight.
+fn normal_color_index(state: &SkirmishShellState, color_index: usize) -> usize {
+    listed_color_index(state.lobby_colors, color_index)
+}
+
+fn listed_color_index(
+    colors: crate::rules::skirmish_colors::SkirmishColorMode,
+    color_index: usize,
 ) -> usize {
-    let item_count = combo_items(state, maps, id).len();
-    ScrollModel::combo(combo_dropdown_max_visible_rows(id)).visible_rows(item_count)
-}
-
-fn combo_dropdown_item_count(
-    state: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> usize {
-    combo_items(state, maps, id).len()
-}
-
-pub fn combo_dropdown_needs_scrollbar(
-    state: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> bool {
-    combo_dropdown_item_count(state, maps, id) > combo_dropdown_visible_row_count(state, maps, id)
-}
-
-pub(super) fn combo_dropdown_max_top_index(
-    state: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> usize {
-    let item_count = combo_dropdown_item_count(state, maps, id);
-    let visible_rows = combo_dropdown_visible_row_count(state, maps, id);
-    ScrollModel::combo(combo_dropdown_max_visible_rows(id)).max_top_index(item_count, visible_rows)
-}
-
-fn normal_color_index(color_index: usize) -> usize {
-    color_index.min(HOUSE_COLOR_COUNT - 1)
-}
-
-pub fn combo_dropdown_scrollbar_rect(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> Option<RectPx> {
-    if !combo_dropdown_needs_scrollbar(state, maps, id) {
-        return None;
-    }
-    let dropdown = combo_dropdown_rect(state, layout, maps, id)?;
-    let scrollbar_w = DropdownMetrics::scaled(layout.scale).scrollbar_w;
-    Some(RectPx::new(
-        dropdown.x + dropdown.w - scrollbar_w,
-        dropdown.y,
-        scrollbar_w,
-        dropdown.h,
-    ))
-}
-
-pub fn combo_dropdown_content_rect(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> Option<RectPx> {
-    let dropdown = combo_dropdown_rect(state, layout, maps, id)?;
-    let width = if combo_dropdown_needs_scrollbar(state, maps, id) {
-        dropdown.w - DropdownMetrics::scaled(layout.scale).scrollbar_w
+    if i32::try_from(color_index).is_ok_and(|color| colors.is_lobby_priority(color)) {
+        color_index
     } else {
-        dropdown.w
-    };
-    Some(RectPx::new(
-        dropdown.x,
-        dropdown.y,
-        width.max(0),
-        dropdown.h,
-    ))
-}
-
-pub fn combo_dropdown_scroll_thumb_rect(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-) -> Option<RectPx> {
-    let scrollbar = combo_dropdown_scrollbar_rect(state, layout, maps, id)?;
-    let model = ScrollModel::combo_at(
-        combo_dropdown_max_visible_rows(id),
-        DropdownMetrics::scaled(layout.scale),
-    );
-    let visible_rows = combo_dropdown_visible_row_count(state, maps, id);
-    let item_count = combo_dropdown_item_count(state, maps, id);
-    let thumb_h = model.thumb_height(visible_rows, item_count, scrollbar.h);
-    let max_top = combo_dropdown_max_top_index(state, maps, id);
-    let open_top = state
-        .open_combo_dropdown
-        .filter(|open| open.id == id)
-        .map(|open| open.top_index.min(max_top))
-        .unwrap_or(0);
-    let thumb_y = model.thumb_y(scrollbar, thumb_h, open_top, max_top);
-    Some(RectPx::new(scrollbar.x, thumb_y, scrollbar.w, thumb_h))
-}
-
-pub(super) fn set_open_combo_top_index(
-    state: &mut SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-    top_index: usize,
-) {
-    let max_top = combo_dropdown_max_top_index(state, maps, id);
-    if let Some(open) = state
-        .open_combo_dropdown
-        .as_mut()
-        .filter(|open| open.id == id)
-    {
-        open.top_index = top_index.min(max_top);
+        color_index.min(HOUSE_COLOR_COUNT - 1)
     }
-}
-
-pub(super) fn scroll_open_combo_by_rows(
-    state: &mut SkirmishShellState,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-    rows: i32,
-) -> bool {
-    let Some(open) = state.open_combo_dropdown.filter(|open| open.id == id) else {
-        return false;
-    };
-    let max_top = combo_dropdown_max_top_index(state, maps, id);
-    let next = if rows < 0 {
-        open.top_index.saturating_sub((-rows) as usize)
-    } else {
-        (open.top_index + rows as usize).min(max_top)
-    };
-    set_open_combo_top_index(state, maps, id, next);
-    next != open.top_index
-}
-
-pub(super) fn top_index_from_thumb_y(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-    mouse_y: i32,
-) -> Option<usize> {
-    let scrollbar = combo_dropdown_scrollbar_rect(state, layout, maps, id)?;
-    let thumb = combo_dropdown_scroll_thumb_rect(state, layout, maps, id)?;
-    let max_top = combo_dropdown_max_top_index(state, maps, id);
-    let model = ScrollModel::combo_at(
-        combo_dropdown_max_visible_rows(id),
-        DropdownMetrics::scaled(layout.scale),
-    );
-    Some(model.top_index_at_pointer(scrollbar, thumb.h, max_top, mouse_y))
-}
-
-pub(super) fn top_index_from_scrollbar_track_click(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    id: SkirmishComboId,
-    mouse_y: i32,
-) -> Option<usize> {
-    let scrollbar = combo_dropdown_scrollbar_rect(state, layout, maps, id)?;
-    let thumb = combo_dropdown_scroll_thumb_rect(state, layout, maps, id)?;
-    let max_top = combo_dropdown_max_top_index(state, maps, id);
-    let model = ScrollModel::combo_at(
-        combo_dropdown_max_visible_rows(id),
-        DropdownMetrics::scaled(layout.scale),
-    );
-    Some(model.top_index_at_pointer(scrollbar, thumb.h, max_top, mouse_y))
 }
 
 pub fn combo_items(
@@ -256,62 +83,91 @@ pub fn combo_items(
         .collect(),
         SkirmishComboId::Side(_) => state.country_catalog.items().to_vec(),
         SkirmishComboId::Color(row) => available_color_choices(
+            state.lobby_colors,
             selected_color_claim(state, row),
-            (0..HOUSE_COLOR_COUNT)
+            state
+                .lobby_colors
+                .lobby_priorities()
+                .map(usize::from)
                 .filter(|color| color_claimed_by_other_row(state, row, *color).is_some()),
         ),
         SkirmishComboId::Start(row) => {
+            // VERA lists a map's starts up to SKIRMISH_MAX_SLOT_COUNT.
             let capacity = maps
                 .get(state.selected_map_idx)
-                .map(|map| {
-                    map.player_capacity
-                        .clamp(0, SKIRMISH_PLAYER_SLOT_COUNT as i32) as usize
-                })
+                .map(|map| map.player_capacity.clamp(0, SKIRMISH_MAX_SLOT_COUNT as i32) as usize)
                 .unwrap_or(SKIRMISH_PLAYER_SLOT_COUNT);
             available_start_choices(
                 selected_start_position(state, row),
-                (0..SKIRMISH_PLAYER_SLOT_COUNT)
+                (0..SKIRMISH_MAX_SLOT_COUNT)
                     .map(|index| LaunchStartPosition::Position(index as u8))
                     .filter(|start| start_position_taken_by_other_row(state, row, *start)),
                 capacity,
             )
         }
-        SkirmishComboId::Team(_) => team_choices(state.selected_mode_must_ally),
+        SkirmishComboId::Team(_) => team_choices(
+            state.selected_mode_must_ally,
+            skirmish_team_count(state, maps),
+        ),
+        SkirmishComboId::TeamMenu => super::team_menus::team_menu_items(state, maps),
+        SkirmishComboId::SeatMenu => super::team_menus::seat_menu_items(state, maps),
     }
 }
 
 /// Shared4E3A00 country catalog: registered source order, Multiplay enabled,
-/// and a nonempty HouseType UIName. Random is the first entry.
+/// and a nonempty HouseType UIName. Random is the first entry. The catalog
+/// has no index cap, which Ares 3.0 HTExt_Unlimit1..5 (1001DD70..1001DDB0,
+/// hooks 0x4E3792, 0x4E3A9C, 0x4E3F31, 0x4E412C, 0x4E41A7) lift from the
+/// shell's 0..9 country range checks; the status line is the Country's
+/// `MenuText.Status` (LoadPlayerCountryString 1001DF10, hook 0x4E38D8).
 pub fn country_choices(rules: &crate::rules::ruleset::RuleSet) -> Vec<SkirmishComboItem> {
+    let mut countries: Vec<(i32, usize, LaunchCountry)> = rules
+        .cooperative_country_candidates()
+        .enumerate()
+        .filter(|(_, (id, _))| {
+            rules.country_multiplay(id)
+                && rules
+                    .country_display_name_sources(id)
+                    .0
+                    .is_some_and(|key| !key.is_empty())
+        })
+        .filter_map(|(index, (id, _))| {
+            let list_index = rules.country_list_index(id);
+            (list_index >= 0).then(|| {
+                (
+                    list_index,
+                    index,
+                    LaunchCountry::from_country_index(index as u32),
+                )
+            })
+        })
+        .collect();
+    // Ares ListIndex, then the Country registry index. Without Ares every
+    // Country's is the common 100, so this preserves source order.
+    countries.sort_by_key(|&(list_index, index, _)| (list_index, index));
     std::iter::once(SkirmishCountryChoice::Random)
         .chain(
-            rules
-                .cooperative_country_candidates()
-                .enumerate()
-                .filter(|(_, (id, _))| {
-                    rules.country_multiplay(id)
-                        && rules
-                            .country_display_name_sources(id)
-                            .0
-                            .is_some_and(|key| !key.is_empty())
-                })
-                .map(|(index, _)| {
-                    SkirmishCountryChoice::Country(LaunchCountry::from_country_index(index as u32))
-                }),
+            countries
+                .into_iter()
+                .map(|(_, _, country)| SkirmishCountryChoice::Country(country)),
         )
         .map(SkirmishComboItem::Country)
         .collect()
 }
 /// Shared4E4770/4E48E0 color catalog. A row retains its current claim while
-/// other occupied rows remove those colors from its available entries.
+/// other occupied rows remove those colors from its available entries. The
+/// colours are the priorities `colors` lists: YR's eight, then VERA's extras.
 pub fn available_color_choices(
+    colors: crate::rules::skirmish_colors::SkirmishColorMode,
     selected: Option<usize>,
     claimed: impl IntoIterator<Item = usize>,
 ) -> Vec<SkirmishComboItem> {
     let claimed: Vec<_> = claimed.into_iter().collect();
     std::iter::once(SkirmishComboItem::ColorSentinel(-2))
         .chain(
-            (0..HOUSE_COLOR_COUNT)
+            colors
+                .lobby_priorities()
+                .map(usize::from)
                 .filter(|color| selected == Some(*color) || !claimed.contains(color))
                 .map(SkirmishComboItem::Color),
         )
@@ -326,25 +182,35 @@ pub fn available_start_choices(
     let claimed: Vec<_> = claimed.into_iter().collect();
     std::iter::once(SkirmishComboItem::Start(LaunchStartPosition::Auto))
         .chain(
-            (0..capacity.min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT))
+            (0..capacity.min(crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT))
                 .map(|index| LaunchStartPosition::Position(index as u8))
                 .filter(|start| selected == Some(*start) || !claimed.contains(start))
                 .map(SkirmishComboItem::Start),
         )
         .collect()
 }
-/// Shared4E5B60 team catalog; mode default team decides whether None is listed.
-pub fn team_choices(must_ally: bool) -> Vec<SkirmishComboItem> {
-    let values: &[i32] = if must_ally {
-        &[0, 1, 2, 3]
-    } else {
-        &[-2, 0, 1, 2, 3]
-    };
-    values
-        .iter()
-        .copied()
+/// Shared4E5B60 team catalog: None (-2) unless the mode must ally, then
+/// teams `0..count`. gamemd lists [`NATIVE_TEAMS`], A to D.
+///
+/// [`NATIVE_TEAMS`]: crate::skirmish_launch::NATIVE_TEAMS
+pub fn team_choices(must_ally: bool, count: u8) -> Vec<SkirmishComboItem> {
+    let none = (!must_ally).then_some(-2);
+    none.into_iter()
+        .chain(0..i32::from(count))
         .map(SkirmishComboItem::Team)
         .collect()
+}
+
+/// The teams a skirmish Team list offers: gamemd's A to D, and VERA's
+/// [`SKIRMISH_TEAMS`] on a map past gamemd's eight starts.
+///
+/// [`SKIRMISH_TEAMS`]: crate::skirmish_launch::SKIRMISH_TEAMS
+fn skirmish_team_count(state: &SkirmishShellState, maps: &[MapMenuEntry]) -> u8 {
+    if super::selected_player_rows(state, maps) > SKIRMISH_PLAYER_SLOT_COUNT {
+        crate::skirmish_launch::SKIRMISH_TEAMS
+    } else {
+        crate::skirmish_launch::NATIVE_TEAMS
+    }
 }
 
 pub fn selected_combo_item(
@@ -371,13 +237,13 @@ pub fn selected_combo_item(
             })
         }),
         SkirmishComboId::Color(0) => Some(if state.player_color_claimed {
-            SkirmishComboItem::Color(normal_color_index(state.player_color_index))
+            SkirmishComboItem::Color(normal_color_index(state, state.player_color_index))
         } else {
             SkirmishComboItem::ColorSentinel(-2)
         }),
         SkirmishComboId::Color(row) => state.opponents.get(row - 1).map(|opponent| {
             if opponent.color_claimed {
-                SkirmishComboItem::Color(normal_color_index(opponent.color_index))
+                SkirmishComboItem::Color(normal_color_index(state, opponent.color_index))
             } else {
                 SkirmishComboItem::ColorSentinel(-2)
             }
@@ -390,6 +256,8 @@ pub fn selected_combo_item(
             .opponents
             .get(row - 1)
             .map(|opponent| SkirmishComboItem::Team(opponent.team)),
+        // A menu shows its caption, not a choice.
+        SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => None,
     }
 }
 
@@ -404,13 +272,15 @@ pub fn selected_combo_item_index(
         .position(|item| *item == selected)
 }
 
-fn combo_player_row(id: SkirmishComboId) -> usize {
+/// The player row `id` belongs to; none for VERA's menus under the rows.
+pub(super) fn combo_player_row(id: SkirmishComboId) -> Option<usize> {
     match id {
-        SkirmishComboId::AiType(idx) => idx + 1,
+        SkirmishComboId::AiType(idx) => Some(idx + 1),
         SkirmishComboId::Side(row)
         | SkirmishComboId::Color(row)
         | SkirmishComboId::Start(row)
-        | SkirmishComboId::Team(row) => row,
+        | SkirmishComboId::Team(row) => Some(row),
+        SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => None,
     }
 }
 
@@ -419,9 +289,13 @@ pub fn combo_enabled(
     maps: &[MapMenuEntry],
     id: SkirmishComboId,
 ) -> bool {
-    if !player_row_visible(state, maps, combo_player_row(id)) {
-        return false;
-    }
+    combo_player_row(id).is_none_or(|row| player_row_visible(state, maps, row))
+        && combo_open(state, id)
+}
+
+/// Whether the combo takes a pick wherever its row shows: the row's player
+/// type and the mode's `AlliesAllowed` decide.
+pub(crate) fn combo_open(state: &SkirmishShellState, id: SkirmishComboId) -> bool {
     match id {
         SkirmishComboId::AiType(_) => true,
         SkirmishComboId::Side(0) | SkirmishComboId::Color(0) | SkirmishComboId::Start(0) => true,
@@ -448,6 +322,9 @@ pub fn combo_enabled(
                     .get(row.saturating_sub(1))
                     .is_some_and(SkirmishShellOpponent::is_active)
         }
+        // Teams follow the same gate; the seats are always the player's.
+        SkirmishComboId::TeamMenu => state.selected_mode_allies_allowed,
+        SkirmishComboId::SeatMenu => true,
     }
 }
 
@@ -480,14 +357,14 @@ fn start_position_taken_by_other_row(
 fn selected_color_claim(state: &SkirmishShellState, row: usize) -> Option<usize> {
     if row == 0 {
         if state.player_color_claimed {
-            Some(normal_color_index(state.player_color_index))
+            Some(normal_color_index(state, state.player_color_index))
         } else {
             None
         }
     } else {
         state.opponents.get(row - 1).and_then(|opponent| {
             if opponent.color_claimed {
-                Some(normal_color_index(opponent.color_index))
+                Some(normal_color_index(state, opponent.color_index))
             } else {
                 None
             }
@@ -502,7 +379,7 @@ fn color_claimed_by_other_row(
 ) -> Option<usize> {
     if row != 0
         && state.player_color_claimed
-        && normal_color_index(state.player_color_index) == color
+        && normal_color_index(state, state.player_color_index) == color
     {
         return Some(0);
     }
@@ -514,7 +391,7 @@ fn color_claimed_by_other_row(
             let opponent_row = idx + 1;
             if opponent_row != row
                 && opponent.color_claimed
-                && normal_color_index(opponent.color_index) == color
+                && normal_color_index(state, opponent.color_index) == color
             {
                 Some(opponent_row)
             } else {
@@ -531,71 +408,23 @@ fn color_claimed_by_other_row(
 fn evict_other_color_claimants(state: &mut SkirmishShellState, row: usize, color: usize) {
     if row != 0
         && state.player_color_claimed
-        && normal_color_index(state.player_color_index) == color
+        && normal_color_index(state, state.player_color_index) == color
     {
         state.player_color_claimed = false;
     }
+    let colors = state.lobby_colors;
     for (idx, opponent) in state.opponents.iter_mut().enumerate() {
         let opponent_row = idx + 1;
         if opponent_row != row
             && opponent.color_claimed
-            && normal_color_index(opponent.color_index) == color
+            && listed_color_index(colors, opponent.color_index) == color
         {
             opponent.color_claimed = false;
         }
     }
 }
 
-fn combo_hit_order() -> Vec<SkirmishComboId> {
-    let mut ids = Vec::new();
-    for row in (0..SKIRMISH_PLAYER_SLOT_COUNT).rev() {
-        ids.push(SkirmishComboId::Team(row));
-        ids.push(SkirmishComboId::Start(row));
-        ids.push(SkirmishComboId::Color(row));
-        ids.push(SkirmishComboId::Side(row));
-        if row > 0 {
-            ids.push(SkirmishComboId::AiType(row - 1));
-        }
-    }
-    ids
-}
-
-fn combo_arrow_at(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    x: i32,
-    y: i32,
-) -> Option<SkirmishComboId> {
-    combo_hit_order().into_iter().find(|id| {
-        combo_enabled(state, maps, *id)
-            && combo_rect(layout, *id)
-                .map(|rect| combo_arrow_hit_rect(rect, layout.scale).contains(x, y))
-                .unwrap_or(false)
-    })
-}
-
-/// A click anywhere on the collapsed combo face — not just the arrow zone.
-/// The owner-draw combo plays the open sound on any face click; only a click
-/// inside the rightmost arrow zone actually toggles the dropdown open. Splitting
-/// these two reachable areas lets us play the sound on a text-portion click
-/// while still gating the open on the arrow zone.
-fn combo_face_at(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    x: i32,
-    y: i32,
-) -> Option<SkirmishComboId> {
-    combo_hit_order().into_iter().find(|id| {
-        combo_enabled(state, maps, *id)
-            && combo_rect(layout, *id)
-                .map(|rect| combo_face_rect(rect, layout.scale).contains(x, y))
-                .unwrap_or(false)
-    })
-}
-
-pub(super) fn apply_combo_selection(
+pub(crate) fn apply_combo_selection(
     state: &mut SkirmishShellState,
     id: SkirmishComboId,
     item: SkirmishComboItem,
@@ -642,13 +471,13 @@ pub(super) fn apply_combo_selection(
             }
         }
         (SkirmishComboId::Color(0), SkirmishComboItem::Color(color)) => {
-            let color = color.min(HOUSE_COLOR_COUNT - 1);
+            let color = normal_color_index(state, color);
             evict_other_color_claimants(state, 0, color);
             state.player_color_index = color;
             state.player_color_claimed = true;
         }
         (SkirmishComboId::Color(row), SkirmishComboItem::Color(color)) => {
-            let color = color.min(HOUSE_COLOR_COUNT - 1);
+            let color = normal_color_index(state, color);
             evict_other_color_claimants(state, row, color);
             if let Some(opponent) = state.opponents.get_mut(row - 1) {
                 opponent.color_index = color;
@@ -679,121 +508,24 @@ pub(super) fn apply_combo_selection(
                 opponent.team = team;
             }
         }
+        (
+            SkirmishComboId::TeamMenu,
+            SkirmishComboItem::TeamTool {
+                tool,
+                refusal: None,
+            },
+        ) => {
+            state.menu_pick = Some(super::MenuPick::Team(tool));
+        }
+        (
+            SkirmishComboId::SeatMenu,
+            SkirmishComboItem::SeatAction {
+                action,
+                enabled: true,
+            },
+        ) => {
+            state.menu_pick = Some(super::MenuPick::Seats(action));
+        }
         _ => {}
     }
-}
-
-pub(super) fn handle_combo_mouse_move(
-    state: &mut SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    x: i32,
-    y: i32,
-) {
-    let Some(open) = state.open_combo_dropdown else {
-        return;
-    };
-    let Some(popup) = combo_popup(state, layout, maps, open.id, open.top_index) else {
-        return;
-    };
-    if let Some(open) = state.open_combo_dropdown.as_mut() {
-        popup.track_hot_row(&mut open.hot_row, x, y);
-    }
-}
-
-pub(super) fn handle_combo_mouse_down(
-    state: &mut SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    x: i32,
-    y: i32,
-) -> bool {
-    if let Some(open) = state.open_combo_dropdown {
-        let metrics = DropdownMetrics::scaled(layout.scale);
-        if let Some(scrollbar) = combo_dropdown_scrollbar_rect(state, layout, maps, open.id)
-            && scrollbar.contains(x, y)
-        {
-            if y < scrollbar.y + metrics.button_h {
-                state.dropdown_scroll_press = Some(DropdownScrollbarPressState {
-                    id: open.id,
-                    part: DropdownScrollbarPart::UpArrow,
-                });
-                scroll_open_combo_by_rows(state, maps, open.id, -1);
-            } else if y >= scrollbar.y + scrollbar.h - metrics.button_h {
-                state.dropdown_scroll_press = Some(DropdownScrollbarPressState {
-                    id: open.id,
-                    part: DropdownScrollbarPart::DownArrow,
-                });
-                scroll_open_combo_by_rows(state, maps, open.id, 1);
-            } else if let Some(thumb) =
-                combo_dropdown_scroll_thumb_rect(state, layout, maps, open.id)
-            {
-                if thumb.contains(x, y) {
-                    state.dropdown_scroll_press = Some(DropdownScrollbarPressState {
-                        id: open.id,
-                        part: DropdownScrollbarPart::Thumb,
-                    });
-                    state.dropdown_scroll_drag = Some(DropdownScrollDragState { id: open.id });
-                } else if let Some(top_index) =
-                    top_index_from_scrollbar_track_click(state, layout, maps, open.id, y)
-                {
-                    state.dropdown_scroll_press = Some(DropdownScrollbarPressState {
-                        id: open.id,
-                        part: DropdownScrollbarPart::Track,
-                    });
-                    set_open_combo_top_index(state, maps, open.id, top_index);
-                }
-            }
-            return true;
-        }
-        if let Some(dropdown) = combo_dropdown_rect(state, layout, maps, open.id) {
-            if let Some(content) = combo_dropdown_content_rect(state, layout, maps, open.id)
-                && content.contains(x, y)
-            {
-                let row = open.top_index + ((y - content.y) / metrics.row_h) as usize;
-                if let Some(item) = combo_items(state, maps, open.id).get(row).copied() {
-                    apply_combo_selection(state, open.id, item);
-                }
-                state.open_combo_dropdown = None;
-                state.dropdown_scroll_drag = None;
-                state.dropdown_scroll_press = None;
-                state.push_ui_sound(SkirmishShellUiSound::GuiComboCloseSound);
-                return true;
-            }
-            if dropdown.contains(x, y) {
-                // The click landed in popup chrome rather than a row; native
-                // ComboDropWin consumes it without closing the popup.
-                return true;
-            }
-        }
-        // The open dropdown is a captured popup: any mouse-down outside its
-        // content/scrollbar is delivered to the popup, which plays the close
-        // sound and closes itself. Because the popup consumed the click, it
-        // does NOT propagate to a second combo — switching combos takes two
-        // clicks (this one closes, a later one opens). So even when the click
-        // lands on another combo's arrow, we only close here.
-        state.open_combo_dropdown = None;
-        state.dropdown_scroll_drag = None;
-        state.dropdown_scroll_press = None;
-        state.push_ui_sound(SkirmishShellUiSound::GuiComboCloseSound);
-        return true;
-    }
-
-    // A click anywhere on a collapsed combo face plays the open sound. Only a
-    // click inside the rightmost arrow zone actually opens the dropdown.
-    if let Some(id) = combo_face_at(state, layout, maps, x, y) {
-        state.push_ui_sound(SkirmishShellUiSound::GuiComboOpenSound);
-        if combo_arrow_at(state, layout, maps, x, y) == Some(id) {
-            state.open_combo_dropdown = Some(OpenComboDropdown {
-                id,
-                top_index: 0,
-                hot_row: selected_combo_item_index(state, maps, id),
-            });
-            state.dropdown_scroll_drag = None;
-            state.dropdown_scroll_press = None;
-        }
-        return true;
-    }
-
-    false
 }

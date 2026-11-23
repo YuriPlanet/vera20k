@@ -24,7 +24,7 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::{motion_query, nav_target_coordinate};
 use crate::sim::world::{ObjectAiCtx, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "patrol_mission_tests.rs"]
 mod tests;
 
@@ -114,7 +114,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> i32 {
         let state = self
             .substrate
@@ -129,7 +129,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                ctx,
+                ctx: ctx.reborrow(),
             },
         );
         if let Some(next) = next
@@ -168,21 +168,19 @@ impl PatrolHost for WorldPatrol<'_> {
     }
 
     fn enter_idle(&mut self) {
-        super::enter_idle_mode_for(
-            self.sim,
-            self.id,
-            self.rules,
-            self.ctx.overlay_registry,
-            self.ctx.effects,
-        );
+        super::enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.ctx.effects);
     }
 
     fn assign_attack_cell(&mut self) {
         let destination = self
             .sim
             .aircraft_find_attack_cell(self.id, self.nav(), self.rules);
-        self.sim
-            .assign_aircraft_destination(self.id, destination, self.rules, self.ctx.effects);
+        self.sim.assign_aircraft_destination(
+            self.id,
+            destination,
+            self.rules,
+            &mut self.ctx.effects,
+        );
     }
 
     fn assign_team_target(&mut self) {
@@ -192,8 +190,7 @@ impl PatrolHost for WorldPatrol<'_> {
                 team,
                 self.nav().map(|nav| TargetKind::from(nav).into()),
                 self.rules,
-                self.ctx.overlay_registry,
-                self.ctx.effects,
+                &mut self.ctx.effects,
             );
         }
     }
@@ -223,12 +220,13 @@ impl PatrolHost for WorldPatrol<'_> {
 
     fn find_dock(&mut self) -> Option<u64> {
         self.sim
-            .aircraft_find_docking_bay(self.id, self.rules, self.ctx.effects)
+            .aircraft_find_docking_bay(self.id, self.rules, &mut self.ctx.effects)
     }
 
     fn greatest_threat(&mut self) -> Option<u64> {
         //417461..417481 pushes mask2, a copy of Location, and false.
-        // The represented scanner returns only Techno entities (native bit2).
+        // 41748B tests the result's IsObject bit (+0x14 & 2): a wall Cell
+        // from the ring walk is no threat here.
         crate::sim::world::direct_greatest_threat(
             self.sim,
             self.rules,
@@ -236,6 +234,7 @@ impl PatrolHost for WorldPatrol<'_> {
             self.id,
             ScanMission::AreaGuard,
         )
+        .and_then(TargetKind::object_id)
     }
 
     fn override_mission(&mut self, mission: MissionType, object: u64) {
@@ -245,13 +244,7 @@ impl PatrolHost for WorldPatrol<'_> {
             destination: (mission == MissionType::Enter).then_some(NavTargetRef::object(object)),
         };
         self.sim
-            .mission_override_represented(
-                self.id,
-                packet,
-                self.rules,
-                self.ctx.overlay_registry,
-                self.ctx.effects,
-            )
+            .mission_override_represented(self.id, packet, self.rules, &mut self.ctx.effects)
             .expect("represented Patrol override setters");
     }
 

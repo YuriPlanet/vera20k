@@ -87,12 +87,12 @@ fn run_cycle(sim: &mut Simulation, rules: &RuleSet, orca: u64, airfield: u64) ->
     for _ in 0..4000 {
         let _ = sim.advance_tick(&[], Some(rules), None, None, 33);
         let entity = sim.substrate.entities.get(orca).expect("aircraft survives");
-        let linked = entity.radio_contacts.contains(airfield)
+        let linked = entity.seldom.radio_contacts.contains(airfield)
             && sim
                 .substrate
                 .entities
                 .get(airfield)
-                .is_some_and(|af| af.radio_contacts.contains(orca));
+                .is_some_and(|af| af.seldom.radio_contacts.contains(orca));
         let height = air_movement::current_fly_height(entity, sim.resolved_terrain.as_ref());
         seen.entered |= mission(sim, orca) == Some(MissionType::Enter);
         seen.linked |= linked;
@@ -203,6 +203,7 @@ fn a_guarding_aircraft_with_a_target_leaves_its_pad_to_attack() {
                 .entities
                 .get(airfield)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .contains(orca),
             "off its pad it is no contact of the airfield"
@@ -258,6 +259,7 @@ fn an_airfield_guard_first_puts_a_guarding_aircraft_with_a_target_to_sleep() {
                 .entities
                 .get(airfield)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .contains(orca)
         );
@@ -296,12 +298,13 @@ fn an_airfield_killing_hit_destroys_all_four_docked_aircraft() {
     }
     let docked = |sim: &Simulation, id| {
         let e = sim.substrate.entities.get(id).unwrap();
-        e.radio_contacts.contains(airfield)
+        e.seldom.radio_contacts.contains(airfield)
             && sim
                 .substrate
                 .entities
                 .get(airfield)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .contains(id)
             && air_movement::current_fly_height(e, sim.resolved_terrain.as_ref()) == 0
@@ -334,6 +337,7 @@ fn an_airfield_killing_hit_destroys_all_four_docked_aircraft() {
             .entities
             .get(airfield)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(airborne)
     );
@@ -353,7 +357,7 @@ fn an_airfield_killing_hit_destroys_all_four_docked_aircraft() {
                 arg6: true,
             },
         ),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     for id in aircraft {
         assert!(
@@ -396,7 +400,7 @@ fn a_linked_airborne_aircraft_crashes_in_the_airfields_damage_transaction() {
             RadioMessage::Hello,
             RadioPayload::default(),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         RadioResponse::Roger
     );
@@ -405,11 +409,12 @@ fn a_linked_airborne_aircraft_crashes_in_the_airfields_damage_transaction() {
             .entities
             .get(airfield)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(plane)
     );
     let c4 = sim.interner.intern("DockC4");
-    let (effects, _) = world_receiver::commit_entities(
+    let effects = world_receiver::commit_entities(
         &mut sim,
         &mut world_receiver::ReceiverRun::default(),
         &[EntityDamageEvent::direct_receiver(
@@ -427,6 +432,7 @@ fn a_linked_airborne_aircraft_crashes_in_the_airfields_damage_transaction() {
         Some(false),
         &rules,
         None,
+        &mut Vec::new(),
     );
     let plane = sim
         .substrate
@@ -489,7 +495,7 @@ fn a_non_helipad_kills_near_contacts_and_releases_distant_contacts() {
                 RadioMessage::Hello,
                 RadioPayload::default(),
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             RadioResponse::Roger
         );
@@ -509,7 +515,7 @@ fn a_non_helipad_kills_near_contacts_and_releases_distant_contacts() {
                     arg6: true,
                 },
             ),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate
@@ -618,12 +624,12 @@ fn retail_harriers_strike_return_reload_and_guard_at_their_airfield() {
                 .expect("Harrier survives");
             let ammo = entity.ammo().expect("Harrier ammo");
             fired[n] |= ammo.current() < ammo.max();
-            let linked = entity.radio_contacts.contains(airfield)
+            let linked = entity.seldom.radio_contacts.contains(airfield)
                 && sim
                     .substrate
                     .entities
                     .get(airfield)
-                    .is_some_and(|af| af.radio_contacts.contains(harrier));
+                    .is_some_and(|af| af.seldom.radio_contacts.contains(harrier));
             let height = air_movement::current_fly_height(entity, sim.resolved_terrain.as_ref());
             let seen = &mut seen[n];
             seen.entered |= fired[n] && mission(sim, harrier) == Some(MissionType::Enter);
@@ -673,7 +679,7 @@ fn retail_harriers_strike_return_reload_and_guard_at_their_airfield() {
     let c4 = sim.interner.intern(&rules.bridge_warheads.c4_name);
     sim.commit_direct_damage_receiver(
         rules,
-        Some(&runtime.resources.overlay_registry),
+        Some(runtime.resources.rules.overlay_registry()),
         crate::sim::combat::EntityDamageEvent::direct_receiver(
             airfield,
             health,
@@ -686,7 +692,7 @@ fn retail_harriers_strike_return_reload_and_guard_at_their_airfield() {
                 arg6: true,
             },
         ),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     for harrier in harriers {
         assert!(

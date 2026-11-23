@@ -3,7 +3,10 @@
 use super::*;
 use crate::map::resolved_terrain::test_flat_ground_grid;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
-use crate::sim::pathfinding::{PathGrid, zone_map::ZoneGrid};
+use crate::sim::pathfinding::{
+    PathGrid,
+    zone_map::{ZoneGrid, ZoneId},
+};
 use crate::sim::world::Simulation;
 use serde_json::Value;
 
@@ -133,7 +136,7 @@ fn original_positive_zone_prechecks_match_routes_float_costs_and_threat_reads() 
             panic!("{}", row["name"]);
         };
         assert_eq!(
-            result.paths,
+            result.routes(),
             expected_paths(&row["flow"][0]),
             "{} paths",
             row["name"]
@@ -162,7 +165,13 @@ fn original_full_and_local_hierarchy_producers_retain_seed_threat_index() {
     assert!(writes.iter().any(|row| row["pc"] == "00584a78"));
     for row in writes {
         let seed = cell(&row["seed"]);
-        let record = ZoneRecord::from_seed(row["zone"].as_u64().unwrap() as u16, 0, 0, seed);
+        let record = ZoneRecord::from_seed(
+            row["zone"].as_u64().unwrap() as ZoneId,
+            0,
+            0,
+            seed,
+            crate::map::cell_index::CellGrid::Retail,
+        );
         assert_eq!(
             record.native_threat_index().unwrap() as u32,
             row["index"].as_u64().unwrap() as u32,
@@ -181,7 +190,7 @@ fn cell(value: &Value) -> (i16, i16) {
     )
 }
 
-type HierarchyEndpoints = ((u16, u16), (u16, u16), [u16; 3], [u16; 3]);
+type HierarchyEndpoints = ((u16, u16), (u16, u16), [ZoneId; 3], [ZoneId; 3]);
 
 fn hierarchy(graphs: &Value, endpoints: Option<HierarchyEndpoints>) -> ZoneHierarchy {
     let levels: [ZoneLevelGraph; 3] = graphs
@@ -199,7 +208,7 @@ fn hierarchy(graphs: &Value, endpoints: Option<HierarchyEndpoints>) -> ZoneHiera
                     ids.as_array()
                         .unwrap()
                         .iter()
-                        .map(|v| v.as_u64().unwrap() as u16)
+                        .map(|v| v.as_u64().unwrap() as ZoneId)
                         .collect()
                 },
             );
@@ -209,12 +218,12 @@ fn hierarchy(graphs: &Value, endpoints: Option<HierarchyEndpoints>) -> ZoneHiera
                 ids[usize::from(goal.1) * usize::from(WIDTH) + usize::from(goal.0)] =
                     goal_id[level];
             }
-            let mut result =
-                ZoneLevelGraph::new((rows.len() - 1) as u16).with_cell_zone_ids(ids, WIDTH, WIDTH);
+            let mut result = ZoneLevelGraph::new((rows.len() - 1) as ZoneId)
+                .with_cell_zone_ids(ids, WIDTH, WIDTH);
             for (id, record) in rows.iter().enumerate() {
                 let mut native_record = ZoneRecord::new(
-                    id as u16,
-                    record["parent"].as_u64().unwrap() as u16,
+                    id as ZoneId,
+                    record["parent"].as_u64().unwrap() as ZoneId,
                     record["zone_type"].as_u64().unwrap() as u8,
                 );
                 native_record.native_threat_index =
@@ -222,9 +231,9 @@ fn hierarchy(graphs: &Value, endpoints: Option<HierarchyEndpoints>) -> ZoneHiera
                 result.set_record(native_record);
                 for edge in record["edges"].as_array().unwrap() {
                     result.push_edge(
-                        id as u16,
+                        id as ZoneId,
                         ZoneEdgeRecord::new(
-                            edge[0].as_u64().unwrap() as u16,
+                            edge[0].as_u64().unwrap() as ZoneId,
                             edge[1].as_u64().unwrap() as u8,
                         ),
                     );
@@ -254,7 +263,7 @@ fn simulation() -> (Simulation, RuleSet, u64) {
     sim.session.set_map_height_for_test(WIDTH);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.zone_grid = Some(zones);
+    sim.zone_grid = Some(zones.into());
     sim.install_resolved_terrain_for_new_map(terrain);
     let id = sim.substrate.allocate_stable_id();
     let mut actor =
@@ -273,7 +282,7 @@ fn expected_paths(native: &Value) -> [Vec<ZoneId>; 3] {
             path.as_array()
                 .unwrap()
                 .iter()
-                .map(|v| v.as_u64().unwrap() as u16)
+                .map(|v| v.as_u64().unwrap() as ZoneId)
                 .collect()
         })
         .collect::<Vec<_>>()
@@ -294,7 +303,7 @@ fn expected_pops(events: &Value) -> Vec<(usize, ZoneId, u32, u32)> {
             }));
             (
                 event["level"].as_u64().unwrap() as usize,
-                event["zone_id"].as_u64().unwrap() as u16,
+                event["zone_id"].as_u64().unwrap() as ZoneId,
                 bits,
                 event["depth"].as_u64().unwrap() as u32,
             )
@@ -317,14 +326,14 @@ fn native_controls_cover_heap_ties_head_admission_and_binary32_costs() {
             Some((
                 (start.0 as u16, start.1 as u16),
                 (goal.0 as u16, goal.1 as u16),
-                [row["source_id"].as_u64().unwrap() as u16, 1, 1],
-                [row["target_id"].as_u64().unwrap() as u16, 1, 1],
+                [row["source_id"].as_u64().unwrap() as ZoneId, 1, 1],
+                [row["target_id"].as_u64().unwrap() as ZoneId, 1, 1],
             )),
         );
         let precheck = zone_precheck_flat(
             &graph,
-            row["source_id"].as_u64().unwrap() as u16,
-            row["target_id"].as_u64().unwrap() as u16,
+            row["source_id"].as_u64().unwrap() as ZoneId,
+            row["target_id"].as_u64().unwrap() as ZoneId,
             MovementZone::Normal,
             &ZonePrecheckExclusions::default(),
             None,
@@ -342,7 +351,7 @@ fn native_controls_cover_heap_ties_head_admission_and_binary32_costs() {
             let ZonePrecheckOutcome::Passed(result) = precheck else {
                 panic!("{}", row["name"]);
             };
-            assert_eq!(result.paths, expected_paths(original), "{}", row["name"]);
+            assert_eq!(result.routes(), expected_paths(original), "{}", row["name"]);
             assert_eq!(
                 result.pops,
                 expected_pops(&row["hierarchy"]),
@@ -380,9 +389,9 @@ fn physical_fv_candidate_and_fallback_costs_match_four_native_bridge_states() {
     for row in native["cases"].as_array().unwrap() {
         let start = cell(&row["source"]);
         let goal = cell(&row["target"]);
-        let ids = |key: &str| std::array::from_fn(|i| row[key][i].as_u64().unwrap() as u16);
-        let start_ids: [u16; 3] = ids("source_ids");
-        let goal_ids: [u16; 3] = ids("target_ids");
+        let ids = |key: &str| std::array::from_fn(|i| row[key][i].as_u64().unwrap() as ZoneId);
+        let start_ids: [ZoneId; 3] = ids("source_ids");
+        let goal_ids: [ZoneId; 3] = ids("target_ids");
         let graph = hierarchy(
             &native["graphs"][row["graph"].as_u64().unwrap() as usize],
             Some((
@@ -408,7 +417,12 @@ fn physical_fv_candidate_and_fallback_costs_match_four_native_bridge_states() {
             let ZonePrecheckOutcome::Passed(result) = precheck else {
                 panic!("{}", row["name"]);
             };
-            assert_eq!(result.paths, expected_paths(preflight), "{}", row["name"]);
+            assert_eq!(
+                result.routes(),
+                expected_paths(preflight),
+                "{}",
+                row["name"]
+            );
             assert_eq!(
                 result.pops,
                 expected_pops(&row["hierarchy"]),
@@ -465,7 +479,7 @@ fn structural_bridge_cost_exits_match_original_six_probe_order() {
             fine.set_zone_at(
                 i32::from(xy.0),
                 i32::from(xy.1),
-                row["zone_ids"][i].as_u64().unwrap() as u16,
+                row["zone_ids"][i].as_u64().unwrap() as ZoneId,
             );
         }
         zones.set_hierarchy(ZoneHierarchy::new(

@@ -40,3 +40,42 @@ pub mod verb_parse_check;
 pub mod verb_render;
 pub mod verb_scan;
 pub mod verb_sound;
+
+/// Turns an asset or archive name into one output path component: ASCII
+/// letters, digits and `.`, `_`, `-` stay, every other character becomes `_`,
+/// and an empty name becomes the verb's own `fallback`. Flattening the path
+/// separators is what keeps a name like `../../x` inside the output root, and
+/// one rule keeps every verb writing the same asset under the same name.
+pub fn sanitise_name(name: &str, fallback: &str) -> String {
+    let sanitised: String = name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if sanitised.is_empty() {
+        fallback.to_string()
+    } else {
+        sanitised
+    }
+}
+
+#[cfg(all(test, tests_asset_tools))]
+mod tests {
+    use super::sanitise_name;
+
+    #[test]
+    fn sanitise_name_keeps_safe_characters_and_replaces_the_rest() {
+        assert_eq!(sanitise_name("gi-idle_01.shp", "asset"), "gi-idle_01.shp");
+        assert_eq!(
+            sanitise_name("ra2\\dir/na me:x*?", "asset"),
+            "ra2_dir_na_me_x__"
+        );
+        assert_eq!(sanitise_name("", "asset"), "asset");
+        assert_eq!(sanitise_name("", "sound"), "sound");
+    }
+}

@@ -2,8 +2,8 @@
 //!
 //! Verifies the FacingClass-driven combat behavior end-to-end through
 //! `Simulation::advance_tick`, covering 1-tick acquisition latency,
-//! mid-rotation retarget, slow vs fast ROT alignment timing, and the
-//! flipped Phase 5 tick order.
+//! mid-rotation retarget and slow vs fast ROT alignment timing, with each
+//! turret turning and firing in its own LogicClass visit.
 
 use std::collections::BTreeMap;
 
@@ -39,7 +39,12 @@ fn retail_ifv_retargets_its_turret_during_an_unfinished_turn() {
         .spawn_object("MTNK", "Russians", 9, 12, 0, rules)
         .unwrap();
     let owner = sim.substrate.entities.get(ifv).unwrap().owner();
-    sim.refresh_object_sight(ifv, rules, 0, crate::sim::world::FrameEffects::default());
+    sim.refresh_object_sight(
+        ifv,
+        rules,
+        0,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     let actor = sim.substrate.entities.get(ifv).unwrap();
     let obj = rules.object("FV").unwrap();
     let weapon = super::combat_weapon::current_weapon(
@@ -127,7 +132,6 @@ fn retail_ifv_retargets_its_turret_during_an_unfinished_turn() {
         super::fire_error_world::FireSubject {
             world: &sim,
             rules,
-            overlay_registry: None,
             fog: None,
             firer: actor,
             obj,

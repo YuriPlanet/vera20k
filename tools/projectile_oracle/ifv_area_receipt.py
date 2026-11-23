@@ -8,6 +8,7 @@ from unicorn.x86_const import *
 from tools.projectile_oracle.ifv_select_anim import setup
 from tools.projectile_oracle.ifv_impact import i32,xyz
 from tools.native_oracle import RET_MAGIC,run_checked,finish_vectors,provenance
+from tools.native_oracle import require
 from tools.spatial_oracle.building_body_rules import SP,RULES,dwords
 from tools.rmg_oracle.gen_rng_vectors import seeded_struct
 
@@ -83,7 +84,7 @@ def rocker_generate():
  for target,entry in zip(targets,entries):
   u.mem_write(target,dwords(0x7F5C70));u.mem_write(target+0x6C4,dwords(typ))
   u.mem_write(target+0x388,dwords(entry['facing'],entry['facing']));u.mem_write(target+0x398,dwords(0))
-  assert m.invoke(0x6F9E10,target)&255==1
+  require(m.invoke(0x6F9E10,target)&255==1, 'native 0x6F9E10 returned an unexpected result')
  scenario=m.read32(0xA8B230)
  rngs={'main':0x886B88,'scenario':scenario+0x218,'mapgen':0xABE890}
  for seed,(name,address) in enumerate(rngs.items(),31):m.invoke(0x65C6D0,address,(seed,))

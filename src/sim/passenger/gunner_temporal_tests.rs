@@ -31,8 +31,11 @@ fn retail_unload_and_snapshot_resume_preserve_the_gunners_rearm() {
     assert!(restored.rebuild_dynamic_navigation(rules));
     for id in [ifv, passenger, target] {
         let (before, after) = (entity(&sim, id), entity(&restored, id));
-        assert_eq!(before.rearm_timer, after.rearm_timer);
-        assert_eq!(before.weapon_burst.index(), after.weapon_burst.index());
+        assert_eq!(before.seldom.rearm_timer, after.seldom.rearm_timer);
+        assert_eq!(
+            before.seldom.weapon_burst.index(),
+            after.seldom.weapon_burst.index()
+        );
         assert_eq!(before.temporal, after.temporal);
     }
     let mut histories = Vec::new();
@@ -45,20 +48,23 @@ fn retail_unload_and_snapshot_resume_preserve_the_gunners_rearm() {
         ));
         for _ in 0..180 {
             sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
-            if !entity(&sim, passenger).passenger_role.is_inside_transport() {
+            if !entity(&sim, passenger)
+                .passenger_role()
+                .is_inside_transport()
+            {
                 break;
             }
         }
         let gunner = entity(&sim, passenger);
         assert!(
-            gunner.passenger_role.is_none(),
+            gunner.passenger_role().is_none(),
             "ordinary unload must finish"
         );
         assert!(!gunner.lifecycle.in_limbo());
         assert!(gunner.temporal.has_link());
         assert!(!entity(&sim, ifv).temporal.has_link());
         assert!(!entity(&sim, target).temporal.is_warped());
-        let rearm = gunner.rearm_timer;
+        let rearm = gunner.seldom.rearm_timer;
         assert!(rearm.start_frame() >= commanded);
         assert!(rearm.remaining(sim.session.binary_frame() as i32) > 0);
         assert!(sim.apply_command(
@@ -72,7 +78,7 @@ fn retail_unload_and_snapshot_resume_preserve_the_gunners_rearm() {
         let mut first_shot = None;
         for _ in 0..240 {
             let frame = sim.session.binary_frame() as i32;
-            let waiting = entity(&sim, passenger).rearm_timer.remaining(frame);
+            let waiting = entity(&sim, passenger).seldom.rearm_timer.remaining(frame);
             sim.fire_events.clear_for_test();
             sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
             if let Some(shot) = sim
@@ -99,7 +105,7 @@ fn retail_unload_and_snapshot_resume_preserve_the_gunners_rearm() {
             rearm.start_frame(),
             rearm.duration(),
             first_shot,
-            entity(&sim, passenger).rearm_timer,
+            entity(&sim, passenger).seldom.rearm_timer,
             sim.scenario_rng.native_state_hex(),
         ));
     }

@@ -6,8 +6,8 @@
 //! tools/spatial_oracle/walk_prehead_response (callee boundaries documented there).
 //!
 //! The shared Cell Scatter owner retains its existing per-occupant displacement
-//! residuals. JumpJet=true Infantry's +4F4/+4F8 conversion is a separate
-//! locomotor mechanism; its unrepresented continuation is reported explicitly.
+//! residuals. Infantry's +4F8 handoff from an unpiggybacked Jumpjet to Walk is
+//! a separate locomotor mechanism; its continuation is reported explicitly.
 
 use super::foot_path::{FindPathResult, coord_cell};
 use super::ground_pose;
@@ -18,6 +18,7 @@ use super::track_fresh::BlockingObject;
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;
+use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_kernel::native_xyz_distance;
@@ -41,7 +42,7 @@ impl Simulation {
         request: WalkAdmissionRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<FootPathRequest>, String> {
         let id = request.entity_id;
         if self.walk_tube_head(id, rules, registry, frame_effects)? {
@@ -65,10 +66,24 @@ impl Simulation {
             .first()
             .map_or(-1, |direction| i32::from(*direction));
         let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[(direction & 7) as usize];
-        let candidate = DriveCoord {
-            x: physical.x.wrapping_add(dx * 256),
-            y: physical.y.wrapping_add(dy * 256),
-            z: physical.z,
+        // Mech 5B088E..5B091D takes the neighbour cell's centre. Walk
+        // advances the physical XY by a whole cell, retaining the subcell.
+        let candidate = if actor
+            .locomotor
+            .as_ref()
+            .is_some_and(|l| l.active_kind() == LocomotorKind::Mech)
+        {
+            DriveCoord::cell(
+                (physical.x / 256 + dx) as u16,
+                (physical.y / 256 + dy) as u16,
+                0,
+            )
+        } else {
+            DriveCoord {
+                x: physical.x.wrapping_add(dx * 256),
+                y: physical.y.wrapping_add(dy * 256),
+                z: physical.z,
+            }
         };
         let packed = coord_cell(candidate);
         //75B642 tests structural100 before5F5F00's two physical-cell
@@ -87,6 +102,7 @@ impl Simulation {
                 .entities
                 .get_mut(id)
                 .ok_or("retired Walk admission owner")?
+                .seldom
                 .runtime_bridge_transition
                 .latch();
         }
@@ -104,7 +120,6 @@ impl Simulation {
                 previous_cell: None,
             },
             rules,
-            registry,
         )?;
         self.finish_walk_admission_response(
             request,
@@ -125,13 +140,33 @@ impl Simulation {
         code: u8,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<FootPathRequest>, String> {
         let id = request.entity_id;
         let packed = coord_cell(candidate);
-        if code == 0 {
+        let mech = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|a| a.locomotor.as_ref())
+            .is_some_and(|l| l.active_kind() == LocomotorKind::Mech);
+        // Mech 5B0981..5B09AF admits a type with Crusher=yes against
+        // overlay index zero even for codes 4 and 5.
+        let crushes_wall = mech
+            && matches!(code, 4 | 5)
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|a| self.interner.object_type(a.type_ref(), rules))
+                .is_some_and(|ty| ty.crusher)
+            && self.cell_overlay(self.walk_lookup_cell(packed)?).overlay_id == Some(0);
+        if code == 0 || crushes_wall {
             let selected =
                 self.walk_find_sub_cell_dest(id, Some(candidate), rules, registry, frame_effects)?;
+            if selected && mech {
+                self.mech_crush_ahead(id, rules);
+            }
             let actor = self
                 .substrate
                 .entities
@@ -249,7 +284,7 @@ impl Simulation {
             code,
             rules,
             registry,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -300,7 +335,7 @@ impl Simulation {
         request: WalkAdmissionRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame();
@@ -319,7 +354,7 @@ impl Simulation {
         let destination = super::path_batch::code2_ladder_destination(actor)
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         // A batched re-path waits for the next frame's batch as if the +640
-        // timer still ran (`path_batch`, a proposed deviation), unless it
+        // timer still ran (`path_batch`, a sim-scale deviation), unless it
         // heads for the Foot's own cell.
         if Self::defer_path_search(
             &mut self.path_batch,
@@ -356,7 +391,12 @@ impl Simulation {
             if self.foot_path_zone_precheck(id, destination, rules)? {
                 self.walk_failed_path_receiver(id, rules, frame_effects)?;
             } else {
-                self.assign_null_destination(id, rules, None, frame_effects);
+                self.assign_null_destination(
+                    id,
+                    rules,
+                    Some(rules.overlay_registry()),
+                    frame_effects,
+                );
             }
         } else {
             self.walk_short_path_receiver(id, rules)?;
@@ -370,7 +410,7 @@ impl Simulation {
         cell: NativeCellIdentity,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -388,7 +428,10 @@ impl Simulation {
             physical.y.wrapping_sub(destination.y),
             physical.z.wrapping_sub(destination.z),
         ) < rules.general.close_enough;
-        if close && actor.radio_contacts.is_empty() && self.track_stop_band(physical, destination) {
+        if close
+            && actor.seldom.radio_contacts.is_empty()
+            && self.track_stop_band(physical, destination)
+        {
             //75B7E1..75B828: headNULL, Stop, speed0, classNULL setter, then
             //clearFoot+5E0 even when the class setter refuses the request.
             let actor = self
@@ -406,7 +449,7 @@ impl Simulation {
                 .ok_or("Walk code6 owner retired during its callback")?
                 .foot_speed
                 .set_speed_fraction(SIM_ZERO);
-            self.assign_null_destination(id, rules, None, frame_effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             self.substrate.clear_walk_admission_path(id)?;
             return Ok(());
         }
@@ -431,7 +474,7 @@ impl Simulation {
         blocker: Option<BlockingObject>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let target = match blocker {
             Some(BlockingObject::Entity(blocker)) => {
@@ -445,11 +488,10 @@ impl Simulation {
                     .entities
                     .get(blocker)
                     .ok_or("retired Walk blocker")?;
-                if crate::map::houses::is_allied_with(
-                    self.house_alliances.as_map(),
-                    self.interner.resolve(actor.owner()),
-                    self.interner.resolve(other.owner()),
-                ) {
+                if self
+                    .house_alliances
+                    .is_allied(&self.interner, actor.owner(), other.owner())
+                {
                     return Ok(());
                 }
                 Some(TargetKind::Entity(blocker))
@@ -493,13 +535,14 @@ impl Simulation {
     }
 
     /// Foot4DC030 (Infantry521DD0 prefix, Unit+4F4): Hunt alone clears
-    ///TarCom then calls the class NULL destination setter. No RNG or timers
-    ///are introduced by this receiver; the setter owns any timer effects.
+    /// TarCom then calls the class NULL destination setter. Original gamemd.exe
+    /// InfantryClass +4F4 @00521DD0 only queries and discards the locomotor's
+    /// GetClassID afterward; it adds no conversion, RNG or timer writes.
     pub(super) fn walk_failed_path_receiver(
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -507,31 +550,16 @@ impl Simulation {
             .get(id)
             .ok_or("retired Walk failed-path receiver")?;
         if actor.mission.effective().raw() == 15 {
-            self.assign_target_represented(id, None, rules, None, frame_effects)
+            self.assign_target_represented(id, None, rules, frame_effects)
                 .map_err(|error| format!("{error:?}"))?;
-            self.assign_null_destination(id, rules, None, frame_effects);
-        }
-        let actor = self
-            .substrate
-            .entities
-            .get(id)
-            .ok_or("retired Walk failed-path receiver")?;
-        if actor.category() == EntityCategory::Infantry
-            && self
-                .interner
-                .object_type(actor.type_ref(), rules)
-                .is_some_and(|object| object.jumpjet)
-        {
-            return Err(
-                "Infantry+4F4 JumpJet close-navigation continuation requires its locomotor owner"
-                    .into(),
-            );
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
         }
         Ok(())
     }
 
-    /// Infantry521EB0 / Unit41C080. Ordinary Infantry and every Unit return
-    ///false; JumpJet=true Infantry has a separate short-path takeoff body.
+    /// Original gamemd.exe InfantryClass +4F8 @00521EB0 / Unit41C080.
+    /// Infantry with a current Walk returns false even with JumpJet=true;
+    /// only a current unpiggybacked Jumpjet admits the separate handoff body.
     pub(super) fn walk_short_path_receiver(&self, id: u64, rules: &RuleSet) -> Result<(), String> {
         let actor = self
             .substrate
@@ -539,6 +567,9 @@ impl Simulation {
             .get(id)
             .ok_or("retired Walk short-path receiver")?;
         if actor.category() == EntityCategory::Infantry
+            && actor.locomotor.as_ref().is_some_and(|locomotor| {
+                locomotor.active_kind() == LocomotorKind::Jumpjet && locomotor.piggyback().is_none()
+            })
             && actor.navigation.path_replay().remaining_directions().len() < 4
             && self
                 .interner
@@ -617,7 +648,11 @@ pub(super) fn clear_walk_doing(actor: &mut crate::sim::game_entity::GameEntity) 
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
+#[path = "walk_jumpjet_flag_tests.rs"]
+mod jumpjet_flag_tests;
+
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use crate::sim::combat::TargetKind;
     use crate::sim::mission::MissionType;

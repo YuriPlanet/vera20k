@@ -31,6 +31,7 @@ fn context(input: &Value) -> WaveUpdateContext {
         owner_fire_coordinate: Some(coord(&input["source_flh"])),
         owner_current_target: Some(TargetKind::Entity(2)),
         target_position: Some(coord(&input["target_center"])),
+        ares: None,
         target_is_unit: true,
     }
 }
@@ -153,15 +154,15 @@ fn retail_tele_and_mtnk_read_the_native_magnetic_and_lift_inputs() {
             // firer. MTNK's weapons are outside this target-only component.
             assert_eq!(object.primary(), native["primary"].as_str());
             assert_eq!(object.elite_primary(), native["elite_primary"].as_str());
-            let art = crate::sim::combat::fire_coord::firer_art(rules, object).unwrap();
             assert_eq!(
-                <[i32; 3]>::from(art.primary_fire_flh),
+                <[i32; 3]>::from(object.weapon_flh(0, false)),
                 [
                     integer(&native["primary_flh"][0]),
                     integer(&native["primary_flh"][1]),
                     integer(&native["primary_flh"][2])
                 ]
             );
+            let art = rules.art().get(&object.image).expect("firer art");
             assert_eq!(art.turret_offset, integer(&native["turret_offset"]));
         }
         // Selected native D70..D94 block. Padding has no gameplay authority.
@@ -238,7 +239,7 @@ fn original_shared_wave_geometry_in_all_octants_elevation_and_converged_xy() {
                 let rejected =
                     Wave::new(wave_type, coord(&input["source"]), coord(&input["target"]));
                 assert!(
-                    !rejected.constructor_distance_is_live(),
+                    !rejected.constructor_distance_is_live(false),
                     "original ctor rejects zero XY"
                 );
                 continue;
@@ -350,6 +351,7 @@ fn sonic_damage_request_uses_the_native_b4_bridge_plane() {
     }
 }
 
+// Ares CreateWave swaps the constructor's coordinates (ares_wave tests).
 #[test]
 fn original_fire_at_births_match_the_production_magnetic_commit() {
     // Each row is one original FireAt tail (0x006FF5F5..0x006FF656) for the
@@ -410,7 +412,7 @@ fn original_fire_at_births_match_the_production_magnetic_commit() {
         let mut event = crate::sim::world::SimFireEvent::for_test(source);
         event.target = TargetKind::Entity(target);
         event.fire_coord = fire.coord;
-        sim.commit_fired_wave(rules, &event, 3);
+        sim.commit_fired_wave(rules, &event, 3, 0);
         let wave = sim.waves.get(sim.active_wave_id(source).unwrap()).unwrap();
         assert_state(wave, &row["after"], true);
     }
@@ -441,8 +443,21 @@ fn original_update_reverses_only_a_unit_target() {
         owner_fire_coordinate: Some(coord(&input["source_flh"])),
         owner_current_target: Some(cell),
         target_position: Some(coord(&input["target_center"])),
+        ares: None,
         target_is_unit: false,
     };
     let terminal = wave.initialize(context, Some(&terrain));
     assert_state(&wave, &row["after"], !terminal);
+}
+
+/// `75EA59`: `(46_341, 46_341)` wraps the native square to 9,266, so the
+/// constructor reads 96 leptons and rejects the wave; the true square is
+/// 65,536 and the wave is live.
+#[test]
+fn vera_only_wave_construction_uses_the_true_square() {
+    let source = ProjectileCoord::new(0, 0, 0);
+    let target = ProjectileCoord::new(46_341, 46_341, 0);
+    let wave = Wave::new(3, source, target);
+    assert!(!wave.constructor_distance_is_live(false));
+    assert!(wave.constructor_distance_is_live(true));
 }

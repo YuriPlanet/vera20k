@@ -63,8 +63,7 @@ fn busy_factory_exit_world() -> Option<(Simulation, RuleSet, InternedId)> {
         .unwrap()
         .base_projection_mut()
         .replace_buildings_for_test(vec![1, 3, 2]);
-    sim.production
-        .set_primary_factory_for_test(owner, ProductionCategory::Vehicle, 1);
+    sim.production.set_primary_factory_for_test(1);
     busy_factory_exit_mission(&mut sim, 1, crate::sim::mission::MissionType::Unload);
     for (id, archive) in [(1, (8, 8)), (2, (12, 24)), (3, (24, 14))] {
         sim.substrate
@@ -125,20 +124,15 @@ fn busy_factory_exit_product(
     }
     let type_id = sim.intern("MTNK");
     let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), rules);
-    sim.production.factories_mut().create_building_factory(
-        1,
-        owner,
-        ProductionCategory::Vehicle,
-        type_id,
-        70,
-        cost,
-    );
+    sim.production
+        .factories_mut_for_test()
+        .create_building_factory_for_test(1, owner, ProductionCategory::Vehicle, type_id, 70, cost);
     let product = super::factory_lifecycle::start_active_production(
         sim,
         rules,
         super::factory::FactoryHolder::Building(1),
         type_id,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     )
     .unwrap();
@@ -164,7 +158,7 @@ fn busy_factory_exit_attempt(
         product,
         (0, 0),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ) == crate::sim::ai_base_building::BuildingExit::Placed)
         .then_some(product)
 }
@@ -217,21 +211,16 @@ fn busy_factory_exit_player_uses_house_order_without_moving_primary() {
     );
     let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
     let rng = sim.scenario_rng.logical_state();
-    assert!(dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(dispatch_production_changes_for_tests(&mut sim, &rules));
     assert_busy_factory_exit_receiver(&sim, &rules, product, 3);
     assert_eq!(sim.scenario_rng.logical_state(), rng);
-    assert_eq!(
-        sim.production
-            .primary_factory_ids(owner, ProductionCategory::Vehicle)
-            .next(),
-        Some(1)
-    );
+    assert!(sim.production.is_primary_factory(1));
     assert!(sim.production.factories().is_empty());
     assert!(!sim.object_placement_scope_active());
 }
 
+/// Stock type match; Ares admits NAWEAP
+/// ([`ares_busy_factory_exit_takes_another_type_that_can_build_the_product`]).
 #[test]
 fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
     let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
@@ -254,14 +243,9 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
         dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
     });
     let mtnk = sim.intern("MTNK");
-    sim.production.factories_mut().create_building_factory(
-        2,
-        owner,
-        ProductionCategory::Vehicle,
-        mtnk,
-        90,
-        700,
-    );
+    sim.production
+        .factories_mut_for_test()
+        .create_building_factory_for_test(2, owner, ProductionCategory::Vehicle, mtnk, 90, 700);
     let attached = sim.production.factories().building_factory(2).cloned();
     sim.houses
         .get_mut(&owner)
@@ -269,9 +253,7 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
         .base_projection_mut()
         .replace_buildings_for_test(vec![1, 2, 4, 3, 5]);
     let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
-    assert!(dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(dispatch_production_changes_for_tests(&mut sim, &rules));
     assert_busy_factory_exit_receiver(&sim, &rules, product, 5);
     assert_eq!(
         sim.production.factories().building_factory(2),
@@ -279,12 +261,28 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
         "any non-null +524 excludes that candidate without changing its factory"
     );
     assert!(sim.production.factories().building_factory(5).is_none());
-    assert_eq!(
-        sim.production
-            .primary_factory_ids(owner, ProductionCategory::Vehicle)
-            .next(),
-        Some(1)
-    );
+    assert!(sim.production.is_primary_factory(1));
+}
+
+/// Ares 3.0 BuildingClass_KickOutUnit_FindAlternateKickout (100415E0, hook
+/// 0x4444E2): a guarding NAWEAP, another type with GAWEAP's `Factory=` and
+/// `Naval=` that MTNK can be built at, takes the busy factory's product.
+#[test]
+fn ares_busy_factory_exit_takes_another_type_that_can_build_the_product() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
+        return;
+    };
+    spawn_structure(&mut sim, &rules, 4, "Americans", "NAWEAP", 20, 20);
+    busy_factory_exit_mission(&mut sim, 4, crate::sim::mission::MissionType::Guard);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .base_projection_mut()
+        .replace_buildings_for_test(vec![1, 4, 3, 2]);
+    let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
+    assert!(dispatch_production_changes_for_tests(&mut sim, &rules));
+    assert_busy_factory_exit_receiver(&sim, &rules, product, 4);
 }
 
 #[test]
@@ -367,12 +365,7 @@ fn busy_factory_exit_restores_building_attachment_after_success() {
     assert!(sim.production.factories().building_factory(3).is_none());
     assert_eq!(sim.houses[&owner].economy().credits(), credits);
     assert_eq!(sim.next_stable_object_id(), next_id);
-    assert_eq!(
-        sim.production
-            .primary_factory_ids(owner, ProductionCategory::Vehicle)
-            .next(),
-        Some(1)
-    );
+    assert!(sim.production.is_primary_factory(1));
     assert!(!sim.object_placement_scope_active());
 }
 
@@ -384,14 +377,9 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     let product = busy_factory_exit_product(&mut sim, &rules, owner, true);
     let mtnk = sim.intern("MTNK");
     let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), &rules);
-    sim.production.factories_mut().create_building_factory(
-        3,
-        owner,
-        ProductionCategory::Vehicle,
-        mtnk,
-        91,
-        cost,
-    );
+    sim.production
+        .factories_mut_for_test()
+        .create_building_factory_for_test(3, owner, ProductionCategory::Vehicle, mtnk, 91, cost);
     let registry = sim.production.factories().clone();
     let source = sim.production.factories().building_factory(1).cloned();
     let credits = sim.houses[&owner].economy().credits();
@@ -399,14 +387,14 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     for (from, to) in [(1, 3), (1, 1), (4, 2)] {
         assert!(
             !sim.production
-                .factories_mut()
+                .edit_factories()
                 .transfer_building_factory_attachment(from, to)
         );
         assert_eq!(*sim.production.factories(), registry);
     }
     assert!(
         sim.production
-            .factories_mut()
+            .edit_factories()
             .transfer_building_factory_attachment(1, 2)
     );
     assert!(sim.production.factories().building_factory(1).is_none());
@@ -418,7 +406,7 @@ fn busy_factory_exit_attachment_owner_preserves_identity_and_rejects_occupied_ta
     assert_eq!(source.unwrap().object().unwrap().entity_id, Some(product));
     assert!(
         sim.production
-            .factories_mut()
+            .edit_factories()
             .transfer_building_factory_attachment(2, 1)
     );
     assert_eq!(*sim.production.factories(), registry);
@@ -500,9 +488,7 @@ fn busy_factory_exit_without_an_alternate_refunds_player_product_and_promotes_qu
     );
     let credits = sim.houses[&owner].economy().credits();
     let refund = sim.cost_of(owner, rules.object("MTNK").unwrap(), &rules);
-    assert!(!dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(!dispatch_production_changes_for_tests(&mut sim, &rules));
     // ExitObject4444B3's busy return1 still copies Archive; the direct native
     // rows below preserve that boundary. Human HousePlace4FB57F then sees
     // producer+524zero and abandons this paid product, not the queued tail.
@@ -528,6 +514,8 @@ fn busy_factory_exit_without_an_alternate_refunds_player_product_and_promotes_qu
     assert!(sim.production.factories().building_factory(1).is_none());
 }
 
+/// Stock gamemd rows; Ares 100415E0 (hook 0x4444E2) admits other factory
+/// types they hold as refused candidates.
 #[test]
 fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng() {
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -539,10 +527,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
     use serde_json::{Value, json};
     use std::collections::BTreeMap;
 
-    let data: Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/anytown_damage/unit_unlimbo.json",
-    ))
-    .unwrap();
+    let data = crate::test_fixture::json("tools/spatial_oracle/anytown_damage/unit_unlimbo.json");
     assert_eq!(data["schema_version"], 1);
     let rows = data["factory_busy_redirect_rows"].as_array().unwrap();
     assert_eq!(rows.len(), 6);
@@ -720,7 +705,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert!(labels.insert(*label, id).is_none());
@@ -753,11 +738,8 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
             .unwrap()
             .base_projection_mut()
             .replace_buildings_for_test(order);
-        sim.production.set_primary_factory_for_test(
-            owner,
-            ProductionCategory::Vehicle,
-            labels["source"],
-        );
+        sim.production
+            .set_primary_factory_for_test(labels["source"]);
         let source_attached = before["producers"]["source"]["attachment"] != "0x0";
         assert_eq!(source_attached, input["source_attachment"] == "Building");
         let product = busy_factory_exit_product(&mut sim, &rules, owner, source_attached);
@@ -765,14 +747,16 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         let cost = sim.cost_of(owner, rules.object("MTNK").unwrap(), &rules);
         for (label, _) in &producer_types {
             if *label != "source" && before["producers"][label]["attachment"] != "0x0" {
-                sim.production.factories_mut().create_building_factory(
-                    labels[label],
-                    owner,
-                    ProductionCategory::Vehicle,
-                    type_id,
-                    90 + labels[label],
-                    cost,
-                );
+                sim.production
+                    .factories_mut_for_test()
+                    .create_building_factory_for_test(
+                        labels[label],
+                        owner,
+                        ProductionCategory::Vehicle,
+                        type_id,
+                        90 + labels[label],
+                        cost,
+                    );
             }
         }
         let actor = sim.substrate.entities.get_mut(product).unwrap();
@@ -875,7 +859,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
             "{name}: original nested call count"
         );
         if result.is_some() {
-            assert_eq!(placed.radio_contacts.slot(0), Some(labels[receiver]));
+            assert_eq!(placed.seldom.radio_contacts.slot(0), Some(labels[receiver]));
         }
         let location = ground_pose::position_world_coord(&placed.position);
         assert_eq!(
@@ -907,12 +891,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         );
         assert_eq!(sim.houses[&owner].economy().credits(), credits);
         assert_eq!(sim.next_stable_object_id(), next_id);
-        assert_eq!(
-            sim.production
-                .primary_factory_ids(owner, ProductionCategory::Vehicle)
-                .next(),
-            Some(labels["source"])
-        );
+        assert!(sim.production.is_primary_factory(labels["source"]));
         for (label, id) in &labels {
             let entity = sim.substrate.entities.get(*id).unwrap();
             let native = &after["producers"][label];
@@ -969,7 +948,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(enqueue_by_type(
@@ -977,7 +956,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
         &rules,
         "Americans",
         "E2",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let held = sim
@@ -1013,7 +992,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
         entity.lifecycle.in_limbo(),
         "Strip emits PLACE before Unlimbo"
     );
-    assert!(!entity.in_logic_vector.is_member());
+    assert!(!entity.seldom.in_logic_vector.is_member());
     let factory = sim
         .production
         .factories()
@@ -1046,7 +1025,7 @@ fn ready_infantry_prefix_world(
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(enqueue_by_type(
@@ -1054,7 +1033,7 @@ fn ready_infantry_prefix_world(
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(
@@ -1106,10 +1085,9 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
         .advance_app_frame(
             std::slice::from_ref(&rally),
             &rules,
-            None,
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut crate::sim::world::FrameEffects::default().with_production_strip(&visits),
         )
         .unwrap();
     let admitted = output.take_admitted_commands();
@@ -1160,10 +1138,9 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut crate::sim::world::FrameEffects::default().with_production_strip(&visits),
         )
         .unwrap();
     assert_eq!(replay_output.take_admitted_commands(), admitted);
@@ -1198,13 +1175,9 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .unwrap()
         .entity_id
         .unwrap();
-    for _ in 0..128 {
-        assert!(live.issue_local_command(CommandEnvelope::new(
-            owner,
-            0,
-            Command::Stop { entity_id: 999 },
-        )));
-    }
+    let free = live.available_local_command_slots();
+    let stop = CommandEnvelope::new(owner, 0, Command::Stop { entity_id: 999 });
+    assert!(live.issue_local_commands(std::iter::repeat_n(stop, free)));
     // The app's pre-Logic drain must not free any of the local slots.
     let due = live.take_due_commands();
     assert!(due.is_empty());
@@ -1229,8 +1202,8 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
 
     let visits = live.production.factories().strip_visits_for_test(owner);
     let clears = std::cell::Cell::new(0);
-    let clear = |_| clears.set(clears.get() + 1);
-    let before_logic = |_: &Simulation| {
+    let mut clear = |_| clears.set(clears.get() + 1);
+    let mut before_logic = |_: &Simulation| {
         assert_eq!(
             clears.get(),
             1,
@@ -1241,16 +1214,16 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             TickLane::Ordinary,
-            FrameEffects::default()
-                .with_production_strip(&visits, &clear)
-                .with_before_logic(&before_logic),
+            &mut FrameEffects::default()
+                .with_production_strip(&visits)
+                .with_production_request_cleared(&mut clear)
+                .with_before_logic(&mut before_logic),
         )
         .unwrap();
     let admitted = output.take_admitted_commands();
-    assert_eq!(admitted.len(), 129);
+    assert_eq!(admitted.len(), free + 1);
     assert_eq!(admitted[0], future);
     assert!(
         admitted[1..]
@@ -1277,10 +1250,9 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .advance_app_frame(
             &due,
             &rules,
-            None,
             67,
             TickLane::Ordinary,
-            FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut FrameEffects::default().with_production_strip(&visits),
         )
         .unwrap();
     assert_eq!(replay_output.take_admitted_commands(), admitted);
@@ -1307,10 +1279,9 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
             .advance_app_frame(
                 &due,
                 &rules,
-                None,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default().with_production_strip(&visits, &|_| {}),
+                &mut FrameEffects::default().with_production_strip(&visits),
             )
             .unwrap();
         assert!(next.take_admitted_commands().is_empty());
@@ -1348,7 +1319,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
         &rules,
         "Americans",
         "MTNK",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let vehicle = sim
@@ -1361,7 +1332,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
     let vehicle_entity = sim.substrate.entities.get(vehicle_id).unwrap();
     assert!(vehicle_entity.lifecycle.in_limbo());
     assert!(!vehicle_entity.lifecycle.cell_marked());
-    assert!(!vehicle_entity.in_logic_vector.is_member());
+    assert!(!vehicle_entity.seldom.in_logic_vector.is_member());
     assert!(!vehicle_entity.in_playfield());
     assert_eq!(vehicle_entity.techno_ctor_random_word(), mtnk_word);
 
@@ -1371,7 +1342,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let infantry = sim
@@ -1384,7 +1355,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
     let e1_entity = sim.substrate.entities.get(e1_id).unwrap();
     assert!(e1_entity.lifecycle.in_limbo());
     assert!(!e1_entity.lifecycle.cell_marked());
-    assert!(!e1_entity.in_logic_vector.is_member());
+    assert!(!e1_entity.seldom.in_logic_vector.is_member());
     assert!(!e1_entity.in_playfield());
     assert_eq!(e1_entity.techno_ctor_random_word(), e1_word);
 
@@ -1393,7 +1364,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
         &rules,
         "Americans",
         "E2",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert_eq!(
@@ -1412,7 +1383,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
             naval: false
         },
         false,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert!(sim.substrate.entities.get(e1_id).is_none());
     let promoted = sim
@@ -1517,7 +1488,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
                 .unwrap()
         );
         assert!(building.lifecycle.in_limbo() && !building.lifecycle.cell_marked());
-        assert!(!building.in_logic_vector.is_member());
+        assert!(!building.seldom.in_logic_vector.is_member());
         if control["input"]["equal_sample_control"] == true {
             // Same isolated health-sampling rung as the native equality control;
             // a held product receives no normal AI turn.
@@ -1541,15 +1512,14 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             sim.assign_target_represented(
                 observer,
                 Some(crate::sim::combat::TargetKind::Entity(object)),
                 &rules,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             Some(observer)
@@ -1579,7 +1549,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap()).into();
+            SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["mapgen"].as_str().unwrap());
         sim.session
@@ -1594,7 +1564,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
                 naval: false
             },
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         assert!(sim.substrate.entities.get(object).is_none());
         let state = serde_json::to_value(&sim.power_states[&owner]).unwrap();
@@ -1951,7 +1921,12 @@ fn forbidden_houses_leave_americans_one_airforce_command() {
     let americans = build_options_for_owner(&sim, &rules, "Americans");
     let airforce: Vec<_> = americans
         .iter()
-        .filter(|opt| opt.display_name == "Airforce Command")
+        .filter(|opt| {
+            rules
+                .object(sim.interner.resolve(opt.type_id))
+                .and_then(|obj| obj.name.as_deref())
+                == Some("Airforce Command")
+        })
         .collect();
 
     assert_eq!(
@@ -2003,7 +1978,7 @@ fn published_completions_dispatch_each_owners_next_frame_place() {
             .test_arm_ready(soviet_id, ProductionCategory::Infantry)
     );
 
-    let spawned = dispatch_production_changes_for_tests(&mut sim, &rules, None);
+    let spawned = dispatch_production_changes_for_tests(&mut sim, &rules);
     assert!(spawned, "At least one queue completion should spawn");
     assert!(
         sim.production.factories().is_empty(),
@@ -2111,9 +2086,7 @@ fn blocked_vehicle_delivery_refunds_disposes_and_promotes_next_item() {
     // test_arm_ready supplies paid Balance0; the wallet above is its supplied
     // post-payment balance. HousePlace4FB0E0 refunds and abandons a present producer's refused exit,
     // then StartNextQueued constructs the next graph (4FB587..4FB62A).
-    assert!(!dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(!dispatch_production_changes_for_tests(&mut sim, &rules));
     assert_eq!(credits_for_owner(&sim, "Americans"), 1700);
     for id in std::iter::once(held).chain(children) {
         assert!(!sim.substrate.entities.contains(id));
@@ -2140,9 +2113,7 @@ fn blocked_vehicle_delivery_refunds_disposes_and_promotes_next_item() {
     assert_eq!(projected[0].progress, 0);
     let allocated = sim.next_stable_object_id();
     for _ in 0..3 {
-        assert!(!dispatch_production_changes_for_tests(
-            &mut sim, &rules, None
-        ));
+        assert!(!dispatch_production_changes_for_tests(&mut sim, &rules));
     }
     assert_eq!(
         super::lifecycle_tests::held_id(&sim, americans_id, ProductionCategory::Vehicle),
@@ -2198,9 +2169,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     assert_eq!(children.len(), 3);
     let owned = sim.owned_object_counts(americans_id).1;
     let mut expected = sim.scenario_rng.clone();
-    assert!(!dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(!dispatch_production_changes_for_tests(&mut sim, &rules));
     for id in std::iter::once(refused).chain(children) {
         assert!(!sim.substrate.entities.contains(id));
     }
@@ -2219,8 +2188,8 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     assert_eq!(credits_for_owner(&sim, "Americans"), 50_700);
     for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
-        cell.speed_costs.track = Some(100);
-        cell.speed_costs.wheel = Some(100);
+        cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        cell.speed_costs.wheel = Some(crate::util::native_x87::NativeF32Bits::ONE);
         cell.zone_type = crate::map::resolved_terrain::zone_class::GROUND;
     }
     let clear_grid = PathGrid::from_resolved_terrain(&terrain);
@@ -2233,9 +2202,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
             .factories_mut()
             .test_arm_ready(americans_id, ProductionCategory::Vehicle)
     );
-    assert!(dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(dispatch_production_changes_for_tests(&mut sim, &rules));
     let delivered = sim.substrate.entities.get(successor).unwrap();
     assert!(!delivered.lifecycle.in_limbo() && delivered.lifecycle.cell_marked());
     assert_eq!(super::lifecycle_tests::children(&sim, successor).len(), 3);
@@ -2352,9 +2319,7 @@ fn cancel_by_type_removes_ready_building_and_refunds() {
             .factories_mut()
             .test_arm_ready(americans_id, ProductionCategory::Building)
     );
-    assert!(!dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
+    assert!(!dispatch_production_changes_for_tests(&mut sim, &rules));
     assert_eq!(
         ready_buildings_for_owner(&sim, &rules, "Americans").len(),
         1
@@ -2371,7 +2336,7 @@ fn cancel_by_type_removes_ready_building_and_refunds() {
             naval: false,
         },
         false,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(cancelled, "should cancel ready building");
 
@@ -2447,6 +2412,7 @@ fn only_a_busy_airfield_refuses_its_type() {
             .entities
             .get_mut(building)
             .unwrap()
+            .seldom
             .radio_contacts;
         contacts.set_capacity(1);
         contacts.insert(contact);
@@ -2471,7 +2437,7 @@ fn only_a_busy_airfield_refuses_its_type() {
         &rules,
         "Americans",
         "MTNK",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
 }
@@ -2488,7 +2454,7 @@ fn completed_same_type_produce_preserves_the_factory_at_build_limit() {
         &rules,
         "Americans",
         "AMCV",
-        Default::default(),
+        &mut Default::default(),
         false
     ));
     assert!(
@@ -2511,7 +2477,7 @@ fn completed_same_type_produce_preserves_the_factory_at_build_limit() {
         &rules,
         "Americans",
         "AMCV",
-        Default::default(),
+        &mut Default::default(),
         false
     ));
     assert_eq!(
@@ -2542,7 +2508,7 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
         &rules,
         "Americans",
         "AMCV",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(suspend_production(
@@ -2564,8 +2530,13 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
         queue_view_for_owner(&sim, &rules, "Americans")[0].state,
         BuildQueueState::Paused
     );
-    let option = super::production_tech::build_option_for_owner(&sim, &rules, "Americans", "AMCV")
-        .expect("the type stays listed");
+    let option = super::production_tech::build_option_for_owner(
+        &sim,
+        &rules,
+        sim.interner.get("Americans"),
+        "AMCV",
+    )
+    .expect("the type stays listed");
     assert_eq!(
         option.reason,
         Some(super::BuildDisabledReason::AtBuildLimit)
@@ -2577,7 +2548,7 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
         &rules,
         "Americans",
         "AMCV",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let factory = sim
@@ -2603,7 +2574,7 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
         &rules,
         "Americans",
         "AMCV",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(sim.sound_events.iter().any(|event| {
@@ -2632,7 +2603,7 @@ fn a_produce_past_the_queue_cap_is_refused_with_a_scold() {
             &rules,
             "Americans",
             "MTNK",
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
     }
@@ -2642,7 +2613,7 @@ fn a_produce_past_the_queue_cap_is_refused_with_a_scold() {
         &rules,
         "Americans",
         "MTNK",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert_eq!(refusals(&sim), 1);
@@ -2713,7 +2684,6 @@ fn a_producer_without_weapons_factory_takes_the_generic_exit_arm() {
             product,
             (0, 0),
             &rules,
-            None,
         )
         .expect("a free dock Cell");
         let rng = sim.rng_state();
@@ -2725,7 +2695,7 @@ fn a_producer_without_weapons_factory_takes_the_generic_exit_arm() {
                 product,
                 (0, 0),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             crate::sim::ai_base_building::BuildingExit::Placed,
             "human {human}"
@@ -2742,7 +2712,7 @@ fn a_producer_without_weapons_factory_takes_the_generic_exit_arm() {
             Some(NavTargetRef::cell(dock.0, dock.1))
         );
         assert!(!unit.has_live_contact_with(1));
-        assert_eq!(unit.tether.partner(), None);
+        assert_eq!(unit.seldom.tether.partner(), None);
         if human {
             assert_eq!(unit.mission.queued().known(), Some(MissionType::Move));
             assert_eq!(unit.archive_target(), None);
@@ -2829,7 +2799,7 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
                 product,
                 (0, 0),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             crate::sim::ai_base_building::BuildingExit::Placed,
             "{context}"
@@ -2859,8 +2829,9 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
                 &mut sim,
                 product,
                 &rules,
-                crate::sim::world::ObjectAiCtx::default(),
-            );
+                &mut crate::sim::world::ObjectAiCtx::default(),
+            )
+            .unwrap();
             let e1 = sim.substrate.entities.get(product).unwrap();
             assert_eq!(e1.navigation.nav_com(), Some(post), "{context}");
             assert_eq!(e1.navigation.nav_list(), [], "{context}");
@@ -2894,7 +2865,7 @@ fn local_strip_raw_place_preserves_remote_change_and_shared_hash() {
             .test_arm_ready(remote, ProductionCategory::Infantry)
     );
     let hash = sim.state_hash();
-    super::publish_production_changes(&mut sim, &rules, FrameEffects::default());
+    super::publish_production_changes(&mut sim, &rules, &mut FrameEffects::default());
     assert!(
         sim.network_command_queues()
             .local_records()
@@ -2908,11 +2879,13 @@ fn local_strip_raw_place_preserves_remote_change_and_shared_hash() {
     stale.construction_order = stale.construction_order.wrapping_add(1);
     let visits = [stale, local, local];
     let cleared = std::cell::RefCell::new(Vec::new());
-    let clear = |id| cleared.borrow_mut().push(id);
+    let mut clear = |id| cleared.borrow_mut().push(id);
     super::publish_production_changes(
         &mut sim,
         &rules,
-        FrameEffects::default().with_production_strip(&visits, &clear),
+        &mut FrameEffects::default()
+            .with_production_strip(&visits)
+            .with_production_request_cleared(&mut clear),
     );
     assert_eq!(*cleared.borrow(), [local.type_id]);
     let raw = sim.network_command_queues().local_records().unwrap()[0].clone();
@@ -2939,7 +2912,7 @@ fn local_strip_raw_place_preserves_remote_change_and_shared_hash() {
     super::publish_production_changes(
         &mut sim,
         &rules,
-        FrameEffects::default().with_production_strip(&remote_visits, &|_| {}),
+        &mut FrameEffects::default().with_production_strip(&remote_visits),
     );
     let records = sim
         .network_command_queues()

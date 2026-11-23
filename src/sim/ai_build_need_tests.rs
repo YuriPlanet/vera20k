@@ -139,7 +139,7 @@ fn yard_builds(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, yard: u
         .unwrap()
         .ai_production_mut()
         .set_for_test(0, choice, true);
-    crate::sim::production::factory_ai(sim, rules, yard, None, FrameEffects::default());
+    crate::sim::production::factory_ai(sim, rules, yard, None, &mut FrameEffects::default());
     assert!(sim.production.factories().building_factory(yard).is_some());
 }
 
@@ -241,7 +241,13 @@ fn the_need_waits_for_the_harvester_the_war_factory_is_building() {
         .ai_unit_choices_mut()
         .set(UnitChoiceKind::Unit, harvester);
     assert!(check_build_need(&sim, &rules, owner), "no factory holds it");
-    crate::sim::production::factory_ai(&mut sim, &rules, factory, None, FrameEffects::default());
+    crate::sim::production::factory_ai(
+        &mut sim,
+        &rules,
+        factory,
+        None,
+        &mut FrameEffects::default(),
+    );
     for (owed, need) in [(1000, false), (1001, true)] {
         sim.production
             .factories_mut()
@@ -330,7 +336,7 @@ fn the_rebuild_sells_from_the_last_node_until_it_can_pay() {
         .unwrap();
     assert!(check_build_need(&sim, &rules, owner));
 
-    manage_build_queue(&mut sim, &rules, owner, None, FrameEffects::default());
+    manage_build_queue(&mut sim, &rules, owner, None, &mut FrameEffects::default());
 
     // 1000 + 600 is not above 2000; 1000 + 1200 is.
     let sold: Vec<bool> = ids.iter().map(|&id| selling(&sim, id)).collect();
@@ -387,7 +393,7 @@ fn a_house_with_a_refinery_and_a_war_factory_rebuilds_its_harvester() {
     assert_eq!(sim.houses[&owner].tracking().war_factories(), 1);
     assert!(check_build_need(&sim, &rules, owner));
 
-    manage_build_queue(&mut sim, &rules, owner, None, FrameEffects::default());
+    manage_build_queue(&mut sim, &rules, owner, None, &mut FrameEffects::default());
 
     // 500 + 600 is not above the harvester's 1400; 500 + 1200 is.
     let sold: Vec<bool> = ids.iter().map(|&id| selling(&sim, id)).collect();
@@ -414,7 +420,7 @@ fn a_house_that_cannot_pay_keeps_its_production_and_hunts() {
     let ids = plan(&mut sim, &rules, owner, &[("PLAIN", (14, 10))]);
     yard_builds(&mut sim, &rules, owner, yard, "PLAIN");
 
-    manage_build_queue(&mut sim, &rules, owner, None, FrameEffects::default());
+    manage_build_queue(&mut sim, &rules, owner, None, &mut FrameEffects::default());
 
     assert!(selling(&sim, ids[0]));
     assert!(sim.production.factories().building_factory(yard).is_some());
@@ -438,7 +444,7 @@ fn paying_at_the_first_node_rebuilds_then_hunts() {
         &[("YARD", (10, 10)), ("GATE", (14, 10)), ("BUNKER", (18, 10))],
     );
 
-    manage_build_queue(&mut sim, &rules, owner, None, FrameEffects::default());
+    manage_build_queue(&mut sim, &rules, owner, None, &mut FrameEffects::default());
 
     // The bunker's node goes unsold; the gate's 300 and the yard's 3000
     // pass 2000 at the first node.
@@ -488,7 +494,13 @@ fn a_house_whose_yard_node_is_open_rebuilds_nothing_and_hunts() {
         .unwrap()
         .ai_unit_choices_mut()
         .set(UnitChoiceKind::Unit, harvester);
-    crate::sim::production::factory_ai(&mut sim, &rules, factory, None, FrameEffects::default());
+    crate::sim::production::factory_ai(
+        &mut sim,
+        &rules,
+        factory,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(
         sim.production
             .factories()
@@ -497,7 +509,7 @@ fn a_house_whose_yard_node_is_open_rebuilds_nothing_and_hunts() {
     );
     assert!(check_build_need(&sim, &rules, owner));
 
-    manage_build_queue(&mut sim, &rules, owner, None, FrameEffects::default());
+    manage_build_queue(&mut sim, &rules, owner, None, &mut FrameEffects::default());
 
     // 1800 and the last plain's 600 pass the refinery's 2000.
     let sold: Vec<bool> = ids.iter().map(|&id| selling(&sim, id)).collect();
@@ -532,7 +544,7 @@ fn a_sale_that_empties_the_plan_gets_its_last_node_back() {
     spawn(&mut sim, &rules, "YARD", "AIHouse", (10, 10));
     let ids = plan(&mut sim, &rules, owner, &[("GATE", (14, 10))]);
 
-    manage_build_queue(&mut sim, &rules, owner, None, FrameEffects::default());
+    manage_build_queue(&mut sim, &rules, owner, None, &mut FrameEffects::default());
 
     assert!(selling(&sim, ids[0]));
     assert_eq!(plan_types(&sim, &rules, owner), [("GATE".into(), (14, 10))]);
@@ -565,7 +577,7 @@ fn the_strategy_rebuilds_after_the_missing_factorys_sell_off() {
         &rules,
         owner,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 
     assert!(ids.iter().all(|&id| selling(&sim, id)));

@@ -55,9 +55,6 @@ fn fixture_with_art(extra: &str, art: Option<&IniFile>) -> (Simulation, RuleSet)
     };
     if let Some(art) = art {
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(art),
-        );
         assert_eq!(
             rules
                 .animation_sequence("E1")
@@ -105,6 +102,7 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
     // ClickFire admits the Super and calls Launch; the cases' own effects
     // are each caller's to check.
     assert!(sim.apply_command_with_overlays(
+        None,
         "Americans",
         &Command::LaunchSuperWeapon {
             sw_type_id,
@@ -113,7 +111,7 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
         },
         rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(
         !sim.super_weapons[&owner][&sw_type_id].is_ready,
@@ -129,7 +127,7 @@ fn held_infantry_survives_launch(name: &str) {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let held = sim
@@ -150,7 +148,7 @@ fn held_infantry_survives_launch(name: &str) {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     // Supplied unmarked Cell0,0 pose, independent of the fresh constructor.
@@ -216,7 +214,7 @@ fn held_infantry_survives_launch(name: &str) {
         assert!(
             object.lifecycle.in_limbo()
                 && !object.lifecycle.cell_marked()
-                && !object.in_logic_vector.is_member()
+                && !object.seldom.in_logic_vector.is_member()
         );
     }
     assert!(
@@ -266,7 +264,7 @@ fn animated_mutation_victim_retires(explosion: bool) {
     let object = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(object.infantry_sprite_pose(), Some((-1, 0)));
     assert!(object.animation.is_none(), "Doing owns the Infantry pose");
-    assert!(object.lifecycle.cell_marked() && object.in_logic_vector.is_member());
+    assert!(object.lifecycle.cell_marked() && object.seldom.in_logic_vector.is_member());
     launch_command(&mut sim, &rules, "GM", 5, 5);
     // InfDeath 9's admitted arm UnInits the victim inside its receiver
     // (`0x005185F1`); no death sequence keeps a corpse.
@@ -313,7 +311,7 @@ fn infantry_effect_only_cleanup_follows_recursive_deaths() {
     assert_eq!(uninit_order, [child, parent]);
     for id in [parent, child] {
         let entity = sim.substrate.entities.get(id).unwrap();
-        assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector.is_member());
+        assert!(entity.lifecycle.in_limbo() && !entity.seldom.in_logic_vector.is_member());
     }
     sim.advance_tick(&[], Some(&rules), None, None, 100);
     assert!(!sim.substrate.entities.contains(parent));
@@ -384,10 +382,9 @@ fn infantry_same_frame_firer_death_keeps_electric_consequences() {
             .advance_app_frame(
                 &[],
                 &rules,
-                None,
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert_eq!(
@@ -431,12 +428,14 @@ fn infantry_same_frame_firer_death_keeps_electric_consequences() {
                 sim.substrate.entities.contains(infantry),
                 inf_death == 2 && visit < 3
             );
+            // This [Spark] authors no ColorList, so its sparks age and the
+            // system may retire (0x0062C494 holds the colour, no error); a
+            // repeated discharge would be another system.
+            assert!(
+                sim.particle_systems().iter().all(|(id, _)| *id == spark_id),
+                "no repeated death discharge"
+            );
         }
-        assert_eq!(
-            sim.particle_systems().len(),
-            1,
-            "no repeated death discharge"
-        );
     }
 }
 
@@ -468,7 +467,9 @@ fn infantry_receiver_sequences_finish_through_production_frames() {
             if frame < 3 {
                 let object = sim.substrate.entities.get(victim).unwrap();
                 assert_eq!(object.infantry_sprite_pose(), Some((doing, frame)));
-                assert!(object.lifecycle.cell_marked() && object.in_logic_vector.is_member());
+                assert!(
+                    object.lifecycle.cell_marked() && object.seldom.in_logic_vector.is_member()
+                );
             }
         }
         assert!(!sim.substrate.occupancy.contains_entity(5, 5, victim));
@@ -493,7 +494,7 @@ fn zero_count_death_request_leaves_an_infantryman_the_health_reset_revives() {
             0,
             true,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -509,7 +510,7 @@ fn zero_count_death_request_leaves_an_infantryman_the_health_reset_revives() {
         !object.death.is_dying()
             && object.lifecycle.object_alive()
             && object.lifecycle.cell_marked()
-            && object.in_logic_vector.is_member()
+            && object.seldom.in_logic_vector.is_member()
     );
     sim.advance_tick(&[], Some(&rules), None, None, 100);
     let object = sim
@@ -595,7 +596,7 @@ fn genetic_converter_command_uses_selected_bridge_membership() {
                 0,
                 4,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         {
@@ -654,7 +655,7 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let wounded = sim
@@ -666,7 +667,7 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     // Supplied already-present mixed membership isolates the IC damage
@@ -716,10 +717,10 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
         !dead.death.is_dying()
             && dead.lifecycle.object_alive()
             && dead.lifecycle.cell_marked()
-            && dead.in_logic_vector.is_member()
+            && dead.seldom.in_logic_vector.is_member()
     );
     assert_eq!(dead.infantry_sprite_pose(), Some((12, 0)));
-    assert_eq!(dead.kill_record.killer(), Some(owner));
+    assert_eq!(dead.seldom.kill_record.killer(), Some(owner));
     // The ordinary sequence still owns the object; the existing shared UnInit
     // terminal owns score publication. Verify the attributed receipt survives it.
     sim.uninit_with_rules(wounded, &rules);
@@ -763,7 +764,7 @@ fn iron_curtain_command_selects_deck_members_and_overlapping_foundation() {
             0,
             4,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     {
@@ -792,7 +793,7 @@ fn iron_curtain_command_selects_deck_members_and_overlapping_foundation() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     sim.substrate
@@ -920,6 +921,17 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
     // launch, nested death and fallout are real. The former overlay0 was not
     // admitted by native587180's structural body branch.
     let span = [(5, 5), (5, 4), (5, 3), (5, 2), (5, 6)];
+    // The ground is raised before the Mark: the stamp is what records the
+    // span's deck, and a level written afterwards would leave that deck four
+    // levels above the old ground.
+    for &(x, y) in &span {
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(x, y)
+            .unwrap()
+            .level = 3;
+    }
     sim.resolved_terrain
         .as_mut()
         .unwrap()
@@ -965,7 +977,7 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
             0,
             7,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     {
@@ -995,7 +1007,7 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
             0,
             7,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     {
@@ -1026,7 +1038,7 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
             0,
             7,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     {
@@ -1090,19 +1102,21 @@ pub(super) fn test_playfield_bounds() -> crate::sim::cell_rect::PlayfieldBounds 
 pub(super) fn test_terrain_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         speed_costs: SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            hover: Some(100),
-            amphibious: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..SpeedCostProfile::default()
         },
         base_speed_costs: SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            hover: Some(100),
-            amphibious: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..SpeedCostProfile::default()
         },
         ..crate::map::resolved_terrain::test_flat_cell(rx, ry)

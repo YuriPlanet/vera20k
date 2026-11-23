@@ -186,10 +186,9 @@ impl Encounter {
             .advance_app_frame(
                 &commands,
                 &self.rules,
-                None,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary open-water Squid combat frame");
         assert!(output.tick.frame_committed);
@@ -387,8 +386,12 @@ impl Encounter {
                 arg6: true,
             },
         );
-        self.sim
-            .commit_direct_damage_receiver(&self.rules, None, event, FrameEffects::default());
+        self.sim.commit_direct_damage_receiver(
+            &self.rules,
+            None,
+            event,
+            &mut FrameEffects::default(),
+        );
     }
 }
 
@@ -516,7 +519,7 @@ fn entire_grapple(elite: bool) {
             assert!(
                 !scene.last_sound_events.iter().any(|event| matches!(event,
                 super::SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                    if *anim_id == scene.ship && sound_id.eq_ignore_ascii_case(&sinking_sound))),
+                    if *anim_id == scene.ship && sound_id.name_in(&scene.rules).eq_ignore_ascii_case(&sinking_sound))),
                 "culling cannot retroactively run the earlier sinking-sound edge"
             );
             scene.assert_released(anim);
@@ -535,7 +538,7 @@ fn entire_grapple(elite: bool) {
             assert!(
                 scene.last_sound_events.iter().any(|event| matches!(event,
                 super::SimSoundEvent::AnimationStarted { anim_id, sound_id, world }
-                    if *anim_id == scene.ship && sound_id.eq_ignore_ascii_case(&sinking_sound)
+                    if *anim_id == scene.ship && sound_id.name_in(&scene.rules).eq_ignore_ascii_case(&sinking_sound)
                         && world.z == lowered_z)),
                 "next Foot visit uses the already-lowered hull coordinate"
             );
@@ -713,7 +716,7 @@ fn stock_squid_iron_curtain_releases_host_then_kills_revealed_organic_owner() {
         ry,
         sw,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     // Native IC visits its center first, then the eight neighboring cells.
     // Center DEST runs ExitUnit; the revealed Organic SQD is now in one of
@@ -778,7 +781,7 @@ fn stock_squid_third_party_victim_death_uninits_suppressed_owner_and_owned_anim(
     let host = scene.sim.substrate.entities.get(scene.ship).unwrap();
     // The fatal receiver records the loss before Unit737E43..737E58
     // restores Health1/Alive and retains the hull for sinking, not UnInit.
-    assert!(host.kill_record.is_recorded());
+    assert!(host.seldom.kill_record.is_recorded());
     assert!(host.sinking.is_active());
     assert!(host.lifecycle.object_alive());
     assert_eq!(
@@ -876,9 +879,9 @@ fn stock_squid_internal_snapshot_preserves_live_roll_progress_and_reference() {
     );
     // Explicit Rust continuation cursor, not native/app SaveGame semantics.
     loaded.scenario_rng = scene.sim.scenario_rng.clone();
-    let main = scene.sim.main_rng.snapshot_for_test();
-    loaded.main_rng = main.clone().into();
-    scene.sim.main_rng = main.into();
+    let main = scene.sim.main_rng.clone();
+    loaded.main_rng = main.clone();
+    scene.sim.main_rng = main;
     loaded.mapgen_rng = scene.sim.mapgen_rng.clone();
     loaded.restore_after_snapshot_load().unwrap();
     loaded.rebuild_caches_after_load(
@@ -907,10 +910,9 @@ fn stock_squid_internal_snapshot_preserves_live_roll_progress_and_reference() {
             .advance_app_frame(
                 &commands,
                 &scene.rules,
-                None,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("internal restored grapple continuation");
         let live = scene
@@ -1319,7 +1321,7 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
         .set_binary_frame_for_test(initial["frame"].as_u64().unwrap() as u32);
     scene.sim.techno_limbo_with_context(
         scene.squid,
-        super::UninitContext::with_rules(&scene.rules).with_effects(FrameEffects::default()),
+        super::UninitContext::new(&scene.rules).with_effects(&mut FrameEffects::default()),
     );
     assert!(
         scene
@@ -1330,7 +1332,7 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
         scene.squid,
         Some(scene.ship),
         &scene.rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         scene
@@ -1353,8 +1355,7 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
     scene.sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["scenario"].as_str().unwrap());
     scene.sim.main_rng =
-        SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["main"].as_str().unwrap())
-            .into();
+        SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["main"].as_str().unwrap());
     scene.sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["mapgen"].as_str().unwrap());
     let mut compared = 0;
@@ -1385,7 +1386,7 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
                 scene.ship,
                 &scene.rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         });
         if let Some(row) = row {

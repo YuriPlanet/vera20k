@@ -1,6 +1,7 @@
 """Bounded original Shrapnel ground-surface repair naval admission/damage.
 
-Research fixture. Cells/actor/owner/list membership are supplied projections,
+Shared research fixture for the naval and Anytown producers; it publishes no
+corpus of its own. Cells/actor/owner/list membership are supplied projections,
 not a native scenario load or proof that an authored map spawns these ships.
 No gameplay callable is replaced in the measured controller/receiver prefix.
 Ordinary rows retain constructor IsOnMap=0; two IsOnMap=1 controls stop before
@@ -13,6 +14,7 @@ import hashlib, json, os, struct
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
 from tools.native_oracle import RET_MAGIC, run_checked, finish_vectors, provenance
+from tools.native_oracle import require
 from tools.rules_oracle.bridge_landing_inputs import Landing, TYPE as RULES, INI, SP, WH, RULES as RULE_BLOCKS
 from tools.projectile_oracle.bridge_render_inputs import lexical
 from tools.spatial_oracle.map_queries import dwords, packed
@@ -157,7 +159,7 @@ class Native(Landing):
             if 'Super' in sections:
                 wh=self.read32(RULES+0xFA8)
                 assert self.string(wh+0x24)=='Super'
-                assert self.invoke(0x75D3A0,wh,(INI,))&255
+                require(self.invoke(0x75D3A0,wh,(INI,))&255, 'native 0x75D3A0 returned an unexpected result')
             if self.case.get('type','AEGIS') in sections:
                 # Supplied interior frames, original read/default/store blocks.
                 self.block(0x5F94B3,0x5F9516,{UC_X86_REG_EBX:t,UC_X86_REG_ESI:INI,UC_X86_REG_EBP:t+0x24,UC_X86_REG_EAX:u.mem_read(t+0x231,1)[0]})
@@ -257,27 +259,3 @@ def inputs():
         yield dict(name='west_water_'+gate+'_counterfactual',land=1,target=[114,59],member=[113,59],current=[113*256+128,59*256+128,208],head=[114*256+128,59*256+128,208],**kw)
     yield dict(name='resident_road_marked_before_explosion',land=1,is_on_map=True)
     yield dict(name='west_water_marked_before_postlude',land=1,target=[114,59],member=[113,59],current=[113*256+128,59*256+128,208],head=[114*256+128,59*256+128,208],is_on_map=True,stop=0x737F74)
-
-def generate():
-    rows=[];m=None
-    for case in inputs():
-        m=Native(case);rows.append(dict(input=case,output=m.run()))
-    return dict(schema_version=1,scope=__doc__,constructor=m.ctor,actor_constructor=m.actor_ctor,retail_inputs=m.inputs,layers=m.layers,cases=rows)
-
-def metadata():
-    p=provenance(scope=__doc__,assumptions=[
-        'Original UnitType constructor and selected exact reader blocks execute; physical rules/mode/map strings use supplied signed-CRC caches. Full file/archive and scenario loaders excluded.',
-        'One supplied AEGIS Unit uses original class/type vtables, Unit/base constructor prefix7353C0..7354CE and original Ship constructor69EC50. Prefix stops before COM locomotor creation/type post-initialization. Actor flags7, current HP from native Strength, Alive1, Limbo0, owner, Guard mission, original Ship owner/refcount and retained head are supplied. No legal route/spawn/full Unlimbo claim.',
-        'Default selected cell115,59 and west/east targets114,59/116,59 are level2/raw100-clear. All three x114..116,y59 cells have finalized Road for repaired cases; adjacent x113/117 remain Water. Original repair calls Recalc for all three before any occupants call; a center-only land transition is not represented as stock.',
-        'Selected land2 versus1 comes from the independently read physical Road/Water speed rows; Recalc and overlay publication are not executed here. Cells use overlay-1 to isolate finalized-land admission from overlay/classification; stock101/83 membership is not certified.',
-        'Road deaths stop at actual Death_Explosion738680 entry. Neighbor Water sinking cases execute full actual Unit/Foot/Techno/Object receiver and return through Cell487A10. They retain constructor IsOnMap0, so no active marked-world proof. Two marked1 controls establish the original Road versus Water decision before post-death Mark; the Water row stops at737F74. Full explosion, full Unlimbo/Logic registration and final lifetime cleanup are excluded.',
-        'Original receiver kill-record and three pointer-expiry/self-observer sweeps execute in a returned sinking row, as do real Foot Stun and Ship stop. Registered external observers, team/tag/slave/bunker/parasite/passengers are absent. House owner has supplied index0, cost multipliers1 and empty counts; output loss-counter arithmetic is bounded to that state.',
-        'Main886B88, Scenario+218 and MapGenABE890 are seeded with original65C6D0 after constructor/setup draws. Each full0x3F4-byte state is preserved before/after; no draw is observed in any measured controller/receiver case. Native x87 control word0x0E7F is a supplied fixture ambient state, not a captured active-game invariant.',
-        'Original Techno receiver writes RadarCombatFlash timer +174=frame1000,+178 padding0,+17C=49 from constructor default21 plus actual General/RadarCombatFlashTime read. All actor/type/house/loco/rules/warhead writes and original PCs are recorded.'],substitutions=[
-        'Setup allocator/free/CRT TLS are inherited from Landing. Measured gameplay calls are original; only OS Interlocked increment/decrement arithmetic is supplied when original COM methods reach imports.'
-    ],entry_points={'occupants':0x487A10,'unit_can_enter':0x73F0A0,'foot_can_enter':0x4D9C10,'ship_at_coord':0x6A3F50,'unit_damage':0x737C90,'foot_damage':0x4D7330,'techno_damage':0x701900,'object_damage':0x5F5390,'unit_record_kill':0x744720,'self_pointer_expired':0x7446E0,'sink_state_stores':0x737E43})
-    m=Native(next(inputs()))
-    p['original_slices']=[dict(start=hex(a),end_exclusive=hex(b),hex=raw.hex(),sha256=sha(raw)) for (a,b),raw in zip(m.code_spans,m.code_before)]
-    return p
-
-if __name__=='__main__':finish_vectors(generate,HERE/'naval_occupants.json',provenance=metadata)

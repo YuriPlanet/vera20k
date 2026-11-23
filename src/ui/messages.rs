@@ -23,6 +23,9 @@ pub const MESSAGE_LINE_HEIGHT_PX: i32 = 19;
 pub const MESSAGE_PREFIX_SEPARATOR: &str = ":";
 /// Retail visible-message cap (Init maxMsg=6; clamped ≤ MESSAGE_SLOTS).
 pub const MESSAGE_MAX_VISIBLE_RETAIL: usize = 6;
+/// The units behind a TextLabel's reveal count that blend toward white;
+/// the renderer's Path-A reveal draws this span.
+pub(crate) const TEXT_LABEL_HIGHLIGHT_UNITS: u32 = 8;
 /// Read_Scenario's Init MaxChars `0x62` (`0x00684ABB`, clamp `0x70`): the
 /// edit holds at most `MaxChars − 1` typed units.
 const MESSAGE_EDIT_MAX_CHARS: usize = 0x62;
@@ -33,6 +36,41 @@ const MESSAGE_OVERFLOW_END: usize = MESSAGE_EDIT_MAX_CHARS - 1;
 /// Input's width margin: a unit stays only while the whole edit line is
 /// narrower than the width limit minus 10 (`0x005D4510`).
 const MESSAGE_EDIT_WIDTH_MARGIN_PX: i32 = 10;
+/// Init's anchors as Read_Scenario (`0x00684A9A..0x00684AC9`) and
+/// Set_View_Dimensions (`0x004A8B9B..0x004A8BB8`) pass them: X = tactical
+/// x + 3, Y = tactical y, Width = tactical w − 6, of which Init `0x005D3A60`
+/// keeps Width − 8.
+const MESSAGE_X_INSET: i32 = 3;
+const MESSAGE_INIT_WIDTH_INSET: i32 = 6 + 8;
+/// SetWidth `0x005D4AD0` keeps its argument − 8; Set_View_Dimensions
+/// passes the whole tactical width (`0x004A8BBD..0x004A8BC9`).
+const MESSAGE_SET_WIDTH_INSET: i32 = 8;
+/// VERA: how long a status notice's state must hold before the list shows
+/// the change ([`MessageList::show_notice`]), so a state that comes and goes
+/// within it adds or removes no row.
+pub const NOTICE_SETTLE_MS: u64 = 1_000;
+
+/// VERA: where a status notice belongs. gamemd has no such rows: they say
+/// what VERA's online play and replays are doing, among the other messages.
+/// Each place shows at most one notice at a time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoticeSlot {
+    /// The game server connection: reconnecting, catching up, rejoining.
+    Network,
+    /// The shared pause.
+    Pause,
+    /// Replay playback.
+    Replay,
+}
+
+/// One [`NoticeSlot`]: the text the list shows, or showed until its rows
+/// expired, and the text its state asks for, since when.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct NoticeState {
+    shown: Option<String>,
+    wanted: Option<String>,
+    wanted_since_ms: u64,
+}
 
 /// One live message row.
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +84,8 @@ pub struct Message {
     /// TextLabel+41/+44/+48. The list owns this state through insertion,
     /// painting, eviction and expiry; renderers only read the current count.
     reveal: Option<MessageReveal>,
+    /// VERA: the status notice this row shows.
+    notice: Option<NoticeSlot>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +103,13 @@ impl Message {
             deadline_ms: None,
             y: edit.y,
             reveal: None,
+            notice: None,
         }
+    }
+
+    /// VERA: a status notice without a deadline stays while its state lasts.
+    fn held(&self) -> bool {
+        self.notice.is_some() && self.deadline_ms.is_none()
     }
 
     /// Original434500: zero draws the whole string; a positive count draws
@@ -111,6 +157,9 @@ struct MessageEdit {
     rgb: [f32; 3],
     /// `+0x18`: split an overfull line instead of refusing the unit.
     overflow: bool,
+    /// The edit label's `+0x40`, which TextLabel vt+0x6C (`0x0072A4A8`)
+    /// reads as "draw nothing".
+    hidden: bool,
 }
 
 /// One key as Input `0x005D4510` decodes it.
@@ -153,19 +202,41 @@ pub struct EditLine {
     pub text: String,
     pub rgb: [f32; 3],
     pub y: i32,
+    /// Open but not drawn: the beacon label edit.
+    pub hidden: bool,
 }
 
+/// MessageListClass, the session's one list at `0x00A8BC60`. Its rows are
+/// the TextLabels Add_Message links, in order (NumMessages `0x005D4AA0`
+/// and ComputeY `0x005D4BF0` are inlined into Add_Message, AddEdit,
+/// RemoveEdit, Manage and Input, and have no callers of their own).
+///
+/// Absent on purpose, with no caller in gamemd: GetMessage `0x005D3F60`,
+/// GetLabel `0x005D3F90`, SetEditFocus `0x005D41E0`, HasEditFocus
+/// `0x005D41F0` (their virtual calls are inlined where the edit takes
+/// focus) and SetEditColor `0x005D4410`. ConcatMessage `0x005D3FC0`
+/// appends to a row with the same id; its one caller `0x0064A630` handles
+/// the modem/serial chat packet `0x68`, reached only in GameMode 1 or 2
+/// (`0x00649347`, `0x006484DF`), which VERA lacks. The Constructor
+/// `0x005D39D0` (Session's static constructor `0x00697256`) is
+/// [`MessageList::scenario`] before its first anchor; the Destructor
+/// `0x005D3A40` runs only from the process-exit teardown `0x00697A58`.
 #[derive(Debug)]
 pub struct MessageList {
     x: i32,
     y: i32,
     max_visible: usize,
     max_width_px: i32,
+    /// The pixels the anchor takes off the tactical width: Init's 14 until
+    /// SetWidth leaves 8.
+    width_inset: i32,
     messages: Vec<Message>,
     edit: Option<MessageEdit>,
     /// Add_Message's per-mode reveal gate: LANScrollText `[0xA8D1F8]` in
     /// GameMode 3, WOLScrollText `[0xA8D1F9]` in 4, always on otherwise.
     typing: bool,
+    /// VERA: one per [`NoticeSlot`], in its order.
+    notices: [NoticeState; 3],
 }
 
 impl MessageList {
@@ -175,25 +246,43 @@ impl MessageList {
             y,
             max_visible: max_visible.min(MESSAGE_SLOTS),
             max_width_px,
+            width_inset: MESSAGE_INIT_WIDTH_INSET,
             messages: Vec::with_capacity(MESSAGE_SLOTS),
             edit: None,
             typing: true,
+            notices: Default::default(),
         }
     }
 
-    /// Re-anchor on viewport/layout change (the native viewport re-init,
-    /// contract §4.1): x = tactical_x + 3, y = tactical_y, width = tactical_w − 14.
-    /// A width change is Set_View_Dimensions' Init (`0x004A8BB8`), which
-    /// drops a live edit without a message.
+    /// Init `0x005D3A60` with the arguments Read_Scenario (`0x00684AC9`)
+    /// and Set_View_Dimensions (`0x004A8BB8`) pass: no rows, no edit, six
+    /// rows at most. [`Self::set_view`] anchors it to the tactical view.
+    pub fn scenario() -> Self {
+        Self::new(MESSAGE_X_INSET, 0, MESSAGE_MAX_VISIBLE_RETAIL, 0)
+    }
+
+    /// Anchor to the tactical viewport: x = tactical_x + 3, y = tactical_y,
+    /// width = tactical_w less Init's 14 or SetWidth's 8. VERA re-anchors
+    /// whenever its window resizes; a width change then drops a live edit
+    /// without a message, as Set_View_Dimensions' Init does.
     /// RESIDUAL: that Init also deletes every row; VERA keeps them.
-    pub fn set_view(&mut self, x: i32, y: i32, max_width_px: i32) {
+    pub fn set_view(&mut self, tactical_x: i32, tactical_y: i32, tactical_w: i32) {
+        let max_width_px = (tactical_w - self.width_inset).max(0);
         if max_width_px != self.max_width_px && self.edit.is_some() {
             self.end_edit();
         }
-        self.x = x;
-        self.y = y;
+        self.x = tactical_x + MESSAGE_X_INSET;
+        self.y = tactical_y;
         self.max_width_px = max_width_px;
         self.restack();
+    }
+
+    /// SetWidth `0x005D4AD0`, which Set_View_Dimensions calls right after
+    /// its Init (`0x004A8BC9`): the list, its rows and an open edit keep
+    /// `tactical_w − 8`, 6 px wider than Init left them.
+    pub fn set_width(&mut self, tactical_w: i32) {
+        self.width_inset = MESSAGE_SET_WIDTH_INSET;
+        self.max_width_px = (tactical_w - self.width_inset).max(0);
     }
 
     /// The mode's reveal gate for later non-silent adds.
@@ -211,7 +300,22 @@ impl MessageList {
             text: String::from_utf16_lossy(&edit.buffer),
             rgb: edit.rgb,
             y: self.y,
+            hidden: edit.hidden,
         })
+    }
+
+    /// The open edit's typed units, past the prefix: what GetEditBuffer
+    /// `0x005D4400` points at while the edit is open.
+    pub fn edit_typed(&self) -> Option<&[u16]> {
+        self.edit.as_ref().map(|edit| &edit.buffer[edit.start..])
+    }
+
+    /// The beacon branch's `[label + 0x40] = 1` after AddEdit
+    /// (`0x0055E5C1`): the edit stays open and takes keys, unseen.
+    pub fn hide_edit(&mut self) {
+        if let Some(edit) = self.edit.as_mut() {
+            edit.hidden = true;
+        }
     }
 
     /// AddEdit `0x005D4210`: refused while an edit is open. Evicts the
@@ -223,7 +327,7 @@ impl MessageList {
             return false;
         }
         if self.max_visible < self.messages.len() + 1 && !self.messages.is_empty() {
-            self.messages.remove(0);
+            self.evict_oldest();
         }
         let buffer: Vec<u16> = prefix.encode_utf16().collect();
         self.edit = Some(MessageEdit {
@@ -231,6 +335,7 @@ impl MessageList {
             buffer,
             rgb,
             overflow,
+            hidden: false,
         });
         self.restack();
         self.max_visible = self.max_visible.saturating_sub(1);
@@ -265,6 +370,8 @@ impl MessageList {
                 if typed < MESSAGE_EDIT_MAX_CHARS - 1 {
                     edit.buffer.push(u16::from(b' '));
                 }
+                // The caller sends GetEditBuffer `0x005D4400`: the buffer
+                // past Start, the prefix.
                 let text = String::from_utf16_lossy(&edit.buffer[edit.start..]);
                 self.end_edit();
                 EditInput::Sent(text)
@@ -291,8 +398,8 @@ impl MessageList {
         }
     }
 
-    /// Every end-of-edit path (`0x005D4390` and Input's copies): the rows
-    /// move back up and the row cap returns.
+    /// Every end-of-edit path (RemoveEdit `0x005D4390` and Input's
+    /// copies): the rows move back up and the row cap returns.
     fn end_edit(&mut self) {
         if self.edit.take().is_some() {
             self.restack();
@@ -310,8 +417,9 @@ impl MessageList {
         &self.messages
     }
 
-    /// Contract §4.2: compose prefix+":"+fitted text, evict the head when
-    /// full, tail-insert, restack, recurse silently on the remainder.
+    /// Add_Message `0x005D3BA0`: compose prefix+":"+fitted text, evict the
+    /// head when full, tail-insert, restack, recurse silently on the
+    /// remainder.
     pub fn add_message(
         &mut self,
         post: &MessagePost,
@@ -322,8 +430,73 @@ impl MessageList {
             added: 0,
             play_sound: false,
         };
-        self.add_inner(post, post.text, post.silent, now_ms, measure, &mut outcome);
+        self.add_inner(
+            post,
+            post.text,
+            post.silent,
+            None,
+            now_ms,
+            measure,
+            &mut outcome,
+        );
         outcome
+    }
+
+    /// VERA: bring `slot`'s status notice in step with its state. `post` is
+    /// what the state asks the list to show now, `None` nothing. A change
+    /// reaches the list once it has held for [`NOTICE_SETTLE_MS`]: the old
+    /// notice's rows go and the new one is added as Add_Message adds a row.
+    /// A notice without a timeout stays while its state lasts: it never
+    /// expires, and eviction passes over it. One with a timeout expires as
+    /// any row does and does not come back while its state lasts.
+    pub fn show_notice(
+        &mut self,
+        slot: NoticeSlot,
+        post: Option<&MessagePost>,
+        now_ms: u64,
+        measure: &dyn Fn(&str) -> i32,
+    ) {
+        let notice = &mut self.notices[slot as usize];
+        let wanted = post.map(|post| post.text);
+        if notice.wanted.as_deref() != wanted {
+            notice.wanted = wanted.map(str::to_owned);
+            notice.wanted_since_ms = now_ms;
+        }
+        if notice.shown.as_deref() == wanted
+            || now_ms.saturating_sub(notice.wanted_since_ms) < NOTICE_SETTLE_MS
+        {
+            return;
+        }
+        notice.shown = notice.wanted.clone();
+        self.messages.retain(|message| message.notice != Some(slot));
+        self.restack();
+        if let Some(post) = post {
+            let mut outcome = AddOutcome {
+                added: 0,
+                play_sound: false,
+            };
+            self.add_inner(
+                post,
+                post.text,
+                post.silent,
+                Some(slot),
+                now_ms,
+                measure,
+                &mut outcome,
+            );
+        }
+    }
+
+    /// Add_Message's and AddEdit's eviction of the head row. VERA passes
+    /// over a status notice that stays while its state lasts; a list of
+    /// nothing else still loses its head.
+    fn evict_oldest(&mut self) {
+        let oldest = self
+            .messages
+            .iter()
+            .position(|message| !message.held())
+            .unwrap_or(0);
+        self.messages.remove(oldest);
     }
 
     /// `text`/`silent` override the `post` fields: the wrap recursion re-adds
@@ -333,6 +506,7 @@ impl MessageList {
         post: &MessagePost,
         text: &str,
         silent: bool,
+        notice: Option<NoticeSlot>,
         now_ms: u64,
         measure: &dyn Fn(&str) -> i32,
         outcome: &mut AddOutcome,
@@ -350,8 +524,9 @@ impl MessageList {
         if budget <= 0 {
             return;
         }
-        // Step 4 — fit (char cap + px budget, word break).
-        let fit_bytes = fit_prefix_bytes(text, budget, MESSAGE_LINE_FIT_CHARS, measure);
+        // Step 4 — fit (unit cap + px budget, word break). Native would
+        // recurse on the same text forever when nothing fits; VERA stops.
+        let fit_bytes = count_fitting_units(text, budget, MESSAGE_LINE_FIT_CHARS, measure);
         if fit_bytes == 0 {
             return;
         }
@@ -365,7 +540,7 @@ impl MessageList {
             && self.max_visible < self.messages.len() + usize::from(self.edit.is_some()) + 1
             && !self.messages.is_empty()
         {
-            self.messages.remove(0);
+            self.evict_oldest();
         }
         // Slot-pool guard (unreachable with retail max_visible ≤ 14).
         if self.messages.len() >= MESSAGE_SLOTS {
@@ -378,6 +553,7 @@ impl MessageList {
             deadline_ms: post.timeout_ms.map(|t| now_ms + t),
             y: 0,
             reveal: (!silent && self.typing).then(MessageReveal::default),
+            notice,
         });
         self.restack();
         outcome.added += 1;
@@ -389,12 +565,12 @@ impl MessageList {
         if fit_bytes < text.len() {
             let remainder = text[fit_bytes..].trim_start_matches(|c: char| (c as u32) < 0x20);
             if !remainder.is_empty() {
-                self.add_inner(post, remainder, true, now_ms, measure, outcome);
+                self.add_inner(post, remainder, true, notice, now_ms, measure, outcome);
             }
         }
     }
 
-    /// Contract §4.3 — expiry: remove rows whose deadline passed strictly
+    /// Manage `0x005D4430` — expiry: remove rows whose deadline passed strictly
     /// (`now > deadline`), then restack. Returns true when anything expired.
     /// Add5D3DD5 and Manage5D4449 use the same process timer887338/887340.
     /// The driver skips this call while Main_Tick is blocked, without
@@ -439,6 +615,21 @@ impl MessageList {
         sound_requests
     }
 
+    /// Whether the next TextLabel paint (72A5B1..72A609) could differ from
+    /// the last: a reveal not painted yet, or a count short of the text plus
+    /// its highlight tail. Past that, each paint draws the same label and
+    /// requests no MessageCharTyped, so a standing picture may skip paints.
+    pub fn revealing(&self) -> bool {
+        self.messages.iter().any(|message| {
+            message.reveal.is_some_and(|reveal| {
+                reveal.count == 0
+                    || u64::from(reveal.count)
+                        < message.text.encode_utf16().count() as u64
+                            + u64::from(TEXT_LABEL_HIGHLIGHT_UNITS)
+            })
+        })
+    }
+
     fn restack(&mut self) {
         let base = self.y
             + if self.edit.is_some() {
@@ -465,34 +656,42 @@ fn trim_message_cut(text: &[u16], min: usize, max: usize) -> usize {
         .min(text.len())
 }
 
-/// Greedy px-budget fitter with word break (contract lane §4.2 step-4 fitter
-/// shape, doc fidelity — exact boundary semantics are a plan deferred item):
-/// fits chars while BOTH the char cap and the pixel budget hold; on overflow
-/// backs up to just-after the last space when one exists. Returns the fitted
-/// BYTE length.
-fn fit_prefix_bytes(
+/// BitFont::CountFittingUnits `0x00433F50` in wrap mode 1, as Add_Message
+/// calls it (`0x005D3C76`, cap 0x6F). Units fit while the text so far stays
+/// within the budget; reaching the cap, or a `\r`/`\n`, ends the line
+/// after that unit. When a unit above 0x20 overflows, the line backs up to
+/// just after the last unit at or below 0x20 before it, if any; an
+/// overflowing space stays as the next line's first unit. Returns the
+/// fitted byte length.
+fn count_fitting_units(
     text: &str,
     budget_px: i32,
-    max_chars: usize,
+    max_units: usize,
     measure: &dyn Fn(&str) -> i32,
 ) -> usize {
+    let mut units = 0usize;
     let mut fitted = 0usize;
-    let mut last_break: Option<usize> = None;
-    // `chars` counts the characters already fitted before this iteration.
-    for (chars, (idx, ch)) in text.char_indices().enumerate() {
+    for (idx, ch) in text.char_indices() {
         let end = idx + ch.len_utf8();
-        if chars + 1 > max_chars || measure(&text[..end]) > budget_px {
-            return last_break.unwrap_or(idx);
-        }
-        if ch == ' ' {
-            last_break = Some(end);
+        if measure(&text[..end]) > budget_px {
+            if u32::from(ch) > 0x20
+                && fitted != 0
+                && let Some(brk) = text[..idx].rfind(|c: char| u32::from(c) <= 0x20)
+            {
+                return brk + 1;
+            }
+            return fitted;
         }
         fitted = end;
+        units += ch.len_utf16();
+        if units >= max_units || ch == '\r' || ch == '\n' {
+            return fitted;
+        }
     }
     fitted
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -585,8 +784,53 @@ mod tests {
     #[test]
     fn word_break_backs_up_to_last_space() {
         // budget 100 px = 10 chars; "hello worlds" breaks after "hello ".
-        let fit = fit_prefix_bytes("hello worlds", 100, 111, &mono);
+        let fit = count_fitting_units("hello worlds", 100, 111, &mono);
         assert_eq!(&"hello worlds"[..fit], "hello ");
+    }
+
+    fn row_texts(l: &MessageList) -> Vec<&str> {
+        l.messages().iter().map(|m| m.text.as_str()).collect()
+    }
+
+    /// CountFittingUnits `0x00433F50` backs up only for an overflowing unit
+    /// above 0x20; an overflowing space ends the line and leads the next.
+    #[test]
+    fn an_overflowing_space_cuts_before_itself() {
+        // Budget 108 − 8 = 100 px: ten units.
+        let mut l = list(6, 108);
+        l.add_message(&post(None, "abcd fghij klm", None, true), 0, &mono);
+        assert_eq!(row_texts(&l), ["abcd fghij", " klm"]);
+    }
+
+    /// The 0x6F unit cap and a newline end the line at once, with no
+    /// word back-up.
+    #[test]
+    fn the_unit_cap_and_a_newline_cut_without_backing_up() {
+        let mut l = list(14, 100_000);
+        l.add_message(&post(None, &"abcd ".repeat(30), None, true), 0, &mono);
+        assert_eq!(l.messages()[0].text.encode_utf16().count(), 111);
+        assert!(l.messages()[0].text.ends_with('a'));
+        let mut l = list(6, 100_000);
+        l.add_message(&post(None, "ab\ncd", None, true), 0, &mono);
+        assert_eq!(row_texts(&l), ["ab\n", "cd"]);
+    }
+
+    /// Init leaves tactical_w − 14; Set_View_Dimensions' SetWidth then
+    /// leaves tactical_w − 8, and later anchors keep it.
+    #[test]
+    fn set_width_widens_the_wrap_by_six_pixels() {
+        let text = "a".repeat(18);
+        let mut l = MessageList::scenario();
+        l.set_view(0, 0, 200);
+        assert_eq!(l.x(), 3);
+        l.add_message(&post(None, &text, None, true), 0, &mono);
+        assert_eq!(l.messages().len(), 2, "186 − 8 px holds 17 units");
+        let mut l = MessageList::scenario();
+        l.set_view(0, 0, 200);
+        l.set_width(200);
+        l.set_view(0, 0, 200);
+        l.add_message(&post(None, &text, None, true), 0, &mono);
+        assert_eq!(row_texts(&l), [text.as_str()], "192 − 8 px holds 18");
     }
 
     #[test]
@@ -649,6 +893,45 @@ mod tests {
         assert!(l.messages()[0].reveal_count() > 5 + 8);
         assert!(l.manage(11_000));
         assert_eq!(l.advance_reveal(11_001), 0, "expired labels own no state");
+    }
+
+    /// A typed label changes on every paint bucket until its count passes the
+    /// text and the highlight tail; then each paint draws the same colours and
+    /// requests no MessageCharTyped, so a standing picture may skip paints.
+    #[test]
+    fn a_reveal_settles_once_the_highlight_passes_the_text() {
+        let mut l = list(6, 500);
+        l.add_message(&post(None, "Hi", Some(100_000), false), 0, &mono);
+        let colours = |l: &MessageList| {
+            let reveal = crate::render::bit_font::text_label_reveal(
+                l.messages()[0].reveal_count(),
+                [200, 40, 40],
+            );
+            (1..=2)
+                .map(|unit| crate::render::shell_text_reveal::encoded_unit_rgb(unit, reveal))
+                .collect::<Vec<_>>()
+        };
+        assert!(l.revealing(), "the first paint starts the reveal");
+        let mut wall = 100;
+        l.advance_reveal(wall);
+        while l.revealing() {
+            let before = colours(&l);
+            wall += 16;
+            l.advance_reveal(wall);
+            assert_ne!(
+                colours(&l),
+                before,
+                "count {}",
+                l.messages()[0].reveal_count()
+            );
+        }
+        assert_eq!(l.messages()[0].reveal_count(), 2 + 8);
+        let settled = colours(&l);
+        for _ in 0..3 {
+            wall += 16;
+            assert_eq!(l.advance_reveal(wall), 0);
+            assert_eq!(colours(&l), settled);
+        }
     }
 
     #[test]
@@ -770,9 +1053,9 @@ mod tests {
     fn a_width_change_drops_the_edit() {
         let mut l = list(6, 500);
         l.add_edit("P:", WHITE, true);
-        l.set_view(3, 0, 500);
+        l.set_view(0, 0, 514);
         assert!(l.editing());
-        l.set_view(3, 0, 600);
+        l.set_view(0, 0, 614);
         assert!(!l.editing());
     }
 
@@ -797,5 +1080,113 @@ mod tests {
             MESSAGE_LINE_FIT_CHARS,
             "first row capped at 111 chars"
         );
+    }
+
+    /// `slot`'s state asks for `text` at `now`, as a silent row.
+    fn want(
+        l: &mut MessageList,
+        slot: NoticeSlot,
+        text: Option<&str>,
+        timeout: Option<u64>,
+        now: u64,
+    ) {
+        let notice = text.map(|text| post(None, text, timeout, true));
+        l.show_notice(slot, notice.as_ref(), now, &mono);
+    }
+
+    const SETTLE: u64 = NOTICE_SETTLE_MS;
+
+    /// VERA status notices: a held notice shows once its state has lasted
+    /// the settle time, outlives every deadline and eviction, and goes once
+    /// its state has been over as long.
+    #[test]
+    fn a_status_notice_stays_while_its_state_lasts() {
+        let mut l = list(3, 500);
+        want(&mut l, NoticeSlot::Network, Some("Reconnecting"), None, 0);
+        assert!(l.messages().is_empty(), "not yet a settle time");
+        want(
+            &mut l,
+            NoticeSlot::Network,
+            Some("Reconnecting"),
+            None,
+            SETTLE,
+        );
+        for i in 0..3 {
+            l.add_message(&post(None, &format!("m{i}"), Some(10), true), SETTLE, &mono);
+        }
+        assert_eq!(row_texts(&l), ["Reconnecting", "m1", "m2"]);
+        l.manage(u64::MAX);
+        assert_eq!(row_texts(&l), ["Reconnecting"]);
+        want(&mut l, NoticeSlot::Network, None, None, 5 * SETTLE);
+        assert_eq!(row_texts(&l), ["Reconnecting"]);
+        want(&mut l, NoticeSlot::Network, None, None, 6 * SETTLE);
+        assert!(l.messages().is_empty());
+    }
+
+    /// A state that comes and goes within the settle time adds no row, and a
+    /// dip that short neither removes the row nor moves it below later rows.
+    #[test]
+    fn a_status_notice_ignores_shorter_changes() {
+        let mut l = list(6, 500);
+        let behind = Some("Catching up");
+        want(&mut l, NoticeSlot::Network, behind, None, 0);
+        want(&mut l, NoticeSlot::Network, behind, None, SETTLE - 1);
+        assert!(l.messages().is_empty(), "a blip adds no row");
+        for (text, now) in [
+            (None, SETTLE - 1),
+            (behind, 3 * SETTLE),
+            (behind, 4 * SETTLE),
+        ] {
+            want(&mut l, NoticeSlot::Network, text, None, now);
+        }
+        l.add_message(&post(None, "m", Some(10 * SETTLE), true), 4 * SETTLE, &mono);
+        for (text, now) in [
+            (None, 4 * SETTLE + 1),
+            (behind, 5 * SETTLE - 1),
+            (behind, 6 * SETTLE),
+        ] {
+            want(&mut l, NoticeSlot::Network, text, None, now);
+        }
+        assert_eq!(row_texts(&l), ["Catching up", "m"], "a dip keeps the row");
+    }
+
+    /// A notice with a timeout expires as any row does and stays gone while
+    /// its state lasts; the next state's notice replaces it.
+    #[test]
+    fn a_timed_status_notice_expires_once() {
+        let mut l = list(6, 500);
+        want(&mut l, NoticeSlot::Replay, Some("Replay"), Some(100), 0);
+        want(
+            &mut l,
+            NoticeSlot::Replay,
+            Some("Replay"),
+            Some(100),
+            SETTLE,
+        );
+        assert_eq!(row_texts(&l), ["Replay"]);
+        l.manage(SETTLE + 101);
+        want(
+            &mut l,
+            NoticeSlot::Replay,
+            Some("Replay"),
+            Some(100),
+            5 * SETTLE,
+        );
+        assert!(l.messages().is_empty(), "an expired notice stays gone");
+        want(
+            &mut l,
+            NoticeSlot::Replay,
+            Some("Replay ended"),
+            None,
+            5 * SETTLE,
+        );
+        want(
+            &mut l,
+            NoticeSlot::Replay,
+            Some("Replay ended"),
+            None,
+            6 * SETTLE,
+        );
+        assert_eq!(row_texts(&l), ["Replay ended"]);
     }
 }

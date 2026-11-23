@@ -39,6 +39,7 @@ fn retail_cold_and_post_reset_animation_ordinals_match_original_registries() {
         &art,
         None,
         &crate::rules::sound_ini::EvaRegistry::default(),
+        &crate::rules::sound_ini::SoundRegistry::default(),
     )
     .unwrap();
     for row in rows.iter().filter(|row| row["case_kind"] == "anim_catalog") {
@@ -103,7 +104,17 @@ fn rules_for_history(retail: &IniFile, physical_art: &IniFile, row: &Value) -> R
             row["next_art"]["name"].as_str().unwrap(),
         );
     }
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(retail, &art).unwrap();
+    // Retail SOUNDMD knows every sound the tested art names.
+    let sounds: Vec<&str> = [&row["art"], &row["next_art"]]
+        .into_iter()
+        .filter_map(|native| art.section(native["name"].as_str()?))
+        .flat_map(|section| {
+            ["StartSound", "Report", "StopSound"].map(|key| section.get_for_test(key))
+        })
+        .flatten()
+        .collect();
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_and_sounds_for_test(retail, &art, &sounds).unwrap();
     let mut registry = crate::rules::retail_ini_fixture::art_registry(&art);
     for native in [&row["art"], &row["next_art"]]
         .into_iter()
@@ -206,7 +217,7 @@ pub(in crate::sim) fn assert_state(sim: &Simulation, id: AnimId, expected: &Valu
     );
 }
 
-fn assert_sound_calls(sim: &Simulation, calls: &Value, context: &str) {
+fn assert_sound_calls(rules: &RuleSet, sim: &Simulation, calls: &Value, context: &str) {
     let expected: Vec<(String, String)> = calls
         .as_array()
         .unwrap()
@@ -226,7 +237,7 @@ fn assert_sound_calls(sim: &Simulation, calls: &Value, context: &str) {
         .iter()
         .filter_map(|event| match event {
             SimSoundEvent::AnimationStarted { sound_id, .. } => {
-                Some(("start".into(), sound_id.to_ascii_uppercase()))
+                Some(("start".into(), sound_id.name_in(rules).to_ascii_uppercase()))
             }
             SimSoundEvent::AnimationStopped {
                 stop_sound_id: None,
@@ -264,11 +275,13 @@ fn retail_trigger_anim_and_retained_no_effects_next_match_original_until_cleanup
             &rules,
             row["read"]["value"].as_i64().unwrap() as i32,
             row["read"]["waypoint"].as_i64().unwrap() as i32,
+            None,
+            &mut FrameEffects::default(),
         ));
         let id = *sim.anims().next().unwrap().0;
         let label = row["input"]["name"].as_str().unwrap();
         assert_state(&sim, id, &row["initial"], label);
-        assert_sound_calls(&sim, &row["constructor_calls"], label);
+        assert_sound_calls(&rules, &sim, &row["constructor_calls"], label);
         assert_eq!(
             sim.anim_display_layer(id, &rules),
             Some(crate::sim::world::display_layers::DisplayLayer::TOP)
@@ -286,9 +299,11 @@ fn retail_trigger_anim_and_retained_no_effects_next_match_original_until_cleanup
             for current in [&mut sim, &mut restored] {
                 current.session.set_binary_frame_for_test(frame);
                 current.sound_events.clear_for_test();
-                current.visit_anim(id, &rules, None, FrameEffects::default());
+                current
+                    .visit_anim(id, &rules, None, &mut FrameEffects::default())
+                    .unwrap();
                 assert_state(current, id, &visit["state"], label);
-                assert_sound_calls(current, &visit["calls"], label);
+                assert_sound_calls(&rules, current, &visit["calls"], label);
                 assert_eq!(
                     current.scenario_rng.logical_state(),
                     before_rng,
@@ -351,4 +366,53 @@ fn constructor_zero_z_adjust_uses_type_and_nonzero_overrides_match_original() {
         sim.destroy_anim(id, &rules);
         sim.process_pending_delete();
     }
+}
+
+/// Each native client reveals a DropZone flare (Anim ctor
+/// `0x0042264D..0x004226BF`) on its own PlayerPtr map; a network game keeps
+/// every human's map, so which human is local must not change the world.
+#[test]
+fn a_network_drop_zone_flare_reveals_for_every_human_whoever_is_local() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut rules = retail.rules;
+    rules.bind_scheduler_anim_assets(&["BEACON".to_owned()], &assets, "TEM", "TEMPERATE");
+    let flare = |local: &str| {
+        let mut sim = Simulation::with_seed(31);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        for name in ["Russians", "Americans"] {
+            let id = sim.interner.intern(name);
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    id, 0, None, true, 0, 10,
+                ));
+            sim.fog.ensure_viewer(id);
+        }
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+        sim.session.install_waypoints(&HashMap::from([(
+            1,
+            Waypoint {
+                index: 1,
+                rx: 16,
+                ry: 16,
+            },
+        )]));
+        sim.session
+            .set_current_house_for_test(sim.interner.get(local));
+        assert!(sim.trigger_drop_zone_flare(&rules, 1));
+        sim
+    };
+    let russian_client = flare("Russians");
+    let american_client = flare("Americans");
+    for name in ["Russians", "Americans"] {
+        let house = russian_client.interner.get(name).unwrap();
+        assert!(russian_client.fog.is_cell_revealed(house, 16, 16), "{name}");
+    }
+    assert_eq!(russian_client.state_hash(), american_client.state_hash());
 }

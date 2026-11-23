@@ -10,7 +10,7 @@ use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::superweapon::chronosphere_tests::{
-    charge_super, click, place, retail_rules_with_sequences, world_with,
+    charge_super, click, place, retail_rules_binding, world_with,
 };
 use crate::sim::superweapon::invulnerability::InvulnKind;
 use crate::sim::world::{SimSoundEvent, Simulation};
@@ -54,9 +54,10 @@ fn rules(extra: &str) -> RuleSet {
     ini.merge(&IniFile::from_str(extra));
     let mut rules = RuleSet::from_ini(&ini).expect("iron curtain fixture rules");
     let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
-        "[IRONBLST]\nRate=450\nReport=IronCurtainBlast\nTranslucent=yes\n",
+        "[IRONBLST]\nRate=450\nTranslucent=yes\n",
     ));
     art.bind_anim_frame_count_for_test("IRONBLST", 12);
+    art.set_anim_sounds_for_test("IRONBLST", Some("IronCurtainBlast"), None);
     rules.replace_art_registry_for_test(art);
     rules
 }
@@ -113,7 +114,7 @@ fn waypoint_curtain_uses_ground_spread_order_including_warped_foot() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let called: Vec<_> = OBSERVED
             .take()
@@ -154,6 +155,35 @@ fn waypoint_curtain_uses_ground_spread_order_including_warped_foot() {
     }
 }
 
+/// A saved slope byte past the 21-record table reads Z 0 at the waypoint, as
+/// every cell looked up by coordinate does, instead of stopping the game.
+#[test]
+fn waypoint_curtain_on_a_slope_past_the_table_plays_at_ground_zero() {
+    let (rules, mut sim, _) = world_with(rules(""), 64, &[]);
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    let index = terrain.index(40, 40).unwrap();
+    terrain.cells_mut_for_test()[index].slope_type = 21;
+    sim.session
+        .install_waypoints(&std::collections::HashMap::from([(
+            1,
+            crate::map::waypoints::Waypoint {
+                index: 1,
+                rx: 40,
+                ry: 40,
+            },
+        )]));
+    assert!(super::at_waypoint(
+        &mut sim,
+        &rules,
+        1,
+        None,
+        &mut crate::sim::world::FrameEffects::default()
+    ));
+    let anim = sim.substrate.anims.iter().next().unwrap().1;
+    let coord = anim.world_coord();
+    assert_eq!([coord.x, coord.y, coord.z], [10368, 10368, 5]);
+}
+
 #[test]
 fn waypoint_curtain_calls_existing_infantry_and_organic_receivers_with_null_house() {
     let (rules, mut sim, _) = world_with(rules(""), 64, &[]);
@@ -175,7 +205,7 @@ fn waypoint_curtain_calls_existing_infantry_and_organic_receivers_with_null_hous
         &rules,
         1,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let damage: Vec<_> = OBSERVED
         .take()
@@ -246,7 +276,7 @@ fn observed_launch(
         cell.1,
         sw_type,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     (launched, OBSERVED.take().unwrap())
 }
@@ -552,14 +582,14 @@ fn the_overrides_match_native() {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             sim.parasite_attach(
                 drone,
                 Some(victim),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 sim.substrate.entities.get(victim).unwrap().parasite.eater(),
@@ -656,12 +686,12 @@ fn the_invoke_anim_plays_its_report() {
         10,
         sw_type,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
         SimSoundEvent::AnimationStarted { sound_id, .. }
-            if sound_id.eq_ignore_ascii_case("IronCurtainBlast")
+            if sound_id.name_in(&rules).eq_ignore_ascii_case("IronCurtainBlast")
     )));
 }
 
@@ -686,7 +716,7 @@ fn a_curtained_tank_draws_its_tint_number_in_its_own_ai() {
                 10,
                 sw_type,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
         }
         let mut drawn = Vec::new();
@@ -736,7 +766,7 @@ fn curtained_infantry_die_and_announce_each_loss() {
         10,
         sw_type,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let lost: Vec<InternedId> = sim
@@ -767,6 +797,114 @@ fn curtained_infantry_die_and_announce_each_loss() {
     assert!(curtain(&sim, tank).is_some());
 }
 
+/// Phobos `IronCurtain.EffectOnOrganics`: the retail default kills an
+/// infantryman and an Organic Foot with the curtain's kill warhead;
+/// `invulnerable` curtains both; `ignore` leaves both untouched.
+#[cfg(feature = "phobos")]
+#[test]
+fn iron_curtain_effect_on_organics_selects_kill_invulnerable_or_ignore() {
+    for (effect, behaviour) in [
+        ("", "kill"),
+        ("invulnerable", "invulnerable"),
+        ("ignore", "ignore"),
+    ] {
+        let extra = if effect.is_empty() {
+            String::new()
+        } else {
+            format!("[CombatDamage]\nIronCurtain.EffectOnOrganics={effect}\n")
+        };
+        let (rules, mut sim, owner) = world_with(rules(&extra), 64, &[]);
+        let spawn = |sim: &mut Simulation, kind: &str, x: u16| {
+            sim.spawn_object_at_height(kind, "Americans", x, 10, 0, 0, &rules)
+                .unwrap()
+        };
+        let infantry = spawn(&mut sim, "E1", 10);
+        let dolphin = spawn(&mut sim, "DLPH", 11);
+        let sw_type = charge_super(&mut sim, owner, IRON_CURTAIN);
+        assert!(launch(
+            &mut sim,
+            &rules,
+            owner,
+            10,
+            10,
+            sw_type,
+            None,
+            &mut crate::sim::world::FrameEffects::default()
+        ));
+        for id in [infantry, dolphin] {
+            let entity = sim.substrate.entities.get(id).unwrap();
+            match behaviour {
+                "kill" => {
+                    assert_eq!(entity.health.current(), 0, "{effect}: killed");
+                    assert!(entity.invulnerability.is_none(), "{effect}: not curtained");
+                }
+                "invulnerable" => {
+                    assert!(entity.health.current() > 0, "{effect}: survived");
+                    assert!(entity.invulnerability.is_some(), "{effect}: curtained");
+                }
+                _ => {
+                    assert!(entity.health.current() > 0, "ignore: survived");
+                    assert!(entity.invulnerability.is_none(), "ignore: untouched");
+                }
+            }
+        }
+    }
+}
+
+/// Phobos `TechnoTypeExt`: `IronCurtain.Effect` overrides the global per
+/// type, and `IronCurtain.KillWarhead`/`KillOrganicsWarhead` choose the
+/// killing warhead (the type's wins).
+#[cfg(feature = "phobos")]
+#[test]
+fn type_effect_and_kill_warheads_override_the_globals() {
+    let extra = "[CombatDamage]\nIronCurtain.KillOrganicsWarhead=GlobalWH\n\
+                 [Warheads]\n2=GlobalWH\n3=TypeWH\n\
+                 [GlobalWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+                 [TypeWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+                 [DLPH]\nIronCurtain.KillWarhead=TypeWH\n";
+    let (rules, mut sim, owner) = world_with(rules(extra), 64, &[]);
+    let infantry = sim
+        .spawn_object_at_height("E1", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let dolphin = sim
+        .spawn_object_at_height("DLPH", "Americans", 11, 10, 0, 0, &rules)
+        .unwrap();
+    let sw_type = charge_super(&mut sim, owner, IRON_CURTAIN);
+    let (_, observed) = observed_launch(&mut sim, &rules, owner, (10, 10), sw_type);
+    let warheads: Vec<String> = observed
+        .iter()
+        .filter_map(|call| match call {
+            Observed::ReceiveDamage(event) => {
+                Some(sim.interner.resolve(event.warhead_ref).to_owned())
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(warheads.len(), 2, "both organics are killed");
+    assert!(warheads.iter().any(|name| name == "GlobalWH"));
+    assert!(warheads.iter().any(|name| name == "TypeWH"));
+    for id in [infantry, dolphin] {
+        assert_eq!(sim.substrate.entities.get(id).unwrap().health.current(), 0);
+    }
+
+    // The type's Invulnerable effect suppresses its kill entirely.
+    let invulnerable_rules = self::rules("[E1]\nIronCurtain.Effect=invulnerable\n");
+    let (invulnerable_rules, mut sim, owner) = world_with(invulnerable_rules, 64, &[]);
+    let infantry = sim
+        .spawn_object_at_height("E1", "Americans", 10, 10, 0, 0, &invulnerable_rules)
+        .unwrap();
+    let sw_type = charge_super(&mut sim, owner, IRON_CURTAIN);
+    let (_, observed) = observed_launch(&mut sim, &invulnerable_rules, owner, (10, 10), sw_type);
+    assert!(
+        !observed
+            .iter()
+            .any(|call| matches!(call, Observed::ReceiveDamage(_))),
+        "the invulnerable type takes no kill"
+    );
+    let entity = sim.substrate.entities.get(infantry).unwrap();
+    assert!(entity.health.current() > 0 && entity.invulnerability.is_some());
+}
+
 /// Retail rules through the production reader and frames:
 /// `IronCurtainDuration=750`, `IronCurtainInvokeAnim=IRONBLST` (its `;`
 /// comment dropped) and `C4Warhead=Super`. A click launches on the next
@@ -774,7 +912,7 @@ fn curtained_infantry_die_and_announce_each_loss() {
 /// 750 frames; the conscript beside it killed by its Strength.
 #[test]
 fn retail_iron_curtain_through_production_frames() {
-    let Some(rules) = retail_rules_with_sequences(&[]) else {
+    let Some(rules) = retail_rules_binding(&[]) else {
         return;
     };
     assert_eq!(rules.general.iron_curtain_duration, 750);

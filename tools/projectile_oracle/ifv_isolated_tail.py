@@ -11,6 +11,7 @@ from unicorn.x86_const import *
 from tools.projectile_oracle.ifv_select_anim import setup
 from tools.projectile_oracle import ifv_impact as impact
 from tools.native_oracle import run_checked,finish_vectors,provenance
+from tools.native_oracle import require
 from tools.spatial_oracle.building_body_rules import SP,RULES,INI,dwords
 from tools.rmg_oracle.gen_rng_vectors import seeded_struct
 
@@ -75,7 +76,7 @@ def execute(receiver_mode,em_effect):
 def generate():
  rows=[execute(mode,em) for mode in ('receiver','empty','iron_curtain') for em in (False,True)]
  initial=rows[0].pop('initial');art=rows[0].pop('art')
- for row in rows[1:]:assert row.pop('initial')==initial and row.pop('art')==art
+ for row in rows[1:]:require(row.pop('initial')==initial and row.pop('art')==art, 'initial or art differs from the first row')
  assert {row['area_result'] for row in rows}=={0,1,2}
  return dict(initial=initial,nullify_art=art,rows=rows)
 
@@ -288,7 +289,7 @@ def brute_generate():
   dict(name='receiver_boundary',seed=1,receiver='receiver')]
  rows=[brute_execute(case) for case in cases]
  initial=rows[0].pop('initial')
- for row in rows[1:]:assert row.pop('initial')==initial
+ for row in rows[1:]:require(row.pop('initial')==initial, 'initial differs from the shared value')
  by_name={r['input']['name']:r for r in rows}
  assert [a['type'] for a in by_name['single_lg_no_anim']['anims']]==['DBRIS2LG']
  assert [a['type'] for a in by_name['single_small']['anims']]==['DBRIS1SM']
@@ -328,7 +329,7 @@ def typed_generate():
   dict(name='isolated_iron_curtain',seed=1,receiver='iron_curtain'),dict(name='zero_max',seed=1,zero_max=True)]
  rows=[brute_execute(case,typed=True) for case in cases]
  initial=rows[0].pop('initial')
- for row in rows[1:]:assert row.pop('initial')==initial
+ for row in rows[1:]:require(row.pop('initial')==initial, 'initial differs from the shared value')
  for row in rows:
   assert row['native_cursor_after']-row['native_cursor_before']==len(row['anims'])+len(row['voxels'])
   assert all(v['registry_registered'] and v['logic_registered'] and v['display_layers']==[3] for v in row['voxels'])

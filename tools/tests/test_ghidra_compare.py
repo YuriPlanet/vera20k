@@ -1,4 +1,4 @@
-"""Synthetic, disconnected regressions for portable Ghidra comparison tools."""
+"""Disconnected regressions for portable Ghidra comparison tools: synthetic inputs plus one exported p-code fixture."""
 import contextlib
 import io
 import json
@@ -53,8 +53,18 @@ def op(mnemonic, inputs, output=None, addr=BASE):
     return dict(mnemonic=mnemonic, seq={'address': f'{addr:08x}'}, inputs=inputs, output=output)
 
 
+def stop(ops):
+    return max([o['seq']['address'] for o in ops], default=f'{BASE:08x}')
+
+
+def high(ops):
+    """One decoded block ending at its last operation, as pcode_frame receives it."""
+    return [(stop(ops), ops)]
+
+
 def pcode(ops, **extra):
-    return json.dumps(dict(address=f'{BASE:08x}', basic_blocks=[{'pcodes': ops}], **extra))
+    block = {'stop': {'address': stop(ops)}, 'pcodes': ops}
+    return json.dumps(dict(address=f'{BASE:08x}', basic_blocks=[block], **extra))
 
 
 class Disconnected(unittest.TestCase):
@@ -210,40 +220,55 @@ class FrameTests(Disconnected):
         native = image('890424')  # mov [esp], eax
         source = var('stack', -12)
         wrong = op('COPY', [source], var('stack', -8))
-        mapping = frames.pcode_frame({'high_pcodes': [wrong]}, native)
+        mapping, _ = frames.pcode_frame(high([wrong]), native)
         self.assertEqual(frames.agreement(mapping, {f'{BASE:08x}': [[-12, 4]]})['agree'], 0)
         wrong['output'] = var('stack', -12)
-        self.assertEqual(frames.agreement(frames.pcode_frame({'high_pcodes': [wrong]}, native),
+        self.assertEqual(frames.agreement(frames.pcode_frame(high([wrong]), native)[0],
                                          {f'{BASE:08x}': [[-12, 4]]})['agree'], 1)
 
     def test_missing_write_output_retains_failed_agreement(self):
-        mapping = frames.pcode_frame({'high_pcodes': [op('COPY', [var('stack', -12)])]}, image('890424'))
+        mapping, _ = frames.pcode_frame(high([op('COPY', [var('stack', -12)])]), image('890424'))
         self.assertEqual(mapping, {f'{BASE:08x}': []})
         self.assertEqual(len(frames.agreement(mapping, {f'{BASE:08x}': [[-12, 4]]})['wrong']), 1)
 
     def test_member_offset_is_part_of_effective_stack_address(self):
         ops = [op('PTRSUB', [var('register', 0x10), var('const', -28)], var('unique', 0x1000)),
                op('PTRADD', [var('unique', 0x1000), var('const', 1), var('const', 4)], var('unique', 0x1004))]
-        self.assertEqual(frames.pcode_frame({'high_pcodes': ops}, image('8d442408')),
+        self.assertEqual(frames.pcode_frame(high(ops), image('8d442408'))[0],
                          {f'{BASE:08x}': [[-24, None]]})
         ops[-1]['inputs'][-1] = var('const', 8)
-        self.assertEqual(frames.agreement(frames.pcode_frame({'high_pcodes': ops}, image('8d442408')),
+        self.assertEqual(frames.agreement(frames.pcode_frame(high(ops), image('8d442408'))[0],
                                          {f'{BASE:08x}': [[-24, None]]})['agree'], 0)
 
     def test_unique_expression_is_not_carried_between_instructions(self):
         ops = [op('PTRSUB', [var('register', 0x10), var('const', -28)], var('unique', 0x1000)),
                op('PTRADD', [var('unique', 0x1000), var('const', 1), var('const', 4)], var('unique', 0x1004), BASE + 4)]
-        self.assertNotIn(f'{BASE + 4:08x}', frames.pcode_frame({'high_pcodes': ops}, image('8d44240890')))
+        self.assertNotIn(f'{BASE + 4:08x}', frames.pcode_frame(high(ops), image('8d44240890'))[0])
 
     def test_store_uses_connected_destination_and_ignores_source_pointer(self):
         ops = [op('PTRSUB', [var('register', 0x10), var('const', -12)], var('unique', 0x1000)),
                op('STORE', [var('const', 0), var('unique', 0x1000), var('stack', -8)])]
-        self.assertEqual(frames.pcode_frame({'high_pcodes': ops}, image('890424')),
+        self.assertEqual(frames.pcode_frame(high(ops), image('890424'))[0],
                          {f'{BASE:08x}': [[-12, None]]})
 
     def test_call_inputs_do_not_certify_stack_offsets(self):
         ops = [op('CALL', [var('stack', -12)])]
-        self.assertEqual(frames.pcode_frame({'high_pcodes': ops}, image('ffd0')), {})
+        self.assertEqual(frames.pcode_frame(high(ops), image('ffd0'))[0], {})
+
+    def test_only_a_block_end_copy_into_a_phi_input_is_an_edge(self):
+        # mov eax,[esp+4] ends its block; the next block merges a Stack+8 copy.
+        own = op('COPY', [var('stack', 4)], var('register', 0))
+        edge = op('COPY', [var('stack', 8)], var('unique', 0x10000001))
+        phi = op('MULTIEQUAL', [var('unique', 0x10000001), var('register', 0x18)], var('register', 0x18), BASE + 4)
+        native = image('8b44240490')
+        blocks = [(f'{BASE:08x}', [own, edge]), (f'{BASE + 4:08x}', [phi])]
+        self.assertEqual(frames.pcode_frame(blocks, native),
+                         ({f'{BASE:08x}': [[4, 4]]}, {f'{BASE:08x}': [[8, 4]]}))
+        other_reader = op('INT_EQUAL', [var('unique', 0x10000001), var('const', 0)], var('register', 0x206), BASE + 4)
+        for name, case in (('not the block end', [(f'{BASE + 4:08x}', [own, edge, phi])]),
+                           ('non-phi reader', blocks + [(f'{BASE + 4:08x}', [other_reader])])):
+            with self.subTest(name):
+                self.assertEqual(frames.pcode_frame(case, native)[0][f'{BASE:08x}'], [[4, 4], [8, 4]])
 
     def test_partial_pcode_error_empty_and_wrong_function_fail(self):
         good = op('RETURN', [])
@@ -255,23 +280,24 @@ class FrameTests(Disconnected):
 
     def test_low_memory_export_preserves_native_stack_destination(self):
         good = op('COPY', [var('register', 0)], var('stack', -12), BASE + 6)
-        payload = json.dumps(dict(address=f'{BASE:08x}', basic_blocks=[{'pcodes': [good]}]))
+        payload = pcode([good])
         def response(**args):
             if args.get('granularity') != 'basic':
                 raise client.ReadError('No HTTP reply after full-export heap failure')
             return payload
-        result = frames.read_frame(FakeClient(responses={'/get_function_pcode': response}),
-                                   '0x00401000', image('5589e583ec0889042483c4085dc3'))
+        result, _ = frames.read_frame(FakeClient(responses={'/get_function_pcode': response}),
+                                      '0x00401000', image('5589e583ec0889042483c4085dc3'))
         self.assertEqual(frames.agreement(result, {f'{BASE + 6:08x}': [[-12, 4]]}),
                          {'agree': 1, 'wrong': []})
 
     def test_partial_basic_block_export_never_becomes_a_frame(self):
         good = op('RETURN', [])
+        block = {'stop': {'address': f'{BASE:08x}'}, 'pcodes': [good]}
         cases = [
-            dict(address=f'{BASE:08x}', basic_blocks=[{'pcodes': [good]}], basic_blocks_error='truncated'),
-            dict(address=f'{BASE:08x}', basic_blocks=[{'pcodes': [good]}, {}]),
+            dict(address=f'{BASE:08x}', basic_blocks=[block], basic_blocks_error='truncated'),
+            dict(address=f'{BASE:08x}', basic_blocks=[block, {}]),
             dict(address=f'{BASE:08x}', basic_blocks=[]),
-            dict(address=f'{BASE:08x}', basic_blocks=[{'pcodes': []}]),
+            dict(address=f'{BASE:08x}', basic_blocks=[dict(block, pcodes=[])]),
             dict(address=f'{BASE:08x}', high_pcodes=[good]),
         ]
         for payload in cases:
@@ -376,6 +402,29 @@ class FrameTests(Disconnected):
         self.assertEqual(report['functions'][0]['native_accesses'], 1)
         self.assertEqual(report['functions'][0]['before']['agree'], 1)
         self.assertEqual(report['functions'][0]['unmapped_after'], [])
+
+    def test_phi_edge_copy_is_reported_beside_the_native_read_it_follows(self):
+        # Original 0x41028C MOV EBX,[ESP+0x10] reads Stack+4; Ghidra's block ends
+        # there with the Stack+8 copy feeding the REPE CMPSD at 0x410290.
+        fixture = json.loads((Path(frames.__file__).parent / 'fixtures' / 'query_interface_410260.json').read_text())
+        code, entry = fixture['code'], int(fixture['address'], 16)
+        native = frames.Image(pe_image([(entry - 0x400000, 0x200, bytes.fromhex(code), 0x100, 0x60000020)]))
+        owner = frames.NativeFrames([row(code, entry)], native)
+        export = json.dumps({k: fixture[k] for k in ('name', 'address', 'basic_blocks')})
+        side = FakeClient(responses={'/get_function_pcode': export})
+        report = frames.compare_frames(side, side, [f'0x{entry:08x}'], owner)
+        function = report['functions'][0]
+        self.assertEqual(report['status'], 'ok')
+        self.assertEqual(function['before']['wrong'], [])
+        self.assertIn('0041028c', function['unmapped_before'])
+        self.assertEqual(function['edges'], [['0041028c', [[4, 4]], [[8, 4]], [[8, 4]]]])
+        edge = next(o for b in fixture['basic_blocks'] for o in b['pcodes'] if o['seq']['address'] == '0041028c'
+                    and o['inputs'][0]['space'] == 'stack')
+        edge['inputs'][0]['offset'] = 'c'
+        moved = FakeClient('after', {'/get_function_pcode': json.dumps(fixture)})
+        report = frames.compare_frames(side, moved, [f'0x{entry:08x}'], owner)
+        self.assertEqual(report['status'], 'findings')
+        self.assertEqual(report['functions'][0]['edge_changed'], [['0041028c', [[8, 4]], [[12, 4]]]])
 
 
 class CliTests(Disconnected):

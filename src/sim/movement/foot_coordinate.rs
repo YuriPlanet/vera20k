@@ -42,7 +42,9 @@ pub(super) fn stored_head(entity: &GameEntity) -> Option<DriveCoord> {
             .locomotor
             .as_ref()?
             .track_head(super::track_process::TrackFamily::Ship),
-        LocomotorKind::Walk | LocomotorKind::Hover => entity.locomotor.as_ref()?.step_head(),
+        LocomotorKind::Walk | LocomotorKind::Mech | LocomotorKind::Hover => {
+            entity.locomotor.as_ref()?.step_head()
+        }
         _ => None,
     }
 }
@@ -53,7 +55,7 @@ pub(super) fn navigation_coordinate(
 ) -> Result<DriveCoord, String> {
     // Foot+684 is tested before dereferencing the locomotor, even on a row
     // awaiting Uninit. Tube+28 is the exit, not the retained transit target.
-    if let Some(state) = entity.low_bridge_tube_state {
+    if let Some(state) = entity.active_tube() {
         let tube = terrain
             .and_then(|grid| grid.tube(state.tube_id()))
             .ok_or("Foot coordinate references a missing active TubeClass")?;
@@ -69,7 +71,11 @@ pub(super) fn navigation_coordinate(
         .ok_or("Foot coordinate requires an active locomotor")?;
     let current = current_coordinate(entity);
     match loco.active_kind() {
-        LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Walk | LocomotorKind::Hover => {
+        LocomotorKind::Drive
+        | LocomotorKind::Ship
+        | LocomotorKind::Walk
+        | LocomotorKind::Mech
+        | LocomotorKind::Hover => {
             // The owner installs constructor-default Drive/Ship storage
             // lazily as None. This is a null retained head, not a missing
             // active locomotor. Original constructors 4AF540/69EC50 and
@@ -77,8 +83,11 @@ pub(super) fn navigation_coordinate(
             // see tools/spatial_oracle/foot_bridge_layer.{json,md}.
             Ok(head_or_current(stored_head(entity), current))
         }
-        // Fly/Rocket/Teleport share +18/55ACA0: copy linked Object+9C.
-        LocomotorKind::Teleport | LocomotorKind::Fly | LocomotorKind::Rocket => Ok(current),
+        // Fly/Rocket/Teleport/Tunnel share +18/55ACA0: copy linked Object+9C.
+        LocomotorKind::Teleport
+        | LocomotorKind::Fly
+        | LocomotorKind::Rocket
+        | LocomotorKind::Tunnel => Ok(current),
         LocomotorKind::Jumpjet => {
             let state = loco
                 .jumpjet_runtime()
@@ -89,6 +98,36 @@ pub(super) fn navigation_coordinate(
 }
 
 impl Simulation {
+    /// `FootClass::ShouldBeOnBridge @ 0x004DDC40` with false: in a Tube the
+    /// Location itself, otherwise the navigation coordinate (vt+0x4C)
+    /// against the Location ([`super::ground_pose::navigation_should_be_on_bridge`]).
+    pub(crate) fn foot_should_be_on_bridge(&self, id: u64) -> Result<bool, String> {
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("Foot bridge owner disappeared")?;
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("ShouldBeOnBridge requires map cells")?;
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let current = super::ground_pose::position_world_coord(&entity.position);
+        let in_tube = entity.active_tube().is_some();
+        let navigation = if in_tube {
+            current
+        } else {
+            self.foot_navigation_coordinate(id)?
+        };
+        super::ground_pose::navigation_should_be_on_bridge(
+            &cells,
+            navigation,
+            current,
+            entity.on_bridge(),
+            in_tube,
+        )
+    }
+
     pub fn foot_navigation_coordinate(&self, id: u64) -> Result<DriveCoord, String> {
         let entity = self
             .substrate
@@ -110,6 +149,6 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "foot_coordinate_tests.rs"]
 mod tests;

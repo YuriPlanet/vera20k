@@ -1,9 +1,10 @@
 //! sim-bench's match scenario: the middle of a multiplayer match.
 //!
-//! The map loads as a Battle against [`COMPUTERS`] computer houses (the most
-//! the skirmish lobby allows; `--computers` takes fewer), and every other
-//! start waypoint gets a human player's house, as in a network game. The
-//! loader's own local house sits the match out (see [`MatchScenario::setup`]).
+//! The map loads as a Battle against the most computer houses the skirmish
+//! lobby admits on it, at most [`COMPUTERS`] (`--computers` takes fewer), and
+//! every other start waypoint gets a human player's house, as in a network
+//! game. The loader's local house normally observes; when `--houses` fills
+//! every start it participates instead (see [`MatchScenario::setup`]).
 //! Every playing house stands at its start with a finished base for its
 //! country, whose refineries' harvesters work the nearest ore, and a mixed army
 //! of its country's infantry, vehicles and aircraft on the way to its nearest
@@ -31,6 +32,7 @@
 use std::collections::BTreeSet;
 
 use vera20k_core::headless_scenario::{HeadlessScenario, battle_session};
+use vera20k_core::map::cell_index::CellGrid;
 use vera20k_core::map::entities::EntityCategory;
 use vera20k_core::rules::ruleset::RuleSet;
 use vera20k_core::sim::ai_buildable::{CountryBuildMasks, candidate_allowed};
@@ -71,8 +73,11 @@ const ORE_REACH: i32 = 40;
 const DEPLOY_PAD: i32 = 3;
 /// Houses a house attacks: its nearest living ones.
 const FRONTS: usize = 3;
-/// Computer houses by default: the seven the skirmish lobby allows.
-pub(crate) const COMPUTERS: usize = 7;
+/// Computer houses at most: one at every start of a 120-start map
+/// (`tools.scale_map --starts 120`) but the local house's, filling the offline
+/// Skirmish rows (`SKIRMISH_MAX_SLOT_COUNT`). A map with fewer starts seats
+/// fewer.
+pub(crate) const COMPUTERS: usize = vera20k_core::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT - 1;
 /// The default run, two minutes of game time, in which the armies reach the
 /// nearest bases.
 pub(crate) const TICKS: u64 = 1800;
@@ -80,18 +85,35 @@ pub(crate) const TICKS: u64 = 1800;
 pub(crate) const WARMUP: u64 = 150;
 
 /// The computer houses in launch order: their countries and difficulties.
-const COMPUTER_ROSTER: [(LaunchCountry, AiDifficulty); COMPUTERS] = [
-    (LaunchCountry::Russia, AiDifficulty::Hard),
-    (LaunchCountry::France, AiDifficulty::Normal),
-    (LaunchCountry::Yuri, AiDifficulty::Easy),
-    (LaunchCountry::Iraq, AiDifficulty::Hard),
-    (LaunchCountry::Korea, AiDifficulty::Normal),
-    (LaunchCountry::Cuba, AiDifficulty::Easy),
-    (LaunchCountry::GreatBritain, AiDifficulty::Hard),
-];
+/// Countries rotate over the ten and difficulties over Hard, Normal and
+/// Easy, so a run seating the first seven matches the old seven-house roster.
+pub(crate) const COMPUTER_ROSTER: [(LaunchCountry, AiDifficulty); COMPUTERS] = {
+    const COUNTRIES: [LaunchCountry; 10] = [
+        LaunchCountry::Russia,
+        LaunchCountry::France,
+        LaunchCountry::Yuri,
+        LaunchCountry::Iraq,
+        LaunchCountry::Korea,
+        LaunchCountry::Cuba,
+        LaunchCountry::GreatBritain,
+        LaunchCountry::America,
+        LaunchCountry::Germany,
+        LaunchCountry::Libya,
+    ];
+    const DIFFICULTIES: [AiDifficulty; 3] =
+        [AiDifficulty::Hard, AiDifficulty::Normal, AiDifficulty::Easy];
+    let mut roster = [(COUNTRIES[0], DIFFICULTIES[0]); COMPUTERS];
+    let mut index = 0;
+    while index < COMPUTERS {
+        roster[index] = (COUNTRIES[index % 10], DIFFICULTIES[index % 3]);
+        index += 1;
+    }
+    roster
+};
 
-/// The human houses' countries, in a fixed rotation over the ten.
-const HUMAN_COUNTRIES: [LaunchCountry; 10] = [
+/// The human houses' countries, in a fixed rotation over the ten; the march
+/// scenario's houses take them too.
+pub(crate) const HUMAN_COUNTRIES: [LaunchCountry; 10] = [
     LaunchCountry::America,
     LaunchCountry::Russia,
     LaunchCountry::Yuri,
@@ -131,8 +153,8 @@ struct Side {
 static ALLIED: Side = Side {
     base: &[
         "GACNST", "GAPOWR", "GAPOWR", "GAPILE", "GAREFN", "GAWEAP", "GAPOWR", "GAREFN", "GAAIRC",
-        "AMRADR", "GADEPT", "GATECH", "GAPOWR", "GAPILL", "GAPILL", "NASAM", "NASAM", "ATESLA",
-        "ATESLA", "GTGCAN",
+        "AMRADR", "GADEPT", "GATECH", "GAPOWR", "GAPOWR", "GAGAP", "GAPILL", "GAPILL", "NASAM",
+        "NASAM", "ATESLA", "ATESLA", "GTGCAN",
     ],
     refinery: "GAREFN",
     defenses: &["GAPILL", "NASAM", "ATESLA", "GTGCAN"],
@@ -321,19 +343,22 @@ pub(crate) struct MatchScenario {
     reinforcements: usize,
 }
 
-/// A 512x512 cell bitmap, gamemd's cell array.
+/// Cell claims over the engine capacity; coordinates are already canonical.
 struct CellSet(Vec<bool>);
+const CLAIM_SIDE: usize = vera20k_core::map::cell_index::MAX_CELL_SIDE as usize;
 
 impl CellSet {
     fn new() -> Self {
-        Self(vec![false; 512 * 512])
+        Self(vec![false; CLAIM_SIDE * CLAIM_SIDE])
     }
     fn contains(&self, x: i32, y: i32) -> bool {
-        (0..512).contains(&x) && (0..512).contains(&y) && self.0[y as usize * 512 + x as usize]
+        (0..CLAIM_SIDE as i32).contains(&x)
+            && (0..CLAIM_SIDE as i32).contains(&y)
+            && self.0[y as usize * CLAIM_SIDE + x as usize]
     }
     fn insert(&mut self, x: i32, y: i32) {
-        if (0..512).contains(&x) && (0..512).contains(&y) {
-            self.0[y as usize * 512 + x as usize] = true;
+        if (0..CLAIM_SIDE as i32).contains(&x) && (0..CLAIM_SIDE as i32).contains(&y) {
+            self.0[y as usize * CLAIM_SIDE + x as usize] = true;
         }
     }
 }
@@ -390,10 +415,11 @@ fn army_types(mix: &[(&'static str, u32)], count: usize) -> Vec<&'static str> {
         .collect()
 }
 
-fn offset_cell(cell: (u16, u16), offset: (i32, i32)) -> (u16, u16) {
+pub(crate) fn offset_cell(cell: (u16, u16), offset: (i32, i32), grid: CellGrid) -> (u16, u16) {
+    let max = i32::from(grid.side() - 1);
     (
-        (i32::from(cell.0) + offset.0).clamp(0, 511) as u16,
-        (i32::from(cell.1) + offset.1).clamp(0, 511) as u16,
+        (i32::from(cell.0) + offset.0).clamp(0, max) as u16,
+        (i32::from(cell.1) + offset.1).clamp(0, max) as u16,
     )
 }
 
@@ -433,9 +459,14 @@ fn place_building(
             simulation,
             resources,
         } = &mut *runtime;
-        if let Some(id) =
-            simulation.spawn_object(type_id, owner, x as u16, y as u16, 0, &resources.rules)
-        {
+        if let Some(id) = simulation.spawn_object_with_map_overlays(
+            type_id,
+            owner,
+            x as u16,
+            y as u16,
+            0,
+            &resources.rules,
+        ) {
             for cy in y - 1..=y + height {
                 for cx in x - 1..=x + width {
                     ground.reserved.insert(cx, cy);
@@ -467,9 +498,14 @@ fn place_mobile(
             simulation,
             resources,
         } = &mut *runtime;
-        if let Some(id) =
-            simulation.spawn_object(type_id, owner, x as u16, y as u16, 0, &resources.rules)
-        {
+        if let Some(id) = simulation.spawn_object_with_map_overlays(
+            type_id,
+            owner,
+            x as u16,
+            y as u16,
+            0,
+            &resources.rules,
+        ) {
             return Some((id, (dx, dy)));
         }
     }
@@ -489,12 +525,12 @@ pub(crate) fn session(map: &str, computers: usize) -> SkirmishLaunchSession {
 impl MatchScenario {
     /// Find the launch's computer houses at their starts, add human houses at
     /// the start waypoints the launch left free, in order, until `houses`
-    /// play (by default, every start), and give every playing house its base
+    /// play (by default, every non-local start), and give each its base
     /// and its share of `units` army objects.
     ///
-    /// The launch's local house, the current one, keeps its MCV at its start.
-    /// Its losing would end the match, so it sits the match out as a passive
-    /// house.
+    /// Normally the local house keeps its MCV and observes as a passive house.
+    /// An explicit request to fill every start includes it as a player instead:
+    /// a 30-start map then has 30 players, without an extra observer house.
     pub(crate) fn setup(
         scenario: &mut HeadlessScenario,
         houses: Option<usize>,
@@ -505,16 +541,10 @@ impl MatchScenario {
             .map(|waypoint| (waypoint.rx, waypoint.ry))
             .collect();
         let sim = &mut scenario.runtime.simulation;
-        let mut taken = Vec::new();
-        if let Some(local) = sim.session().current_house()
-            && sim.make_house_multiplay_passive(local)
-        {
-            taken.extend(
-                sim.houses()
-                    .get(&local)
-                    .and_then(|house| house.base_center()),
-            );
-        }
+        let local = sim.session().current_house();
+        let local_home =
+            local.and_then(|id| sim.houses().get(&id)?.base_center().map(|home| (id, home)));
+        let mut taken: Vec<_> = local_home.iter().map(|&(_, home)| home).collect();
         let computers: Vec<(InternedId, (u16, u16))> = sim
             .houses()
             .order()
@@ -532,7 +562,9 @@ impl MatchScenario {
             .filter(|start| !taken.contains(start))
             .collect();
         let playing = houses.unwrap_or(computers.len() + free.len());
-        if playing < computers.len().max(2) || playing - computers.len() > free.len() {
+        let local_plays = local_home.is_some() && playing == computers.len() + free.len() + 1;
+        let seated = computers.len() + usize::from(local_plays);
+        if playing < seated.max(2) || playing - seated > free.len() {
             return Err(format!(
                 "{playing} houses on {} start waypoints: the launch took {} for itself and {} \
                  computer houses, and a match needs two houses",
@@ -541,18 +573,26 @@ impl MatchScenario {
                 computers.len()
             ));
         }
-        let humans = playing - computers.len();
+        if !local_plays && let Some(local) = local {
+            sim.make_house_multiplay_passive(local);
+        }
+        let humans = playing - seated;
 
         let mut players: Vec<(InternedId, (u16, u16), bool)> = computers
             .iter()
             .map(|&(id, home)| (id, home, true))
             .collect();
+        if local_plays {
+            let (id, home) = local_home.expect("local seat checked above");
+            players.push((id, home, false));
+        }
         for (index, &home) in free.iter().take(humans).enumerate() {
             let country = HUMAN_COUNTRIES[index % HUMAN_COUNTRIES.len()];
             let id = scenario.add_human_house(&format!("Bench{index:02}"), country);
             players.push((id, home, false));
         }
 
+        let grid = scenario.map.header.cell_grid();
         let runtime = &mut scenario.runtime;
         let mut ground = Ground {
             cells: CellSet::new(),
@@ -567,7 +607,7 @@ impl MatchScenario {
                 let ore = sim
                     .overlay_grid()
                     .and_then(|grid| grid.cell(cell.rx, cell.ry).overlay_id)
-                    .and_then(|id| runtime.resources.overlay_registry.flags(id))
+                    .and_then(|id| runtime.resources.rules.overlay_registry().flags(id))
                     .is_some_and(|flags| flags.tiberium);
                 if ore {
                     ground.ore.insert(x, y);
@@ -643,7 +683,7 @@ impl MatchScenario {
             let side = house.arsenal.side;
             let toward_ore = ore_offsets
                 .iter()
-                .map(|&offset| offset_cell(house.home, offset))
+                .map(|&offset| offset_cell(house.home, offset, grid))
                 .find(|&(x, y)| ground.ore.contains(i32::from(x), i32::from(y)))
                 .unwrap_or(house.home);
             let front = offset_cell(
@@ -652,6 +692,7 @@ impl MatchScenario {
                     (i32::from(house.staging.0) - i32::from(house.home.0)) * 3 / 5,
                     (i32::from(house.staging.1) - i32::from(house.home.1)) * 3 / 5,
                 ),
+                grid,
             );
             // The construction yard heads the list; a computer house's comes
             // from its MCV.
@@ -841,11 +882,15 @@ impl MatchScenario {
         members: &[(u64, (i32, i32))],
         destination: (u16, u16),
     ) {
+        let grid = runtime
+            .simulation
+            .resolved_terrain()
+            .map_or(CellGrid::Retail, |terrain| terrain.cell_grid());
         for &(id, offset) in members {
             if !Self::alive(runtime, id) {
                 continue;
             }
-            let (x, y) = offset_cell(destination, offset);
+            let (x, y) = offset_cell(destination, offset, grid);
             orders.push(CommandEnvelope::new(
                 owner,
                 at,
@@ -1163,5 +1208,81 @@ impl MatchScenario {
             factories[1],
             factories[2]
         )
+    }
+}
+
+#[cfg(test)]
+mod scale_target_tests {
+    use super::*;
+
+    #[test]
+    fn client_timing_is_opt_in_and_uses_the_client_step() {
+        let parse = |extra: &[&str]| {
+            crate::parse_args_from(
+                ["--ra2-dir", "unused"]
+                    .into_iter()
+                    .chain(extra.iter().copied())
+                    .map(str::to_owned),
+            )
+            .expect("benchmark arguments")
+        };
+        assert_eq!(parse(&[]).tick_ms(), 66);
+        assert_eq!(parse(&["--client-timing"]).tick_ms(), 22);
+    }
+
+    #[test]
+    fn offsets_keep_extended_coordinates() {
+        assert_eq!(
+            offset_cell((700, 700), (6, -2), CellGrid::Extended),
+            (706, 698)
+        );
+        assert_eq!(
+            offset_cell((510, 510), (6, -2), CellGrid::Retail),
+            (511, 508)
+        );
+        assert_eq!(
+            offset_cell((1020, 1), (6, -2), CellGrid::Extended),
+            (1023, 0)
+        );
+    }
+
+    #[test]
+    #[ignore = "requires RA2_DIR and VERA20K_PERF_MAP generated by tools.scale_map --size 500 --starts 30"]
+    fn full_capacity_match_uses_the_local_house_as_a_player() {
+        let retail = std::path::PathBuf::from(std::env::var_os("RA2_DIR").expect("retail assets"));
+        let map = std::env::var("VERA20K_PERF_MAP").expect("generated scale map");
+        let mut scenario = vera20k_core::headless_scenario::load_session(
+            &retail,
+            &map,
+            0x5EED0001,
+            session(&map, 0),
+        )
+        .expect("load retail map");
+        assert_eq!(
+            (scenario.map.header.width, scenario.map.header.height),
+            (500, 500)
+        );
+        let local = scenario
+            .sim()
+            .session()
+            .current_house()
+            .expect("local player");
+        let initial_houses = scenario.sim().houses().len();
+        let script = MatchScenario::setup(&mut scenario, Some(30), 60).expect("all 30 starts play");
+        assert_eq!(script.houses(), 30);
+        assert_eq!(scenario.sim().houses().len(), initial_houses + 29);
+        assert!(script.houses.iter().any(|house| house.id == local));
+        assert!(
+            script
+                .houses
+                .iter()
+                .all(|house| !scenario.sim().houses()[&house.id].multiplay_passive())
+        );
+        assert!(
+            script
+                .houses
+                .iter()
+                .any(|house| house.home.0 > 511 && house.home.1 > 511)
+        );
     }
 }

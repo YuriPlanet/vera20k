@@ -232,15 +232,10 @@ native comparison.
 Across all 600 ticks the two Rust executions matched every world hash, serialized
 entity and RNG fingerprint, plus all 319 raw draws. The unchanged absolute RNG
 pins and duel checks still pass. The final world hash `B3DF7D9407AF305B` then reflected
-the completed fixture's map, coordinates and movement context (later composition-only
-moves are recorded beside `GLOBAL_HARNESS_FINAL_HASH`). These are Rust
+the completed fixture's map, coordinates and movement context. These are Rust
 regression and baseline provenance checks, not a native skirmish comparison.
-The current baseline and strengthened mining checks are reproducible with:
-
-```sh
-VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- test -p vera20k-core --lib \
-  sim::world::global_parity_harness_tests::global_skirmish_replay_is_deterministic_and_baseline_stable
-```
+The global replay test that held that baseline and the mining checks was
+removed on 2026-11-11; git history keeps it.
 
 These source queries draw no RNG, write no actor timer and perform no detach.
 They retain the shared map Dummy coordinate writes. The response's existing

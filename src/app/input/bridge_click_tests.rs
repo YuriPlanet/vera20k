@@ -306,7 +306,6 @@ fn follow_clicked_goal(
     let admitted = super::commands::ordinary_cell_move_goal(
         scenario.sim(),
         &scenario.runtime.resources.rules,
-        Some(&scenario.runtime.resources.overlay_registry),
         owner,
         entity_id,
         goal,
@@ -332,7 +331,7 @@ fn follow_clicked_goal(
                 &due,
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert!(output.tick.frame_committed, "the retail frame must commit");
@@ -457,13 +456,12 @@ fn shift_walk_cell_input_uses_ordinary_resolver_and_move_record() {
     let owner = sim.interner().get("Local").unwrap();
     let clicked = (11, 5);
     let ordinary =
-        super::commands::ordinary_cell_move_goal(&sim, &rules, None, owner, actor, clicked, false)
+        super::commands::ordinary_cell_move_goal(&sim, &rules, owner, actor, clicked, false)
             .unwrap();
     let modifier = super::context_order::resolve_order_modifiers(false, true, false);
     let shifted = super::commands::ordinary_cell_move_goal(
         &sim,
         &rules,
-        None,
         owner,
         actor,
         clicked,
@@ -493,10 +491,9 @@ fn ordinary_walk_cell_input_reaches_near_bank_and_valid_high_bridge() {
         let (mut sim, rules, actor) = Simulation::walk_cell_input_test_scene(bridge);
         let owner = sim.interner().get("Local").unwrap();
         let clicked = if bridge { (9, 6) } else { (11, 5) };
-        let chosen = super::commands::ordinary_cell_move_goal(
-            &sim, &rules, None, owner, actor, clicked, false,
-        )
-        .unwrap();
+        let chosen =
+            super::commands::ordinary_cell_move_goal(&sim, &rules, owner, actor, clicked, false)
+                .unwrap();
         if bridge {
             assert_eq!(chosen, clicked);
         } else {
@@ -550,7 +547,7 @@ fn encoded_walk_destination_survives_topology_change_before_due_frame() {
     let owner = sim.interner().get("Local").unwrap();
     let clicked = (9, 6);
     let chosen =
-        super::commands::ordinary_cell_move_goal(&sim, &rules, None, owner, actor, clicked, false)
+        super::commands::ordinary_cell_move_goal(&sim, &rules, owner, actor, clicked, false)
             .unwrap();
     assert_eq!(chosen, clicked);
     let mut order = ordinary_move(&sim, owner, actor, chosen);
@@ -560,7 +557,7 @@ fn encoded_walk_destination_survives_topology_change_before_due_frame() {
     sim.queue_command(order.clone());
     sim.close_walk_input_test_bridge(&rules);
     assert_ne!(
-        super::commands::ordinary_cell_move_goal(&sim, &rules, None, owner, actor, clicked, false),
+        super::commands::ordinary_cell_move_goal(&sim, &rules, owner, actor, clicked, false),
         Some(clicked),
         "the later input query must discriminate the changed topology"
     );
@@ -586,7 +583,7 @@ fn direct_simulation_walk_move_is_an_already_resolved_destination() {
     let (mut sim, rules, actor) = Simulation::walk_cell_input_test_scene(false);
     let owner = sim.interner().get("Local").unwrap();
     assert_ne!(
-        super::commands::ordinary_cell_move_goal(&sim, &rules, None, owner, actor, (9, 5), false),
+        super::commands::ordinary_cell_move_goal(&sim, &rules, owner, actor, (9, 5), false),
         Some((9, 5))
     );
     sim.queue_command(CommandEnvelope::new(

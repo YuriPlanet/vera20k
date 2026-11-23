@@ -4,24 +4,23 @@ use crate::sim::command::GameSpeedRecord;
 use crate::sim::house_state::HouseState;
 use crate::sim::scenario_session::ScenarioGameMode;
 use crate::sim::world::{FrameEffects, NetworkCommandBoundary, NetworkCommandError, TickLane};
-use std::cell::Cell;
 
 struct Boundary {
-    visits: Cell<u32>,
-    checksums: Cell<u32>,
+    visits: u32,
+    checksums: u32,
     wait_visits: u32,
     skip: bool,
 }
 
 impl NetworkCommandBoundary for Boundary {
     fn exchange_commands(
-        &self,
+        &mut self,
         context: NetworkQueueContext,
         _queues: &mut NetworkCommandQueues<'_>,
     ) -> Result<Option<NetworkQueuePass>, NetworkCommandError> {
         assert_eq!(context.frame, 0);
-        let visits = self.visits.get() + 1;
-        self.visits.set(visits);
+        self.visits += 1;
+        let visits = self.visits;
         Ok(Some(if visits <= self.wait_visits {
             NetworkQueuePass::Waiting
         } else if self.skip {
@@ -31,8 +30,8 @@ impl NetworkCommandBoundary for Boundary {
         }))
     }
 
-    fn record_frame_checksum(&self, _frame: u32, _checksum: u32) {
-        self.checksums.set(self.checksums.get() + 1);
+    fn record_frame_checksum(&mut self, _frame: u32, _checksum: u32) {
+        self.checksums += 1;
     }
 
     fn compare_frame_info(
@@ -68,21 +67,19 @@ fn world() -> Simulation {
 #[test]
 fn repeated_network_waits_resume_only_dispatch_and_commit_after_one_logic_visit() {
     let mut sim = world();
-    let boundary = Boundary {
-        visits: Cell::new(0),
-        checksums: Cell::new(0),
+    let mut boundary = Boundary {
+        visits: 0,
+        checksums: 0,
         wait_visits: 2,
         skip: false,
     };
-    let effects = FrameEffects::empty().with_network_commands(&boundary);
     let first = sim
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
-            effects,
+            &mut FrameEffects::empty().with_network_commands(&mut boundary),
         )
         .unwrap();
     assert!(first.network_waiting);
@@ -101,10 +98,9 @@ fn repeated_network_waits_resume_only_dispatch_and_commit_after_one_logic_visit(
         sim.advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
-            effects
+            &mut FrameEffects::empty().with_network_commands(&mut boundary)
         )
         .is_err()
     );
@@ -112,13 +108,19 @@ fn repeated_network_waits_resume_only_dispatch_and_commit_after_one_logic_visit(
     let bytes = serde_json::to_vec(&sim).unwrap();
     let mut sim: Simulation = serde_json::from_slice(&bytes).unwrap();
     let second = sim
-        .resume_network_wait(RuleSet::empty_for_test(), None, effects)
+        .resume_network_wait(
+            RuleSet::empty_for_test(),
+            &mut FrameEffects::empty().with_network_commands(&mut boundary),
+        )
         .unwrap();
     assert!(second.network_waiting);
     assert!(second.lifecycle_outputs.is_empty());
     assert_eq!(sim.session.tick(), 0);
     let mut third = sim
-        .resume_network_wait(RuleSet::empty_for_test(), None, effects)
+        .resume_network_wait(
+            RuleSet::empty_for_test(),
+            &mut FrameEffects::empty().with_network_commands(&mut boundary),
+        )
         .unwrap();
     assert!(!third.network_waiting);
     assert!(third.network_failure.is_none());
@@ -127,12 +129,15 @@ fn repeated_network_waits_resume_only_dispatch_and_commit_after_one_logic_visit(
     assert_eq!(sim.session.game_options().game_speed, 4);
     assert_eq!(third.tick.executed_commands, 1);
     assert_eq!(third.take_admitted_commands().len(), 1);
-    assert_eq!(boundary.checksums.get(), 1);
-    assert_eq!(boundary.visits.get(), 3);
+    assert_eq!(boundary.checksums, 1);
+    assert_eq!(boundary.visits, 3);
     assert!(!sim.pending_network_wait());
     assert!(
-        sim.resume_network_wait(RuleSet::empty_for_test(), None, effects)
-            .is_err()
+        sim.resume_network_wait(
+            RuleSet::empty_for_test(),
+            &mut FrameEffects::empty().with_network_commands(&mut boundary)
+        )
+        .is_err()
     );
 }
 
@@ -144,21 +149,19 @@ fn natural_outcome_waits_for_terminal_network_dispatch_and_score_snapshot() {
     let house = sim.houses.get_mut(&owner).unwrap();
     house.economy_mut().set_score_for_test(120);
     assert!(house.accept_win_result(0, 0, false));
-    let boundary = Boundary {
-        visits: Cell::new(0),
-        checksums: Cell::new(0),
+    let mut boundary = Boundary {
+        visits: 0,
+        checksums: 0,
         wait_visits: 1,
         skip: false,
     };
-    let effects = FrameEffects::empty().with_network_commands(&boundary);
     let waiting = sim
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
-            effects,
+            &mut FrameEffects::empty().with_network_commands(&mut boundary),
         )
         .unwrap();
     assert!(waiting.network_waiting);
@@ -169,7 +172,10 @@ fn natural_outcome_waits_for_terminal_network_dispatch_and_score_snapshot() {
     let rng_before_score = sim.scenario_rng.state();
 
     let complete = sim
-        .resume_network_wait(RuleSet::empty_for_test(), None, effects)
+        .resume_network_wait(
+            RuleSet::empty_for_test(),
+            &mut FrameEffects::empty().with_network_commands(&mut boundary),
+        )
         .unwrap();
     assert!(!complete.network_waiting);
     assert!(!complete.tick.frame_committed);
@@ -184,15 +190,15 @@ fn natural_outcome_waits_for_terminal_network_dispatch_and_score_snapshot() {
         sim.ready_outcome_for_owner(owner).unwrap().kind,
         crate::sim::house_state::HouseOutcomeKind::Victory
     );
-    assert_eq!(boundary.checksums.get(), 1);
+    assert_eq!(boundary.checksums, 1);
 }
 
 #[test]
 fn skipped_network_dispatch_commits_without_consuming_or_retiring_dolist() {
     let mut sim = world();
-    let boundary = Boundary {
-        visits: Cell::new(0),
-        checksums: Cell::new(0),
+    let mut boundary = Boundary {
+        visits: 0,
+        checksums: 0,
         wait_visits: 0,
         skip: true,
     };
@@ -201,24 +207,23 @@ fn skipped_network_dispatch_commits_without_consuming_or_retiring_dolist() {
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
-            FrameEffects::empty().with_network_commands(&boundary),
+            &mut FrameEffects::empty().with_network_commands(&mut boundary),
         )
         .unwrap();
     assert!(output.tick.frame_committed);
     assert_eq!(output.tick.executed_commands, 0);
     assert_eq!(sim.session.game_options().game_speed, 3);
     assert_eq!(sim.pending_commands, before);
-    assert_eq!(boundary.checksums.get(), 1);
+    assert_eq!(boundary.checksums, 1);
 }
 
 #[test]
 fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_tail() {
     struct FullQueue;
     impl NetworkCommandBoundary for FullQueue {
-        fn record_frame_checksum(&self, _: u32, _: u32) {}
+        fn record_frame_checksum(&mut self, _: u32, _: u32) {}
         fn compare_frame_info(
             &self,
             _: &CommandRecord,
@@ -227,7 +232,7 @@ fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_ta
             panic!("queue failure must precede DoList")
         }
         fn exchange_commands(
-            &self,
+            &mut self,
             _: NetworkQueueContext,
             _: &mut NetworkCommandQueues<'_>,
         ) -> Result<Option<NetworkQueuePass>, NetworkCommandError> {
@@ -240,10 +245,9 @@ fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_ta
         .advance_app_frame(
             &[],
             RuleSet::empty_for_test(),
-            None,
             33,
             TickLane::Ordinary,
-            FrameEffects::empty().with_network_commands(&FullQueue),
+            &mut FrameEffects::empty().with_network_commands(&mut FullQueue),
         )
         .unwrap();
     assert!(!output.tick.frame_committed);
@@ -256,7 +260,7 @@ fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_ta
     let bytes = serde_json::to_vec(&sim).unwrap();
     let mut sim: Simulation = serde_json::from_slice(&bytes).unwrap();
     let output = sim
-        .resume_after_network_failure(RuleSet::empty_for_test(), None, FrameEffects::empty())
+        .resume_after_network_failure(RuleSet::empty_for_test(), &mut FrameEffects::empty())
         .unwrap();
     assert!(output.tick.frame_committed);
     assert_eq!(sim.session.binary_frame(), 1);
@@ -264,7 +268,7 @@ fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_ta
     assert_eq!(sim.pending_commands, before);
     assert!(sim.pending_network_interruption().is_none());
     assert!(
-        sim.resume_after_network_failure(RuleSet::empty_for_test(), None, FrameEffects::empty())
+        sim.resume_after_network_failure(RuleSet::empty_for_test(), &mut FrameEffects::empty())
             .is_err()
     );
 }
@@ -273,9 +277,9 @@ fn fatal_receive_failure_suspends_before_dispatch_and_acknowledges_only_frame_ta
 fn external_wait_timeout_or_quit_resumes_the_same_tail_without_dispatch() {
     for timeout in [false, true] {
         let mut sim = world();
-        let boundary = Boundary {
-            visits: Cell::new(0),
-            checksums: Cell::new(0),
+        let mut boundary = Boundary {
+            visits: 0,
+            checksums: 0,
             wait_visits: 1,
             skip: false,
         };
@@ -283,10 +287,9 @@ fn external_wait_timeout_or_quit_resumes_the_same_tail_without_dispatch() {
             .advance_app_frame(
                 &[],
                 RuleSet::empty_for_test(),
-                None,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::empty().with_network_commands(&boundary),
+                &mut FrameEffects::empty().with_network_commands(&mut boundary),
             )
             .unwrap();
         assert!(output.network_waiting);
@@ -298,18 +301,18 @@ fn external_wait_timeout_or_quit_resumes_the_same_tail_without_dispatch() {
             );
             assert!(!sim.pending_network_wait());
             assert!(sim.pending_network_interruption().is_some());
-            sim.resume_after_network_failure(RuleSet::empty_for_test(), None, FrameEffects::empty())
+            sim.resume_after_network_failure(RuleSet::empty_for_test(), &mut FrameEffects::empty())
                 .unwrap()
         } else {
-            sim.leave_network_wait(RuleSet::empty_for_test(), None, FrameEffects::empty())
+            sim.leave_network_wait(RuleSet::empty_for_test(), &mut FrameEffects::empty())
                 .unwrap()
         };
         assert!(output.tick.frame_committed);
         assert!(output.tick.state_hash.is_some());
         assert_eq!(sim.session.binary_frame(), 1);
         assert_eq!(sim.session.game_options().game_speed, 3);
-        assert_eq!(boundary.visits.get(), 1);
-        assert_eq!(boundary.checksums.get(), 1);
+        assert_eq!(boundary.visits, 1);
+        assert_eq!(boundary.checksums, 1);
         assert!(
             output
                 .lifecycle_outputs
@@ -320,7 +323,7 @@ fn external_wait_timeout_or_quit_resumes_the_same_tail_without_dispatch() {
             !sim.interrupt_network_wait(crate::sim::world::NetworkInterruption::ConnectionFailed)
         );
         assert!(
-            sim.leave_network_wait(RuleSet::empty_for_test(), None, FrameEffects::empty())
+            sim.leave_network_wait(RuleSet::empty_for_test(), &mut FrameEffects::empty())
                 .is_err()
         );
     }

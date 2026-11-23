@@ -1,7 +1,8 @@
 //! Overlay and terrain object parsing from RA2 map files.
 //!
 //! RA2 maps have three overlay-related sections:
-//! - `[OverlayPack]`: base64 → LCW compressed → 262,144 bytes (512×512 grid).
+//! - `[OverlayPack]`: base64 → LCW compressed → 262,144 bytes (512×512 grid),
+//!   or 1024×1024 on VERA's extended sizes (`docs/map-format.md`).
 //!   Each byte is an overlay type ID (0xFF = no overlay).
 //! - `[OverlayDataPack]`: same format. Each byte is a frame/value for the overlay
 //!   (e.g., ore density 0-11, wall connection frame).
@@ -12,18 +13,21 @@
 //! ## Dependency rules
 //! - Part of map/ — depends on util/ (base64, lcw), rules/ (ini_parser).
 
-use std::collections::HashMap;
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 
+use crate::map::cell_index::CellGrid;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::util::base64;
 use crate::util::lcw;
-
-/// Width of the overlay grid (RA2 maps are max 512×512 cells).
-pub(crate) const OVERLAY_GRID_SIZE: usize = 512;
-
-/// Total cells in the overlay grid (512 × 512 = 262,144).
-pub(crate) const OVERLAY_TOTAL_CELLS: usize = OVERLAY_GRID_SIZE * OVERLAY_GRID_SIZE;
 
 /// Sentinel value meaning "no overlay at this cell".
 const NO_OVERLAY: u8 = 0xFF;
@@ -33,15 +37,17 @@ const NO_OVERLAY: u8 = 0xFF;
 /// The vector keeps its actual decoded length: `ReadMapOverlayPacks` attempts
 /// one byte at every 512x512 coordinate and a short body's failed reads keep
 /// the initialized `0xFF` sentinel. A zero-length body is inactive under the
-/// reader's signed-positive length gate.
+/// reader's signed-positive length gate. The map's cell grid, not the body's
+/// length, sets the row stride: 512 on retail-size maps, 1024 on extended ones.
 #[derive(Debug, Default)]
 pub struct OverlayIdentityPack {
     bytes: Vec<u8>,
+    grid: CellGrid,
 }
 
 impl OverlayIdentityPack {
-    pub fn from_decoded(bytes: Vec<u8>) -> Self {
-        Self { bytes }
+    pub fn from_decoded(bytes: Vec<u8>, grid: CellGrid) -> Self {
+        Self { bytes, grid }
     }
 
     pub fn has_positive_length(&self) -> bool {
@@ -55,20 +61,26 @@ impl OverlayIdentityPack {
     /// Return the decoded byte for one fixed-grid reader coordinate. `None`
     /// represents native's failed byte read and is not the `0xFF` sentinel.
     pub fn read_byte(&self, rx: u16, ry: u16) -> Option<u8> {
-        if usize::from(rx) >= OVERLAY_GRID_SIZE || usize::from(ry) >= OVERLAY_GRID_SIZE {
-            return None;
-        }
-        self.bytes
-            .get(usize::from(ry) * OVERLAY_GRID_SIZE + usize::from(rx))
-            .copied()
+        read_pack_byte(&self.bytes, self.grid, rx, ry)
     }
+}
+
+/// One byte of a decoded pack at `(rx, ry)` under the grid's row stride.
+fn read_pack_byte(bytes: &[u8], grid: CellGrid, rx: u16, ry: u16) -> Option<u8> {
+    let stride = usize::from(grid.side());
+    if usize::from(rx) >= stride || usize::from(ry) >= stride {
+        return None;
+    }
+    bytes
+        .get(usize::from(ry) * stride + usize::from(rx))
+        .copied()
 }
 
 /// An overlay placed on a specific map cell.
 ///
 /// Overlays include ore, gems, walls, fences, bridges, rocks, and other
 /// decorative or gameplay objects that sit on top of terrain tiles.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct OverlayEntry {
     /// Isometric X coordinate.
     pub rx: u16,
@@ -88,18 +100,24 @@ pub struct OverlayEntry {
 pub struct OverlayDataPack {
     bytes: Vec<u8>,
     present: bool,
+    grid: CellGrid,
 }
 
 impl OverlayDataPack {
-    pub fn from_decoded(bytes: Vec<u8>) -> Self {
+    pub fn from_decoded(bytes: Vec<u8>, grid: CellGrid) -> Self {
         let present = !bytes.is_empty();
-        Self { bytes, present }
+        Self {
+            bytes,
+            present,
+            grid,
+        }
     }
 
     pub fn missing() -> Self {
         Self {
             bytes: Vec::new(),
             present: false,
+            grid: CellGrid::Retail,
         }
     }
 
@@ -120,12 +138,7 @@ impl OverlayDataPack {
     /// body produces `None`, matching the native failed-read path rather than
     /// fabricating a decoded zero byte.
     pub fn read_byte(&self, rx: u16, ry: u16) -> Option<u8> {
-        if usize::from(rx) >= OVERLAY_GRID_SIZE || usize::from(ry) >= OVERLAY_GRID_SIZE {
-            return None;
-        }
-        self.bytes
-            .get(usize::from(ry) * OVERLAY_GRID_SIZE + usize::from(rx))
-            .copied()
+        read_pack_byte(&self.bytes, self.grid, rx, ry)
     }
 
     pub fn byte_at(&self, rx: u16, ry: u16) -> u8 {
@@ -137,15 +150,23 @@ impl OverlayDataPack {
     /// Used by the map generator to emit an overlay-density grid alongside the
     /// overlay list; out-of-grid coordinates are ignored.
     pub fn from_cells(cells: impl IntoIterator<Item = (u16, u16, u8)>) -> Self {
-        let mut bytes = vec![0u8; OVERLAY_TOTAL_CELLS];
+        let cells: Vec<_> = cells.into_iter().collect();
+        let grid = if cells.iter().any(|&(x, y, _)| x >= 512 || y >= 512) {
+            CellGrid::Extended
+        } else {
+            CellGrid::Retail
+        };
+        let side = usize::from(grid.side());
+        let mut bytes = vec![0u8; side * side];
         for (rx, ry, frame) in cells {
-            if (rx as usize) < OVERLAY_GRID_SIZE && (ry as usize) < OVERLAY_GRID_SIZE {
-                bytes[ry as usize * OVERLAY_GRID_SIZE + rx as usize] = frame;
+            if usize::from(rx) < side && usize::from(ry) < side {
+                bytes[usize::from(ry) * side + usize::from(rx)] = frame;
             }
         }
         Self {
             bytes,
             present: true,
+            grid,
         }
     }
 }
@@ -177,25 +198,27 @@ pub struct TerrainObject {
     pub name: String,
 }
 
-/// Parse overlay entries and preserve the full overlay-data byte grid.
-pub fn parse_overlay_packs(ini: &IniFile) -> ParsedOverlayPacks {
-    let identity = decode_pack_section(ini, "OverlayPack")
-        .map(OverlayIdentityPack::from_decoded)
+/// Parse overlay entries and preserve the full overlay-data byte grid, laid
+/// out at the map's cell-grid stride.
+pub fn parse_overlay_packs(ini: &IniFile, grid: CellGrid) -> ParsedOverlayPacks {
+    let identity = decode_pack_section(ini, "OverlayPack", grid)
+        .map(|bytes| OverlayIdentityPack::from_decoded(bytes, grid))
         .unwrap_or_default();
-    let data: OverlayDataPack = decode_pack_section(ini, "OverlayDataPack")
-        .map(OverlayDataPack::from_decoded)
+    let data: OverlayDataPack = decode_pack_section(ini, "OverlayDataPack", grid)
+        .map(|bytes| OverlayDataPack::from_decoded(bytes, grid))
         .unwrap_or_else(OverlayDataPack::missing);
 
     let mut entries: Vec<OverlayEntry> = Vec::new();
-    let max_idx: usize = identity.decoded_len().min(OVERLAY_TOTAL_CELLS);
+    let stride = usize::from(grid.side());
+    let max_idx: usize = identity.decoded_len().min(stride * stride);
 
     for idx in 0..max_idx {
         let overlay_id: u8 = identity.bytes[idx];
         if overlay_id == NO_OVERLAY {
             continue;
         }
-        let rx: u16 = (idx % OVERLAY_GRID_SIZE) as u16;
-        let ry: u16 = (idx / OVERLAY_GRID_SIZE) as u16;
+        let rx: u16 = (idx % stride) as u16;
+        let ry: u16 = (idx / stride) as u16;
         let frame: u8 = data.byte_at(rx, ry);
 
         entries.push(OverlayEntry {
@@ -220,6 +243,9 @@ pub fn parse_overlay_packs(ini: &IniFile) -> ParsedOverlayPacks {
 /// selects radix128 for signed NewINIFormat<4, otherwise1000 (71CAE3..71CB44).
 /// The caller supplies ReadBasic's retained format, whose native default is0.
 /// Values are object names like "INTREE01", "CACTUS01", "ROCK01".
+/// The writer `TerrainClass::Write_Map_Section @ 0x0071CB90` has no port: its
+/// one caller, Save_Scenario_Map_File 0x00687CE0, is reached only from the
+/// random-map dialog under the map-editor flag 0x00A8ED6B (0x00596A38..72).
 pub fn parse_terrain_objects(ini: &IniFile, signed_new_ini_format: i32) -> Vec<TerrainObject> {
     let section = match ini.section("Terrain") {
         Some(s) => s,
@@ -258,7 +284,7 @@ pub fn parse_terrain_objects(ini: &IniFile, signed_new_ini_format: i32) -> Vec<T
 /// Decode a base64-encoded, LCW-compressed pack section (OverlayPack or OverlayDataPack).
 ///
 /// Concatenates all numbered key values, base64 decodes, then LCW decompresses.
-fn decode_pack_section(ini: &IniFile, section_name: &str) -> Option<Vec<u8>> {
+fn decode_pack_section(ini: &IniFile, section_name: &str, grid: CellGrid) -> Option<Vec<u8>> {
     let section = ini.section(section_name)?;
 
     let b64_data: Vec<&str> = section.packed_text_values().collect();
@@ -280,9 +306,8 @@ fn decode_pack_section(ini: &IniFile, section_name: &str) -> Option<Vec<u8>> {
     // ReadMapOverlayPacks 0x005FD2E0 consumes one byte per fixed-grid cell.
     // Reject excess decoded data before allocating it; short packs retain the
     // existing failed-read semantics in OverlayIdentityPack/OverlayDataPack.
-    let decompressed = lcw::decompress_chunks(&compressed, OVERLAY_TOTAL_CELLS);
-    drop(compressed);
-    match decompressed {
+    let side = usize::from(grid.side());
+    match lcw::decompress_chunks(&compressed, side * side) {
         Ok(data) => {
             log::info!(
                 "{}: {} compressed → {} decompressed bytes",
@@ -299,114 +324,30 @@ fn decode_pack_section(ini: &IniFile, section_name: &str) -> Option<Vec<u8>> {
     }
 }
 
-/// Compute wall connectivity frames for all wall overlays.
-///
-/// RA2 walls use a 4-bit cardinal-direction bitmask to select their SHP frame:
-///   bit 0 (1) = North neighbor (Y − 1, screen top-right)
-///   bit 1 (2) = East  neighbor (X + 1, screen bottom-right)
-///   bit 2 (4) = South neighbor (Y + 1, screen bottom-left)
-///   bit 3 (8) = West  neighbor (X − 1, screen top-left)
-///
-/// Frame 0 = isolated pillar, 5 = NE–SW straight, 10 = NW–SE straight, 15 = cross.
-/// Connectivity is same-type only (GAWALL connects to GAWALL, not NAWALL).
-/// Modifies `entries` in-place, setting `entry.frame` for every wall overlay.
-/// Returns the number of wall entries updated.
-pub fn compute_wall_connectivity(
-    entries: &mut [OverlayEntry],
-    overlay_registry: &OverlayTypeRegistry,
-) -> u32 {
-    // Build spatial index: (rx, ry) → overlay_id for wall cells only.
-    let mut wall_cells: HashMap<(u16, u16), u8> = HashMap::new();
-    for entry in entries.iter() {
-        let is_wall: bool = overlay_registry
-            .flags(entry.overlay_id)
-            .map(|f| f.wall)
-            .unwrap_or(false);
-        if is_wall {
-            wall_cells.insert((entry.rx, entry.ry), entry.overlay_id);
-        }
-    }
-
-    if wall_cells.is_empty() {
-        return 0;
-    }
-
-    let mut updated: u32 = 0;
-    for entry in entries.iter_mut() {
-        let is_wall: bool = overlay_registry
-            .flags(entry.overlay_id)
-            .map(|f| f.wall)
-            .unwrap_or(false);
-        if !is_wall {
-            continue;
-        }
-
-        let (rx, ry) = (entry.rx, entry.ry);
-        let mut bitmask: u8 = 0;
-
-        // Bit 0: North (Y − 1, screen top-right).
-        if ry > 0 && wall_cells.get(&(rx, ry - 1)) == Some(&entry.overlay_id) {
-            bitmask |= 1;
-        }
-        // Bit 1: East (X + 1, screen bottom-right).
-        if let Some(&id) = wall_cells.get(&(rx.wrapping_add(1), ry))
-            && id == entry.overlay_id
-        {
-            bitmask |= 2;
-        }
-        // Bit 2: South (Y + 1, screen bottom-left).
-        if let Some(&id) = wall_cells.get(&(rx, ry.wrapping_add(1)))
-            && id == entry.overlay_id
-        {
-            bitmask |= 4;
-        }
-        // Bit 3: West (X − 1, screen top-left).
-        if rx > 0 && wall_cells.get(&(rx - 1, ry)) == Some(&entry.overlay_id) {
-            bitmask |= 8;
-        }
-
-        entry.frame = bitmask;
-        if updated < 10 {
-            log::info!(
-                "  Wall[{}] at ({},{}) id={} → bitmask={} (N={} E={} S={} W={})",
-                updated,
-                rx,
-                ry,
-                entry.overlay_id,
-                bitmask,
-                bitmask & 1 != 0,
-                bitmask & 2 != 0,
-                bitmask & 4 != 0,
-                bitmask & 8 != 0,
-            );
-        }
-        updated += 1;
-    }
-
-    log::info!(
-        "Wall connectivity: {} entries updated ({} unique wall cells)",
-        updated,
-        wall_cells.len()
-    );
-    updated
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
 
     #[test]
     fn overlay_pack_limits_cumulative_output_and_keeps_short_pack_reads() {
-        // Four 65535-byte RLE chunks plus five more bytes exceed 512x512.
-        let packed = "BQD///7///+ABQD///7///+ABQD///7///+ABQD///7///+ABQAFAP4FAP+A";
+        // Seventeen 65535-byte RLE chunks exceed the extended 1024-square cap.
+        let packed = "BQD///7///+A".repeat(17);
         let ini = IniFile::from_str(&format!(
             "[OverlayPack]\n1={packed}\n[OverlayDataPack]\n1={packed}\n"
         ));
-        let rejected = parse_overlay_packs(&ini);
+        let rejected = parse_overlay_packs(&ini, CellGrid::Extended);
         assert!(!rejected.identity.has_positive_length());
         assert!(!rejected.data.has_positive_length());
+        // Five exceed the retail 512-square plane a retail-size map reads.
+        let retail_over =
+            IniFile::from_str(&format!("[OverlayPack]\n1={}\n", "BQD///7///+A".repeat(5)));
+        let rejected = parse_overlay_packs(&retail_over, CellGrid::Retail);
+        assert!(!rejected.identity.has_positive_length());
 
-        let short = parse_overlay_packs(&IniFile::from_str("[OverlayPack]\n1=BQD///7///+A\n"));
+        let short = parse_overlay_packs(
+            &IniFile::from_str("[OverlayPack]\n1=BQD///7///+A\n"),
+            CellGrid::Retail,
+        );
         assert_eq!(short.identity.decoded_len(), 65535);
         assert_eq!(short.identity.read_byte(0, 0), Some(NO_OVERLAY));
         assert_eq!(short.identity.read_byte(511, 127), None);
@@ -414,9 +355,10 @@ mod tests {
 
     #[test]
     fn raw_identity_pack_distinguishes_sentinel_from_failed_short_read() {
-        let mut bytes = vec![NO_OVERLAY; OVERLAY_GRID_SIZE + 1];
-        bytes[OVERLAY_GRID_SIZE] = 7;
-        let pack = OverlayIdentityPack::from_decoded(bytes);
+        // A short retail body still has its native 512-byte row stride.
+        let mut bytes = vec![NO_OVERLAY; 512 + 1];
+        bytes[512] = 7;
+        let pack = OverlayIdentityPack::from_decoded(bytes, CellGrid::Retail);
 
         assert!(pack.has_positive_length());
         assert_eq!(pack.read_byte(0, 0), Some(NO_OVERLAY));
@@ -427,8 +369,8 @@ mod tests {
 
     #[test]
     fn zero_length_pack_does_not_enter_signed_positive_body_gate() {
-        let identity = OverlayIdentityPack::from_decoded(Vec::new());
-        let data = OverlayDataPack::from_decoded(Vec::new());
+        let identity = OverlayIdentityPack::from_decoded(Vec::new(), CellGrid::Retail);
+        let data = OverlayDataPack::from_decoded(Vec::new(), CellGrid::Retail);
 
         assert!(!identity.has_positive_length());
         assert_eq!(identity.read_byte(0, 0), None);
@@ -438,7 +380,7 @@ mod tests {
 
     #[test]
     fn raw_overlay_data_pack_preserves_failed_short_reads() {
-        let data = OverlayDataPack::from_decoded(vec![7, 8]);
+        let data = OverlayDataPack::from_decoded(vec![7, 8], CellGrid::Retail);
 
         assert!(data.has_positive_length());
         assert_eq!(data.decoded_len(), 2);
@@ -474,180 +416,26 @@ mod tests {
         assert_eq!(rock.rx, 15);
         assert_eq!(rock.ry, 72);
     }
+}
 
-    /// Build a minimal OverlayTypeRegistry where overlay_id 0 = GAWALL (wall)
-    /// and overlay_id 1 = NAWALL (wall), overlay_id 2 = GEM01 (non-wall).
-    fn test_wall_registry() -> OverlayTypeRegistry {
-        let text: &str = "\
-[OverlayTypes]
-0=GAWALL
-1=NAWALL
-2=GEM01
-[GAWALL]
-Wall=yes
-[NAWALL]
-Wall=yes
-[GEM01]
-Tiberium=yes
-";
-        let ini: IniFile = IniFile::from_str(text);
-        OverlayTypeRegistry::from_ini(&ini, None)
-    }
-
+#[cfg(all(test, tests_map))]
+mod large_map_tests {
+    use super::*;
     #[test]
-    fn wall_connectivity_isolated() {
-        let reg = test_wall_registry();
-        let mut entries = vec![OverlayEntry {
-            rx: 10,
-            ry: 10,
-            overlay_id: 0,
-            frame: 99,
-        }];
-        let updated = compute_wall_connectivity(&mut entries, &reg);
-        assert_eq!(updated, 1);
-        assert_eq!(entries[0].frame, 0, "isolated wall = frame 0 (pillar)");
-    }
-
-    #[test]
-    fn wall_connectivity_straight_ns() {
-        let reg = test_wall_registry();
-        // Three walls in a North–South line (same X, consecutive Y).
-        let mut entries = vec![
-            OverlayEntry {
-                rx: 5,
-                ry: 4,
-                overlay_id: 0,
-                frame: 0,
-            },
-            OverlayEntry {
-                rx: 5,
-                ry: 5,
-                overlay_id: 0,
-                frame: 0,
-            },
-            OverlayEntry {
-                rx: 5,
-                ry: 6,
-                overlay_id: 0,
-                frame: 0,
-            },
-        ];
-        compute_wall_connectivity(&mut entries, &reg);
-        assert_eq!(entries[0].frame, 4, "top end: South only = bit 2");
-        assert_eq!(entries[1].frame, 5, "middle: N+S = bits 0+2 = 5");
-        assert_eq!(entries[2].frame, 1, "bottom end: North only = bit 0");
-    }
-
-    #[test]
-    fn wall_connectivity_straight_ew() {
-        let reg = test_wall_registry();
-        let mut entries = vec![
-            OverlayEntry {
-                rx: 4,
-                ry: 5,
-                overlay_id: 0,
-                frame: 0,
-            },
-            OverlayEntry {
-                rx: 5,
-                ry: 5,
-                overlay_id: 0,
-                frame: 0,
-            },
-            OverlayEntry {
-                rx: 6,
-                ry: 5,
-                overlay_id: 0,
-                frame: 0,
-            },
-        ];
-        compute_wall_connectivity(&mut entries, &reg);
-        assert_eq!(entries[0].frame, 2, "west end: East only = bit 1");
-        assert_eq!(entries[1].frame, 10, "middle: E+W = bits 1+3 = 10");
-        assert_eq!(entries[2].frame, 8, "east end: West only = bit 3");
-    }
-
-    #[test]
-    fn wall_connectivity_cross() {
-        let reg = test_wall_registry();
-        let mut entries = vec![
-            OverlayEntry {
-                rx: 5,
-                ry: 5,
-                overlay_id: 0,
-                frame: 0,
-            }, // center
-            OverlayEntry {
-                rx: 5,
-                ry: 4,
-                overlay_id: 0,
-                frame: 0,
-            }, // North
-            OverlayEntry {
-                rx: 6,
-                ry: 5,
-                overlay_id: 0,
-                frame: 0,
-            }, // East
-            OverlayEntry {
-                rx: 5,
-                ry: 6,
-                overlay_id: 0,
-                frame: 0,
-            }, // South
-            OverlayEntry {
-                rx: 4,
-                ry: 5,
-                overlay_id: 0,
-                frame: 0,
-            }, // West
-        ];
-        compute_wall_connectivity(&mut entries, &reg);
-        assert_eq!(entries[0].frame, 15, "center with all 4 neighbors = cross");
-    }
-
-    #[test]
-    fn wall_connectivity_same_type_only() {
-        let reg = test_wall_registry();
-        // GAWALL (id=0) at (5,5) with NAWALL (id=1) neighbors — should NOT connect.
-        let mut entries = vec![
-            OverlayEntry {
-                rx: 5,
-                ry: 5,
-                overlay_id: 0,
-                frame: 0,
-            },
-            OverlayEntry {
-                rx: 5,
-                ry: 4,
-                overlay_id: 1,
-                frame: 0,
-            }, // NAWALL North
-            OverlayEntry {
-                rx: 6,
-                ry: 5,
-                overlay_id: 1,
-                frame: 0,
-            }, // NAWALL East
-        ];
-        compute_wall_connectivity(&mut entries, &reg);
-        assert_eq!(entries[0].frame, 0, "GAWALL ignores NAWALL neighbors");
-        assert_eq!(entries[1].frame, 0, "NAWALL ignores GAWALL neighbors");
-    }
-
-    #[test]
-    fn wall_connectivity_skips_non_walls() {
-        let reg = test_wall_registry();
-        let mut entries = vec![
-            OverlayEntry {
-                rx: 5,
-                ry: 5,
-                overlay_id: 2,
-                frame: 7,
-            }, // GEM01, not wall
-        ];
-        let updated = compute_wall_connectivity(&mut entries, &reg);
-        assert_eq!(updated, 0);
-        assert_eq!(entries[0].frame, 7, "non-wall frame unchanged");
+    fn large_map_overlay_stride_keeps_retail_and_extended_planes_distinct() {
+        let mut retail = vec![255; 512 * 512];
+        retail[400 * 512 + 300] = 102;
+        assert_eq!(
+            OverlayIdentityPack::from_decoded(retail, CellGrid::Retail).read_byte(300, 400),
+            Some(102)
+        );
+        let mut large = vec![255; 1024 * 1024];
+        large[600 * 1024 + 700] = 103;
+        let pack = OverlayIdentityPack::from_decoded(large, CellGrid::Extended);
+        assert_eq!(pack.read_byte(700, 600), Some(103));
+        assert_eq!(pack.read_byte(188, 601), Some(255));
+        let data = OverlayDataPack::from_cells([(700, 600, 11)]);
+        assert_eq!(data.byte_at(700, 600), 11);
+        assert_eq!(data.byte_at(188, 601), 0);
     }
 }

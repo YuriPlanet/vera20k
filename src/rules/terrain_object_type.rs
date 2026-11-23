@@ -10,6 +10,31 @@ use crate::rules::foundation;
 use crate::rules::ini_parser::IniSection;
 use crate::util::native_x87::NativeF32Bits;
 
+/// The stock forest-fire Rules keys gamemd reads but never consumes; Ares
+/// 3.0's terrain fire (`sim::terrain_fire`) is their consumer.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ForestFireRules {
+    /// `[AudioVisual] TreeFire=` (TypeList<AnimTypeClass*>, ReadAudioVisual
+    /// `0x0066AFC8`; constructor empty, an empty read retains it), the anims
+    /// `TerrainClass::Catch_Fire @ 0x0071C5B0` picks from.
+    pub(crate) tree_fire: Vec<String>,
+    /// `[General] TreeFlammability=` (Rules+0x588; the constructor stores
+    /// 0.1 at `0x00665D9C`, ReadGeneral `0x0066EC08` retains the current
+    /// value): the chance a burning tree sets each unburnt neighbour alight.
+    pub(crate) tree_flammability: crate::util::native_x87::NativeF64Bits,
+}
+
+impl Default for ForestFireRules {
+    fn default() -> Self {
+        Self {
+            tree_fire: Vec::new(),
+            tree_flammability: crate::util::native_x87::NativeF64Bits::from_bits(
+                0x3FB9_9999_9999_999A,
+            ),
+        }
+    }
+}
+
 /// Type-class data for a terrain object (e.g. `[TIBTRE01]`).
 ///
 /// Fields consumed by terrain occupation, damage and animation. Other terrain
@@ -265,7 +290,7 @@ impl TerrainObjectType {
     ) {
         // TerrainRead71DEBB inherits ObjectRead5F93E4: own Rules section,
         // ReadString128, registered Voc lookup, current-ID retention on misses.
-        self.ambient_sound = sounds.read_rules_reference(section, "AmbientSound");
+        self.ambient_sound = sounds.read_rules_reference(section, "AmbientSound", None);
     }
 
     pub(crate) fn ambient_sound(&self) -> Option<&str> {
@@ -320,6 +345,7 @@ impl PhobosSpawnsTiberium {
         section: &IniSection,
         mut find_particle: impl FnMut(&str) -> Option<String>,
     ) {
+        let _phobos = crate::rules::ares_switch::not_ares_reads();
         self.tiberium_type = section.read_ares_int("SpawnsTiberium.Type", self.tiberium_type);
         self.range = section.read_ares_int("SpawnsTiberium.Range", self.range);
         self.growth_stage =
@@ -496,7 +522,7 @@ impl TerrainTypeReadState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -852,7 +878,7 @@ mod tests {
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         sim.install_resolved_terrain_for_new_map(template.clone());
-        sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+        *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
         crate::sim::terrain_spawn::construct_terrain_objects(
             &mut sim,
             &[crate::map::overlay::TerrainObject {
@@ -876,8 +902,9 @@ mod tests {
                 impact,
                 weapon.damage,
                 warhead,
+                true,
                 (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         };
         hit(&mut sim, &rules);

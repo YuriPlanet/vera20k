@@ -16,7 +16,7 @@ from .core import (
     BYTES_PER_PIXEL,
     ValidatedGuard,
     ValidationError,
-    _parse_json_bytes,
+    parse_json_bytes,
     _read_regular_bytes,
     _require_array,
     _require_keys,
@@ -143,7 +143,7 @@ def _load_guard_document(
             "native shell guard changed after validation: "
             f"got {actual_sha256}, expected {guard.sha256}"
         )
-    return _parse_json_bytes(raw, "native shell guard")
+    return parse_json_bytes(raw, "native shell guard")
 
 
 def _source_records(document: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:

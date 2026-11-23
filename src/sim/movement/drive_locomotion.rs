@@ -168,8 +168,17 @@ impl DriveLocomotionRuntime {
         self
     }
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn with_target_speed_fraction_for_test(mut self, value: SimFixed) -> Self {
-        self.target_speed_fraction = NativeF64Bits::from_bits(value.to_num::<f64>().to_bits());
+    pub(crate) fn with_target_speed_fraction_for_test(self, value: SimFixed) -> Self {
+        self.with_target_speed_fraction_native_for_test(NativeF64Bits::from_bits(
+            value.to_num::<f64>().to_bits(),
+        ))
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn with_target_speed_fraction_native_for_test(
+        mut self,
+        value: NativeF64Bits,
+    ) -> Self {
+        self.target_speed_fraction = value;
         self
     }
     #[cfg(any(test, feature = "test-support"))]
@@ -702,6 +711,12 @@ pub(super) struct TrackSpeedPrefix {
     pub crush_slowdown: bool,
 }
 
+impl TrackSpeedPrefix {
+    pub(super) fn applies_acceleration(&self) -> bool {
+        self.accelerates && self.selector < 64 && !self.unit_passive
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct TrackSpeedStep {
     /// Class+50: unchanged bit-for-bit except the crush arm's FLD/FSTP.
@@ -720,8 +735,8 @@ fn track_c0_set(order: MaskedX87Ordering) -> bool {
 
 /// Process_Drive_Track speed prefix: Drive4B0F74..4B1218 / Ship6A0644..6A08E0.
 /// Exact PC53/chop arithmetic feeds the same frame's movement budget.
-/// Linked-member propagation remains outside this numeric owner; no stock
-/// producer of that linked chain has been established.
+/// The track host hands the resulting applied fraction to linked Units on
+/// the accelerating path (Drive 0x4B1218, Ship 0x6A08E0).
 ///
 /// `distance` is called exactly once only after Accelerates/selector/Passive
 /// gates. The native distance owner is a pure ground/Cell query. Live mutable
@@ -745,7 +760,7 @@ pub(super) fn track_speed_prefix(
         return unchanged_target(Some(target));
     }
     // Signed selector comparison; negative values are not rejected here.
-    if input.selector >= 64 || input.unit_passive {
+    if !input.applies_acceleration() {
         return unchanged_target(None);
     }
 
@@ -832,7 +847,7 @@ pub(super) fn track_speed_prefix(
     unchanged_target(None)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
     use crate::sim::movement::foot_speed::owner_current_speed_from_fraction;

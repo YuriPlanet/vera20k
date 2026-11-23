@@ -164,8 +164,7 @@ fn grant_percentage_hold_release_and_ai_match_original_histories() {
         // Admit the harness's incoming stream states after the supplied
         // Building fixture; construction draws are outside this history.
         let seeds = &data["rng_seed_states"];
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
         sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
@@ -208,7 +207,12 @@ fn grant_percentage_hold_release_and_ai_match_original_histories() {
                     assert_eq!(i32::from(changed), int(row, "returned"));
                 }
                 "held_ai" | "released_ai" | "elapsed_ai" => {
-                    tick_house_superweapon_instances(&mut sim, &rules, owner);
+                    tick_house_superweapon_instances(
+                        &mut sim,
+                        &rules,
+                        owner,
+                        &mut Default::default(),
+                    );
                 }
                 _ => panic!("unhandled original history stage {stage}"),
             }
@@ -269,8 +273,7 @@ fn house_hold_pass_matches_original_retained_power_histories() {
             .or_default()
             .insert(type_id, instance);
         let seeds = &data["rng_seed_states"];
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
         sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
@@ -299,7 +302,7 @@ fn house_hold_pass_matches_original_retained_power_histories() {
             power.set_total_drain_for_test(int(row, "retained_drain"));
             power.set_is_low_power_for_test(row["low_power_before_call"].as_bool().unwrap());
             sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
-            update_owned_supers(&mut sim, &rules, owner);
+            update_owned_supers(&mut sim, &rules, owner, &mut Default::default());
             assert_state(&sim.super_weapons[&owner][&type_id], &row["output"], &label);
             assert_eq!(
                 sim.houses.get_mut(&owner).unwrap().take_tech_recheck(),

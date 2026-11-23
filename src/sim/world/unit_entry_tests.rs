@@ -48,7 +48,7 @@ fn a_closed_gate_asks_its_own_house_about_the_mover() {
     use crate::map::houses::HouseAllianceMap;
     use crate::sim::house_diplomacy::HouseAllianceAdmission;
 
-    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+    let (mut sim, rules, _registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
         "[VehicleTypes]\n0=MOVER\n[BuildingTypes]\n1=GATE\n\
          [MOVER]\nSpeedType=Track\n[GATE]\nFoundation=1x1\nGate=yes\n",
     );
@@ -66,7 +66,7 @@ fn a_closed_gate_asks_its_own_house_about_the_mover() {
     gate.set_owner_for_test(sim.intern("Russians"));
     gate.set_type_ref_for_test(sim.intern("GATE"));
     gate.set_category_for_test(EntityCategory::Structure);
-    gate.building_gate = Some(Default::default());
+    gate.building.building_gate = Some(Default::default());
     sim.substrate.entities.insert(gate);
     sim.substrate.occupancy.add(
         11,
@@ -85,7 +85,6 @@ fn a_closed_gate_asks_its_own_house_about_the_mover() {
         let live = EntryReadContext {
             sim,
             rules: &rules,
-            registry: Some(&registry),
             facts: None,
         };
         let args = InfantryEntryArgs {
@@ -128,7 +127,7 @@ fn unit_post_walk_tail_matches_original_crush_controls() {
     let mut mismatches = Vec::new();
     for case in cases {
         let input = &case["input"];
-        let (mut sim, rules, registry) =
+        let (mut sim, rules, _registry) =
             crate::sim::world::entry_test_fixture::fixture_with_rules(&format!(
                 "[VehicleTypes]\n0=MOVER\n1=VICTIM\n[MOVER]\nSpeedType=Track\nCrusher=yes\n\
                  OmniCrusher={}\n",
@@ -183,6 +182,7 @@ fn unit_post_walk_tail_matches_original_crush_controls() {
                     target.set_type_ref_for_test(sim.intern(name));
                     target.set_category_for_test(category);
                     target
+                        .seldom
                         .crushable_facts
                         .set_crushable_for_test(node["crushable"] == true);
                     target
@@ -222,7 +222,6 @@ fn unit_post_walk_tail_matches_original_crush_controls() {
         let live = EntryReadContext {
             sim: &sim,
             rules: &rules,
-            registry: Some(&registry),
             facts: None,
         };
         let mover = EntryMover::new(
@@ -264,7 +263,7 @@ fn unit_post_walk_tail_matches_original_crush_controls() {
 fn an_unarmed_train_answers_five_where_an_unarmed_unit_answers_seven() {
     for (train, expected) in [("no", 7), ("yes", 5)] {
         for listed in [false, true] {
-            let (mut sim, rules, registry) =
+            let (mut sim, rules, _registry) =
                 crate::sim::world::entry_test_fixture::fixture_with_rules(&format!(
                     "[VehicleTypes]\n0=MOVER\n[MOVER]\nSpeedType=Track\nIsTrain={train}\n"
                 ));
@@ -303,29 +302,34 @@ fn an_unarmed_train_answers_five_where_an_unarmed_unit_answers_seven() {
                 .as_ref()
                 .unwrap()
                 .native_cell_identity((11, 10));
-            let live = EntryReadContext {
-                sim: &sim,
-                rules: &rules,
-                registry: Some(&registry),
-                facts: None,
-            };
-            let args = InfantryEntryArgs {
-                direction: -1,
-                height: -1,
-                previous_cell: None,
-            };
-            assert_eq!(
-                classify_entry(&live, CellObjectMember::Entity(90), cell, args),
-                Ok(expected),
-                "IsTrain={train}, listed={listed}"
-            );
+            // A path batch's kept facts walk the infantryman's list too.
+            let kept = EntryFacts::fitted(&sim);
+            for facts in [None, Some(&kept)] {
+                let live = EntryReadContext {
+                    sim: &sim,
+                    rules: &rules,
+                    facts,
+                };
+                let args = InfantryEntryArgs {
+                    direction: -1,
+                    height: -1,
+                    previous_cell: None,
+                };
+                assert_eq!(
+                    classify_entry(&live, CellObjectMember::Entity(90), cell, args),
+                    Ok(expected),
+                    "IsTrain={train}, listed={listed}, kept={}",
+                    facts.is_some()
+                );
+            }
         }
     }
 }
 
 /// A Unit's walk meets a terrain object through the weapon it would fire at
 /// it (`0x0073FBAC`, `+0x2E4`): 5 for a `Wood=` warhead, else 7. A crusher is
-/// no exception, however the terrain's type spells `Crushable=`.
+/// no exception, however the terrain's type spells `Crushable=`. A path
+/// batch's kept facts meet it too.
 #[test]
 fn a_crusher_meets_a_terrain_object_with_its_weapon() {
     for (mover, expected) in [
@@ -333,7 +337,7 @@ fn a_crusher_meets_a_terrain_object_with_its_weapon() {
         ("OmniCrusher=yes\n", 7),
         ("Crusher=yes\nPrimary=SAW\n", 5),
     ] {
-        let (mut sim, rules, registry) =
+        let (mut sim, rules, _registry) =
             crate::sim::world::entry_test_fixture::fixture_with_rules(&format!(
                 "[VehicleTypes]\n0=MOVER\n[MOVER]\nSpeedType=Track\n{mover}\
                  [TerrainTypes]\n0=TREE01\n[TREE01]\nCrushable=yes\n\
@@ -365,22 +369,25 @@ fn a_crusher_meets_a_terrain_object_with_its_weapon() {
             .as_ref()
             .unwrap()
             .native_cell_identity((11, 10));
-        let live = EntryReadContext {
-            sim: &sim,
-            rules: &rules,
-            registry: Some(&registry),
-            facts: None,
-        };
-        let args = InfantryEntryArgs {
-            direction: -1,
-            height: -1,
-            previous_cell: None,
-        };
-        assert_eq!(
-            classify_entry(&live, CellObjectMember::Entity(90), cell, args),
-            Ok(expected),
-            "{mover}"
-        );
+        let kept = EntryFacts::fitted(&sim);
+        for facts in [None, Some(&kept)] {
+            let live = EntryReadContext {
+                sim: &sim,
+                rules: &rules,
+                facts,
+            };
+            let args = InfantryEntryArgs {
+                direction: -1,
+                height: -1,
+                previous_cell: None,
+            };
+            assert_eq!(
+                classify_entry(&live, CellObjectMember::Entity(90), cell, args),
+                Ok(expected),
+                "{mover}, kept={}",
+                facts.is_some()
+            );
+        }
     }
 }
 
@@ -438,7 +445,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
         if input.get("wall").is_some() {
             extra.push_str(&format!("[O0]\nWall=yes\nCrushable={}\n", flag("wall")));
         }
-        let (mut sim, rules, registry) =
+        let (mut sim, rules, _registry) =
             crate::sim::world::entry_test_fixture::fixture_with_rules(&extra);
         let coord = |value: &serde_json::Value| {
             (
@@ -531,7 +538,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
         mover.set_category_for_test(EntityCategory::Unit);
         mover.set_in_playfield(flag("in_playfield"));
         if flag("mission_only") {
-            mover.mission_only.mark();
+            mover.seldom.mission_only.mark();
         }
         mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         sim.substrate.entities.insert(mover);
@@ -608,6 +615,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                     EntityCategory::Unit
                 });
                 blocker
+                    .seldom
                     .crushable_facts
                     .set_crushable_for_test(node["crushable"].as_bool().unwrap_or(false));
                 blocker.mover_facts.set_omni_crush_resistant_for_test(
@@ -701,7 +709,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 }
                 if node["gate"].as_bool().unwrap_or(false) {
                     let opened = node["open"].as_bool().unwrap_or(false);
-                    blocker.building_gate = Some(Default::default());
+                    blocker.building.building_gate = Some(Default::default());
                     if opened {
                         crate::sim::mission::authority::queue_entity_mission_deferred(
                             &mut blocker,
@@ -717,7 +725,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 if node["cloaked"].as_bool().unwrap_or(false) {
                     let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(100);
                     cloak.establish_unlimbo_fully_cloaked();
-                    blocker.cloak = Some(cloak);
+                    blocker.cloak = Some(Box::new(cloak));
                 }
                 sim.substrate.entities.insert(blocker);
                 id
@@ -823,7 +831,6 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 let live = EntryReadContext {
                     sim,
                     rules: &rules,
-                    registry: Some(&registry),
                     facts,
                 };
                 let actual = classify_entry(&live, CellObjectMember::Entity(90), cell, args);

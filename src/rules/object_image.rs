@@ -21,7 +21,8 @@ pub(crate) enum ImageTheater {
 
 impl ImageTheater {
     /// FindTheater48DBE0 scans the six names at7E1B78 with case-insensitive
-    /// comparison; Snow is ordinal1. Unknown names return-1.
+    /// comparison; Snow is ordinal1. Unknown names return-1. The map's
+    /// theater data finds its theater through this too (`map::theater`).
     pub(crate) fn from_name(name: &str) -> Self {
         if name.eq_ignore_ascii_case("SNOW") {
             Self::Snow
@@ -40,16 +41,56 @@ impl ImageTheater {
         }
     }
 
-    /// Full_Init687633..687649 invokes ReadTheater475870 with default0
-    /// before resetting Types. This reads the raw map, not the merged Rules.
-    pub(crate) fn from_map(map: &IniFile) -> Self {
-        let name = map.section_or_empty("Map").read_string("Theater", "", 0x80);
-        if name.is_empty() {
-            Self::Temperate
-        } else {
-            Self::from_name(&name)
+    /// The TheaterType ordinal FindTheater48DBE0 returns: Temperate0 to
+    /// Lunar5, and -1 for an unknown name (Ares `Theater::FindIndex
+    /// @ 1003DAE0` and `ScenarioClass+Theater`).
+    pub(crate) const fn native_index(self) -> i32 {
+        match self {
+            Self::Uninitialized => -1,
+            Self::Temperate => 0,
+            Self::Snow => 1,
+            Self::Urban => 2,
+            Self::Desert => 3,
+            Self::NewUrban => 4,
+            Self::Lunar => 5,
         }
     }
+
+    /// The theater's `TheaterData.Letter` string (`0x007E1BCE`, one per
+    /// 0x70-byte entry from `0x007E1B78`): one letter, T A U D N L. None for
+    /// an unknown theater, whose entry gamemd would read before the table.
+    pub(crate) const fn letter(self) -> Option<char> {
+        match self {
+            Self::Uninitialized => None,
+            Self::Temperate => Some('T'),
+            Self::Snow => Some('A'),
+            Self::Urban => Some('U'),
+            Self::Desert => Some('D'),
+            Self::NewUrban => Some('N'),
+            Self::Lunar => Some('L'),
+        }
+    }
+
+    /// Full_Init687633..687649 invokes ReadTheater475870 with default0
+    /// before resetting Types. This reads the raw map, not the merged Rules,
+    /// with the map header's read ([`read_map_theater`]).
+    pub(crate) fn from_map(map: &IniFile) -> Self {
+        Self::from_name(&read_map_theater(map))
+    }
+}
+
+/// The map's `[Map] Theater=`: `ReadTheater @ 0x00475870` with default 0
+/// (Temperate), as the map reader (0x004ACFE5) and Full_Init (0x0068763E)
+/// both call it. The name its 0x80-byte ReadString copies, uppercased, or
+/// `TEMPERATE` when the copy is empty. An unknown name stays as read; the
+/// theater lookups match names without regard to case, as FindTheater
+/// (0x0048DBE0) does. Rules reads it for the image theater, so it lives here
+/// rather than in the map reader (rules must not import map).
+pub(crate) fn read_map_theater(ini: &IniFile) -> String {
+    ini.section_or_empty("Map")
+        .read_name("Theater", 0x80)
+        .unwrap_or("TEMPERATE")
+        .to_uppercase()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,6 +148,9 @@ impl ObjectImageLoad {
 pub(crate) struct ObjectImageState {
     image: String,
     alternate_arctic_art: bool,
+    /// Ares TechnoTypeExt `AlternateTheaterArt` (+0x17A, Valueable<bool>,
+    /// constructor false); only a TechnoType read the Ares way sets it.
+    alternate_theater_art: bool,
     arctic_applied: bool,
     theater: bool,
     new_theater: bool,
@@ -119,6 +163,8 @@ pub(crate) struct ObjectImageState {
     anim_bounds_loads: Option<Vec<ObjectImageLoad>>,
     anim_theater_bounds_loads: Option<Vec<ObjectImageLoad>>,
     voxel_load: Option<String>,
+    #[serde(default)]
+    pub(crate) model_slots: super::voxel_model_plan::ModelSlots,
 }
 
 impl ObjectImageState {
@@ -128,6 +174,7 @@ impl ObjectImageState {
         Self {
             image: stored_id.chars().take(24).collect(),
             alternate_arctic_art: false,
+            alternate_theater_art: false,
             arctic_applied: false,
             theater: false,
             new_theater: false,
@@ -136,6 +183,7 @@ impl ObjectImageState {
             anim_bounds_loads: None,
             anim_theater_bounds_loads: None,
             voxel_load: None,
+            model_slots: Default::default(),
         }
     }
 
@@ -151,7 +199,7 @@ impl ObjectImageState {
         self.read_input(input);
         let art = fixed_art.section(&self.image);
         self.read_art(art);
-        self.load_for_read(kind, theater);
+        self.load_for_read(kind, theater, Some(fixed_art));
         art
     }
 
@@ -159,6 +207,14 @@ impl ObjectImageState {
         self.image = input.read_string("Image", &self.image, 25);
         self.alternate_arctic_art =
             input.read_bool("AlternateArcticArt", self.alternate_arctic_art);
+    }
+
+    /// Ares ObjectTypeClass_LoadFromINI (hook `0x005F9634`, body `100413B0`):
+    /// a TechnoType reads `AlternateTheaterArt` from the INI being read, in
+    /// its ID's section, before ReadINI calls LoadSHP (`0x005F964D`).
+    pub(crate) fn read_ares_alternate_theater_art(&mut self, input: &IniSection) {
+        self.alternate_theater_art =
+            input.read_ares_bool("AlternateTheaterArt", self.alternate_theater_art);
     }
 
     pub(crate) fn read_art(&mut self, art: Option<&IniSection>) {
@@ -171,9 +227,14 @@ impl ObjectImageState {
         }
     }
 
-    pub(crate) fn load_for_read(&mut self, kind: ObjectImageKind, theater: ImageTheater) {
+    pub(crate) fn load_for_read(
+        &mut self,
+        kind: ObjectImageKind,
+        theater: ImageTheater,
+        art: Option<&IniFile>,
+    ) {
         if !self.voxel && kind != ObjectImageKind::Animation {
-            self.load_unowned_shp(kind, theater);
+            self.load_unowned_shp(kind, theater, art);
         }
     }
 
@@ -183,8 +244,31 @@ impl ObjectImageState {
     /// before every saved-family call here. This is the proven unowned
     /// read/saved boundary, not the lazy owned-shape lifecycle. A miss never
     /// undoes the name or latch.
-    pub(crate) fn load_unowned_shp(&mut self, kind: ObjectImageKind, theater: ImageTheater) {
-        if self.alternate_arctic_art && theater == ImageTheater::Snow {
+    ///
+    /// Ares ObjectTypeClass_Load2DArt (hook `0x005F9070`, body `10041040`,
+    /// resumes `0x005F92C3`) puts its own arm first: a TechnoType with
+    /// `AlternateTheaterArt` takes ImageFile plus the theater letter once,
+    /// and only when the art INI (`art`) holds a section of that name. That
+    /// arm skips the Arctic one, its latch reset included. The rest of the
+    /// hook is the stock load below. A saved-game restore passes no art: its
+    /// latch and image were settled against the same art and theater.
+    pub(crate) fn load_unowned_shp(
+        &mut self,
+        kind: ObjectImageKind,
+        theater: ImageTheater,
+        art: Option<&IniFile>,
+    ) {
+        if self.alternate_theater_art {
+            if let (false, Some(letter), Some(art)) = (self.arctic_applied, theater.letter(), art) {
+                // 10041098 formats into a 0x20-byte buffer and copies at most
+                // 24 characters back into the 25-byte ImageFile.
+                let name = format!("{}{letter}", self.image);
+                if art.section(&name).is_some() {
+                    self.image = name.chars().take(24).collect();
+                    self.arctic_applied = true;
+                }
+            }
+        } else if self.alternate_arctic_art && theater == ImageTheater::Snow {
             if !self.arctic_applied {
                 self.image = self.image.chars().chain(['A']).take(24).collect();
                 self.arctic_applied = true;
@@ -222,7 +306,7 @@ impl ObjectImageState {
         phase: AnimImagePhase,
     ) {
         if self.theater {
-            self.load_unowned_shp(ObjectImageKind::Animation, theater);
+            self.load_unowned_shp(ObjectImageKind::Animation, theater, None);
         } else {
             let mut request = self.shp_request(true);
             if request.image.is_empty() {

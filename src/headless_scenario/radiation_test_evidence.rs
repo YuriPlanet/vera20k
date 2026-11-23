@@ -46,6 +46,7 @@ pub fn visit_paid_deso_light_lifecycle(
     // Match the App's initial batches. HeadlessScenario::tick's 66ms lane is
     // deliberately not used: the accepted capture advances ordinary22ms.
     scene.runtime.simulation.batch_path_searches();
+    scene.runtime.simulation.batch_target_scans();
     let owner = scene.sim().session.current_house().unwrap();
     assert_eq!(scene.sim().resolve(owner), local_name);
     assert_eq!(
@@ -199,7 +200,7 @@ pub fn visit_paid_deso_light_lifecycle(
                 .get(deso)
                 .expect("actual paid DESO before Deploy");
             assert!(delivered && actor.is_object_alive() && !actor.lifecycle.in_limbo());
-            assert!(actor.lifecycle.cell_marked() && actor.in_logic_vector.is_member());
+            assert!(actor.lifecycle.cell_marked() && actor.seldom.in_logic_vector.is_member());
             assert_eq!(
                 (actor.position.rx(), actor.position.ry()),
                 center,
@@ -215,10 +216,10 @@ pub fn visit_paid_deso_light_lifecycle(
             .production()
             .factories()
             .strip_visits_for_test(owner);
-        let effects = FrameEffects::default().with_production_strip(&visits, &|_| {});
+        let mut effects = FrameEffects::default().with_production_strip(&visits);
         let output = scene
             .runtime
-            .advance_frame(&due, 22, TickLane::Ordinary, effects)
+            .advance_frame(&due, 22, TickLane::Ordinary, &mut effects)
             .expect("ordinary paid DESO frame");
         assert!(output.tick.frame_committed);
         if !bound_deso

@@ -11,14 +11,24 @@ import shutil
 import struct
 import subprocess
 import sys
+import tarfile
+import tempfile
+import urllib.request
 from nsp import CLIENT_TITLE_ID, GPU_TITLE_ID, TITLE_ID, icon_path, package
 
 ROOT = Path(__file__).resolve().parent
 WORKSPACE = ROOT.parents[3]
 TOOLCHAIN = "nightly-2026-10-04"
 UPSTREAM_COMMIT = "3eac779b232ee47cd0eb957676c64386ac7b0f1d"
+WGPU_VERSION = "30.0.1"
+WGPU_ARCHIVES = {
+    "wgpu": "527ccdf43dd5b2e8676eed9984ce00e2bbb0a1b85b70c1969dcb6cd2eb55ab9e",
+    "wgpu-core": "14c018fce9b6270aa203c2fdd56f3cce996713534bd757e4ea58c8560b121f14",
+    "wgpu-hal": "b6b7fb58561a792bc237628ba0792e332de418fefe145f13b5ed8201e6d52f58",
+    "wgpu-core-deps-windows-linux-android": "7586165fd5f6d881cb9ce4bb71f40d6caab2c0f1837e3fc1d9788a197fb6004f",
+}
 DEFAULT_CLIENT_ASSETS = ROOT / "target/emulator/master-xdg-data/eden/sdmc/game"
-CLIENT_VERSION = "0.0.1"
+CLIENT_VERSION = "0.0.2"
 # NACP application title shown in the Switch menu (Yuri's Revenge build).
 CLIENT_TITLE = "尤里的复仇"
 PROFILE_FEATURES = "horizon-frame-profile,telemetry"
@@ -73,7 +83,7 @@ def client_nsp_artifact(version: str) -> str:
     match = re.fullmatch(r"(\d+\.\d+\.\d+)(?:\s+.+)?", version)
     if match is None:
         raise SystemExit(f"Client NSP version must start with x.y.z: {version!r}")
-    return f"vera20-client-v{match.group(1)}"
+    return f"ver20k-Yuris-Revenge-v{match.group(1)}"
 
 
 def run(*arguments, **kwargs):
@@ -99,6 +109,36 @@ def horizon_ring(work: Path, config: Path) -> Path:
     subprocess.run(["patch", "-p1", "-i", str(patch)], cwd=staged, check=True)
     staged.rename(patched)
     return patched
+
+
+def horizon_wgpu(work: Path) -> dict[str, Path]:
+    """Apply the Horizon Vulkan port to the exact crates pinned by VERA20k."""
+    patch = ROOT / "third_party/wgpu-30.0.1-horizon.patch"
+    patch_id = hashlib.sha256(patch.read_bytes()).hexdigest()[:12]
+    patched = work / f"wgpu-{WGPU_VERSION}-{patch_id}"
+    if not patched.is_dir():
+        cargo_root = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo"))
+        with tempfile.TemporaryDirectory(dir=work) as temp:
+            staged = Path(temp)
+            source = staged / "source"
+            source.mkdir()
+            for name, expected in WGPU_ARCHIVES.items():
+                package = f"{name}-{WGPU_VERSION}"
+                archive = f"{package}.crate"
+                cached = next((cargo_root / "registry/cache").glob(f"*/{archive}"), None)
+                if cached is None:
+                    url = f"https://static.crates.io/crates/{name}/{archive}"
+                    with urllib.request.urlopen(url, timeout=60) as response:
+                        cached = staged / archive
+                        cached.write_bytes(response.read())
+                if hashlib.sha256(cached.read_bytes()).hexdigest() != expected:
+                    raise SystemExit(f"Unexpected checksum for {archive}")
+                with tarfile.open(cached) as files:
+                    files.extractall(source, filter="data")
+                (source / package).rename(source / name)
+            subprocess.run(["patch", "-p1", "--fuzz=0", "-i", str(patch)], cwd=source, check=True)
+            source.rename(patched)
+    return {name: patched / name for name in WGPU_ARCHIVES}
 
 
 def normalize_std_lock(lock: Path, patch_names: set[str]) -> bool:
@@ -197,13 +237,12 @@ def main():
     patches = {name: upstream / "patches" / name for name in ["libc", "memmap2", "rustix"]}
     if args.check_client_deps or args.client:
         patches["cpal"] = upstream / "patches/cpal"
-    if args.client:
+    if args.client or (args.check_client_deps and not args.without_winit):
         patches["winit"] = ROOT / "winit-horizon"
         patches["rustix"] = upstream / "patches/rustix"
     if args.check_client_deps or args.gpu or args.client:
         patches["raw-window-handle"] = upstream / "patches/raw-window-handle"
-        for name in ["wgpu", "wgpu-core", "wgpu-hal", "wgpu-core-deps-windows-linux-android"]:
-            patches[name] = upstream / "patches" / name
+        patches.update(horizon_wgpu(work))
     config.write_text("[patch.crates-io]\n" + "\n".join(
         f'{name} = {{ path = {json.dumps(str(path))} }}' for name, path in patches.items()) + "\n")
     if args.client:
@@ -212,10 +251,9 @@ def main():
             fh.write(f'ring = {{ path = {json.dumps(str(patched_ring))} }}\n')
     # getrandom 0.3.x has no Horizon backend; select the custom backend and
     # let vera20k-switch provide __getrandom_v03_custom via csrngGetRandomBytes.
-    if args.client:
-        with config.open("a") as fh:
-            fh.write('\n[target.aarch64-nintendo-horizon]\n'
-                     'rustflags = ["--cfg", "getrandom_backend=\\"custom\\""]\n')
+    with config.open("a") as fh:
+        fh.write('\n[target.aarch64-nintendo-horizon]\n'
+                 'rustflags = ["--cfg", "getrandom_backend=\\"custom\\""]\n')
     if args.check_libc_abi:
         # Reuse the pinned upstream checker rather than maintaining a second
         # list of C/Rust layouts. Run its Python body locally, without Docker.

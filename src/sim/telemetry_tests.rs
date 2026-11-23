@@ -4,7 +4,6 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::art_data::ArtRegistry;
-use crate::rules::infantry_sequence::parse_infantry_sequence_registry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::Health;
@@ -21,7 +20,6 @@ fn vehicle_rules() -> RuleSet {
     let art = IniFile::from_str("[IMAGE]\nVoxel=yes\nFacings=8\nWalkFrames=6\nStandingFrames=1\n");
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(&parse_infantry_sequence_registry(&art));
     rules
 }
 

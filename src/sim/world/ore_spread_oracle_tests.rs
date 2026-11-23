@@ -79,7 +79,12 @@ fn ore_rung_publishes_native_cell_attributes_before_live_object_turns() {
     let name = row["input"]["name"].as_str().unwrap();
     sim.session
         .set_binary_frame_for_test(row["input"]["frame"].as_i64().unwrap() as u32);
-    sim.tick_ore_growth_rungs(&rules, Some(&registry));
+    sim.tick_ore_growth_rungs(
+        &rules,
+        Some(&registry),
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     compare_overlay_state(&sim, &row["steps"][0]["state"], name);
     compare_dummy(
         sim.resolved_terrain.as_ref().unwrap(),
@@ -126,7 +131,7 @@ fn app_frames_match_original_ore_driver_histories_and_rng_continuation() {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
         let capacity = row["capacity"].as_u64().unwrap() as u32;
-        let (mut sim, rules, registry) = world(row);
+        let (mut sim, rules, _) = world(row);
         compare_state(
             &sim.ore_growth_state,
             &sim.scenario_rng,
@@ -144,10 +149,9 @@ fn app_frames_match_original_ore_driver_histories_and_rng_continuation() {
                 sim.advance_app_frame(
                     &[],
                     &rules,
-                    Some(&registry),
                     67,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap()
             });
@@ -202,17 +206,16 @@ fn app_ore_constructor_terminal_cleanup_matches_original_deferred_drain() {
     assert!(!rows.is_empty(), "original deferred-lifecycle controls");
     for row in rows {
         let name = row["input"]["name"].as_str().unwrap();
-        let (mut sim, rules, registry) = world(row);
+        let (mut sim, rules, _) = world(row);
         sim.session
             .set_binary_frame_for_test(row["input"]["frame"].as_i64().unwrap() as u32);
         let (output, draws) = crate::sim::rng::trace_draws(|| {
             sim.advance_app_frame(
                 &[],
                 &rules,
-                Some(&registry),
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
         });
@@ -273,17 +276,19 @@ fn ore_rung_spreads_no_ore_under_a_landed_aircraft() {
         grid.place_overlay(source.0, source.1, tib01, 11);
         let _ = grid.take_dirty_cells();
         let mut state = crate::sim::ore_growth::OreGrowthState::new(33, 33);
-        state.rebuild_native_tiberium_queues_from_overlays(
-            sim.overlay_grid.as_ref().expect("overlay grid"),
-            &registry,
-            &rules.tiberium_types,
-            sim.resolved_terrain.as_ref(),
-            &std::collections::BTreeSet::new(),
-            true,
-            true,
-            sim.session.binary_frame(),
-            (32, 32),
-        );
+        state
+            .rebuild_native_tiberium_queues_from_overlays(
+                sim.overlay_grid.as_ref().expect("overlay grid"),
+                &registry,
+                &rules.tiberium_types,
+                sim.resolved_terrain.as_ref(),
+                &std::collections::BTreeSet::new(),
+                true,
+                true,
+                sim.session.binary_frame(),
+                (32, 32),
+            )
+            .unwrap();
         sim.ore_growth_state = state;
         sim.ore_growth_config = OreGrowthConfig::for_test(true, true, false);
         if landed {
@@ -298,7 +303,12 @@ fn ore_rung_spreads_no_ore_under_a_landed_aircraft() {
                 "the aircraft stands landed on the cell"
             );
         }
-        sim.tick_ore_growth_rungs(&rules, Some(&registry));
+        sim.tick_ore_growth_rungs(
+            &rules,
+            Some(&registry),
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
         sim.overlay_grid
             .as_ref()
             .expect("overlay grid")

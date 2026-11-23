@@ -2,7 +2,8 @@
 //! that read them: the game list `0x00781480` (with its filter `0x00781130`
 //! and ping comparators `0x00781380`/`0x007813B0`), the chat-lobby list
 //! `0x007806C0`, the player list `0x00783C80` with the membership inserts
-//! `0x00781FB0`/`0x00782320`/`0x00782BB0`, the sort buttons, admission
+//! `0x00781FB0`/`0x00782320`/`0x00782BB0` and the join sink's game-channel
+//! insert (`0x007A674B`), the sort buttons, admission
 //! `0x0079BA60`, the resolution limit of `0x00789960`, the `" ,;"` password
 //! gate of `0xC3`/`0xE1` and the chat-lobby picker `0x00788180`.
 //!
@@ -62,6 +63,20 @@ pub(crate) struct WolChannel {
     pub(crate) name: String,
     /// `+0xE0`: `"%d,%d,%d,%d,%d,%s"` (`0x0077E7A0`).
     pub(crate) ex_info: String,
+    /// Descriptive fields returned by VERA's public game list.
+    pub(crate) summary: Option<WolRoomSummary>,
+}
+
+/// A read-only view of a host's published setup, or of a running match's start.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+pub(crate) struct WolRoomSummary {
+    pub(crate) map: Option<String>,
+    /// Occupied seats per team number (index + 1). An empty list means FFA.
+    pub(crate) teams: Option<Vec<u8>>,
+    #[serde(default)]
+    pub(crate) forming: bool,
+    pub(crate) observers: Option<u8>,
+    pub(crate) computers: Option<u8>,
 }
 
 /// `0x0077E820`: the exInfo fields, each a CRT `strtok(",")` token through
@@ -73,9 +88,11 @@ pub(crate) struct ExInfo {
     pub(crate) hash: i32,
     /// `0x005E94D0`: AI players.
     pub(crate) ai_players: i32,
-    /// `0x005E9580`: a human occupies the observer slot.
+    /// `0x005E9580`: a human occupies the observer slot; in a VERA room
+    /// with several observers, how many observers there are.
     pub(crate) observer_taken: i32,
-    /// `!0x005E9560`: an open observer slot exists.
+    /// `!0x005E9560`: an open observer slot exists; in a VERA room with
+    /// several observers, how many there are.
     pub(crate) observer_open: i32,
     pub(crate) scenario: String,
 }
@@ -120,14 +137,19 @@ impl ExInfo {
         text
     }
 
-    /// `f4 || f5`: one of the max users is the observer slot.
-    fn observer_slot(&self) -> bool {
-        self.observer_taken != 0 || self.observer_open != 0
+    /// `f4 || f5`: how many of the max users are observer slots. A native
+    /// room's two flags never both hold: f5 is an Open Observer item
+    /// `[0xAC11B4]` among the row pointers (`0x005E9560`), f4 an observer
+    /// node on `[0x8316A4]` (`0x005E9580`), the only row offered that item.
+    /// So their sum is its one slot.
+    fn observer_slots(&self) -> i32 {
+        self.observer_taken + self.observer_open
     }
 
-    /// The observer slot is open and empty.
+    /// An observer slot is open and empty (`f5 && !f4` for a native room's
+    /// one slot).
     fn observer_free(&self) -> bool {
-        self.observer_open != 0 && self.observer_taken == 0
+        self.observer_open > 0
     }
 }
 
@@ -157,15 +179,32 @@ impl WolChannel {
         let info = self.ex_info();
         (
             self.users - info.observer_taken + info.ai_players,
-            self.max_users - i32::from(info.observer_slot()),
+            self.max_users - info.observer_slots(),
         )
+    }
+
+    /// The count and capacity a game list shows. VERA's lobby
+    /// (`vera_rooms`) shows the people in a room over the most people its
+    /// host lets in: that host seats a newcomer in a free seat, then in an
+    /// AI's, then among the spectators, so neither AI nor spectators take
+    /// from it. Otherwise [`Self::shown_capacity`].
+    fn listed_capacity(&self, vera_rooms: bool) -> (i32, i32) {
+        if vera_rooms {
+            (self.users, self.max_users)
+        } else {
+            self.shown_capacity()
+        }
     }
 
     /// `0x00781480`'s full test, which also greys the name: with the
     /// observer preference off the shown count equals the capacity, with it
-    /// on the observer slot is not free.
-    pub(crate) fn full(&self, observer: bool) -> bool {
-        if observer {
+    /// on the observer slot is not free. A room in VERA's lobby is full
+    /// only at its host's limit, whatever the preference.
+    pub(crate) fn full(&self, observer: bool, vera_rooms: bool) -> bool {
+        if vera_rooms {
+            let (people, limit) = self.listed_capacity(true);
+            people >= limit
+        } else if observer {
             !self.ex_info().observer_free()
         } else {
             let (shown, capacity) = self.shown_capacity();
@@ -333,6 +372,14 @@ pub(crate) struct WolGameRow {
     pub(crate) limit_icon: Option<&'static str>,
     /// -1 shows `"???"`; the column tooltip is `WOL:GamePing` either way.
     pub(crate) ping: i32,
+    /// VERA: the modern list's text at the end of the name cell, the
+    /// Cooperative mode's name for a co-op room. The app sets it; the
+    /// native list has no such column.
+    pub(crate) tag: Option<String>,
+    /// VERA: a running match the player can watch, listed after the rooms
+    /// by the modern list; `record` is then its index in the lobby's match
+    /// list, and it has no ping.
+    pub(crate) watch: bool,
 }
 
 /// `0x00781130`: whether the filter pass skips this record.
@@ -340,7 +387,7 @@ fn filter_skips(channel: &WolChannel, info: &ExInfo, sort: GameSort, pass: usize
     let clan = channel.game_flags & GAME_CLAN != 0;
     let marked = match sort {
         2 | 3 => channel.keyed(),
-        4 | 5 => info.observer_slot(),
+        4 | 5 => info.observer_slots() != 0,
         6 | 7 => channel.game_flags & (GAME_LIMIT_640 | GAME_LIMIT_800) != 0,
         8 | 9 => channel.tournament != 0,
         10 | 11 => clan,
@@ -372,11 +419,13 @@ fn compare_ping(a: i32, b: i32, descending: bool) -> Ordering {
 /// order, mode 1 reverses it, every other mode orders by ping (MSVC
 /// `qsort`, which is not stable: equal pings keep the service order here,
 /// a residual). Non-full rows come first, then full ones; filter modes run
-/// each half twice through `0x00781130`. Ranked games are hidden.
+/// each half twice through `0x00781130`. Ranked games are hidden. VERA's
+/// lobby (`vera_rooms`) counts people ([`WolChannel::listed_capacity`]).
 pub(crate) fn game_rows(
     channels: &[WolChannel],
     sort: GameSort,
     observer: bool,
+    vera_rooms: bool,
 ) -> Vec<WolGameRow> {
     let count = channels.len();
     let mut sorted: Vec<usize> = (0..count).collect();
@@ -396,10 +445,12 @@ pub(crate) fn game_rows(
                     continue;
                 }
                 let info = channel.ex_info();
-                if channel.full(observer) != full_pass || filter_skips(channel, &info, sort, pass) {
+                if channel.full(observer, vera_rooms) != full_pass
+                    || filter_skips(channel, &info, sort, pass)
+                {
                     continue;
                 }
-                let (shown, capacity) = channel.shown_capacity();
+                let (shown, capacity) = channel.listed_capacity(vera_rooms);
                 rows.push(WolGameRow {
                     record,
                     name: channel.name.clone(),
@@ -415,6 +466,8 @@ pub(crate) fn game_rows(
                     keyed: channel.keyed(),
                     limit_icon: channel.limit_icon(),
                     ping: channel.ping,
+                    tag: None,
+                    watch: false,
                 });
             }
         }
@@ -537,11 +590,19 @@ pub(crate) struct AdmissionContext {
     /// Rules ^ AI ^ Art (`crate::rules::native_ini_hash`); `None` only
     /// without the process sources, which skips the comparison.
     pub(crate) local_hash: Option<i32>,
+    /// VERA's lobby, whose rooms take people until their host's limit
+    /// ([`WolChannel::listed_capacity`]).
+    pub(crate) vera_rooms: bool,
 }
+
+/// [`admit`]'s refusal of a VERA room whose rules hash differs: the caller
+/// says what this game changes (`agreement::rules_differ_text`).
+pub(crate) const RULES_DIFFER: &str = "VERA:RulesDiffer";
 
 /// `0x0079BA60`: may this game be joined (as an observer)? `Err(None)`
 /// rejects silently; `Err(Some(key))` names the chat line shown when the
-/// caller asks for messages.
+/// caller asks for messages. A room in VERA's lobby places a joiner itself,
+/// so only its host's limit counts there.
 pub(crate) fn admit(
     channel: &WolChannel,
     observer: bool,
@@ -554,17 +615,27 @@ pub(crate) fn admit(
         return Err(Some("TXT_NO_CLAN"));
     }
     let info = channel.ex_info();
-    if info.version != EX_INFO_VERSION || context.local_hash.is_some_and(|hash| hash != info.hash) {
+    if info.version != EX_INFO_VERSION {
         return Err(Some("TXT_MISMATCH"));
     }
-    if observer {
+    if context.local_hash.is_some_and(|hash| hash != info.hash) {
+        // VERA's rooms say what this game changes instead of retail's text,
+        // which sends the player to Westwood.
+        let vera_room = context.vera_rooms && !context.quick_match;
+        return Err(Some(if vera_room {
+            RULES_DIFFER
+        } else {
+            "TXT_MISMATCH"
+        }));
+    }
+    if observer && !context.vera_rooms {
         return if info.observer_free() {
             Ok(())
         } else {
             Err(Some("TXT_OBSERVER_FULL"))
         };
     }
-    let (shown, capacity) = channel.shown_capacity();
+    let (shown, capacity) = channel.listed_capacity(context.vera_rooms);
     if shown < capacity {
         Ok(())
     } else {
@@ -675,7 +746,27 @@ pub(crate) fn resort_members(
     }
 }
 
-#[cfg(test)]
+/// The join sink's insert into a game channel (`0x007A674B..0x007A6944` in
+/// `0x007A5890`), whatever the sort mode: a user weighs 4 as an operator
+/// plus 2 with voice; the joiner goes before the first user who weighs
+/// less, or as much with a `_strcmpi` name after its own, otherwise last.
+pub(crate) fn insert_game_member(members: &mut Vec<WolMember>, member: WolMember) {
+    let weight = |m: &WolMember| {
+        4 * u32::from(m.flags & MEMBER_OPERATOR != 0) + 2 * u32::from(m.flags & MEMBER_VOICE != 0)
+    };
+    let key = weight(&member);
+    let at = members
+        .iter()
+        .position(|existing| match key.cmp(&weight(existing)) {
+            Ordering::Greater => true,
+            Ordering::Equal => crt_strcmpi(&member.name, &existing.name).is_lt(),
+            Ordering::Less => false,
+        })
+        .unwrap_or(members.len());
+    members.insert(at, member);
+}
+
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -748,7 +839,7 @@ mod tests {
             // Observer slot open: capacity 7 - 1.
             game("Open's_game", 2, 7, "25,0,0,0,1,b.map"),
         ];
-        let rows = game_rows(&channels, 0, false);
+        let rows = game_rows(&channels, 0, false, false);
         assert_eq!(
             rows.iter().map(|row| row.text.as_str()).collect::<Vec<_>>(),
             ["Open's_game 2/6", "Full's_game 4/4"]
@@ -760,9 +851,59 @@ mod tests {
         assert_eq!(rows[0].limit_icon, Some("wolob.pcx"));
         assert_eq!(rows[1].limit_icon, None);
         // With the observer preference only a free observer slot counts.
-        let rows = game_rows(&channels, 0, true);
+        let rows = game_rows(&channels, 0, true, false);
         assert_eq!(rows[0].name, "Open's_game");
         assert!(!rows[0].greyed && rows[1].greyed);
+    }
+
+    /// A VERA room with several observers writes counts: one watching and
+    /// one open observer row leave both player rows taken, and the open row
+    /// free.
+    #[test]
+    fn several_observer_slots_leave_the_shown_capacity() {
+        let channels = [game("Watched", 3, 4, "25,0,0,1,1,c.map")];
+        let rows = game_rows(&channels, 0, false, false);
+        assert_eq!(rows[0].text, "Watched 2/2");
+        assert!(rows[0].greyed);
+        assert!(!game_rows(&channels, 0, true, false)[0].greyed);
+    }
+
+    /// VERA's lobby lists a room's people over its host's limit and lets
+    /// them in until then: AI and spectators take none of it, and the
+    /// observer preference shuts no room.
+    #[test]
+    fn vera_rooms_take_people_until_their_hosts_limit() {
+        // The host and four AI, of Max players 30.
+        let open = game("Open", 1, 30, "25,0,4,0,0,a.map");
+        // Two players and a spectator, of Max players 3.
+        let full = game("Full", 3, 3, "25,0,0,1,1,b.map");
+        let rows = game_rows(&[open.clone(), full.clone()], 0, true, true);
+        assert_eq!(
+            rows.iter()
+                .map(|row| (row.text.as_str(), row.greyed))
+                .collect::<Vec<_>>(),
+            [("Open 1/30", false), ("Full 3/3", true)]
+        );
+        let context = AdmissionContext {
+            quick_match: false,
+            clan_id: 0,
+            local_hash: None,
+            vera_rooms: true,
+        };
+        assert_eq!(admit(&open, true, context), Ok(()));
+        assert_eq!(admit(&full, false, context), Err(Some("WOL:GameFull")));
+        // A different rules hash: VERA's rooms say what this game changes,
+        // where retail's text sends the player to Westwood.
+        let differs = AdmissionContext {
+            local_hash: Some(open.ex_info().hash.wrapping_add(1)),
+            ..context
+        };
+        assert_eq!(admit(&open, false, differs), Err(Some(RULES_DIFFER)));
+        let native = AdmissionContext {
+            vera_rooms: false,
+            ..differs
+        };
+        assert_eq!(admit(&open, false, native), Err(Some("TXT_MISMATCH")));
     }
 
     #[test]
@@ -775,7 +916,7 @@ mod tests {
         tournament.game_flags = GAME_LIMIT_640;
         let mut ranked = game("r", 1, 4, "25,0,0,0,0,x");
         ranked.game_flags = 0x800;
-        let rows = game_rows(&[clan, tournament, ranked], 0, false);
+        let rows = game_rows(&[clan, tournament, ranked], 0, false, false);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].kind, GameTypeIcon::Clan);
         assert!(rows[0].keyed);
@@ -795,7 +936,7 @@ mod tests {
         }
         channels[3].flags = CHANNEL_KEYED;
         let names = |sort| -> Vec<String> {
-            game_rows(&channels, sort, false)
+            game_rows(&channels, sort, false, false)
                 .into_iter()
                 .map(|row| row.name)
                 .collect()
@@ -882,6 +1023,7 @@ mod tests {
             quick_match: false,
             clan_id: 0,
             local_hash: None,
+            vera_rooms: false,
         };
         let open = game("g", 2, 4, "25,0,0,0,1,x");
         assert_eq!(admit(&open, false, context), Ok(()));
@@ -903,7 +1045,7 @@ mod tests {
         // 3 humans of 4 with the observer slot counted: full.
         let full = game("g", 3, 4, "25,0,0,0,1,x");
         assert_eq!(admit(&full, false, context), Err(Some("WOL:GameFull")));
-        let taken = game("g", 2, 4, "25,0,0,1,1,x");
+        let taken = game("g", 2, 4, "25,0,0,1,0,x");
         assert_eq!(admit(&taken, true, context), Err(Some("TXT_OBSERVER_FULL")));
     }
 

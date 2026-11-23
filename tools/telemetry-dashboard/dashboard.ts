@@ -373,6 +373,22 @@ function updateCost(snapshot: TelemetrySnapshot): void {
   document.getElementById("tickhz")!.textContent = timing
     ? fmt(timing.tick_hz, 1)
     : "-";
+  const network = snapshot.network;
+  const backlogCell = document.getElementById("backlog")!;
+  backlogCell.textContent = network ? String(network.backlog_frames) : "-";
+  backlogCell.className =
+    network && (network.catching_up || network.relay_slowed) ? "value bad" : "value";
+  backlogCell.title = !network
+    ? ""
+    : [
+        network.catching_up ? t("cost.catchingUp") : "",
+        network.relay_slowed ? t("cost.relaySlowed") : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+  document.getElementById("skipped")!.textContent = network
+    ? String(network.skipped_draws)
+    : "-";
 }
 
 /** Terrain inspection data from the snapshot's debug block. */
@@ -770,6 +786,10 @@ function buildTimingSlices(
     { key: "rnd.ui", ms: render.ui_ms, color: "#2f6fb0" },
     { key: "rnd.sidebar", ms: render.sidebar_ms, color: "#3f9f5f" },
     { key: "rnd.upload", ms: render.upload_ms, color: "#d94f5c" },
+    { key: "rnd.lights", ms: render.lights_ms, color: "#f2d34f" },
+    { key: "rnd.effects", ms: render.effects_ms, color: "#e05fb0" },
+    { key: "rnd.drawCalls", ms: render.draw_calls_ms, color: "#7fa7d9" },
+    { key: "rnd.handoff", ms: render.handoff_ms, color: "#c46a3a" },
     { key: "rnd.other", ms: render.other_ms, color: "#9a9a9a" },
   ] : [];
   return {
@@ -798,17 +818,20 @@ const PHASE_KEYS = [
   "superweapons",
   "radiation",
   "team_ai",
-  "objects",
-  "wall_crush",
+  "unit_ai",
+  "pathfinding",
+  "targeting",
+  "movement",
+  "firing",
+  "buildings",
+  "bullets",
+  "effects",
   "wakes",
   "vision",
   "combat",
-  "passengers",
   "ion_blasts",
   "crates",
   "production",
-  "docks",
-  "spawn_fog",
   "late_ai",
   "overlays",
   "debug_asserts",

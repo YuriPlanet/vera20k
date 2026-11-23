@@ -526,8 +526,7 @@ fn a_computer_spy_attacking_a_power_plant_goes_in() {
         spy,
         Some(TargetKind::Entity(plant)),
         &rules,
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     let mut events = Vec::new();

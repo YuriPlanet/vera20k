@@ -36,7 +36,7 @@ fn world(terrain: ResolvedTerrainGrid) -> Simulation {
     let mut sim = Simulation::new();
     sim.playfield_bounds = Some(bounds());
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.zone_grid = Some(zones);
+    sim.zone_grid = Some(zones.into());
     sim
 }
 
@@ -63,6 +63,7 @@ fn identical_source_and_houses_with_different_retained_threat_seed_hash_differen
         record.parent,
         record.zone_type,
         seed,
+        crate::map::cell_index::CellGrid::Retail,
     ));
     zones.replace_hierarchy(hierarchy);
     assert_ne!(

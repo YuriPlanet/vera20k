@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::app::App;
+use crate::app::shell_route::ShellRoute;
 use crate::ui::campaign_shell::CampaignSide;
 use serde_json::{Value, json};
 
@@ -15,9 +16,7 @@ mod lan;
 pub(crate) use lan::{LAN_CHECKPOINTS, LanTarget};
 mod wol;
 pub(crate) use wol::{WOL_CHECKPOINTS, WolTarget};
-mod network_options;
 mod opening;
-pub(crate) use network_options::NetworkOptionsTarget;
 pub(super) use opening::OpeningTarget;
 
 /// Native control corpus read from this checkout's `tools/` at capture time.
@@ -38,6 +37,37 @@ const LIST_DOWN_ARROW_POINT: (f32, f32) = (509.0, 420.0);
 /// changes show before the readback.
 const SETTLE_FRAMES: u32 = 4;
 
+/// The 14 retail Yuri's Revenge campaign missions a trigger trace may run.
+pub(super) const RETAIL_CAMPAIGN_MAPS: [&str; 14] = [
+    "ALL01UMD.MAP",
+    "ALL02UMD.MAP",
+    "ALL03UMD.MAP",
+    "ALL04DMD.MAP",
+    "ALL05UMD.MAP",
+    "ALL06UMD.MAP",
+    "ALL07SMD.MAP",
+    "SOV01UMD.MAP",
+    "SOV02SMD.MAP",
+    "SOV03UMD.MAP",
+    "SOV04DMD.MAP",
+    "SOV05UMD.MAP",
+    "SOV06LMD.MAP",
+    "SOV07TMD.MAP",
+];
+
+/// What a Mods capture presses once the page has settled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ModsPress {
+    Nothing,
+    /// A row the run does not play, then Use This Mod.
+    Use,
+    /// A mod's row, then Check Files.
+    Check,
+    /// New Mod, which makes a folder in the run's `Mods`: run it from a
+    /// settings folder of its own.
+    New,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum MoviesTarget {
     Page0x101,
@@ -56,6 +86,10 @@ pub(super) enum MoviesTarget {
     },
     /// Exit Game through the production teardown slide, then state 6.
     ExitConfirm,
+    /// Main Menu -> Options -> Mods: VERA's page settled, then `press`.
+    Mods {
+        press: ModsPress,
+    },
     /// A teardown slide held at `tick`: Exit Game on `0xE2` or Back on
     /// `0x129`.
     SlideOut {
@@ -85,6 +119,7 @@ pub(super) enum MoviesTarget {
     /// `entry_tick` of its entry slide.
     LoadSavedGame0xB7 {
         entry_tick: Option<u32>,
+        check_sidebar: bool,
     },
     /// Main Menu -> Options: dialog `0xD5` settled, or held at `entry_tick`
     /// of its entry slide.
@@ -92,19 +127,19 @@ pub(super) enum MoviesTarget {
         entry_tick: Option<u32>,
         /// Rest the pointer here instead of at the neutral point.
         hover: Option<(i32, i32)>,
-        /// The page captured: VERA's is reached by pressing Vera Options on
-        /// the settled main page.
-        page: crate::ui::main_menu_dialogs::options::OptionsPage,
+        /// The page captured. Another page is reached by pressing its
+        /// column button on the settled dialog.
+        category: crate::ui::main_menu_dialogs::options::Category,
     },
     /// Network on `0xE2`: its teardown slide, then a new `0xE2` with its
     /// own entry slide, captured once settled.
     NetworkBounce,
-    NetworkOptions(NetworkOptionsTarget),
     Lan(LanTarget),
     Wol(WolTarget),
     /// Main Menu -> Internet: `0x10E` settled (pointer at `hover` or
     /// neutral), held at `entry_tick`, or after one of its buttons.
     WolWelcome {
+        provider: crate::app::shell_wol::WolProvider,
         entry_tick: Option<u32>,
         hover: Option<(i32, i32)>,
         press: WolPress,
@@ -133,6 +168,7 @@ impl CampaignStartTarget {
                 | OpeningTarget::SovietFortresses(_),
             ) => Some("SOV02SMD.MAP"),
             Self::Opening(OpeningTarget::SovietGroups(_)) => Some("SOV07TMD.MAP"),
+            Self::Opening(OpeningTarget::TriggerTrace { scenario, .. }) => Some(scenario),
             Self::Restart(RestartTarget::ObjectiveExpiry) => Some("SOV02SMD.MAP"),
             Self::Restart(RestartTarget::AlternateHomeVictory) => Some("SOV06LMD.MAP"),
             Self::Restart(RestartTarget::InheritedTimerVictory) => Some("SOV01UMD.MAP"),
@@ -161,6 +197,10 @@ enum Phase {
     MainMenu,
     Page,
     List,
+    /// Options is opening on the way to the Mods page: its Mods button is
+    /// pressed once it has settled.
+    ModsOptions,
+    Mods,
     Credits,
     Movie,
     Exit,
@@ -177,13 +217,9 @@ enum Phase {
     /// The restart driver owns the route from the first live frame.
     CampaignRestart,
     LoadSavedGame,
+    SavedGameLoading,
+    SavedGameButtonsChecked,
     Options,
-    NetworkOptions,
-    NetworkOptionsInput,
-    NetworkOptionsMessage,
-    NetworkOptionsPortWarning,
-    NetworkOptionsReturning,
-    NetworkOptionsMainMenu,
     /// Network pressed: waiting for the teardown to commit.
     NetworkLeaving,
     /// A new `0xE2` exists: waiting for its entry slide to be seen.
@@ -294,9 +330,90 @@ impl MoviesCapture {
             && state.frontend.shell_slide_active_shell == Some(kind)
     }
 
+    /// Through the page's own pointer handlers: a press on the first row in
+    /// view that the run does not play and can, then on Use This Mod, which
+    /// asks.
+    /// The Mods page's row and button for `press`, through the ordinary
+    /// pointer handlers. Check Files then waits for its reading thread.
+    fn press_mod_row_and(state: &mut AppState, press: ModsPress) -> Result<()> {
+        let layout = crate::app::frontend::shell_layout::mods_layout(state);
+        let mods = &state.frontend.mods;
+        let page = mods.page.as_ref().context("the Mods page has no list")?;
+        let (geometry, view) = crate::app::frontend::movies_credits_render::family_list_view(
+            state,
+            crate::ui::mods_shell::DIALOG,
+            layout.list,
+            layout.page.scale,
+        )
+        .context("the Mods page has no list")?;
+        // The list opens with the row in use in view: pick from what shows.
+        // New Mod needs no row.
+        let row = (press != ModsPress::New)
+            .then(|| {
+                page.iter()
+                    .skip(view.top)
+                    .take(geometry.visible_rows)
+                    .position(|row| match press {
+                        ModsPress::Check => row.folder.is_some(),
+                        _ => !mods.in_use(row) && row.needs.is_none(),
+                    })
+                    .map(|visible| geometry.row(visible))
+                    .context("the Mods list shows no row to pick")
+            })
+            .transpose()?;
+        let button = layout
+            .page
+            .button_rect(match press {
+                ModsPress::Check => crate::ui::mods_shell::CHECK,
+                ModsPress::New => crate::ui::mods_shell::NEW,
+                _ => crate::ui::mods_shell::USE,
+            })
+            .context("the Mods page lacks the button to press")?;
+        for rect in row.into_iter().chain([button]) {
+            state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
+            state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
+            App::handle_mods_mouse(state, Some(true));
+            App::handle_mods_mouse(state, Some(false));
+        }
+        ensure!(
+            state.frontend.shell_message_box.is_some(),
+            "the Mods page's button opened no box"
+        );
+        if press == ModsPress::Check {
+            use crate::app::frontend::state::{ModFilesBox, ShellMessageBoxPurpose};
+            let reading = |state: &AppState| {
+                state
+                    .frontend
+                    .shell_message_box
+                    .as_ref()
+                    .is_some_and(|open| {
+                        matches!(
+                            open.purpose,
+                            ShellMessageBoxPurpose::ModFiles(ModFilesBox::Reading)
+                        )
+                    })
+            };
+            let started = std::time::Instant::now();
+            while reading(state) && started.elapsed() < std::time::Duration::from_secs(60) {
+                App::poll_mod_files(state);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            ensure!(!reading(state), "Check Files did not answer in a minute");
+        }
+        Ok(())
+    }
+
     fn restore_neutral_pointer(state: &mut AppState) {
-        state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
-        state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
+        let config = &state.renderer.gpu.config;
+        // A scaled window (VERA's room's capture) rests it at its centre.
+        let (x, y) = match (config.width, config.height) {
+            (EXPECTED_WIDTH, EXPECTED_HEIGHT) | (640, 480) => {
+                (EXPECTED_CURSOR_X, EXPECTED_CURSOR_Y)
+            }
+            (width, height) => (width / 2, height / 2),
+        };
+        state.match_state.input.cursor_x = x as f32;
+        state.match_state.input.cursor_y = y as f32;
     }
 
     pub(super) fn after_present(
@@ -305,6 +422,20 @@ impl MoviesCapture {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
+        if self.phase == Phase::SavedGameLoading {
+            if state.frontend.screen == GameScreen::InGame {
+                check_loaded_sidebar_buttons(state)?;
+                Self::restore_neutral_pointer(state);
+                self.route.push(json!({
+                    "frame": frame, "action": "loaded sidebar buttons opened Diplomacy and Options"
+                }));
+                self.phase = Phase::SavedGameButtonsChecked;
+            }
+            return Ok(());
+        }
+        if self.phase == Phase::SavedGameButtonsChecked {
+            return Ok(());
+        }
         if matches!(self.target, MoviesTarget::CampaignStart { .. }) && !self.saves_isolated {
             state
                 .persistence
@@ -481,12 +612,12 @@ impl MoviesCapture {
         if aborting_campaign {
             return self.campaign_abort_after_present(state, frame);
         }
-        if self.network_options_after_present(state, rendered, frame)? {
-            return Ok(());
-        }
         match (self.phase, rendered) {
             (Phase::MainMenu, PresentedShell::MainMenu) => {
-                if steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))? {
+                // Only VERA's room's capture runs in a scaled window
+                // (`parse_launch_args`).
+                let snapshot = MainMenuCaptureSnapshot::from_state(state).scaled_as_reference();
+                if steady_main_menu_capture_ready(snapshot)? {
                     let exit_phase = match self.target {
                         MoviesTarget::ExitConfirm => Some(Phase::Exit),
                         MoviesTarget::SlideOut {
@@ -500,9 +631,13 @@ impl MoviesCapture {
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "Internet"}));
                         App::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
-                                crate::ui::main_menu_shell::MainMenuShellAction::WwOnline,
-                            ),
+                            crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
+                            move |state| {
+                                App::handle_main_menu_shell_action(
+                                    state,
+                                    crate::ui::main_menu_shell::MainMenuShellAction::WwOnline,
+                                )
+                            },
                         );
                         self.phase = Phase::Wol;
                         return Ok(());
@@ -512,9 +647,13 @@ impl MoviesCapture {
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "Network"}));
                         App::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
-                                crate::ui::main_menu_shell::MainMenuShellAction::Network,
-                            ),
+                            crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
+                            move |state| {
+                                App::handle_main_menu_shell_action(
+                                    state,
+                                    crate::ui::main_menu_shell::MainMenuShellAction::Network,
+                                )
+                            },
                         );
                         ensure!(
                             state.frontend.shell_exit.is_some(),
@@ -523,16 +662,30 @@ impl MoviesCapture {
                         self.phase = Phase::NetworkLeaving;
                         return Ok(());
                     }
-                    if matches!(
-                        self.target,
-                        MoviesTarget::Options0xD5 { .. } | MoviesTarget::NetworkOptions(_)
-                    ) {
+                    if matches!(self.target, MoviesTarget::Mods { .. }) {
                         self.route
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "Options"}));
                         App::handle_main_menu_shell_action(
                             state,
                             crate::ui::main_menu_shell::MainMenuShellAction::Options,
                         );
+                        self.phase = Phase::ModsOptions;
+                        return Ok(());
+                    }
+                    if let MoviesTarget::Options0xD5 { category, .. } = self.target {
+                        self.route
+                            .push(json!({"dialog": 0xe2, "frame": frame, "action": "Options"}));
+                        App::handle_main_menu_shell_action(
+                            state,
+                            crate::ui::main_menu_shell::MainMenuShellAction::Options,
+                        );
+                        // Older explicitly named settings and hover captures still
+                        // exercise the legacy layout used by the in-game pages.
+                        if Category::ALL.contains(&category)
+                            && let Some(dialog) = state.frontend.options_dialog.as_mut()
+                        {
+                            dialog.select_category(category);
+                        }
                         self.phase = Phase::Options;
                         return Ok(());
                     }
@@ -558,9 +711,13 @@ impl MoviesCapture {
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "ExitGame"}));
                         App::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
-                                crate::ui::main_menu_shell::MainMenuShellAction::ExitGame,
-                            ),
+                            crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
+                            move |state| {
+                                App::handle_main_menu_shell_action(
+                                    state,
+                                    crate::ui::main_menu_shell::MainMenuShellAction::ExitGame,
+                                )
+                            },
                         );
                         self.phase = next;
                         return Ok(());
@@ -612,13 +769,13 @@ impl MoviesCapture {
                             crate::ui::movies_credits_shell::MoviesCreditsAction::SneakPeeks
                         }
                         MoviesTarget::ExitConfirm
+                        | MoviesTarget::Mods { .. }
                         | MoviesTarget::SlideOut { .. }
                         | MoviesTarget::Campaign0x94 { .. }
                         | MoviesTarget::CampaignStart { .. }
                         | MoviesTarget::CampaignBack
                         | MoviesTarget::LoadSavedGame0xB7 { .. }
                         | MoviesTarget::Options0xD5 { .. }
-                        | MoviesTarget::NetworkOptions(_)
                         | MoviesTarget::Lan(_)
                         | MoviesTarget::Wol(_)
                         | MoviesTarget::NetworkBounce
@@ -654,7 +811,8 @@ impl MoviesCapture {
                     // The page button through the production teardown.
                     App::leave_shell_dialog(
                         state,
-                        crate::app::frontend::shell_transition::ShellExitThen::SinglePlayer(action),
+                        crate::app::frontend::shell_transition::ShellSlideKind::SinglePlayer,
+                        move |state| App::handle_single_player_shell_action(state, action),
                     );
                     self.phase = phase;
                 }
@@ -683,7 +841,7 @@ impl MoviesCapture {
                     .filter(|_| {
                         state.frontend.shell_slide_active_shell == Some(ShellSlideKind::Campaign)
                     })
-                    .and_then(|wave| wave.compatibility_tick());
+                    .map(|wave| wave.tick());
                 if let Some(tick) = tick {
                     ensure!(tick <= target, "entry slide passed tick {target}");
                     if tick == target {
@@ -697,7 +855,11 @@ impl MoviesCapture {
                 }
             }
             (Phase::LoadSavedGame, PresentedShell::Other | PresentedShell::LoadSavedGame) => {
-                let MoviesTarget::LoadSavedGame0xB7 { entry_tick } = self.target else {
+                let MoviesTarget::LoadSavedGame0xB7 {
+                    entry_tick,
+                    check_sidebar,
+                } = self.target
+                else {
                     bail!("load phase without a load target");
                 };
                 if let Some(target) = entry_tick {
@@ -709,7 +871,7 @@ impl MoviesCapture {
                             state.frontend.shell_slide_active_shell
                                 == Some(ShellSlideKind::LoadSavedGame)
                         })
-                        .and_then(|wave| wave.compatibility_tick());
+                        .map(|wave| wave.tick());
                     if let Some(tick) = tick {
                         ensure!(tick <= target, "entry slide passed tick {target}");
                         if tick == target {
@@ -724,6 +886,20 @@ impl MoviesCapture {
                 } else if rendered == PresentedShell::LoadSavedGame
                     && Self::slide_settled(state, ShellSlideKind::LoadSavedGame)
                 {
+                    if check_sidebar {
+                        // Start with the process state a confirmed Abort leaves behind.
+                        state.match_state.match_presentation.modal_latch = false;
+                        let layout = crate::app::frontend::shell_layout::load_saved_game_layout(state);
+                        set_window_pointer_to_rect_center(state, layout.browser.action);
+                        App::handle_load_saved_game_mouse(state, true);
+                        App::handle_load_saved_game_mouse(state, false);
+                        ensure!(
+                            state.persistence.pending_load.is_some(),
+                            "Load did not queue the selected save"
+                        );
+                        self.phase = Phase::SavedGameLoading;
+                        return Ok(());
+                    }
                     Self::restore_neutral_pointer(state);
                     App::handle_load_saved_game_mouse_move(state);
                     self.route.push(
@@ -733,11 +909,11 @@ impl MoviesCapture {
                 }
             }
             (Phase::Options, PresentedShell::Other | PresentedShell::Options) => {
-                use crate::ui::main_menu_dialogs::options::{LauncherButton, OptionsPage};
+                use crate::ui::main_menu_dialogs::options::LauncherButton;
                 let MoviesTarget::Options0xD5 {
                     entry_tick,
                     hover,
-                    page,
+                    category,
                 } = self.target
                 else {
                     bail!("options phase without an options target");
@@ -746,7 +922,7 @@ impl MoviesCapture {
                     .frontend
                     .options_dialog
                     .as_ref()
-                    .map(|dialog| dialog.page());
+                    .map(|dialog| dialog.category());
                 if let Some(target) = entry_tick {
                     let tick = state
                         .frontend
@@ -755,7 +931,7 @@ impl MoviesCapture {
                         .filter(|_| {
                             state.frontend.shell_slide_active_shell == Some(ShellSlideKind::Options)
                         })
-                        .and_then(|wave| wave.compatibility_tick());
+                        .map(|wave| wave.tick());
                     if let Some(tick) = tick {
                         ensure!(tick <= target, "entry slide passed tick {target}");
                         if tick == target {
@@ -768,21 +944,17 @@ impl MoviesCapture {
                         }
                     }
                 } else if rendered == PresentedShell::Options
-                    && page == OptionsPage::Vera
-                    && showing == Some(OptionsPage::Main)
+                    && let Some(showing) = showing.filter(|&showing| showing != category)
                     && state.frontend.shell_exit.is_none()
                     && Self::slide_settled(state, ShellSlideKind::Options)
                 {
-                    let layout = crate::app::frontend::shell_layout::launcher_options_layout(
-                        state,
-                        OptionsPage::Main,
-                    );
+                    // A launcher page button slides the column out and back
+                    // in on its page (`App::handle_launcher_options_mouse`).
+                    let layout =
+                        crate::app::frontend::shell_layout::launcher_options_layout(state, showing);
                     let rect = layout
-                        .buttons
-                        .iter()
-                        .find(|(button, _)| *button == LauncherButton::Page(OptionsPage::Vera))
-                        .map(|(_, rect)| *rect)
-                        .context("D5 Vera Options button")?;
+                        .button_rect(LauncherButton::Category(category))
+                        .context("D5 page button")?;
                     state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
                     state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
                     App::handle_launcher_options_mouse(state, None);
@@ -790,14 +962,15 @@ impl MoviesCapture {
                     App::handle_launcher_options_mouse(state, Some(false));
                     ensure!(
                         state.frontend.shell_exit.is_some(),
-                        "Vera Options must run the main page's teardown slide"
+                        "the settings page button did not start its slide"
                     );
                     self.route.push(json!({"dialog": 0xd5, "frame": frame,
-                        "action": "Vera Options through ordinary pointer handler"}));
+                        "action": "page button through ordinary pointer handler",
+                        "page": format!("{category:?}")}));
                 } else if rendered == PresentedShell::Options
-                    && showing == Some(page)
+                    && showing == Some(category)
                     && state.frontend.shell_exit.is_none()
-                    && Self::slide_settled(state, ShellSlideKind::options_page(page))
+                    && Self::slide_settled(state, ShellSlideKind::Options)
                 {
                     Self::restore_neutral_pointer(state);
                     if let Some((x, y)) = hover {
@@ -818,7 +991,8 @@ impl MoviesCapture {
                     {
                         let side = match side {
                             crate::ui::campaign_shell::CampaignSide::Allied => 0,
-                            crate::ui::campaign_shell::CampaignSide::Soviet => 1,
+                            crate::ui::campaign_shell::CampaignSide::Soviet
+                            | crate::ui::campaign_shell::CampaignSide::BootCamp => 1,
                         };
                         let request = crate::app::frontend::cncnet_spawn::SpawnRequest::parse(
                             &format!(
@@ -848,8 +1022,12 @@ impl MoviesCapture {
                             .campaign
                             .as_ref()
                             .context("campaign page missing after press")?;
+                        let pressed = crate::ui::shell::menu_page::pressed_id(
+                            &state.frontend.shell_controller,
+                            crate::ui::campaign_shell::CAMPAIGN_DIALOG,
+                        );
                         ensure!(
-                            campaign.pressed() == Some(side),
+                            pressed == Some(side.emblem()),
                             "emblem press was not admitted"
                         );
                         self.route.push(json!({"dialog": 0x94, "frame": frame,
@@ -921,12 +1099,12 @@ impl MoviesCapture {
                 let MoviesTarget::CampaignStart { side, .. } = self.target else {
                     bail!("emblem press without a campaign start target");
                 };
+                let pressed = crate::ui::shell::menu_page::pressed_id(
+                    &state.frontend.shell_controller,
+                    crate::ui::campaign_shell::CAMPAIGN_DIALOG,
+                );
                 ensure!(
-                    state
-                        .frontend
-                        .campaign
-                        .as_ref()
-                        .is_some_and(|page| page.pressed() == Some(side)),
+                    pressed == Some(side.emblem()),
                     "campaign emblem press changed before release"
                 );
                 App::handle_campaign_mouse_up(state);
@@ -949,14 +1127,63 @@ impl MoviesCapture {
                     self.phase = Phase::Settling(SETTLE_FRAMES);
                 }
             }
+            (Phase::ModsOptions, PresentedShell::Options) => {
+                use crate::ui::main_menu_dialogs::options::{LauncherButton, LauncherParentResult};
+                let showing = state
+                    .frontend
+                    .options_dialog
+                    .as_ref()
+                    .map(|dialog| dialog.category());
+                if let Some(showing) = showing
+                    && state.frontend.shell_exit.is_none()
+                    && Self::slide_settled(state, ShellSlideKind::Options)
+                {
+                    let layout =
+                        crate::app::frontend::shell_layout::launcher_options_layout(state, showing);
+                    let rect = layout
+                        .button_rect(LauncherButton::Exit(LauncherParentResult::Mods))
+                        .context("D5 Mods button")?;
+                    state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
+                    state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
+                    App::handle_launcher_options_mouse(state, None);
+                    App::handle_launcher_options_mouse(state, Some(true));
+                    App::handle_launcher_options_mouse(state, Some(false));
+                    ensure!(
+                        state.frontend.shell_exit.is_some(),
+                        "Mods did not start the 0xD5 teardown slide"
+                    );
+                    self.route.push(json!({"dialog": 0xd5, "frame": frame,
+                        "action": "Mods through ordinary pointer handler"}));
+                    self.phase = Phase::Mods;
+                }
+            }
+            (Phase::Mods, PresentedShell::Mods) => {
+                if Self::slide_settled(state, ShellSlideKind::Mods) {
+                    if let MoviesTarget::Mods {
+                        press: press @ (ModsPress::Use | ModsPress::Check | ModsPress::New),
+                    } = self.target
+                    {
+                        Self::press_mod_row_and(state, press)?;
+                        self.route
+                            .push(json!({"dialog": crate::ui::mods_shell::DIALOG.0,
+                            "frame": frame, "action": "press a row, then the page's button"}));
+                        Self::restore_neutral_pointer(state);
+                    } else {
+                        // Hover over the list writes its status help.
+                        Self::restore_neutral_pointer(state);
+                        App::handle_mods_mouse(state, None);
+                    }
+                    self.phase = Phase::Settling(SETTLE_FRAMES);
+                }
+            }
             (Phase::List, PresentedShell::MovieList) => {
                 if Self::slide_settled(state, ShellSlideKind::MovieList) {
                     if let MoviesTarget::FullList { down_presses } = self.target {
                         state.match_state.input.cursor_x = LIST_DOWN_ARROW_POINT.0;
                         state.match_state.input.cursor_y = LIST_DOWN_ARROW_POINT.1;
                         for _ in 0..down_presses {
-                            App::handle_movie_list_mouse_down(state);
-                            App::handle_movie_list_mouse_up(state);
+                            App::handle_movie_list_mouse(state, Some(true));
+                            App::handle_movie_list_mouse(state, Some(false));
                         }
                         self.route.push(json!({"dialog": 0x129, "frame": frame,
                             "action": "press down arrow", "count": down_presses,
@@ -965,15 +1192,15 @@ impl MoviesCapture {
                     if self.target == MoviesTarget::List0x129Selected {
                         state.match_state.input.cursor_x = LIST_ROW0_POINT.0;
                         state.match_state.input.cursor_y = LIST_ROW0_POINT.1;
-                        App::handle_movie_list_mouse_down(state);
-                        App::handle_movie_list_mouse_up(state);
+                        App::handle_movie_list_mouse(state, Some(true));
+                        App::handle_movie_list_mouse(state, Some(false));
                         self.route.push(json!({"dialog": 0x129, "frame": frame,
                             "action": "press row", "point": [LIST_ROW0_POINT.0, LIST_ROW0_POINT.1]}));
                     }
                     // The native helper recenters the pointer after each click;
                     // hover over the list writes its status help.
                     Self::restore_neutral_pointer(state);
-                    App::handle_movie_list_mouse_move(state);
+                    App::handle_movie_list_mouse(state, None);
                     self.route.push(
                         json!({"dialog": 0x129, "frame": frame, "action": "pointer at neutral"}),
                     );
@@ -984,7 +1211,8 @@ impl MoviesCapture {
                         // Back (0x686) through the production teardown.
                         App::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::MovieListBack,
+                            crate::app::frontend::shell_transition::ShellSlideKind::MovieList,
+                            App::open_movies_credits_page,
                         );
                         ensure!(
                             state.frontend.shell_exit.is_some(),
@@ -1009,8 +1237,7 @@ impl MoviesCapture {
                 };
                 let tick = crate::app::frontend::shell_transition::shell_exit_wave(state, kind)
                     .context("teardown slide ended before capture")?
-                    .compatibility_tick()
-                    .context("teardown slide without a tick clock")?;
+                    .tick();
                 ensure!(tick <= target, "teardown slide passed tick {target}");
                 if tick == target {
                     crate::app::frontend::shell_transition::hold_shell_exit_for_capture(state);
@@ -1025,6 +1252,7 @@ impl MoviesCapture {
                     entry_tick,
                     hover,
                     press,
+                    ..
                 } = self.target
                 else {
                     bail!("WOL phase without a WOL target");
@@ -1038,7 +1266,7 @@ impl MoviesCapture {
                             state.frontend.shell_slide_active_shell
                                 == Some(ShellSlideKind::WolWelcome)
                         })
-                        .and_then(|wave| wave.compatibility_tick());
+                        .map(|wave| wave.tick());
                     if let Some(tick) = tick {
                         ensure!(tick <= target, "entry slide passed tick {target}");
                         if tick == target {
@@ -1220,7 +1448,7 @@ impl MoviesCapture {
                     let sim = &state
                         .match_state
                         .sim_runtime
-                        .as_ref()
+                        .runtime()
                         .context("EXIT lost its installed runtime")?
                         .simulation;
                     ensure!(
@@ -1261,6 +1489,12 @@ impl MoviesCapture {
     }
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+        if matches!(
+            self.target,
+            MoviesTarget::LoadSavedGame0xB7 { check_sidebar: true, .. }
+        ) {
+            return Ok(self.phase == Phase::SavedGameButtonsChecked);
+        }
         if let Some(lan) = self.lan.as_ref() {
             return lan.ready(state);
         }
@@ -1357,12 +1591,12 @@ impl MoviesCapture {
                 .frontend
                 .shell_first_paint_slide
                 .as_ref()
-                .and_then(|wave| wave.compatibility_tick());
+                .map(|wave| wave.tick());
             ensure!(
-                state.frontend.shell_route.movies_and_credits() && entry_tick == Some(0),
+                state.frontend.shell_route == ShellRoute::MoviesAndCredits && entry_tick == Some(0),
                 "the frame after the 0x129 teardown is not the 0x101 entry tick 0 \
                  (route M&C {}, entry tick {entry_tick:?})",
-                state.frontend.shell_route.movies_and_credits()
+                state.frontend.shell_route == ShellRoute::MoviesAndCredits
             );
             return Ok(true);
         }
@@ -1372,7 +1606,14 @@ impl MoviesCapture {
         // Steady page frames wait for the heading's and the status line's
         // kind-1 reveals to finish.
         let heading_settled = match self.target {
+            // The box covers the page's statics.
+            MoviesTarget::Mods {
+                press: ModsPress::Use | ModsPress::Check | ModsPress::New,
+            } => true,
             MoviesTarget::Page0x101
+            | MoviesTarget::Mods {
+                press: ModsPress::Nothing,
+            }
             | MoviesTarget::List0x129
             | MoviesTarget::List0x129Selected
             | MoviesTarget::FullList { .. }
@@ -1389,12 +1630,13 @@ impl MoviesCapture {
             }
             | MoviesTarget::LoadSavedGame0xB7 {
                 entry_tick: Some(_),
+                ..
             }
             | MoviesTarget::Options0xD5 {
                 entry_tick: Some(_),
                 ..
             } => true,
-            MoviesTarget::LoadSavedGame0xB7 { entry_tick: None }
+            MoviesTarget::LoadSavedGame0xB7 { entry_tick: None, .. }
             | MoviesTarget::Options0xD5 {
                 entry_tick: None, ..
             } => {
@@ -1418,12 +1660,6 @@ impl MoviesCapture {
             } => true,
             MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
             MoviesTarget::Wol(_) => unreachable!("WOL driver handled above"),
-            MoviesTarget::NetworkOptions(target) => {
-                target.is_message()
-                    || target == NetworkOptionsTarget::SaveReturn
-                    || (state.frontend.shell_page_title.is_terminal()
-                        && state.frontend.shell_status_line.is_terminal())
-            }
             MoviesTarget::WolWelcome { .. } => {
                 state.frontend.shell_page_title.is_terminal()
                     && state.frontend.shell_status_line.is_terminal()
@@ -1433,11 +1669,17 @@ impl MoviesCapture {
             return Ok(false);
         }
         let expected = match self.target {
-            MoviesTarget::Page0x101 => state.frontend.shell_route.movies_and_credits(),
+            MoviesTarget::Page0x101 => state.frontend.shell_route == ShellRoute::MoviesAndCredits,
+            MoviesTarget::Mods { press } => {
+                state.frontend.shell_route == ShellRoute::Mods
+                    && state.frontend.mods.page.is_some()
+                    && state.frontend.shell_message_box.is_some() == (press != ModsPress::Nothing)
+            }
             MoviesTarget::List0x129
             | MoviesTarget::List0x129Selected
             | MoviesTarget::FullList { .. } => {
-                state.frontend.shell_route.movie_list() && state.frontend.movie_list.is_some()
+                state.frontend.shell_route == ShellRoute::MovieList
+                    && state.frontend.movie_list.is_some()
             }
             MoviesTarget::Credits { .. } => state.frontend.credits_roll.is_some(),
             MoviesTarget::SneakPeek { .. } => state.frontend.fullscreen_movie.is_some(),
@@ -1456,62 +1698,63 @@ impl MoviesCapture {
                 ..
             } => wol_api_missing_shown(state),
             MoviesTarget::WolWelcome { entry_tick, .. } => {
-                state.frontend.shell_route.wol()
+                state.frontend.shell_route == ShellRoute::Wol
                     && entry_tick.is_none_or(|target| {
                         state
                             .frontend
                             .shell_first_paint_slide
                             .as_ref()
-                            .and_then(|wave| wave.compatibility_tick())
+                            .map(|wave| wave.tick())
                             == Some(target)
                     })
             }
             MoviesTarget::SlideOut { kind, tick } => {
                 crate::app::frontend::shell_transition::shell_exit_wave(state, kind)
-                    .and_then(|wave| wave.compatibility_tick())
+                    .map(|wave| wave.tick())
                     == Some(tick)
             }
             MoviesTarget::Campaign0x94 { entry_tick, .. } => {
-                state.frontend.shell_route.campaign()
+                state.frontend.shell_route == ShellRoute::Campaign
                     && state.frontend.campaign.is_some()
                     && entry_tick.is_none_or(|target| {
                         state
                             .frontend
                             .shell_first_paint_slide
                             .as_ref()
-                            .and_then(|wave| wave.compatibility_tick())
+                            .map(|wave| wave.tick())
                             == Some(target)
                     })
             }
-            MoviesTarget::LoadSavedGame0xB7 { entry_tick } => {
-                state.frontend.shell_route.load_saved_game()
+            MoviesTarget::LoadSavedGame0xB7 { entry_tick, .. } => {
+                state.frontend.shell_route == ShellRoute::LoadSavedGame
                     && state.frontend.load_saved_game.is_some()
                     && entry_tick.is_none_or(|target| {
                         state
                             .frontend
                             .shell_first_paint_slide
                             .as_ref()
-                            .and_then(|wave| wave.compatibility_tick())
+                            .map(|wave| wave.tick())
                             == Some(target)
                     })
             }
             MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
             MoviesTarget::Wol(_) => unreachable!("WOL driver handled above"),
-            MoviesTarget::NetworkOptions(target) => self.network_options_ready(state, target)?,
             MoviesTarget::Options0xD5 {
-                entry_tick, page, ..
+                entry_tick,
+                category,
+                ..
             } => {
                 state
                     .frontend
                     .options_dialog
                     .as_ref()
-                    .is_some_and(|dialog| dialog.page() == page)
+                    .is_some_and(|dialog| dialog.category() == category)
                     && entry_tick.is_none_or(|target| {
                         state
                             .frontend
                             .shell_first_paint_slide
                             .as_ref()
-                            .and_then(|wave| wave.compatibility_tick())
+                            .map(|wave| wave.tick())
                             == Some(target)
                     })
             }
@@ -1519,7 +1762,7 @@ impl MoviesCapture {
             MoviesTarget::CampaignStart { .. } => unreachable!("handled above"),
             MoviesTarget::CampaignBack => {
                 state.frontend.screen == GameScreen::MainMenu
-                    && state.frontend.shell_route.single_player()
+                    && state.frontend.shell_route == ShellRoute::SinglePlayer
                     && state.frontend.campaign.is_none()
                     && state.frontend.loading_session.is_none()
                     && state.frontend.shell_exit.is_none()
@@ -1549,6 +1792,26 @@ impl MoviesCapture {
             "frame": {"path": FRAME_FILE_NAME, "byte_length": pixels.len(),
                 "sha256": crate::util::sha256::sha256_hex(pixels)}
         });
+        if let MoviesTarget::WolWelcome {
+            provider,
+            press: WolPress::None,
+            ..
+        } = self.target
+        {
+            let visit = state.frontend.wol.as_ref().context("captured WOL visit")?;
+            ensure!(
+                !visit.modern_ui(),
+                "captured WOL welcome lost its native page"
+            );
+            let button_ids: Vec<_> = crate::ui::wol_shell::WOL_WELCOME_PAGE
+                .buttons()
+                .map(|button| button.id)
+                .collect();
+            manifest["wol_welcome"] = json!({
+                "provider": format!("{provider:?}"),
+                "button_ids": button_ids
+            });
+        }
         if let MoviesTarget::CampaignStart { target, .. } = self.target {
             let startup = crate::app::loading::pump::loading_campaign_startup(state)
                 .map(campaign_startup_receipt)
@@ -1688,9 +1951,6 @@ impl MoviesCapture {
                 "campaign_page_present": state.frontend.campaign.is_some(),
                 "loading_session_present": state.frontend.loading_session.is_some()});
         }
-        if let MoviesTarget::NetworkOptions(target) = self.target {
-            manifest["network_options"] = self.network_options_receipt(state, target)?;
-        }
         if let Some(lan) = self.lan.as_ref() {
             manifest["lan"] = lan.receipt(state)?;
         }
@@ -1700,11 +1960,14 @@ impl MoviesCapture {
         Ok(manifest)
     }
 
-    pub(super) fn cleanup(&mut self) -> Result<()> {
-        if let Some(lan) = self.lan.as_mut() {
-            lan.cleanup()?;
-        }
-        Ok(())
+    pub(super) fn measurement_failure(&self) -> Option<String> {
+        self.lan.as_ref()?.measurement_failure()
+    }
+
+    pub(super) fn observes_every_frame(&self) -> bool {
+        self.lan
+            .as_ref()
+            .is_some_and(|lan| lan.observes_every_frame())
     }
 
     pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
@@ -1747,13 +2010,73 @@ impl MoviesCapture {
 
 /// The visit shows `0xD0` with `TXT_APIMISSING` over the backdrop.
 fn wol_api_missing_shown(state: &AppState) -> bool {
-    let expected = App::csf_label(state, "TXT_APIMISSING", "TXT_APIMISSING");
+    let expected = state.csf_label("TXT_APIMISSING", "TXT_APIMISSING");
     state
         .frontend
         .wol
         .as_ref()
         .and_then(|visit| visit.message())
         .is_some_and(|message| message.body == expected)
+}
+
+/// A controlled peer's EventClass record from participant `source_index`,
+/// queued at the current frame as if received.
+fn queue_peer_command(
+    state: &mut AppState,
+    source_index: usize,
+    command: crate::sim::command::Command,
+) -> Result<()> {
+    let owner = state
+        .match_state
+        .session
+        .network_source_owner(source_index)
+        .with_context(|| format!("no participant {source_index}"))?;
+    let sim = &mut state
+        .match_state
+        .sim_runtime
+        .write_sim(crate::app::match_runtime::sim_host::SimWrite::Debug)
+        .context("no running match")?
+        .simulation;
+    let owner = sim
+        .interner()
+        .get(&owner)
+        .context("the participant has no House")?;
+    sim.queue_command(crate::sim::command::CommandEnvelope::new(
+        owner,
+        sim.session().tick(),
+        command,
+    ));
+    Ok(())
+}
+
+fn check_loaded_sidebar_buttons(state: &mut AppState) -> Result<()> {
+    use crate::ui::pause_menu::InGameMenuState;
+    use winit::event::{ElementState, MouseButton};
+
+    let mut opened = [InGameMenuState::Closed; 2];
+    for (index, dialog) in opened.iter_mut().enumerate() {
+        let view = crate::app::presentation::sidebar_render::current_sidebar_view(state)
+            .context("loaded match has no sidebar view")?;
+        let rect = state
+            .sidebar_frame()
+            .rect_to_frame(view.top_buttons[index].rect);
+        state.match_state.input.cursor_x = rect.x + rect.w / 2.0;
+        state.match_state.input.cursor_y = rect.y + rect.h / 2.0;
+        for edge in [ElementState::Pressed, ElementState::Released] {
+            crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
+        }
+        // Options opens when the simulation consumes the queued request.
+        if index == 1 && !state.match_state.paused() {
+            crate::app::match_runtime::sim_tick::advance_in_game_runtime_exact_step(state)?;
+        }
+        *dialog = state.match_state.match_presentation.in_game_menu;
+        App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+    }
+    ensure!(
+        opened == [InGameMenuState::Diplomacy, InGameMenuState::Menu],
+        "loaded skirmish sidebar clicks opened {opened:?}; expected [Diplomacy, Menu]"
+    );
+    Ok(())
 }
 
 /// Same physical-window to retained-render coordinates as CursorMoved in the
@@ -1800,7 +2123,7 @@ fn process_source_ini_hashes(state: &AppState) -> Result<Value> {
 fn campaign_abort_cleanup_receipt(state: &AppState) -> Result<Value> {
     ensure!(
         state.frontend.screen == GameScreen::MainMenu
-            && state.frontend.shell_route == crate::app::shell_route::ShellRoute::MainMenu,
+            && state.frontend.shell_route == ShellRoute::MainMenu,
         "campaign abort did not return to the ordinary main menu"
     );
     ensure!(
@@ -1825,7 +2148,7 @@ fn campaign_abort_cleanup_receipt(state: &AppState) -> Result<Value> {
     let sim = &state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("ordinary return unexpectedly discarded the retained campaign runtime")?
         .simulation;
     let mission_counter = sim
@@ -1855,7 +2178,7 @@ fn campaign_abort_cleanup_receipt(state: &AppState) -> Result<Value> {
         "campaign_page_present": state.frontend.campaign.is_some(), "fullscreen_movie_present": state.frontend.fullscreen_movie.is_some(),
         "scenario_exit_present": state.match_state.scenario_exit.is_some(), "scenario_outcome_present": state.match_state.scenario_outcome.is_some(),
         "in_game_menu": format!("{:?}", state.match_state.match_presentation.in_game_menu),
-        "retained_runtime_present": state.match_state.sim_runtime.is_some(), "retained_tick": sim.session().tick(),
+        "retained_runtime_present": state.match_state.sim_runtime.is_installed(), "retained_tick": sim.session().tick(),
         "retained_quit_requested": sim.quit_requested(),
         "retained_scenario_started": sim.session().started(),
         "campaign_mission_counter": mission_counter, "pending_exit_commands": pending_exit_commands,
@@ -1869,7 +2192,7 @@ fn campaign_runtime_receipt(state: &AppState) -> Result<Value> {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .is_some_and(|runtime| runtime.simulation.session().tick() == 0),
         "first live capture passed simulation tick zero"
     );
@@ -1880,7 +2203,7 @@ fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("initial save has no world")?;
     ensure!(
         runtime.simulation.session().tick() == 1,
@@ -1905,15 +2228,10 @@ fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
         &state.persistence.repository.read(&entry.path)?,
     )?;
     ensure!(
-        saved.sim.session().game_options().game_speed == 2,
+        saved.session().game_options().game_speed == 2,
         "automatic save preceded the Options input"
     );
-    let pending_speed = saved.sim.pending_command_snapshot().iter().any(|command| {
-        matches!(
-            command.payload,
-            crate::sim::command::Command::SetGameSpeed { .. }
-        )
-    });
+    let pending_speed = saved.has_pending_game_speed_input();
     ensure!(
         !pending_speed,
         "automatic save retained already-consumed Options input"
@@ -1930,9 +2248,9 @@ fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
         "filename": entry.path.file_name().unwrap().to_string_lossy(),
         "description": entry.header.description, "tick": entry.header.tick,
         "map_name": entry.header.map_name,
-        "game_speed": saved.sim.session().game_options().game_speed,
+        "game_speed": saved.session().game_options().game_speed,
         "pending_speed_input": pending_speed,
-        "new_save_description": browser.description_edit.display_text(),
+        "new_save_description": browser.edit().display_text(),
         "observation": "ordinary save browser model; dialog not opened",
     }))
 }
@@ -1941,7 +2259,7 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
     let runtime = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .context("first live frame has no runtime")?;
     let sim = &runtime.simulation;
     ensure!(
@@ -2002,7 +2320,7 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
                 "id": id, "type": sim.interner().resolve(entity.type_ref()),
                 "cell": [entity.position.rx(), entity.position.ry()],
                 "in_playfield": entity.in_playfield(),
-                "discovered": entity.discovery.discovered_by_current_house(),
+                "discovered": entity.seldom.discovery.discovered_by_current_house(),
                 "opened": entity.building_art.actually_placed(),
                 "ready": entity.building_ready_latch(),
                 "mission": entity.mission.current().raw(), "queued": entity.mission.queued().raw(),

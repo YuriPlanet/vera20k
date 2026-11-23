@@ -656,7 +656,7 @@ fn drive_across_high_bridge_with_order(
             &[order],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
 
@@ -1397,7 +1397,7 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
             &[order],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
 
@@ -2367,7 +2367,7 @@ fn tank_ordered_across_the_deadman_collapse_gap_never_drives_into_it() {
             )],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     let accepted = accepted_route(&scenario, entity_id).map(|path| (path.len(), path));
@@ -2575,7 +2575,7 @@ fn tank_cannot_cross_a_destroyed_shrapnel_low_bridge() {
             )],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     let accepted = accepted_route(&scenario, entity_id).map(|path| path.len());
@@ -3036,7 +3036,7 @@ fn order_under_high_span(map_file: &str, unit_type: &str) -> Option<UnderSpanRun
             )],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     let path = accepted_route(&scenario, entity_id).map(|path| path.len());
@@ -3353,7 +3353,7 @@ fn tank_cannot_reach_the_riverbed_beside_bay_of_pigs_high_bridge() {
         );
         assert_eq!(
             track_row,
-            Some(0),
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
             "the riverbed at {cell:?} has a nonzero Track row; T1-13 now has a BayOPigs arm \
              and this test must be replaced by a real run"
         );
@@ -3559,113 +3559,5 @@ fn deck_and_ground_under_one_high_bridge_cell_are_separate_occupancy_planes() {
     assert!(
         deck_end.on_bridge(),
         "the deck mover lost on_bridge while a unit drove out from underneath it"
-    );
-}
-
-/// Scale instrument, not a parity test: N tanks on `Hills.mmx` all ordered
-/// across the valley, per-frame wall time of the whole simulation frame.
-/// `VERA20K_SCALE_MOVERS` overrides the count (default 400).
-/// `VERA20K_SKIP_LIVE_READ_CHECK=1` drops the debug cross-checks of the pass's
-/// derived inputs (live reads, cached blocker plane), which otherwise rebuild
-/// their whole-world forms every turn.
-#[test]
-#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
-fn scale_benchmark_many_movers_on_hills() {
-    let Some(retail) = retail_dir() else {
-        return;
-    };
-    let movers: usize = std::env::var("VERA20K_SCALE_MOVERS")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(400);
-    let frames: usize = std::env::var("VERA20K_SCALE_FRAMES")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(150);
-    let mut scenario = headless_scenario::load(&retail, "Hills.mmx", SEED).expect("Hills loads");
-    let owner_name = prepare_commanding_house(&mut scenario);
-    let mut ids = Vec::new();
-    'spawn: for ry in 40..120u16 {
-        for rx in 40..120u16 {
-            if ids.len() >= movers {
-                break 'spawn;
-            }
-            let SimRuntime {
-                simulation,
-                resources,
-            } = &mut scenario.runtime;
-            if let Some(id) =
-                simulation.spawn_object("MTNK", &owner_name, rx, ry, 0, &resources.rules)
-            {
-                ids.push((id, rx, ry));
-            }
-        }
-    }
-    {
-        let SimRuntime {
-            simulation,
-            resources,
-        } = &mut scenario.runtime;
-        simulation.resolve_type_handles(&resources.rules);
-    }
-    let owner_id = scenario
-        .sim()
-        .interner
-        .get(&owner_name)
-        .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick() + 1;
-    let commands: Vec<CommandEnvelope> = ids
-        .iter()
-        .map(|&(id, rx, ry)| {
-            CommandEnvelope::new(
-                owner_id,
-                execute_tick,
-                Command::Move {
-                    entity_id: id,
-                    target_rx: rx.wrapping_add(30),
-                    target_ry: ry,
-                },
-            )
-        })
-        .collect();
-    let live_objects = scenario.sim().entities().len();
-    let mut total = std::time::Duration::ZERO;
-    let mut worst = std::time::Duration::ZERO;
-    for frame in 0..frames {
-        let batch = if frame == 0 { commands.as_slice() } else { &[] };
-        let started = std::time::Instant::now();
-        scenario
-            .runtime
-            .advance_frame(
-                batch,
-                SIM_TICK_MS,
-                TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
-            )
-            .expect("frame completes");
-        let elapsed = started.elapsed();
-        total += elapsed;
-        worst = worst.max(elapsed);
-    }
-    let moved = ids
-        .iter()
-        .filter(|&&(id, rx, ry)| {
-            scenario
-                .sim()
-                .entities()
-                .get(id)
-                .is_some_and(|entity| (entity.position.rx(), entity.position.ry()) != (rx, ry))
-        })
-        .count();
-    println!(
-        "SCALE movers={} live_objects={live_objects} frames={frames} avg_ms={:.2} worst_ms={:.2} moved={moved} entity_bytes={} world_reads={}",
-        ids.len(),
-        total.as_secs_f64() * 1000.0 / frames as f64,
-        worst.as_secs_f64() * 1000.0,
-        std::mem::size_of::<crate::sim::game_entity::GameEntity>(),
-        scenario
-            .sim()
-            .movement_pass_cache
-            .blocker_plane_world_rebuilds(),
     );
 }

@@ -140,7 +140,6 @@ fn original_object_cell_queries_keep_physical_aliases_and_dummy_fields() {
         let subject = FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.substrate.entities.get(1).unwrap(),
             obj: rules.object("TANK").unwrap(),
@@ -239,7 +238,7 @@ fn original_early_fire_error_retains_cell_between_temporal_and_lifted_gates() {
         if row.name == "target_cloaked" {
             let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
             cloak.set_state_for_test(2);
-            target.cloak = Some(cloak);
+            target.cloak = Some(Box::new(cloak));
         }
         let dummy = sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy();
         let [x, y] = row.supplied.initial_dummy_xy;
@@ -247,8 +246,7 @@ fn original_early_fire_error_retains_cell_between_temporal_and_lifted_gates() {
         let subject = FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
-            fog: Some(sim.fog.fire_view(sim.house_alliances.as_map())),
+            fog: Some(sim.fog.fire_view(&sim.house_alliances)),
             firer: sim.substrate.entities.get(1).unwrap(),
             obj: rules.object("TANK").unwrap(),
             target: Some(TargetKind::Entity(2)),
@@ -340,7 +338,6 @@ fn original_cell_center_query_reads_the_retained_receiver_coordinate() {
         let subject = FireSubject {
             world: &sim,
             rules: &rules,
-            overlay_registry: None,
             fog: None,
             firer: sim.substrate.entities.get(1).unwrap(),
             obj: rules.object("TANK").unwrap(),

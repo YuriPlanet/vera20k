@@ -36,13 +36,16 @@
 //!   executable (`tools.native_inspect calls` and `find-bytes`).
 
 use crate::map::entities::EntityCategory;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::ground_pose::position_world_xy;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
-use super::{TeamMember, TeamRules, member_type_identity, script_action_at};
+use super::{
+    AiTriggerFeedbackRules, TeamMember, TeamMemberTypeIdentity, member_type_identity,
+    script_action_at,
+};
 
 /// `Recruit`'s penalty on a candidate outside the team's group, added to
 /// the squared distance (`0x006EABFA`).
@@ -68,35 +71,94 @@ pub(super) struct RecruitCandidate {
     pub(super) matches: bool,
 }
 
+/// The walks of a house's objects one team's recruit loop shares between its
+/// short TaskForce entries of a class in one update (`TeamClass::AI`'s loop,
+/// `0x006E927A`); see [`Simulation::team_recruit`].
+#[derive(Debug, Default)]
+pub(super) struct RecruitWalks(Vec<RecruitWalk>);
+
+/// One walk of a house's objects of one class.
+#[derive(Debug)]
+struct RecruitWalk {
+    class: EntityCategory,
+    /// The ids the store listed for the house and class: the walk holds
+    /// while it lists exactly these.
+    owned: Vec<u64>,
+    /// Those of a TaskForce type, in the same order.
+    typed: Vec<u64>,
+}
+
+impl RecruitWalks {
+    /// The ids of a TaskForce type the walk of `class` found, while the
+    /// store still lists `owned` for it.
+    fn typed(&self, class: EntityCategory, owned: &[u64]) -> Option<&[u64]> {
+        self.0
+            .iter()
+            .find(|walk| walk.class == class && walk.owned == owned)
+            .map(|walk| walk.typed.as_slice())
+    }
+
+    fn keep(&mut self, class: EntityCategory, owned: &[u64], typed: Vec<u64>) {
+        self.0.retain(|walk| walk.class != class);
+        self.0.push(RecruitWalk {
+            class,
+            owned: owned.to_vec(),
+            typed,
+        });
+    }
+}
+
 /// `Recruit`'s search (`0x006EAB86..0x006EAE19`) over one class array in
 /// order: a candidate in the team's `group` (any with -2), or any for a
 /// `Recruiter=` TeamType, is keyed by its squared XY distance to `origin`
-/// (`0x005F6560`, wrapping) plus `0x3200` outside the group (wrapping); it
+/// (`0x005F6560`, `native_coord::squared_xy_distance_for_map`) plus `0x3200`
+/// outside the group (wrapping); it
 /// wins when it passes its own tests, its key is below the best (signed) or
-/// the best is still -1, and `can_add` admits it.
+/// the best is still -1, and `can_add` admits it. A VERA-only map compares the
+/// true 64-bit square, so the wrap cannot make a far candidate win.
 pub(super) fn recruit_pick(
-    candidates: &[RecruitCandidate],
+    candidates: impl IntoIterator<Item = RecruitCandidate>,
     origin: [i32; 2],
     group: i32,
     recruiter: bool,
     mut can_add: impl FnMut(u64) -> bool,
+    ares: bool,
+    vera_only_map: bool,
 ) -> Option<u64> {
-    let mut best = -1i32;
+    let mut best = -1i64;
     let mut winner = None;
     for candidate in candidates {
         if !(group == -2 || candidate.group == group || recruiter) {
             continue;
         }
-        let mut key = super::team_ai::squared_xy_distance(candidate.xy, origin);
-        if candidate.group != group {
-            key = key.wrapping_add(OTHER_GROUP_PENALTY);
-        }
+        let distance = crate::util::native_coord::squared_xy_distance_for_map(
+            candidate.xy,
+            origin,
+            ares,
+            vera_only_map,
+        );
+        let key = if candidate.group != group {
+            other_group_key(distance, vera_only_map)
+        } else {
+            distance
+        };
         if candidate.matches && (key < best || best == -1) && can_add(candidate.id) {
             winner = Some(candidate.id);
             best = key;
         }
     }
     winner
+}
+
+/// `OTHER_GROUP_PENALTY` added to a candidate outside the team's group. The
+/// original adds it in 32-bit wrapping arithmetic; a VERA-only map adds it to
+/// the true 64-bit square.
+fn other_group_key(distance: i64, vera_only_map: bool) -> i64 {
+    if vera_only_map {
+        distance + i64::from(OTHER_GROUP_PENALTY)
+    } else {
+        i64::from((distance as i32).wrapping_add(OTHER_GROUP_PENALTY))
+    }
 }
 
 impl Simulation {
@@ -127,7 +189,7 @@ impl Simulation {
         if entity.health.current() <= 0
             || !entity.lifecycle.object_alive()
             || entity.lifecycle.in_limbo()
-            || !entity.radio_contacts.is_empty()
+            || !entity.seldom.radio_contacts.is_empty()
             || entity.owner() != owner
             || !crate::sim::mission::control::mission_recruitable(rules, entity.mission.effective())
         {
@@ -137,8 +199,8 @@ impl Simulation {
             .team_type_ini
             .get(&team_type_id)
             .is_some_and(|metadata| metadata.autocreate);
-        if (!entity.base_defense_response.recruitable_a() && !autocreate)
-            || (!entity.base_defense_response.recruitable_b() && autocreate)
+        if (!entity.seldom.base_defense_response.recruitable_a() && !autocreate)
+            || (!entity.seldom.base_defense_response.recruitable_b() && autocreate)
             || current_type.is_some_and(|current| current.priority >= team_type.priority)
         {
             return false;
@@ -152,6 +214,7 @@ impl Simulation {
                         entity.veterancy.rank(),
                         0,
                     )
+                    .and_then(|record| record.weapon_id)
                     .is_some()
                 })
             && entity.ammo().is_some_and(|ammo| ammo.current() == 0)
@@ -204,7 +267,7 @@ impl Simulation {
         }
         let aircraft = entity.category() == EntityCategory::Aircraft;
         let object = self.object_type(entity.type_ref(), rules)?;
-        if !entity.radio_contacts.is_empty() && !(aircraft && object.airport_bound) {
+        if !entity.seldom.radio_contacts.is_empty() && !(aircraft && object.airport_bound) {
             return None;
         }
         let entries = vm.task_force_entries(team);
@@ -221,16 +284,19 @@ impl Simulation {
         }
         let metadata = team.team_type_id.and_then(|id| vm.team_type_ini.get(&id));
         let autocreate = metadata.is_some_and(|metadata| metadata.autocreate);
-        if !entity.base_defense_response.recruitable_a() && !autocreate {
+        if !entity.seldom.base_defense_response.recruitable_a() && !autocreate {
             return None;
         }
         let unloading = script_action_at(vm.scripts.get(&team.script_id), team.cursor)
             .is_some_and(|action| action.action_id == 8);
-        if !entity.base_defense_response.recruitable_b() && autocreate && !(unloading || aircraft) {
+        if !entity.seldom.base_defense_response.recruitable_b()
+            && autocreate
+            && !(unloading || aircraft)
+        {
             return None;
         }
         // `0x006EA79B..0x006EA7A4`: one seeking a building's entry.
-        if entity.building_entry.seeking() {
+        if entity.seldom.building_entry.seeking() {
             return None;
         }
         if entity.drain.target().is_some() || entity.bunker.link().installed_in().is_some() {
@@ -247,6 +313,7 @@ impl Simulation {
                 entity.veterancy.rank(),
                 0,
             )
+            .and_then(|record| record.weapon_id)
             .is_some()
             && entity.ammo().is_some_and(|ammo| ammo.current() == 0)
         {
@@ -274,8 +341,7 @@ impl Simulation {
         entity_id: u64,
         constrained: bool,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(slot) = self.team_can_add(team_id, entity_id, constrained, rules) else {
             return false;
@@ -312,7 +378,11 @@ impl Simulation {
         );
         // gamemd.exe Add_Member6EA500 stores Get_Group6F1870 at6EA57C,
         // after linking and before Tag inheritance. Remove_Member retains it.
-        let group = vm.team_group(vm.teams.get(&team_id).unwrap());
+        let group = vm.team_group(
+            vm.teams
+                .get(&team_id)
+                .expect("the member was linked to this Team just above"),
+        );
         if let Some(entity) = self.substrate.entities.get_mut(entity_id) {
             entity.assign_object_group(group);
         }
@@ -332,7 +402,7 @@ impl Simulation {
                 .attach_team_member_trigger_tag(team_id, entity_id);
         }
         if centreless {
-            self.team_calc_center(team_id, rules, registry);
+            self.team_calc_center(team_id, rules);
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             team.altered = true;
@@ -341,6 +411,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(entity_id) {
             // `+0x422` (`0x006EA5F5`).
             entity
+                .seldom
                 .base_defense_response
                 .set_team_recruitable(recruitable);
         }
@@ -352,16 +423,17 @@ impl Simulation {
     /// against the first entry of its type, leaves the list, drops its
     /// suspended mission, destination and target (`+0xB0`, `+0x5A8`,
     /// `+0x2B8`) and, active, not falling (`+0x425`), out of limbo and
-    /// unless `no_idle`, enters its idle mode (`vt+0x484(0, 1)`). If no
-    /// member left is initiated, the head is, and the team loses its centre.
-    /// The team is marked altered.
+    /// unless `no_idle`, enters its idle mode (`vt+0x484(0, 1)`), which an
+    /// object-placement scope skips: `0x006EAA1E` tests `[0x00A8E7AC]` first.
+    /// If no member left is initiated, the head is, and the team loses its
+    /// centre. The team is marked altered.
     pub(crate) fn team_remove_member(
         &mut self,
         team_id: u64,
         entity_id: u64,
         no_idle: bool,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self.team_script_vm.member_team.get(&entity_id) != Some(&team_id) {
             return;
@@ -373,7 +445,7 @@ impl Simulation {
             .entities
             .get(entity_id)
             .and_then(|entity| self.houses.get(&entity.owner()))
-            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()))
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.rule_policy()))
         {
             self.trigger_runtime
                 .clear_team_member_trigger_tag(team_id, entity_id);
@@ -408,13 +480,19 @@ impl Simulation {
             .is_some_and(|entity| {
                 entity.mission.clear_suspended();
                 entity.navigation.clear_suspended_nav_com();
-                entity.suspended_attack_target.clear();
+                entity.seldom.suspended_attack_target.clear();
                 entity.lifecycle.object_alive()
                     && !entity.crash.is_crashing()
                     && !entity.lifecycle.in_limbo()
             });
-        if idles && !no_idle {
-            crate::sim::world::enter_idle_mode(self, entity_id, rules, None, frame_effects);
+        if idles && !no_idle && !self.object_placement_scope_active() {
+            crate::sim::world::enter_idle_mode(
+                self,
+                entity_id,
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            );
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             if !other_initiated && let Some(head) = team.members.first_mut() {
@@ -446,7 +524,7 @@ impl Simulation {
         entity_id: u64,
         no_idle: bool,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if let Some(team_id) = self.team_script_vm.member_team.get(&entity_id).copied() {
             self.team_remove_member(team_id, entity_id, no_idle, rules, frame_effects);
@@ -460,7 +538,7 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         while let Some(head) = self
             .team_script_vm
@@ -494,14 +572,16 @@ impl Simulation {
     /// when strictly nearer, or the best is still -1. A unit must also be
     /// the team's house's and of the entry's own type; an infantryman or an
     /// aircraft may be of any entry's type. The winner loses its target
-    /// (`vt+0x3C8`) and joins ([`Self::team_add_member`]).
-    pub(crate) fn team_recruit(
+    /// (`vt+0x3C8`) and joins ([`Self::team_add_member`]). `walks` carries
+    /// the walk of the house's objects to the team's later short entries in
+    /// the same update.
+    pub(super) fn team_recruit(
         &mut self,
         team_id: u64,
         slot: usize,
+        walks: &mut RecruitWalks,
         rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let vm = &self.team_script_vm;
         let Some(team) = vm.teams.get(&team_id) else {
@@ -511,15 +591,18 @@ impl Simulation {
             .team_type_id
             .and_then(|id| vm.team_type_ini.get(&id))
             .map_or(-1, |metadata| metadata.waypoint);
-        let origin = if waypoint >= 0 {
-            self.session
-                .waypoint_cell(waypoint)
-                .map_or([0, 0], |(x, y)| {
-                    self.team_target_xy(super::TeamTarget::Cell { x, y })
-                })
-        } else {
-            team.zone.map_or([0, 0], |zone| self.team_target_xy(zone))
-        };
+        // Recruit6EAAAD first queries the retained zone. A nonempty packed
+        // waypoint then overrides it with literal XY/Z0 (6EAAFE..6EAB20),
+        // without Map lookup or terrain height; Empty keeps the zone.
+        let mut origin = team.zone.map_or([0, 0], |zone| self.team_target_xy(zone));
+        if let Some(cell) = (waypoint >= 0)
+            .then(|| self.session.waypoint_cell(waypoint))
+            .flatten()
+            && cell != (0, 0)
+        {
+            let center = crate::sim::cell_kernel::cell_center(cell.into(), 0);
+            origin = [center.x, center.y];
+        }
         let entries = vm.task_force_entries(team);
         let Some(&entry) = entries.get(slot) else {
             return false;
@@ -536,32 +619,101 @@ impl Simulation {
         if class == EntityCategory::Structure {
             return false;
         }
-        let owner = team.owner;
-        let candidates: Vec<RecruitCandidate> = self
-            .substrate
-            .entities
-            .iter_sorted()
-            .filter(|(_, entity)| entity.category() == class)
-            .map(|(id, entity)| RecruitCandidate {
+        // VERA walks only the team's house's objects of the class, in the
+        // same order. Another house's object can neither win nor move the
+        // best key: the unit search's own house test fails it, and for an
+        // infantryman or aircraft `Can_Add` refuses it, before any write.
+        // Nor can an object of a type the search cannot take: a unit not of
+        // the entry's type fails the search's own type test, and `Can_Add`
+        // (`0x006EA610`) refuses an infantryman or aircraft of no entry's
+        // type, also before any write. VERA reads such an object's type and
+        // nothing more.
+        //
+        // A later short entry of the class in the same update weighs only
+        // the objects of a TaskForce type this walk found (`walks`), each
+        // read afresh, while the store lists the same objects for the house.
+        // Only `convert_techno_type` and `store_techno_type` write an object's
+        // type, and nothing a recruit reaches (`Add_Member`, the old team's
+        // `Remove_Member` and its idle mode) calls them, so no other object
+        // can have become one of a TaskForce type in between.
+        let entities = &self.substrate.entities;
+        let owned = entities.owned_ids(team.owner, class);
+        let of_task_force_type = |member_type: TeamMemberTypeIdentity| {
+            entries.iter().any(|entry| entry.member_type == member_type)
+        };
+        let weigh = |id: u64, entity: &GameEntity| {
+            let member_type = member_type_identity(entity);
+            let weighed = if class == EntityCategory::Unit {
+                member_type == entry.member_type
+            } else {
+                of_task_force_type(member_type)
+            };
+            weighed.then(|| RecruitCandidate {
                 id,
                 xy: position_world_xy(&entity.position),
                 // gamemd.exe Recruit6EAA90 reads Techno+214, including
                 // authored campaign groups (6EAC7A for Infantry).
                 group: entity.object_group(),
-                // The unit search's own house and type test.
-                matches: class != EntityCategory::Unit
-                    || (entity.owner() == owner
-                        && member_type_identity(entity) == entry.member_type),
+                // The unit search's own house and type test: every object
+                // weighed is the team's house's, and a unit of the entry's
+                // type.
+                matches: true,
             })
-            .collect();
-        let winner = recruit_pick(&candidates, origin, group, recruiter, |id| {
-            self.team_can_add(team_id, id, false, rules).is_some()
-        });
+        };
+        let can_add = |id| self.team_can_add(team_id, id, false, rules).is_some();
+        let winner = if let Some(typed) = walks.typed(class, owned) {
+            debug_assert!(
+                !crate::sim::touch_log::live_read_check_enabled()
+                    || typed.iter().copied().eq(entities
+                        .values()
+                        .filter(|entity| {
+                            entity.owner() == team.owner
+                                && entity.category() == class
+                                && of_task_force_type(member_type_identity(entity))
+                        })
+                        .map(GameEntity::stable_id)),
+                "a recruit walk outlived a change of its objects' types"
+            );
+            recruit_pick(
+                typed.iter().filter_map(|&id| weigh(id, entities.get(id)?)),
+                origin,
+                group,
+                recruiter,
+                can_add,
+                rules.ares(),
+                self.session.map_exceeds_original_size(),
+            )
+        } else {
+            // Kept only when a later entry of the class may search again.
+            let later = entries[slot + 1..]
+                .iter()
+                .any(|later| EntityCategory::from(later.member_type.category) == class);
+            let mut typed = Vec::new();
+            let winner = recruit_pick(
+                owned.iter().filter_map(|&id| {
+                    let entity = entities.get(id)?;
+                    if later && of_task_force_type(member_type_identity(entity)) {
+                        typed.push(id);
+                    }
+                    weigh(id, entity)
+                }),
+                origin,
+                group,
+                recruiter,
+                can_add,
+                rules.ares(),
+                self.session.map_exceeds_original_size(),
+            );
+            if later {
+                walks.keep(class, owned, typed);
+            }
+            winner
+        };
         let Some(winner) = winner else {
             return false;
         };
         self.team_member_clear_target(winner, rules);
-        self.team_add_member(team_id, winner, false, rules, registry, frame_effects);
+        self.team_add_member(team_id, winner, false, rules, frame_effects);
         true
     }
 
@@ -574,11 +726,11 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
-        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero());
+        let feedback_rules = AiTriggerFeedbackRules::new(&rules.general);
         self.team_script_vm
-            .record_trigger_outcome(team_id, &team_rules);
+            .record_trigger_outcome(team_id, &feedback_rules);
         self.team_remove_all_members(team_id, rules, frame_effects);
         Self::clear_team_trigger_tag(&mut self.substrate, &mut self.trigger_runtime, team_id);
         self.team_script_vm.teams.remove(&team_id);
@@ -593,7 +745,7 @@ impl Simulation {
         &mut self,
         team_type: crate::sim::intern::InternedId,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let mut index = 0;
         loop {
@@ -624,7 +776,7 @@ impl Simulation {
         priority: i32,
         duration: i32,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let current_frame = self.session.binary_frame() as i32;
         let vm = &self.team_script_vm;

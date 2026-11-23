@@ -50,6 +50,7 @@ from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, U
 
 from tools.native_oracle import (load_image, run_checked, SCRATCH, SCRATCH_SIZE, STACK_BASE,
                                  STACK_SIZE, NATIVE_FPCW, finish_vectors, provenance)
+from tools.native_oracle import require
 
 RULES_PTR, SCENARIO_PTR = 0x8871E0, 0xA8B230
 RANDOM_RANGED, RANDOM = 0x65C7E0, 0x65C780
@@ -465,7 +466,7 @@ def shrapnel_chain_generate():
     ]]
     layers = rows[0]['layers']
     for row in rows:
-        assert row.pop('layers') == layers
+        require(row.pop('layers') == layers, 'layers differs from the shared value')
     return dict(layers=layers, cases=rows,
                 input_environment='VERA20K_PROJECTILE_RENDER_ASSETS points to the extracted physical files identified in layers; RA2_DIR or VERA20K_GAMEMD_EXE selects gamemd.exe')
 
@@ -501,7 +502,7 @@ def terrain_shrapnel_generate():
     )]
     layers = rows[0]['layers']
     for row in rows:
-        assert row.pop('layers') == layers
+        require(row.pop('layers') == layers, 'layers differs from the shared value')
     return dict(layers=layers, cases=rows)
 
 

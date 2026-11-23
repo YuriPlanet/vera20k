@@ -13,13 +13,39 @@ use crate::util::retail_trig::TrigTable;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(super) struct GrappleState {
     /// +44, cleared synchronously by the dedicated Anim expiry callback.
-    pub(super) anim: Option<u64>,
+    /// Only [`FootParasite::begin_grapple`] stores an Anim here.
+    anim: Option<u64>,
     /// +48: entry0, initial animation1, roll2/3, impact4.
     phase: i32,
     stage: i32,
     delay: i32,
     /// +54: the held animation expired; not an independent liveness query.
     invalidated: bool,
+}
+
+impl GrappleState {
+    /// +44, the held Anim.
+    pub(super) fn anim(&self) -> Option<u64> {
+        self.anim
+    }
+}
+
+impl FootParasite {
+    /// UpdateSquidGrapple6297F0's entry phase publishes its Anim at +44
+    /// (none when the type is absent) and starts phase 1, through
+    /// [`EntityStore::begin_parasite_grapple`](crate::sim::entity_store::EntityStore::begin_parasite_grapple).
+    pub(in crate::sim) fn begin_grapple(
+        &mut self,
+        anim: Option<u64>,
+        _: crate::sim::entity_store::AnimHolderAuthority,
+    ) -> Option<()> {
+        let grapple = &mut self.class_mut()?.grapple;
+        grapple.anim = anim;
+        grapple.phase = 1;
+        grapple.stage = 0;
+        grapple.delay = 0;
+        Some(())
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -135,7 +161,7 @@ impl Simulation {
         victim: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(source) = self.substrate.entities.get(owner) else {
             return;
@@ -149,7 +175,7 @@ impl Simulation {
         let Some(warhead_name) = weapon.warhead.as_deref() else {
             return;
         };
-        let Some(warhead) = rules.warhead(warhead_name) else {
+        let Some(warhead) = rules.weapon_warhead(weapon) else {
             return;
         };
         let Some(target) = self.substrate.entities.get(victim) else {
@@ -209,18 +235,10 @@ impl Simulation {
                 } else {
                     None
                 };
-                let state = self
-                    .substrate
+                self.substrate
                     .entities
-                    .get_mut(owner)
-                    .unwrap()
-                    .parasite
-                    .class_mut()
+                    .begin_parasite_grapple(owner, anim)
                     .unwrap();
-                state.grapple.anim = anim;
-                state.grapple.phase = 1;
-                state.grapple.stage = 0;
-                state.grapple.delay = 0;
                 Self::advance_grapple_stage(&self.session, &mut self.substrate, owner, victim);
             }
             1 => {
@@ -258,7 +276,7 @@ impl Simulation {
             4 => {
                 self.substrate.write_grapple_roll(victim, SimFixed::ZERO);
                 self.grapple_splashes(victim, origin, rules);
-                if warhead.culling && self.grapple_cull_admitted(owner, victim, rules) {
+                if warhead.culling && self.grapple_cull_admitted(owner, victim, warhead, rules) {
                     self.grapple_cull(owner, victim, rules, effects);
                     return;
                 }
@@ -394,25 +412,55 @@ impl Simulation {
         }
     }
 
-    fn grapple_cull_admitted(&self, owner: u64, victim: u64, rules: &RuleSet) -> bool {
+    fn grapple_cull_admitted(
+        &mut self,
+        owner: u64,
+        victim: u64,
+        warhead: &crate::rules::warhead_type::WarheadType,
+        rules: &RuleSet,
+    ) -> bool {
         let Some(target) = self.substrate.entities.get(victim) else {
             return false;
         };
         let Some(kind) = self.object_type(target.type_ref(), rules) else {
             return false;
         };
-        match crate::sim::combat::health_category(
-            target.health.current(),
-            kind.strength,
-            rules.general.condition_red,
-            rules.general.condition_yellow,
-        ) {
-            0 => true,
-            1 => self.substrate.entities.get(owner).is_some_and(|source| {
-                super::super::veterancy::raw_is_elite(source.veterancy.raw())
-            }),
-            _ => false,
-        }
+        // Ares ParasiteClass_UpdateSquiddy_Culling (10053AC0, hook 0x629BC0)
+        // replaces the red/elite-at-yellow test with CanCull 10052590.
+        let admitted = if rules.ares() {
+            let (health, strength) = (target.health, kind.strength);
+            let Some(veterancy) = self
+                .substrate
+                .entities
+                .get(owner)
+                .map(|source| source.veterancy.raw())
+            else {
+                return false;
+            };
+            crate::sim::combat::object_health::ares_can_cull(
+                warhead,
+                veterancy,
+                health,
+                strength,
+                rules.general.condition_red,
+                rules.general.condition_yellow,
+                &mut self.scenario_rng,
+            )
+        } else {
+            match crate::sim::combat::health_category(
+                target.health.current(),
+                kind.strength,
+                rules.general.condition_red,
+                rules.general.condition_yellow,
+            ) {
+                0 => true,
+                1 => self.substrate.entities.get(owner).is_some_and(|source| {
+                    super::super::veterancy::raw_is_elite(source.veterancy.raw())
+                }),
+                _ => false,
+            }
+        };
+        admitted
     }
 
     fn grapple_cull(
@@ -420,7 +468,7 @@ impl Simulation {
         owner: u64,
         victim: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(source) = self.substrate.entities.get(owner) else {
             return;
@@ -436,7 +484,14 @@ impl Simulation {
         };
         let source_cost = self.cost_of(source.owner(), source_type, rules);
         let target_cost = self.cost_of(target.owner(), target_type, rules);
-        if source_type.trainable {
+        // Ares 10053AC0 resumes past this experience block (0x629C5D) when
+        // the victim's house counts the squid's house an ally (the owner
+        // itself included), else at the block (0x629BF3).
+        let gains = !rules.ares()
+            || !self
+                .house_alliances
+                .is_allied(&self.interner, target.owner(), source.owner());
+        if gains && source_type.trainable {
             self.substrate
                 .entities
                 .get_mut(owner)

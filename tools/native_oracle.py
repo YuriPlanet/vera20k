@@ -12,6 +12,7 @@ from collections import deque
 from functools import lru_cache
 import hashlib
 import gzip
+import inspect
 import io
 import json
 import os
@@ -47,6 +48,27 @@ class OracleError(RuntimeError):
 
 class OracleMismatch(OracleError):
     """A comparison ran, and its native output or evidence differs from the reference."""
+
+
+def require(condition, message: str) -> None:
+    """A fixture or observation check that `python -O` cannot remove."""
+    if not condition:
+        raise OracleError(message)
+
+
+def edited_source(function, *edits: tuple[str, str]) -> str:
+    """`function`'s source with each (anchor, replacement) applied in order.
+
+    For harnesses that adapt a shared Python fixture in memory before exec: an
+    anchor that is missing or repeated fails instead of leaving the old setup.
+    """
+    source = inspect.getsource(function)
+    for anchor, replacement in edits:
+        count = source.count(anchor)
+        require(count == 1, f"{function.__qualname__}: fixture edit anchor occurs "
+                            f"{count} times: {anchor!r}")
+        source = source.replace(anchor, replacement)
+    return source
 
 
 class NativeCallTrace:
@@ -88,6 +110,16 @@ class NativeCallTrace:
             cleanup=cleanup, entry_fpcw=self.uc.reg_read(UC_X86_REG_FPCW)))
         self.pending.setdefault((caller, sp + 4 + cleanup), []).append(index)
         return index
+
+
+def stored_value(size: int, value: int) -> int:
+    """The bytes a UC_HOOK_MEM_WRITE store writes, as an unsigned integer.
+
+    For a store narrower than its source register, Unicorn passes the whole
+    register on some hosts (arm64) and only the stored bytes on others
+    (x86-64), so recording the raw hook value makes a corpus host-dependent.
+    """
+    return value & ((1 << (8 * size)) - 1)
 
 
 def reconstruct_byte_spans(before: bytes, changed: list) -> bytes:
@@ -484,6 +516,60 @@ def _canonical(data) -> bytes:
     return json.dumps(data, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 
+def corpus_text(data, depth=0) -> str:
+    """Committed corpus layout: one entry per line through two levels, compact JSON below.
+
+    Indented corpora were twice this size in every checkout, and the rows still diff by line.
+    """
+    indent = " " * (depth + 1)
+    if depth < 2 and isinstance(data, dict) and data:
+        entries = (f"{indent}{json.dumps(key)}: {corpus_text(value, depth + 1)}" for key, value in data.items())
+        return "{\n" + ",\n".join(entries) + "\n" + " " * depth + "}" + ("\n" if depth == 0 else "")
+    if depth < 2 and isinstance(data, list) and data and isinstance(data[0], (dict, list)):
+        entries = (indent + corpus_text(value, depth + 1) for value in data)
+        return "[\n" + ",\n".join(entries) + "\n" + " " * depth + "]" + ("\n" if depth == 0 else "")
+    return json.dumps(data, separators=(",", ":"), allow_nan=False) + ("\n" if depth == 0 else "")
+
+
+RNG_STATE_KEYS = ["disabled", "index_a", "index_b", "state"]
+
+
+def shared_rng_states(data: dict | list) -> dict:
+    """The corpus with each distinct RNG stream state stored once, in `shared_rng_states`.
+
+    A corpus that records every stream before and after each row repeats a few
+    250-word states thousands of times. Each state becomes `{"rng_state": n}`,
+    numbered in the order first met. Rust tests read the corpus through
+    `test_fixture::json`, which puts the states back, so they see the same data.
+    A corpus that is a bare list has no place for the table and becomes
+    `{"rows": list}`.
+    """
+    if isinstance(data, list):
+        data = {"rows": data}
+    if "shared_rng_states" in data:
+        raise OracleError("The corpus already stores its RNG states in shared_rng_states")
+    table, numbers = [], {}
+
+    def share(value):
+        if isinstance(value, dict):
+            if list(value) == ["rng_state"]:
+                raise OracleError("A corpus object already reads as an rng_state reference")
+            if sorted(value) == RNG_STATE_KEYS and isinstance(value["state"], list):
+                key = _canonical(value)
+                if key not in numbers:
+                    numbers[key] = len(table)
+                    table.append(value)
+                return {"rng_state": numbers[key]}
+            return {key: share(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [share(item) for item in value]
+        return value
+
+    shared = share(data)
+    shared["shared_rng_states"] = table
+    return shared
+
+
 def first_difference(expected, actual, path="$", limit=180) -> str | None:
     """Locate the first mismatch without dumping whole model states."""
     if type(expected) is not type(actual):
@@ -631,7 +717,7 @@ def finish_vectors(data, default_path: Path, *, provenance: dict, argv=None,
         archive_metadata = dict(provenance, payload_sha256=archive_record["canonical_payload_sha256"],
                                 raw_archive=archive_record, projected_payload_sha256=metadata["payload_sha256"])
         archive_metadata_text = json.dumps(archive_metadata, indent=2, allow_nan=False) + "\n"
-    payload_text = json.dumps(normalized, indent=2, allow_nan=False) + "\n"
+    payload_text = corpus_text(normalized)
     metadata_text = json.dumps(metadata, indent=2, allow_nan=False) + "\n"
     if difference := first_difference(sources, source_identity()):
         raise OracleError(f"Source changed during native generation: {difference}")

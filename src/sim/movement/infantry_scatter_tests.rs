@@ -82,7 +82,8 @@ fn player_scatter_event_gates_and_rng_prefix_match_native_gi() {
                 .set_object_alive_for_test(actor["alive"].as_u64().unwrap() != 0);
             man.lifecycle
                 .set_in_limbo_for_test(actor["limbo"].as_u64().unwrap() != 0);
-            man.tether
+            man.seldom
+                .tether
                 .set_for_test((actor["tether"].as_u64().unwrap() != 0).then_some(9));
             let mut loco = LocomotorState::for_test_kind(LocomotorKind::Walk);
             loco.set_walk_destination(
@@ -171,7 +172,7 @@ fn armed_teleport_destination_requires_the_current_cell_inputs() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -246,7 +247,7 @@ fn forced_gates_and_draw_match_original_hut_caller() {
                 ScatterFlags::new(true, true),
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .unwrap()
         );
@@ -323,7 +324,7 @@ fn forced_no_kidding_gates_match_native_walk_and_jumpjet_rows() {
                     1,
                     flags,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_eq!(admitted, flag("gate_admitted"), "{row}");
@@ -419,7 +420,7 @@ fn damage_gates_match_original_execution() {
                 1,
                 ScatterFlags::new(flag("forced", false), flag("no_kidding", false)),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(admitted, row["admitted"].as_bool().unwrap(), "{input}");
@@ -463,10 +464,66 @@ fn deploy_doing_head_refuses_a_human_owner_without_both_flags() {
                     1,
                     flags,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_eq!(admitted, !human, "human={human} flags={flags:?}");
         }
+    }
+}
+
+/// A Scatter record from another player can name any Foot. When the Scatter
+/// body fails on the actor it names (here: a type the rules do not define),
+/// the order is refused, the same way on every peer, instead of panicking.
+#[test]
+fn scatter_order_whose_body_fails_is_refused() {
+    let mut man = infantry();
+    man.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
+    man.lifecycle.set_object_alive_for_test(true);
+    man.lifecycle.set_in_limbo_for_test(false);
+    let mut sim = sim_with(man);
+    let rng = sim.scenario_rng.native_state_hex();
+    let applied = sim.apply_command(
+        "Allies",
+        &crate::sim::command::Command::Scatter { entity_id: 1 },
+        None,
+    );
+    assert!(!applied);
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+}
+
+/// InfantryClass::Set_Destination 51B1D2 calls Foot4D94B0; the Foot calls
+/// its installed Move_To at 4D965D independently of the receiver's class.
+#[test]
+fn infantry_can_order_its_authored_ground_locomotors() {
+    for clsid in [
+        "{55D141B8-DB94-11D1-AC98-006008055BB5}",
+        "{4A582742-9839-11D1-B709-00A024DDAFD1}",
+        "{4A582741-9839-11D1-B709-00A024DDAFD1}",
+        "{2BEA74E1-7CCA-11D3-BE14-00104B62A16C}",
+    ] {
+        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            &format!(
+                "[InfantryTypes]\n0=GI\n[GI]\nStrength=100\nSpeed=4\nSpeedType=Foot\nMovementZone=Infantry\nLocomotor={clsid}\n"
+            ),
+        );
+        let id = sim
+            .spawn_object("GI", "Americans", 15, 15, 0, &rules)
+            .unwrap();
+        let requested = NavTargetRef::cell(15, 21);
+        assert!(
+            sim.assign_infantry_destination(
+                id,
+                requested,
+                &rules,
+                Some(&registry),
+                &mut FrameEffects::default()
+            )
+            .unwrap(),
+            "{clsid}"
+        );
+        let actor = sim.entities().get(id).unwrap();
+        assert_eq!(actor.navigation.nav_com(), Some(requested));
+        assert_eq!(super::super::motion_query::is_moving(actor), Some(true));
     }
 }

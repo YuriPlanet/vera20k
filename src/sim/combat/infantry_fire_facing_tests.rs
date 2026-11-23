@@ -127,7 +127,7 @@ fn airstrike_primary_fire_keeps_the_existing_secondary_action() {
     }) {
         let mut store = pair();
         let firer = store.get_mut(1).unwrap();
-        firer.airstrike.set_test_link(Some(1));
+        firer.seldom.airstrike.set_test_link(Some(1));
         firer
             .mission_leaf
             .set_infantry_doing_verified(row["current_doing"].as_i64().unwrap() as i32)
@@ -175,6 +175,7 @@ fn infantry_refused_or_reloading_does_not_snap() {
             store
                 .get_mut(1)
                 .unwrap()
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::started(100, 20));
         }
@@ -260,26 +261,25 @@ fn infantry_speed_refusal_at_fire_frame_clears_firing_latch() {
 /// `[RocketeerSequence]`) hovering at 500 over (5, 5), firing at a GI three
 /// cells off.
 fn rocketeer_pair() -> (EntityStore, RuleSet) {
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n0=JJ\n1=E2\n\
+    let art_ini = IniFile::from_str(
+        "[ROCK]\nSequence=RocketeerSequence\nFireUp=2\n\
+         [RocketeerSequence]\nReady=0,1,1\nGuard=0,1,1\nWalk=8,6,6\nFireUp=164,6,6\n\
+         Fly=292,6,6\nHover=292,6,6\nFireFly=370,6,6\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[InfantryTypes]\n0=JJ\n1=E2\n\
          [JJ]\nStrength=125\nArmor=flak\nSpeed=9\nImage=ROCK\nPrimary=M60\nJumpJet=yes\n\
          BalloonHover=yes\nLocomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\n\
          SpeedType=Hover\nMovementZone=Fly\nJumpjetSpeed=30\nJumpjetHeight=500\n\
          [E2]\nStrength=125\nArmor=flak\nSpeed=4\n\
          [M60]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\n\
          [SA]\nVerses=100%,100%,100%,90%,70%,0%,100%,25%,25%,0%,0%\n",
-    ))
+        ),
+        &art_ini,
+    )
     .unwrap();
-    let art_ini = IniFile::from_str(
-        "[ROCK]\nSequence=RocketeerSequence\nFireUp=2\n\
-         [RocketeerSequence]\nReady=0,1,1\nGuard=0,1,1\nWalk=8,6,6\nFireUp=164,6,6\n\
-         Fly=292,6,6\nHover=292,6,6\nFireFly=370,6,6\n",
-    );
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    let registry = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini);
-    rules.replace_animation_sequences_for_test(
-        crate::rules::animation_sequence::build_animation_sequence_catalog(&rules, Some(&registry)),
-    );
     let mut store = EntityStore::new();
     let mut firer = make_infantry_entity(1, "JJ", 5, 5, 125);
     firer.body_facing = FacingClass::new(0x4000, 127);
@@ -306,7 +306,7 @@ fn jumpjet_fire_precedes_airstrike_retained_action() {
     use crate::sim::movement::infantry_action::DO_FIRE_FLY;
     let (mut store, rules) = rocketeer_pair();
     let firer = store.get_mut(1).unwrap();
-    firer.airstrike.set_test_link(Some(1));
+    firer.seldom.airstrike.set_test_link(Some(1));
     firer.mission_leaf.set_infantry_doing_verified(40).unwrap();
     firer
         .attack_target
@@ -387,7 +387,7 @@ fn production_rules(fire_up: u32) -> RuleSet {
     // The receiver-only fixture has the default Sight=1. Give this full-frame
     // scenario the retail GI sight/locomotor inputs so its target three cells
     // away is visible through the ordinary fog update and firing gates.
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+    let rules_ini = &IniFile::from_str(
         "[InfantryTypes]\n0=E1\n1=E2\n[BuildingTypes]\n0=TARGET\n\
          [E1]\nStrength=125\nArmor=flak\nSpeed=4\nSight=5\nImage=GI\nPrimary=M60\n\
          Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Infantry\n\
@@ -395,16 +395,13 @@ fn production_rules(fire_up: u32) -> RuleSet {
          [TARGET]\nStrength=125\nArmor=flak\nFoundation=2x3\n\
          [M60]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\n\
          [SA]\nVerses=100%,100%,100%,90%,70%,0%,100%,25%,25%,0%,0%\n",
-    ))
-    .unwrap();
+    );
     let art_ini = IniFile::from_str(&format!(
         "[GI]\nFireUp={fire_up}\nPrimaryFireFLH=80,20,40\nSequence=GISequence\n\
          [GISequence]\nReady=0,1,1\nGuard=0,1,1\nFireUp=8,6,6\n",
     ));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini),
-    );
     rules
 }
 
@@ -541,6 +538,7 @@ fn cell_and_building_fire_headings_match_original_coordinate_getters() {
                 let mut target = make_structure_entity(2, "TARGET", 8, 5, 125, 125);
                 // Construction stamps the type's `Foundation=2x3`.
                 target
+                    .seldom
                     .type_facts
                     .set_foundation_for_test("2x3".to_string().into());
                 store.insert(target);
@@ -621,11 +619,12 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let command = |sim: &mut Simulation, command: Command| {
         assert!(sim.apply_command_with_overlays(
+            None,
             "Americans",
             &command,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
     };
     let frame = |sim: &mut Simulation| {

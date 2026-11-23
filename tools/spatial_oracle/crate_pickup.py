@@ -12,6 +12,7 @@ import struct
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESP
 from tools.native_oracle import SCRATCH, RET_MAGIC, run_checked, finish_vectors, provenance
+from tools.native_oracle import require
 from tools.spatial_oracle.map_queries import dwords, packed
 from tools.spatial_oracle.crate_speed_effect import fixture, CELL, RULES, HOUSES
 
@@ -274,7 +275,7 @@ def cash_case(case):
     for name,pointer in overlay_types.items():
         f.ordered_ini({name:f.rules_input[name]})
         assert f.string(pointer+0x24)==name, (name,f.string(pointer+0x24))
-        assert f.call(0x5295F0,[pointer+0x24,0x833578,0],ecx=INI)&255, (name,'native Crate read refused')
+        require(f.call(0x5295F0,[pointer+0x24,0x833578,0],ecx=INI)&255, f'{name}: native Crate read refused')
         u.reg_write(UC_X86_REG_ESI,pointer);u.reg_write(UC_X86_REG_EDI,pointer+0x24)
         u.reg_write(UC_X86_REG_EBX,INI)
         u.reg_write(UC_X86_REG_ESP,sp)

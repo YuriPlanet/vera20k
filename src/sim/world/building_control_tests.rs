@@ -86,7 +86,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         .set_in_limbo_for_test(input["limbo"].as_bool().unwrap_or(false));
     if input["mind_controlled"] == true {
         // Prepared native +2C0 pointer control. This does not execute capture.
-        actor.mind_control = MindControlLink::controlled_by_for_test(ACTOR + 1);
+        actor.seldom.mind_control = MindControlLink::controlled_by_for_test(ACTOR + 1);
     }
     sim.substrate.entities.insert(actor);
     (sim, rules)
@@ -125,6 +125,61 @@ fn building_command_capability_matches_native_rally_and_redeploy_gates() {
 }
 
 #[test]
+fn construction_yard_redeploy_follows_the_admitted_rule() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let row = corpus()
+        .into_iter()
+        .find(|row| {
+            let input = &row["input"];
+            input["profile"] == "construction_yard"
+                && input["mcv_redeploy"] == true
+                && input["emp"].is_null()
+                && row["expected"]["controllable"] == true
+        })
+        .unwrap();
+    let (mut sim, rules) = fixture(&row["input"]);
+    assert!(sim.techno_player_controllable(ACTOR, &rules));
+
+    let mode = ScenarioGameMode::Skirmish;
+    let policy = mode
+        .stock_rule_policy(None)
+        .with_allows_construction_yard_redeploy(false);
+    sim.install_session_admission(mode, None, policy);
+    assert!(!sim.techno_player_controllable(ACTOR, &rules));
+}
+
+#[test]
+fn native_player_identity_is_independent_of_the_discovery_policy() {
+    use crate::sim::scenario_session::ScenarioGameMode::{Campaign, Skirmish};
+
+    let mut sim = Simulation::new();
+    let player = sim.intern("Americans");
+    sim.houses
+        .register(HouseState::new(player, 0, None, true, 0, 1));
+    sim.session.set_current_house_for_test(Some(player));
+    let scripted = sim.intern("Russians");
+    let mut house = HouseState::new(scripted, 1, None, false, 0, 1);
+    house.set_player_control_for_test(true);
+    sim.houses.register(house);
+
+    let campaign = Campaign
+        .stock_rule_policy(None)
+        .with_uses_campaign_discovery(false)
+        .with_counts_player_control_as_human(false);
+    sim.install_session_admission(Campaign, None, campaign);
+    assert!(sim.house_is_human_player(scripted));
+    assert_eq!(sim.human_player_clients(scripted), [player]);
+
+    let skirmish = Skirmish
+        .stock_rule_policy(None)
+        .with_uses_campaign_discovery(true);
+    sim.install_session_admission(Skirmish, None, skirmish);
+    assert!(!sim.house_is_human_player(scripted));
+    assert!(sim.human_player_clients(scripted).is_empty());
+}
+
+#[test]
 fn building_mission_only_selection_uses_native_virtual_control_admission() {
     let mut compared = 0;
     for row in corpus() {
@@ -141,6 +196,7 @@ fn building_mission_only_selection_uses_native_virtual_control_admission() {
                     .entities
                     .get_mut(ACTOR)
                     .unwrap()
+                    .seldom
                     .mission_only
                     .mark();
             }
@@ -157,6 +213,7 @@ fn building_mission_only_selection_uses_native_virtual_control_admission() {
                     .entities
                     .get(ACTOR)
                     .unwrap()
+                    .seldom
                     .selection
                     .is_selected()
             );

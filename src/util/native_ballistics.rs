@@ -4,11 +4,25 @@
 
 use super::native_x87::{NativeF64Bits, X87Chop53 as X, X87Ordering, X87Value};
 
-/// The gravity both helpers take, as their callers hand it over: Rules
-/// `Gravity=` FILDed, halved for a `Floater=` projectile (`0x0048ACF0`), and
+/// The gravity source a ballistic helper applies: the stock Rules
+/// `Gravity=` integer, or the Phobos `[Projectile] Gravity=` double
+/// (`BulletTypeExt::GetAdjustedGravity`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BallisticGravity {
+    Rules(i32),
+    Value(NativeF64Bits),
+}
+
+/// The gravity both helpers take, as their callers hand it over: the
+/// selected value, halved for a `Floater=` projectile (`0x0048ACF0`), and
 /// stored to a double.
-fn ballistic_gravity(gravity: i32, floater: bool) -> X87Value {
-    let mut gravity = X::load_i32(gravity);
+fn ballistic_gravity(gravity: BallisticGravity, floater: bool) -> X87Value {
+    let mut gravity = match gravity {
+        BallisticGravity::Rules(value) => X::load_i32(value),
+        BallisticGravity::Value(bits) => {
+            X::load_f64(bits).expect("the Phobos Gravity= reader drops a non-finite value")
+        }
+    };
     if floater {
         gravity = X::mul(gravity, X::load_f64(NativeF64Bits::HALF).unwrap());
     }
@@ -22,7 +36,11 @@ fn ballistic_gravity(gravity: i32, floater: bool) -> X87Value {
 /// stores, approximate square root and truncation can change flight/contact.
 /// Execution corpora: `tools/projectile_oracle/fireat_speed.json` and
 /// `tools/rules_oracle/weapon_speed_order.json`.
-pub(crate) fn ballistic_launch_speed(distance: i32, gravity: i32, floater: bool) -> i32 {
+pub(crate) fn ballistic_launch_speed(
+    distance: i32,
+    gravity: BallisticGravity,
+    floater: bool,
+) -> i32 {
     let gravity = ballistic_gravity(gravity, floater);
     let product = X::mul(
         X::mul(X::load_i32(distance), gravity),
@@ -54,7 +72,7 @@ pub(crate) fn ballistic_can_reach(
     speed: i32,
     distance: i32,
     height: i32,
-    gravity: i32,
+    gravity: BallisticGravity,
     floater: bool,
 ) -> bool {
     let gravity = ballistic_gravity(gravity, floater);

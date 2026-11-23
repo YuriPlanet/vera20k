@@ -1,7 +1,8 @@
 """Native references for the house wallet's money primitives.
 
 Run python -m tools.house_money_oracle --check (or explicit --write).
-Rust consumer: src/sim/economy.rs (tests).
+Rust consumers: src/sim/economy.rs (tests); the fill_silos rows,
+src/sim/scenario_post_map.rs (tests).
 
 Sections, each case executed in a fresh emulator on a house whose silo
 storage (+0x2FC) is empty. The first four sections use capacity (+0x310)

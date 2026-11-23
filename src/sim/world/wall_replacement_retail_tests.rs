@@ -27,6 +27,7 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
     )
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
+    scene.runtime.simulation.batch_target_scans();
     // Periodic frame hashes feed replay and sync checks, which nothing here
     // reads; an interval no tick reaches skips them (11-12% of each frame in
     // this unoptimized test build).
@@ -70,11 +71,11 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
             .collect();
         scene
             .runtime
-            .advance_frame(&due, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
     }
     let rules = &scene.runtime.resources.rules;
-    let registry = &scene.runtime.resources.overlay_registry;
+    let registry = scene.runtime.resources.rules.overlay_registry();
     let sim = &mut scene.runtime.simulation;
     let overlay = registry.id_for_name("GAWALL").unwrap();
     assert!(sim.houses[&owner].is_human());
@@ -112,7 +113,7 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
             cell: *origin,
         },
         Some(registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     // Observe the production call before the ordinary frame's shared drain.
     // No health, rule, pose, timer or RNG input is overridden by this witness.
@@ -160,7 +161,7 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
         crate::sim::production::ready_building_entity_for_owner(sim, rules, owner, wall_type)
             .is_none()
     );
-    sim.process_pending_delete_with(rules, Some(registry), FrameEffects::default(), 1, true);
+    sim.process_pending_delete_with(rules, &mut FrameEffects::default(), 1, true);
     for id in buildings {
         assert!(sim.entities().get(id).is_none());
     }
@@ -184,6 +185,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
     )
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
+    scene.runtime.simulation.batch_target_scans();
     // Periodic frame hashes feed replay and sync checks, which nothing here
     // reads; an interval no tick reaches skips them (11-12% of each frame in
     // this unoptimized test build).
@@ -203,7 +205,8 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
     let wall = scene
         .runtime
         .resources
-        .overlay_registry
+        .rules
+        .overlay_registry()
         .id_for_name("GAWALL")
         .unwrap();
     let mut orders: Vec<_> = profile["commands"]
@@ -305,7 +308,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
                 "GAWALL",
                 source.0,
                 source.1,
-                Some(&scene.runtime.resources.overlay_registry),
+                Some(scene.runtime.resources.rules.overlay_registry()),
             )
             .unwrap();
             assert!(
@@ -336,7 +339,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
         }
         let output = scene
             .runtime
-            .advance_frame(&due, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         if let Some((product, credits, spent)) = replacement {
             let sim = scene.sim();
@@ -367,7 +370,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
             for _ in 0..180 {
                 let output = scene
                     .runtime
-                    .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&[], 22, TickLane::Ordinary, &mut FrameEffects::default())
                     .unwrap();
                 assert!(
                     !output
@@ -413,7 +416,12 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
                 };
                 let output = scene
                     .runtime
-                    .advance_frame(commands, 22, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(
+                        commands,
+                        22,
+                        TickLane::Ordinary,
+                        &mut FrameEffects::default(),
+                    )
                     .unwrap();
                 if output
                     .fire_events
@@ -439,7 +447,12 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
             );
             let output = scene
                 .runtime
-                .advance_frame(&[sell], 22, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(
+                    &[sell],
+                    22,
+                    TickLane::Ordinary,
+                    &mut FrameEffects::default(),
+                )
                 .unwrap();
             assert!(
                 scene

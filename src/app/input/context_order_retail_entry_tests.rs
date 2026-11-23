@@ -102,6 +102,7 @@ fn chord_cursor(
         modifier,
         force_move_key,
         false,
+        &mut Default::default(),
     ))
 }
 
@@ -184,6 +185,178 @@ fn a_players_vehicle_and_rifleman_grind_at_their_own_grinder() {
     assert!(
         sim.houses()[&owner].economy().credits() > credits,
         "refunded"
+    );
+}
+
+#[test]
+fn delegated_infantry_grinds_when_its_house_is_hostile_to_the_viewer() {
+    use crate::app::input::entity_pick::hover_object_by_id;
+    use crate::sim::command::MEGAMISSION_OPCODE;
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::world::TickLane;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let mut sim = arena(rules);
+    sim.spawn_object("GAPOWR", "Americans", 3, 3, 0, rules)
+        .unwrap();
+    let grinder = sim
+        .spawn_object("YAGRND", "Russians", 20, 16, 0, rules)
+        .unwrap();
+    let infantry = sim
+        .spawn_object("E1", "Russians", 14, 17, 0, rules)
+        .unwrap();
+    sim.session_mut_for_test()
+        .set_game_mode(ScenarioGameMode::Lan);
+    sim.install_network_timing(10);
+    sim.network_command_queues()
+        .install_timing(0, std::num::NonZeroU8::new(5).unwrap(), [0]);
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: 1,
+        level: ControlGrantLevel::UnitsOnly,
+    }])
+    .unwrap();
+    let Some(HoverObject::Techno(hover)) = hover_object_by_id(&sim, grinder, "Americans") else {
+        panic!("expected the grinder's live hover classification");
+    };
+    assert_eq!(hover.kind, HoverTargetKind::EnemyStructure);
+    assert_eq!(
+        cursor_id_for_feedback(capability_cursor_for_hover(
+            &sim,
+            &[infantry],
+            Some(infantry),
+            &hover,
+            Some(rules),
+            Some(&registry),
+            OrderModifier::Normal,
+            false,
+            false,
+            &mut Default::default(),
+        )),
+        Some(CursorId::Enter)
+    );
+    let mut selected = vec![infantry];
+    let orders = entry_orders(
+        &sim,
+        rules,
+        &[infantry],
+        &mut selected,
+        &hover,
+        OrderModifier::Normal,
+        false,
+        Some(&registry),
+    )
+    .unwrap();
+    assert_eq!(orders, [eaten(infantry, grinder)]);
+    let delegated = sim.interner().get("Russians").unwrap();
+    let credits = sim.houses()[&delegated].economy().credits();
+    for order in orders {
+        assert!(
+            crate::app::input::commands::schedule_command_in_sim(&mut sim, "Americans", order)
+                .is_some()
+        );
+    }
+    let mut queue = sim.network_command_queues();
+    let records: Vec<_> = queue
+        .local_records()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect();
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| (record.house_id(), record.opcode()))
+            .collect::<Vec<_>>(),
+        [(0, MEGAMISSION_OPCODE)]
+    );
+    queue.commit_local_mirrors(&records).unwrap();
+    for _ in 0..900 {
+        let commands = sim.take_due_commands();
+        sim.advance_app_frame(
+            &commands,
+            rules,
+            67,
+            TickLane::Ordinary,
+            &mut Default::default(),
+        )
+        .unwrap();
+        if sim.entities().get(infantry).is_none() {
+            break;
+        }
+    }
+    assert!(sim.entities().get(infantry).is_none());
+    assert!(sim.houses()[&delegated].economy().credits() > credits);
+}
+
+/// An unarmed Infantryman reaches the Grinder row through base Select
+/// (0x0070056C..0x007005E6), even across an alliance. Delegated command
+/// authority over that Grinder does not let a different House feed it.
+#[test]
+fn allied_delegated_grinder_refuses_other_house_infantry_on_hover_and_click() {
+    use crate::app::input::entity_pick::hover_object_by_id;
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let (mut sim, grinder, _, _) = scene(rules, "Russians");
+    let infantry = sim
+        .spawn_object("CIV1", "Americans", 14, 17, 0, rules)
+        .unwrap();
+    sim.install_session_mode(ScenarioGameMode::Lan);
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: 1,
+        level: ControlGrantLevel::FullControl,
+    }])
+    .unwrap();
+
+    let Some(HoverObject::Techno(hover)) = hover_object_by_id(&sim, grinder, "Americans") else {
+        panic!("expected the Grinder's live hover classification");
+    };
+    assert_eq!(hover.kind, HoverTargetKind::FriendlyStructure);
+    assert_eq!(
+        cursor_id_for_feedback(capability_cursor_for_hover(
+            &sim,
+            &[infantry],
+            Some(infantry),
+            &hover,
+            Some(rules),
+            Some(&registry),
+            OrderModifier::Normal,
+            false,
+            false,
+            &mut Default::default(),
+        )),
+        Some(CursorId::NoEnter)
+    );
+    assert_eq!(
+        entry_orders(
+            &sim,
+            rules,
+            &[infantry],
+            &mut vec![infantry],
+            &hover,
+            OrderModifier::Normal,
+            false,
+            Some(&registry),
+        ),
+        Some(Vec::new())
     );
 }
 
@@ -464,8 +637,7 @@ fn a_damaged_tank_sent_to_the_depot_is_repaired() {
     let rules = &retail.rules;
     let (mut sim, depot, tank, _) = scene_with(rules, "GADEPT", "Americans");
     let strength = rules.object("MTNK").unwrap().strength;
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .health
         .set_for_test(strength / 2);
@@ -574,6 +746,7 @@ fn screen_overlap_with_hovering_rocketeer_keeps_bunker_enter_action() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )),
         Some(CursorId::Enter)
     );
@@ -699,6 +872,7 @@ fn carrier_cursor(
         modifier,
         modifier == OrderModifier::ForceMove,
         false,
+        &mut Default::default(),
     ))
 }
 
@@ -733,7 +907,7 @@ fn board(sim: &mut Simulation, rules: &RuleSet, passenger: u64, carrier: u64, fr
         if sim
             .entities()
             .get(passenger)
-            .is_some_and(|entity| entity.passenger_role.is_inside_transport())
+            .is_some_and(|entity| entity.passenger_role().is_inside_transport())
         {
             break;
         }
@@ -743,7 +917,7 @@ fn board(sim: &mut Simulation, rules: &RuleSet, passenger: u64, carrier: u64, fr
         sim.entities()
             .get(carrier)
             .unwrap()
-            .passenger_role
+            .passenger_role()
             .passenger_count(),
         1
     );
@@ -940,9 +1114,9 @@ fn a_gi_selected_with_the_ifv_boards_it_when_the_ifv_is_clicked() {
     let rules = &retail.rules;
     let (mut sim, ifv, _, gi) = carrier_scene(rules, "FV");
     for id in [gi, ifv] {
-        sim.entities_mut_for_test()
-            .get_mut(id)
+        sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
     }
@@ -1073,7 +1247,9 @@ fn a_deployed_gis_alt_over_the_ifv_skips_the_row() {
 /// `Dock=` list (only GAAIRC and AMRADR) and answers NoEnter (0x1F). The
 /// cursor is NoEnter; Aircraft ClickedAction (`0x00417BD0`) passes 0x1F to
 /// Foot ClickedAction (`0x004D74E0`), whose default orders nothing, so the
-/// click orders nothing and no longer selects the depot.
+/// click orders nothing and no longer selects the depot. Ares drops the
+/// `UnitRepair=` gate (hook `0x417E16`), so there the jet keeps Select
+/// (`sim::world::passenger_entry_tests`).
 #[test]
 fn a_players_jet_over_the_players_service_depot_gets_no_enter() {
     let Some((retail, registry)) = retail() else {
@@ -1107,4 +1283,100 @@ fn a_players_jet_over_the_players_service_depot_gets_no_enter() {
             "{jet}"
         );
     }
+}
+
+/// A player's empty Carryall (`Carryall=`, `+0xDFC`) over the player's tank
+/// shows the Tote row (What_Action `0x00417D06..0x00417D75`, action 0x11),
+/// and its click sends Move onto the tank (Aircraft ClickedAction
+/// `0x00417BD0` case 0x11, `Player_Assign_Mission(Move, NULL, unit)`).
+#[test]
+fn a_carryall_over_the_players_tank_totes_it() {
+    let ini = crate::rules::ini_parser::IniFile::from_str(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [AircraftTypes]\n0=CARRY\n[CARRY]\nCarryall=yes\nLandable=yes\nStrength=75\n\
+         Locomotor={4A582746-9839-11d1-B709-00A024DDAFD1}\n\
+         [VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=4\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
+    let mut sim = arena(&rules);
+    let carryall = sim
+        .spawn_object("CARRY", "Americans", 13, 16, 0, &rules)
+        .expect("carryall");
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 16, 16, 0, &rules)
+        .expect("tank");
+    let hover = HoverTargetKindWithId {
+        stable_id: tank,
+        kind: HoverTargetKind::FriendlyUnit,
+    };
+    assert_eq!(
+        cursor_id_for_feedback(capability_cursor_for_hover(
+            &sim,
+            &[carryall],
+            Some(carryall),
+            &hover,
+            Some(&rules),
+            Some(&registry),
+            OrderModifier::Normal,
+            false,
+            false,
+            &mut Default::default(),
+        )),
+        Some(CursorId::Tote)
+    );
+    let mut selected = vec![carryall];
+    assert_eq!(
+        entry_orders(
+            &sim,
+            &rules,
+            &[carryall],
+            &mut selected,
+            &hover,
+            OrderModifier::Normal,
+            false,
+            Some(&registry),
+        ),
+        Some(vec![Command::MoveToObject {
+            entity_id: carryall,
+            target_id: tank,
+        }])
+    );
+    assert!(selected.is_empty());
+}
+
+/// A Carryall's hold counts (`+0x114`, Aircraft What_Action
+/// `0x00417DCD..0x00417DDA`) though its type has no `Passengers=`: loaded,
+/// its self-click offers Unload.
+#[test]
+fn a_loaded_carryall_offers_unload() {
+    let ini = crate::rules::ini_parser::IniFile::from_str(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [AircraftTypes]\n0=CARRY\n[CARRY]\nCarryall=yes\nLandable=yes\nStrength=75\n\
+         Locomotor={4A582746-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut sim = arena(&rules);
+    let carryall = sim
+        .spawn_object("CARRY", "Americans", 13, 16, 0, &rules)
+        .expect("carryall");
+    let owner = sim.interner().get("Americans");
+    let unload = |sim: &Simulation| {
+        let entity = sim.entities().get(carryall).unwrap();
+        let object = sim.interner().object_type(entity.type_ref(), &rules);
+        crate::app::input::transport_orders::unload_command(sim, entity, object, owner)
+    };
+    assert_eq!(unload(&sim), None, "empty");
+    let mut cargo = crate::sim::passenger::PassengerCargo::new(0, 0.0);
+    cargo.board_forced_chain(&[(999, 2.0)]);
+    sim.entity_mut_for_test(carryall)
+        .unwrap()
+        .set_passenger_role_for_test(crate::sim::passenger::PassengerRole::transport(cargo));
+    assert_eq!(
+        unload(&sim),
+        Some(Command::UnloadPassengers {
+            transport_id: carryall
+        })
+    );
 }

@@ -11,10 +11,7 @@
 //! - Depends on `assets/` only.
 
 use crate::assets::format_sniff::detect_format;
-use crate::assets::hva_file::HvaFile;
 use crate::assets::mix_archive::MixArchive;
-use crate::assets::shp_file::ShpFile;
-use crate::assets::vpl_file::VplFile;
 
 /// Short stable tag plus a one-line structural summary.
 #[derive(Debug, Clone)]
@@ -47,10 +44,6 @@ pub fn identify(data: &[u8]) -> Identified {
     }
 
     // Everything below is a case format_sniff intentionally skips.
-    if let Some(behind_gate) = reclassify_behind_mix_gate(data) {
-        return behind_gate;
-    }
-
     if &data[0..3] == b"BIK" {
         let revision = data.get(3).map(|b| *b as char).unwrap_or('?');
         let (w, h) = if data.len() >= 28 {
@@ -114,87 +107,6 @@ pub fn identify(data: &[u8]) -> Identified {
         ),
     }
 }
-
-/// Recover leaf formats that the upstream nested-MIX gate swallows.
-///
-/// `detect_format` tests for a nested MIX *before* it tests for TMP, SHP, PAL,
-/// HVA or VPL, and that container test is a heuristic keyed on a leading zero
-/// word plus loose size arithmetic. Real assets satisfy it: `POWERP.SHP` reads
-/// as a container, and so does any palette whose first entry is black. Once
-/// that gate fires the leaf checks never run and the asset comes back as
-/// `None`, which a browser would report as an archive.
-///
-/// Rather than fork the certified sniffer — the retail certification suite
-/// walks it, so its verdicts must not move — this reruns the checks it skipped,
-/// in its own order, using decisive tests: an exact length for PAL, the same
-/// explicit 60x30 header test for TMP, and full parses for the rest. A
-/// genuinely nested MIX fails all of them and falls through to the MIX arm.
-fn reclassify_behind_mix_gate(data: &[u8]) -> Option<Identified> {
-    // The gate only fires on a leading zero word; nothing else can be affected.
-    if data[0] != 0 || data[1] != 0 {
-        return None;
-    }
-
-    // PAL: exactly 768 bytes, the same unconditional rule the sniffer uses.
-    if data.len() == PAL_FILE_SIZE {
-        return Some(Identified {
-            format: "pal",
-            detail: detail_for("pal", data),
-        });
-    }
-
-    // TMP: the sniffer's own explicit test — 60x30 tiles at offsets 8 and 12.
-    if data.len() >= 16 {
-        let tile_w = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
-        let tile_h = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
-        if tile_w == RA2_TILE_WIDTH && tile_h == RA2_TILE_HEIGHT {
-            return Some(Identified {
-                format: "tmp",
-                detail: detail_for("tmp", data),
-            });
-        }
-    }
-
-    // SHP: a full parse is decisive where the container heuristic is not.
-    if let Ok(shp) = ShpFile::from_bytes(data)
-        && !shp.frames.is_empty()
-        && shp.width > 0
-        && shp.height > 0
-    {
-        return Some(Identified {
-            format: "shp",
-            detail: format!(
-                "SHP(TS) {}x{}, {} frames",
-                shp.width,
-                shp.height,
-                shp.frames.len()
-            ),
-        });
-    }
-
-    // HVA and VPL both carry exact size relationships, so their parsers are
-    // decisive too. Order matches the sniffer's.
-    if HvaFile::from_bytes(data).is_ok() {
-        return Some(Identified {
-            format: "hva",
-            detail: detail_for("hva", data),
-        });
-    }
-    if VplFile::from_bytes(data).is_ok() {
-        return Some(Identified {
-            format: "vpl",
-            detail: detail_for("vpl", data),
-        });
-    }
-
-    None
-}
-
-/// A .pal is exactly 256 RGB triplets.
-const PAL_FILE_SIZE: usize = 768;
-/// RA2 isometric tile dimensions, as the sniffer tests them.
-const RA2_TILE_WIDTH: u32 = 60;
-const RA2_TILE_HEIGHT: u32 = 30;
 
 /// Build the structural detail line for a format the sniffer already named.
 /// Header fields are read directly here so a malformed body cannot suppress the
@@ -306,7 +218,7 @@ fn ascii_preview(data: &[u8], max: usize) -> String {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_asset_tools))]
 mod tests {
     use super::*;
 

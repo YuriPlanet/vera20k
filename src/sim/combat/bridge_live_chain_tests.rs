@@ -106,7 +106,7 @@ fn restore_saved_scenario(
     restored
         .restore_map_authority_after_snapshot_load(
             &resources.rules,
-            &resources.overlay_registry,
+            resources.rules.overlay_registry(),
             None,
         )
         .expect("saved map and bridge authority restore");
@@ -283,7 +283,7 @@ fn assert_live_projectile_restore_continuation(
                 &[],
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("first restored Bullet continuation frame");
         assert!(first_output.tick.frame_committed);
@@ -297,7 +297,7 @@ fn assert_live_projectile_restore_continuation(
                 &[],
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("second restored Bullet continuation frame");
         assert!(second_output.tick.frame_committed);
@@ -382,7 +382,7 @@ fn assert_debris_restore_continuation(
                 &[],
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("first restored continuation frame");
         for (id, coord) in before {
@@ -398,7 +398,7 @@ fn assert_debris_restore_continuation(
                 &[],
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("second restored continuation frame");
         assert_eq!(
@@ -549,7 +549,7 @@ fn retail_bridge_forcefire_chain(vehicle_name: &str, weapon_name: &str, projecti
                 &commands,
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("ordinary production frame");
         assert!(

@@ -2,20 +2,15 @@
 //!
 //! Split from the presentation render path. Part of the app layer — may depend on everything.
 
-use std::collections::HashMap;
-
 use crate::app::AppState;
+use crate::app::match_runtime::sim_host::SimWrite;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
-use crate::sim::production;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "ground_command_native_tests.rs"]
 mod ground_command_native_tests;
-
-/// Default owner name when no playable house is found.
-const DEFAULT_OWNER: &str = "Americans";
 
 /// Intern a string (owner name or type id) against the live simulation's
 /// interner, returning its InternedId. Returns the default ID when there is
@@ -24,20 +19,10 @@ fn intern_in_sim(state: &mut AppState, s: &str) -> InternedId {
     state
         .match_state
         .sim_runtime
-        .as_mut()
+        .write_sim(SimWrite::Command)
         .map(|rt| &mut rt.simulation)
         .map(|sim| sim.intern(s))
         .unwrap_or_default()
-}
-
-/// Resolve the local owner and return the owned String.
-///
-/// Read-only: identity comes from the live scenario's saved current House
-/// (or the sandbox heuristic when absent). Command issue never rewrites it —
-/// the old per-action override write made "who am I" drift with whatever
-/// the heuristic last returned, a lockstep hazard.
-fn resolve_owner(state: &mut AppState) -> String {
-    preferred_local_owner(state).unwrap_or_else(|| DEFAULT_OWNER.to_string())
 }
 
 /// Queue `repeat` builds of `type_id` as `repeat` ordinary PRODUCE events.
@@ -50,7 +35,9 @@ fn resolve_owner(state: &mut AppState) -> String {
 /// hash exactly like repeated clicks. All of them carry the current tick, so
 /// they execute in one frame and in issue order.
 pub(crate) fn queue_build_by_type(state: &mut AppState, type_id: &str, repeat: u32) {
-    let owner: String = resolve_owner(state);
+    let Some(owner) = preferred_command_owner(state) else {
+        return;
+    };
     let type_interned = intern_in_sim(state, type_id);
     for _ in 0..repeat.max(1) {
         schedule_command(
@@ -70,8 +57,10 @@ pub(crate) fn queue_build_by_type(state: &mut AppState, type_id: &str, repeat: u
 }
 
 pub(crate) fn suspend_build(state: &mut AppState, type_id: &str) {
-    let owner: String = resolve_owner(state);
-    let record = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+    let Some(owner) = preferred_command_owner(state) else {
+        return;
+    };
+    let record = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         sim.encode_production_record(
             sim.interner().get(&owner)?,
@@ -90,21 +79,10 @@ pub(crate) fn suspend_build(state: &mut AppState, type_id: &str) {
     );
 }
 
-pub(crate) fn cycle_active_producer(
-    state: &mut AppState,
-    category: production::ProductionCategory,
-) {
-    let owner: String = resolve_owner(state);
-    schedule_command(state, &owner, Command::CycleProducerFocus { category });
-    log::info!(
-        "Producer focus cycle queued: owner={} category={} issue_frame=current",
-        owner,
-        category.label()
-    );
-}
-
 pub(crate) fn cancel_build_by_type(state: &mut AppState, type_id: &str, all: bool) {
-    let owner: String = resolve_owner(state);
+    let Some(owner) = preferred_command_owner(state) else {
+        return;
+    };
     let type_interned = intern_in_sim(state, type_id);
     schedule_command(
         state,
@@ -127,7 +105,7 @@ fn visible_object_under_point(state: &AppState, world_x: f32, world_y: f32) -> O
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)?;
     let owner = preferred_local_owner(state)?;
     crate::app::input::entity_pick::hover_target_at_point(
@@ -158,7 +136,7 @@ fn super_weapon_pointer_target_is_valid(
         .is_some_and(|target| {
             target.category() == crate::map::entities::EntityCategory::Structure
                 && crate::map::houses::is_allied_with(
-                    sim.house_alliances(),
+                    sim.house_alliances().as_map(),
                     sim.interner().resolve(target.owner()),
                     sim.interner().resolve(viewer),
                 )
@@ -171,7 +149,7 @@ pub(crate) fn super_weapon_pointer_target_at_cursor_is_valid(
     state: &AppState,
     section: &str,
 ) -> bool {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return true;
     };
     let Some(sw) = runtime.resources.rules.super_weapon(section) else {
@@ -198,19 +176,22 @@ pub(crate) fn super_weapon_pointer_target_at_cursor_is_valid(
     )
 }
 
+// RESIDUAL (no retail map starts with a building owned by a PlayerControl
+// house other than the player's): DetermineAction's repair
+// (`0x006927EE`) and sell (`0x006929E5`) tests ask `HouseClass::IsHumanPlayer @
+// 0x0050B6F0`, which in a campaign also passes for a PlayerControl house; VERA
+// takes only the local player's own buildings.
 fn own_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let sim = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|rt| &rt.simulation)?;
-    let owner = preferred_local_owner(state)?;
+    let control = sim.control_projection();
+    let owner = control.local_command_house()?;
     let entity = sim.entities().get(stable_id)?;
     (entity.category() == EntityCategory::Structure
-        && sim
-            .interner()
-            .resolve(entity.owner())
-            .eq_ignore_ascii_case(&owner))
+        && control.can_manage_from(entity.owner(), owner))
     .then_some(stable_id)
 }
 
@@ -230,7 +211,7 @@ pub(crate) fn own_repairable_building_under_point(
 
 fn own_repairable_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let id = own_building_id(state, stable_id)?;
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     crate::sim::production::can_repair_building(sim, state.rules()?, id).then_some(id)
 }
 
@@ -247,8 +228,32 @@ pub(crate) fn own_sellable_building_under_point(
 
 fn own_sellable_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let id = own_building_id(state, stable_id)?;
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     crate::sim::production::can_sell_building(sim, state.rules()?, id).then_some(id)
+}
+
+/// The local player's own Unit or Aircraft under the given world point when
+/// the sell cursor takes it: Ares 3.0 DisplayClass_ChooseAction_CanSell
+/// (10057E70, hook 0x6929FC) answers SellUnit once `DetermineAction
+/// 0x006929F2` found the object's owner the player and its CanBeSold
+/// (`production::foot_can_be_sold`) true, while Ares plays.
+pub(crate) fn own_sellable_unit_under_point(
+    state: &AppState,
+    world_x: f32,
+    world_y: f32,
+) -> Option<u64> {
+    own_sellable_unit_id(state, visible_object_under_point(state, world_x, world_y)?)
+}
+
+fn own_sellable_unit_id(state: &AppState, stable_id: u64) -> Option<u64> {
+    let rules = state.rules().filter(|rules| rules.ares())?;
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
+    let control = sim.control_projection();
+    let owner = control.local_command_house()?;
+    let entity = sim.entities().get(stable_id)?;
+    (control.can_manage_from(entity.owner(), owner)
+        && crate::sim::production::foot_can_be_sold(sim, rules, stable_id))
+    .then_some(stable_id)
 }
 
 pub(crate) fn sell_wall_under_cursor_is_eligible(state: &AppState) -> bool {
@@ -272,7 +277,7 @@ pub(crate) fn sell_wall_under_cursor_is_eligible(state: &AppState) -> bool {
         state
             .match_state
             .sim_runtime
-            .as_ref()
+            .runtime()
             .map(|rt| &rt.simulation),
         state.overlay_registry(),
     ) {
@@ -323,17 +328,15 @@ fn sell_wall_command_for_cell(
     if !overlays.flags(overlay_id).is_some_and(|flags| flags.wall) {
         return None;
     }
-    let wall_owner = cell.wall_owner?;
-    let wall_owner_house = sim.houses().get(&wall_owner)?;
-    let owner_is_human_player = if sim.session().game_mode_nonzero() {
-        wall_owner == local_owner_id
-    } else {
-        wall_owner_house.is_human() || wall_owner_house.player_control()
-    };
-    owner_is_human_player.then_some(Command::SellWallAtCell {
-        x: rx as i16,
-        y: ry as i16,
-    })
+    // The wall's owner must pass `HouseClass::IsHumanPlayer @ 0x0050B6F0`,
+    // asked of the local player's client: its PlayerPtr is the current house
+    // (`scenario_local_owner`).
+    sim.control_projection()
+        .can_manage(cell.wall_owner?)
+        .then_some(Command::SellWallAtCell {
+            x: rx as i16,
+            y: ry as i16,
+        })
 }
 
 /// Handle a tactical left-click while the sidebar Repair or Sell cursor mode is
@@ -370,9 +373,17 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
             own_sellable_building_id(state, id)
         }
     });
+    // `DisplayClass::BandBox_LeftUp @ 0x004AB9B0`'s action 0xD (SellUnit)
+    // arm: a Unit or Aircraft target queues the same SELL event.
+    let building = building.or_else(|| {
+        object_under_cursor
+            .filter(|_| !repair)
+            .and_then(|id| own_sellable_unit_id(state, id))
+    });
     if let Some(entity_id) = building {
-        let owner: String =
-            preferred_local_owner(state).unwrap_or_else(|| DEFAULT_OWNER.to_string());
+        let Some(owner) = preferred_command_owner(state) else {
+            return true;
+        };
         let payload = if repair {
             Command::ToggleRepair { entity_id }
         } else {
@@ -392,7 +403,7 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
             state
                 .match_state
                 .sim_runtime
-                .as_ref()
+                .runtime()
                 .map(|rt| &rt.simulation),
             state.overlay_registry(),
         ) {
@@ -408,7 +419,9 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
             _ => None,
         };
         if let Some(payload) = payload {
-            schedule_command(state, &owner, payload);
+            if let Some(command_owner) = preferred_command_owner(state) {
+                schedule_command(state, &command_owner, payload);
+            }
         }
     }
     true
@@ -430,7 +443,7 @@ pub(crate) fn place_ready_building_at_cell(
     let Some(owner) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .map(|runtime| runtime.simulation.interner().resolve(issuer).to_string())
     else {
         return;
@@ -440,7 +453,7 @@ pub(crate) fn place_ready_building_at_cell(
     let (origin, in_build_area) = state
         .match_state
         .sim_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| {
             let sim = &runtime.simulation;
             let rules = &runtime.resources.rules;
@@ -448,6 +461,9 @@ pub(crate) fn place_ready_building_at_cell(
                 // LeftUp4ABA16 adds the same type-derived offset as preview,
                 // using this fresh clicked Cell rather than the last draw.
                 let origin = object.foundation.placement_origin_at_cursor(cursor_cell);
+                // RESIDUAL (dormant, no retail type sets `PowersUpBuilding=`): LeftUp
+                // `0x004ABA64..0x004ABA9D` also sets proximity when the clicked Building
+                // takes this upgrade (`0x00452670`); this recompute leaves that out.
                 let in_build_area = crate::sim::production::is_within_build_area(
                     sim, rules, &owner, object, origin.0, origin.1,
                 );
@@ -458,12 +474,8 @@ pub(crate) fn place_ready_building_at_cell(
     let (rx, ry) = origin;
     // Visibility1181 is latched by UpdateFoundationCenter4A94DA. LeftUp
     // checks it after the freshly recomputed proximity1180(4ABAA4/4ABAB2).
-    // RESIDUAL: gamemd latches it from the tactical gadget only
-    // (`0x004AAC10` calls `0x004A91B0` at `0x004AAD04`); this preview follows
-    // the cursor's screen point over the sidebar too. Trigger: a radar
-    // placement (`0x00653D58`) in a shrouded game. Effect: it tests the Cell
-    // behind the radar rather than the last tactical one, so it may refuse
-    // or admit differently. Frequency: rare.
+    // Over the radar the centre is the last tactical one
+    // ([`crate::app::match_runtime::sim_tick::FoundationCentre::Tactical`]).
     let visible = state
         .match_state
         .input
@@ -512,7 +524,10 @@ pub(crate) fn place_ready_building_at_cell(
     );
     // Clear placement mode immediately so the foundation preview stops following
     // the cursor after the order is issued.
-    state.match_state.input.submit_building_placement();
+    state
+        .match_state
+        .input
+        .submit_building_placement(&mut state.match_state.match_presentation.sidebar_projection);
     log::info!(
         "Ready building placement queued: owner={} type={} cell=({}, {}) execute_tick=current",
         owner,
@@ -532,9 +547,9 @@ pub(crate) fn place_ready_building_at_cell(
 /// `DisplayClass::BandBox_LeftUp @ 0x004AB9B0` queues the SPECIAL_PLACE event
 /// (`0x12`), and keeps the selection: Launch's tail clears or moves it
 /// (`match_runtime::super_selection`). Pointer action admission runs first;
-/// the sim's ClickFire still owns instance admission. The event names the first
-/// type whose `Action=` is the click's action (`SuperWeaponTypeClass::FindFirstOfAction`); retail
-/// types' actions are unique, so that is the selected one.
+/// the sim's ClickFire still owns instance admission. The click's action is
+/// the armed type's `Action=` (`SuperWeaponTypeClass::GetAction @
+/// 0x006CEF80`), which [`special_place_type`] maps to the type it names.
 pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str) {
     // Guard: arming click's RELEASE lands on the cameo. Don't fire the SW
     // at a bogus off-map cell behind the sidebar panel; leave the mode
@@ -558,18 +573,77 @@ pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str)
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
-    launch_super_weapon_at_cell(state, section, cell);
+    let Some(action) = state
+        .rules()
+        .and_then(|rules| rules.super_weapon(section))
+        .map(|super_weapon| super_weapon.action.as_deref().unwrap_or("None").to_owned())
+    else {
+        return;
+    };
+    launch_super_weapon_at_cell(state, section, PlaceAction::Stock(&action), cell);
 }
 
-/// BandBox_LeftUp's SPECIAL_PLACE (`0x004AC20C`) for `section` at the clicked
-/// `(rx, ry)`: the tactical click's Cell, or the radar release's
-/// (`0x00653D58`), whose action names no pointer target to admit.
+/// The superweapon action a release hands `BandBox_LeftUp`'s SPECIAL_PLACE
+/// (`0x004AC20C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlaceAction<'a> {
+    /// A stock action, by its ActionType name (`0x007E4C50`).
+    Stock(&'a str),
+    /// An Ares superweapon action, above `SuperWeaponDisallowed`, which
+    /// only the radar's Ares superweapon answer hands over.
+    Ares,
+}
+
+/// The type `BandBox_LeftUp`'s SPECIAL_PLACE names for `action`, with
+/// `armed` the armed type (`0x004AC20C..0x004AC21A`): the first
+/// `[SuperWeaponTypes]` entry whose `Action=` it is
+/// ([`crate::sim::superweapon::first_super_type_with_action`]), or none, and
+/// none queues no event (`0x004AC294`). Ares replaces that lookup (hook
+/// `0x4AC20C`, `DisplayClass_LeftMouseButtonUp` 10034BF0): an Ares action
+/// above `SuperWeaponDisallowed` (0x7E) names its current type, the armed one
+/// (resuming at `0x4AC21C`); a stock action names the armed type when it is
+/// that type's `Action=` (`+0xBC`); anything else names none (`0x4AC294`). It
+/// is superweapon code, so it follows [`RuleSet::ares_form`].
+///
+/// [`RuleSet::ares_form`]: crate::rules::ruleset::RuleSet::ares_form
+pub(crate) fn special_place_type<'a>(
+    rules: &'a crate::rules::ruleset::RuleSet,
+    armed: &'a str,
+    action: PlaceAction<'_>,
+) -> Option<&'a str> {
+    match action {
+        PlaceAction::Ares => Some(armed),
+        PlaceAction::Stock(action) if rules.ares_form() => rules
+            .super_weapon(armed)
+            .is_some_and(|sw| sw.has_action(action))
+            .then_some(armed),
+        PlaceAction::Stock(action) => {
+            crate::sim::superweapon::first_super_type_with_action(rules, action)
+        }
+    }
+}
+
+/// BandBox_LeftUp's SPECIAL_PLACE (`0x004AC20C`) for `action`, with `armed`
+/// the armed type, at the clicked `(rx, ry)`: the tactical click's Cell, or
+/// the radar release's (`0x00653D58`), whose action names no pointer target
+/// to admit.
 pub(crate) fn launch_super_weapon_at_cell(
     state: &mut AppState,
-    section: &str,
+    armed: &str,
+    action: PlaceAction<'_>,
     (rx, ry): (u16, u16),
 ) {
-    let owner: String = resolve_owner(state);
+    let Some(section) = state
+        .rules()
+        .and_then(|rules| special_place_type(rules, armed, action))
+        .map(str::to_owned)
+    else {
+        return;
+    };
+    let section = section.as_str();
+    let Some(owner) = preferred_command_owner(state) else {
+        return;
+    };
     let sw_type_id = intern_in_sim(state, section);
     queue_super_weapon_click(state, &owner, sw_type_id, (rx, ry));
     log::info!(
@@ -589,7 +663,7 @@ pub(crate) fn queue_super_weapon_click(
     sw_type_id: InternedId,
     cell: (u16, u16),
 ) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;
@@ -646,8 +720,10 @@ fn super_weapon_click_command(
 /// never a direct Simulation write. Called after input and before the next
 /// ordinary frame so building placement and campaign mode clears participate.
 pub(crate) fn reconcile_paid_super_weapon_cursor(state: &mut AppState) {
-    let owner = resolve_owner(state);
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+    let Some(owner) = preferred_command_owner(state) else {
+        return;
+    };
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return;
     };
     let sim = &runtime.simulation;
@@ -683,80 +759,6 @@ fn paid_super_weapon_cursor_cancellation(
         .then_some(Command::CancelPaidSuperWeapon { selection })
 }
 
-/// Dev "Base" button: start the next opening building (power plant, barracks,
-/// refinery) the owner has none of on the map and the strip offers. A
-/// building never queues (`production::enqueue_by_type`), so each press
-/// starts one while the building factory holds nothing; place it, then press
-/// again.
-pub(crate) fn place_starter_base_for_local_owner(state: &mut AppState) {
-    let owner: String = resolve_owner(state);
-    let (Some(sim), Some(rules)) = (
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-    ) else {
-        return;
-    };
-    let opening = [
-        pick_building_for_owner(rules, &owner, &["GAPOWR", "NAPOWR", "YAPOWR"]),
-        pick_building_for_owner(
-            rules,
-            &owner,
-            &["GAPILE", "NAHAND", "YABRCK", "NABRCK", "GABARR"],
-        ),
-        pick_building_for_owner(rules, &owner, &["GAREFN", "NAREFN", "YAREFN", "GAOREP"]),
-    ];
-    let owner_id = sim.interner().get(&owner);
-    let build_options = production::build_options_for_owner(sim, rules, &owner);
-    let next = opening.into_iter().flatten().find(|type_id| {
-        let on_map = sim.interner().get(type_id).is_some_and(|type_ref| {
-            sim.entities().values().any(|entity| {
-                Some(entity.owner()) == owner_id
-                    && entity.type_ref() == type_ref
-                    && !entity.in_limbo()
-            })
-        });
-        !on_map
-            && build_options.iter().any(|opt| {
-                opt.enabled
-                    && sim
-                        .interner()
-                        .resolve(opt.type_id)
-                        .eq_ignore_ascii_case(type_id)
-            })
-    });
-    let Some(type_id) = next else {
-        log::warn!("Starter opening: owner={owner} has no opening building left to start");
-        return;
-    };
-    let Some(category) = rules.object(&type_id).map(production::category_for_object) else {
-        return;
-    };
-    if owner_id.is_some_and(|owner_id| {
-        sim.production()
-            .factories()
-            .view(owner_id, category)
-            .is_some_and(|factory| factory.object.is_some())
-    }) {
-        log::warn!(
-            "Starter opening: owner={owner} must place or cancel its current building first"
-        );
-        return;
-    }
-    let type_interned = intern_in_sim(state, &type_id);
-    schedule_command(
-        state,
-        &owner,
-        Command::QueueProduction {
-            type_id: type_interned,
-        },
-    );
-    log::info!("Starter opening started: owner={owner} type={type_id}");
-}
-
 /// Queue one attack-move per object for a dev stress army. Every order goes
 /// through the ordinary local gate, so the stress march obeys the same input
 /// lock, owner interning and megamission byte round-trip as a player's click.
@@ -783,279 +785,24 @@ pub(crate) fn schedule_stress_attack_moves(
         .count()
 }
 
-pub(crate) fn spawn_test_units_for_local_owner(state: &mut AppState) {
-    let owner: String = resolve_owner(state);
-    let sw: f32 = state.render_width() as f32;
-    let sh: f32 = state.render_height() as f32;
-    let (mut base_rx, mut base_ry) =
-        crate::app::match_runtime::sim_tick::screen_point_to_world_cell(state, sw * 0.5, sh * 0.5);
-    let path_grid = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .map(|rt| &rt.simulation)
-        .and_then(crate::sim::world::Simulation::path_grid_snapshot);
-    let Some(rt) = state.match_state.sim_runtime.as_mut() else {
-        return;
-    };
-    let resources = &rt.resources;
-    let sim = &mut rt.simulation;
-    let rules = &resources.rules;
-    if let Some(grid) = path_grid.as_deref() {
-        (base_rx, base_ry) =
-            crate::app::match_runtime::sim_tick::clamp_cell_to_grid(grid, (base_rx, base_ry));
-    }
-
-    let mut debug_types: Vec<String> = {
-        let options = production::build_options_for_owner(sim, rules, &owner);
-        let mut selected: Vec<String> = options
-            .iter()
-            .filter(|o| {
-                o.enabled
-                    && o.object_category == crate::rules::object_type::ObjectCategory::Infantry
-            })
-            .take(3)
-            .map(|o| sim.interner().resolve(o.type_id).to_string())
-            .collect();
-        if selected.len() < 3 {
-            let vehicles = options
-                .iter()
-                .filter(|o| {
-                    o.enabled
-                        && o.object_category == crate::rules::object_type::ObjectCategory::Vehicle
-                })
-                .take(3 - selected.len())
-                .map(|o| sim.interner().resolve(o.type_id).to_string());
-            selected.extend(vehicles);
-        }
-        selected
-    };
-    if debug_types.is_empty() {
-        debug_types = vec!["HTNK".to_string(), "MTNK".to_string(), "E1".to_string()];
-    }
-
-    let mut spawned: u32 = 0;
-    let mut first_spawn: Option<(u16, u16)> = None;
-    for (i, type_id) in debug_types.iter().enumerate() {
-        let mut desired = (
-            base_rx.saturating_add(2 + i as u16 * 2),
-            base_ry.saturating_add(2),
-        );
-        if let Some(grid) = path_grid.as_deref() {
-            desired = crate::app::match_runtime::sim_tick::clamp_cell_to_grid(grid, desired);
-        }
-        let spawn_cell = path_grid
-            .as_deref()
-            .and_then(|g| {
-                crate::app::match_runtime::sim_tick::nearest_walkable_cell(g, desired, 16)
-            })
-            .unwrap_or(desired);
-        if sim
-            .spawn_object_with_overlay_registry(
-                type_id,
-                &owner,
-                spawn_cell.0,
-                spawn_cell.1,
-                64,
-                rules,
-                &resources.overlay_registry,
-            )
-            .is_some()
-        {
-            if first_spawn.is_none() {
-                first_spawn = Some(spawn_cell);
-            }
-            let name = rules
-                .object(type_id)
-                .and_then(|o| o.name.clone())
-                .unwrap_or_else(|| type_id.clone());
-            log::info!("Spawn test unit: {} ({})", name, type_id);
-            spawned += 1;
-        }
-    }
-    if spawned > 0 {
-        crate::app::match_runtime::sim_tick::refresh_entity_atlases(state);
-        if let Some((rx, ry)) = first_spawn {
-            crate::app::input::camera::center_camera_on_cell(state, rx, ry);
-        }
-    }
-    log::info!(
-        "Spawn test units: owner={} spawned={} at ({},{}) types={:?}",
-        owner,
-        spawned,
-        base_rx,
-        base_ry,
-        debug_types
-    );
-}
-
-pub(crate) fn cycle_local_owner(state: &mut AppState) {
-    // Debug cycling is available only without a scenario current House.
-    // It cannot repoint ordinary saved identity through a presentation choice.
-    if state.match_state.local_player_owner().is_some() {
-        log::info!("Cycle owner ignored: local player is pinned for this match");
-        return;
-    }
-    let mut owners = collect_playable_owners(state);
-    if owners.is_empty() {
-        return;
-    }
-    let current = preferred_local_owner(state);
-    let next_idx = current
-        .as_ref()
-        .and_then(|c| owners.iter().position(|o| o.eq_ignore_ascii_case(c)))
-        .map(|idx| (idx + 1) % owners.len())
-        .unwrap_or(0);
-    // Move out of Vec instead of cloning, then clone once for the override.
-    let next = owners.swap_remove(next_idx);
-    state.match_state.local_owner_override = Some(next.clone());
-    state.match_state.input.targeting_mode = None;
-    log::info!("Local owner switched to {}", next);
-}
-
 pub(crate) fn preferred_local_owner_name(state: &AppState) -> Option<String> {
     preferred_local_owner(state)
 }
 
+/// The local player is the live scenario's saved current House
+/// ([`crate::app::match_runtime::state::scenario_local_owner`], native
+/// `A83D4C`). A world without one has no local player: commands are not
+/// issued and presentation draws no local-owner state. Selection, structure
+/// counts and roster order never stand in for it.
 pub(crate) fn preferred_local_owner(state: &AppState) -> Option<String> {
-    let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
-    preferred_local_owner_for_sim(
-        sim,
-        state.rules(),
-        &state.match_state.match_presentation.house_roster,
-        state.match_state.local_owner_override.as_deref(),
-    )
+    state.match_state.local_player_owner().map(str::to_owned)
 }
 
-fn preferred_local_owner_for_sim(
-    sim: &crate::sim::world::Simulation,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
-    roster: &crate::map::houses::HouseRoster,
-    sandbox_override: Option<&str>,
-) -> Option<String> {
-    // Normal command and presentation consumers share saved native identity.
-    // App debug preferences and selection apply only to identity-less sandboxes.
-    if let Some(owner) = crate::app::match_runtime::state::scenario_local_owner(sim) {
-        return Some(owner.to_string());
-    }
-    // Sandbox fallback: prefer owner of selected unit first.
-    for entity in sim.entities().values() {
-        let owner_str = sim.interner().resolve(entity.owner());
-        if entity.selection.is_selected() && is_playable_house_name(owner_str) {
-            return Some(owner_str.to_string());
-        }
-    }
-
-    // Then explicit local override set by debug actions.
-    if let Some(owner) = sandbox_override
-        && is_playable_house_name(owner)
-    {
-        return Some(owner.to_string());
-    }
-
-    // Prefer owners that currently have structures.
-    let mut structure_counts: HashMap<String, usize> = HashMap::new();
-    for entity in sim.entities().values() {
-        let owner_str = sim.interner().resolve(entity.owner());
-        if entity.category() == EntityCategory::Structure && is_playable_house_name(owner_str) {
-            *structure_counts.entry(owner_str.to_string()).or_insert(0) += 1;
-        }
-    }
-    if !structure_counts.is_empty() {
-        let mut ranked: Vec<(usize, String)> = structure_counts
-            .into_iter()
-            .filter_map(|(owner, count)| {
-                let strict_buildable = rules.is_some_and(|rules| {
-                    production::has_build_option_for_owner(sim, rules, &owner)
-                });
-                strict_buildable.then_some((count, owner))
-            })
-            .collect();
-        ranked.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-        if let Some((_, owner)) = ranked.first() {
-            return Some(owner.to_string());
-        }
-    }
-
-    // Next fallback: playable houses from map config.
-    let houses = collect_playable_owners_from(roster, Some(sim));
-    if let Some(owner) = houses.first() {
-        return Some(owner.to_string());
-    }
-
-    // Last fallback: any playable owner present in entity store.
-    let mut owners: Vec<String> = sim
-        .entities()
-        .values()
-        .map(|e| sim.interner().resolve(e.owner()).to_string())
-        .filter(|o| is_playable_house_name(o))
-        .collect();
-    owners.sort();
-    owners.dedup();
-    owners.first().cloned()
-}
-
-pub(crate) fn collect_playable_owners(state: &AppState) -> Vec<String> {
-    collect_playable_owners_from(
-        &state.match_state.match_presentation.house_roster,
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-    )
-}
-
-fn collect_playable_owners_from(
-    roster: &crate::map::houses::HouseRoster,
-    simulation: Option<&crate::sim::world::Simulation>,
-) -> Vec<String> {
-    let mut owners: Vec<String> = roster
-        .houses
-        .iter()
-        .filter(|house| is_playable_house_name(&house.name))
-        .filter(|house| house.player_control != Some(false))
-        .map(|house| house.name.clone())
-        .collect();
-    if let Some(sim) = simulation {
-        for entity in sim.entities().values() {
-            let owner_str = sim.interner().resolve(entity.owner());
-            if is_playable_house_name(owner_str) {
-                owners.push(owner_str.to_string());
-            }
-        }
-    }
-    owners.sort();
-    owners.dedup();
-    owners
-}
-
-fn pick_building_for_owner(
-    rules: &crate::rules::ruleset::RuleSet,
-    owner: &str,
-    candidates: &[&str],
-) -> Option<String> {
-    for id in candidates {
-        let Some(obj) = rules.object(id) else {
-            continue;
-        };
-        if obj.category != crate::rules::object_type::ObjectCategory::Building {
-            continue;
-        }
-        if !obj.owner.is_empty() && !obj.owner.iter().any(|o| o.eq_ignore_ascii_case(owner)) {
-            continue;
-        }
-        return Some((*id).to_string());
-    }
-    for id in candidates {
-        let Some(obj) = rules.object(id) else {
-            continue;
-        };
-        if obj.category == crate::rules::object_type::ObjectCategory::Building {
-            return Some((*id).to_string());
-        }
-    }
-    None
+/// The issuer's primary House can differ from the represented view House.
+pub(super) fn preferred_command_owner(state: &AppState) -> Option<String> {
+    let sim = &state.match_state.sim_runtime.runtime()?.simulation;
+    let owner = sim.control_projection().local_command_house()?;
+    Some(sim.interner().resolve(owner).to_owned())
 }
 
 pub(crate) fn schedule_command_in_sim(
@@ -1083,7 +830,7 @@ pub(crate) fn schedule_command_in_sim(
     let execute_tick = sim.session().tick();
     let owner_id = match &payload {
         Command::SetGameSpeed { speed } => {
-            if *speed > crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED {
+            if !crate::sim::game_options::is_selectable_game_speed(*speed) {
                 return None;
             }
             let owner_id = sim.interner().get(owner)?;
@@ -1122,8 +869,8 @@ pub(crate) fn schedule_command_in_sim(
             let record = sim.encode_destruct_record(owner_id)?;
             CommandEnvelope::synchronized(record, execute_tick)
         }
-        Command::RemovePlayer { house_index } => {
-            let record = sim.encode_remove_player_record(owner_id, house_index)?;
+        Command::RemovePlayer { source } => {
+            let record = sim.encode_remove_player_record(owner_id, source)?;
             CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::Ally { house_index } => {
@@ -1137,10 +884,10 @@ pub(crate) fn schedule_command_in_sim(
         payload => CommandEnvelope::new(owner_id, execute_tick, payload),
     };
     let envelope = encode_ordinary_local_command(sim, envelope)?;
-    // PlayerSend6FFDE6 ignores a full OutList's false return. The click is
-    // still handled and its voice/action-line effects are not rolled back.
-    let accepted = sim.issue_local_command(envelope);
-    if sim.session().game_mode().is_network() && !accepted {
+    // Sim-scale deviation: PlayerSend6FFDE6 ignores a full OutList's false
+    // return. Every mode reports the refusal instead, so a full queue fails
+    // closed and can show backpressure rather than dropping the order.
+    if !sim.issue_local_command(envelope) {
         return None;
     }
     Some(execute_tick)
@@ -1158,13 +905,32 @@ pub(crate) fn schedule_command_in_sim(
 pub(crate) fn ordinary_cell_move_goal(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     viewer: InternedId,
     entity_id: u64,
     clicked: (u16, u16),
     shift: bool,
 ) -> Option<(u16, u16)> {
-    sim.cell_click_destination(viewer, entity_id, clicked, shift, rules, registry)
+    ordinary_cell_move_goal_with(
+        sim,
+        &sim.control_projection(),
+        rules,
+        viewer,
+        entity_id,
+        clicked,
+        shift,
+    )
+}
+
+pub(crate) fn ordinary_cell_move_goal_with(
+    sim: &crate::sim::world::Simulation,
+    control: &crate::sim::world::ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    viewer: InternedId,
+    entity_id: u64,
+    clicked: (u16, u16),
+    shift: bool,
+) -> Option<(u16, u16)> {
+    sim.cell_click_destination_with(control, viewer, entity_id, clicked, shift, rules)
         .unwrap_or_else(|cause| {
             log::warn!("Cell click input: {cause}");
             None
@@ -1184,11 +950,41 @@ pub(crate) fn object_move_destination(
     action: crate::sim::world::MoveAction,
     force_move_key: bool,
 ) -> Option<crate::sim::combat::TargetKind> {
-    sim.object_move_click(viewer, entity_id, target_id, action, force_move_key, rules)
-        .unwrap_or_else(|cause| {
-            log::warn!("Move click over an object: {cause}");
-            None
-        })
+    object_move_destination_with(
+        sim,
+        &sim.control_projection(),
+        rules,
+        viewer,
+        entity_id,
+        target_id,
+        action,
+        force_move_key,
+    )
+}
+
+pub(crate) fn object_move_destination_with(
+    sim: &crate::sim::world::Simulation,
+    control: &crate::sim::world::ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    viewer: InternedId,
+    entity_id: u64,
+    target_id: u64,
+    action: crate::sim::world::MoveAction,
+    force_move_key: bool,
+) -> Option<crate::sim::combat::TargetKind> {
+    sim.object_move_click_with(
+        control,
+        viewer,
+        entity_id,
+        target_id,
+        action,
+        force_move_key,
+        rules,
+    )
+    .unwrap_or_else(|cause| {
+        log::warn!("Move click over an object: {cause}");
+        None
+    })
 }
 
 /// Make ordinary local mission bytes authoritative at issue time.
@@ -1278,23 +1074,85 @@ pub(crate) fn try_schedule_command(
     owner: &str,
     payload: Command,
 ) -> Option<u64> {
-    let runtime = state.match_state.sim_runtime.as_mut()?;
+    if state.match_state.match_diagnostics.is_replay_playback() {
+        return None;
+    }
+    // The relay owns a fixed match clock. Native connection/speed controls
+    // cannot independently retime this negotiated command timeline.
+    if state
+        .match_state
+        .live_network
+        .as_ref()
+        .is_some_and(|live| live.uses_sequenced_lockstep())
+        && matches!(
+            payload,
+            Command::SetGameSpeed { .. }
+                | Command::LiveGameSpeed { .. }
+                | Command::SetLatencyFudge { .. }
+                | Command::RemovePlayer { .. }
+        )
+    {
+        return None;
+    }
+    let runtime = state.match_state.sim_runtime.write_sim(SimWrite::Command)?;
+    let sim = &runtime.simulation;
+    let command_owner = if sim.session().has_custom_control_grants() {
+        sim.control_projection()
+            .local_command_house()
+            .map(|house| sim.interner().resolve(house).to_owned())
+    } else {
+        None
+    };
     schedule_rules_command_in_sim(
         &mut runtime.simulation,
         &runtime.resources.rules,
-        owner,
+        command_owner.as_deref().unwrap_or(owner),
         payload,
     )
 }
 
+/// Frames past the relay's head, or past MaxAhead, that a command sent now
+/// may still take to execute: its trip to the relay and back.
+const EXECUTE_MARGIN: u64 = 90;
+
+/// The frame by which a command scheduled at frame `now` has surely executed.
+/// Offline it executes at the next frame. Online it joins the relay's next
+/// unsealed frame (`docs/Networking.md`), past the relay's head this game
+/// last heard of, which is far ahead while the game catches up; a direct
+/// match's lockstep puts it up to MaxAhead frames past now. A VERA helper
+/// that sends a toggle waits for this before it sends another.
+pub(crate) fn command_executed_by(state: &AppState, now: u64) -> u64 {
+    executed_by(
+        now,
+        state
+            .match_state
+            .live_network
+            .as_ref()
+            .and_then(|live| live.relay_head_frame()),
+        state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .and_then(|runtime| runtime.simulation.session().network_max_ahead_frames()),
+    )
+}
+
+fn executed_by(now: u64, relay_head: Option<u32>, max_ahead: Option<i32>) -> u64 {
+    let ahead = max_ahead.map_or(0, |frames| u64::try_from(frames).unwrap_or(0));
+    now.max(relay_head.map_or(0, u64::from)) + ahead + EXECUTE_MARGIN
+}
+
 // The ordinary AppState entry and component tests share this rules-dependent
 // issue boundary; the live OutList still owns the only pending command state.
-fn schedule_rules_command_in_sim(
+pub(super) fn schedule_rules_command_in_sim(
     sim: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     owner: &str,
     payload: Command,
 ) -> Option<u64> {
+    if !sim.can_issue_local_command(&payload, rules) {
+        return None;
+    }
     //6AAD00's selected cameo determines RTTI/type-array index/Naval when
     //the event is issued. The raw queue retains those bytes until execution;
     //the existing production owner resolves the then-current held object.
@@ -1339,11 +1197,8 @@ pub(crate) fn schedule_command(state: &mut AppState, owner: &str, payload: Comma
         && state
             .match_state
             .sim_runtime
-            .as_ref()
-            .is_some_and(|runtime| {
-                runtime.simulation.session().game_mode().is_network()
-                    && runtime.simulation.available_local_command_slots() == 0
-            })
+            .runtime()
+            .is_some_and(|runtime| runtime.simulation.available_local_command_slots() == 0)
     {
         super::messages::post_command_backpressure(state);
     }
@@ -1353,11 +1208,8 @@ pub(super) fn selection_input_has_capacity(state: &mut AppState, count: usize) -
     let blocked = state
         .match_state
         .sim_runtime
-        .as_ref()
-        .is_some_and(|runtime| {
-            runtime.simulation.session().game_mode().is_network()
-                && count > runtime.simulation.available_local_command_slots()
-        });
+        .runtime()
+        .is_some_and(|runtime| count > runtime.simulation.available_local_command_slots());
     if blocked {
         super::messages::post_command_backpressure(state);
     }
@@ -1367,10 +1219,10 @@ pub(super) fn selection_input_has_capacity(state: &mut AppState, count: usize) -
 /// AllToCheer536C00 ->730F30. The input owner retains only its admission
 /// frame; the ordinary scheduler and native Event2D codec own the command.
 pub(crate) fn queue_house_cheer(state: &mut AppState) {
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_command_owner(state) else {
         return;
     };
-    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+    let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return;
     };
     let _ = queue_house_cheer_in_sim(
@@ -1403,19 +1255,22 @@ pub(super) fn queue_house_cheer_in_sim(
     )
 }
 
-pub(crate) fn is_playable_house_name(name: &str) -> bool {
-    let up = name.to_ascii_uppercase();
-    !matches!(
-        up.as_str(),
-        "NEUTRAL" | "SPECIAL" | "CIVILIAN" | "GOODGUY" | "BADGUY" | "JP"
-    )
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 mod tests {
     use super::{
-        schedule_command_in_sim, schedule_stress_attack_moves, sell_wall_command_for_cell,
+        EXECUTE_MARGIN, executed_by, schedule_command_in_sim, schedule_stress_attack_moves,
+        sell_wall_command_for_cell,
     };
+
+    /// Online a command executes past the relay's head while this game
+    /// catches up, or MaxAhead frames on; offline at the next frame.
+    #[test]
+    fn a_command_has_executed_by_the_relay_head_or_max_ahead() {
+        assert_eq!(executed_by(100, None, None), 100 + EXECUTE_MARGIN);
+        assert_eq!(executed_by(100, Some(40), None), 100 + EXECUTE_MARGIN);
+        assert_eq!(executed_by(100, Some(1000), None), 1000 + EXECUTE_MARGIN);
+        assert_eq!(executed_by(100, None, Some(260)), 360 + EXECUTE_MARGIN);
+    }
 
     use crate::map::entities::EntityCategory;
     use crate::rules::ini_parser::IniFile;
@@ -1427,7 +1282,7 @@ mod tests {
     use crate::sim::world::Simulation;
 
     #[test]
-    fn repair_click_publishes_a_raw_target_and_still_handles_a_full_outlist() {
+    fn repair_click_publishes_a_raw_target_and_is_refused_by_a_full_queue() {
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
             return;
         };
@@ -1458,17 +1313,15 @@ mod tests {
         );
         assert_eq!(&record.payload()[..4], &(building as i32).to_le_bytes());
         assert_eq!(record.payload()[4], 0x34);
-        for _ in 1..128 {
-            assert!(sim.issue_local_command(CommandEnvelope::synchronized(record.clone(), 41)));
-        }
+        let free = sim.available_local_command_slots();
+        let repair = CommandEnvelope::synchronized(record, 41);
+        assert!(sim.issue_local_commands(std::iter::repeat_n(repair, free)));
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Americans", command),
-            Some(41)
+            None,
+            "a full queue refuses the click instead of dropping it"
         );
-        assert_eq!(
-            sim.network_command_queues().local_records().unwrap().len(),
-            128
-        );
+        assert_eq!(sim.pending_local_command_count(), free + 1);
         assert_eq!(sim.state_hash(), before);
     }
 
@@ -1811,12 +1664,12 @@ mod tests {
     }
 
     #[test]
-    fn local_outlist_overflow_keeps_click_success_and_local_options() {
+    fn full_local_queue_refuses_clicks_but_keeps_local_options() {
         let (mut sim, _, _) = two_human_sim();
-        // TryAppend6521C0 admits 128 events globally, before any payload
-        // receiver runs. A stale Stop still occupies its slot. PlayerSend
-        // 6FFDE6..6FFDEE ignores a full OutList's refusal and returns true.
-        for _ in 0..127 {
+        // Sim-scale deviation: TryAppend6521C0 admits 128 events and PlayerSend
+        // 6FFDE6..6FFDEE ignores a full OutList's refusal. VERA's larger queue
+        // refuses the click instead. A stale Stop still occupies its slot.
+        for _ in 1..sim.available_local_command_slots() {
             assert_eq!(
                 schedule_command_in_sim(&mut sim, "Local", Command::Stop { entity_id: 42 }),
                 Some(41)
@@ -1828,8 +1681,8 @@ mod tests {
         );
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
-            Some(41),
-            "overflow does not turn ordinary input feedback into a refusal"
+            None,
+            "a full queue refuses the click instead of dropping it"
         );
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Local", Command::SetGameSpeed { speed: 2 }),
@@ -1842,13 +1695,13 @@ mod tests {
         // batch cannot free the event queue's occupied slots.
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
-            Some(41)
+            None
         );
         sim.advance_tick(&due, None, None, None, 33);
         assert_eq!(
             sim.session().game_options().game_speed,
             4,
-            "local Options runs first, then slot 128; the peer's 129th event was dropped"
+            "local Options runs first, then the last slot; the refused peer event never ran"
         );
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
@@ -1876,7 +1729,10 @@ mod tests {
         assert!(run_due(&mut sim), "a remote EXIT does not end the frame");
         assert!(!sim.quit_requested());
         assert_eq!(sim.take_executed_exit_owner(), None);
-        assert_eq!(sim.take_departed_owners(), [peer]);
+        assert_eq!(
+            sim.take_departed_senders(),
+            [sim.houses().index_of(peer).unwrap() as i8]
+        );
         assert!(sim.houses()[&peer].left_game());
         // 0x005E2BA0: the local human is undefeated, so no Flag_To_Die.
         assert!(!sim.houses()[&peer].is_to_die());
@@ -1887,7 +1743,7 @@ mod tests {
         assert!(!run_due(&mut sim));
         assert!(sim.quit_requested());
         assert_eq!(sim.take_executed_exit_owner(), Some(local));
-        assert!(sim.take_departed_owners().is_empty());
+        assert!(sim.take_departed_senders().is_empty());
     }
 
     #[test]
@@ -1911,12 +1767,8 @@ mod tests {
         sim.houses_mut_for_test()
             .register(HouseState::new(ai, 0, None, false, 0, 10));
         for index in [1, 2] {
-            schedule_command_in_sim(
-                &mut sim,
-                "Local",
-                Command::RemovePlayer { house_index: index },
-            )
-            .unwrap();
+            schedule_command_in_sim(&mut sim, "Local", Command::RemovePlayer { source: index })
+                .unwrap();
         }
         let record = sim
             .encode_remove_player_record(sim.interner().get("Local").unwrap(), 1)
@@ -1940,8 +1792,7 @@ mod tests {
             .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
         sim.install_network_timing(10);
         sim.install_wol_start(1, Default::default());
-        schedule_command_in_sim(&mut sim, "Local", Command::RemovePlayer { house_index: 2 })
-            .unwrap();
+        schedule_command_in_sim(&mut sim, "Local", Command::RemovePlayer { source: 2 }).unwrap();
         run_due(&mut sim);
         assert!(sim.houses()[&ai].is_to_die());
     }
@@ -2337,6 +2188,8 @@ mod tests {
         let missing_house = sim.intern("MissingHouse");
         let mut local_house = HouseState::new(local, 0, None, false, 0, 10);
         local_house.set_player_control_for_test(true);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
         sim.houses_mut_for_test().register(local_house);
         sim.houses_mut_for_test()
             .register(HouseState::new(remote, 1, None, true, 0, 10));
@@ -2355,9 +2208,7 @@ mod tests {
         assert_eq!(issued.frame_stamp(), 23);
         assert_eq!(&issued.payload()[..4], &[0, 0, 1, 0]);
         assert_eq!(
-            crate::net::lockstep::SynchronizedCommand::opaque(issued)
-                .decode_for_simulation(&sim, 23)
-                .unwrap(),
+            sim.decode_native_command_record(&issued, 23).unwrap(),
             CommandEnvelope::new(local, 23, Command::SellWallAtCell { x: 0, y: 1 })
         );
 
@@ -2465,14 +2316,14 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "local_owner_tests.rs"]
 mod local_owner_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "paid_superweapon_tests.rs"]
 mod paid_superweapon_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_input_a_c))]
 #[path = "force_shield_target_tests.rs"]
 mod force_shield_target_tests;

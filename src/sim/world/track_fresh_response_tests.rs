@@ -170,7 +170,9 @@ fn unit(
     if let Some(clear) = input["clear_speed"].as_f64() {
         // The oracle writes the Clear row of every SpeedType; after the spawn,
         // which would refuse a zero row.
-        let percent = Some((clear * 100.0) as u8);
+        let percent = Some(crate::util::native_x87::NativeF32Bits::from_bits(
+            (clear as f32).to_bits(),
+        ));
         let terrain = sim.resolved_terrain.as_mut().unwrap();
         for y in 0..33 {
             for x in 0..33 {
@@ -202,7 +204,7 @@ fn order(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)) {
         crate::sim::components::NavTargetRef::cell(target.0, target.1),
         rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
 }
 
@@ -379,7 +381,9 @@ fn compare(sim: &Simulation, id: u64, row: &Value, out: bool) {
         ("mission", json!(e.mission.current().raw())),
         (
             "foot_68b",
-            json!(u8::from(e.runtime_bridge_transition.pending_mismatch())),
+            json!(u8::from(
+                e.seldom.runtime_bridge_transition.pending_mismatch()
+            )),
         ),
         ("out", json!(u8::from(out))),
     ];
@@ -405,7 +409,7 @@ fn fresh_arm_rows_match_the_original_responses() {
         if input.get("far_zone").is_some() {
             continue;
         }
-        let (mut sim, rules, registry, id) = unit(input);
+        let (mut sim, rules, _registry, id) = unit(input);
         let destination = input.get("destination").map_or((13, 10), pair);
         order(
             &mut sim,
@@ -494,8 +498,7 @@ fn fresh_arm_rows_match_the_original_responses() {
             family,
             ProcessMovementArgs::OUTER,
             &rules,
-            Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let (records, unused) = fresh_oracle_seam::finish();
         let out = out.unwrap();
@@ -550,8 +553,7 @@ fn crusher_all_non_wall_overlay_uses_ground_unit_for_straight_latch() {
             TrackFamily::Drive,
             ProcessMovementArgs::OUTER,
             &rules,
-            Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let (_, unused) = fresh_oracle_seam::finish();
         result.unwrap();
@@ -582,7 +584,7 @@ fn first_code7_scold_request_retains_the_native_byte() {
         .iter()
         .filter(|row| row["branch"] == "first_rejection")
     {
-        let (mut sim, mut rules, registry, id) = unit(row);
+        let (mut sim, mut rules, _registry, id) = unit(row);
         let sound = native["sound"]["resolved_name"].as_str().unwrap();
         rules.general.scold_sound = Some(sound.into());
         order(&mut sim, &rules, id, (13, 10));
@@ -616,8 +618,7 @@ fn first_code7_scold_request_retains_the_native_byte() {
                 force_single: false,
             },
             &rules,
-            Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let (_, unused) = fresh_oracle_seam::finish();
         result.unwrap();
@@ -639,7 +640,7 @@ fn first_code7_scold_request_retains_the_native_byte() {
             .iter()
             .filter_map(|event| match event {
                 crate::sim::world::SimSoundEvent::VocCentered { sound_id } => {
-                    Some(sound_id.as_str())
+                    Some(sound_id.name_in(&rules))
                 }
                 _ => None,
             })

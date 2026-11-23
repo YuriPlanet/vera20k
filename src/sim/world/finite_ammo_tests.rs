@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
 use crate::sim::runtime::{SimResources, SimRuntime};
@@ -28,13 +27,11 @@ impl Scene {
         retail
             .rules
             .bind_effect_assets(&assets, theater.extension, "TEMPERATE");
-        let registry =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xa220);
         // The supplied clear map still owns its empty overlay cells and saved
         // wall-neighbor plane; full map-authority restore requires both.
-        sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         for name in ["Americans", "Russians"] {
@@ -58,11 +55,10 @@ impl Scene {
         let terrain_template = sim.resolved_terrain().cloned();
         let mut scene = Self(SimRuntime {
             simulation: sim,
-            resources: SimResources {
+            resources: std::sync::Arc::new(SimResources {
                 rules,
-                overlay_registry: registry,
                 terrain_template,
-            },
+            }),
         });
         scene.spawn("GAPOWR", "Americans", (4, 24));
         scene.spawn("NAPOWR", "Russians", (28, 28));
@@ -81,7 +77,7 @@ impl Scene {
                 cell.1,
                 0,
                 &self.0.resources.rules,
-                &self.0.resources.overlay_registry,
+                self.0.resources.rules.overlay_registry(),
             )
             .expect("retail constructor and ordinary Unlimbo")
     }
@@ -101,7 +97,7 @@ impl Scene {
         // Observe the actual serialized clock without depending on a new API:
         // the same test source compiles against the pre-fix production tree.
         let entity = serde_json::to_value(self.actor(id)).unwrap();
-        serde_json::from_value(entity["ammo_reload_timer"].clone())
+        serde_json::from_value(entity["seldom"]["ammo_reload_timer"].clone())
             .expect("authoritative saved reload clock")
     }
 
@@ -119,7 +115,12 @@ impl Scene {
         let commands = self.0.simulation.take_due_commands();
         let output = self
             .0
-            .advance_frame(&commands, 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                33,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         assert!(output.tick.frame_committed);
         output
@@ -170,7 +171,7 @@ impl Scene {
         restored
             .restore_map_authority_after_snapshot_load(
                 &resources.rules,
-                &resources.overlay_registry,
+                resources.rules.overlay_registry(),
                 None,
             )
             .unwrap();
@@ -187,6 +188,255 @@ fn fired(output: &SimFrameOutput, source: u64) -> bool {
         .any(|shot| shot.attacker_id == source)
 }
 
+#[test]
+fn finite_infantry_reloads_and_resumes_fire_only_with_ares() {
+    let Some(mut scene) =
+        Scene::new("[E1]\nAmmo=1\nInitialAmmo=1\nReload=8\nEmptyReload=12\nCanPassiveAquire=no\n")
+    else {
+        return;
+    };
+    let target = scene.spawn("GACNST", "Russians", (16, 16));
+    let infantry = scene.spawn("E1", "Americans", (16, 20));
+    scene.command(
+        "Americans",
+        Command::Attack {
+            attacker_id: infantry,
+            target_id: target,
+        },
+    );
+    let first = scene.shot(infantry, target);
+    assert_eq!(scene.count(infantry), 0);
+    let ares = scene.0.resources.rules.ares();
+    if ares {
+        assert_eq!(
+            (
+                scene.reload(infantry).start_frame(),
+                scene.reload(infantry).duration()
+            ),
+            (first, 12)
+        );
+    }
+    let mut fired_again = false;
+    for _ in 0..100 {
+        if fired(&scene.frame(), infantry) {
+            fired_again = true;
+            break;
+        }
+    }
+    assert_eq!(
+        fired_again, ares,
+        "Ares adds the Infantry reload visit; stock does not"
+    );
+}
+
+/// Infantry5200E1..520105 refills only on a positive-fear turn that reaches
+/// zero. Stock E1's unlimited count bypasses it; the native Scenario reader
+/// admits this finite-magazine map override without an extension.
+#[test]
+fn finite_infantry_refills_after_damage_fear_expires_and_can_fire_again() {
+    use crate::sim::combat::{EntityDamageEvent, ReceiverCallFlags};
+
+    let Some(mut scene) = Scene::new("[E1]\nAmmo=1\nInitialAmmo=1\nCanPassiveAquire=no\n") else {
+        return;
+    };
+    let target = scene.spawn("GACNST", "Russians", (16, 16));
+    let infantry = scene.spawn("E1", "Americans", (16, 20));
+    let attack = Command::Attack {
+        attacker_id: infantry,
+        target_id: target,
+    };
+    scene.command("Americans", attack.clone());
+    scene.shot(infantry, target);
+    scene.command(
+        "Americans",
+        Command::Stop {
+            entity_id: infantry,
+        },
+    );
+    for _ in 0..3 {
+        scene.frame();
+        assert_eq!(scene.count(infantry), 0, "initial zero fear never refills");
+    }
+    let hit = EntityDamageEvent::direct_receiver(
+        infantry,
+        1,
+        0,
+        target,
+        None,
+        scene.0.simulation.interner.intern("SA"),
+        ReceiverCallFlags {
+            ignore_defenses: false,
+            arg6: false,
+        },
+    );
+    scene.0.simulation.commit_direct_damage_receiver(
+        &scene.0.resources.rules,
+        Some(scene.0.resources.rules.overlay_registry()),
+        hit,
+        &mut FrameEffects::default(),
+    );
+    assert_eq!(scene.actor(infantry).infantry.unwrap().fear_level(), 100);
+    let reload = scene.reload(infantry);
+    for _ in 0..99 {
+        scene.frame();
+        assert_eq!(scene.count(infantry), 0, "positive fear retains empty ammo");
+    }
+    assert_eq!(scene.actor(infantry).infantry.unwrap().fear_level(), 1);
+    scene.frame();
+    assert_eq!(scene.actor(infantry).infantry.unwrap().fear_level(), 0);
+    assert_eq!(
+        scene.count(infantry),
+        1,
+        "fear expiry copies the type's Ammo"
+    );
+    assert_eq!(
+        scene.reload(infantry),
+        reload,
+        "this arm writes no reload clock"
+    );
+    scene.command("Americans", attack);
+    scene.shot(infantry, target);
+    assert_eq!(
+        scene.count(infantry),
+        0,
+        "the next actual FireAt spends the refill"
+    );
+}
+
+/// InfantryClass::FireAt51DF8C..51DFD6: a Fraidycat's last returned Bullet
+/// starts panic and queues Guard. The physical E1 weapons/art stay unchanged;
+/// these registered Scenario overrides activate the stock finite-ammo branch.
+#[test]
+fn fraidycat_last_round_queues_guard_panics_then_refills() {
+    let Some(mut scene) =
+        Scene::new("[E1]\nAmmo=2\nInitialAmmo=2\nFraidycat=yes\nCanPassiveAquire=no\n")
+    else {
+        return;
+    };
+    let target = scene.spawn("GACNST", "Russians", (16, 16));
+    let infantry = scene.spawn("E1", "Americans", (16, 20));
+    let attack = Command::Attack {
+        attacker_id: infantry,
+        target_id: target,
+    };
+    scene.command("Americans", attack.clone());
+    scene.shot(infantry, target);
+    assert_eq!(scene.count(infantry), 1);
+    assert_eq!(scene.actor(infantry).infantry.unwrap().fear_level(), 0);
+    scene.shot(infantry, target);
+    assert_eq!(scene.count(infantry), 0);
+    let actor = scene.actor(infantry);
+    assert_eq!(actor.infantry.unwrap().fear_level(), 300);
+    assert_eq!(actor.mission.current().raw(), 1, "Guard is only queued");
+    assert_eq!(actor.mission.queued().raw(), 5);
+    let position = crate::sim::movement::ground_pose::position_world_xy(&actor.position);
+    let reload = scene.reload(infantry);
+    // A real Stop clears the old attack before the later same-tick refill can
+    // feed another shot; it does not cancel the class's existing panic owner.
+    scene.command(
+        "Americans",
+        Command::Stop {
+            entity_id: infantry,
+        },
+    );
+    let mut escaped = false;
+    for _ in 0..299 {
+        scene.frame();
+        escaped |=
+            crate::sim::movement::ground_pose::position_world_xy(&scene.actor(infantry).position)
+                != position;
+        assert_eq!(scene.count(infantry), 0);
+    }
+    assert!(escaped, "the live Fraidycat panic requests movement");
+    assert_eq!(scene.actor(infantry).infantry.unwrap().fear_level(), 1);
+    scene.frame();
+    assert_eq!(scene.actor(infantry).infantry.unwrap().fear_level(), 0);
+    assert_eq!(scene.count(infantry), 2);
+    assert_eq!(scene.reload(infantry), reload, "no reload timer is armed");
+    scene.command("Americans", attack);
+    scene.shot(infantry, target);
+    assert_eq!(scene.count(infantry), 1);
+    assert_eq!(scene.actor(infantry).infantry.unwrap().fear_level(), 0);
+}
+
+/// FireAt's panic is independent of ReceiveDamage/ForcePanic's Fearless gate.
+#[test]
+fn fraidycat_last_round_does_not_use_fearless_gate() {
+    let Some(mut scene) = Scene::new(
+        "[E1]\nAmmo=1\nInitialAmmo=1\nFraidycat=yes\nFearless=yes\nCanPassiveAquire=no\n",
+    ) else {
+        return;
+    };
+    let target = scene.spawn("GACNST", "Russians", (16, 16));
+    let infantry = scene.spawn("E1", "Americans", (16, 20));
+    scene.command(
+        "Americans",
+        Command::Attack {
+            attacker_id: infantry,
+            target_id: target,
+        },
+    );
+    scene.shot(infantry, target);
+    assert_eq!(scene.count(infantry), 0);
+    assert_eq!(scene.actor(infantry).infantry.unwrap().fear_level(), 300);
+    assert_eq!(scene.actor(infantry).mission.queued().raw(), 5);
+}
+
+#[test]
+fn ares_weapon_ammo_cost_controls_admission_debit_and_reload() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let weapon =
+        "[AmmoProbe]\nDamage=1\nROF=15\nRange=6\nProjectile=InvisibleLow\nWarhead=SA\nAmmo=";
+    let Some(mut free) = Scene::new(&format!(
+        "[E1]\nAmmo=0\nInitialAmmo=0\nPrimary=AmmoProbe\nElitePrimary=AmmoProbe\nCanPassiveAquire=no\n{weapon}0\n"
+    )) else {
+        return;
+    };
+    let target = free.spawn("GACNST", "Russians", (16, 16));
+    let infantry = free.spawn("E1", "Americans", (16, 20));
+    free.command(
+        "Americans",
+        Command::Attack {
+            attacker_id: infantry,
+            target_id: target,
+        },
+    );
+    free.shot(infantry, target);
+    assert_eq!(
+        free.count(infantry),
+        0,
+        "zero-cost weapons fire with an empty magazine"
+    );
+    assert_eq!(free.reload(infantry).duration(), 0);
+
+    let Some(mut pair) = Scene::new(&format!(
+        "[E1]\nAmmo=3\nInitialAmmo=3\nReload=12\nPrimary=AmmoProbe\nElitePrimary=AmmoProbe\nCanPassiveAquire=no\n{weapon}2\n"
+    )) else {
+        return;
+    };
+    let target = pair.spawn("GACNST", "Russians", (16, 16));
+    let infantry = pair.spawn("E1", "Americans", (16, 20));
+    pair.command(
+        "Americans",
+        Command::Attack {
+            attacker_id: infantry,
+            target_id: target,
+        },
+    );
+    let first = pair.shot(infantry, target);
+    assert_eq!(pair.count(infantry), 1, "one shot consumes two rounds");
+    assert_eq!(
+        (
+            pair.reload(infantry).start_frame(),
+            pair.reload(infantry).duration()
+        ),
+        (first, 12)
+    );
+    pair.shot(infantry, target);
+}
+
+// This is the stock GetROF6FCFA9 magazine shortcut. Installed Ares hook
+// 10047A60 skips it (continues at6FCFC1), independently of this ammo port.
 #[test]
 fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() {
     let Some(mut scene) = Scene::new("[GAPILL]\nAmmo=2\nInitialAmmo=2\nCanPassiveAquire=no\n")
@@ -208,7 +458,7 @@ fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() 
         1,
         "the actual first ordinary shot debits two to one"
     );
-    assert_eq!(scene.actor(gun).rearm_timer.duration(), 1);
+    assert_eq!(scene.actor(gun).seldom.rearm_timer.duration(), 1);
     let second = scene.now();
     let output = scene.frame();
     assert!(fired(&output, gun), "ROF1 admits the next ordinary visit");
@@ -218,7 +468,7 @@ fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() 
         2,
         "zero refills in the same outer Building visit"
     );
-    let rearm = scene.actor(gun).rearm_timer.timer();
+    let rearm = scene.actor(gun).seldom.rearm_timer.timer();
     assert_eq!(rearm.start_frame(), second);
     assert!(rearm.duration() > 1);
     while scene.now() < rearm.start_frame() + rearm.duration() {
@@ -227,10 +477,41 @@ fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() 
             "refill must preserve the long cooldown"
         );
     }
-    assert_eq!(scene.actor(gun).rearm_timer.timer(), rearm);
+    assert_eq!(scene.actor(gun).seldom.rearm_timer.timer(), rearm);
     let third = scene.shot(gun, target);
     assert!(third >= rearm.start_frame() + rearm.duration());
     assert_eq!(scene.count(gun), 1);
+}
+
+/// Ares 3.0 BuildingClass_Update_Reload (100478E0, hook 0x43FE8E): a
+/// building other than a Hospital or Armory reloads through
+/// TechnoClass::Reload, by `ReloadAmount` on its reload clock, where the
+/// stock visit refills an empty magazine at once.
+#[test]
+fn ares_building_reloads_by_reload_amount_on_its_clock() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(mut scene) = Scene::new(
+        "[GAPILL]\nAmmo=4\nInitialAmmo=0\nReloadAmount=3\nReload=10\nEmptyReload=10\n\
+         CanPassiveAquire=no\n",
+    ) else {
+        return;
+    };
+    let gun = scene.spawn("GAPILL", "Americans", (16, 20));
+    for _ in 0..3 {
+        if scene.count(gun) != 0 {
+            break;
+        }
+        scene.frame();
+    }
+    assert_eq!(scene.count(gun), 3);
+    let reload = scene.reload(gun);
+    assert_eq!(reload.duration(), 10);
+    while scene.now() < reload.start_frame() + reload.duration() {
+        scene.frame();
+        assert_eq!(scene.count(gun), 3, "the clock holds the next round");
+    }
+    scene.frame();
+    assert_eq!(scene.count(gun), 4, "ReloadAmount is capped by Ammo=");
 }
 
 #[test]
@@ -261,7 +542,7 @@ fn finite_unit_empty_reload_expires_after_fire_and_survives_actual_snapshot_rest
         "the real returned Bullet empties the Unit"
     );
     let reload = scene.reload(tank);
-    let rearm = scene.actor(tank).rearm_timer.timer();
+    let rearm = scene.actor(tank).seldom.rearm_timer.timer();
     assert_eq!((reload.start_frame(), reload.duration()), (shot, 36));
     assert!((60..=62).contains(&rearm.duration()));
     for _ in 0..7 {
@@ -280,7 +561,7 @@ fn finite_unit_empty_reload_expires_after_fire_and_survives_actual_snapshot_rest
     let loaded = scene.restored(&bytes);
     scene.0.replace_simulation(loaded);
     assert_eq!(scene.reload(tank), reload);
-    assert_eq!(scene.actor(tank).rearm_timer.timer(), rearm);
+    assert_eq!(scene.actor(tank).seldom.rearm_timer.timer(), rearm);
     let mut saw_refill = false;
     let mut saw_next_shot = false;
     for _ in 0..80 {
@@ -294,7 +575,7 @@ fn finite_unit_empty_reload_expires_after_fire_and_survives_actual_snapshot_rest
             assert!(!shot_again);
             assert_eq!(scene.count(tank), 1);
             assert!(rearm.remaining(now) > 0, "reload never clears weapon rearm");
-            assert_eq!(scene.actor(tank).rearm_timer.timer(), rearm);
+            assert_eq!(scene.actor(tank).seldom.rearm_timer.timer(), rearm);
             saw_refill = true;
         }
         if shot_again {
@@ -338,9 +619,9 @@ fn damage_reduces_readiness_before_object_immunity_and_restarts_reload() {
         );
         scene.0.simulation.commit_direct_damage_receiver(
             &scene.0.resources.rules,
-            Some(&scene.0.resources.overlay_registry),
+            Some(scene.0.resources.rules.overlay_registry()),
             event,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     };
     hit(&mut scene, 100, tank);

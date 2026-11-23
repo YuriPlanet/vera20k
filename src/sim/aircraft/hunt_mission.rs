@@ -43,7 +43,7 @@ use crate::sim::combat::{ScanMission, TargetKind};
 use crate::sim::mission::MissionType;
 use crate::sim::world::{ObjectAiCtx, Simulation};
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_a_b))]
 #[path = "hunt_mission_tests.rs"]
 mod tests;
 
@@ -116,7 +116,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> i32 {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
         debug_assert_eq!(entity.category(), EntityCategory::Aircraft);
@@ -131,7 +131,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                ctx,
+                ctx: ctx.reborrow(),
             },
         )
     }
@@ -145,14 +145,15 @@ struct WorldHunt<'a> {
 }
 
 impl HuntHost for WorldHunt<'_> {
-    type Threat = u64;
+    /// An object, or a wall Cell from the ring walk (a Foot-coerced mask).
+    type Threat = TargetKind;
 
     fn target(&mut self) -> bool {
         let entity = self.sim.substrate.entities.get(self.id).unwrap();
         crate::sim::combat::target_present(entity.attack_target.target(), self.sim)
     }
 
-    fn greatest_threat(&mut self, mask: u32) -> Option<u64> {
+    fn greatest_threat(&mut self, mask: u32) -> Option<TargetKind> {
         let mission = match mask {
             0 => ScanMission::Hunt,
             mask => ScanMission::Quarry {
@@ -169,14 +170,13 @@ impl HuntHost for WorldHunt<'_> {
         )
     }
 
-    fn assign_target(&mut self, threat: Option<u64>) {
+    fn assign_target(&mut self, threat: Option<TargetKind>) {
         self.sim
             .assign_target_represented(
                 self.id,
-                threat.map(TargetKind::Entity),
+                threat,
                 self.rules,
-                None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("hunting aircraft");
     }
@@ -186,18 +186,12 @@ impl HuntHost for WorldHunt<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        super::enter_idle_mode_for(
-            self.sim,
-            self.id,
-            self.rules,
-            self.ctx.overlay_registry,
-            self.ctx.effects,
-        );
+        super::enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.ctx.effects);
     }
 
     fn leave_team(&mut self) {
         self.sim
-            .leave_team(self.id, false, self.rules, self.ctx.effects);
+            .leave_team(self.id, false, self.rules, &mut self.ctx.effects);
     }
 
     fn epilogue(&mut self) -> i32 {

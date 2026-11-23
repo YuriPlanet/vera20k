@@ -75,7 +75,7 @@ pub(crate) fn estimated_damage(inputs: &EstimateInputs) -> i32 {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
@@ -166,10 +166,12 @@ mod tests {
                     occupied: None,
                     bunkered: None,
                     open_topped: None,
+                    ae_firepower: 1.0,
                 },
                 divisors: DefenceDivisors {
                     house_type_armor: category_armor(input),
                     unit_armor: f64_bits(&input["attacker_armor"]),
+                    ae_armor: 1.0,
                     rank_armor: stronger.then(|| f64_bits(&input["rules_veteran_armor"])),
                 },
                 warhead: (input["warhead_present"] == true).then_some(EstimateWarhead {

@@ -16,6 +16,7 @@ class ScaleMapTests(unittest.TestCase):
         size = 16
         ini = parse_ini(build_map(size))
         self.assertEqual(ini['Map']['Size'], f'0,0,{size},{size}')
+        self.assertNotIn('MaxPlayers', ini['Basic'])
         x, y, width, height = map(int, ini['Map']['LocalSize'].split(','))
         self.assertTrue(width > 0 and height > 0)
         cells = decode_iso_cells(ini['IsoMapPack5'])
@@ -30,9 +31,25 @@ class ScaleMapTests(unittest.TestCase):
         self.assertEqual(set(decode_overlay_section(ini['OverlayPack'])), {0xFF})
 
     def test_size_is_bounded_by_the_playfield_and_the_cell_array(self):
-        for size in (15, 257):
+        for size in (15, 501):
             with self.assertRaises(ValueError):
                 build_map(size)
+        with self.assertRaises(ValueError):
+            build_map(500, cell_array_width=512)
+
+    def test_extended_grid_keeps_high_coordinate_overlays_and_literal_map_size(self):
+        ini = parse_ini(build_map(500, 30))
+        self.assertEqual(ini['Map']['Size'], '0,0,500,500')
+        cells = decode_iso_cells(ini['IsoMapPack5'])
+        self.assertEqual(len(cells), 499500)
+        self.assertIn((749, 750), cells)
+        homes = start_cells(ini)
+        self.assertEqual(len(set(homes)), 30)
+        self.assertEqual(ini['Basic']['MaxPlayers'], '30')
+        self.assertTrue(all(home in cells for home in homes))
+        overlay = decode_overlay_section(ini['OverlayPack'])
+        self.assertEqual(len(overlay), 1024 * 1024)
+        self.assertTrue(any(kind != 255 and index // 1024 > 512 for index, kind in enumerate(overlay)))
 
     def test_match_map_gives_each_start_its_own_ore_and_keeps_trees_off_the_bases(self):
         size, starts = 128, 9

@@ -19,7 +19,7 @@ use super::zone_map::ZoneId;
 use super::zone_search::PathSearchFailure;
 use crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::map::tube_facts::{TubeId, TubeSource};
+use crate::map::tube_facts::TubeId;
 use crate::rules::terrain_rules::LandType;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::overlay_grid::OverlayGrid;
@@ -135,20 +135,21 @@ fn with_pathfind_workspace<R>(
 }
 
 thread_local! {
-    /// The expansions this thread's searches ([`astar_search`]) have made,
-    /// for [`count_search_steps`].
+    /// The expansions this thread's finished searches ([`astar_search`])
+    /// have made, for [`search_steps`].
     static SEARCH_STEPS: Cell<u64> = const { Cell::new(0) };
 }
 
-/// `work`'s result and the expansions the searches it ran on this thread
-/// made. VERA-only: the path batch measures its searches' work by it. Work
+/// The expansions this thread's finished searches have made. VERA-only: the
+/// path batch measures a search's work by the difference across it. Work
 /// that waits on the worker pool may run other items on this thread, whose
 /// searches would count too.
-pub(crate) fn count_search_steps<R>(work: impl FnOnce() -> R) -> (R, u64) {
-    let before = SEARCH_STEPS.with(Cell::get);
-    let result = work();
-    (result, SEARCH_STEPS.with(Cell::get) - before)
+pub(crate) fn search_steps() -> u64 {
+    SEARCH_STEPS.with(Cell::get)
 }
+
+/// The expansions between two asks of [`SearchFootEntry::keeps_searching`].
+const PROGRESS_STRIDE: u32 = 1024;
 
 /// The expansions a search may make. `AStar_main_loop` takes its limit as an
 /// argument and resolves a negative one to `0xFFF7` (`0x00429D51..0x00429D59`);
@@ -260,7 +261,11 @@ impl BlockerNeighborCounts {
         }
     }
 
-    pub(crate) fn from_retained_wall_plane(width: u16, height: u16, counts: &[u8]) -> Self {
+    pub(crate) fn from_retained_wall_plane(
+        width: u16,
+        height: u16,
+        counts: &crate::util::synced::ChunkedVec<u8>,
+    ) -> Self {
         assert_eq!(
             counts.len(),
             usize::from(width) * usize::from(height),
@@ -280,13 +285,17 @@ impl BlockerNeighborCounts {
     /// Bring the retained wall/Foot part of these counts from `kept` to
     /// `now`, cell by cell, and make `kept` a copy of `now`. The counts wrap,
     /// so this is every delta between them applied at once.
-    pub(crate) fn apply_retained_difference(&mut self, kept: &mut [u8], now: &[u8]) {
+    pub(crate) fn apply_retained_difference(
+        &mut self,
+        kept: &mut [u8],
+        now: &crate::util::synced::ChunkedVec<u8>,
+    ) {
         assert_eq!(
             (kept.len(), now.len()),
             (self.counts.len(), self.counts.len()),
             "retained wall-neighbor plane must match pathfinding dimensions"
         );
-        for ((count, kept), &now) in self.counts.iter_mut().zip(kept.iter_mut()).zip(now) {
+        for ((count, kept), &now) in self.counts.iter_mut().zip(kept.iter_mut()).zip(now.iter()) {
             *count = count.wrapping_add(now.wrapping_sub(*kept));
             *kept = now;
         }
@@ -385,8 +394,8 @@ impl BlockerNeighborCounts {
     }
 }
 
-/// A* expansion gate produced by `Zone_precheck`, and the search's progress
-/// along the precheck's level-0 route.
+/// A* expansion gate produced by `Zone_precheck`, with the precheck's
+/// level-0 route the search's [`RouteProgress`] follows.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HierarchyGate<'a> {
     pub level0_zones: &'a ZoneLevelGraph,
@@ -394,8 +403,6 @@ pub(crate) struct HierarchyGate<'a> {
     pub blocker_neighbor_counts: &'a BlockerNeighborCounts,
     /// The precheck's level-0 route, start zone first (`PathfinderClass+0xBC`).
     pub level0_route: &'a [ZoneId],
-    /// Written by the search, read by the retry after it fails.
-    pub progress: &'a Cell<RouteProgress>,
 }
 
 /// How far a corridor search got along its level-0 route:
@@ -428,14 +435,13 @@ impl HierarchyGate<'_> {
     /// goal's zone. Also native sign-extends the cell's zone word, so a zone
     /// id from `0x8000` never matches; the corridor test above reads it
     /// unsigned too, and retail maps stay far below that many zones.
-    fn advance(&self, cell: (u16, u16)) {
-        let progress = self.progress.get();
+    fn advance(&self, progress: &mut RouteProgress, cell: (u16, u16)) {
         let next = self.level0_route.get(progress.index + 1);
         if next == Some(&self.level0_zones.zone_at(cell.0, cell.1)) {
-            self.progress.set(RouteProgress {
+            *progress = RouteProgress {
                 index: progress.index + 1,
                 cell,
-            });
+            };
         }
     }
 }
@@ -531,7 +537,7 @@ fn next_node(held: Option<AStarNode>, open: &mut OpenList) -> Option<AStarNode> 
 const BRIDGE_HEIGHT_THRESHOLD: u16 = 2;
 
 /// Encode source cell index + bridge flag into came_from value.
-/// Max map = 512x512 = 262,144 cells -> fits in 18 bits, leaving bit 20 free.
+/// The experimental 1024-square grid still fits below bit 20 (index <= 0xFFFFF).
 const CAME_FROM_BRIDGE: u32 = 1 << 20;
 
 /// AStar429E54 selects its closed list from the candidate's raw0x100 and
@@ -553,15 +559,19 @@ fn initial_search_heights(
     start: &PathCell,
     start_layer: MovementLayer,
     goal: &PathCell,
+    corrected_decks: [Option<i16>; 2],
 ) -> (i16, i16) {
     (
-        start.signed_level()
-            + if start_layer == MovementLayer::Bridge {
-                4
-            } else {
-                0
-            },
-        goal.signed_level() + if goal.has_structural_bridge() { 4 } else { 0 },
+        if start_layer == MovementLayer::Bridge {
+            corrected_decks[0].unwrap_or_else(|| start.signed_level() + 4)
+        } else {
+            start.signed_level()
+        },
+        if goal.has_structural_bridge() {
+            corrected_decks[1].unwrap_or_else(|| goal.signed_level() + 4)
+        } else {
+            goal.signed_level()
+        },
     )
 }
 
@@ -577,6 +587,7 @@ pub(crate) fn compute_node_height(
     parent_height: i16,
     parent_cell: Option<&PathCell>,
     neighbor_cell: &PathCell,
+    corrected_decks: [Option<i16>; 2],
 ) -> i16 {
     let Some(parent_cell) = parent_cell else {
         return parent_height;
@@ -585,12 +596,17 @@ pub(crate) fn compute_node_height(
     if !neighbor_cell.has_structural_bridge() {
         return ground;
     }
-    let deck = if parent_cell.has_structural_bridge() {
-        parent_height == parent_cell.signed_level() + 4
+    let deck_height = corrected_decks[1].unwrap_or(ground + 4);
+    let source_is_deck = parent_cell.has_structural_bridge()
+        && parent_height == corrected_decks[0].unwrap_or_else(|| parent_cell.signed_level() + 4);
+    let use_deck = if corrected_decks[1].is_some() {
+        parent_height == deck_height && (!parent_cell.has_structural_bridge() || source_is_deck)
+    } else if parent_cell.has_structural_bridge() {
+        source_is_deck
     } else {
         (2..=4).contains(&(parent_height - ground))
     };
-    ground + if deck { 4 } else { 0 }
+    if use_deck { deck_height } else { ground }
 }
 
 fn encode_from(cell_idx: usize, on_bridge: bool) -> u32 {
@@ -605,23 +621,12 @@ fn decode_from(value: u32) -> (usize, bool) {
     )
 }
 
-/// The exit of the explicit tube entered at `coord`, the direction-8 candidate.
-fn explicit_tube_edge(
-    terrain: Option<&ResolvedTerrainGrid>,
-    coord: (u16, u16),
-) -> Option<(u16, u16)> {
-    let terrain = terrain?;
-    let tube = terrain.tube_at_cell(coord.0, coord.1)?;
-    if tube.source != TubeSource::ExplicitMap || tube.path_len() == 0 || tube.exit == (0, 0) {
-        return None;
-    }
-    Some(tube.exit)
-}
-
 /// gamemd tests the actual Cell pointer (`0x00429E19..0x00429E21`) before
 /// its layer, zone and +1AC tests, for compass and tube candidates alike;
 /// `astar_search` asks its closed lists first. This lookup must not stamp the
-/// shared Dummy. Native controls: astar_structural_height.json.
+/// shared Dummy. Native controls: astar_structural_height.json. A compass
+/// neighbour of an interior cell ([`ResolvedTerrainGrid::interior_cells`]) is
+/// allocated, so the search skips the test for it.
 fn search_cell_allocated(terrain: Option<&ResolvedTerrainGrid>, coord: (u16, u16)) -> bool {
     terrain.is_none_or(|terrain| {
         terrain
@@ -630,18 +635,82 @@ fn search_cell_allocated(terrain: Option<&ResolvedTerrainGrid>, coord: (u16, u16
     })
 }
 
+/// The first test an expansion of `cell` at path `height` makes of its
+/// neighbour one `direction` away: whether it asks about it at all, and
+/// whether its bridge closed list is the one selected. Closed-list selection
+/// (`0x00429E54`) compares the CURRENT node's height with the candidate
+/// ([`PathGrid::selects_bridge_list_at`]); Foot+1AC's own `0x004D9C60` list
+/// choice stays local to the class. A neighbour off the grid is passed over,
+/// and so is one closed in its selected list unless it is the goal: such a
+/// cell never gets a node or ends the route here (the retry below only
+/// re-asks gamemd's class and edge cost, a recorded residual), and every
+/// test gamemd makes before its closed test only passes a candidate over.
+#[inline(always)]
+fn neighbour_test(
+    grid: &PathGrid,
+    ground: &ClosedLayer,
+    bridge: &ClosedLayer,
+    cell: (u16, u16),
+    direction: usize,
+    height: i16,
+    goal: (u16, u16),
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> (bool, bool) {
+    let (dx, dy) = DIRECTION_DELTAS[direction];
+    let (x, y) = (i32::from(cell.0) + dx, i32::from(cell.1) + dy);
+    let width = i32::from(grid.width());
+    let inside = (x >= 0) & (y >= 0) & (x < width) & (y < i32::from(grid.height()));
+    // Off the grid, the bits read are the expanded cell's, and unused.
+    let index = if inside {
+        y * width + x
+    } else {
+        i32::from(cell.1) * width + i32::from(cell.0)
+    } as usize;
+    // Both lists' bits are read before the choice is known, so neither read
+    // waits on the planes that make it.
+    let ground_closed = ground.contains(index);
+    let bridge_closed = bridge.contains(index);
+    let use_bridge = grid.selects_bridge_list_at(
+        index,
+        height,
+        if inside { terrain } else { None },
+        (x as u16, y as u16),
+    );
+    let closed = if use_bridge {
+        bridge_closed
+    } else {
+        ground_closed
+    };
+    let is_goal = (x, y) == (i32::from(goal.0), i32::from(goal.1));
+    (inside & (!closed | is_goal), use_bridge)
+}
+
+/// [`neighbour_test`] of every direction, as bits by direction
+/// ([`DIRECTION_DELTAS`]): the neighbours the expansion asks about, and those
+/// whose bridge closed list is selected.
+#[inline(always)]
+fn expansion_neighbours(
+    grid: &PathGrid,
+    ground: &ClosedLayer,
+    bridge: &ClosedLayer,
+    cell: (u16, u16),
+    height: i16,
+    goal: (u16, u16),
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> (u8, u8) {
+    let mut asked = 0;
+    let mut bridge_lists = 0;
+    for direction in 0..DIRECTION_DELTAS.len() {
+        let (ask, use_bridge) =
+            neighbour_test(grid, ground, bridge, cell, direction, height, goal, terrain);
+        asked |= u8::from(ask) << direction;
+        bridge_lists |= u8::from(use_bridge) << direction;
+    }
+    (asked, bridge_lists)
+}
+
 /// Configuration for the unified A* search.
 pub struct AStarOptions<'a> {
-    /// The mover type's `IsTrain=` flag (`TechnoTypeClass+0xC94`):
-    /// `AStar_main_loop` sets its gate byte at `0x00429C79` and then zeroes
-    /// every passable `+0x1AC` class (`0x00429F5C..0x00429F69`). Residual: no
-    /// mover supplies it (always false), and the search's other train arms
-    /// are unported: the start height at `0x00429B64..0x00429BB0`, the start
-    /// neighbours closed against the train's facing at
-    /// `0x00429C87..0x00429D25`, the hierarchy bypass at `0x0042CACC` and
-    /// Find_Path's code-6 destination skip at `0x004D3A66`/`0x004D3AA5`. No
-    /// retail type sets `IsTrain=`, so all are dormant.
-    pub mover_is_train: bool,
     /// The Foot's `+0x1AC` (`0x00429F54`): the only terrain and object
     /// admission verdict, and the edge's cost class.
     pub foot_entry: &'a dyn SearchFootEntry,
@@ -665,10 +734,9 @@ pub struct AStarOptions<'a> {
 
 impl<'a> AStarOptions<'a> {
     /// A search asking `foot_entry`, with no hierarchy gate, markers,
-    /// urgency, train flag or map cells.
+    /// urgency or map cells.
     pub fn new(foot_entry: &'a dyn SearchFootEntry) -> Self {
         Self {
-            mover_is_train: false,
             foot_entry,
             marker_overlay: None,
             urgency: 0,
@@ -698,7 +766,19 @@ pub struct SearchEntryQuery {
     pub path_height: i32,
 }
 
+/// Inputs of AStar_main_loop's train arms, sampled from the searching Foot.
+#[derive(Clone, Copy)]
+pub struct TrainSearchPose {
+    pub facing_octant: u8,
+    pub level: i32,
+}
+
 pub trait SearchFootEntry {
+    /// A train's body facing and its signed Location.Z in height levels.
+    fn train_pose(&self) -> Option<TrainSearchPose> {
+        None
+    }
+
     fn classify(&self, query: SearchEntryQuery) -> Result<u8, String>;
 
     /// Successful-search finishing reads Foot4DC760 and House threat state.
@@ -724,12 +804,10 @@ pub trait SearchFootEntry {
     }
     ///429C1A runs after wrapper admission. One transaction is retained through
     ///A* and both finishing passes; fixtures may supply their static overlay.
-    fn prepare_search_markers(
-        &self,
-    ) -> Result<Option<(u8, std::cell::Ref<'_, SearchMarkerOverlay>)>, String> {
+    fn prepare_search_markers(&self) -> Result<Option<(u8, &SearchMarkerOverlay)>, String> {
         Ok(None)
     }
-    fn prepared_search_markers(&self) -> Option<std::cell::Ref<'_, SearchMarkerOverlay>> {
+    fn prepared_search_markers(&self) -> Option<&SearchMarkerOverlay> {
         None
     }
     /// Whether the Foot is a Unit (`WhatAmI` 1) whose type is `Passive=`
@@ -737,6 +815,14 @@ pub trait SearchFootEntry {
     /// such a search never takes the blocked-goal tail.
     fn is_passive_unit(&self) -> bool {
         false
+    }
+    /// VERA-only, never native: asked after every [`PROGRESS_STRIDE`]
+    /// expansions with the expansions this cell search has made. `false`
+    /// stops it with [`PathSearchFailure::Stopped`], which no retry
+    /// follows. Going on changes nothing. The path batch stops a code-2
+    /// re-path whose answer its turn's budget cuts whatever the search finds.
+    fn keeps_searching(&self, _expanded: u32) -> bool {
+        true
     }
 }
 
@@ -827,16 +913,53 @@ fn reconstruct_path_dual(
 /// neighbor. Refusal and unavailable live inputs remain distinct errors.
 pub fn astar_search(
     grid: &PathGrid,
-    start: (u16, u16),
+    requested_start: (u16, u16),
     start_layer: MovementLayer,
-    goal: (u16, u16),
+    requested_goal: (u16, u16),
     options: &AStarOptions<'_>,
 ) -> Result<Vec<LayeredPathStep>, PathSearchFailure> {
-    // Start cell may be blocked (e.g. unit standing inside a building footprint
-    // after undock). The start node is expanded first without a passability
-    // check; only neighbor expansion calls Can_Enter_Cell. If all 8 neighbors
-    // are also blocked, the open list stays empty and reports refusal
-    // naturally — no need for an explicit start-cell rejection.
+    astar_search_along_route(
+        grid,
+        requested_start,
+        start_layer,
+        requested_goal,
+        options,
+        None,
+    )
+}
+
+/// [`astar_search`], also writing to `progress` how far the search got along
+/// the hierarchy gate's level-0 route, which the retry after a failed
+/// search reads.
+fn astar_search_along_route(
+    grid: &PathGrid,
+    requested_start: (u16, u16),
+    start_layer: MovementLayer,
+    requested_goal: (u16, u16),
+    options: &AStarOptions<'_>,
+    mut progress: Option<&mut RouteProgress>,
+) -> Result<Vec<LayeredPathStep>, PathSearchFailure> {
+    // AStar_main_loop (0x00429AA1..0x00429AEB) refuses a null endpoint
+    // before asking the Foot about a neighbour. A packed coordinate can
+    // alias a real cell; the closed list uses that cell's +0x24 coordinates
+    // (0x00429C1F), while AStar_create_node (0x0042A54A) uses the raw goal
+    // for its distance estimate.
+    let resolve_endpoint = |coord: (u16, u16)| {
+        let (x, y) = match options.resolved_terrain {
+            Some(terrain) => {
+                let index = terrain.native_fixed_cell_index(coord.0 as i16, coord.1 as i16)?;
+                let (x, y) = terrain
+                    .native_cell_coord(crate::map::cell_index::NativeCellIdentity::Real(index));
+                (x as u16, y as u16)
+            }
+            None => coord,
+        };
+        grid.cell(x, y).map(|cell| ((x, y), cell))
+    };
+    let (start, start_cell) =
+        resolve_endpoint(requested_start).ok_or(PathSearchFailure::CellSearchExhausted)?;
+    let (goal, goal_cell) =
+        resolve_endpoint(requested_goal).ok_or(PathSearchFailure::CellSearchExhausted)?;
 
     // Original429A90..429B5A widens signed levels before adding the bridge
     // offset. The goal's raw structural flag selects its height even when
@@ -844,22 +967,56 @@ pub fn astar_search(
     // Residual: the Aircraft (WhatAmI 2) arms at 0x00429AF9/0x00429B2A, which
     // keep the plain level at both ends, are not ported; no Aircraft reaches
     // FootClass::Find_Path, this search's one production caller.
-    let start_cell = grid.cell(start.0, start.1).unwrap_or(&DEFAULT_BLOCKED_CELL);
-    let goal_cell = grid.cell(goal.0, goal.1).unwrap_or(&DEFAULT_BLOCKED_CELL);
-    let (start_height, goal_height) = initial_search_heights(start_cell, start_layer, goal_cell);
-    if let Some(gate) = options.hierarchy_gate {
-        gate.progress.set(RouteProgress {
+    let corrected_deck = |coord, cell: &PathCell| {
+        if !cell.has_structural_bridge() {
+            return None;
+        }
+        options
+            .resolved_terrain?
+            .corrected_high_bridge_deck_level(coord)
+    };
+    let start_deck = corrected_deck(start, start_cell);
+    let (mut start_height, goal_height) = initial_search_heights(
+        start_cell,
+        start_layer,
+        goal_cell,
+        [start_deck, corrected_deck(goal, goal_cell)],
+    );
+    // AStar_main_loop 0x00429B64..0x00429BB0: Location.Z / LevelHeight is
+    // compared with the OnBridge-adjusted start; a structural rail may add
+    // four more levels even when the Foot's OnBridge byte was clear. A fixed
+    // deck is the level that rail stands at.
+    let train = options.foot_entry.train_pose();
+    let train_on_rail = start_cell.has_structural_bridge()
+        && train.is_some_and(|pose| pose.level.abs_diff(i32::from(start_height)) > 2);
+    if train_on_rail {
+        start_height = start_deck.unwrap_or(start_height + 4);
+    }
+    if options.hierarchy_gate.is_some()
+        && let Some(progress) = progress.as_deref_mut()
+    {
+        *progress = RouteProgress {
             index: 0,
-            cell: start,
-        });
+            cell: requested_start,
+        };
     }
 
     // 0x00429BF3..0x00429C0A: a start cell and height that are the goal's
     // skip the search, and AStar returns no route (0x0042A451).
-    if start == goal && start_height == goal_height {
+    if requested_start == requested_goal && start_height == goal_height {
         return Err(PathSearchFailure::CellSearchExhausted);
     }
 
+    // 0x00429C1A prepares the markers after endpoint admission. The Foot
+    // retains the transaction for corridor retries and path finishing.
+    let prepared = options
+        .foot_entry
+        .prepare_search_markers()
+        .map_err(PathSearchFailure::CellEntryUnavailable)?;
+    let (urgency, marker_overlay) = match prepared {
+        Some((urgency, overlay)) => (urgency, Some(overlay)),
+        None => (options.urgency, options.marker_overlay),
+    };
     // --- Arrays ---
     let w = grid.width() as usize;
     let h = grid.height() as usize;
@@ -876,13 +1033,19 @@ pub fn astar_search(
         } = *ws;
 
         let start_idx = start.1 as usize * w + start.0 as usize;
-        let start_on_bridge = is_at_bridge_level(start_height, start_cell);
+        // The start stamp compares just the two levels (0x00429C3B). A fixed
+        // deck can sit at the ground's level, so there the layer decides.
+        let start_on_bridge = if start_deck.is_some() {
+            start_layer == MovementLayer::Bridge || train_on_rail
+        } else {
+            start_height > start_cell.signed_level()
+        };
         // Close-on-generation: gamemd stamps a (cell, layer) closed at the
         // moment a node is created for it and freezes its g there. The start
         // node is created before the loop, so it is stamped here, with g 0.
         let start_descriptor = PathDescriptor {
             parent: u32::MAX,
-            height: compute_node_height(start_height, None, start_cell),
+            height: compute_node_height(start_height, None, start_cell, [None; 2]),
             g: 0.0,
         };
         if start_on_bridge {
@@ -891,10 +1054,37 @@ pub fn astar_search(
             ground.set(start_idx, start_descriptor);
         }
 
+        // AStar_main_loop 0x00429C87..0x00429D25 stamps the rear three
+        // neighbours closed at g=0 for the whole search, even if a later
+        // approach would reach one from a different direction. Here the
+        // selected list depends on height alone, including on an unflagged cell.
+        if let Some(train) = train {
+            for (direction, (dx, dy)) in DIRECTION_DELTAS.iter().enumerate() {
+                if !(3..=5).contains(&train.facing_octant.abs_diff(direction as u8)) {
+                    continue;
+                }
+                let neighbour = (
+                    start.0.wrapping_add_signed(*dx as i16),
+                    start.1.wrapping_add_signed(*dy as i16),
+                );
+                if let Some(((x, y), cell)) = resolve_endpoint(neighbour) {
+                    let layer = if start_height > cell.signed_level() + 1 {
+                        &mut *bridge
+                    } else {
+                        &mut *ground
+                    };
+                    layer.set(
+                        usize::from(y) * w + usize::from(x),
+                        PathDescriptor::UNVISITED,
+                    );
+                }
+            }
+        }
+
         // The start node is expanded first and never enters the open list
         // (created at `0x00429BE6`).
         let mut current = AStarNode {
-            f_cost: heuristic(start, goal),
+            f_cost: heuristic(start, requested_goal),
             g_cost: 0.0,
             x: start.0,
             y: start.1,
@@ -904,6 +1094,10 @@ pub fn astar_search(
         // `[ESP+0x13]` (`0x00429D2F..0x00429D4C`): the Foot is a Unit whose
         // type is `Passive=`.
         let passive_unit = options.foot_entry.is_passive_unit();
+        // Every neighbour of an interior cell is allocated.
+        let interior_cells = options
+            .resolved_terrain
+            .and_then(ResolvedTerrainGrid::interior_cells);
 
         // --- Main loop ---
         let tail = 'search: loop {
@@ -945,64 +1139,95 @@ pub fn astar_search(
             let mut held = None;
 
             // --- Neighbor expansion ---
-            for (dir_index, &(dx, dy)) in DIRECTION_DELTAS.iter().enumerate() {
-                let nx_i = cx as i32 + dx;
-                let ny_i = cy as i32 + dy;
-                if nx_i < 0
-                    || ny_i < 0
-                    || nx_i >= grid.width() as i32
-                    || ny_i >= grid.height() as i32
-                {
-                    continue;
+            // Every neighbour's closed test is made first, into one bit per
+            // direction, and the neighbours asked about are then taken in
+            // ascending direction: in a flood most neighbours are closed in
+            // a changing pattern, which a branch per neighbour mispredicts.
+            // Nothing a neighbour below does changes another's test: the one
+            // closed bit it sets is its own, and the planes and the current
+            // height stay as they are.
+            let (mut asked, bridge_lists) = expansion_neighbours(
+                grid,
+                ground,
+                bridge,
+                (cx, cy),
+                current.height,
+                goal,
+                options.resolved_terrain,
+            );
+            let interior = interior_cells.is_some_and(|cells| cells.contains((cx, cy)));
+            let compass = std::iter::from_fn(|| {
+                if asked == 0 {
+                    return None;
                 }
-                let nx = nx_i as u16;
-                let ny = ny_i as u16;
+                let dir = asked.trailing_zeros() as usize;
+                asked &= asked - 1;
+                let (dx, dy) = DIRECTION_DELTAS[dir];
+                let coord = ((i32::from(cx) + dx) as u16, (i32::from(cy) + dy) as u16);
+                Some((dir, coord, bridge_lists >> dir & 1 != 0))
+            });
+            // 0x00429DCB..0x00429E52: after the compass directions, a Cell
+            // with a tube supplies its exit's actual Cell from the map table.
+            // The ordinary layer, zone, closed-list and Foot admission follow.
+            let tube = options
+                .resolved_terrain
+                .and_then(|terrain| terrain.tube_at_cell(cx, cy))
+                .and_then(|tube| resolve_endpoint(tube.exit))
+                .map(|(coord, cell)| (8, coord, is_at_bridge_level(current.height, cell)));
+            for (dir_index, (nx, ny), neighbor_use_bridge) in compass.chain(tube) {
+                debug_assert!(
+                    dir_index == 8
+                        || neighbour_test(
+                            grid,
+                            ground,
+                            bridge,
+                            (cx, cy),
+                            dir_index,
+                            current.height,
+                            goal,
+                            options.resolved_terrain,
+                        ) == (true, neighbor_use_bridge),
+                    "an earlier neighbour changed the test of direction {dir_index}"
+                );
                 let n_idx = ny as usize * w + nx as usize;
-
-                // Closed-list selection (0x00429E54): the CURRENT node's height
-                // against the candidate. Foot+1AC's own 0x004D9C60 list choice
-                // stays local to the class.
-                // Both lists' bits are read before the choice is known, so
-                // neither read waits on the planes that make it.
-                let ground_closed = ground.contains(n_idx);
-                let bridge_closed = bridge.contains(n_idx);
-                let neighbor_use_bridge = grid.selects_bridge_list_at(n_idx, current.height);
                 let layer = if neighbor_use_bridge {
                     &*bridge
                 } else {
                     &*ground
                 };
-                // A closed cell other than the goal never gets a node or ends
-                // the route here (the retry below only re-asks gamemd's class
-                // and edge cost, a recorded residual), and every test gamemd
-                // makes before its closed test only passes a candidate over,
-                // so such a cell is passed over first. Most candidates are
-                // closed, so this reads only the closed bits.
                 let is_goal = (nx, ny) == goal;
-                let is_closed = if neighbor_use_bridge {
-                    bridge_closed
+                // A tube can lead to a cell just closed by a compass edge or
+                // back to the entrance, as an automatic low-bridge shell does.
+                let closed = if is_goal || dir_index == 8 {
+                    layer.get(n_idx)
                 } else {
-                    ground_closed
+                    None
                 };
-                if is_closed && !is_goal {
-                    continue;
-                }
-                let closed = if is_goal { layer.get(n_idx) } else { None };
-                if !search_cell_allocated(options.resolved_terrain, (nx, ny)) {
+                debug_assert!(
+                    !interior || search_cell_allocated(options.resolved_terrain, (nx, ny)),
+                    "an interior cell's neighbour ({nx},{ny}) is allocated"
+                );
+                if !interior && !search_cell_allocated(options.resolved_terrain, (nx, ny)) {
                     continue;
                 }
                 let neighbor_cell = grid.cell(nx, ny).unwrap_or(&DEFAULT_BLOCKED_CELL);
 
                 // Compute what height the NEW node carries forward (separate computation)
-                let neighbor_height =
-                    compute_node_height(current.height, Some(cur_cell), neighbor_cell);
+                let neighbor_height = compute_node_height(
+                    current.height,
+                    Some(cur_cell),
+                    neighbor_cell,
+                    [
+                        corrected_deck((cx, cy), cur_cell),
+                        corrected_deck((nx, ny), neighbor_cell),
+                    ],
+                );
 
                 // Original429E54..429EAF exempts structural deck candidates
                 // from the ordinary zone comparison. The signed-height/list
                 // predicate is executed in astar_structural_height.json.
-                // Residual: HierarchyGate also consults blocker-neighbor counts;
-                // full equivalence of that adapter to the original hierarchy
-                // comparison is not established by the scalar fragment corpus.
+                // 0x00429E7F..0x00429EC1: a ground candidate passes when its
+                // zone is marked or Cell+0x122 is nonzero (`HierarchyGate`).
                 if let Some(gate) = options.hierarchy_gate
                     && !neighbor_use_bridge
                     && !gate.allows(nx, ny)
@@ -1011,7 +1236,7 @@ pub fn astar_search(
                 }
 
                 // A closed candidate (`0x00429EC7..0x00429F31`), by now only the
-                // goal, is passed over unless its node's g is at least the
+                // goal or tube exit, is passed over unless its node's g is at least the
                 // current g plus 1.009. Then the class and edge cost are asked,
                 // but a closed cell never gets a second node
                 // (`0x00429FF3..0x0042A018`), so the goal is asked again only
@@ -1019,10 +1244,10 @@ pub fn astar_search(
                 // Foot+1AC (`0x00429F54`) and the edge cost (`0x00429F8A`, whose
                 // class-2 chain walk looks cells up) about every retried cell
                 // and keeps only a refused goal's class. Here only the goal is
-                // asked, and only Foot+1AC. The discarded answers' only lasting
+                // asked on compass edges, and only Foot+1AC. The discarded answers' only lasting
                 // effect is the shared Dummy cell's coordinate words, which a
                 // lookup of an off-map cell stamps. Trigger: a retried closed
-                // candidate whose Foot+1AC or chain walk reads an off-map cell.
+                // compass candidate whose Foot+1AC or chain walk reads an off-map cell.
                 // Effect: the Dummy keeps an older stamp. Frequency: only near
                 // map edges, the only place a lookup leaves the map. Downstream
                 // risk: only a later read of the Dummy's coordinates without its
@@ -1073,57 +1298,59 @@ pub fn astar_search(
                     continue;
                 }
 
-                // A train (`IsTrain=`, gate byte set at `0x00429C79`) takes
-                // class 0 for every admitted class (`0x00429F5C..0x00429F69`).
-                let cost_class = if options.mover_is_train {
-                    0
+                let edge = if dir_index == 8 {
+                    // 0x00429FA3..0x00429FE6: a tube costs the Chebyshev
+                    // distance between its cells, with no compass modifiers.
+                    f32::from(cx.abs_diff(nx).max(cy.abs_diff(ny)))
                 } else {
-                    cost_class
+                    // A train (`IsTrain=`, gate byte set at `0x00429C79`) takes
+                    // class 0 for every admitted class (`0x00429F5C..0x00429F69`).
+                    let cost_class = if train.is_some() { 0 } else { cost_class };
+
+                    // The edge cost (`AStar_compute_edge_cost @ 0x00429830`) is
+                    // built from this class (base table `0x0081870C`), the code-2
+                    // blocker override, the `CellClass+0x140 & 0x40000` marker,
+                    // the dormant `PathfinderClass+0x01` bridge-flank term and the
+                    // direction tiebreaks at `0x0081872C`. No land row enters it:
+                    // the classes read the row only as passability (Unit
+                    // `0x0073FAB5`, Infantry `0x0051C750`), answering 7 for zero.
+                    //
+                    // Step cost — uniform across all 8 compass directions.
+                    // AStar_main_loop checks only the destination through
+                    // Can_Enter_Cell. PathfinderClass+0x01 is constructor-zero and
+                    // has no retail writer, so the dormant bridge-flank block does
+                    // not inspect either cardinal beside a diagonal destination.
+                    //
+                    // No height term. `AStar_compute_edge_cost` multiplies by
+                    // exactly four things — the class base, the code-2
+                    // blocker-prediction override, `4.0` when the destination
+                    // carries `CellClass+0x140 & 0x40000` (the search-scoped bridge
+                    // marker, applied below), and the dormant flank term — and
+                    // `AStar_main_loop` adds only the direction tiebreak and one
+                    // `FMUL` by `PathfinderClass+0x04`. Its seven reads of the cell
+                    // level byte `+0x11B` all feed the bridge/layer selection,
+                    // never a cost. A ×4 on height change would have made every
+                    // ramp step cost as much as four flat ones.
+                    let mut cost = CLASS_BASE[usize::from(cost_class)];
+
+                    // The class's code-2 multiplier; the receiver walks the chain
+                    // on the list the class was asked about.
+                    if cost_class == 2 {
+                        let list = if neighbor_use_bridge {
+                            MovementLayer::Bridge
+                        } else {
+                            MovementLayer::Ground
+                        };
+                        cost *= code2_multiplier(urgency, || {
+                            options.foot_entry.code2_chain_jams((nx, ny), list)
+                        })
+                        .map_err(PathSearchFailure::CellEntryUnavailable)?;
+                    }
+
+                    cost = apply_search_marker_cost(cost, marker_overlay, (nx, ny));
+                    compass_edge_cost(cost, dir_index)
                 };
-
-                // The edge cost (`AStar_compute_edge_cost @ 0x00429830`) is
-                // built from this class (base table `0x0081870C`), the code-2
-                // blocker override, the `CellClass+0x140 & 0x40000` marker,
-                // the dormant `PathfinderClass+0x01` bridge-flank term and the
-                // direction tiebreaks at `0x0081872C`. No land row enters it:
-                // the classes read the row only as passability (Unit
-                // `0x0073FAB5`, Infantry `0x0051C750`), answering 7 for zero.
-                //
-                // Step cost — uniform across all 8 compass directions.
-                // AStar_main_loop checks only the destination through
-                // Can_Enter_Cell. PathfinderClass+0x01 is constructor-zero and
-                // has no retail writer, so the dormant bridge-flank block does
-                // not inspect either cardinal beside a diagonal destination.
-                //
-                // No height term. `AStar_compute_edge_cost` multiplies by
-                // exactly four things — the class base, the code-2
-                // blocker-prediction override, `4.0` when the destination
-                // carries `CellClass+0x140 & 0x40000` (the search-scoped bridge
-                // marker, applied below), and the dormant flank term — and
-                // `AStar_main_loop` adds only the direction tiebreak and one
-                // `FMUL` by `PathfinderClass+0x04`. Its seven reads of the cell
-                // level byte `+0x11B` all feed the bridge/layer selection,
-                // never a cost. A ×4 on height change would have made every
-                // ramp step cost as much as four flat ones.
-                let mut cost = CLASS_BASE[usize::from(cost_class)];
-
-                // The class's code-2 multiplier; the receiver walks the chain
-                // on the list the class was asked about.
-                if cost_class == 2 {
-                    let list = if neighbor_use_bridge {
-                        MovementLayer::Bridge
-                    } else {
-                        MovementLayer::Ground
-                    };
-                    cost *= code2_multiplier(options.urgency, || {
-                        options.foot_entry.code2_chain_jams((nx, ny), list)
-                    })
-                    .map_err(PathSearchFailure::CellEntryUnavailable)?;
-                }
-
-                cost = apply_search_marker_cost(cost, options.marker_overlay, (nx, ny));
-                let edge = compass_edge_cost(cost, dir_index);
-                let (g_cost, f_cost) = node_costs(current.g_cost, edge, (nx, ny), goal);
+                let (g_cost, f_cost) = node_costs(current.g_cost, edge, (nx, ny), requested_goal);
 
                 // Node creation. gamemd stamps the selected layer's closed
                 // array and records g at this point and never revisits the
@@ -1155,75 +1382,25 @@ pub fn astar_search(
                         on_bridge: neighbor_use_bridge,
                     },
                 );
-                if let Some(gate) = options.hierarchy_gate {
-                    gate.advance((nx, ny));
-                }
-            }
-
-            // Direction 8 is a TubeClass jump. It is not an adjacent neighbor and
-            // must not use the normal terrain/height/corner-cut predicates. Auto
-            // low-bridge shells have path_len=0 and remain predicate-only.
-            // Residual: gamemd offers the direction-8 candidate whenever the
-            // current cell has a tube index (`CellClass+0x116`,
-            // `0x00429DCB..0x00429E02`), on either layer, and runs it through
-            // the compass arms' layer choice, hierarchy gate, closed test and
-            // Foot+1AC with direction 8 (`0x00429F54`), so a class of 7 or
-            // more refuses it and a blocked goal can end the route there
-            // (`0x00429FEA..0x0042A19B`). Here it is offered only off the
-            // bridge layer, never asked of Foot+1AC and tested closed on the
-            // ground list only. Trigger: a search reaching a tube entrance.
-            // Effect: a tube gamemd refuses (class 7 or more, or outside the
-            // corridor) can be taken here, one it offers from a deck-layer
-            // node is not, and a blocked goal at a tube exit does not end the
-            // route there. Frequency: maps with tubes only. Downstream risk:
-            // low; it is one arm of the neighbour loop.
-            if !on_bridge
-                && let Some((nx, ny)) = explicit_tube_edge(options.resolved_terrain, (cx, cy))
-                && nx < grid.width()
-                && ny < grid.height()
-                && search_cell_allocated(options.resolved_terrain, (nx, ny))
-            {
-                let n_idx = ny as usize * w + nx as usize;
-                if !ground.contains(n_idx) {
-                    let neighbor_cell = grid.cell(nx, ny).unwrap_or(&DEFAULT_BLOCKED_CELL);
-                    let neighbor_height = neighbor_cell.signed_level();
-                    // `0x00429FA3..0x00429FE6`: the Chebyshev cell distance to
-                    // the exit, stored as binary32, with no tiebreak or `FMUL`.
-                    let edge = f32::from(cx.abs_diff(nx).max(cy.abs_diff(ny)));
-                    let (g_cost, f_cost) = node_costs(current.g_cost, edge, (nx, ny), goal);
-
-                    // Same close-on-generation rule as the compass edges.
-                    ground.set(
-                        n_idx,
-                        PathDescriptor {
-                            parent: encode_from(c_idx, on_bridge),
-                            height: neighbor_height,
-                            g: g_cost,
-                        },
-                    );
-                    offer_child(
-                        &mut held,
-                        open,
-                        AStarNode {
-                            f_cost,
-                            g_cost,
-                            x: nx,
-                            y: ny,
-                            height: neighbor_height,
-                            on_bridge: false,
-                        },
-                    );
-                    if let Some(gate) = options.hierarchy_gate {
-                        gate.advance((nx, ny));
-                    }
+                if let (Some(gate), Some(progress)) =
+                    (options.hierarchy_gate, progress.as_deref_mut())
+                {
+                    gate.advance(progress, (nx, ny));
                 }
             }
 
             expanded += 1;
+            if expanded.is_multiple_of(PROGRESS_STRIDE)
+                && !options.foot_entry.keeps_searching(expanded)
+            {
+                return Err(PathSearchFailure::Stopped);
+            }
             current = next_node(held, open).ok_or(PathSearchFailure::CellSearchExhausted)?;
         };
 
-        if expanded == REFUSED_EXPANSION_COUNT {
+        // 0x0042A3F8 refuses a path with just the root descriptor. Distinct
+        // input coordinates may point to the same map slot.
+        if expanded == REFUSED_EXPANSION_COUNT || expanded == 0 {
             return Err(PathSearchFailure::CellSearchExhausted);
         }
         // Use the tail node's push-time layer flag (same value came_from was
@@ -1546,11 +1723,22 @@ impl PathGrid {
     /// from `path_height` ([`is_at_bridge_level`]), from the kept planes:
     /// the level is read only for a structural cell. A cell past the grid
     /// reads as the default blocked cell does.
-    fn selects_bridge_list_at(&self, index: usize, path_height: i16) -> bool {
+    fn selects_bridge_list_at(
+        &self,
+        index: usize,
+        path_height: i16,
+        terrain: Option<&ResolvedTerrainGrid>,
+        coord: (u16, u16),
+    ) -> bool {
         let structural = self
             .bridge_structural
             .get(index / 64)
             .is_some_and(|word| word >> (index % 64) & 1 != 0);
+        if structural
+            && let Some(deck) = terrain.and_then(|t| t.corrected_high_bridge_deck_level(coord))
+        {
+            return path_height == deck;
+        }
         let selected = structural
             && selects_bridge_list(path_height, (true, self.ground_levels[index] as i8 as i16));
         debug_assert_eq!(
@@ -1676,39 +1864,6 @@ impl PathGrid {
 
     pub fn bridge_deck_level(&self, x: u16, y: u16) -> Option<u8> {
         self.cell(x, y).and_then(PathCell::bridge_deck_level_if_any)
-    }
-
-    /// Find nearest walkable cell on either layer, searching in expanding rings.
-    pub fn nearest_walkable_any_layer(
-        &self,
-        x: u16,
-        y: u16,
-        max_radius: u16,
-    ) -> Option<(u16, u16)> {
-        let check = |cx: u16, cy: u16| self.is_any_layer_walkable(cx, cy);
-        if check(x, y) {
-            return Some((x, y));
-        }
-        for radius in 1..=max_radius {
-            let r = radius as i32;
-            for d in -r..=r {
-                let candidates = [
-                    (x as i32 + d, y as i32 - r),
-                    (x as i32 + d, y as i32 + r),
-                    (x as i32 - r, y as i32 + d),
-                    (x as i32 + r, y as i32 + d),
-                ];
-                for (cx, cy) in candidates {
-                    if cx < 0 || cy < 0 || cx >= self.width as i32 || cy >= self.height as i32 {
-                        continue;
-                    }
-                    if check(cx as u16, cy as u16) {
-                        return Some((cx as u16, cy as u16));
-                    }
-                }
-            }
-        }
-        None
     }
 
     /// Build from resolved terrain without a live overlay surface: a bridge
@@ -1871,10 +2026,11 @@ impl PathGrid {
         foundation: &crate::rules::foundation::Foundation,
         has_bib: bool,
     ) {
-        let foundation_cells =
-            crate::sim::production::building_base_foundation_cells(cell_rx, cell_ry, foundation);
-        let blocking =
-            crate::sim::production::building_movement_blocking_cells(&foundation_cells, has_bib);
+        let blocking = crate::sim::production::building_movement_blocking_cells(
+            (cell_rx, cell_ry),
+            foundation,
+            has_bib,
+        );
         for (rx, ry) in blocking {
             self.block_structure_cell(rx, ry);
         }
@@ -1998,8 +2154,8 @@ struct AStarNode {
 /// is part of the engine's character. The table root never exceeds the exact
 /// one.
 fn heuristic(cell: (u16, u16), goal: (u16, u16)) -> f32 {
-    let dx = i32::from(cell.0) - i32::from(goal.0);
-    let dy = i32::from(cell.1) - i32::from(goal.1);
+    let dx = i32::from(cell.0 as i16) - i32::from(goal.0 as i16);
+    let dy = i32::from(cell.1 as i16) - i32::from(goal.1 as i16);
     let squares = dy.wrapping_mul(dy).wrapping_add(dx.wrapping_mul(dx));
     let root = sqrt_approx_f32(X87Chop53::load_i32(squares)).expect("an integer root is finite");
     f32::from_bits(root.bits())
@@ -2084,7 +2240,7 @@ pub(crate) fn find_layered_path_marker(
     start: (u16, u16),
     start_layer: MovementLayer,
     goal: (u16, u16),
-    hierarchy_gate: Option<HierarchyGate<'_>>,
+    hierarchy: Option<(HierarchyGate<'_>, &mut RouteProgress)>,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     marker_overlay: Option<&SearchMarkerOverlay>,
     facts: MoverSearchFacts<'_>,
@@ -2092,7 +2248,8 @@ pub(crate) fn find_layered_path_marker(
     if !matches!(start_layer, MovementLayer::Ground | MovementLayer::Bridge) {
         return Err(PathSearchFailure::CellSearchExhausted);
     }
-    astar_search(
+    let (hierarchy_gate, progress) = hierarchy.unzip();
+    astar_search_along_route(
         grid,
         start,
         start_layer,
@@ -2104,11 +2261,12 @@ pub(crate) fn find_layered_path_marker(
             urgency: facts.urgency,
             ..AStarOptions::new(facts.foot_entry)
         },
+        progress,
     )
 }
 
 // Tests extracted to core_tests.rs to stay under 400 lines.
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "core_tests.rs"]
 mod core_tests;
 
@@ -2132,6 +2290,6 @@ impl PathGrid {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "astar_entry_tests.rs"]
 mod astar_entry_tests;

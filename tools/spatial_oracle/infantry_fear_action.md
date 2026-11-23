@@ -86,14 +86,19 @@ Weapon-slot presence in the three IsArmed controls is a comparison-only supplied
 pointer; weapon reader/gameplay is excluded. No executable or gameplay result
 is replaced.
 
+The fear-expiry refill at `5200E1..520105` uses the shared `TechnoAmmo`
+owner, including its constructor and ordinary ground FireAt debit. The
+production regression
+`finite_infantry_refills_after_damage_fear_expires_and_can_fire_again` reads
+retail Battle rules/ART and a Scenario `E1.Ammo=1` override, fires an actual
+shot, delivers a surviving hit through the damage receiver, advances Logic
+through fear expiry and fires again. It also checks that initial zero fear
+does not refill and that the refill leaves the reload clock alone. This is
+an admitted map override, not use by an unchanged shipped map; ordinary
+stock E1 keeps its negative unlimited count and bypasses this arm.
+
 The following required larger mechanisms remain open:
 
-- **Ground TechnoAmmo:** `5200E1..520105` needs the live `Techno+2FC` owner and
-  its initialization, fire/reload/persistence lifecycle. Current aircraft ammo
-  storage is not a ground Infantry count. Stock E1 uses unlimited ammo; the
-  receiver records this omission and does not infer live ammo from TypeAmmo or
-  introduce an invented failure. The three executed zero-ammo controls are
-  retained prerequisites for the shared ammo migration.
 - **Complete Fraidycat transaction:** the boundary row establishes the fear
   caller's request, not the Scatter body, Scenario draws, destination/Process,
   bridge effects or enclosing return. Those use the existing Scatter owners

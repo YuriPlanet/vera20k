@@ -51,7 +51,6 @@ fn fire_error(sim: &Simulation, rules: &RuleSet, scorer: u64, target: u64) -> Fi
     FireSubject {
         world: sim,
         rules,
-        overlay_registry: None,
         fog: None,
         firer: sim.substrate.entities.get(scorer).unwrap(),
         obj: rules.object("SCORER").unwrap(),
@@ -63,6 +62,7 @@ fn fire_error(sim: &Simulation, rules: &RuleSet, scorer: u64, target: u64) -> Fi
 
 #[test]
 fn custom_armor_selection_preserves_numeric_zero_and_secondary_first_order() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // Installed hook10054360 checks secondary zero first, independently of
     // the ForceFire override which allows a zero record through CanFire.
     for (primary, secondary, expected) in [
@@ -88,7 +88,15 @@ fn custom_armor_selection_preserves_numeric_zero_and_secondary_first_order() {
                 &rules,
                 object,
                 &attacker_facts(actor, object),
-                Some(&target)
+                Some(&target),
+                |index| super::combat_weapon::get_weapon(
+                    actor,
+                    object,
+                    index,
+                    &sim.substrate.entities,
+                    &rules,
+                    &sim.interner
+                ),
             ),
             expected,
             "primary={primary}, secondary={secondary}",
@@ -98,6 +106,7 @@ fn custom_armor_selection_preserves_numeric_zero_and_secondary_first_order() {
 
 #[test]
 fn custom_armor_can_fire_uses_force_fire_or_nonzero_multiplier() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (multiplier, force_fire, admitted) in [
         ("0%", "no", false),
         ("0%", "yes", true),
@@ -118,6 +127,7 @@ fn custom_armor_can_fire_uses_force_fire_or_nonzero_multiplier() {
 
 #[test]
 fn custom_armor_passive_and_retaliation_flags_are_independent_of_each_other_and_damage() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for (multiplier, passive, retaliate) in [
         ("25%", false, false),
         ("0%", true, false),
@@ -141,7 +151,8 @@ fn custom_armor_passive_and_retaliation_flags_are_independent_of_each_other_and_
             "multiplier={multiplier}, passive={passive}, retaliate={retaliate}",
         );
         assert_eq!(
-            sim.greatest_threat_represented(&rules, None, scorer, ScanMission::Guard, None),
+            sim.greatest_threat_represented(&rules, None, scorer, ScanMission::Guard, None)
+                .and_then(crate::sim::combat::TargetKind::object_id),
             passive.then_some(target),
             "multiplier={multiplier}, passive={passive}, retaliate={retaliate}",
         );
@@ -150,6 +161,7 @@ fn custom_armor_passive_and_retaliation_flags_are_independent_of_each_other_and_
 
 #[test]
 fn custom_armor_positive_receive_and_estimate_share_the_effective_record() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let rules = rules("25%", "25%", "");
     let (mut sim, scorer, target) = scene(&rules);
     let weapon = rules.weapon("PRIMARY").unwrap();
@@ -175,10 +187,11 @@ fn custom_armor_positive_receive_and_estimate_share_the_effective_record() {
         &rules,
         &sim.interner,
         &sim.houses,
-        sim.house_alliances.as_map(),
+        &sim.house_alliances,
         false,
         0,
         sim.resolved_terrain.as_ref(),
+        None,
     )
     .unwrap();
     assert_eq!(resolved.outcome.hp_delta, 25);
@@ -186,6 +199,7 @@ fn custom_armor_positive_receive_and_estimate_share_the_effective_record() {
 
 #[test]
 fn custom_armor_threat_score_consumes_both_effectiveness_terms() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let score = |multiplier: &str, mine: f64, theirs: f64| {
         let rules = rules(multiplier, multiplier, "");
         let (sim, scorer, target) = scene(&rules);
@@ -196,7 +210,7 @@ fn custom_armor_threat_score_consumes_both_effectiveness_terms() {
             &rules,
             &sim.interner,
             sim.resolved_terrain.as_ref(),
-            Some(sim.house_alliances.as_map()),
+            Some(&sim.house_alliances),
             greatest_threat::ThreatCoefficients {
                 my_effectiveness: mine,
                 target_effectiveness: theirs,

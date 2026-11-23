@@ -7,16 +7,16 @@
 //! Source decoding, generated W staging and cache installation have one shared
 //! owner with WOL in shell_network_setup::maps and map::source.
 
+use crate::util::time::{Duration, Instant};
 use std::net::SocketAddrV4;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
-use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow, ensure};
 
 use crate::app::AppState;
+use crate::app::shell_network_setup as setup;
 use crate::app::shell_network_setup::maps::{self as shared, GeneratedMapManifest};
-use crate::app::shell_network_setup::{self as setup, NetworkSetupRequest};
 use crate::map::source::{LoadedTransferAsset, TransferMapSource, TransferResource};
 use crate::net::lan_messages::SessionScope;
 
@@ -72,21 +72,11 @@ impl Key {
             .session
             .network_map_metadata()
             .ok_or_else(|| anyhow!("map transfer has no metadata"))?;
-        let seed = crate::map::rmg::is_seed_selection(file);
-        ensure!(
-            seed == generated.is_some(),
-            "generated map transfer manifest differs from selection"
-        );
-        let total = usize::try_from(metadata.byte_length)?;
-        ensure!(
-            crate::map::source::valid_source_sha256(&metadata.source_sha256)
-                && crate::map::source::valid_source_sha256(&metadata.effective_digest)
-                && total > 0
-                && total <= TransferResource::Map.limit(),
-            "invalid map transfer identity"
-        );
+        // `Transfers::selected` checks the manifest against the selection
+        // (`shared::accept_generated_manifest`) before it keeps this key.
+        let total = shared::transfer_length(metadata)?;
         let mut assets = vec![Asset {
-            resource: if seed {
+            resource: if crate::map::rmg::is_seed_selection(file) {
                 TransferResource::Seed
             } else {
                 TransferResource::Map
@@ -95,12 +85,6 @@ impl Key {
             total,
         }];
         if let Some(manifest) = &generated {
-            ensure!(
-                crate::map::source::valid_source_sha256(&manifest.preview.source_sha256)
-                    && manifest.preview.byte_length > 0
-                    && manifest.preview.byte_length <= TransferResource::Preview.limit(),
-                "invalid generated preview identity"
-            );
             assets.push(Asset {
                 resource: TransferResource::Preview,
                 digest: manifest.preview.source_sha256.clone(),
@@ -407,39 +391,6 @@ pub(super) struct Transfers {
 }
 
 impl Transfers {
-    pub(super) fn has_peer(&self, endpoint: SocketAddrV4) -> bool {
-        self.peers.iter().any(|peer| peer.endpoint == endpoint)
-    }
-
-    pub(super) fn active(&self) -> bool {
-        self.key.is_some()
-            || self.worker.is_some()
-            || self.pending_job.is_some()
-            || !self.peers.is_empty()
-    }
-
-    pub(super) fn incomplete_map_download(
-        &self,
-        scope: SessionScope,
-    ) -> Option<(&str, usize, usize)> {
-        let key = self.key.as_ref()?;
-        if key.host || key.scope != scope || key.generated.is_some() {
-            return None;
-        }
-        let Flow::Download(download) = &self.flow else {
-            return None;
-        };
-        let completed = download.completed_bytes();
-        (download.asset.resource == TransferResource::Map
-            && completed > 0
-            && completed < download.asset.total)
-            .then_some((
-                download.asset.digest.as_str(),
-                completed,
-                download.asset.total,
-            ))
-    }
-
     pub(super) fn cancel(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.key = None;
@@ -918,16 +869,34 @@ pub(super) fn received_options(
     if result.is_err() {
         maps.fail(state);
     }
-    state
-        .match_state
-        .lan_service
-        .as_mut()
-        .expect("retained LAN service")
-        .maps = maps;
+    // The step above runs with the whole app state and can close the visit;
+    // the transfer state then ends with the service it belonged to.
+    if let Some(service) = state.match_state.lan_service.as_mut() {
+        service.maps = maps;
+    }
     result
 }
 
+pub(super) fn clear_campaign_transfer(state: &mut AppState) {
+    if let Some(service) = &mut state.match_state.lan_service {
+        service.maps.cancel();
+    }
+    setup::set_network_map_progress(state, None);
+}
+
 pub(super) fn poll(state: &mut AppState) {
+    if state.match_state.session.campaign_room().is_some() {
+        return;
+    }
+    // A direct spawn's map is the launcher's file; nothing is transferred.
+    if state
+        .match_state
+        .lan_service
+        .as_ref()
+        .is_some_and(|service| service.preadmitted)
+    {
+        return;
+    }
     let scope = state
         .match_state
         .lan_service
@@ -994,52 +963,14 @@ pub(super) fn receive(state: &mut AppState, source: SocketAddrV4, bytes: &[u8]) 
             .maps,
     );
     let result = maps.receive(state, source, packet);
-    state
-        .match_state
-        .lan_service
-        .as_mut()
-        .expect("retained LAN service")
-        .maps = maps;
+    // As in `received_options`: a closed visit takes its transfer state along.
+    if let Some(service) = state.match_state.lan_service.as_mut() {
+        service.maps = maps;
+    }
     result
 }
 
-/// Modern manifest prefetch replaces native preview offers and GO file pulls;
-/// the requests still reach this owner and cannot fabricate successful admission.
-pub(super) fn setup_request(
-    state: &mut AppState,
-    request: &NetworkSetupRequest,
-) -> Result<Option<bool>> {
-    match request {
-        NetworkSetupRequest::RequestPreview
-        | NetworkSetupRequest::RequestRandomMapImage
-        | NetworkSetupRequest::OfferPreview
-        | NetworkSetupRequest::SendPreviewFile
-        | NetworkSetupRequest::AcknowledgePreview
-        | NetworkSetupRequest::RequestPreviewFile => {
-            ensure!(
-                state
-                    .match_state
-                    .lan_service
-                    .as_ref()
-                    .is_some_and(|service| service.setup_scope().is_some()),
-                "LAN map request has no admitted scope"
-            );
-            Ok(Some(true))
-        }
-        NetworkSetupRequest::PublishStartStaging(text) => {
-            let manifest = shared::host_generated_manifest(state)?
-                .ok_or_else(|| anyhow!("staging publication has no selected seed"))?;
-            ensure!(
-                &manifest.start_staging == text,
-                "published W staging differs from selected seed"
-            );
-            Ok(Some(true))
-        }
-        _ => Ok(None),
-    }
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::net::global::{GlobalDestination, GlobalMessage};
@@ -1112,7 +1043,7 @@ mod tests {
         let mut options = crate::map::rmg::RmgOptions::default();
         options.seed = 1234;
         options.normalize();
-        let mut bytes = options.to_sed_bytes();
+        let mut bytes = options.to_sed_bytes(false);
         bytes.extend_from_slice(b"\n;");
         bytes.extend(std::iter::repeat_n(b'x', WINDOW_BYTES));
         let key = key(TransferResource::Seed, &bytes);
@@ -1191,7 +1122,7 @@ mod tests {
             panic!("received seed INI");
         };
         let mut decoded = crate::map::rmg::RmgOptions::default();
-        decoded.apply_sed(&ini);
+        decoded.apply_sed(&ini, false);
         decoded.normalize();
         assert_eq!(decoded, options);
     }
@@ -1227,40 +1158,5 @@ mod tests {
         let mut malformed = encoded;
         malformed[61] = 3;
         assert!(Packet::decode(&malformed).is_err());
-    }
-
-    #[test]
-    fn incomplete_download_observation_requires_actual_current_map_bytes() {
-        let bytes = vec![5; CHUNK + 2];
-        let key = key(TransferResource::Map, &bytes);
-        let scope = key.scope;
-        let mut transfers = Transfers {
-            key: Some(key.clone()),
-            flow: Flow::Download(Download::new(key.assets[0].clone())),
-            ..Default::default()
-        };
-        assert!(transfers.incomplete_map_download(scope).is_none());
-        let Flow::Download(download) = &mut transfers.flow else {
-            unreachable!()
-        };
-        download.requested = true;
-        assert!(!download.receive(0, &bytes[..CHUNK]).unwrap());
-        assert_eq!(
-            transfers.incomplete_map_download(scope),
-            Some((key.assets[0].digest.as_str(), CHUNK, bytes.len()))
-        );
-        let mut stale = scope;
-        stale.revision -= 1;
-        assert!(transfers.incomplete_map_download(stale).is_none());
-        let Flow::Download(download) = &mut transfers.flow else {
-            unreachable!()
-        };
-        assert!(download.receive(CHUNK, &[5, 5]).unwrap());
-        assert!(
-            transfers.incomplete_map_download(scope).is_none(),
-            "complete bytes are not an in-flight download"
-        );
-        transfers.cancel();
-        assert!(transfers.incomplete_map_download(scope).is_none());
     }
 }

@@ -60,8 +60,7 @@ fn ordinary_spark() -> &'static Value {
 }
 
 fn restore_rng(sim: &mut Simulation, expected: &Value) {
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(expected["scenario"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
@@ -212,9 +211,8 @@ fn retail_birth_fields_match_native_exact_flh() {
         physical["is_alternate_color"] == true
     );
     assert_eq!(weapon.range_leptons, int(&physical["range_leptons"]));
-    let art = retail.rules.art().get("NATSLA").unwrap();
     assert_eq!(
-        <[i32; 3]>::from(art.primary_fire_flh),
+        <[i32; 3]>::from(retail.rules.object("TESLA").unwrap().weapon_flh(0, false)),
         xyz(&ordinary_birth()["input"]["primary_flh"])
     );
 
@@ -408,7 +406,7 @@ fn building_fireat_reads_the_retained_target_for_its_launch_coordinate() {
             },
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.fire_events.len(), 1, "{name} actual Building FireAt");
         let event = &sim.fire_events[0];
@@ -483,17 +481,17 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
         },
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let bullet = *sim.projectiles.iter().next().unwrap().0;
-    assert!(sim.object_ai_visit_one(bullet, Some(rules), Default::default()));
+    assert!(sim.object_ai_visit_one(bullet, Some(rules), &mut Default::default()));
     let victim = sim.substrate.entities.get(target).unwrap();
     assert!(
         !victim.lifecycle.cell_marked(),
         "fatal receiver already unmarked"
     );
     assert!(
-        !victim.in_logic_vector.is_member(),
+        !victim.seldom.in_logic_vector.is_member(),
         "fatal receiver already left Logic"
     );
     for &(x, y) in &cells {
@@ -510,10 +508,9 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
         sim.advance_app_frame(
             &[],
             rules,
-            None,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         for &(x, y) in &cells {
@@ -522,6 +519,8 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
     }
 }
 
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
 #[test]
 fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass() {
     let Some((retail, assets)) = retail_with_bound_animation_assets() else {
@@ -554,12 +553,16 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
     let now = sim.session.binary_frame() as i32;
     let entity = sim.substrate.entities.get_mut(source).unwrap();
     entity
+        .building
         .pending_building_fire
         .set_for_test(Some(PendingBuildingFire::new(
             1,
             DelayedFire::Weapon(WeaponSlot::Primary),
         )));
-    entity.rearm_timer.set_for_test(CdTimer::started(100, 0));
+    entity
+        .seldom
+        .rearm_timer
+        .set_for_test(CdTimer::started(100, 0));
     entity.mission_leaf.set_building_ready_latch(1);
     entity.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_known(MissionType::Attack),
@@ -575,10 +578,9 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
         .advance_app_frame(
             &[],
             rules,
-            None,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let births: Vec<_> = frame
@@ -674,6 +676,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
             .entities
             .get(source)
             .unwrap()
+            .building
             .pending_building_fire
             .pending()
             .is_none()
@@ -686,10 +689,9 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
         .advance_app_frame(
             &[],
             rules,
-            None,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert!(
@@ -814,10 +816,9 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             sim.advance_app_frame(
                 &[],
                 rules,
-                None,
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         }
@@ -834,10 +835,9 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             sim.advance_app_frame(
                 &[],
                 rules,
-                None,
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             let actual = sim.anim(charge).unwrap_or_else(|| {
@@ -872,12 +872,14 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
         );
         let entity = sim.substrate.entities.get_mut(source).unwrap();
         entity
+            .building
             .pending_building_fire
             .set_for_test(Some(PendingBuildingFire::new(
                 1,
                 DelayedFire::Weapon(WeaponSlot::Primary),
             )));
         entity
+            .seldom
             .rearm_timer
             .set_for_test(CdTimer::started(sim.session.binary_frame() as i32, 0));
         let health_before = sim.substrate.entities.get(target).unwrap().health.current();
@@ -890,10 +892,9 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                 .advance_app_frame(
                     &[],
                     rules,
-                    None,
                     67,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             let expected = &case[key]["state"];
@@ -1029,4 +1030,61 @@ fn a_tesla_tank_bolt_names_its_firer_and_follows_its_flh() {
     sim.uninit_with_rules(tank, &rules);
     sim.substrate.entities.remove(tank);
     assert_eq!(electric_bolt::owner_source(&sim, &rules, owner), None);
+}
+
+/// Ares TechnoClass_FireEBolt (Ares.dll 10056350) and EBolt_Fire_Particles
+/// (100562C0): a 6FD460 bolt carries its weapon's Bolt.Color1..3 and spawns
+/// Bolt.ParticleSystem instead of DefaultSparkSystem; `none` spawns nothing.
+#[test]
+fn ares_bolt_keys_choose_colors_and_spark_system() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[InfantryTypes]\n0=ZAPPER\n1=MARK\n[ZAPPER]\nPrimary=ZAP\nSecondary=OFF\n[MARK]\n\
+         [CombatDamage]\nDefaultSparkSystem=SPARKSYS\n\
+         [ParticleSystems]\n0=SPARKSYS\n1=BOLTSYS\n[SPARKSYS]\n[BOLTSYS]\n\
+         [ZAP]\nIsElectricBolt=yes\nBolt.Color2=1,2,3\nBolt.ParticleSystem=BOLTSYS\n\
+         [OFF]\nIsElectricBolt=yes\nBolt.ParticleSystem=none\n",
+    ))
+    .unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 11);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let source = sim
+        .spawn_object("ZAPPER", "Americans", 16, 16, 64, &rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("MARK", "Russians", 18, 16, 0, &rules)
+        .unwrap();
+    let mut fire = |weapon: &str| {
+        sim.lifecycle_outputs.clear_for_test();
+        let before = sim.particle_systems().len();
+        electric_bolt::create(
+            &mut sim,
+            &rules,
+            source,
+            crate::sim::projectile::ProjectileTarget::Entity(target),
+            rules.weapon(weapon).unwrap(),
+            ProjectileCoord::new(4096, 4096, 0),
+            None,
+        );
+        let [LifecycleOutput::ElectricBoltCreated(birth)] = sim.lifecycle_outputs.as_slice() else {
+            panic!("one bolt");
+        };
+        let colors = birth.colors;
+        let spawned: Vec<_> = sim
+            .particle_systems()
+            .iter()
+            .skip(before)
+            .map(|(_, system)| system.type_id())
+            .collect();
+        (colors, spawned)
+    };
+    assert_eq!(
+        fire("ZAP"),
+        (
+            [None, Some([1, 2, 3]), None],
+            vec![rules.ps_type_id_by_name("BOLTSYS").unwrap()]
+        )
+    );
+    assert_eq!(fire("OFF"), ([None; 3], Vec::new()));
 }

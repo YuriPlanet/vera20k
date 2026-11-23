@@ -10,6 +10,7 @@ from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE, UC_HOOK_MEM_READ,
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESP, UC_X86_REG_EBP, UC_X86_REG_FPCW
 
 from tools import native_oracle as oracle
+from tools.native_oracle import require
 
 BASE, SIZE = 0x20000000, 0x01000000
 FILE, VTABLE, VXL, HVA_OBJECT = BASE + 0x100, BASE + 0x200, BASE + 0x300, BASE + 0x400
@@ -212,14 +213,14 @@ def render_native(vxl_bytes, hva_bytes, vpl_bytes, draw_matrix=None, diffuse=Fal
         return u.reg_read(UC_X86_REG_EAX)
 
     data = vpl_bytes
-    assert invoke(0x753b70, ecx=FILE, required=(0x758a30,)) == 0
+    require(invoke(0x753b70, ecx=FILE, required=(0x758a30,)) == 0, 'native 0x753B70 returned an unexpected result')
     data = vxl_bytes
-    assert invoke(0x755db0, ecx=VXL, args=(FILE, 0), required=(0x756035, 0x756144)) == 1
+    require(invoke(0x755db0, ecx=VXL, args=(FILE, 0), required=(0x756035, 0x756144)) == 1, 'native 0x755DB0 returned an unexpected result')
     section_count = read32(VXL + 4)
     hva_matrices = []
     if hva_bytes is not None:
         data = hva_bytes
-        assert invoke(0x5bd5c0, ecx=HVA_OBJECT, args=(FILE,), required=(0x5ae5e0,)) == 1
+        require(invoke(0x5bd5c0, ecx=HVA_OBJECT, args=(FILE,), required=(0x5ae5e0,)) == 1, 'native 0x5BD5C0 returned an unexpected result')
         assert read32(HVA_OBJECT + 4) == section_count
         scale_bits = read32(read32(VXL + 0x14) + 0x0c)
         invoke(0x5bd730, ecx=HVA_OBJECT, args=(scale_bits,))

@@ -141,8 +141,7 @@ impl Simulation {
         id: u64,
         attacker: Option<u64>,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -151,9 +150,9 @@ impl Simulation {
             return false;
         }
         if entity.health.current() > 0 {
-            let context = UninitContext::new(rules, registry).with_effects(frame_effects);
+            let mut context = UninitContext::new(rules).with_effects(frame_effects);
             if attacker.is_some() {
-                self.dispatch_object_tag_event(id, 38, Some(id), None, context);
+                self.dispatch_object_tag_event(id, 38, Some(id), None, context.reborrow());
             }
             if self
                 .substrate
@@ -161,7 +160,7 @@ impl Simulation {
                 .get(id)
                 .is_some_and(|entity| entity.is_object_alive())
             {
-                self.dispatch_object_tag_event(id, 41, Some(id), None, context);
+                self.dispatch_object_tag_event(id, 41, Some(id), None, context.reborrow());
             }
             if attacker.is_some()
                 && self
@@ -170,7 +169,7 @@ impl Simulation {
                     .get(id)
                     .is_some_and(|entity| entity.is_object_alive())
             {
-                self.dispatch_object_tag_event(id, 41, Some(id), attacker, context);
+                self.dispatch_object_tag_event(id, 41, Some(id), attacker, context.reborrow());
             }
             if self
                 .substrate
@@ -214,21 +213,30 @@ impl Simulation {
             rules,
             frame_effects,
         );
-        self.techno_death_stun(
-            id,
-            UninitContext::new(rules, registry).with_effects(frame_effects),
-        );
+        self.stun(id, UninitContext::new(rules).with_effects(frame_effects));
         self.kill_passengers(
             id,
             attacker,
-            UninitContext::new(rules, registry).with_effects(frame_effects),
+            UninitContext::new(rules).with_effects(frame_effects),
         );
         // RTTI is read after the synchronous tail calls at 0x004DECA2.
+        // Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):
+        // `CrashSpin=no` skips the spin and its draws.
+        let crash_spin = if rules.ares() {
+            self.substrate
+                .entities
+                .get(id)
+                .and_then(|entity| self.object_type(entity.type_ref(), rules))
+                .is_none_or(|object| object.techno_combat().movement().crash_spin())
+        } else {
+            true
+        };
         if self
             .substrate
             .entities
             .get(id)
             .is_some_and(|entity| entity.category() != EntityCategory::Infantry)
+            && crash_spin
             && !self.object_placement_scope_active()
         {
             let sideways = self.scenario_rng.next_range_i32_inclusive(0, 0x7FFF_FFFE);
@@ -243,7 +251,7 @@ impl Simulation {
                 RockingState::spin_for_crash(&mut entity.rocking, vel_sideways, vel_forwards);
             }
         }
-        self.detach_all_pointer_expired(id, rules, registry, frame_effects);
+        self.detach_all_pointer_expired(id, rules, frame_effects);
         true
     }
 
@@ -266,8 +274,9 @@ impl Simulation {
     ///
     /// RESIDUAL: the same block drops an unpowered living Fly by three a frame
     /// and its impact (`0x004CD8A9..0x004CD9C0`) kills it with the C4 warhead,
-    /// an explosion anim and area damage. Nothing in VERA powers an aircraft
-    /// off (native: `Power_Off`, reached by EMP), so the arm is dormant.
+    /// an explosion anim and area damage. Stock play never powers an
+    /// aircraft off, and Ares EMP crashes a flying one before it deactivates
+    /// (`emp.rs`), so the arm is dormant.
     ///
     /// A falling wreck is still alive for its class AI, so one that drifts
     /// past the playfield or `In_Bounds` meets `AircraftClass::AI`'s removal
@@ -278,8 +287,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let terrain = self.resolved_terrain.as_ref();
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -304,9 +312,9 @@ impl Simulation {
         };
         let counter = runtime.advance_fall(true);
         if placed {
-            let context = UninitContext::new(rules, registry).with_effects(frame_effects);
+            let mut context = UninitContext::new(rules).with_effects(frame_effects);
             self.substrate.display.remove(id);
-            self.unmark_entity_remove(id, context);
+            self.unmark_entity_remove(id, context.reborrow());
             let dropped = crate::sim::components::DriveCoord {
                 z: location.z.wrapping_sub(counter),
                 ..location
@@ -321,7 +329,6 @@ impl Simulation {
             self.mark_entity_put(id, context);
             Self::submit_entity_display(
                 &self.interner,
-                &self.terrain_objects,
                 &mut self.substrate,
                 &self.resolved_terrain,
                 id,
@@ -347,13 +354,13 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self.substrate.entities.contains(id) {
             return false;
         }
         self.substrate.aircraft_tracker_remove(id);
-        self.set_object_height(id, 0, rules, overlay_registry, frame_effects);
+        self.set_object_height(id, 0, rules, frame_effects);
         let bridge_state_changed =
             self.fire_death_weapon(id, rules, overlay_registry, frame_effects);
         Self::play_crash_impact_sound(
@@ -364,10 +371,7 @@ impl Simulation {
             id,
             rules,
         );
-        self.uninit_with_context(
-            id,
-            UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
-        );
+        self.uninit_with_context(id, UninitContext::new(rules).with_effects(frame_effects));
         bridge_state_changed
     }
 
@@ -399,7 +403,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -429,17 +433,20 @@ impl Simulation {
                 false
             }
         } else if crashable {
-            self.set_object_height(id, 0, rules, overlay_registry, frame_effects);
+            self.set_object_height(id, 0, rules, frame_effects);
             let bridge_state_changed = if balloon_hover {
                 self.fire_death_weapon(id, rules, overlay_registry, frame_effects)
             } else {
-                self.unit_death_explosion(rules, id, &mut Vec::new());
+                self.unit_death_explosion(
+                    rules,
+                    id,
+                    &mut Vec::new(),
+                    overlay_registry,
+                    frame_effects,
+                );
                 false
             };
-            self.uninit_with_context(
-                id,
-                UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
-            );
+            self.uninit_with_context(id, UninitContext::new(rules).with_effects(frame_effects));
             bridge_state_changed
         } else if self
             .substrate
@@ -460,7 +467,7 @@ impl Simulation {
         };
         // `0x0054D097..0x0054D0A7`: after the notice, the drop's credit goes.
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.drop_credit.forget();
+            entity.seldom.drop_credit.forget();
         }
         bridge_state_changed
     }
@@ -502,7 +509,7 @@ impl Simulation {
         ground_warhead: &str,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::util::native_x87::{MaskedX87Chop53, NativeF32Bits};
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -522,7 +529,7 @@ impl Simulation {
             )),
         ))
         .max(0);
-        let attacker = entity.drop_credit.manipulated_by().unwrap_or(id);
+        let attacker = entity.seldom.drop_credit.manipulated_by().unwrap_or(id);
         let coords = crate::sim::movement::ground_pose::object_get_coords(
             entity,
             self.resolved_terrain.as_ref(),
@@ -549,7 +556,7 @@ impl Simulation {
                 self.record_manipulated_kill(
                     id,
                     id,
-                    UninitContext::new(rules, registry).with_effects(effects),
+                    UninitContext::new(rules).with_effects(effects),
                 );
             }
             if let Some(weapon) = weapon {
@@ -591,14 +598,11 @@ impl Simulation {
                 );
                 // Release7462E2/74637A destroys this Bullet before the next
                 // constructor, including its common pointer-expiry broadcast.
-                self.destroy_unfired_projectile(bullet_id, rules, registry, effects);
+                self.destroy_unfired_projectile(bullet_id, rules, effects);
             }
         }
         if self.substrate.entities.contains(id) {
-            self.uninit_with_context(
-                id,
-                UninitContext::new(rules, registry).with_effects(effects),
-            );
+            self.uninit_with_context(id, UninitContext::new(rules).with_effects(effects));
         }
         bridge_state_changed
     }
@@ -611,7 +615,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         crate::sim::combat::death_weapon_detonation(
             &mut self.interner,
@@ -654,15 +658,15 @@ impl Simulation {
         let object = interner.object_type(entity.type_ref(), rules);
         let sound = if water {
             object
-                .and_then(|object| object.impact_water_sound.clone())
-                .or_else(|| rules.general.impact_water_sound.clone())
+                .and_then(|object| object.impact_water_sound.as_deref())
+                .or(rules.general.impact_water_sound.as_deref())
         } else {
             object
-                .and_then(|object| object.impact_land_sound.clone())
-                .or_else(|| rules.general.impact_land_sound.clone())
+                .and_then(|object| object.impact_land_sound.as_deref())
+                .or(rules.general.impact_land_sound.as_deref())
         };
         if let Some(sound_id) = sound {
-            let event = super::SimSoundEvent::voc_at(sound_id, &entity.position);
+            let event = super::SimSoundEvent::voc_at(rules.sound_name(sound_id), &entity.position);
             sound_events.emit(event);
         }
     }
@@ -704,18 +708,21 @@ impl Simulation {
             let entity = substrate.entities.get(id).expect("checked above");
             let owner = entity.owner();
             let object = interner.object_type(entity.type_ref(), rules);
-            let voice = object.and_then(|object| object.voice_crashing.clone());
-            let crashing_sound = object.and_then(|object| object.crashing_sound.clone());
+            let voice = object.and_then(|object| object.voice_crashing.as_deref());
+            let crashing_sound = object.and_then(|object| object.crashing_sound.as_deref());
             if let Some(voice) = voice
                 && Simulation::is_human_player(session, houses, owner)
             {
-                sound_events.emit(super::SimSoundEvent::voc_at(voice, &entity.position));
+                sound_events.emit(super::SimSoundEvent::voc_at(
+                    rules.sound_name(voice),
+                    &entity.position,
+                ));
             }
             if let Some(sound) = crashing_sound {
                 let world = Self::movement_sound_world(entity);
                 sound_events.emit(super::SimSoundEvent::AnimationStarted {
                     anim_id: id,
-                    sound_id: sound,
+                    sound_id: rules.sound_name(sound),
                     world,
                 });
             }
@@ -749,24 +756,43 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        let red = matches!(
-            entity
-                .health
-                .compare_ratio(object.strength, rules.general.condition_red),
-            Less | Unordered
-        );
+        // Stock's `test ah,1` (`0x0041509A`) takes an unordered ratio (0/0)
+        // as red; Ares' `fcompi`/`jbe` (`0x10047BA6..0x10047BAA`) does not.
+        let red = match entity
+            .health
+            .compare_ratio(object.strength, rules.general.condition_red)
+        {
+            Less => true,
+            Unordered => !rules.ares(),
+            _ => false,
+        };
         if !red || current_fly_height(entity, terrain) <= 0 {
             return;
         }
-        let threshold = if entity.health.current() != 0 { 10 } else { 80 };
+        // Ares AircraftClass_Update_DamageSmoke (Ares.dll 10047B60, hook
+        // 0x415085) puffs the type's `Smoke.Anim` (null: no draw) under its
+        // `Smoke.ChanceRed`/`Smoke.ChanceDead`.
+        let (anim, threshold) = if rules.ares() {
+            let Some(smoke) = object
+                .techno_combat()
+                .damage()
+                .smoke(entity.health.current() > 0)
+            else {
+                return;
+            };
+            smoke
+        } else {
+            (
+                // `0x004150EF..0x00415102`: `AnimTypeClass::Find` of the literal.
+                crate::rules::effect_asset_catalog::AIRCRAFT_SMOKE_ANIM,
+                if entity.health.current() != 0 { 10 } else { 80 },
+            )
+        };
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         if self.scenario_rng.next_range_i32_inclusive(0, 99) >= threshold {
             return;
         }
-        // `0x004150EF..0x00415102`: `AnimTypeClass::Find` of the literal.
-        let type_id = self
-            .interner
-            .intern(crate::rules::effect_asset_catalog::AIRCRAFT_SMOKE_ANIM);
+        let type_id = self.interner.intern(anim);
         self.admit_death_anim(
             rules,
             type_id,
@@ -799,12 +825,33 @@ impl Simulation {
         attacker: Option<u64>,
         context: UninitContext<'_>,
     ) {
+        self.kill_cargo_passengers(transport, attacker, true, context);
+    }
+
+    /// Ares `TechnoExt::KillCargo @ 100455E0` (3.0) for a Foot: the
+    /// KillPassengers loop with `LiberateMember(-1, false)`, except that each
+    /// passenger's own cargo dies with the same (here no) killer. Its
+    /// Building arm, the occupants first, is reached only by the building
+    /// chronoshift VERA does not port.
+    pub(crate) fn ares_kill_cargo(&mut self, transport: u64, context: UninitContext<'_>) {
+        self.kill_cargo_passengers(transport, None, false, context);
+    }
+
+    /// The shared passenger loop; `nested_by_self` credits each passenger's
+    /// own cargo to that passenger (KillPassengers) instead of `attacker`.
+    fn kill_cargo_passengers(
+        &mut self,
+        transport: u64,
+        attacker: Option<u64>,
+        nested_by_self: bool,
+        mut context: UninitContext<'_>,
+    ) {
         loop {
             let Some(passenger) = self
                 .substrate
                 .entities
                 .get_mut(transport)
-                .and_then(|entity| entity.passenger_role.cargo_mut())
+                .and_then(|entity| entity.passenger_role_mut().cargo_mut())
                 .and_then(|cargo| cargo.unload_first())
                 .map(|(passenger, _size)| passenger)
             else {
@@ -814,12 +861,17 @@ impl Simulation {
             // order).
             self.leave_team(passenger, false, context.rules(), context.effects());
             if let Some(entity) = self.substrate.entities.get_mut(passenger)
-                && entity.passenger_role.inside_transport_id() == Some(transport)
+                && entity.passenger_role().inside_transport_id() == Some(transport)
             {
-                entity.passenger_role.clear_carrier_relation();
+                entity.passenger_role_mut().clear_carrier_relation();
             }
-            self.kill_passengers(passenger, Some(passenger), context);
-            self.record_kill_and_uninit(passenger, attacker, context);
+            let nested = if nested_by_self {
+                Some(passenger)
+            } else {
+                attacker
+            };
+            self.kill_cargo_passengers(passenger, nested, nested_by_self, context.reborrow());
+            self.record_kill_and_uninit(passenger, attacker, context.reborrow());
         }
     }
 
@@ -833,13 +885,13 @@ impl Simulation {
         &mut self,
         victim: u64,
         attacker: Option<u64>,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) {
         self.record_the_kill(
             victim,
             crate::sim::combat::KillSource::Techno(attacker),
             crate::sim::combat::KillCallback::Terminal,
-            context,
+            context.reborrow(),
         );
         self.uninit_with_context(victim, context);
     }

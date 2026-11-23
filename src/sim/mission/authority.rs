@@ -161,7 +161,7 @@ impl UnitReadyWorld for LiveUnitWorld<'_> {
     /// `UnitClass::Is_Ready_To_Commence @ 0x00744270`'s contact read:
     /// `GetNthLink(0)` (`0x0065AD40` at `0x0074433C`) and a Building's WeaponsFactory.
     fn contact_slot_zero(&self) -> Result<Option<UnitReadyContact>, ReadyUnavailable> {
-        let Some(contact_id) = self.entity.radio_contacts.slot(0) else {
+        let Some(contact_id) = self.entity.seldom.radio_contacts.slot(0) else {
             return Ok(None);
         };
         let Some(contact) = self.sim.substrate.entities.get(contact_id) else {
@@ -374,6 +374,12 @@ pub(crate) fn commence_entity_mission(
     verb::commence_base(&mut entity.mission, now)
 }
 
+/// Whether [`commence_entity_mission`] writes: an aircraft's clears `+0x6D2`
+/// first, and the base promotes a queued mission.
+pub(crate) fn commence_entity_mission_writes(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    entity.mission_leaf.as_aircraft().is_some() || verb::commences(&entity.mission)
+}
+
 /// The `RandomRanged(0, 2)` ceiling of the Rate epilogue.
 pub(crate) const RATE_EPILOGUE_JITTER_MAX_FRAMES: u32 = 2;
 
@@ -527,14 +533,12 @@ impl Simulation {
         receiver: u64,
         requested: Option<TargetKind>,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
         if !self.substrate.entities.contains(receiver) {
             return Err(MissionAuthorityError::MissingReceiver(receiver));
         }
-        let mut effects =
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects);
+        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects.reborrow());
         let prepared =
             effects.preflight(self, receiver, ConcreteSetterRequest::Target { requested })?;
         effects.apply_target(self, &prepared, requested);
@@ -550,11 +554,10 @@ impl Simulation {
         receiver: u64,
         requested: Option<NavTargetRef>,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
         self.assign_destination_through(
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects),
+            RepresentedConcreteMissionEffects::new(rules, frame_effects.reborrow()),
             receiver,
             requested,
         )
@@ -569,12 +572,10 @@ impl Simulation {
         receiver: u64,
         requested: Option<NavTargetRef>,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), MissionAuthorityError> {
         self.assign_destination_through(
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects)
-                .keeping_queue(),
+            RepresentedConcreteMissionEffects::new(rules, frame_effects.reborrow()).keeping_queue(),
             receiver,
             requested,
         )
@@ -614,11 +615,9 @@ impl Simulation {
         &mut self,
         receiver: u64,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, MissionAuthorityError> {
-        let mut effects =
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects);
+        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects.reborrow());
         self.mission_restore_exact_with_effects(receiver, &mut effects)
     }
 
@@ -630,11 +629,9 @@ impl Simulation {
         receiver: u64,
         packet: OverridePacket,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, MissionAuthorityError> {
-        let mut effects =
-            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects);
+        let mut effects = RepresentedConcreteMissionEffects::new(rules, frame_effects.reborrow());
         self.mission_override_exact_with_effects(receiver, packet, &mut effects)
     }
 
@@ -653,8 +650,7 @@ impl Simulation {
         receiver: u64,
         attacker: u64,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self.substrate.entities.contains(attacker)
             || !self.substrate.entities.contains(receiver)
@@ -672,7 +668,6 @@ impl Simulation {
                 destination: None,
             },
             rules,
-            overlay_registry,
             frame_effects,
         )
         .expect("present represented retaliation receiver has concrete setters")
@@ -690,7 +685,7 @@ impl Simulation {
         mover: u64,
         target: TargetKind,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self.substrate.entities.contains(mover) {
             return false;
@@ -705,7 +700,6 @@ impl Simulation {
                 destination: None,
             },
             rules,
-            None,
             frame_effects,
         )
         .expect("present represented blocker receiver has concrete setters")
@@ -810,9 +804,8 @@ impl Simulation {
             if entity.category() != EntityCategory::Structure {
                 entity.navigation.suspend_nav_com();
             }
-            entity
-                .suspended_attack_target
-                .archive(entity.attack_target.target());
+            let target = entity.attack_target.target();
+            entity.seldom.suspended_attack_target.archive(target);
             verb::override_base(&mut entity.mission, packet.mission);
         }
         effects.apply_target(self, &prepared, packet.combat_target);
@@ -841,7 +834,7 @@ impl Simulation {
         if entity.mission.suspended() == MissionId::NONE {
             return Ok(false);
         }
-        let saved_target = entity.suspended_attack_target.target();
+        let saved_target = entity.seldom.suspended_attack_target.target();
         let saved_destination = entity.navigation.suspended_nav_com();
         let category = entity.category();
         let request = match category {
@@ -945,10 +938,13 @@ impl crate::sim::world::ObjectSubstrate {
             return Ok(false);
         }
 
-        let entity = self
+        // With nothing queued, Commence fails and writes nothing.
+        let Some(entity) = self
             .entities
-            .get_mut(receiver)
-            .expect("building-ready receiver remains present");
+            .get_mut_if(receiver, commence_entity_mission_writes)
+        else {
+            return Ok(false);
+        };
         if !commence_entity_mission(entity, now) {
             return Ok(false);
         }
@@ -957,7 +953,7 @@ impl crate::sim::world::ObjectSubstrate {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_h_o))]
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::collections::VecDeque;
@@ -1006,7 +1002,7 @@ mod tests {
             mission: &MissionCom,
         ) -> bool {
             self.reads.set(self.reads.get() + 1);
-            self.missions.borrow_mut().push(*mission);
+            self.missions.borrow_mut().push(mission.clone());
             self.values
                 .borrow_mut()
                 .pop_front()
@@ -1034,7 +1030,7 @@ mod tests {
             mission: &MissionCom,
         ) -> bool {
             self.reads.set(self.reads.get() + 1);
-            self.missions.borrow_mut().push(*mission);
+            self.missions.borrow_mut().push(mission.clone());
             self.ready
         }
     }
@@ -1066,7 +1062,7 @@ mod tests {
     fn mission_authority_assign_applies_aircraft_gate_before_writes() {
         let mut aircraft = entity(EntityCategory::Aircraft, MissionId::from_raw(4));
         aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
-        let before = aircraft.mission;
+        let before = aircraft.mission.clone();
         let mut sim = sim_with(aircraft);
 
         sim.substrate
@@ -1086,7 +1082,7 @@ mod tests {
     #[test]
     fn mission_authority_assign_preserves_base_guard_and_raw_ids() {
         let mut sim = sim_with(entity(EntityCategory::Unit, MissionId::from_raw(28)));
-        let before = sim.substrate.entities.get(1).unwrap().mission;
+        let before = sim.substrate.entities.get(1).unwrap().mission.clone();
         sim.substrate.mission_assign_exact(1, GUARD, 10).unwrap();
         assert_eq!(sim.substrate.entities.get(1).unwrap().mission, before);
 
@@ -1145,7 +1141,7 @@ mod tests {
         for requested in [MissionId::NONE, MissionId::from_raw(0x1234_5678)] {
             let mut aircraft = entity(EntityCategory::Aircraft, MissionId::from_raw(4));
             aircraft.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
-            let before_mission = aircraft.mission;
+            let before_mission = aircraft.mission.clone();
             let before_leaf = aircraft.mission_leaf;
             let mut sim = sim_with(aircraft);
             let readiness = TestReadyProvider::ready(true);
@@ -1177,7 +1173,7 @@ mod tests {
 
         let mut managed = entity(EntityCategory::Aircraft, MissionId::from_raw(4));
         managed.mission_leaf = MissionLeafState::aircraft_raw_for_test(9, 1);
-        managed.airstrike.set_test_link(Some(999));
+        managed.seldom.airstrike.set_test_link(Some(999));
         let unknown = MissionId::from_raw(0x1234_5678);
         let mut sim = sim_with(managed);
         sim.mission_queue_exact(1, unknown, 0, 10, &TestReadyProvider::ready(false))
@@ -1195,7 +1191,7 @@ mod tests {
             (MissionId::from_raw(28), GUARD),
         ] {
             let mut sim = sim_with(entity(EntityCategory::Unit, current));
-            let before = sim.substrate.entities.get(1).unwrap().mission;
+            let before = sim.substrate.entities.get(1).unwrap().mission.clone();
             let readiness = TestReadyProvider::ready(true);
 
             sim.mission_queue_exact(1, requested, 1, 10, &readiness)
@@ -1210,7 +1206,7 @@ mod tests {
     fn mission_authority_queue_none_and_redundant_requests_still_read_once() {
         for requested in [MissionId::NONE, GUARD] {
             let mut sim = sim_with(entity(EntityCategory::Unit, GUARD));
-            let before = sim.substrate.entities.get(1).unwrap().mission;
+            let before = sim.substrate.entities.get(1).unwrap().mission.clone();
             let readiness = TestReadyProvider::ready(false);
 
             sim.mission_queue_exact(1, requested, 1, 10, &readiness)
@@ -1282,7 +1278,6 @@ mod tests {
         let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
             return;
         };
-        let registry = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art);
         let rules: std::collections::BTreeMap<_, _> = ["yes", "no"]
             .into_iter()
             .map(|raw| {
@@ -1295,7 +1290,6 @@ mod tests {
                     RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap())
                         .unwrap();
                 rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-                rules.bind_animation_sequences(&registry);
                 (raw, rules)
             })
             .collect();
@@ -1442,15 +1436,14 @@ mod tests {
                         1,
                         2,
                         rules,
-                        None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                 } else {
                     sim.mission_override_movement_blocker(
                         1,
                         TargetKind::Entity(2),
                         rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                 };
                 assert!(ran, "{name}, damage={damage_response}");
@@ -1460,7 +1453,7 @@ mod tests {
                 // selector; current Move is used only without a queue.
                 assert_eq!(actor.mission.suspended(), GUARD, "{name}");
                 assert_eq!(
-                    actor.suspended_attack_target.target(),
+                    actor.seldom.suspended_attack_target.target(),
                     prior_target,
                     "{name}"
                 );
@@ -1561,8 +1554,8 @@ mod tests {
         assert_eq!(after.mission, before.mission);
         assert_eq!(after.attack_target.target(), before.attack_target.target());
         assert_eq!(
-            after.suspended_attack_target.target(),
-            before.suspended_attack_target.target()
+            after.seldom.suspended_attack_target.target(),
+            before.seldom.suspended_attack_target.target()
         );
     }
 
@@ -1599,9 +1592,10 @@ mod tests {
     fn foot_override_provider_order_includes_same_identity_target_dispatch() {
         let mut unit = entity(EntityCategory::Unit, GUARD);
         let active_target = TargetKind::Entity(7);
-        unit.rearm_timer
+        unit.seldom
+            .rearm_timer
             .set_for_test(crate::sim::timer::CdTimer::started(0, 17));
-        unit.weapon_burst.complete_shot(4);
+        unit.seldom.weapon_burst.complete_shot(4);
         unit.attack_target.set_for_test(Some(active_target));
         unit.navigation
             .set_nav_com_for_test(Some(NavTargetRef::cell(1, 2)));
@@ -1658,11 +1652,23 @@ mod tests {
             .target()
             .unwrap();
         assert_eq!(
-            sim.substrate.entities.get(1).unwrap().rearm_timer.timer(),
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .seldom
+                .rearm_timer
+                .timer(),
             crate::sim::timer::CdTimer::started(0, 17)
         );
         assert_eq!(
-            sim.substrate.entities.get(1).unwrap().weapon_burst.index(),
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .seldom
+                .weapon_burst
+                .index(),
             1
         );
         assert_eq!(installed, TargetKind::Entity(7));
@@ -1709,7 +1715,7 @@ mod tests {
             assert_eq!(after.mission.current(), ATTACK);
             assert_eq!(after.mission.suspended(), GUARD);
             assert_eq!(
-                after.suspended_attack_target.target(),
+                after.seldom.suspended_attack_target.target(),
                 Some(TargetKind::Entity(7))
             );
             assert!(matches!(
@@ -1756,7 +1762,7 @@ mod tests {
         unit.attack_target.set_for_test(Some(TargetKind::Entity(7)));
         unit.navigation
             .set_nav_com_for_test(Some(NavTargetRef::cell(1, 2)));
-        let before_mission = unit.mission;
+        let before_mission = unit.mission.clone();
         let mut sim = sim_with(unit);
         let mut effects = RecordingConcreteMissionEffects::available();
 
@@ -1774,7 +1780,7 @@ mod tests {
         let after = sim.substrate.entities.get(1).unwrap();
         assert_eq!(after.mission, before_mission);
         assert_eq!(
-            after.suspended_attack_target.target(),
+            after.seldom.suspended_attack_target.target(),
             Some(TargetKind::Entity(7))
         );
         assert_eq!(
@@ -1842,7 +1848,7 @@ mod tests {
             ai_counter: 12,
             dispatch_timer: MissionDispatchTimer::from_raw(13, 14),
         });
-        let before = unit.mission;
+        let before = unit.mission.clone();
         let mut sim = sim_with(unit);
 
         assert!(matches!(
@@ -1865,7 +1871,8 @@ mod tests {
             ai_counter: 12,
             dispatch_timer: MissionDispatchTimer::from_raw(13, 14),
         });
-        unit.suspended_attack_target
+        unit.seldom
+            .suspended_attack_target
             .set_for_test(Some(TargetKind::Entity(7)));
         unit.navigation
             .set_suspended_nav_com_for_test(Some(NavTargetRef::cell(8, 9)));
@@ -1880,7 +1887,7 @@ mod tests {
         assert_eq!(entity.mission.current(), GUARD);
         assert_eq!(entity.mission.queued(), MOVE);
         assert_eq!(
-            entity.suspended_attack_target.target(),
+            entity.seldom.suspended_attack_target.target(),
             Some(TargetKind::Entity(7))
         );
         assert_eq!(

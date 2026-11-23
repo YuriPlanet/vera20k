@@ -23,22 +23,27 @@
 //! during future parity work unless the user explicitly asks to change it.
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::aud_file;
 use crate::assets::mix_archive::SharedBytes;
 use crate::assets::wav_file::{WavFile, WavPcmCursor};
+use crate::audio::custom_music::CustomMusicLibrary;
 use crate::audio::sfx::upmix_i16_to_f32_stereo;
-use crate::rules::ini_parser::{IniFile, IniSection};
+#[cfg(test)]
+use crate::rules::ini_parser::IniFile;
+#[cfg(test)]
+use crate::rules::theme_ini::catalog_from_ini;
+pub(crate) use crate::rules::theme_ini::missing_install_music;
+use crate::rules::theme_ini::{ThemeCatalog, ThemeEntry};
 use crate::util::native_x87::X87Chop53;
 
-const THEME_INI_NAME: &str = "thememd.ini";
-const RA2_THEME_INI_NAME: &str = "theme.ini";
 const MENU_THEME_SECTION: &str = "INTRO";
 /// `Next_Song` shuffle rejection budget (`CMP EDI,0x3E8` @ `0x00720AC6`).
 const SHUFFLE_TRIES: u32 = 1_000;
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 #[path = "theme_saved_tests.rs"]
 mod saved_tests;
 
@@ -62,6 +67,11 @@ pub(crate) enum MusicOutputState {
     Ramping,
     /// The current source reached its physical end.
     Finished,
+    /// A movie holds the stream (`Audio__HoldAllStreamPlayersAgainstStop @
+    /// 0x00408200`, `Audio__PauseAllStreamPlayers @ 0x00408270`): the pause
+    /// moves the playing bit to the paused bit, so `IsPlaying` reads 0, and
+    /// `Stop @ 0x00407F40` and `PlayFile @ 0x00407B60` do nothing.
+    Held,
 }
 
 impl MusicOutputState {
@@ -76,7 +86,7 @@ impl MusicOutputState {
     /// The stream as the next step of the same native call chain reads it
     /// again, once this step's Stop, PlayFile and SetTarget have run.
     fn after(self, action: &ThemeAction) -> Self {
-        if !self.stream_exists() {
+        if !self.stream_exists() || self == Self::Held {
             return self;
         }
         let state = if action.start.is_some() {
@@ -92,35 +102,6 @@ impl MusicOutputState {
             state
         }
     }
-}
-
-/// One `[Themes]` entry (native 0x290-byte record, ctor inside `0x00720590`,
-/// reader `0x00720480`, scan `0x007207F0`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ThemeEntry {
-    /// `[Themes]` value = section key (+0x000). `From_Name` matches this only.
-    pub(crate) key: String,
-    /// `Sound=` with leading `$`/`#` stripped (+0x100); `.WAV` appended at play.
-    pub(crate) sound: String,
-    /// `Name=` CSF key for the native localized +0x200 display name. B8's
-    /// projection resolves it using the process CSF, with a 63-UTF16-unit cap.
-    pub(crate) name_key: String,
-    /// Whole seconds from native WAV metadata scan `7207F0`; independent of
-    /// physical playback length (especially for IMA ADPCM music).
-    pub(crate) duration_seconds: u32,
-    /// `Scenario=` (+0x280, default 0).
-    pub(crate) scenario: i32,
-    /// `Normal=` (+0x288, default yes).
-    pub(crate) normal: bool,
-    /// `Repeat=` (+0x289, default no). Keyed by entry, never by `Sound=` stem.
-    pub(crate) repeat: bool,
-    /// `Side=` name (+0x28C holds the resolved index; default -1 = any side).
-    pub(crate) side_name: Option<String>,
-    /// Resolved `Side=` index, -1 when unset. Unknown names natively register
-    /// a fresh `SideClass` that never equals the player's side.
-    pub(crate) side: i32,
-    /// `CCFileClass::IsAvailable(Sound + ".WAV")` (+0x28A).
-    pub(crate) available: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -303,16 +284,17 @@ pub(crate) struct ThemeAllowContext {
 /// fading and shuffle start false.
 #[derive(Debug)]
 pub(crate) struct ThemeRuntime {
-    catalog_loaded: bool,
-    entries: Vec<ThemeEntry>,
-    /// Physical failures, shared by logical entries with the same Sound stem.
-    /// Like the once-loaded catalog, these belong to this process's Theme:
-    /// AssetManager mounts THEMEMD.MIX/THEME.MIX at construction and snapshots
-    /// loose files on first read; scenario leases do not replace those sources.
-    /// Reloading the installation/catalog must construct a fresh ThemeRuntime.
-    /// Keep availability/Next_Song unchanged: failed Play still advances slots
-    /// and Main RNG on every AI poll. Only physical preparation is memoized.
-    failed_tracks: Vec<String>,
+    catalog: Option<ThemeCatalog>,
+    /// Player-supplied in-match BGM, indexed once from `musics/` at startup.
+    /// `None` keeps the retail playlist exactly as gamemd drives it.
+    custom_music: Option<Arc<CustomMusicLibrary>>,
+    /// Set by the in-match frame tick, cleared on WOL-lobby entry. It gates
+    /// the custom playlist to actual gameplay: the WOL lobby shares the same
+    /// AUTO selection outlet and must stay on the retail playlist.
+    custom_music_in_match: bool,
+    /// Derived Side indices for the immutable catalog, rebuilt on every scenario
+    /// bind. Unbound entries use -1; unknown explicit names cannot match a player.
+    resolved_sides: Vec<i32>,
     slots: ThemeSlots,
     /// Signed +0x0C gate; derived from Options' stored f32, independent of
     /// the physical stream's separate gain. Ctor72096F initializes 255.
@@ -331,9 +313,10 @@ pub(crate) struct ThemeRuntime {
 impl Default for ThemeRuntime {
     fn default() -> Self {
         Self {
-            catalog_loaded: false,
-            entries: Vec::new(),
-            failed_tracks: Vec::new(),
+            catalog: None,
+            custom_music: None,
+            custom_music_in_match: false,
+            resolved_sides: Vec::new(),
             slots: ThemeSlots::default(),
             score_volume: 255,
             global_repeat: false,
@@ -346,6 +329,13 @@ impl Default for ThemeRuntime {
 }
 
 impl ThemeRuntime {
+    /// Bind the player's indexed music once, before the first catalog load.
+    /// `None` is the retail-default path; callers pass it when `music.ini` is
+    /// absent, disabled, or the folder holds no loadable file.
+    pub(crate) fn set_custom_music(&mut self, library: Option<Arc<CustomMusicLibrary>>) {
+        self.custom_music = library;
+    }
+
     /// Options5FA4A0/ReadFromINI5FAAE6/apply5FB251 derive this gate from
     /// the already stored, upper-clamped Options f32 times double255.0.
     /// The product is exact in f64 (at most 32 significand bits); reuse
@@ -364,46 +354,36 @@ impl ThemeRuntime {
 
     /// Catalog load `0x00720590` + scan `0x007207F0`, once per process, with
     /// the requested RA2 gameplay playlist extension appended afterwards.
-    pub(crate) fn initialize_catalog(&mut self, assets: &AssetManager) {
-        if self.catalog_loaded {
-            return;
+    /// ReadINI, then Scan `0x007207F0` behind the gate every Theme entry
+    /// point shares (an output device and no `-X…Q`).
+    pub(crate) fn initialize_catalog(&mut self, assets: &AssetManager, gates: ThemeGates) {
+        if self.catalog.is_none() {
+            let catalog = ThemeCatalog::select(assets);
+            let catalog = if gates.launcher_audio_available && !gates.startup_suppressed {
+                catalog
+            } else {
+                catalog.without_scan()
+            };
+            self.resolved_sides = vec![-1; catalog.entries().len()];
+            self.catalog = Some(catalog);
         }
-        if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, THEME_INI_NAME) {
-            self.entries = catalog_from_ini(&selected.ini);
-        }
-        scan_catalog_availability(&mut self.entries, assets);
+    }
 
-        // Read RA2 independently: merging INIs would let its INTRO, SCORE,
-        // LOADING and CREDITS sections replace the YR lifecycle themes.
-        if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, RA2_THEME_INI_NAME) {
-            let mut ra2_entries = catalog_from_ini(&selected.ini);
-            scan_catalog_availability(&mut ra2_entries, assets);
-            for entry in ra2_entries {
-                if entry.normal
-                    && entry.available
-                    && !self
-                        .entries
-                        .iter()
-                        .any(|yr| yr.key.eq_ignore_ascii_case(&entry.key))
-                {
-                    self.entries.push(entry);
-                }
-            }
-        }
-        self.catalog_loaded = true;
+    pub(crate) fn catalog(&self) -> Option<&ThemeCatalog> {
+        self.catalog.as_ref()
     }
 
     #[cfg(test)]
     fn with_entries(entries: Vec<ThemeEntry>) -> Self {
         Self {
-            catalog_loaded: true,
-            entries,
+            resolved_sides: vec![-1; entries.len()],
+            catalog: Some(ThemeCatalog::from_entries_for_test(entries)),
             ..Default::default()
         }
     }
 
     pub(crate) fn entries(&self) -> &[ThemeEntry] {
-        &self.entries
+        self.catalog.as_ref().map_or(&[], ThemeCatalog::entries)
     }
 
     #[cfg(test)]
@@ -421,10 +401,6 @@ impl ThemeRuntime {
     /// Play(saved +4) and Queue(saved +8). Reuse those same owners and observe
     /// the physical output after Play before Queue decides whether to fade.
     /// Native controls: tools/storage_oracle/sound_theme_metadata.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "native load inputs plus physical output handoff"
-    )]
     pub(crate) fn restore_saved_slots(
         &mut self,
         saved: [i32; 2],
@@ -469,39 +445,51 @@ impl ThemeRuntime {
         context: ThemeAllowContext,
         resolve_side: impl Fn(&str) -> Option<i32>,
     ) {
+        // A real match is running; the shared AUTO outlet now belongs to
+        // in-match BGM, so the player's custom playlist may take part. WOL
+        // lobby entry clears this again without rebinding the catalog.
+        self.custom_music_in_match = true;
         self.allow_context = context;
-        for entry in &mut self.entries {
-            entry.side = match entry.side_name.as_deref() {
+        self.resolved_sides = self
+            .entries()
+            .iter()
+            .map(|entry| match entry.side_name.as_deref() {
                 None => -1,
                 Some(name) => resolve_side(name).unwrap_or(i32::MAX),
-            };
-        }
+            })
+            .collect();
     }
 
     fn admitted(&self, gates: ThemeGates) -> bool {
-        self.catalog_loaded && gates.launcher_audio_available && !gates.startup_suppressed
+        self.catalog.is_some() && gates.launcher_audio_available && !gates.startup_suppressed
     }
 
-    /// `ThemeClass__From_Name @ 0x00721210`: case-insensitive section-key
-    /// match (`0x007C8D20`); -1 for null, empty, or unknown names.
-    #[expect(
-        clippy::wrong_self_convention,
-        reason = "named after the native ThemeClass::From_Name lookup"
-    )]
+    /// Delegate every caller to the shared ThemeClass::From_Name721210 owner.
+    #[expect(clippy::wrong_self_convention, reason = "native ThemeClass::From_Name")]
     pub(crate) fn from_name(&self, name: &str) -> i32 {
-        if name.is_empty() {
-            return THEME_NONE;
-        }
-        self.entries
-            .iter()
-            .position(|entry| entry.key.eq_ignore_ascii_case(name))
-            .map_or(THEME_NONE, |index| index as i32)
+        self.catalog
+            .as_ref()
+            .map_or(THEME_NONE, |catalog| catalog.from_name(name))
     }
 
+    /// Resolve a playlist index, including VERA's custom tracks appended past
+    /// the retail catalog. Retail indices are unchanged; a virtual index maps
+    /// to `custom_music[index - catalog_len]`.
     fn entry(&self, index: i32) -> Option<&ThemeEntry> {
-        usize::try_from(index)
+        let retail_len = self.catalog.as_ref().map_or(0, |catalog| catalog.entries().len()) as i32;
+        if index < retail_len {
+            return self.catalog.as_ref()?.entry(index);
+        }
+        let custom = self.custom_music.as_ref()?;
+        usize::try_from(index - retail_len)
             .ok()
-            .and_then(|i| self.entries.get(i))
+            .and_then(|offset| custom.entry(offset))
+    }
+
+    /// Resolved side for an admitted index. Custom tracks have no `Side=`, so
+    /// they match every side just like a retail entry with `Side=-1`.
+    fn resolved_side(&self, index: i32) -> i32 {
+        self.resolved_sides.get(index as usize).copied().unwrap_or(-1)
     }
 
     fn entry_repeats(&self, index: i32) -> bool {
@@ -520,9 +508,12 @@ impl ThemeRuntime {
         if !entry.available || !entry.normal {
             return false;
         }
+        // entry() admitted a nonnegative index; custom indices fall outside
+        // the retail-side projection and keep the constructor's any-side -1.
+        let side = self.resolved_side(index);
         if let Some(local_side) = self.allow_context.local_side
-            && entry.side != -1
-            && local_side != entry.side
+            && side != -1
+            && local_side != side
         {
             return false;
         }
@@ -535,18 +526,24 @@ impl ThemeRuntime {
     }
 
     /// `ThemeClass__Next_Song @ 0x00720A80`: `0x00720AB5` draws inclusive
-    /// `[0, count - 1]` from Main `0x00886B88`. Borrow the caller's draw so
+    /// `[lo, hi - 1]` from Main `0x00886B88`. Borrow the caller's draw so
     /// Sound, Vox and Theme (`AudioSystem::Pump 0x00406F70`) share one cursor.
-    fn next_song(&self, prev: i32, draw_main: &mut impl FnMut(i32, i32) -> i32) -> i32 {
-        let count = self.entries.len() as i32;
-        if prev >= 0 && (self.entry_repeats(prev) || self.global_repeat) {
+    ///
+    /// With retail-only playlists `lo=0, hi=catalog_len`, byte-for-byte the
+    /// native draw. VERA's in-match custom music widens the same space: append
+    /// keeps `lo=0`, exclusive raises `lo` to the first virtual index. Custom
+    /// entries carry the same allowed/available/repeat flags as retail ones,
+    /// so the selection rule, rejection budget and shared RNG are reused.
+    fn next_song_in(&self, prev: i32, lo: i32, hi: i32, draw_main: &mut impl FnMut(i32, i32) -> i32) -> i32 {
+        let count = hi - lo;
+        if prev >= lo && (self.entry_repeats(prev) || self.global_repeat) {
             return prev;
         }
         if self.shuffle {
             let mut tries = 0u32;
             let mut draw;
             loop {
-                draw = draw_main(0, count - 1);
+                draw = draw_main(lo, hi - 1);
                 tries += 1;
                 if tries >= SHUFFLE_TRIES {
                     break;
@@ -555,23 +552,45 @@ impl ThemeRuntime {
                     break;
                 }
             }
-            return if tries == SHUFFLE_TRIES { 0 } else { draw };
+            return if tries == SHUFFLE_TRIES { lo } else { draw };
         }
         let mut index = prev;
         let mut probes = count + 1;
         loop {
             index += 1;
-            if index >= count {
-                index = 0;
+            if index >= hi {
+                index = lo;
             }
             probes -= 1;
             if probes == 0 {
-                return 0;
+                return lo;
             }
             if self.is_allowed(index) {
                 return index;
             }
         }
+    }
+
+    /// Playlist bounds for in-match random selection. The retail catalog is
+    /// `[0, retail_len)`; indexed custom music, when enabled, is appended as
+    /// `[retail_len, retail_len + custom_len)`. Only the explicit exclusive
+    /// switch removes the retail half. A missing/empty library is the exact
+    /// native range, so all other scenes and stock play are untouched.
+    fn in_match_playlist(&self) -> (i32, i32) {
+        let retail_len = self.catalog.as_ref().map_or(0, |catalog| catalog.entries().len()) as i32;
+        let Some(custom) = self.custom_music.as_ref().filter(|_| self.custom_music_in_match) else {
+            return (0, retail_len);
+        };
+        if custom.exclusive() {
+            (retail_len, retail_len + custom.len() as i32)
+        } else {
+            (0, retail_len + custom.len() as i32)
+        }
+    }
+
+    fn next_song(&self, prev: i32, draw_main: &mut impl FnMut(i32, i32) -> i32) -> i32 {
+        let (lo, hi) = self.in_match_playlist();
+        self.next_song_in(prev, lo, hi, draw_main)
     }
 
     pub(crate) fn play_track(
@@ -581,7 +600,7 @@ impl ThemeRuntime {
         gates: ThemeGates,
         physical: MusicOutputState,
     ) -> ThemeAction {
-        self.initialize_catalog(assets);
+        self.initialize_catalog(assets, gates);
         let index = self.from_name(track_name);
         let mut prepare = |stem: &str| prepare_track(stem, assets);
         self.play_song(index, gates, physical, &mut prepare)
@@ -597,7 +616,6 @@ impl ThemeRuntime {
     /// Installed Ares1002FB80/1002FC20: ordered Side then Country, or one
     /// campaign Basic name. Exactly-2 retains retail LOADING; unknown-1 must
     /// reach the same Play_Song owner. Native: rules_oracle/ares_loading_themes.
-    #[cfg(feature = "ares")]
     pub(crate) fn play_ares_loading_theme<'a>(
         &mut self,
         names: impl IntoIterator<Item = Option<&'a str>>,
@@ -605,7 +623,7 @@ impl ThemeRuntime {
         gates: ThemeGates,
         physical: MusicOutputState,
     ) -> ThemeAction {
-        self.initialize_catalog(assets);
+        self.initialize_catalog(assets, gates);
         let selected = names
             .into_iter()
             .fold(THEME_AUTO, |prior, name| self.read_theme_name(name, prior));
@@ -639,7 +657,7 @@ impl ThemeRuntime {
         gates: ThemeGates,
         physical: MusicOutputState,
     ) -> ThemeAction {
-        self.initialize_catalog(assets);
+        self.initialize_catalog(assets, gates);
         let index = self.read_theme_name(requested_section.map(str::trim), THEME_NONE);
         let admitted = self.admitted(gates);
         let action = if index == THEME_NONE {
@@ -690,6 +708,9 @@ impl ThemeRuntime {
         gates: ThemeGates,
         physical: MusicOutputState,
     ) -> (ThemeAction, bool) {
+        // Lobby randomization shares the AUTO outlet; keep it on the retail
+        // playlist even when a match's custom music was active.
+        self.custom_music_in_match = false;
         let intro = self.from_name(MENU_THEME_SECTION);
         let mut action = ThemeAction::default();
         let mut physical = physical;
@@ -892,8 +913,17 @@ impl ThemeRuntime {
         physical: MusicOutputState,
         draw_main: &mut impl FnMut(i32, i32) -> i32,
     ) -> ThemeAction {
-        self.initialize_catalog(assets);
-        let mut prepare = |stem: &str| prepare_track(stem, assets);
+        self.initialize_catalog(assets, gates);
+        let custom = self.custom_music.clone();
+        let mut prepare = |stem: &str| {
+            if let Some(rest) = stem.strip_prefix(crate::audio::custom_music::CUSTOM_STEM_PREFIX)
+                && let Ok(index) = rest.parse::<usize>()
+                && let Some(bytes) = custom.as_ref().and_then(|library| library.bytes_at(index))
+            {
+                return prepare_bytes(stem, bytes);
+            }
+            prepare_track(stem, assets)
+        };
         self.ai(gates, physical, &mut prepare, draw_main)
     }
 
@@ -925,12 +955,12 @@ impl ThemeRuntime {
         } else {
             pending
         };
-        // A released source is idle; an absent stream remains absent. Play's
-        // retained/pending writes still run without decoding physical audio.
-        let physical = if physical.stream_exists() {
-            MusicOutputState::Idle
-        } else {
-            MusicOutputState::Unavailable
+        // A released source is idle; an absent or held stream stays as it
+        // is. Play's retained/pending writes still run without decoding
+        // physical audio.
+        let physical = match physical {
+            MusicOutputState::Unavailable | MusicOutputState::Held => physical,
+            _ => MusicOutputState::Idle,
         };
         action = action.then(self.play_song(index, gates, physical, prepare));
         // AI unconditionally restores -2 after attempting Play.
@@ -938,9 +968,10 @@ impl ThemeRuntime {
         action
     }
 
-    /// `ThemeClass__Play_Song @ 0x00720BB0`. The CD-check branch remains
-    /// outside this port; ordinary loaded-song controls execute the body in
-    /// tools/storage_oracle/sound_theme_metadata.
+    /// `ThemeClass__Play_Song @ 0x00720BB0`; ordinary loaded-song controls
+    /// execute the body in tools/storage_oracle/sound_theme_metadata. Its
+    /// no-disc branch (`0x00720CB7`) cannot run: the disc query `0x004790A0`
+    /// jumps to `0x004A80D0`, `MOV EAX,2; RET`, and `-CD` makes it 0.
     fn play_song(
         &mut self,
         index: i32,
@@ -972,38 +1003,22 @@ impl ThemeRuntime {
         // Stop and sentinels. A muted request only replaces Pending.
         if index >= 0 && self.score_volume > 0 {
             self.slots.retained = index;
-            if physical.stream_exists() {
-                let track = self.entry(index).and_then(|entry| {
-                    if self
-                        .failed_tracks
-                        .iter()
-                        .any(|stem| stem.eq_ignore_ascii_case(&entry.sound))
-                    {
-                        None
-                    } else {
-                        prepare(&entry.sound)
-                    }
-                });
-                match track {
+            if physical == MusicOutputState::Held {
+                // PlayFile does nothing on a held stream; Play still writes
+                // active (`0x00720CF2`/`0x00720D07`), so Theme AI moves on
+                // through the list each pass while the paused song waits.
+                self.slots.active = index;
+            } else if physical.stream_exists() {
+                let stem = self.entry(index).map(|entry| entry.sound.clone());
+                match stem.as_deref().and_then(prepare) {
                     Some(prepared) => {
                         action.start = Some(prepared);
                         self.slots.active = index;
                     }
                     None => {
-                        let failed_stem = self.entry(index).and_then(|entry| {
-                            (!self
-                                .failed_tracks
-                                .iter()
-                                .any(|stem| stem.eq_ignore_ascii_case(&entry.sound)))
-                            .then(|| entry.sound.clone())
-                        });
-                        if let Some(stem) = failed_stem {
-                            self.failed_tracks.push(stem);
-                        }
-                        // PlayFile's failure is ignored natively (active :=
-                        // index while nothing streams); Rust leaves active -1
-                        // so AI's next poll consumes pending the same way.
-                        self.slots.active = THEME_NONE;
+                        // PlayFile's failure is ignored (`0x00720CF2`):
+                        // active is the index while nothing streams.
+                        self.slots.active = index;
                     }
                 }
             } else {
@@ -1013,7 +1028,10 @@ impl ThemeRuntime {
                 return action;
             }
         }
+        // This pending request is Play's own, whatever a scenario queued
+        // before it: a muted Play(LOADING) must outlive the scenario reset.
         self.slots.pending = index;
+        self.scenario_owns_pending = false;
         action
     }
 }
@@ -1025,147 +1043,67 @@ fn prepare_track(track_name: &str, assets: &AssetManager) -> Option<PreparedTrac
         let Some(file) = assets.get_shared(&filename) else {
             continue;
         };
-
-        if let Some(track) = PreparedTrack::streamed(track_name, &file) {
+        if let Some(track) = prepare_bytes(track_name, &file) {
             return Some(track);
         }
-
-        let Some((header, samples)) = aud_file::decode_aud(&file) else {
-            continue;
-        };
-        if samples.is_empty() || header.sample_rate == 0 {
-            log::warn!("Track {track_name} decoded to 0 samples");
-            return None;
-        }
-        let mut stereo = Vec::new();
-        upmix_i16_to_f32_stereo(&mut stereo, &samples, header.channels());
-        return Some(PreparedTrack::decoded(
-            track_name.to_string(),
-            stereo,
-            u32::from(header.sample_rate),
-        ));
     }
-    log::warn!("Music track not found: resolved='{track_name}'");
+    if first_report_of_missing_track(track_name) {
+        log::warn!("Music track not found: resolved='{track_name}'");
+    }
     None
 }
 
-fn find_section<'a>(ini: &'a IniFile, name: &str) -> Option<&'a IniSection> {
-    ini.section(name).or_else(|| {
-        ini.section_names()
-            .into_iter()
-            .find(|candidate| candidate.eq_ignore_ascii_case(name))
-            .and_then(|candidate| ini.section(candidate))
-    })
+/// Whether a file's bytes decode through the same WAV/AUD path the engine
+/// uses. `custom_music::load` calls this so only indexed, playable files enter
+/// the custom playlist; a non-audio file in `musics/` is silently skipped.
+pub(crate) fn track_bytes_loadable(bytes: &SharedBytes) -> bool {
+    prepare_bytes("", bytes).is_some()
 }
 
-/// Native catalog scan `0x007207F0`: WAV availability and declared metadata
-/// supply the playlist row; the shared player owns subsequent decoding.
-fn scan_catalog_availability(entries: &mut [ThemeEntry], assets: &AssetManager) {
-    for entry in entries {
-        let wav = (!entry.sound.is_empty())
-            .then(|| assets.get_ref(&format!("{}.wav", entry.sound)))
-            .flatten();
-        entry.available = wav.is_some();
-        entry.duration_seconds = wav
-            .and_then(crate::assets::wav_file::WavFile::parse)
-            .and_then(|wav| wav.native_duration_seconds())
-            .unwrap_or(0);
+/// Decode the first piece of a WAV or AUD payload. Shared by archive-backed
+/// retail tracks and player-supplied files so both use one decoder path.
+fn prepare_bytes(track_name: &str, file: &SharedBytes) -> Option<PreparedTrack> {
+    if let Some(track) = PreparedTrack::streamed(track_name, file) {
+        return Some(track);
+    }
+    let (header, samples) = aud_file::decode_aud(file)?;
+    if samples.is_empty() || header.sample_rate == 0 {
+        return None;
+    }
+    let mut stereo = Vec::new();
+    upmix_i16_to_f32_stereo(&mut stereo, &samples, header.channels());
+    Some(PreparedTrack::decoded(
+        track_name.to_string(),
+        stereo,
+        u32::from(header.sample_rate),
+    ))
+}
+
+/// Whether `track_name`'s absence is new to the log. A repeating theme whose
+/// file is missing retries every frame, as gamemd does (`0x00720CF2` ignores
+/// the failed play); one warning per track keeps that out of the log. The
+/// list is process-wide, like the log it guards.
+fn first_report_of_missing_track(track_name: &str) -> bool {
+    static REPORTED: std::sync::Mutex<std::collections::BTreeSet<String>> =
+        std::sync::Mutex::new(std::collections::BTreeSet::new());
+    REPORTED
+        .lock()
+        .is_ok_and(|mut reported| reported.insert(track_name.to_ascii_lowercase()))
+}
+
+#[cfg(all(test, tests_audio))]
+mod missing_track_tests {
+    use super::first_report_of_missing_track;
+
+    #[test]
+    fn a_missing_track_is_reported_once() {
+        assert!(first_report_of_missing_track("vera_test_absent_track"));
+        assert!(!first_report_of_missing_track("vera_test_absent_track"));
+        assert!(!first_report_of_missing_track("VERA_TEST_ABSENT_TRACK"));
     }
 }
 
-/// Installer diagnostics use the playlist's own catalog and availability scan,
-/// without initializing an audio device or decoding whole songs.
-pub(crate) fn missing_install_music(assets: &AssetManager) -> Vec<String> {
-    let mut missing = Vec::new();
-    for name in [THEME_INI_NAME, RA2_THEME_INI_NAME] {
-        let selected = match crate::rules::retail_sources::select_ini(assets, name) {
-            Ok(selected) => selected,
-            Err(error) => {
-                if name == THEME_INI_NAME {
-                    missing.push(format!("{name}: {error}"));
-                }
-                continue;
-            }
-        };
-        let mut entries = catalog_from_ini(&selected.ini);
-        scan_catalog_availability(&mut entries, assets);
-        for entry in entries {
-            if entry.sound.is_empty() {
-                continue;
-            }
-            let wav = format!("{}.wav", entry.sound);
-            if !entry.available {
-                let issue = format!("{wav}: music track unavailable");
-                if !missing.contains(&issue) {
-                    missing.push(issue);
-                }
-            }
-        }
-    }
-    missing
-}
-
-/// Catalog load `0x00720590`: every non-empty `[Themes]` value in source
-/// order becomes an entry keyed by that value (duplicates re-read the existing
-/// entry); `0x00720480` fills the section fields with the ctor defaults
-/// (Normal=1, Repeat=0, Scenario=0, Side=-1, Sound="").
-pub(crate) fn catalog_from_ini(ini: &IniFile) -> Vec<ThemeEntry> {
-    let mut entries: Vec<ThemeEntry> = Vec::new();
-    let Some(themes) = ini.section("Themes") else {
-        return entries;
-    };
-    // Each entry through ReadString(0x20) (`0x007205DE`).
-    for entry_name in themes.keys() {
-        let Some(key) = themes.read_name(entry_name, 0x20) else {
-            continue;
-        };
-        let existing = entries
-            .iter()
-            .position(|entry| entry.key.eq_ignore_ascii_case(key));
-        let index = match existing {
-            Some(index) => index,
-            None => {
-                entries.push(ThemeEntry {
-                    key: key.to_string(),
-                    sound: String::new(),
-                    name_key: String::new(),
-                    duration_seconds: 0,
-                    scenario: 0,
-                    normal: true,
-                    repeat: false,
-                    side_name: None,
-                    side: -1,
-                    available: false,
-                });
-                entries.len() - 1
-            }
-        };
-        let entry = &mut entries[index];
-        let Some(section) = find_section(ini, &entry.key) else {
-            continue;
-        };
-        // `0x00720480`: ReadString 0x100 over an empty default, then
-        // ReadInt/ReadBool over each field and the side-name read
-        // (`0x004756F0`, 0x80 bytes).
-        entry.sound = section
-            .read_string("Sound", "", 0x100)
-            .trim_start_matches(['$', '#'])
-            .to_string();
-        entry.scenario = section.read_int("Scenario", entry.scenario);
-        entry.normal = section.read_bool("Normal", entry.normal);
-        entry.repeat = section.read_bool("Repeat", entry.repeat);
-        if let Some(side) = section.read_name("Side", 0x80) {
-            entry.side_name = Some(side.to_string());
-        }
-        if entry.normal {
-            // The string-table label read `0x00529160` copies up to 0x3FF bytes.
-            entry.name_key = section.read_string("Name", "", 0x400);
-        }
-    }
-    entries
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
     use crate::sim::rng::SimRng;
@@ -1206,127 +1144,6 @@ mod tests {
 
     fn no_draw(_low: i32, _high: i32) -> i32 {
         panic!("this Theme path must not draw Main")
-    }
-
-    #[test]
-    fn cached_failures_preserve_retry_slots_and_shared_rng_continuation() {
-        for shuffle in [false, true] {
-            let mut cached = stock_runtime();
-            let mut uncached = stock_runtime();
-            cached.set_score_options(false, shuffle);
-            uncached.set_score_options(false, shuffle);
-            cached.slots.pending = 0; // Missing repeating INTRO/Drok.
-            uncached.slots.pending = 0;
-            let mut cached_main = SimRng::new(17);
-            let mut uncached_main = SimRng::new(17);
-            let mut attempts = Vec::new();
-            for _ in 0..64 {
-                let action = cached.ai(
-                    gates(true),
-                    MusicOutputState::Idle,
-                    &mut |stem| {
-                        attempts.push(stem.to_owned());
-                        None
-                    },
-                    &mut |low, high| cached_main.next_range_i32_inclusive(low, high),
-                );
-                // Reference the original physical retry behavior while using
-                // the same production slot/selection code.
-                uncached.failed_tracks.clear();
-                let reference = uncached.ai(
-                    gates(true),
-                    MusicOutputState::Idle,
-                    &mut |_| None,
-                    &mut |low, high| uncached_main.next_range_i32_inclusive(low, high),
-                );
-                assert!(action.start.is_none() && reference.start.is_none());
-                assert_eq!(action.stop_output, reference.stop_output);
-                assert_eq!(action.fade_out, reference.fade_out);
-                assert_eq!(cached.slots(), uncached.slots());
-                assert_eq!(cached.slots.pending, THEME_AUTO);
-                assert_eq!(
-                    cached_main.native_state_hex(),
-                    uncached_main.native_state_hex()
-                );
-            }
-            assert_eq!(attempts.iter().filter(|stem| *stem == "Drok").count(), 1);
-            assert!(attempts.len() < 64);
-            assert_eq!(cached_main.next_u32(), uncached_main.next_u32());
-            // Alias and repeated explicit requests must use the same failure.
-            cached.play_song(6, gates(true), MusicOutputState::Idle, &mut |_| {
-                panic!("Drok alias must not prepare again")
-            });
-        }
-    }
-
-    #[test]
-    fn physical_failures_are_theme_local_and_successful_tracks_are_not_cached() {
-        let dir =
-            crate::assets::asset_manager::test_support::TestDirectory::new("theme-negative-cache");
-        std::fs::write(dir.path().join("Drok.wav"), b"invalid WAV").unwrap();
-        let assets = AssetManager::from_loose_root_for_test(dir.path());
-        let mut theme = stock_runtime();
-        let mut attempts = 0;
-        // Exercise real resolution/decoding: invalid Drok and missing Bully.
-        for _ in 0..3 {
-            for index in [0, 2, 6] {
-                let action =
-                    theme.play_song(index, gates(true), MusicOutputState::Idle, &mut |stem| {
-                        attempts += 1;
-                        prepare_track(stem, &assets)
-                    });
-                assert!(action.start.is_none());
-            }
-        }
-        assert_eq!(attempts, 2);
-
-        // A new installation/catalog lifetime gets a new Theme owner. A PCM
-        // source remains reusable; volume/device gates must not poison it.
-        let valid_dir =
-            crate::assets::asset_manager::test_support::TestDirectory::new("theme-valid-cache");
-        let mut wav = b"RIFF".to_vec();
-        wav.extend(40u32.to_le_bytes());
-        wav.extend(b"WAVEfmt ");
-        wav.extend(16u32.to_le_bytes());
-        for value in [1u16, 1] {
-            wav.extend(value.to_le_bytes());
-        }
-        wav.extend(22_050u32.to_le_bytes());
-        wav.extend(44_100u32.to_le_bytes());
-        for value in [2u16, 16] {
-            wav.extend(value.to_le_bytes());
-        }
-        wav.extend(b"data");
-        wav.extend(4u32.to_le_bytes());
-        wav.extend([0u8; 4]);
-        std::fs::write(valid_dir.path().join("Drok.wav"), wav).unwrap();
-        let valid_assets = AssetManager::from_loose_root_for_test(valid_dir.path());
-        let mut fresh = stock_runtime();
-        for (gates, physical, volume) in [
-            (gates(false), MusicOutputState::Idle, 255),
-            (gates(true), MusicOutputState::Unavailable, 255),
-            (gates(true), MusicOutputState::Idle, 0),
-        ] {
-            fresh.set_volume(volume);
-            fresh.play_song(0, gates, physical, &mut |_| {
-                panic!("closed audio gate must not prepare")
-            });
-        }
-        fresh.set_volume(127);
-        let mut successful_attempts = 0;
-        for _ in 0..2 {
-            let action = fresh.play_song(0, gates(true), MusicOutputState::Idle, &mut |stem| {
-                successful_attempts += 1;
-                prepare_track(stem, &valid_assets)
-            });
-            let track = action.start.unwrap();
-            assert_eq!(track.stem, "Drok");
-            assert_eq!(track.sample_rate, 22_050);
-            assert_eq!(track.collect::<Vec<_>>(), vec![0.0; 4]);
-            assert_eq!(fresh.score_volume, 127);
-        }
-        assert_eq!(successful_attempts, 2);
-        assert!(fresh.failed_tracks.is_empty());
     }
 
     #[test]
@@ -1482,7 +1299,7 @@ mod tests {
         let assets = AssetManager::from_loose_root_for_test(&dir);
 
         let mut theme = ThemeRuntime::default();
-        theme.initialize_catalog(&assets);
+        theme.initialize_catalog(&assets, gates(true));
         let keys: Vec<&str> = theme.entries().iter().map(|e| e.key.as_str()).collect();
         assert_eq!(keys, ["INTRO", "Drok", "Grinder"]);
         assert_eq!(theme.from_name("Grinder"), 2);
@@ -1494,6 +1311,21 @@ mod tests {
             "theme.ini's [Drok] Repeat=yes must not leak in"
         );
         assert!(theme.entries().iter().all(|entry| entry.available));
+        // `-X…Q` (or no device) skips Scan `0x007207F0`: same entries, none
+        // available, so the B8 list offers nothing.
+        let mut quiet = ThemeRuntime::default();
+        let suppressed = ThemeGates {
+            launcher_audio_available: true,
+            startup_suppressed: true,
+        };
+        quiet.initialize_catalog(&assets, suppressed);
+        assert_eq!(quiet.from_name("Grinder"), 2);
+        assert!(
+            quiet
+                .entries()
+                .iter()
+                .all(|entry| !entry.available && entry.duration_seconds == 0)
+        );
         assert_eq!(theme.entries()[1].name_key, "THEME:Drok");
         assert_eq!(
             theme.entries()[1].duration_seconds,
@@ -1513,14 +1345,14 @@ mod tests {
         std::fs::remove_file(dir.join("theme.ini")).expect("remove theme.ini");
         let assets = AssetManager::from_loose_root_for_test(&dir);
         let mut theme = ThemeRuntime::default();
-        theme.initialize_catalog(&assets);
+        theme.initialize_catalog(&assets, gates(true));
         assert_eq!(theme.entries().len(), 2);
 
         // Both optional inputs missing leave an empty catalog.
         std::fs::remove_file(dir.join("thememd.ini")).expect("remove thememd.ini");
         let assets = AssetManager::from_loose_root_for_test(&dir);
         let mut theme = ThemeRuntime::default();
-        theme.initialize_catalog(&assets);
+        theme.initialize_catalog(&assets, gates(true));
         assert!(theme.entries().is_empty());
         std::fs::remove_dir_all(dir).expect("remove theme test assets");
     }
@@ -1583,7 +1415,7 @@ mod tests {
             return;
         };
         let mut theme = ThemeRuntime::default();
-        theme.initialize_catalog(&assets);
+        theme.initialize_catalog(&assets, gates(true));
         let yr_keys = [
             "INTRO",
             "SCORE",
@@ -1664,7 +1496,10 @@ mod tests {
             assert_eq!(prepared.sample_rate, 22_050);
             let file = assets.get_ref(&format!("{}.wav", entry.sound)).unwrap();
             let whole = crate::audio::sfx::decode_wav(file, key).unwrap().samples;
-            assert!(prepared.eq(whole), "{key} streams its whole decode");
+            assert!(
+                prepared.eq(whole.iter().copied()),
+                "{key} streams its whole decode"
+            );
         }
         let intro = assets
             .resolve_ref("Drok.wav")
@@ -1768,7 +1603,6 @@ mod tests {
                     normal: true,
                     repeat: false,
                     side_name: None,
-                    side: -1,
                     available: true,
                 })
                 .collect();
@@ -1859,7 +1693,6 @@ mod tests {
                     normal: entry["normal"].as_bool().unwrap(),
                     repeat: entry["repeat"].as_bool().unwrap(),
                     side_name: None,
-                    side: entry["side"].as_i64().unwrap() as i32,
                     available: entry["available"].as_bool().unwrap(),
                 })
                 .collect();
@@ -1869,6 +1702,12 @@ mod tests {
                 input["shuffle"].as_bool().unwrap(),
             );
             // The native fixture supplies already-resolved Side indices.
+            theme.resolved_sides = input["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| entry["side"].as_i64().unwrap() as i32)
+                .collect();
             theme.allow_context = ThemeAllowContext {
                 local_side: Some(input["current_side"].as_i64().unwrap() as i32),
                 campaign_scenario: (input["game_mode"] == 0)
@@ -2039,6 +1878,40 @@ mod tests {
         );
     }
 
+    /// A movie's hold pauses the song and refuses PlayFile (`0x00407B60`),
+    /// so Theme AI (`0x007209D0`) finds nothing playing and moves on through
+    /// the list without starting a track; the paused song plays on after.
+    #[test]
+    fn held_stream_moves_theme_on_without_starting_a_track() {
+        let mut theme = stock_runtime();
+        let mut ok = prepared;
+        theme.queue_song(5, gates(true), MusicOutputState::Idle);
+        theme.ai(gates(true), MusicOutputState::Idle, &mut ok, &mut no_draw);
+        let mut refused = |_: &str| -> Option<PreparedTrack> { panic!("held: nothing decodes") };
+        let action = theme.ai(
+            gates(true),
+            MusicOutputState::Held,
+            &mut refused,
+            &mut no_draw,
+        );
+        assert!(action.start.is_none());
+        assert_eq!(
+            theme.slots(),
+            ThemeSlots {
+                active: 6,
+                retained: 6,
+                pending: THEME_AUTO
+            }
+        );
+        let action = theme.ai(
+            gates(true),
+            MusicOutputState::Playing,
+            &mut ok,
+            &mut no_draw,
+        );
+        assert!(action.start.is_none() && !action.stop_output);
+    }
+
     #[test]
     fn scenario_with_basic_theme_queues_and_fades_the_loading_track() {
         let mut theme = stock_runtime();
@@ -2206,10 +2079,11 @@ mod tests {
             &mut missing,
             &mut no_draw,
         );
+        // Play_Song ignores PlayFile's failure (`0x00720CF2`).
         assert_eq!(
             theme.slots(),
             ThemeSlots {
-                active: -1,
+                active: 6,
                 retained: 6,
                 pending: THEME_AUTO
             }
@@ -2323,6 +2197,23 @@ mod tests {
         );
     }
 
+    /// `Play 0x00720C8E`: at score volume 0 a played song only replaces
+    /// Pending, and that request is Play's own. The loading screen's track
+    /// must outlive the scenario reset that follows it, so it plays once the
+    /// volume comes up, as in gamemd.
+    #[test]
+    fn a_muted_play_keeps_its_pending_song_through_the_scenario_reset() {
+        let mut theme = stock_runtime();
+        theme.score_volume = 0;
+        // Left by the previous scenario's request, never consumed while muted.
+        theme.scenario_owns_pending = true;
+        let action = theme.play_song(5, gates(true), MusicOutputState::Idle, &mut prepared);
+        assert!(action.start.is_none());
+        assert_eq!(theme.slots().pending, 5);
+        theme.cancel_scenario_theme_request();
+        assert_eq!(theme.slots().pending, 5);
+    }
+
     #[test]
     fn scenario_cancel_clears_only_scenario_owned_pending() {
         let mut theme = stock_runtime();
@@ -2334,5 +2225,47 @@ mod tests {
         theme.scenario_owns_pending = true;
         theme.cancel_scenario_theme_request();
         assert_eq!(theme.slots().pending, THEME_NONE);
+    }
+
+    fn custom_runtime(exclusive: bool) -> ThemeRuntime {
+        let mut theme = stock_runtime();
+        theme.set_custom_music(Some(crate::audio::custom_music::CustomMusicLibrary::for_test(
+            exclusive, 2,
+        )));
+        theme.custom_music_in_match = true;
+        theme
+    }
+
+    #[test]
+    fn custom_music_defaults_to_the_retail_playlist() {
+        let theme = stock_runtime();
+        let retail_len = theme.entries().len() as i32;
+        assert_eq!(theme.in_match_playlist(), (0, retail_len));
+        // Without a bound match even an indexed library stays off the outlet.
+        let mut theme = custom_runtime(false);
+        theme.custom_music_in_match = false;
+        assert_eq!(theme.in_match_playlist(), (0, retail_len));
+    }
+
+    #[test]
+    fn custom_music_appends_to_the_in_match_playlist() {
+        let theme = custom_runtime(false);
+        let retail_len = theme.entries().len() as i32;
+        assert_eq!(theme.in_match_playlist(), (0, retail_len + 2));
+        // The appended virtual indices resolve to custom entries, not catalog.
+        let first_custom = theme.entry(retail_len).expect("first custom index");
+        assert_eq!(first_custom.sound, "\u{1}vera:0");
+        assert!(first_custom.available && first_custom.normal && !first_custom.repeat);
+        assert!(theme.entry(retail_len + 2).is_none(), "past the end");
+    }
+
+    #[test]
+    fn exclusive_custom_music_removes_the_retail_half() {
+        let theme = custom_runtime(true);
+        let retail_len = theme.entries().len() as i32;
+        assert_eq!(theme.in_match_playlist(), (retail_len, retail_len + 2));
+        // A sequential draw stays inside the custom range.
+        let index = theme.next_song_in(retail_len, retail_len, retail_len + 2, &mut |_low, high| high);
+        assert!(index >= retail_len && index < retail_len + 2);
     }
 }

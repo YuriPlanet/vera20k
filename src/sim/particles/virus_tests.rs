@@ -41,7 +41,7 @@ fn check_fatal_virus_shot(
             arg6: false,
         },
     );
-    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
     let gas = rules.p_type_id_by_name("VirusCloud1").unwrap();
     let count = |sim: &Simulation| {
         sim.particle_systems()
@@ -213,8 +213,7 @@ fn retail_gas_snapshot_retains_global_owner_motion_and_child_cleanup() {
             super::system_ai::tick_particle_systems(world, &rules);
             world.process_pending_delete_with(
                 &rules,
-                None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
                 1,
                 world.session.started(),
             );

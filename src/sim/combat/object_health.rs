@@ -28,23 +28,13 @@ impl Health {
     }
 
     /// Store `value`. The native writers outside ReceiveDamage: a crash's
-    /// kill (`0x004DEC72`) and a parasite whose host dies under it
-    /// (`ParasiteClass::ExitUnit`, `0x0062A854`, `0x0062A8A0`) store 0;
+    /// kill (`0x004DEC72`) and a parasite that dies leaving its victim
+    /// (`ParasiteClass::PointerExpired`, `0x0062A46A`;
+    /// `ParasiteClass::ExitUnit`, `0x0062A854`, `0x0062A8A0`) store 0;
     /// PostMortem, ship sinking and the infantry health reset store 1; a
     /// completed repair (an engineer's, the repair step's or the depot's), a
     /// spawn reload and a slave heal store the type's Strength; map
     /// admission, conversion and crew survival store their computed value.
-    ///
-    /// RESIDUAL: VERA also stores 0 before UnInit where native leaves the
-    /// health alone: a crushed object (`Crush_Or_Prescatter_Cell
-    /// 0x007416A0`), a transport's dying passengers (`KillPassengers
-    /// 0x00707CB0`, Unit ReceiveDamage's refused escape
-    /// `0x00738188..0x0073819B`) and a garrison's occupants (`KillOccupants
-    /// 0x004585C0`, `SellBuilding 0x00457DE0`). Trigger: each of those
-    /// deaths. Effect: a reader of the dead object's health between that
-    /// store and its removal sees 0 where native sees its last value.
-    /// Frequency: every crush and every passenger or occupant death. Risk: a
-    /// same-frame reader, such as `is_alive`, disagrees with native.
     pub(crate) fn set(&mut self, value: i32) {
         self.current = value;
     }
@@ -70,14 +60,29 @@ impl Health {
         X87::div(X87::load_i32(self.current), X87::load_i32(strength))
     }
 
+    /// ObjectClass::SetHealthFraction5F5C80..5F5CC5, called by installed
+    /// Ares conversion10043745 through10046400. The stored double must be
+    /// positive and ordered; only a zero integer product is raised to one.
+    pub(crate) fn set_fraction(&mut self, fraction: NativeF64Bits, strength: i32) {
+        let fraction = X87::load_f64(fraction);
+        self.current = if X87::compare(fraction, X87::load_i32(0)) == MaskedX87Ordering::Greater {
+            let product = X87::ftol_i32_low_masked(X87::mul(fraction, X87::load_i32(strength)));
+            if product == 0 { 1 } else { product }
+        } else {
+            0
+        };
+    }
+
     /// [`Self::ratio`] compared `>=` `Rules+0x16F8` with an ordered FCOMP
     /// (the C0-clear test): 0/0 (NaN) is not full and x/0 for x > 0 (+inf)
     /// is. AudioVisual `0x0066B323..0x0066B32D` writes that threshold as 1.0
     /// unconditionally; there is no ConditionGreen key. Object radio
     /// (`0x005F5339`), Techno repair (`0x006F4DE5`), the healer fire errors and
     /// the hospital and depot tests ask it. The quotient of two dwords cannot
-    /// round across 1.0, so the integer form is exact.
-    pub(crate) fn is_full(self, strength: i32) -> bool {
+    /// round across 1.0, so the integer form is exact. Public because the
+    /// client's `[VERA] HealthBars=` modes ask it; the simulation keeps calling
+    /// it as the same owner.
+    pub fn is_full(self, strength: i32) -> bool {
         match strength.cmp(&0) {
             std::cmp::Ordering::Greater => self.current >= strength,
             std::cmp::Ordering::Less => self.current <= strength,
@@ -111,6 +116,58 @@ pub fn health_category(current: i32, strength: i32, red: f64, yellow: f64) -> u8
     }
 }
 
+/// WarheadTypeExt::CanCull (installed Ares 10052590), shared by the Object
+/// receiver (10053A10, hook 0x5F5456) and the squid grapple (10053AC0, hook
+/// 0x629BC0). `Culling=` (+0x174) first; the attacker's veterancy float
+/// (+0x150, `< 1.0` Rookie, `< 2.0` Veteran, else Elite) selects
+/// `Culling.%sBelowHealth`/`%sChance`. A positive BelowHealth is the highest
+/// health percentage (`ftol(Health / Strength * 100.0)`) that culls; zero or
+/// `-N` needs GetHealthStatus (5F5DD0: Red 0, Yellow 1, Green 2) `<= N`
+/// unsigned. A negative chance always culls; otherwise one
+/// `Scenario.Random.RandomRanged(0, 99) < chance` draw decides.
+pub(crate) fn ares_can_cull(
+    warhead: &crate::rules::warhead_type::WarheadType,
+    attacker_veterancy: crate::util::native_x87::NativeF32Bits,
+    victim: Health,
+    victim_strength: i32,
+    condition_red: f64,
+    condition_yellow: f64,
+    scenario_rng: &mut crate::sim::rng::SimRng,
+) -> bool {
+    let Some(combat) = warhead.ares_combat().filter(|_| warhead.culling) else {
+        return false;
+    };
+    let veterancy = f32::from_bits(attacker_veterancy.bits());
+    let rank = if !(veterancy < 2.0) {
+        2
+    } else if veterancy < 1.0 {
+        0
+    } else {
+        1
+    };
+    let (below_health, chance) = combat.culling(rank);
+    if below_health > 0 {
+        let percent = X87::ftol_i32_low_masked(X87::mul(
+            victim.ratio(victim_strength),
+            X87::load_f64(NativeF64Bits::from_bits(100.0_f64.to_bits())),
+        ));
+        if percent > below_health {
+            return false;
+        }
+    } else {
+        let status = health_category(
+            victim.current(),
+            victim_strength,
+            condition_red,
+            condition_yellow,
+        );
+        if u32::from(status) > below_health.wrapping_neg() as u32 {
+            return false;
+        }
+    }
+    chance < 0 || scenario_rng.next_range_i32_inclusive(0, 99) < chance
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum HealthCallback {
     Changed,
@@ -126,6 +183,11 @@ pub(super) trait ObjectHealthHost {
     fn object_mut(&mut self) -> Option<&mut GameEntity>;
     fn current_strength(&self) -> Option<i32>;
     fn write_damage(&mut self, _damage: i32) {}
+    /// Ares ObjectClass_ReceiveDamage_Culling (10053A10): whether a positive
+    /// packet culls the object (CanCull 10052590, which may draw).
+    fn culls(&mut self) -> bool {
+        false
+    }
     fn invoke(&mut self, callback: HealthCallback);
 }
 
@@ -141,6 +203,7 @@ pub(super) fn commit(
     building_no_c4: bool,
     condition_red: f64,
     source_present: bool,
+    ares: bool,
 ) -> DamageState {
     let Some(previous) = host.object().map(|target| target.health.current) else {
         return DamageState::Unaffected;
@@ -150,6 +213,12 @@ pub(super) fn commit(
     }
     if building_no_c4 {
         *packet = (*packet).max(1);
+        host.write_damage(*packet);
+    }
+    // Ares hook 0x5F5456 (10053A10), after the building minimum and before
+    // the dispatch on the packet: a culled object takes its full Health.
+    if *packet > 0 && host.culls() {
+        *packet = previous;
         host.write_damage(*packet);
     }
     if *packet == 0 {
@@ -309,15 +378,21 @@ pub(super) fn commit(
     {
         return result;
     }
-    if result != DamageState::Dead && source_present {
+    fn alive(host: &impl ObjectHealthHost) -> bool {
+        host.object()
+            .is_some_and(|target| target.lifecycle.object_alive())
+    }
+    // Ares 3.0 ObjectClass_ReceiveDamage_Trigger (100505A0, hook 0x5F57B5)
+    // raises 6 and 44 also without an attacker, then 84 and 83 (attacked or
+    // destroyed by House / by anybody) on every hit the object survives so
+    // far, each only while it is still alive.
+    let source_gate = ares || source_present;
+    if result != DamageState::Dead && source_gate {
         host.invoke(HealthCallback::Tag {
             kind: 6,
             with_source: true,
         });
-        if !host
-            .object()
-            .is_some_and(|target| target.lifecycle.object_alive())
-        {
+        if !alive(host) {
             return result;
         }
         host.invoke(HealthCallback::Tag {
@@ -325,9 +400,20 @@ pub(super) fn commit(
             with_source: true,
         });
     }
+    if ares {
+        for kind in [84, 83] {
+            if !alive(host) {
+                break;
+            }
+            host.invoke(HealthCallback::Tag {
+                kind,
+                with_source: true,
+            });
+        }
+    }
     result
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "object_health_tests.rs"]
 mod tests;

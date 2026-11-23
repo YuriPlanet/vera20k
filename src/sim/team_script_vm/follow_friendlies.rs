@@ -7,10 +7,10 @@
 use super::TeamTarget;
 use super::team_ai::{member_is_live, member_is_live_joined};
 use crate::map::entities::EntityCategory;
-use crate::map::houses::is_allied_with;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::combat_weapon::is_armed;
+use crate::sim::components::NavTargetRef;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::motion_query::is_moving;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -34,7 +34,6 @@ impl Simulation {
         let Some(from) = self.team_target_coord(TeamTarget::Object(head)) else {
             return (None, None);
         };
-        let owner = self.interner.resolve(team.owner);
         let mut best = None;
         let mut best_distance = -1;
         for category in [EntityCategory::Unit, EntityCategory::Infantry] {
@@ -43,11 +42,9 @@ impl Simulation {
                     || self.team_script_vm.member_team.get(&candidate.stable_id()) == Some(&team_id)
                     // 6EAF7E/6EB079: the CANDIDATE asks whether the team
                     // owner is allied. Do not turn this into a mutual test.
-                    || !is_allied_with(
-                        self.house_alliances.as_map(),
-                        self.interner.resolve(candidate.owner()),
-                        owner,
-                    )
+                    || !self
+                        .house_alliances
+                        .is_allied(&self.interner, candidate.owner(), team.owner)
                 {
                     continue;
                 }
@@ -68,14 +65,11 @@ impl Simulation {
             return (None, None);
         };
         let zone = friendly
-            .low_bridge_tube_state
-            .as_ref()
+            .active_tube()
             .and_then(|state| self.resolved_terrain.as_ref()?.tube(state.tube_id()))
             .map_or(TeamTarget::Object(friendly.stable_id()), |tube| {
-                TeamTarget::Cell {
-                    x: tube.exit.0 as i16,
-                    y: tube.exit.1 as i16,
-                }
+                // CalcCenter's Script10 arm resolves the exit at6EB17E.
+                self.canonical_team_cell((tube.exit.0 as i16, tube.exit.1 as i16))
             });
         (Some(zone), Some(head))
     }
@@ -91,9 +85,9 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
-        self.team_calc_center(team_id, rules, registry);
+        self.team_calc_center(team_id, rules);
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
         };
@@ -133,7 +127,13 @@ impl Simulation {
                 return;
             };
             let target = followed.attack_target.target();
-            if entity.attack_target.target().is_some() && entity.attack_target.target() != target {
+            // Script10/6EDBDD compares TarCom allocation identity.
+            if let Some(held) = entity.attack_target.target()
+                && !target.is_some_and(|target| {
+                    NavTargetRef::from(held)
+                        .same_pointer(target.into(), self.resolved_terrain.as_ref())
+                })
+            {
                 self.team_member_clear_target(id, rules);
             }
             let Some(target) = self
@@ -150,13 +150,21 @@ impl Simulation {
             if is_moving(entity) == Some(false)
                 && self
                     .object_type(entity.type_ref(), rules)
-                    .is_some_and(|object| is_armed(entity, object))
+                    .is_some_and(|object| {
+                        is_armed(
+                            entity,
+                            object,
+                            &self.substrate.entities,
+                            rules,
+                            &self.interner,
+                        )
+                    })
                 && entity.mission.effective() == MissionId::from_known(MissionType::Guard)
             {
                 // Queue only, not Commence: the ordinary mission owner
                 // decides when this queued Attack becomes current.
                 self.team_member_queue_mission(id, MissionType::Attack, rules);
-                self.team_member_assign_target(id, target.into(), rules, registry, frame_effects);
+                self.team_member_assign_target(id, target.into(), rules, frame_effects);
             }
         }
         // Coordinate_Move6EBF25..6EBF45 may already have marked +80 on

@@ -312,6 +312,6 @@ impl MaskedX87Chop53 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 #[path = "masked_tests.rs"]
 mod tests;

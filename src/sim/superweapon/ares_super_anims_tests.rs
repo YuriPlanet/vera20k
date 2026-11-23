@@ -110,6 +110,7 @@ fn assert_play(sim: &Simulation, building: u64, native: &Value) {
 
 #[test]
 fn ares_super_launch_history_rejects_incomplete_restored_pair() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::sim::snapshot::{GameSnapshot, SnapshotRestoreError};
 
     let (mut sim, rules, owner, _) = fixture("");
@@ -124,7 +125,7 @@ fn ares_super_launch_history_rejects_incomplete_restored_pair() {
     // A same-layout damaged save can contain this pair despite the normal
     // writer always setting both fields. Exercise codec and restore admission.
     instance.ares_launch_count = 2;
-    instance.ares_last_launch_frame = None;
+    instance.ares_charge_origin_frame = None;
     let bytes = GameSnapshot::save(&sim, 0, rules.simulation_config_hash(), "bad-history", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     assert_eq!(
@@ -137,6 +138,7 @@ fn ares_super_launch_history_rejects_incomplete_restored_pair() {
 
 #[test]
 fn ares_super_anim_queries_and_slot_calls_match_four_native_histories() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let native = oracle();
     assert_eq!(native["histories"].as_array().unwrap().len(), 3);
     let a = &native["histories"][0];

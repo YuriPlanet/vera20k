@@ -18,10 +18,25 @@
 
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::object_image::{ImageTheater, ObjectImageKind, ObjectImageState};
+use crate::util::native_x87::NativeF64Bits;
 
 /// Shared inputs captured by ObjectType::LoadSHP5F9070; asset binding resolves
 /// the attempted name independently of constructor or later Image text.
 use crate::rules::object_image::ObjectImageLoad;
+
+/// VERA's bound on `ShrapnelCount=`'s magnitude, read by
+/// `BulletTypeClass::ReadINI`'s ReadInt (`0x0046C325`, `+0x2B8`).
+/// SpawnShrapnel (`0x0046A322..0x0046A3D2`) builds one projectile per
+/// fragment, so a value near `i32::MAX` freezes the match; retail throws at
+/// most 8.
+pub const SHRAPNEL_COUNT_LIMIT: i32 = 256;
+
+/// VERA's bound on `Cluster=`, read by `BulletTypeClass::ReadINI`'s ReadInt
+/// (`0x0046C1A1`, `+0x2AC`). A non-airburst impact detonates once per
+/// cluster and an airburst lists one target per cluster, so a value near
+/// `i32::MAX` freezes the match or runs out of memory; retail clusters at
+/// most 9.
+pub const CLUSTER_LIMIT: i32 = 256;
 
 /// A projectile definition parsed from a rules.ini section.
 ///
@@ -106,9 +121,11 @@ pub struct ProjectileType {
     pub flat: bool,
 
     // --- Integer fields ---
-    /// Number of sub-projectiles on detonation. (+0x2AC)
+    /// Number of sub-projectiles on detonation. (+0x2AC) At most
+    /// [`CLUSTER_LIMIT`].
     pub cluster: i32,
-    /// Number of shrapnel fragments on impact. (+0x2B8)
+    /// Number of shrapnel fragments on impact. (+0x2B8) Its magnitude is at
+    /// most [`SHRAPNEL_COUNT_LIMIT`].
     pub shrapnel_count: i32,
     /// Altitude at which the projectile detonates (for airburst). (+0x2BC)
     pub detonation_altitude: i32,
@@ -131,6 +148,11 @@ pub struct ProjectileType {
     // --- Float fields ---
     /// Bounce elasticity coefficient (0.0 = no bounce, 1.0 = perfect bounce). (+0x2C8)
     pub elasticity: f64,
+    /// Phobos `BulletTypeExt::Gravity` (`Nullable<double>`): the ballistic
+    /// gravity this type uses, defaulting to `[General] Gravity=` and halved
+    /// for `Floater=`. Kept as exact binary64 bits, like `Elasticity=`.
+    #[cfg(feature = "phobos")]
+    gravity: Option<NativeF64Bits>,
 
     // --- Color ---
     /// Native BulletType +2D4 runtime ColorScheme index. The retained rules
@@ -143,6 +165,13 @@ pub struct ProjectileType {
     pub shrapnel_weapon: Option<String>,
     /// Airburst child weapon (+2B0), retained by the ordered Rules reader.
     pub airburst_weapon: Option<String>,
+    /// Phobos `BulletTypeExt` airburst/splits settings. Absent keys keep the
+    /// Phobos constructor defaults; only Phobos builds read or consume them.
+    #[cfg(feature = "phobos")]
+    pub phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstType,
+    /// Ares BulletTypeExt keys (`rules::ares_bullet_type`, read by
+    /// `100193C0`). A stock-way read keeps the constructor defaults.
+    pub(crate) bullet_type_ext: crate::rules::ares_bullet_type::BulletTypeExtRules,
     /// Current native Image25 text; SHP admission is separately retained below.
     pub image: Option<String>,
     /// Admitted native5F9070 requests, independently of later Image text.
@@ -294,7 +323,7 @@ impl ProjectileArtState {
         // Image may be empty: native then attempts .SHP and .GHP, clearing +A4
         // when neither exists. Inviso can instead retain the base-prefix load.
         if !self.inviso {
-            image.load_unowned_shp(ObjectImageKind::Ordinary, theater);
+            image.load_unowned_shp(ObjectImageKind::Ordinary, theater, None);
         }
         // 46C40B..46C417: independent of Inviso, after the clearing Image
         // read. A false Voxel flag preserves the prior pair; missing/empty
@@ -329,7 +358,55 @@ impl ProjectileArtState {
     }
 }
 
+/// Phobos `BulletTypeExt::Gravity` (`Nullable<double>`) as exact binary64
+/// bits, shared by the type reader and the weapon speed pass. RESIDUAL: a
+/// value the float parse makes infinite (such as `1e39`) counts as unset;
+/// Phobos would carry the infinity through its x87 gravity arithmetic.
+#[cfg(feature = "phobos")]
+pub(crate) fn read_phobos_gravity(section: &IniSection) -> Option<NativeF64Bits> {
+    section
+        .read_phobos_nullable_double("Gravity", None)
+        .filter(|value| value.is_finite())
+        .map(|value| NativeF64Bits::from_bits(value.to_bits()))
+}
+
 impl ProjectileType {
+    /// Phobos `Splits=`: the Phobos emitter replaces the native tail and the
+    /// parent's outer cluster loop, exactly as `BulletClass::Explodes`'s
+    /// airburst checks do with `Airburst || Splits`. Without Phobos, Ares'
+    /// `Splits=` does the same (`HasSplitBehavior`, BulletClass_Fire_SplitsA/B
+    /// `1001A7E0`/`1001A810`, hooks `0x468EB9`/`0x468FFA`). False in stock:
+    /// a stock-way read leaves the Ares key unread.
+    pub const fn splits(&self) -> bool {
+        #[cfg(feature = "phobos")]
+        {
+            self.phobos_airburst.splits
+        }
+        #[cfg(not(feature = "phobos"))]
+        {
+            self.bullet_type_ext.splits
+        }
+    }
+
+    /// Phobos `BulletTypeExt::Gravity`, unset when the key is absent.
+    #[cfg(feature = "phobos")]
+    pub fn gravity(&self) -> Option<NativeF64Bits> {
+        self.gravity
+    }
+
+    /// Phobos is compiled out: every shot uses the Rules gravity.
+    #[cfg(not(feature = "phobos"))]
+    pub fn gravity(&self) -> Option<NativeF64Bits> {
+        None
+    }
+
+    /// `Airburst=` or, in a Phobos build or a game read the Ares way,
+    /// `Splits=`: the BulletClass impact and detonation arms the
+    /// `BulletClass::Explodes` hooks select.
+    pub const fn airburst_arm(&self) -> bool {
+        self.airburst || self.splits()
+    }
+
     /// Runtime ColorScheme index (two native shade variants per Colors entry).
     pub fn color_scheme(&self) -> i32 {
         self.color_scheme
@@ -388,8 +465,10 @@ impl ProjectileType {
             vertical: section.read_bool("Vertical", false),
             flat: false,
             // Integer fields
-            cluster: section.read_int("Cluster", 1),
-            shrapnel_count: section.read_int("ShrapnelCount", 0),
+            cluster: section.read_int("Cluster", 1).min(CLUSTER_LIMIT),
+            shrapnel_count: section
+                .read_int("ShrapnelCount", 0)
+                .clamp(-SHRAPNEL_COUNT_LIMIT, SHRAPNEL_COUNT_LIMIT),
             detonation_altitude: section.read_int("DetonationAltitude", 0),
             acceleration: section.read_int("Acceleration", 3),
             course_lock_duration: section.read_int("CourseLockDuration", 0),
@@ -401,12 +480,23 @@ impl ProjectileType {
             // ReadDouble -> `FSTP qword [ESI+0x2C8]` (`0x0046BF71`) over the
             // constructor's 0.75 (`0x0046BC65`/`0x0046BC9A`).
             elasticity: section.read_double("Elasticity", 0.75),
+            #[cfg(feature = "phobos")]
+            gravity: read_phobos_gravity(section),
             // Constructor46BCA4. Resolution requires the pass-local Colors
             // registry and is supplied by the retained rules processor.
             color_scheme: 0,
             // Constructor null; only the ordered Process owner reads it.
             shrapnel_weapon: None,
             airburst_weapon: None,
+            #[cfg(feature = "phobos")]
+            phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstType::from_section(
+                section,
+            ),
+            bullet_type_ext: if crate::rules::ares_switch::ares_way() {
+                crate::rules::ares_bullet_type::BulletTypeExtRules::from_section(section)
+            } else {
+                Default::default()
+            },
             image: None,
             image_loads: Vec::new(),
             voxel_image_load: None,
@@ -423,7 +513,7 @@ impl ProjectileType {
         let mut image = ObjectImageState::new(id);
         image.read_input(section);
         image.read_art(image_section);
-        image.load_for_read(ObjectImageKind::Ordinary, ImageTheater::Uninitialized);
+        image.load_for_read(ObjectImageKind::Ordinary, ImageTheater::Uninitialized, None);
         let mut art = ProjectileArtState::new();
         art.read_bullet_fields(
             &mut image,
@@ -441,7 +531,7 @@ impl ProjectileType {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -533,6 +623,36 @@ mod tests {
             rules.simulation_config_hash(),
             "late binding cannot replace Bullet state"
         );
+    }
+
+    /// Phobos `Nullable<double> Gravity`: absent keeps the Rules fallback
+    /// (None), `<default>` clears it, a value keeps its exact binary64, and an
+    /// infinite one is dropped.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_gravity_reads_nullable_double_and_clears() {
+        let ini =
+            IniFile::from_str("[P]\nGravity=6.5\n[Q]\nGravity=<default>\n[R]\nGravity=1e39\n");
+        let gravity = |name: &str| {
+            ProjectileType::from_ini_section(name, ini.section(name).unwrap(), None).gravity()
+        };
+        assert_eq!(
+            gravity("P"),
+            Some(NativeF64Bits::from_bits(6.5f64.to_bits()))
+        );
+        assert_eq!(gravity("Q"), None);
+        assert_eq!(gravity("R"), None);
+    }
+
+    #[test]
+    fn huge_fragment_counts_stop_at_their_bounds() {
+        let ini = IniFile::from_str(
+            "[A]\nShrapnelCount=2147483647\nCluster=2147483647\n[B]\nShrapnelCount=-2147483648\n",
+        );
+        let read = |name| ProjectileType::from_ini_section(name, ini.section(name).unwrap(), None);
+        assert_eq!(read("A").shrapnel_count, SHRAPNEL_COUNT_LIMIT);
+        assert_eq!(read("A").cluster, CLUSTER_LIMIT);
+        assert_eq!(read("B").shrapnel_count, -SHRAPNEL_COUNT_LIMIT);
     }
 
     #[test]
@@ -638,6 +758,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 #[path = "projectile_line_trail_tests.rs"]
 mod line_trail_tests;

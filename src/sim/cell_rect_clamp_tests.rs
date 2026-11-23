@@ -74,3 +74,54 @@ fn native_house_playfield_clamp_matches_all_72_original_rows() {
         );
     }
 }
+
+#[test]
+fn reservation_bits_reach_the_one_hundred_twentieth_house_without_wrapping() {
+    let mut grid = CellReservationGrid::new();
+    grid.reserve(None, 10, 20, 119);
+    grid.reserve(None, 10, 20, 31);
+    assert_eq!(
+        grid.raw_mask(None, 10, 20),
+        (1u128 << 119) | (1u128 << 31),
+        "each House keeps its own bit past the native 32-House word"
+    );
+    assert!(grid.has_reservation(None, 10, 20, 119));
+    // The native 32-bit word wraps bit 119 onto bit 23; the widened one must not.
+    assert!(!grid.has_reservation(None, 10, 20, 23));
+    grid.clear(None, 10, 20, 119);
+    assert_eq!(grid.raw_mask(None, 10, 20), 1u128 << 31);
+}
+
+/// A save made before extended House ids contains a (cell, u32) map. Its
+/// bytes and replay hash survive an extended reservation being set and cleared.
+#[test]
+fn legacy_reservation_save_and_hash_survive_extended_houses() {
+    use crate::util::save_codec::{deserialize, layout, serialize};
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[serde(rename = "CellReservationGrid")]
+    struct LegacyGrid {
+        masks: BTreeMap<(u16, u16), u32>,
+    }
+    assert_eq!(
+        layout::describe::<CellReservationGrid>().unwrap(),
+        layout::describe::<LegacyGrid>().unwrap(),
+    );
+    let legacy = serialize(&LegacyGrid {
+        masks: BTreeMap::from([((10, 20), 1 << 31)]),
+    })
+    .unwrap();
+    let mut sim = crate::sim::world::Simulation::new();
+    *sim.base_reservations_mut_for_test() = deserialize(&legacy).unwrap();
+    assert!(sim.base_reservations().has_reservation(None, 10, 20, 31));
+    let old_hash = sim.state_hash();
+    sim.base_reservations_mut_for_test()
+        .reserve(None, 10, 20, 119);
+    assert_ne!(sim.state_hash(), old_hash);
+    let extended = serialize(sim.base_reservations()).unwrap();
+    let restored: CellReservationGrid = deserialize(&extended).unwrap();
+    assert_eq!(&restored, sim.base_reservations());
+    sim.base_reservations_mut_for_test()
+        .clear(None, 10, 20, 119);
+    assert_eq!(sim.state_hash(), old_hash);
+    assert_eq!(serialize(sim.base_reservations()).unwrap(), legacy);
+}

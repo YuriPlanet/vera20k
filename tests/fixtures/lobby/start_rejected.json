@@ -1,0 +1,9 @@
+{
+  "about": "The messages a lobby's `start_rejected` carries (docs/lobby-protocol.md) that games from 0.3.6 on show as their own lines; any other message shows the general line that the match could not start. The game's test in src/app/shell_wol/live_service/completion_tests.rs checks each; a lobby sends these unchanged.",
+  "messages": [
+    "A player left before the game started.",
+    "A player cancelled the game start.",
+    "A player could not connect to the gameplay relay.",
+    "A player could not complete the peer latency check."
+  ]
+}

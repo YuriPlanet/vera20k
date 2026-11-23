@@ -191,7 +191,7 @@ fn a_crush_charge_takes_the_per_cell_range_stop() {
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let entity = sim.substrate.entities.get(rhino).unwrap();

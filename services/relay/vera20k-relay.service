@@ -12,6 +12,8 @@ Group=vera20k-relay
 ExecStart=/usr/local/bin/vera20k-relay
 Environment=VERA_RELAY_BIND=0.0.0.0:5000
 LoadCredential=relay-ticket-key:/etc/vera20k/relay-ticket-key
+StateDirectory=vera20k-relay
+StateDirectoryMode=0700
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=yes

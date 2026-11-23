@@ -129,8 +129,9 @@ fn rng(sim: &Simulation) -> [String; 3] {
     ]
 }
 
+#[cfg(not(feature = "phobos"))]
 fn restore_rng(sim: &mut Simulation, state: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap());
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(state["scenario"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(state["mapgen"].as_str().unwrap());
 }
@@ -170,12 +171,7 @@ fn physical_repair_and_particle_readers_match_original_layers_and_constructor_de
             ),
             (
                 "spawn_direction_bits",
-                json!(
-                    system
-                        .spawn_direction
-                        .to_array()
-                        .map(|value| (value as f32).to_bits())
-                ),
+                json!(system.spawn_direction.map(|value| value.bits())),
             ),
         ] {
             assert_eq!(
@@ -348,6 +344,7 @@ fn birth(rules: &RuleSet, row: &Value) -> (Simulation, Roles, u64) {
         .entities
         .get_mut(owner)
         .unwrap()
+        .seldom
         .spark_particle_system
         .bind(Some(id));
     (sim, roles, id)
@@ -417,7 +414,7 @@ fn original_fireat_live_spark_guard_refuses_a_direct_shot_without_launch_side_ef
             36,
             &mut out,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         None
     );
@@ -429,6 +426,7 @@ fn original_fireat_live_spark_guard_refuses_a_direct_shot_without_launch_side_ef
         sim.entities()
             .get(roles["owner"])
             .unwrap()
+            .seldom
             .spark_particle_system
             .system(),
         Some(id)
@@ -474,6 +472,7 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                 sim.entities()
                     .get(roles["owner"])
                     .unwrap()
+                    .seldom
                     .spark_particle_system
                     .system(),
                 Some(id),
@@ -486,8 +485,7 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                     roles["owner"],
                     target(&roles, requested),
                     rules,
-                    None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
                 let actor = sim.entities().get(roles["owner"]).unwrap();
@@ -496,7 +494,11 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                     expected["target"]
                 );
                 assert_eq!(
-                    actor.spark_particle_system.system().map(|_| "system"),
+                    actor
+                        .seldom
+                        .spark_particle_system
+                        .system()
+                        .map(|_| "system"),
                     expected["spark_link"].as_str()
                 );
                 assert_eq!(
@@ -528,7 +530,11 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                 row["after"]["target"]
             );
             assert_eq!(
-                actor.spark_particle_system.system().map(|_| "system"),
+                actor
+                    .seldom
+                    .spark_particle_system
+                    .system()
+                    .map(|_| "system"),
                 row["after"]["spark_link"].as_str()
             );
             assert_eq!(
@@ -592,6 +598,7 @@ fn assert_logical_state(sim: &Simulation, roles: &Roles, id: u64, expected: &Val
         sim.entities()
             .get(roles["owner"])
             .unwrap()
+            .seldom
             .spark_particle_system
             .system()
             .map(|_| "system"),
@@ -608,6 +615,8 @@ fn assert_logical_state(sim: &Simulation, roles: &Roles, id: u64, expected: &Val
     );
 }
 
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
 #[test]
 fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_link_expiry() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -639,13 +648,12 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
                 .get(id)
                 .and_then(|system| system.particles().first())
         {
-            let spark = particle.spark().unwrap();
             let expected = &row["first_produced_particle"];
             assert_eq!(json!(particle.coords().to_array()), expected["world"]);
-            assert_eq!(json!(spark.start_rgb), expected["start_rgb"]);
-            assert_eq!(json!(spark.color_index), expected["color_index"]);
+            assert_eq!(json!(particle.start_rgb()), expected["start_rgb"]);
+            assert_eq!(json!(particle.color_index()), expected["color_index"]);
             assert_eq!(
-                format!("{:016x}", spark.color_accumulator.bits()),
+                format!("{:016x}", particle.color_accumulator().bits()),
                 expected["color_accumulator_f64_bits"].as_str().unwrap()
             );
             compared_produced_child = true;
@@ -735,6 +743,8 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
 
 /// Rust persistence regression, separate from the original executable's
 /// queue/AI comparison above. Native in-scenario load owns RNG reseeding.
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
 #[test]
 fn detached_particle_snapshot_keeps_bodies_and_queue_until_the_common_drain() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -812,6 +822,8 @@ fn detached_particle_snapshot_keeps_bodies_and_queue_until_the_common_drain() {
 
 /// SystemPointerExpired62FEA4..62FEE2 removes a reference, independently
 /// of UnInit. Its stable vector erase must not destroy the allocated body.
+// Ares simulates this Spark system itself (hooks 0x62DF05, 0x62FD60) and
+// builds no ParticleClass children.
 #[test]
 fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -861,6 +873,22 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
             .display_particles()
             .any(|(system, particle)| { system.is_none() && particle.stable_id() == child_id })
     );
+    // Each Display particle, in a system or detached, is found again at its
+    // place, in the same order.
+    let store = sim.particle_systems();
+    let listed = |found: Option<(Option<&ParticleSystem>, &crate::sim::particles::Particle)>| {
+        found.map(|(system, particle)| (system.is_some(), particle.stable_id()))
+    };
+    assert_eq!(
+        store
+            .display_particle_places()
+            .map(|(id, place)| listed(store.display_particle_at(id, place)))
+            .collect::<Vec<_>>(),
+        store
+            .display_particles()
+            .map(|found| listed(Some(found)))
+            .collect::<Vec<_>>()
+    );
     sim.scenario_rng = SimRng::new(0);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "welding-detached", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -900,7 +928,7 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
         let before_rng = rng(world);
         world.uninit_with_context(
             child_id,
-            crate::sim::world::UninitContext::with_rules(&retail.rules),
+            crate::sim::world::UninitContext::new(&retail.rules),
         );
         assert!(
             !world
@@ -916,7 +944,7 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
         // another ticket, which the existing common drain collapses.
         world.uninit_with_context(
             child_id,
-            crate::sim::world::UninitContext::with_rules(&retail.rules),
+            crate::sim::world::UninitContext::new(&retail.rules),
         );
         assert_eq!(
             world.substrate.pending_delete.object_ids(),
@@ -935,6 +963,9 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
     assert_eq!(restored.state_hash(), sim.state_hash());
 }
 
+// Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
+// this stock golden only holds without the capability.
+#[cfg(not(feature = "phobos"))]
 #[test]
 fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -955,6 +986,7 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
             .entities
             .get_mut(owner)
             .unwrap()
+            .seldom
             .spark_particle_system
             .bind(live.then_some(id));
         restore_rng(&mut sim, &row["rng_before"]);
@@ -974,7 +1006,6 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
                 rules,
                 &snap,
                 object,
-                &weapon,
                 Some(&weapon),
                 int(&row["input"]["queried_burst"]),
             );
@@ -985,28 +1016,30 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
                 rules,
                 &snap,
                 object,
-                &weapon,
                 Some(&weapon),
                 1,
             );
             let rearm = fireat_rearm_frames(tail_rof, row["input"]["berserk"].as_bool().unwrap());
             let actor = sim.substrate.entities.get_mut(owner).unwrap();
             actor.rearm_after_fire(int(&row["input"]["frame"]), rearm);
-            actor.weapon_burst.complete_shot(weapon.burst.max(1));
+            actor.seldom.weapon_burst.complete_shot(weapon.burst.max(1));
             (rof, rearm)
         });
         assert_eq!(rof, int(&row["get_rof"]));
         assert_eq!(rearm, int(&row["rearm"]["rof"]));
         let actor = sim.substrate.entities.get(owner).unwrap();
         assert_eq!(
-            actor.rearm_timer.timer().start_frame(),
+            actor.seldom.rearm_timer.timer().start_frame(),
             int(&row["rearm"]["rearm"][0])
         );
         assert_eq!(
-            actor.rearm_timer.timer().duration(),
+            actor.seldom.rearm_timer.timer().duration(),
             int(&row["rearm"]["rearm"][2])
         );
-        assert_eq!(actor.weapon_burst.index(), int(&row["rearm"]["burst"]));
+        assert_eq!(
+            actor.seldom.weapon_burst.index(),
+            int(&row["rearm"]["burst"])
+        );
         let raw: Vec<_> = row["get_rof_requests"]
             .as_array()
             .unwrap()

@@ -9,8 +9,8 @@ On Windows, the installer sets everything up: it wrote config.toml in the
 install folder, where VERA20k also keeps its settings, logs, saves and
 replays. To use another game folder, run the installer again.
 
-On macOS, drag VERA20k from the disk image into Applications and open it (the
-first time, see REQUIREMENTS). It looks for Yuri's Revenge in Porting Kit,
+On macOS, drag VERA20k from the disk image into Applications and open it.
+It looks for Yuri's Revenge in Porting Kit,
 Wineskin and CrossOver installs and offers the one it finds, or asks you to
 choose the folder. It keeps config.toml, its settings, logs, saves and replays
 in ~/Library/Application Support/VERA20k (in Finder, choose Go > Go to
@@ -25,17 +25,17 @@ replays in ~/.local/share/VERA20k. To use another game folder, change ra2_dir
 in that config.toml.
 
 REQUIREMENTS
-  A GPU with Vulkan, DirectX 12 or Metal.
+  A GPU with Vulkan, DirectX 12 or Metal. Some older GPUs with DirectX 12,
+    such as Intel's 4th generation, are not enough; VERA20k then draws with
+    the processor, very slowly, and says so when it starts.
   Windows: VERA20k is not code-signed yet. SmartScreen may warn about an
     unknown app; choose More info, then Run anyway. Smart App Control, which
     some Windows 11 PCs have on, blocks unsigned programs outright: there,
     VERA20k runs only with it turned off, in Windows Security > App & browser
     control > Smart App Control settings.
-  macOS: VERA20k is not notarized by Apple yet, so macOS blocks it the first
-    time you open it. Click Done, open System Settings > Privacy & Security,
-    scroll down, click Open Anyway, enter your password and confirm. The
-    button stays for about an hour after the block; if it is gone, open
-    VERA20k again. Each new version asks once.
+  macOS: requires macOS 11 or later. The macos-arm64 disk image is for Apple
+    Silicon Macs, the macos-x64 one for Intel Macs. Published Mac builds are
+    signed with Developer ID and notarized by Apple.
   Linux: needs ALSA (libasound2), a Vulkan driver, and libxkbcommon-x11-0
     for X11 keyboard support. The AppImage mounts itself with FUSE (fusermount, from the fuse3 or fuse package), which most
     desktops have; without it, start it with --appimage-extract-and-run.
@@ -47,10 +47,19 @@ Official downloads come only from
 https://github.com/YuriPlanet/vera20k/releases. To check that an installer was
 built there, run: gh attestation verify <installer> --repo YuriPlanet/vera20k
 
+Copyright 2026 Halvor Nikolai Rusten and VERA20k contributors.
 VERA20k is licensed under the GNU General Public License version 3
-(LICENSE-GPL). Source code: https://github.com/YuriPlanet/vera20k
+(LICENSE-GPL). The source of this build is at
+https://github.com/YuriPlanet/vera20k/tree/@COMMIT@
+Its Bink video decoder and its sidebar's xBR scaler are ported from FFmpeg and,
+as section 3 of FFmpeg's LGPL 2.1 allows, licensed under the GNU General Public
+License version 3 or later (LICENSE-GPL). The decoder is copyright 2007-2011
+Peter Ross, 2009 Daniel Verkamp and 2009 Konstantin Shishkov; the scaler
+2011-2012 Hyllian/Jararaca and 2014 Arwa Arif.
 THIRD_PARTY_LICENSES.html lists the open-source libraries it includes and
-their licenses.
+their licenses. On Windows, dxcompiler.dll beside the game is Microsoft's
+DirectX Shader Compiler, which compiles the game's DirectX 12 shaders; its
+license notices are in LICENSE-DXC.txt.
 
 Command & Conquer, Red Alert and Yuri's Revenge are trademarks of Electronic
 Arts Inc. The program icon, Red Alert 2's red star, is game art owned by

@@ -49,7 +49,7 @@ fn rng(sim: &Simulation) -> [String; 3] {
 fn action(sim: &mut Simulation, kind: i32, value: i32) {
     let ini = IniFile::from_str(&format!("[Actions]\nA=1,{kind},0,{value},0,0,0,0,Z\n"));
     let entry = crate::map::actions::parse_actions(&ini)["A"].entries()[0].clone();
-    let action = RuntimeDefinitions::default().resolve_action(entry, None, None);
+    let action = RuntimeDefinitions::default().resolve_action(entry, None, None, None);
     assert!(sim.apply_live_trigger_action(
         &action,
         TriggerActionContext {
@@ -60,7 +60,7 @@ fn action(sim: &mut Simulation, kind: i32, value: i32) {
         &mut Vec::new(),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
 }
 
@@ -90,13 +90,13 @@ fn kill(
                 arg6: true,
             },
         ),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     previous_rng
 }
 
 fn crate_count(sim: &Simulation) -> usize {
-    sim.crate_authority
+    sim.crate_authority()
         .slots()
         .iter()
         .filter(|slot| !slot.is_empty())
@@ -218,7 +218,7 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
     let owner = sim.interner.get("Americans").unwrap();
     sim.session.set_binary_frame_for_test(16);
     let previous_rng = rng(&sim);
-    sim.raise_house_tags(owner, &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(owner, &rules, Some(&registry), &mut FrameEffects::default());
     assert!(sim.session.train_crate());
     assert!(sim.trigger_runtime.locals_set.contains(&9));
     assert_eq!(rng(&sim), previous_rng);
@@ -232,7 +232,7 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
     assert_eq!(rng(&sim)[0], death_rng[0]);
     assert_eq!(rng(&sim)[2], death_rng[2]);
     let slot = *sim
-        .crate_authority
+        .crate_authority()
         .slots()
         .iter()
         .find(|slot| !slot.is_empty())
@@ -250,12 +250,15 @@ fn live_house_trigger_enables_train_cargo_before_fatal_receiver_and_pickup() {
         .spawn_object_at_height("CARGOTRUCK", "Americans", 16, 15, 0, 0, &rules)
         .unwrap();
     let money = crate::sim::credit_income::available_money(&sim.houses, owner);
+    // A campaign's Money crate pays PlayerPtr for a human collector: the
+    // player's own House here.
+    sim.session.set_current_house_for_test(Some(owner));
     assert!(sim.pickup_crate_at(
         collector,
         (slot.cell_x, slot.cell_y),
         &rules,
         Some(&registry),
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     // Native56C020's solo arm removes the overlay without clearing slots;
     // retain the already-established crate owner and its timer semantics.

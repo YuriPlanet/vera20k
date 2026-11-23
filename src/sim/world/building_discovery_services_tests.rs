@@ -32,7 +32,7 @@ fn campaign_fixture(triggers: &str) -> Option<(Simulation, RuleSet, InternedId)>
     sim.resolve_type_handles(&rules);
     sim.fog = vision::FogState::new(33, 33);
     sim.session
-        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
@@ -48,7 +48,7 @@ fn campaign_fixture(triggers: &str) -> Option<(Simulation, RuleSet, InternedId)>
         &map.ini,
     );
     sim.session.install_waypoints(&map.waypoints);
-    sim.initialize_trigger_definitions(&map, &Default::default(), None, None);
+    sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
     sim.classify_map_triggers(&rules);
     sim.session.publish_started();
     let remote = sim.interner.get("Remote").unwrap();
@@ -56,10 +56,14 @@ fn campaign_fixture(triggers: &str) -> Option<(Simulation, RuleSet, InternedId)>
     sim.fog.ensure_viewer(player);
     sim.fog.ensure_viewer(remote);
     assert_eq!(sim.session.current_house(), Some(player));
-    assert!(sim.houses[&remote].is_controlled_by_human(false));
+    assert!(
+        sim.houses[&remote]
+            .is_controlled_by_human(crate::rules::rule_policy::RulePolicy::stock_campaign())
+    );
     assert!(!sim.houses[&remote].is_human());
     assert!(
         !sim.house_alliances()
+            .as_map()
             .get("REMOTE")
             .is_some_and(|allies| allies.contains("PLAYER"))
     );
@@ -71,10 +75,9 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) {
         .advance_app_frame(
             &[],
             rules,
-            Some(rules.overlay_registry()),
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(output.tick.frame_committed);
@@ -116,7 +119,7 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
         let building = sim.substrate.entities.get(id).unwrap();
         assert_eq!(building.owner(), remote);
         assert!(building.lifecycle.cell_marked() && !building.lifecycle.in_limbo());
-        assert!(!building.discovery.discovered_by_current_house());
+        assert!(!building.seldom.discovery.discovered_by_current_house());
     }
     // House508CC7,508ECD,508FAB reject +41B=false only for controlled
     // campaign Houses. Added_To_Game's immediate drain is not this scan.
@@ -137,10 +140,33 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
     }
+    // A custom discovery policy cannot require the local +41B projection
+    // for services in lockstep, even when the provider belongs to a human.
+    let mut lockstep = hidden.clone();
+    let mode = crate::sim::scenario_session::ScenarioGameMode::Lan;
+    let policy = mode
+        .stock_rule_policy(None)
+        .with_uses_campaign_discovery(true);
+    lockstep.install_session_admission(mode, None, policy);
+    lockstep
+        .houses
+        .get_mut(&remote)
+        .unwrap()
+        .set_is_human_for_test(true);
+    Simulation::invalidate_house_power(&lockstep.houses, &mut lockstep.power_states, remote, true);
+    lockstep.assess_house_derived_state(remote, &rules, &mut FrameEffects::default());
+    assert_eq!(lockstep.power_states()[&remote].total_output(), 200);
+    assert!(power_system::has_active_radar(
+        lockstep.power_states(),
+        remote
+    ));
+    assert!(lockstep.houses[&remote].spy_sat_active());
+
     // The same undiscovered providers are admitted outside campaign mode.
     // This invokes the production House prefix on the restored hidden prior;
     // the fixture does not run skirmish defeat on its intentionally empty Player.
@@ -148,7 +174,7 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
         .session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     Simulation::invalidate_house_power(&hidden.houses, &mut hidden.power_states, remote, true);
-    hidden.assess_house_derived_state(remote, &rules, FrameEffects::default());
+    hidden.assess_house_derived_state(remote, &rules, &mut FrameEffects::default());
     assert_eq!(hidden.power_states()[&remote].total_output(), 200);
     assert!(power_system::has_active_radar(
         hidden.power_states(),
@@ -166,6 +192,7 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -187,6 +214,7 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -217,10 +245,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
     assert!(!clean_power.radar_recheck_for_test());
     assert!(!sim.houses[&remote].spy_sat_active());
     for waypoint in 0..3 {
-        assert!(sim.trigger_reveal_at_waypoint(
-            waypoint,
-            UninitContext::new(&rules, Some(rules.overlay_registry())),
-        ));
+        assert!(sim.trigger_reveal_at_waypoint(waypoint, UninitContext::new(&rules),));
     }
     // Supply a retained +41B=false history over genuinely mapped ground.
     // Keep the real prior House assessment, rather than inventing power or
@@ -231,6 +256,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -238,6 +264,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(false);
         sim.attach_object_trigger_tag(id, Some("DISCOVER_TAG"));
@@ -252,6 +279,7 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -270,18 +298,23 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(false);
     }
     // Action40/6E225C..6E227C calls the same virtual+4A0 prelude for every
     // Building before returning, even with no following object-AI visit.
-    assert!(sim.change_visible_map_area([0, 0, 16, 16], &rules));
+    assert!(sim.change_visible_map_area(
+        [0, 0, 16, 16],
+        crate::sim::world::UninitContext::new(&rules)
+    ));
     for id in ids {
         assert!(
             sim.substrate
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .discovered_by_current_house()
         );
@@ -290,4 +323,52 @@ fn mapped_retained_objects_promote_silently_in_ordinary_ai_and_action40() {
     assert!(!sim.power_states()[&remote].power_recheck_for_test());
     assert!(!sim.power_states()[&remote].radar_recheck_for_test());
     assert!(!sim.houses[&remote].spy_sat_active());
+}
+
+/// `ObjectClass::Unlimbo @ 0x005F4EC0` puts the object in Display
+/// (`0x005F4FE2`) and Logic (`0x005F5040`) before the Building tail, so a
+/// building its own Unlimbo discovery (`0x00440D61`) destroys is taken out of
+/// both by its Limbo and stays out.
+#[test]
+fn building_destroyed_by_its_unlimbo_discovery_stays_out_of_display_and_logic() {
+    let Some((mut sim, rules, _)) = campaign_fixture(
+        "[Triggers]\nDIE=Americans,<none>,Die,0,1,1,1,0\n\
+         [Events]\nDIE=1,4,0,0\n\
+         [Actions]\nDIE=1,32,0,0,0,0,0,0,A\n\
+         [Tags]\nDIE_TAG=0,Die,DIE\n",
+    ) else {
+        return;
+    };
+    let player = sim.session.current_house().unwrap();
+    let id = sim
+        .construct_object_limbo_at_height(
+            "GAPOWR",
+            "Remote",
+            8,
+            8,
+            0,
+            0,
+            &rules,
+            &mut FrameEffects::default(),
+        )
+        .unwrap();
+    sim.attach_object_trigger_tag(id, Some("DIE_TAG"));
+    // Open but unmapped ground (`Cell+0x12C` = 0x10): CellPUT's discovery
+    // passes the building over, and Unlimbo's own call is its first.
+    sim.fog.set_ground_bits_for_test(player, 8, 8, 0x10);
+    sim.reveal_constructed_object_at_height(
+        id,
+        8,
+        8,
+        0,
+        0,
+        PlacementEvidence::MarkSucceeded,
+        &rules,
+        &mut FrameEffects::default(),
+    );
+    let building = sim.entities().get(id).unwrap();
+    assert!(building.seldom.discovery.discovered_by_current_house());
+    assert!(!building.is_object_alive(), "event 4 destroyed it");
+    assert!(!sim.live_object_order_snapshot().contains(&id));
+    assert_eq!(sim.substrate.display.layer_of(id), None);
 }

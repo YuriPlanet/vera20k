@@ -25,9 +25,11 @@ use std::collections::BTreeMap;
 use glam::IVec3;
 use serde::{Deserialize, Serialize};
 
+use crate::rules::particle_system_type::ParticleSystemTypeId;
 use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
 use crate::sim::bounce::BounceState;
 use crate::sim::intern::InternedId;
+use crate::sim::particles::spawn::AttachedParticleSystem;
 use crate::sim::rng::{SimRng, abs_before_modulo};
 use crate::sim::world::ObjectLifecycle;
 use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
@@ -57,6 +59,16 @@ pub struct VoxelAnimObject {
     lifecycle: ObjectLifecycle,
     /// The embedded `BounceClass` at `+0xB0`.
     bounce: BounceState,
+    /// `+0x108`: the type's `AttachedSystem=` (`+0x2FC`), which the
+    /// constructor's tail builds (`0x007498A5..0x007498BD`, NULL included).
+    /// The destructor (`0x00749A5F..0x00749A71`) then calls the system's
+    /// vt+0xF8, which only sets its done byte (`0x006301E0`); the expiry
+    /// announcement before it (`0x00749A11`) already did that through the
+    /// system's PointerExpired (`0x0062FE90`), so VERA has nothing more to do.
+    /// RESIDUAL: nothing clears `+0x108` when the system ends first, so
+    /// gamemd's destructor and CRC (`0x0074AA63`) then read a freed system;
+    /// VERA keeps the stale handle and reads nothing through it.
+    attached_system: AttachedParticleSystem,
     /// LogicClass membership, reconstructed from the serialized vector.
     #[serde(skip)]
     in_logic_vector: bool,
@@ -122,6 +134,16 @@ impl VoxelAnimObject {
         self.lifecycle
     }
 
+    /// The `+0x108` system handle, as the constructor stored it.
+    pub(crate) const fn attached_system(&self) -> Option<u64> {
+        self.attached_system.system()
+    }
+
+    /// The constructor's store of its AttachedSystem result.
+    pub(crate) fn bind_attached_system(&mut self, system: Option<u64>) {
+        self.attached_system.bind(system);
+    }
+
     /// Only the shared lifecycle owner writes the private Object bytes.
     pub(crate) fn lifecycle_mut(&mut self) -> &mut ObjectLifecycle {
         &mut self.lifecycle
@@ -181,7 +203,7 @@ pub(crate) enum VoxelAnimAiStep {
 /// Contact74A91B passes this field by address to each concrete receiver.
 /// The sparse values follow that type across pieces, save/load and scene
 /// retirement; the processed Rules owner resumes authority after transfer.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct VoxelTypeDamage {
     // Identity metadata follows the sole mutable value through retirement,
     // where the outgoing RuleSet is no longer available.
@@ -306,11 +328,20 @@ const INCLUSIVE_RANGE_BIAS: NativeF64Bits = NativeF64Bits::from_bits(0x3ff0_0000
 /// the double `1.4`. It is NOT read from the type.
 const DEBRIS_GRAVITY: NativeF64Bits = NativeF64Bits::from_bits(0x3ff6_6666_6000_0000);
 
-/// `VoxelAnimClass::Constructor @ 0x007493B0`, the ordinary (non-`IsMeteor`)
-/// arm at `0x007494F0`..`0x00749663` — the one a death's `DebrisTypes=` takes.
+/// `VoxelAnimClass::Constructor @ 0x007493B0`. The third native argument
+/// is the owner House; trigger action 43 and meteor children pass null.
 ///
-/// Seven draws, in this exact order, all on the shared scenario stream
-/// (`[0x00A8B230] + 0x218`):
+/// The `IsMeteor` arm (`0x00749668`..`0x0074981F`) takes the shared
+/// [`meteor_launch`](crate::sim::bounce::meteor_launch) prefix from the Type
+/// `Duration`, which it stores as the shortened countdown. Unlimbo
+/// (`0x00749794`) places the object at the launch start, one raw draw
+/// (`0x007497A5`) picks the spin like the ordinary arm's, and
+/// `BounceClass::Init` starts at that start without the ordinary arm's +10.
+/// Seven draws in all, like the ordinary arm.
+///
+/// The ordinary (non-`IsMeteor`) arm at `0x007494F0`..`0x00749663` is the
+/// one a death's `DebrisTypes=` takes. Seven draws, in this exact order, all
+/// on the shared scenario stream (`[0x00A8B230] + 0x218`):
 /// - four `Random__Next()` at `0x0074951D`, `0x00749531`, `0x00749544`,
 ///   `0x00749559`, then
 /// - three `RandomRanged(-0xFFFF, 0xFFFF)` inside [`BounceState::init`].
@@ -338,6 +369,39 @@ pub fn spawn_debris_piece(
     origin: IVec3,
     rng: &mut SimRng,
 ) -> Result<VoxelAnimObject, NativeX87Error> {
+    if voxel_anim_type.is_meteor {
+        let launch = crate::sim::bounce::meteor_launch(
+            origin,
+            voxel_anim_type.duration,
+            voxel_anim_type.min_z_vel,
+            voxel_anim_type.max_xy_vel,
+            rng,
+        )?;
+        let spin = spin_angle(voxel_anim_type, rng.next_u32())?;
+        let bounce = BounceState::init(
+            launch.start,
+            voxel_anim_type.elasticity,
+            DEBRIS_GRAVITY,
+            NativeF64Bits::POSITIVE_ZERO,
+            launch.velocity,
+            spin,
+            rng,
+        )?;
+        return Ok(VoxelAnimObject {
+            stable_id,
+            native_unique_id,
+            type_id,
+            duration: launch.duration,
+            marked_for_deletion: false,
+            owner_house,
+            location: launch.start.to_array(),
+            lifecycle: ObjectLifecycle::default(),
+            bounce,
+            attached_system: AttachedParticleSystem::default(),
+            in_logic_vector: false,
+        });
+    }
+
     let start = IVec3::new(
         origin.x,
         origin.y,
@@ -372,17 +436,7 @@ pub fn spawn_debris_piece(
         X87Chop53::load_i32(abs_before_modulo(x_draw, xy_divisor)),
         X87Chop53::load_f64(voxel_anim_type.max_xy_vel)?,
     ))?;
-    let angular_divisor = X87Chop53::ftol_i64(X87Chop53::add(
-        X87Chop53::sub(
-            X87Chop53::load_f64(voxel_anim_type.max_angular_velocity)?,
-            X87Chop53::load_f64(voxel_anim_type.min_angular_velocity)?,
-        ),
-        bias,
-    ))? as i32;
-    let rotation_angle_per_tick = X87Chop53::store_f64(X87Chop53::add(
-        X87Chop53::load_i32(abs_before_modulo(angular_draw, angular_divisor)),
-        X87Chop53::load_f64(voxel_anim_type.min_angular_velocity)?,
-    ))?;
+    let rotation_angle_per_tick = spin_angle(voxel_anim_type, angular_draw)?;
 
     let bounce = BounceState::init(
         start,
@@ -404,8 +458,26 @@ pub fn spawn_debris_piece(
         location: origin.to_array(),
         lifecycle: ObjectLifecycle::default(),
         bounce,
+        attached_system: AttachedParticleSystem::default(),
         in_logic_vector: false,
     })
+}
+
+/// Both constructor arms' spin (`0x007495FE..0x00749644`,
+/// `0x007497AA..0x007497F6`): `|draw| % ftol(MaxAngularVelocity -
+/// MinAngularVelocity + 1.0) + MinAngularVelocity`, stored as a double.
+fn spin_angle(voxel_anim_type: &VoxelAnimType, draw: u32) -> Result<NativeF64Bits, NativeX87Error> {
+    let divisor = X87Chop53::ftol_i64(X87Chop53::add(
+        X87Chop53::sub(
+            X87Chop53::load_f64(voxel_anim_type.max_angular_velocity)?,
+            X87Chop53::load_f64(voxel_anim_type.min_angular_velocity)?,
+        ),
+        X87Chop53::load_f64(INCLUSIVE_RANGE_BIAS)?,
+    ))? as i32;
+    X87Chop53::store_f64(X87Chop53::add(
+        X87Chop53::load_i32(abs_before_modulo(draw, divisor)),
+        X87Chop53::load_f64(voxel_anim_type.min_angular_velocity)?,
+    ))
 }
 
 /// Which list the SHP half of the death block draws its anim from.
@@ -423,6 +495,10 @@ pub struct VoxelDebrisSpawn {
     /// The complete constructor result, including both assigned identities;
     /// delayed fixture delivery only registers it, never allocates again.
     pub object: VoxelAnimObject,
+    /// The type's `AttachedSystem=` and the constructor's input location
+    /// (`[ebp+0xC]`, `0x0074982A`), where the constructor's tail builds that
+    /// system. The meteor arm Unlimbos the anim at its launch start instead.
+    pub attached_system: Option<(ParticleSystemTypeId, IVec3)>,
 }
 
 /// One SHP debris selection retained by a numeric comparison fixture.
@@ -453,7 +529,6 @@ pub trait VoxelDebrisHost: ShpDebrisHost {
     fn construct_voxel(
         &mut self,
         type_id: VoxelAnimTypeId,
-        voxel_type: &VoxelAnimType,
         owner_house: Option<InternedId>,
         origin: IVec3,
     ) -> Result<(), NativeX87Error>;
@@ -512,8 +587,9 @@ pub struct DebrisTypeData<'a> {
     /// `+0x314` vector, count at `+0x324`. Resolved entries in list order; an
     /// entry naming a `[VoxelAnims]` section that does not exist is `None`.
     /// Native resolves the names once at rules-load time and stores pointers,
-    /// so an unresolvable name would be a null slot there too.
-    pub debris_types: &'a [Option<(VoxelAnimTypeId, &'a VoxelAnimType)>],
+    /// so an unresolvable name would be a null slot there too
+    /// (`RuleSet::object_debris_types`).
+    pub debris_types: &'a [Option<VoxelAnimTypeId>],
     /// `+0x330` vector, positionally paired with `debris_types`.
     pub debris_maximums: &'a [i32],
     /// `+0x5C4` vector, count at `+0x5D4`.
@@ -534,7 +610,7 @@ const DEBRIS_LOOP_ITERATION_CEILING: u32 = 4096;
 /// next selector, with the origin queried separately for every piece.
 pub(crate) fn throw_typed_debris(
     mut budget: i32,
-    types: &[Option<(VoxelAnimTypeId, &VoxelAnimType)>],
+    types: &[Option<VoxelAnimTypeId>],
     maximums: &[i32],
     owner_house: Option<InternedId>,
     host: &mut impl VoxelDebrisHost,
@@ -572,11 +648,11 @@ pub(crate) fn throw_typed_debris(
                 count = budget;
             }
             if count > 0
-                && let Some((type_id, voxel_type)) = types[index]
+                && let Some(type_id) = types[index]
             {
                 for _ in 0..count {
                     let origin = host.voxel_origin();
-                    host.construct_voxel(type_id, voxel_type, owner_house, origin)?;
+                    host.construct_voxel(type_id, owner_house, origin)?;
                 }
             }
             budget = budget.wrapping_sub(count);
@@ -742,7 +818,7 @@ pub fn throw_death_debris(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_t_z))]
 mod tests {
     use super::*;
     use crate::rules::voxel_anim_type::VoxelAnimType;
@@ -762,7 +838,7 @@ mod tests {
     fn data<'a>(
         max_debris: i32,
         min_debris: i32,
-        debris_types: &'a [Option<(VoxelAnimTypeId, &'a VoxelAnimType)>],
+        debris_types: &'a [Option<VoxelAnimTypeId>],
         debris_maximums: &'a [i32],
         debris_anim_count: usize,
         metallic_debris_count: usize,
@@ -790,6 +866,7 @@ mod tests {
             IVec3::new(1280, 2560, 0),
             true,
             &mut deferred,
+            &crate::rules::ruleset::RuleSet::empty_for_test(),
         )
         .expect("in domain");
         assert!(deferred.is_empty());
@@ -813,8 +890,10 @@ mod tests {
         assert_eq!(sim.state_hash(), before);
     }
 
+    /// Every piece is the stock `[TIRE]` ([`tire`]), whatever its id.
     struct NumericDebrisHost<'a> {
         rng: &'a mut SimRng,
+        voxel_type: VoxelAnimType,
         receipt: DeathDebris,
         next_id: u64,
     }
@@ -840,7 +919,6 @@ mod tests {
         fn construct_voxel(
             &mut self,
             type_id: VoxelAnimTypeId,
-            voxel_type: &VoxelAnimType,
             owner_house: Option<InternedId>,
             origin: IVec3,
         ) -> Result<(), NativeX87Error> {
@@ -850,12 +928,15 @@ mod tests {
                 self.next_id,
                 self.next_id as i32,
                 type_id,
-                voxel_type,
+                &self.voxel_type,
                 owner_house,
                 origin,
                 self.rng,
             )?;
-            self.receipt.voxels.push(VoxelDebrisSpawn { object });
+            self.receipt.voxels.push(VoxelDebrisSpawn {
+                object,
+                attached_system: None,
+            });
             Ok(())
         }
     }
@@ -863,6 +944,7 @@ mod tests {
     fn throw(input: &DebrisTypeData<'_>, rng: &mut SimRng) -> DeathDebris {
         let mut host = NumericDebrisHost {
             rng,
+            voxel_type: tire(),
             receipt: DeathDebris::default(),
             next_id: 0,
         };
@@ -875,8 +957,7 @@ mod tests {
     fn gsi_05_14_no_debris_without_a_positive_maxdebris_and_no_draw_taken() {
         // `TEST ECX,ECX / JLE` at `0x00702291` sits BEFORE the budget draw, so
         // a type with no `MaxDebris=` costs the shared stream nothing.
-        let voxel_type = tire();
-        let types = [Some((VoxelAnimTypeId(0), &voxel_type))];
+        let types = [Some(VoxelAnimTypeId(0))];
         let input = data(0, 0, &types, &[3], 6, 20);
         let mut rng = SimRng::new(11);
         assert!(throw(&input, &mut rng).is_empty());
@@ -930,11 +1011,7 @@ mod tests {
         // thrown is exactly the budget. The rejected reading — a per-entry cap
         // that never drains — would let two entries each reach the cap and
         // throw up to twice the budget.
-        let voxel_type = tire();
-        let types = [
-            Some((VoxelAnimTypeId(0), &voxel_type)),
-            Some((VoxelAnimTypeId(0), &voxel_type)),
-        ];
+        let types = [Some(VoxelAnimTypeId(0)), Some(VoxelAnimTypeId(0))];
         for seed in 0..64u64 {
             let input = data(7, 6, &types, &[5, 5], 0, 20);
             let mut rng = SimRng::new(seed);
@@ -957,8 +1034,7 @@ mod tests {
         // `RandomRanged(-0xFFFF, 0xFFFF)` in `BounceClass::Init`. The count is
         // the lockstep contract: a miscount desyncs every later consumer in the
         // same tick.
-        let voxel_type = tire();
-        let types = [Some((VoxelAnimTypeId(0), &voxel_type))];
+        let types = [Some(VoxelAnimTypeId(0))];
         let input = data(4, 3, &types, &[9], 0, 20);
         let mut rng = SimRng::new(2024);
         let thrown = throw(&input, &mut rng);
@@ -1008,8 +1084,7 @@ mod tests {
         // The voxel loop exits only at `budget <= 0`, so both SHP arms see a
         // spent pool. `[HARV]` is the stock case: `MaxDebris=6`,
         // `DebrisTypes=TIRE`, no `DebrisAnims=`.
-        let voxel_type = tire();
-        let types = [Some((VoxelAnimTypeId(0), &voxel_type))];
+        let types = [Some(VoxelAnimTypeId(0))];
         let input = data(6, 5, &types, &[4], 6, 20);
         let mut rng = SimRng::new(77);
         let thrown = throw(&input, &mut rng);

@@ -1,6 +1,8 @@
 //! Retail PARACH atlas closure, canopy instance building, and offscreen draw.
 
-use super::draw_plan_lowering::{NativeDisplayOrder, ObjectTexture, lower_object_instances};
+use super::draw_plan_lowering::{
+    NativeDisplayOrder, ObjectTexture, PlannedObjects, lower_object_instances,
+};
 use super::merge_passes::draw_native_object_pass;
 use crate::app::presentation::detail::DetailState;
 use crate::app::presentation::instances::{DisplayEffectInputs, build_display_effect_instances};
@@ -191,7 +193,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
             let anim = sim.anim(anim_id).unwrap();
             let key = ShpSpriteKey {
                 palette_context: ShpPaletteContext::AnimScheme,
-                type_id: parachute_name.clone(),
+                type_id: parachute_name.clone().into(),
                 facing: 0,
                 frame: u16::try_from(anim.runtime().current_frame).unwrap(),
                 house_color: color,
@@ -229,14 +231,15 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
     let lighting = CellLightGrid::new();
     let hidden = BTreeSet::new();
     let input = DisplayEffectInputs {
-        interpolation: None,
         sim: &sim,
+        frame: &crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules),
         rules: &rules,
         camera: view_camera,
         render_size: size,
         tactical: [0, 0, size[0], size[1]],
         zoom: 1.0,
         axis: DepthAxis::NONE,
+        z_seed: crate::render::native_z::DEFAULT_Z,
         atlas: Some(&atlas),
         detail: &detail,
         detail_level: 2,
@@ -248,9 +251,10 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         local_owner: None,
         observe_particles: false,
     };
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
-    let mut parents = Vec::new();
+    let order = NativeDisplayOrder::from_world(&sim, None);
+    let mut parents = PlannedObjects::default();
     build_display_effect_instances(&input, &mut parents, &order, Default::default());
+    let parents = parents.into_owned();
 
     let mut canopy_instances = Vec::with_capacity(2);
     for ((&id, (key, entry)), parent) in anim_ids.iter().zip(&keys_and_entries).zip(&parents) {
@@ -277,7 +281,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         canopy_instances.push(piece.instance);
     }
 
-    let layers = lower_object_instances(parents);
+    let layers = lower_object_instances(parents.into());
     let ground = &layers[2];
     assert_eq!(ground.instances.len(), 2);
     assert_eq!(ground.owners, anim_ids);

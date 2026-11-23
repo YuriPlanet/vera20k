@@ -12,6 +12,7 @@ from unicorn.x86_const import (
 )
 
 from tools.native_oracle import finish_vectors, provenance, run_checked, RET_MAGIC, SCRATCH
+from tools.native_oracle import require
 from tools.spatial_oracle.locomotor_track_cursor import OriginalCursor, LOCO, SP
 from tools.spatial_oracle.map_queries import dwords
 
@@ -75,7 +76,7 @@ class OriginalCallback(OriginalCursor):
         u.mem_write(LOCO + 0x40, dwords(17, 29, 43))
         u.reg_write(UC_X86_REG_EDX, 15)
         u.reg_write(UC_X86_REG_EAX, 0xFFFFFFFF)
-        assert self.run(f['gate'], (f['sample'], f['sentinel'])) == f['sample']
+        require(self.run(f['gate'], (f['sample'], f['sentinel'])) == f['sample'], 'gate did not return the sample')
         first = self.read_sample()
         if chain is not None:
             pointer = f['turns'] + chain * 12
@@ -107,13 +108,13 @@ class OriginalCallback(OriginalCursor):
             u.mem_write(LOCO + 0x4C, dwords(mutation['residual']))
         u.mem_write(LOCO + 0x40, dwords(*mutation['head']))
         before_tail = self.state()
-        assert self.run(f['tail'], (f['again'], f['exhausted'])) == f['again']
-        assert self.run(f['again'], (f['sample'], f['sentinel'])) == f['sample']
+        require(self.run(f['tail'], (f['again'], f['exhausted'])) == f['again'], 'tail did not return again')
+        require(self.run(f['again'], (f['sample'], f['sentinel'])) == f['sample'], 'again did not return the sample')
         second = self.read_sample()
         second['transformed'] = self.transform(second['point'])
         after_payment = self.state()
         retained_residual = self.ints(LOCO + 0x4C)[0]
-        assert self.run(f['tail'], (f['again'], f['exhausted'])) == f['exhausted']
+        require(self.run(f['tail'], (f['again'], f['exhausted'])) == f['exhausted'], 'tail did not return exhausted')
         # Residual branch deliberately reselects from the mutated live instance.
         self.run(c['residual'], c['residual_point'])
         residual = dict(progress=self.state(), budget=self.ints(LOCO + 0x4C)[0],

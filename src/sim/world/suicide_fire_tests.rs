@@ -71,7 +71,7 @@ fn retail_scene() -> Option<TerrorScene> {
             super::PlacementEvidence::EvaluateMark,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     let owner = sim.substrate.entities.get(source).unwrap().owner();
@@ -146,8 +146,8 @@ fn compare_native_phase(scene: &TerrorScene, phase: &serde_json::Value) {
         "doing": source.mission_leaf.as_infantry().unwrap().doing(),
         "stage": stage.value(),
         "sequence": {"start":stage.timer().start_frame(), "duration":stage.timer().duration(), "rate":stage.rate()},
-        "rearm": {"start":source.rearm_timer.start_frame(), "duration":source.rearm_timer.duration()},
-        "burst": source.weapon_burst.index(),
+        "rearm": {"start":source.seldom.rearm_timer.start_frame(), "duration":source.seldom.rearm_timer.duration()},
+        "burst": source.seldom.weapon_burst.index(),
         "last_fire": source.last_fire_frame.frame(),
         "target_health": target.health.current(),
         "target_alive": u8::from(target.lifecycle.object_alive()),
@@ -201,7 +201,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
         // Original constructor/Unlimbo owns placement. Only the three measured
         // stream priors are imported; the real Rust RNG produces every word.
         scene.sim.main_rng =
-            SimRng::from_native_state_hex_for_test(initial["rng"]["main"].as_str().unwrap()).into();
+            SimRng::from_native_state_hex_for_test(initial["rng"]["main"].as_str().unwrap());
         scene.sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(initial["rng"]["scenario"].as_str().unwrap());
         scene.sim.mapgen_rng =
@@ -229,7 +229,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     &scene.rules,
                     None,
                     event,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 );
             }
             scene
@@ -238,8 +238,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     scene.source,
                     Some(TargetKind::Entity(scene.target)),
                     &scene.rules,
-                    None,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             if ordinary {
@@ -274,9 +273,9 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                 },
                 &scene.rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
-            let ai = super::techno_ai::ObjectAiCtx {
+            let mut ai = super::techno_ai::ObjectAiCtx {
                 effects: FrameEffects::default(),
                 overlay_registry: None,
             };
@@ -289,7 +288,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     scene.sim.session.set_binary_frame_for_test(frame);
                     scene
                         .sim
-                        .advance_live_object_turn(scene.source, &scene.rules, ai)
+                        .advance_live_object_turn(scene.source, &scene.rules, &mut ai)
                         .unwrap();
                 }
             }
@@ -313,7 +312,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     .set_binary_frame_for_test(visit["frame"].as_u64().unwrap() as u32);
                 scene
                     .sim
-                    .advance_live_object_turn(scene.source, &scene.rules, ai)
+                    .advance_live_object_turn(scene.source, &scene.rules, &mut ai)
                     .unwrap();
                 let source = scene.sim.substrate.entities.get(scene.source).unwrap();
                 compare_native_fields(
@@ -325,8 +324,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
             compare_native_phase(&scene, native_phase(row, "before_deferred_destruction"));
             scene.sim.process_pending_delete_with(
                 &scene.rules,
-                None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
                 1,
                 true,
             );
@@ -397,7 +395,7 @@ fn ordinary_terror_attack_finishes_die2_and_retires_its_source() {
     }
     let source = scene.sim.substrate.entities.get(scene.source).unwrap();
     let owner = source.owner();
-    let rearm = source.rearm_timer;
+    let rearm = source.seldom.rearm_timer;
     let last_fire = source.last_fire_frame;
     scene.sim.queue_command(CommandEnvelope::new(
         owner,
@@ -416,10 +414,9 @@ fn ordinary_terror_attack_finishes_die2_and_retires_its_source() {
             .advance_app_frame(
                 &commands,
                 &scene.rules,
-                None,
                 33,
                 super::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(output.tick.frame_committed);
@@ -439,7 +436,7 @@ fn ordinary_terror_attack_finishes_die2_and_retires_its_source() {
                 saw_die2 = true;
                 assert!(!source.death.is_dying() && source.lifecycle.object_alive());
                 assert_eq!(source.mission_leaf.as_infantry().unwrap().doing(), 12);
-                assert_eq!(source.rearm_timer, rearm);
+                assert_eq!(source.seldom.rearm_timer, rearm);
                 assert_eq!(source.last_fire_frame.frame(), last_fire.frame());
                 assert!(source.attack_target.target().is_none());
             }
@@ -520,7 +517,7 @@ fn assert_suicide_blast_reports_building_loss(direct: bool) {
                 arg6: false,
             },
         ),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         scene
@@ -542,7 +539,7 @@ fn assert_suicide_blast_reports_building_loss(direct: bool) {
             },
             &scene.rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert!(
             scene
@@ -592,10 +589,9 @@ fn assert_suicide_blast_reports_building_loss(direct: bool) {
             .advance_app_frame(
                 &commands,
                 &scene.rules,
-                None,
                 33,
                 super::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         if scene

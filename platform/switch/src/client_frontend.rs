@@ -65,7 +65,7 @@ fn run_mounted(romfs_mounted: bool) -> Result<()> {
     import_legacy_saves()?;
     let log_path =
         vera20k::util::logging::init_file_logger("client").context("initialize client log")?;
-    vera20k::util::logging::install_panic_hook(Some(&log_path));
+    vera20k::util::logging::install_panic_hook(Some(&log_path), None);
     // GPU, applet and audio initialization consume kernel sessions. Connect to
     // the optional SaltyNX reporter before them so its port gets a free slot.
     unsafe { platform_fps_start() };

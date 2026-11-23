@@ -83,7 +83,7 @@ impl WeaponBurst {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod tests {
     use super::*;
     use crate::sim::combat::TargetKind;
@@ -159,12 +159,12 @@ mod tests {
                 .spawn_object("TANK", "Americans", 4, 4, 64, &rules)
                 .unwrap();
             let entity = sim.substrate.entities.get_mut(id).unwrap();
-            represented_assign_target(entity, Some(TargetKind::Cell(5, 4)));
+            represented_assign_target(entity, Some(TargetKind::Cell(5, 4)), rules.ares_form());
             entity
                 .passive_scan
                 .set_passively_acquired_target_for_test(true);
-            entity.weapon_burst.complete_shot(2);
-            assert_eq!(entity.weapon_burst.index(), 1);
+            entity.seldom.weapon_burst.complete_shot(2);
+            assert_eq!(entity.seldom.weapon_burst.index(), 1);
             let command = match order {
                 0 => Command::Stop { entity_id: id },
                 1 => Command::Move {
@@ -186,11 +186,15 @@ mod tests {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             assert!(entity.attack_target.target().is_none(), "{command:?}");
             assert!(!entity.passive_scan.acquired(), "{command:?}");
-            assert_eq!(entity.weapon_burst.index(), 0, "{command:?}");
+            // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
+            // keeps the index through the NULL assignment
+            // (`mission::concrete_effects::represented_assign_target_admitted`).
+            let reset = if rules.ares_form() { 1 } else { 0 };
+            assert_eq!(entity.seldom.weapon_burst.index(), reset, "{command:?}");
             // A later non-null assignment preserves the reset value, so FLH
             // and GetROF start the new burst at its first shot.
-            represented_assign_target(entity, Some(TargetKind::Cell(6, 4)));
-            assert_eq!(entity.weapon_burst.index(), 0, "{command:?}");
+            represented_assign_target(entity, Some(TargetKind::Cell(6, 4)), rules.ares_form());
+            assert_eq!(entity.seldom.weapon_burst.index(), reset, "{command:?}");
         }
     }
 
@@ -249,12 +253,16 @@ mod tests {
                 let actor = sim.substrate.entities.get_mut(id).unwrap();
                 actor.health.set_for_test(actor.health.current() / 2); // Repair admission requires damage.
                 if had_target {
-                    represented_assign_target(actor, Some(TargetKind::Cell(6, 4)));
+                    represented_assign_target(
+                        actor,
+                        Some(TargetKind::Cell(6, 4)),
+                        rules.ares_form(),
+                    );
                 }
                 actor
                     .passive_scan
                     .set_passively_acquired_target_for_test(true);
-                actor.weapon_burst.complete_shot(2);
+                actor.seldom.weapon_burst.complete_shot(2);
                 let command = match order {
                     2 => Command::PlantC4 {
                         attacker_id: id,
@@ -283,7 +291,7 @@ mod tests {
                         "{command:?}"
                     );
                     assert!(actor.passive_scan.acquired(), "{command:?}");
-                    assert_eq!(actor.weapon_burst.index(), 1, "{command:?}");
+                    assert_eq!(actor.seldom.weapon_burst.index(), 1, "{command:?}");
                 }
 
                 assert!(
@@ -293,18 +301,12 @@ mod tests {
                 let actor = sim.substrate.entities.get_mut(id).unwrap();
                 assert!(actor.attack_target.target().is_none(), "{command:?}");
                 assert!(!actor.passive_scan.acquired(), "{command:?}");
-                assert_eq!(
-                    actor.weapon_burst.index(),
-                    i32::from(!had_target),
-                    "{command:?}"
-                );
+                // Ares 0x6FCF53 (1005D320) never resets the index.
+                let kept = i32::from(!had_target || rules.ares_form());
+                assert_eq!(actor.seldom.weapon_burst.index(), kept, "{command:?}");
                 // The next non-null assignment must retain the observed index.
-                represented_assign_target(actor, Some(TargetKind::Cell(7, 4)));
-                assert_eq!(
-                    actor.weapon_burst.index(),
-                    i32::from(!had_target),
-                    "{command:?}"
-                );
+                represented_assign_target(actor, Some(TargetKind::Cell(7, 4)), rules.ares_form());
+                assert_eq!(actor.seldom.weapon_burst.index(), kept, "{command:?}");
             }
         }
     }
@@ -322,18 +324,26 @@ mod tests {
             2 => Some(TargetKind::Cell(6, 4)),
             other => panic!("unexpected native target {other}"),
         };
-        for row in rows {
+        // The setter takes the game's answer; this bare entity has no Rules,
+        // so each native row runs both ways.
+        for (row, ares) in rows.iter().flat_map(|row| [(row, false), (row, true)]) {
             let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 4, 4);
-            represented_assign_target(&mut entity, target(&row["previous"]));
-            entity.weapon_burst.index = row["index"].as_i64().unwrap() as i32;
+            represented_assign_target(&mut entity, target(&row["previous"]), ares);
+            entity.seldom.weapon_burst.index = row["index"].as_i64().unwrap() as i32;
             entity
                 .passive_scan
                 .set_passively_acquired_target_for_test(row["passive"].as_u64().unwrap() != 0);
-            represented_assign_target(&mut entity, target(&row["requested"]));
+            represented_assign_target(&mut entity, target(&row["requested"]), ares);
+            // Ares 0x6FCF53 (1005D320) keeps the index on every assignment.
+            let next_index = if ares {
+                &row["index"]
+            } else {
+                &row["next_index"]
+            };
             assert_eq!(
-                entity.weapon_burst.index(),
-                row["next_index"].as_i64().unwrap() as i32,
-                "{row}"
+                entity.seldom.weapon_burst.index(),
+                next_index.as_i64().unwrap() as i32,
+                "{row} ares={ares}"
             );
             assert_eq!(
                 entity.passive_scan.acquired(),

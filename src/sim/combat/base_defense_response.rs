@@ -10,7 +10,6 @@
 //! Foot4DBDF0/4DDC40 and Map56D100; the response never selects NavCom instead.
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::is_allied_with;
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::mission::authority::queue_entity_mission_deferred;
@@ -233,59 +232,65 @@ impl ResponseSelection {
     ) -> i32 {
         let current_frame = world.session.binary_frame() as i32;
         let (budget, responders) = self.into_ranked();
-        if budget <= 0 {
-            return 0;
-        }
-
         let mut accumulated = 0;
-        for responder in responders {
-            let in_base_defense_team = world
-                .team_script_vm
-                .team_for_member(responder.entity_id)
-                .is_some_and(|(_, is_base_defense)| is_base_defense);
-            let draw = world.scenario_rng.next_range_u32_inclusive(0, 99);
-            let mission = match response_mission(draw, in_base_defense_team) {
-                ResponseMission::Rescue => MissionType::Rescue,
-                ResponseMission::AreaGuard => MissionType::AreaGuard,
-            };
-            let Some(responder_entity) = world.substrate.entities.get_mut(responder.entity_id)
-            else {
-                continue;
-            };
-            queue_entity_mission_deferred(responder_entity, MissionId::from_known(mission));
-            responder_entity.set_archive_target(Some(TargetKind::Entity(victim_id)));
-            world
-                .assign_target_represented(
-                    responder.entity_id,
-                    Some(TargetKind::Entity(attacker_id)),
-                    rules,
-                    None,
-                    FrameEffects::default(),
-                )
-                .expect("selected responder remains present during synchronous target assignment");
-            let Some(responder_entity) = world.substrate.entities.get(responder.entity_id) else {
-                continue;
-            };
-            let threat = live_threat_posed(
-                responder_entity,
+        // `0x0070863F`: a nonpositive budget skips the sort and assignments.
+        if budget > 0 {
+            for responder in responders {
+                let in_base_defense_team = world
+                    .team_script_vm
+                    .team_for_member(responder.entity_id)
+                    .is_some_and(|(_, is_base_defense)| is_base_defense);
+                let draw = world.scenario_rng.next_range_u32_inclusive(0, 99);
+                let mission = match response_mission(draw, in_base_defense_team) {
+                    ResponseMission::Rescue => MissionType::Rescue,
+                    ResponseMission::AreaGuard => MissionType::AreaGuard,
+                };
+                let Some(responder_entity) = world.substrate.entities.get_mut(responder.entity_id)
+                else {
+                    continue;
+                };
+                queue_entity_mission_deferred(responder_entity, MissionId::from_known(mission));
+                responder_entity.set_archive_target(Some(TargetKind::Entity(victim_id)));
                 world
-                    .interner
-                    .object_type(responder_entity.type_ref(), rules),
-                &world.substrate.entities,
-                rules,
-                &world.interner,
-            );
-            let (next, overshot) = add_assigned_threat(accumulated, threat, budget);
-            accumulated = next;
-            if overshot {
-                if let Some(attacker) = world.substrate.entities.get_mut(attacker_id) {
-                    attacker.base_defense_response.cooldown.start(
-                        current_frame,
-                        response_delay_frames(rules.general.base_defense_delay_minutes),
+                    .assign_target_represented(
+                        responder.entity_id,
+                        Some(TargetKind::Entity(attacker_id)),
+                        rules,
+                        &mut FrameEffects::default(),
+                    )
+                    .expect(
+                        "selected responder remains present during synchronous target assignment",
                     );
+                let Some(responder_entity) = world.substrate.entities.get(responder.entity_id)
+                else {
+                    continue;
+                };
+                let threat = live_threat_posed(
+                    responder_entity,
+                    world
+                        .interner
+                        .object_type(responder_entity.type_ref(), rules),
+                    &world.substrate.entities,
+                    rules,
+                    &world.interner,
+                );
+                let (next, overshot) = add_assigned_threat(accumulated, threat, budget);
+                accumulated = next;
+                if overshot {
+                    break;
                 }
-                break;
             }
+        }
+        // `0x0070875C..0x007087A9`: the shared exit starts the attacker's
+        // cooldown whenever the sum strictly exceeds the budget, so a budget
+        // that engaged defenders drove negative arms it with no assignment.
+        if accumulated > budget
+            && let Some(attacker) = world.substrate.entities.get_mut(attacker_id)
+        {
+            attacker.seldom.base_defense_response.cooldown.start(
+                current_frame,
+                response_delay_frames(rules.general.base_defense_delay_minutes),
+            );
         }
         accumulated
     }
@@ -323,8 +328,9 @@ use admission::{
 /// Persistent TechnoClass state used by the active House base-defence
 /// responder. The two recruitment admission bytes are constructor-true; an
 /// authored object's scenario line ([`Self::author_recruitable`]) and
-/// `TeamClass::Add_Member` ([`Self::set_team_recruitable`]) write them. Cooldown
-/// writes occur only after a responder assignment or strict budget overshoot. The
+/// `TeamClass::Add_Member` ([`Self::set_team_recruitable`]) write them. The
+/// cooldown starts only when the assigned sum strictly exceeds the budget: an
+/// assignment overshoot, or a scan whose engaged defenders left it negative. The
 /// ArchiveTarget (`+0x218`) stored here is the general Techno field, which
 /// responders, miners, the slave manager and the rally click all write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -419,7 +425,7 @@ pub(crate) fn respond_to_base_attack(
     rules: &RuleSet,
     victim_id: u64,
     attacker_id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let entities = &world.substrate.entities;
     let interner = &world.interner;
@@ -440,12 +446,11 @@ pub(crate) fn respond_to_base_attack(
     let budget = live_threat_posed(attacker, Some(attacker_object), entities, rules, interner)
         .wrapping_mul(rules.general.computer_base_defense_response);
     let current_frame = world.session.binary_frame() as i32;
+    let campaign_base_defense = world.session.rule_policy().uses_campaign_base_defense();
 
-    if is_allied_with(
-        world.house_alliances.as_map(),
-        interner.resolve(victim_owner),
-        interner.resolve(attacker_owner),
-    )
+    if world
+        .house_alliances
+        .is_allied(interner, victim_owner, attacker_owner)
         // gamemd.exe, RespondToBaseAttack @ 0x00708080 (call at 0x007080F9):
         // HouseClass::IsControlledByHuman @ 0x0050B730 also rejects campaign
         // PlayerControl, before suspension, responder RNG and cooldown writes.
@@ -454,14 +459,15 @@ pub(crate) fn respond_to_base_attack(
         // `0x00708114`: `[g_GameMode 0x00A8B238] == 0 && this->Is_Armed
         // (vt+0x2AC)` — an armed victim in that game mode defends itself
         // instead of calling for help.
-        || (!world.session.game_mode_nonzero() && is_armed(victim, victim_object))
+        || (campaign_base_defense
+            && is_armed(victim, victim_object, entities, rules, interner))
         || !matches!(
             attacker.category(),
             EntityCategory::Unit | EntityCategory::Infantry
         )
         || victim_object.insignificant
         || !attacker
-            .base_defense_response
+            .seldom.base_defense_response
             .cooldown
             .expired(current_frame)
     {
@@ -487,10 +493,9 @@ pub(crate) fn respond_to_base_attack(
         rules,
         frame_effects,
     );
+    // A nonpositive budget still reaches the shared cooldown exit through
+    // `dispatch`; each class loop below stops first (`0x007081BF`, `0x007083F5`).
     let mut selection = ResponseSelection::new(budget);
-    if !selection.can_scan() {
-        return;
-    }
 
     // Admission retains native lazy map-query effects on shared Dummy. Entity
     // and mission mutations follow the scan.
@@ -503,27 +508,35 @@ pub(crate) fn respond_to_base_attack(
     let attacker_coord = ground_pose::object_get_coords(attacker, sim.resolved_terrain.as_ref());
     let attacker_coord = [attacker_coord.x, attacker_coord.y, attacker_coord.z];
     let victim_is_self_anchor = victim.archive_target() == Some(TargetKind::Entity(victim_id));
-    let candidate_ids = entities.keys_sorted();
     for class in [ResponderClass::Infantry, ResponderClass::Unit] {
-        for &candidate_id in &candidate_ids {
+        let expected_category = match class {
+            ResponderClass::Infantry => EntityCategory::Infantry,
+            ResponderClass::Unit => EntityCategory::Unit,
+        };
+        // VERA walks only the victim's house's objects of the class, in the
+        // same order: admission (`0x007081D4`, `0x0070840A`) refuses every
+        // other house's after reading only its liveness, before any map
+        // query, score or draw.
+        for &candidate_id in entities.owned_ids(victim.owner(), expected_category) {
             if !selection.can_scan() {
                 break;
             }
-            let expected_category = match class {
-                ResponderClass::Infantry => EntityCategory::Infantry,
-                ResponderClass::Unit => EntityCategory::Unit,
-            };
             let Some(candidate) = entities.get(candidate_id) else {
                 continue;
             };
-            if candidate.category() != expected_category {
-                continue;
-            }
             let Some(candidate_object) = sim.interner.object_type(candidate.type_ref(), rules)
             else {
                 continue;
             };
-            if !candidate_admitted(sim, rules, candidate, candidate_object, victim, attacker_id) {
+            if !candidate_admitted(
+                sim,
+                rules,
+                candidate,
+                candidate_object,
+                victim,
+                attacker_id,
+                campaign_base_defense,
+            ) {
                 continue;
             }
 
@@ -545,24 +558,8 @@ pub(crate) fn respond_to_base_attack(
                 continue;
             };
             let cells = NativeCellQuery::canonical(terrain);
-            let current = ground_pose::position_world_coord(&candidate.position);
-            let in_tube = candidate.low_bridge_tube_state.is_some();
             // Foot4DDC40 short-circuits before virtual+4C in a Tube.
-            let navigation = if in_tube {
-                current
-            } else {
-                match sim.foot_navigation_coordinate(candidate_id) {
-                    Ok(coord) => coord,
-                    Err(_) => continue,
-                }
-            };
-            let Ok(source_should_be_on_bridge) = ground_pose::navigation_should_be_on_bridge(
-                &cells,
-                navigation,
-                current,
-                candidate.on_bridge(),
-                in_tube,
-            ) else {
+            let Ok(source_should_be_on_bridge) = sim.foot_should_be_on_bridge(candidate_id) else {
                 continue;
             };
             let bounds = sim
@@ -639,7 +636,7 @@ pub(crate) fn respond_to_base_attack(
             // Original7085A4/7085A9 evaluate threat first;7085AD then
             // refuses a Unit for a slave victim. Earlier rejection would
             // lose this candidate's shared-Dummy coordinate/layer/zone writes.
-            if class == ResponderClass::Unit && victim.slave.owner().is_some() {
+            if class == ResponderClass::Unit && victim.seldom.slave.owner().is_some() {
                 continue;
             }
             selection.consider(candidate_id, raw_score, class, victim_is_self_anchor);
@@ -649,10 +646,10 @@ pub(crate) fn respond_to_base_attack(
     selection.dispatch(world, rules, victim_id, attacker_id);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "base_defense_response_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "base_defense_response_oracle_tests.rs"]
 mod oracle_tests;

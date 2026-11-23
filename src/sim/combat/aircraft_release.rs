@@ -14,7 +14,7 @@ use crate::sim::aircraft::attack_mission::{StrikeFacts, StrikeHost, strike_visit
 use crate::sim::aircraft::fire_at::{AircraftShot, FireAtHost};
 use crate::sim::projectile::ProjectileVelocity;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[path = "aircraft_release_tests.rs"]
 mod tests;
 
@@ -38,7 +38,7 @@ fn live_shot<'r>(
         world,
         &world.interner,
         world.resolved_terrain.as_ref(),
-        Some(world.house_alliances.as_map()),
+        Some(&world.house_alliances),
     )?;
     let selected = selected?;
     let burst = selected.weapon.burst;
@@ -78,7 +78,6 @@ pub(super) fn visit(
     world: &mut Simulation,
     run: &mut ReceiverRun,
     rules: &RuleSet,
-    overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     out: &mut CombatEmit,
     under_attack_events: &mut Vec<UnderAttackEvent>,
@@ -113,7 +112,6 @@ pub(super) fn visit(
         world,
         run,
         rules,
-        overlay_registry,
         binary_frame,
         out,
         under_attack_events,
@@ -138,7 +136,6 @@ struct CombatStrike<'w, 'r, 'f> {
     world: &'w mut Simulation,
     run: &'w mut ReceiverRun<'f>,
     rules: &'r RuleSet,
-    overlay_registry: Option<&'w OverlayTypeRegistry>,
     /// GetFireError reads the live fog when the scenario has it.
     fog_enabled: bool,
     binary_frame: u32,
@@ -185,15 +182,14 @@ impl CombatStrike<'_, '_, '_> {
             world,
             &world.interner,
             cells.as_ref(),
-            Some(world.house_alliances.as_map()),
+            Some(&world.house_alliances),
         )?;
         Some(ask(&fire_error_world::FireSubject {
             world,
             rules: self.rules,
-            overlay_registry: self.overlay_registry,
             fog: self
                 .fog_enabled
-                .then(|| world.fog.fire_view(world.house_alliances.as_map())),
+                .then(|| world.fog.fire_view(&world.house_alliances)),
             firer,
             obj: self.obj,
             target: Some(target),
@@ -232,7 +228,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
     /// reads at `0x00415EEE`.
     fn carries_passenger(&mut self) -> bool {
         self.entity()
-            .and_then(|entity| entity.passenger_role.cargo())
+            .and_then(|entity| entity.passenger_role().cargo())
             .is_some_and(|cargo| !cargo.is_empty())
     }
 
@@ -242,7 +238,6 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             strike.world,
             strike.id,
             strike.rules,
-            strike.overlay_registry,
             strike.run.effects(),
         );
     }
@@ -262,7 +257,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
                 shot,
                 strike.binary_frame,
                 strike.out,
-                strike.overlay_registry,
+                Some(strike.rules.overlay_registry()),
                 strike.run.effects(),
             )
             .map(|bullet| (bullet, rot));
@@ -271,7 +266,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             strike.world,
             strike.run,
             strike.rules,
-            strike.overlay_registry,
+            Some(strike.rules.overlay_registry()),
             strike.out,
             strike.under_attack_events,
         );
@@ -354,14 +349,13 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
         }
     }
 
-    /// `0x0050B6F0` asks whether the owner is the local player; each human
-    /// house's map takes what its own client would. RESIDUAL: in a campaign
-    /// (GameMode 0) it also admits a `PlayerControl=` house, whose shot then
-    /// asks and maps the player's map (through RevealArea's house gate,
-    /// `0x00567AB0..0x00567B12`); VERA asks and maps that house's own.
-    fn owner_is_player(&mut self) -> bool {
-        self.entity()
-            .is_some_and(|entity| self.strike.world.owner_is_human(entity.owner()))
+    /// [`Simulation::human_player_clients`] of the owner: each human house's
+    /// map takes what its own client would, and in a campaign a
+    /// `PlayerControl=` house's shot asks the player's map too.
+    fn player_clients(&mut self) -> Vec<InternedId> {
+        self.entity().map_or_else(Vec::new, |entity| {
+            self.strike.world.human_player_clients(entity.owner())
+        })
     }
 
     fn location(&mut self) -> ProjectileCoord {
@@ -376,20 +370,17 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             })
     }
 
-    /// On the owner's map, as [`Self::owner_is_player`] reads it. A world
-    /// without a map (a fixture) has nothing to ask.
-    fn is_shrouded(&mut self, point: ProjectileCoord) -> bool {
+    /// On `client`'s map. A world without a map (a fixture) has nothing to
+    /// ask.
+    fn is_shrouded(&mut self, client: InternedId, point: ProjectileCoord) -> bool {
         let world = &*self.strike.world;
-        let (Some(owner), Some(terrain)) = (
-            self.entity().map(GameEntity::owner),
-            world.resolved_terrain.as_ref(),
-        ) else {
+        let Some(terrain) = world.resolved_terrain.as_ref() else {
             return false;
         };
         crate::sim::vision::point_is_shrouded(
             &world.fog,
             &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
-            owner,
+            client,
             crate::sim::components::DriveCoord {
                 x: point.x,
                 y: point.y,
@@ -398,10 +389,13 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
         )
     }
 
-    /// On the owner's map only: the other houses' clients do not run it.
+    /// On `client`'s map, when RevealArea's house gate
+    /// (`0x00567AB0..0x00567B12`, [`crate::sim::vision::reveal_admits`])
+    /// admits the owner there: the owner's own map, or an ally's under
+    /// `AllyReveal=`.
     /// RESIDUAL: a negative `AttackingAircraftSightRange=` indexes before
     /// RevealArea's count table natively; VERA reveals nothing. Retail is 2.
-    fn reveal_area(&mut self, final_pass: bool) {
+    fn reveal_area(&mut self, client: InternedId, final_pass: bool) {
         let strike = &mut *self.strike;
         let world = &mut *strike.world;
         let Some(entity) = world.substrate.entities.get(strike.id) else {
@@ -418,9 +412,18 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             .attacking_aircraft_sight_range
             .clamp(0, i32::from(u16::MAX)) as u16;
         let config = world.sight_reveal_config(strike.rules);
+        if !crate::sim::vision::reveal_admits(
+            &world.house_alliances,
+            owner,
+            client,
+            &config,
+            &world.interner,
+        ) {
+            return;
+        }
         let heights = world.sight_height_grid(&config);
         let _ = world.reveal_area(
-            &[owner],
+            &[client],
             (
                 location.x.div_euclid(256) as u16,
                 location.y.div_euclid(256) as u16,
@@ -430,8 +433,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             Some(&heights),
             final_pass,
             &config,
-            crate::sim::world::UninitContext::new(strike.rules, strike.overlay_registry)
-                .with_effects(strike.run.effects()),
+            crate::sim::world::UninitContext::new(strike.rules).with_effects(strike.run.effects()),
             crate::sim::vision::MapRevealProjection::Transient,
             world.session.current_house(),
         );
@@ -446,8 +448,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
         let strike = &mut *self.strike;
         strike.world.uninit_with_context(
             strike.id,
-            crate::sim::world::UninitContext::new(strike.rules, strike.overlay_registry)
-                .with_effects(strike.run.effects()),
+            crate::sim::world::UninitContext::new(strike.rules).with_effects(strike.run.effects()),
         );
     }
 }
@@ -527,7 +528,7 @@ impl StrikeHost for CombatStrike<'_, '_, '_> {
             id,
             target,
             self.rules,
-            self.overlay_registry,
+            Some(self.rules.overlay_registry()),
             self.run.effects(),
         ) {
             log::debug!("aircraft {id} target cell Scatter failed: {cause}");

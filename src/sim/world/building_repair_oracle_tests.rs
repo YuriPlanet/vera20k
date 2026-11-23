@@ -69,6 +69,64 @@ fn oracle_rules_with_sounds(root: IniFile) -> RuleSet {
     )
 }
 
+#[test]
+fn repair_click_retains_the_retail_cue_after_an_unknown_map_override() {
+    // ToggleRepair446FF0 consumes Rules+70C; its reader66AD24..66AD56
+    // retains the registered startup cue when this legal map read fails.
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+        &IniFile::from_str("[AudioVisual]\nGenericClick=UnknownRepairClick\n"),
+    ) else {
+        return;
+    };
+    let rules = fixture.rules;
+    let strength = rules.object("GAPOWR").unwrap().strength;
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Americans");
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.houses
+        .register(HouseState::new(owner, 0, None, true, 1000, 10));
+    let kind = sim.interner.intern("GAPOWR");
+    sim.substrate
+        .entities
+        .insert(GameEntity::new_at_frame_zero_for_test(
+            1,
+            12,
+            12,
+            0,
+            0,
+            owner,
+            Health::new(strength / 2),
+            kind,
+            EntityCategory::Structure,
+            0,
+            5,
+            false,
+        ));
+    for control in [RepairControl::Start, RepairControl::Stop] {
+        sim.sound_events.clear_for_test();
+        assert!(production::toggle_repair(&mut sim, &rules, 1, control));
+        let clicks: Vec<_> = sim
+            .sound_events
+            .iter()
+            .filter_map(|event| match event {
+                SimSoundEvent::VocAt {
+                    sound_id,
+                    audible_to,
+                    rx,
+                    ry,
+                    ..
+                } => {
+                    assert_eq!(*audible_to, Some([owner, owner]));
+                    assert_eq!((*rx, *ry), (12, 12));
+                    Some(sound_id.name_in(&rules))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(clicks, ["MenuClick"]);
+    }
+}
+
 fn corpus() -> &'static Value {
     crate::test_fixture::json("tools/spatial_oracle/building_repair.json")
 }
@@ -83,11 +141,11 @@ fn yes_no(value: bool) -> &'static str {
 
 /// The building's sound events as the oracle records them: `EVA_Repairing`
 /// and each `VocClass::PlayAt` with its sound index, coordinate and handle.
-fn sounds(sim: &Simulation, owner: crate::sim::intern::InternedId) -> Vec<Value> {
+fn sounds(rules: &RuleSet, sim: &Simulation, owner: crate::sim::intern::InternedId) -> Vec<Value> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::Repairing { owner: speaker } => {
+            SimSoundEvent::Repairing { owner: speaker, .. } => {
                 assert_eq!(*speaker, owner);
                 Some(json!(["eva", "EVA_Repairing", -1, -1]))
             }
@@ -103,9 +161,9 @@ fn sounds(sim: &Simulation, owner: crate::sim::intern::InternedId) -> Vec<Value>
                 assert_eq!(*audible_to, Some([owner, owner]), "the owner's player");
                 let index = SOUNDS
                     .iter()
-                    .find(|(_, name)| name == sound_id)
+                    .find(|(_, name)| *name == sound_id.name_in(rules))
                     .map(|(index, _)| *index)
-                    .unwrap_or_else(|| panic!("sound {sound_id}"));
+                    .unwrap_or_else(|| panic!("sound {}", sound_id.name_in(rules)));
                 Some(json!([
                     "play_at",
                     index,
@@ -251,7 +309,10 @@ fn toggle_repair_matches_the_original() {
             5,
             false,
         );
-        building.repairing.set_for_test(input["repairing"] == 1);
+        building
+            .building
+            .repairing
+            .set_for_test(input["repairing"] == 1);
         sim.substrate.entities.insert(building);
         let timer_before = *sim.houses[&owner].repair_latch_timer();
         let latch_before = sim.houses[&owner].repair_start_latch();
@@ -274,7 +335,15 @@ fn toggle_repair_matches_the_original() {
             "{name}"
         );
         assert_eq!(
-            u64::from(sim.substrate.entities.get(1).unwrap().repairing.is_on()),
+            u64::from(
+                sim.substrate
+                    .entities
+                    .get(1)
+                    .unwrap()
+                    .building
+                    .repairing
+                    .is_on()
+            ),
             row["repairing"].as_u64().unwrap(),
             "{name}: +0x6E8"
         );
@@ -294,7 +363,7 @@ fn toggle_repair_matches_the_original() {
         );
         let native = native_sounds(row);
         if local_player(input) {
-            assert_eq!(sounds(&sim, owner), native, "{name}: sounds");
+            assert_eq!(sounds(&rules, &sim, owner), native, "{name}: sounds");
         } else {
             assert!(native.is_empty(), "{name}: not the local player");
         }
@@ -385,14 +454,20 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
     building.lifecycle.set_in_limbo_for_test(false);
     building.set_in_playfield(true);
     building.estimated_health = EstimatedHealth::from_raw(int("estimate", health.into()));
-    building.repairing.set_for_test(flag("repairing", false));
     building
+        .building
+        .repairing
+        .set_for_test(flag("repairing", false));
+    building
+        .building
         .has_been_captured
         .set_for_test(flag("captured", false));
     building
+        .seldom
         .ai_sell_repair
         .set_ai_repairable_for_test(flag("ai_repairable", true));
     building
+        .seldom
         .ai_sell_repair
         .set_was_attacked_by_enemy_for_test(flag("attacked", false));
     building
@@ -433,6 +508,7 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .set_for_test(Some(smoke));
         smoke
@@ -474,7 +550,7 @@ fn update_repair_and_power_matches_the_original() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let owner = sim.interner.get("AI").unwrap();
         let building = sim.substrate.entities.get(1).unwrap();
@@ -483,7 +559,7 @@ fn update_repair_and_power_matches_the_original() {
             json!([
                 building.health.current(),
                 building.estimated_health.get(),
-                u8::from(building.repairing.is_on()),
+                u8::from(building.building.repairing.is_on()),
                 u8::from(building.building_art.damage_state_active()),
             ]),
             json!([
@@ -542,7 +618,7 @@ fn update_repair_and_power_matches_the_original() {
         );
         let native = native_sounds(row);
         if local_player(input) {
-            assert_eq!(sounds(&sim, owner), native, "{name}: sounds");
+            assert_eq!(sounds(&rules, &sim, owner), native, "{name}: sounds");
         } else {
             assert!(native.is_empty(), "{name}: not the local player");
         }
@@ -607,7 +683,11 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
                 .unwrap()
                 .building_art
                 .actually_placed();
-            sim.object_ai_visit_one(1, Some(&rules), super::techno_ai::ObjectAiCtx::default());
+            sim.object_ai_visit_one(
+                1,
+                Some(&rules),
+                &mut super::techno_ai::ObjectAiCtx::default(),
+            );
             let after = cursors(&sim);
             let completed = !placed_before
                 && sim
@@ -626,7 +706,7 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
             assert_eq!(
                 json!([
                     building.health.current(),
-                    u8::from(building.repairing.is_on()),
+                    u8::from(building.building.repairing.is_on()),
                     house.economy().credits(),
                     u8::from(house.repair_start_latch()),
                     [
@@ -652,7 +732,7 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
             assert_eq!(after, frame["random_indices"]["after"], "{name} {now}");
             let native = native_sounds(frame);
             if local_player(input) {
-                assert_eq!(sounds(&sim, owner), native, "{name} {now}: sounds");
+                assert_eq!(sounds(&rules, &sim, owner), native, "{name} {now}: sounds");
             } else {
                 assert!(native.is_empty(), "{name} {now}: not the local player");
             }
@@ -748,7 +828,7 @@ fn retail_repair_keys_read_as_the_oracle_writes_them() {
         HouseDifficulty::Easy,
         &rules.general,
         Default::default(),
-        true,
+        crate::rules::rule_policy::RulePolicy::stock_multiplayer(),
         0,
         0,
     );
@@ -801,21 +881,21 @@ fn the_repair_step_keeps_signed_adds_and_the_live_strength() {
             false,
         );
         building.estimated_health = EstimatedHealth::from_raw(estimate);
-        building.repairing.set_for_test(true);
+        building.building.repairing.set_for_test(true);
         sim.substrate.entities.insert(building);
         production::update_repair_and_power(
             &mut sim,
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let building = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
             (
                 building.health.current(),
                 building.estimated_health.get(),
-                building.repairing.is_on()
+                building.building.repairing.is_on()
             ),
             (expected_actual, expected_estimate, repairing),
             "strength={strength} actual={actual}"
@@ -851,7 +931,7 @@ fn a_sale_s_first_visit_stops_the_repair() {
             .strength;
         let entity = s.sim.substrate.entities.get_mut(building).unwrap();
         entity.health.set_for_test(strength / 2);
-        entity.repairing.set_for_test(repairing);
+        entity.building.repairing.set_for_test(repairing);
         let sale_order = crate::sim::command::CommandEnvelope::new(
             s.sim.substrate.entities.get(building).unwrap().owner(),
             s.sim.session.tick() + 1,
@@ -880,12 +960,12 @@ fn a_sale_s_first_visit_stops_the_repair() {
                 .sound_events
                 .iter()
                 .filter(|event| {
-                    matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == SOUNDS[0].1)
+                    matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&s.rules) == SOUNDS[0].1)
                 })
                 .count();
             frames.push((
                 entity.mission.handler_state(),
-                entity.repairing.is_on(),
+                entity.building.repairing.is_on(),
                 clicks,
             ));
         }
@@ -901,4 +981,117 @@ fn a_sale_s_first_visit_stops_the_repair() {
             "repairing {repairing}: the first visit"
         );
     }
+}
+
+/// Ares 3.0 10014630 (hook 0x4509B4): with `[General]
+/// RepairStopOnInsufficientFunds=no` a human player's broke repair stays on
+/// and heals nothing; a computer house's stops as in stock.
+#[test]
+fn ares_broke_human_repair_stays_on_without_repair_stop() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    for (human, repairing) in [(true, true), (false, false)] {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nRepairStep=4\nRepairStopOnInsufficientFunds=no\n[InfantryTypes]\n\
+             [VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n0=GAPOWR\n\
+             [GAPOWR]\nStrength=1000\nCost=800\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .register(HouseState::new(owner, 0, None, human, 0, 10));
+        let kind = sim.interner.intern("GAPOWR");
+        let mut building = GameEntity::new_at_frame_zero_for_test(
+            1,
+            10,
+            10,
+            0,
+            0,
+            owner,
+            Health::new(500),
+            kind,
+            EntityCategory::Structure,
+            0,
+            5,
+            false,
+        );
+        building.building.repairing.set_for_test(true);
+        sim.substrate.entities.insert(building);
+        production::update_repair_and_power(
+            &mut sim,
+            &rules,
+            1,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        let building = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(
+            (
+                building.health.current(),
+                building.building.repairing.is_on()
+            ),
+            (500, repairing),
+            "human={human}"
+        );
+    }
+}
+
+/// VERA Auto Repair asks which of a house's buildings want the Repair order
+/// ([`production::buildings_wanting_repair`]).
+#[test]
+fn buildings_wanting_repair_are_the_damaged_idle_ones_the_owner_can_pay_for() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = fixture.rules;
+    let strength = rules.object("GAPOWR").unwrap().strength;
+    let wanting = |credits: i32| {
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        let other = sim.interner.intern("Russians");
+        sim.houses
+            .register(HouseState::new(owner, 0, None, true, credits, 10));
+        sim.houses
+            .register(HouseState::new(other, 0, None, true, 1000, 10));
+        let kind = sim.interner.intern("GAPOWR");
+        // 1 damaged, 2 whole, 3 damaged and repairing, 4 another house's.
+        for (id, house, health) in [
+            (1, owner, strength / 2),
+            (2, owner, strength),
+            (3, owner, strength / 2),
+            (4, other, strength / 2),
+        ] {
+            sim.substrate
+                .entities
+                .insert(GameEntity::new_at_frame_zero_for_test(
+                    id,
+                    12 + id as u16 * 4,
+                    12,
+                    0,
+                    0,
+                    house,
+                    Health::new(health),
+                    kind,
+                    EntityCategory::Structure,
+                    0,
+                    5,
+                    false,
+                ));
+        }
+        sim.substrate
+            .entities
+            .get_mut(3)
+            .unwrap()
+            .building
+            .repairing
+            .set_for_test(true);
+        production::buildings_wanting_repair(&sim, &rules, owner)
+    };
+    assert_eq!(wanting(1000), [1]);
+    // A house that cannot pay one step gets none: the step would stop it.
+    assert!(wanting(0).is_empty());
+    // Building 3's running repair pays its step first; 1 needs a second.
+    let step = production::repair_step_cost(&rules, rules.object("GAPOWR").unwrap());
+    assert!(wanting(2 * step - 1).is_empty());
+    assert_eq!(wanting(2 * step), [1]);
 }

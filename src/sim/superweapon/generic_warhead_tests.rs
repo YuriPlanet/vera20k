@@ -4,9 +4,11 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
-use crate::rules::superweapon_type::{GenericWarheadAiTargeting, SuperWeaponKind};
+use crate::rules::superweapon_targeting::AiTargetingMode;
+use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::command::Command;
 use crate::sim::superweapon::SuperWeaponInstance;
+use crate::sim::world::SimSoundEvent;
 
 const RULES: &str = "\
 [SuperWeaponTypes]
@@ -34,6 +36,284 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 ";
 const ART: &str = "[LAUNCHER]\nFoundation=1x1\n[TARGET]\nFoundation=1x1\n";
 
+fn common_presentation_layers(visibility: &str) -> RulesLayerStack {
+    let mut base = crate::sim::arena_fixture::clear_ground_ini(RULES);
+    base.merge(&IniFile::from_str(&format!(
+        "[Animations]\n0=INVOKE\n[Strike]\nSW.Animation=INVOKE\nSW.AnimationHeight=-9\n\
+         SW.AnimationVisibility={visibility}\nSW.Sound=Launch\n"
+    )));
+    RulesLayerStack::new(base)
+}
+
+fn common_presentation_rules(layers: &RulesLayerStack) -> RuleSet {
+    let art = IniFile::from_str(&format!("{ART}[INVOKE]\nEnd=4\nRate=1\n"));
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=Launch\n[Launch]\nSounds=launch\n",
+    ));
+    rules.bind_type_sound_references(processed.ini(), &sounds);
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    art.bind_anim_frame_count_for_test("INVOKE", 4);
+    rules.install_art_data(art);
+    rules
+}
+
+#[test]
+fn ares_common_launch_constructs_hidden_anim_and_sound_only_on_admitted_fire() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = common_presentation_rules(&common_presentation_layers("none"));
+    assert!(
+        crate::rules::effect_asset_catalog::anim_class_roots(&rules)
+            .iter()
+            .any(|name| name == "INVOKE")
+    );
+    let (mut sim, rules, owner, typ, _) = fixture_with_rules(rules, "Russians");
+    let ground = crate::sim::superweapon::deck_coords(&sim, (15, 15));
+    assert!(fire(&mut sim, &rules, owner, typ, (15, 15)));
+    let animations: Vec<_> = sim
+        .anims()
+        .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "INVOKE")
+        .collect();
+    assert_eq!(animations.len(), 1);
+    let anim = animations[0].1;
+    assert_eq!(
+        anim.world_coord(),
+        crate::sim::anim_class::AnimWorldCoord {
+            x: ground[0],
+            y: ground[1],
+            z: ground[2] - 9,
+        }
+    );
+    assert!(anim.hidden_for(Some(owner)) && anim.hidden_for(None));
+    let launch_sounds = || {
+        sim.sound_events.as_slice().iter().filter(|event| {
+        matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id.name_in(&rules) == "Launch")
+    }).count()
+    };
+    assert_eq!(launch_sounds(), 1);
+    assert!(sim.sound_events.as_slice().iter().any(|event| {
+        matches!(event, SimSoundEvent::VocAtCoord { sound_id, coordinate, flags: 0 }
+            if sound_id.name_in(&rules) == "Launch" && coordinate.x == ground[0]
+                && coordinate.y == ground[1] && coordinate.z == ground[2] - 9)
+    }));
+    let count = sim.anims().count();
+    assert!(!fire(&mut sim, &rules, owner, typ, (15, 15)));
+    assert_eq!(sim.anims().count(), count);
+    assert_eq!(
+        sim.sound_events
+            .as_slice()
+            .iter()
+            .filter(|event| {
+                matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id.name_in(&rules) == "Launch")
+            })
+            .count(),
+        1
+    );
+}
+
+/// SWTypeExt::LoadFromINI 0x1003362B..0x1003367D through readers 0x10034430
+/// and 0x100341D0: a donor alias or a spaced token fails the whole read and
+/// keeps the earlier layer's mask; unset AI masks use the Offensive row.
+#[test]
+fn ares_target_masks_keep_prior_layers_on_native_parse_failures() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    use crate::rules::superweapon_targeting::{HouseMask, TargetMask, TargetRequirements};
+    let mut layers = common_presentation_layers("all");
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str(
+            "[Strike]\nSW.RequiresTarget=buildings\nSW.RequiresHouse=enemies\n\
+             SW.AIRequiresTarget=aircraft\n",
+        ),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.RequiresTarget=units, buildings\nSW.RequiresHouse=self\n"),
+    );
+    let targeting = |layers: &RulesLayerStack| {
+        common_presentation_rules(layers)
+            .super_weapon_target_policy("Strike")
+            .unwrap()
+    };
+    let retained = targeting(&layers);
+    assert_eq!(
+        (retained.manual(), retained.automatic()),
+        (
+            TargetRequirements {
+                target: TargetMask::BUILDING,
+                house: HouseMask::ENEMIES,
+            },
+            TargetRequirements {
+                target: TargetMask::ALL_TECHNOS,
+                house: HouseMask::ENEMIES,
+            },
+        )
+    );
+
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.RequiresTarget=,\nSW.AIRequiresHouse=OWNER\n"),
+    );
+    let replaced = targeting(&layers);
+    assert_eq!(replaced.manual().target, TargetMask::NONE);
+    assert_eq!(replaced.automatic().house, HouseMask::OWNER);
+}
+
+/// LoadFromINIFile 0x10033250 runs GenericWarhead's Initialize (0x10071860,
+/// Offensive) on a type's first rules pass only, so `Late` keeps
+/// PsychicReveal's ParaDrop (10075336); reader 0x10034350 keeps the prior
+/// mode for a name outside its table.
+#[test]
+fn ares_ai_targeting_initializes_once_and_keeps_prior_layers_on_unknown_names() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let mut layers = common_presentation_layers("all");
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str(
+            "[SuperWeaponTypes]\n1=Late\n[Late]\nType=PsychicReveal\n\
+             [Strike]\nSW.AITargeting=Bogus\n",
+        ),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Late]\nType=GenericWarhead\n"),
+    );
+    let mode = |layers: &RulesLayerStack, id| {
+        common_presentation_rules(layers)
+            .super_weapon_target_policy(id)
+            .unwrap()
+            .mode()
+    };
+    assert_eq!(mode(&layers, "Strike"), AiTargetingMode::Offensive);
+    assert_eq!(mode(&layers, "Late"), AiTargetingMode::ParaDrop);
+
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.AITargeting=NONE\n[Late]\nSW.AITargeting=offensive\n"),
+    );
+    assert_eq!(mode(&layers, "Strike"), AiTargetingMode::None);
+    assert_eq!(mode(&layers, "Late"), AiTargetingMode::Offensive);
+}
+
+#[test]
+fn ares_common_launch_reader_retains_unknowns_and_honors_explicit_none() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let mut layers = common_presentation_layers("team");
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str(
+            "[SuperWeaponTypes]\n1=Delivery\n[Delivery]\nType=UnitDelivery\nSW.ActivationSound=Launch\n",
+        ),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[Strike]\nSW.Animation=UnknownAnim\nSW.Sound=UnknownSound\n\
+         SW.AnimationHeight=invalid\nSW.AnimationVisibility=owner+enemies\n",
+        ),
+    );
+    let retained = common_presentation_rules(&layers);
+    let p = &retained.super_weapon("Strike").unwrap().presentation;
+    assert_eq!(
+        p.animation.as_ref().and_then(|x| x.as_deref()),
+        Some("INVOKE")
+    );
+    assert_eq!(p.sound.as_ref().and_then(|x| x.as_deref()), Some("Launch"));
+    assert_eq!(
+        retained
+            .super_weapon("Delivery")
+            .unwrap()
+            .unit_delivery
+            .as_ref()
+            .unwrap()
+            .activation_sound
+            .as_deref(),
+        Some("Launch"),
+    );
+    assert_eq!(p.height, -9);
+    assert_eq!(
+        p.visibility,
+        crate::rules::superweapon_targeting::HouseMask::TEAM
+    );
+    assert!(!retained.anim_type_names.contains("UNKNOWNANIM"));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[Strike]\nSW.Animation=none\nSW.Sound=none\nSW.AnimationVisibility=trump\n",
+        ),
+    );
+    let mut cleared = common_presentation_rules(&layers);
+    let p = &cleared.super_weapon("Strike").unwrap().presentation;
+    assert_eq!(p.animation, Some(None));
+    assert_eq!(p.sound, Some(None));
+    assert_ne!(
+        retained.simulation_config_hash(),
+        cleared.simulation_config_hash()
+    );
+    // NullableIdx tries the fixed sound catalog before recognizing none.
+    let named_none = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=none\n[none]\nVolume=100\n",
+    ));
+    cleared.bind_type_sound_references(
+        &IniFile::from_str("[Strike]\nSW.Sound=none\n[Delivery]\nSW.ActivationSound=none\n"),
+        &named_none,
+    );
+    assert_eq!(
+        cleared.super_weapon("Strike").unwrap().presentation.sound,
+        Some(Some("none".to_owned())),
+    );
+    assert_eq!(
+        cleared
+            .super_weapon("Delivery")
+            .unwrap()
+            .unit_delivery
+            .as_ref()
+            .unwrap()
+            .activation_sound
+            .as_deref(),
+        Some("none"),
+    );
+}
+
+#[test]
+fn ares_common_launch_visibility_snapshots_alliances_and_uniform_writes_replace_it() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = common_presentation_rules(&common_presentation_layers("team"));
+    let (mut sim, rules, owner, typ, _) = fixture_with_rules(rules, "Russians");
+    let enemy = sim.interner.get("Americans").unwrap();
+    let ally = sim.interner.intern("ViewerAlly");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            ally, 0, None, false, 0, 10,
+        ));
+    sim.house_alliances_mut_for_test().insert(
+        "RUSSIANS".to_owned(),
+        std::collections::BTreeSet::from(["VIEWERALLY".to_owned()]),
+    );
+    assert!(fire(&mut sim, &rules, owner, typ, (15, 15)));
+    let id = sim
+        .anims()
+        .find(|(_, anim)| sim.interner.resolve(anim.type_id()) == "INVOKE")
+        .map(|(id, _)| *id)
+        .unwrap();
+    let anim = sim.anim(id).unwrap();
+    assert!(!anim.hidden_for(Some(owner)) && !anim.hidden_for(Some(ally)));
+    assert!(anim.hidden_for(Some(enemy)) && anim.hidden_for(None));
+    let bytes = crate::util::save_codec::serialize(anim).unwrap();
+    let saved: crate::sim::anim_class::AnimObject =
+        crate::util::save_codec::deserialize(&bytes).unwrap();
+    assert!(!saved.hidden_for(Some(ally)) && saved.hidden_for(Some(enemy)));
+    sim.house_alliances_mut_for_test().clear();
+    assert!(
+        !sim.anim(id).unwrap().hidden_for(Some(ally)),
+        "visibility is a spawn-time snapshot"
+    );
+    assert!(sim.substrate.set_anim_hidden(id, false));
+    assert!(!sim.anim(id).unwrap().hidden_for(Some(enemy)));
+    assert!(!sim.anim(id).unwrap().hidden_for(None));
+}
+
 fn rules(extra: &str) -> RuleSet {
     let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
     ini.merge(&IniFile::from_str(extra));
@@ -42,6 +322,13 @@ fn rules(extra: &str) -> RuleSet {
 
 fn fixture(extra: &str, owner_name: &str) -> (Simulation, RuleSet, InternedId, InternedId, u64) {
     let rules = rules(extra);
+    fixture_with_rules(rules, owner_name)
+}
+
+fn fixture_with_rules(
+    rules: RuleSet,
+    owner_name: &str,
+) -> (Simulation, RuleSet, InternedId, InternedId, u64) {
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -74,6 +361,7 @@ fn fire(
 ) -> bool {
     let owner_name = sim.interner.resolve(owner).to_owned();
     sim.apply_command_with_overlays(
+        None,
         &owner_name,
         &Command::LaunchSuperWeapon {
             sw_type_id: sw_type,
@@ -82,12 +370,120 @@ fn fire(
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
 #[test]
+fn designation_requires_own_unit_and_includes_the_range_boundary() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    use crate::rules::superweapon_targeting::TargetReject;
+    let (mut sim, rules, owner, sw, _) = fixture(
+        "[VehicleTypes]\n0=SCOUT\n[SCOUT]\nStrength=100\nSight=7\nDesignatorRange=3\n\
+         [Strike]\nSW.Designators=SCOUT\n",
+        "Russians",
+    );
+    sim.house_alliances_mut_for_test()
+        .insert("RUSSIANS".into(), ["AMERICANS".into()].into());
+    sim.spawn_object_at_height("SCOUT", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let before = sim.state_hash();
+    assert_eq!(
+        sim.super_weapon_target_check(&rules, owner, sw, (13, 10), false),
+        Err(TargetReject::NoEligibleDesignator),
+        "an ally cannot designate"
+    );
+    assert!(!fire(&mut sim, &rules, owner, sw, (13, 10)));
+    assert_eq!(
+        sim.state_hash(),
+        before,
+        "refusal consumes neither charge nor RNG"
+    );
+    sim.spawn_object_at_height("SCOUT", "Russians", 10, 11, 0, 0, &rules)
+        .unwrap();
+    assert_eq!(
+        sim.super_weapon_target_check(&rules, owner, sw, (13, 11), false),
+        Ok(())
+    );
+    assert_eq!(
+        sim.super_weapon_target_check(&rules, owner, sw, (14, 11), false),
+        Err(TargetReject::NoEligibleDesignator)
+    );
+    assert!(fire(&mut sim, &rules, owner, sw, (13, 11)));
+    assert!(!sim.super_weapons[&owner][&sw].is_ready());
+}
+
+#[test]
+fn hostile_building_inhibits_only_while_powered_and_within_range() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    use crate::rules::superweapon_targeting::TargetReject;
+    use crate::sim::power_system::PowerState;
+    let (mut sim, rules, owner, sw, target) = fixture(
+        "[Strike]\nSW.Inhibitors=TARGET\n[TARGET]\nInhibitorRange=2\nPowered=yes\nPower=-10\n",
+        "Russians",
+    );
+    let enemy = sim.interner.get("Americans").unwrap();
+    let mut power = PowerState::default();
+    power.set_total_output_for_test(100);
+    power.set_total_drain_for_test(10);
+    sim.power_states.map_mut_for_test().insert(enemy, power);
+    assert_eq!(sim.building_operational_state(target, &rules), Some(true));
+    assert_eq!(
+        sim.super_weapon_target_check(&rules, owner, sw, (17, 15), false),
+        Err(TargetReject::InhibitorInRange)
+    );
+    assert_eq!(
+        sim.super_weapon_target_check(&rules, owner, sw, (18, 15), false),
+        Ok(())
+    );
+    assert!(!fire(&mut sim, &rules, owner, sw, (17, 15)));
+    assert!(sim.super_weapons[&owner][&sw].is_ready());
+    sim.power_states
+        .get_mut(&enemy)
+        .unwrap()
+        .set_total_output_for_test(0);
+    assert_eq!(sim.building_operational_state(target, &rules), Some(false));
+    assert_eq!(
+        sim.super_weapon_target_check(&rules, owner, sw, (15, 15), true),
+        Ok(())
+    );
+    assert!(fire(&mut sim, &rules, owner, sw, (17, 15)));
+}
+
+#[test]
+fn designation_rules_retain_nullable_ranges_across_invalid_later_reads() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let mut layers = RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(
+        "[VehicleTypes]\n0=SCOUT\n[SCOUT]\nStrength=100\nDesignatorRange=3\nInhibitorRange=0\n\
+         [SuperWeaponTypes]\n0=Strike\n[Strike]\nType=GenericWarhead\n\
+         SW.Designators=scout,UNKNOWN\nSW.AnyInhibitor=yes\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[SCOUT]\nDesignatorRange=invalid\nInhibitorRange=invalid\n\
+         [Strike]\nSW.AnyInhibitor=?invalid\n",
+        ),
+    );
+    let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
+    let scout = rules.object("SCOUT").unwrap();
+    assert_eq!(
+        (scout.designator_range(), scout.inhibitor_range()),
+        (Some(3), Some(0))
+    );
+    let influence = rules.super_weapon_metadata("Strike").unwrap().influence();
+    assert_eq!(influence.designators.len(), 1);
+    assert_eq!(influence.designators[0].id, "SCOUT");
+    assert_eq!(
+        influence.designators[0].category,
+        crate::rules::object_type::ObjectCategory::Vehicle
+    );
+    assert!(influence.any_inhibitor);
+}
+
+#[test]
 fn ares_generic_warhead_binds_unlisted_payload_and_preserves_layered_references() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     // No [Warheads] list or WeaponType references Payload: the SW must allocate it.
     let base = IniFile::from_str(RULES);
     let mut layers = RulesLayerStack::new(base);
@@ -102,7 +498,10 @@ fn ares_generic_warhead_binds_unlisted_payload_and_preserves_layered_references(
     assert_eq!(sw.action.as_deref(), Some("Attack"));
     assert_eq!(settings.warhead.as_deref(), Some("Payload"));
     assert_eq!(settings.damage, 40);
-    assert_eq!(settings.ai_targeting, GenericWarheadAiTargeting::Offensive);
+    assert_eq!(
+        parsed.super_weapon_target_policy("Strike").unwrap().mode(),
+        AiTargetingMode::Offensive
+    );
     assert!(parsed.warhead("Payload").is_some());
 
     layers.push(
@@ -128,6 +527,7 @@ fn ares_generic_warhead_binds_unlisted_payload_and_preserves_layered_references(
 
 #[test]
 fn ares_generic_warhead_command_applies_area_damage_and_consumes_charge_once() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, target) = fixture("", "Russians");
     let far = sim
         .spawn_object_at_height("TARGET", "Americans", 25, 25, 0, 0, &rules)
@@ -148,6 +548,7 @@ fn ares_generic_warhead_command_applies_area_damage_and_consumes_charge_once() {
 
 #[test]
 fn ares_generic_warhead_source_obeys_damage_self() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for damage_self in [false, true] {
         let extra = format!(
             "[LAUNCHER]\nDamageSelf={}\n",
@@ -165,6 +566,7 @@ fn ares_generic_warhead_source_obeys_damage_self() {
 
 #[test]
 fn generic_warhead_source_destruction_keeps_single_charge_cleanup() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for one_time in [false, true] {
         let (mut sim, rules, owner, sw_type, _) = fixture(
             "[Strike]\nSW.Damage=250\n[LAUNCHER]\nDamageSelf=yes\n",
@@ -204,6 +606,7 @@ fn generic_warhead_source_destruction_keeps_single_charge_cleanup() {
 
 #[test]
 fn ares_generic_warhead_ai_offensive_and_none_use_normal_firing() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for mode in ["Offensive", "None"] {
         let (mut sim, rules, owner, sw_type, target) =
             fixture(&format!("[Strike]\nSW.AITargeting={mode}\n"), "Russians");
@@ -217,7 +620,7 @@ fn ares_generic_warhead_ai_offensive_and_none_use_normal_firing() {
             &rules,
             owner,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             sim.entities().get(target).unwrap().health.current(),
@@ -231,12 +634,12 @@ fn ares_generic_warhead_ai_offensive_and_none_use_normal_firing() {
 // and RangeGate_UsesLiveSpecificLauncherWithInclusiveBoundaries in ra2-mono.
 #[test]
 fn mono_invalid_preflight_preserves_charge_health_and_observable_effects() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     for extra in [
         "[Strike]\nSW.RequiresTarget=water\n",
         "[Strike]\nSW.RequiresHouse=owner\n",
         "[Strike]\nSW.RangeMaximum=2\n",
         "[Strike]\nSW.RangeMinimum=9\nSW.RangeMaximum=2\n",
-        "[Strike]\nSW.RequiresTarget=future-content-mask\n",
     ] {
         let (mut sim, rules, owner, sw_type, target) = fixture(extra, "Russians");
         let before = sim.state_hash();
@@ -257,6 +660,7 @@ fn mono_invalid_preflight_preserves_charge_health_and_observable_effects() {
 
 #[test]
 fn generic_warhead_range_requires_the_existing_provider_prerequisites() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     use crate::rules::superweapon_targeting::TargetReject;
 
     let (mut sim, rules, owner, sw_type, _) = fixture(
@@ -290,6 +694,7 @@ fn generic_warhead_range_requires_the_existing_provider_prerequisites() {
 
 #[test]
 fn mono_range_gate_uses_second_live_launcher_at_inclusive_boundary() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, target) = fixture(
         "[Strike]\nSW.RangeMinimum=5\nSW.RangeMaximum=5\n",
         "Russians",
@@ -303,6 +708,7 @@ fn mono_range_gate_uses_second_live_launcher_at_inclusive_boundary() {
 
 #[test]
 fn mono_player_and_ai_queries_keep_independent_requirements() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, target) = fixture(
         "[Strike]\nSW.RequiresHouse=owner\nSW.AIRequiresHouse=enemies\nSW.AIRequiresTarget=buildings\n",
         "Russians",
@@ -322,7 +728,7 @@ fn mono_player_and_ai_queries_keep_independent_requirements() {
         &rules,
         owner,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 125);
     assert!(!sim.super_weapons[&owner][&sw_type].is_ready);
@@ -330,6 +736,7 @@ fn mono_player_and_ai_queries_keep_independent_requirements() {
 
 #[test]
 fn mono_fire_into_shroud_allows_explored_fog_but_not_never_explored_cell() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, target) =
         fixture("[Strike]\nSW.FireIntoShroud=no\n", "Russians");
     sim.fog = crate::sim::vision::FogState::new(32, 32);
@@ -344,6 +751,7 @@ fn mono_fire_into_shroud_allows_explored_fog_but_not_never_explored_cell() {
 // VERA has no AttachEffect receiver, so this scene observes ordinary HP damage.
 #[test]
 fn mono_generic_warhead_target_gate_does_not_override_payload_house_filter() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, enemy) = fixture(
         "[Strike]\nSW.AffectsHouse=none\nSW.RequiresHouse=enemies\n[Payload]\nAffectsAllies=no\n",
         "Russians",
@@ -358,6 +766,7 @@ fn mono_generic_warhead_target_gate_does_not_override_payload_house_filter() {
 
 #[test]
 fn ares_generic_warhead_one_time_consumption_survives_snapshot() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner, sw_type, _) = fixture("", "Russians");
     sim.super_weapons
         .map_mut_for_test()
@@ -387,6 +796,7 @@ fn ares_generic_warhead_one_time_consumption_survives_snapshot() {
 /// grant invalidation, and the unavailable building-Anim fallback.
 #[test]
 fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallback_body() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, mut rules, owner, typ, target) = fixture("[Strike]\nSW.Shots=2\n", "Russians");
     let native = crate::test_fixture::json("tools/rules_oracle/ares_super_anims.json");
     let rows = native["availability_history"].as_array().unwrap();
@@ -398,7 +808,7 @@ fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallba
         rows[7]["counter"]["count"].as_i64().unwrap()
     );
     assert_eq!(
-        first.ares_last_launch_frame.unwrap() as i64,
+        first.ares_charge_origin_frame.unwrap() as i64,
         rows[7]["counter"]["last_frame"].as_i64().unwrap()
     );
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 125);
@@ -458,7 +868,7 @@ fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallba
         rows[8]["counter"]["count"].as_i64().unwrap()
     );
     assert_eq!(
-        second.ares_last_launch_frame.unwrap() as i64,
+        second.ares_charge_origin_frame.unwrap() as i64,
         rows[8]["counter"]["last_frame"].as_i64().unwrap()
     );
     assert!(restored.houses[&owner].tech_recheck_pending());

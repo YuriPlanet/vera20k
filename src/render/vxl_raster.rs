@@ -33,9 +33,10 @@ mod native;
 #[path = "vxl_shadow.rs"]
 pub(crate) mod shadow;
 
-pub(crate) use native::PreparedDraw;
+pub(crate) use native::{NativeRaster, PreparedDraw, RasterParams, section_voxels};
 
-/// Shared ordinary VXL preparation for CPU and GPU visibility writes. Preview
+/// Shared ordinary VXL preparation for CPU and GPU visibility writes, on the
+/// shared `depth` map when depth-tested (None draws on a clear one). Preview
 /// magnification and constructed models without encoded spans keep their
 /// explicitly separate legacy renderer.
 pub(crate) fn prepare_native_draw(
@@ -43,9 +44,13 @@ pub(crate) fn prepare_native_draw(
     hva: Option<&HvaFile>,
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
+    depth: Option<&mut DepthMap>,
 ) -> Option<PreparedDraw> {
-    native::prepare_draw(vxl, hva, params, vpl)
+    native::prepare_draw(vxl, hva, params, vpl, depth)
 }
+
+/// The renderer's 256-square depth map (`0xB1D5E0`), one byte a pixel.
+pub type DepthMap = [u8; 65536];
 
 /// Number of distinct orientations a voxel body/turret/barrel can render at.
 ///
@@ -230,6 +235,12 @@ fn voxel_jumpjet_tilt_locomotor_matrix(step: u8, angles: [f32; 2], half_sizes: [
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GroundPose {
     pub angles: [f32; 2],
+    /// A Tunnel's dig tilt in radians, replacing `angles` for the body matrix:
+    /// `TunnelLocomotionClass::Draw_Matrix @ 0x00729B40` rotates the facing
+    /// matrix by Y alone, with none of the Drive/Ship support offsets. The
+    /// body therefore pivots at its own origin and sinks, which is why the
+    /// tunnel arm cannot share [`crate::map::voxel_pose::ground_locomotor_matrix`].
+    pub tunnel_tilt: Option<f32>,
     pub body_facing: u8,
     pub slope_blend: Option<VxlSlopeBlend>,
     pub turret_offset: i32,
@@ -245,23 +256,29 @@ pub(crate) fn ground_unit_pose_matrices(
     turret_facing: u8,
     barrel_pitch: i8,
 ) -> [Mat4; 3] {
-    let body = ground_locomotor_matrix(
-        slope_type,
-        pose.slope_blend,
-        voxel_facing_step(pose.body_facing),
-        pose.angles,
-        half_sizes,
-    );
-    let translated = affine::translate(body, &[turret_offset_units(pose.turret_offset)]);
+    let body = match pose.tunnel_tilt {
+        Some(angle) => crate::map::voxel_pose::tunnel_locomotor_matrix(
+            voxel_facing_step(pose.body_facing),
+            angle,
+        ),
+        None => ground_locomotor_matrix(
+            slope_type,
+            pose.slope_blend,
+            voxel_facing_step(pose.body_facing),
+            pose.angles,
+            half_sizes,
+        ),
+    };
+    let translated = affine::translate_axis(body, 0, turret_offset_units(pose.turret_offset));
     let relative = i32::from(voxel_facing_step(turret_facing))
         - i32::from(voxel_facing_step(pose.body_facing));
     let (sin, cos) = crate::util::native_trig::native_sin_cos_by_step(relative)
         .expect("relative five-bit facing fits table");
     let turret = affine::rotate_z(translated, sin, cos);
     let pivot = turret.w_axis.truncate();
-    let barrel = affine::translate(turret, &(-pivot).to_array());
+    let barrel = affine::translate(turret, (-pivot).to_array());
     let barrel = voxel_barrel_pitch(barrel, barrel_pitch);
-    let barrel = affine::translate(barrel, &pivot.to_array());
+    let barrel = affine::translate(barrel, pivot.to_array());
     [body, turret, barrel].map(|matrix| {
         affine::matrix_product(voxel_camera_view(), matrix).expect("finite ground draw matrix")
     })
@@ -555,7 +572,7 @@ pub fn building_gun_screen_offsets(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 #[path = "vxl_building_tests.rs"]
 mod building_tests;
 
@@ -572,6 +589,10 @@ const FP_SCALE: f32 = (1 << FP_SHIFT) as f32; // 65536.0
 pub struct VxlRenderParams {
     /// HVA animation frame index (0-based). Use 0 for idle pose.
     pub frame: u32,
+    /// One physical VXL section, or every section. VoxelAnim DrawIt749DCE
+    /// submits its signed VoxelIndex to7540F0; ordinary Techno draws submit
+    /// all sections. This does not change the first-section lighting owner.
+    pub section: Option<usize>,
     /// Facing angle: 0–255 maps to 0–360° (RA2 convention).
     pub facing: u8,
     /// Terrain slope type (0–16). 0 = flat, 1-4 = edge ramps (full-edge tilt),
@@ -629,6 +650,7 @@ impl Default for VxlRenderParams {
         );
         Self {
             frame: 0,
+            section: None,
             facing: 0,
             slope_type: 0,
             slope_blend: None,
@@ -641,6 +663,19 @@ impl Default for VxlRenderParams {
             diffuse: 0.4,
             light_dir,
         }
+    }
+}
+
+/// Shared selection for geometry, native paint and preview fallback. Keep
+/// original indices: HVA transforms and GPU limb identities index the source
+/// file, even when a draw submits only one section.
+fn section_indices(vxl: &VxlFile, section: Option<usize>) -> Option<std::ops::Range<usize>> {
+    match section {
+        Some(index) => {
+            vxl.limbs.get(index)?;
+            Some(index..index + 1)
+        }
+        None => Some(0..vxl.limbs.len()),
     }
 }
 
@@ -799,7 +834,7 @@ pub struct SpriteBounds {
 
 /// Native VXL destination rectangle relative to the part's draw anchor.
 /// `VXL_Submit_BoundingBox 0x7540F0` transforms the full tailer min/max
-/// extents (grid 0..size), unions all limbs, and `0x754510` pads that one
+/// extents (grid 0..size), unions the submitted limbs, and `0x754510` pads that one
 /// union. This is intentionally independent of atlas voxel-center storage
 /// bounds, SPRITE_MARGIN, splat footprint and zero/nonzero palette pixels.
 ///
@@ -813,15 +848,27 @@ pub fn native_vxl_draw_bounds(
     params: &VxlRenderParams,
 ) -> Option<[i32; 4]> {
     let draw_matrix = voxel_params_draw_rotation(params, voxel_facing_step(params.facing));
-    if params.scale == 1.0 && vxl.limbs.iter().all(|limb| limb.native_spans.is_some()) {
-        let geometry =
-            native::prepare_geometry(vxl, hva, params.frame, draw_matrix, params.use_buffer)?;
+    let indices = section_indices(vxl, params.section)?;
+    if params.scale == 1.0
+        && indices
+            .clone()
+            .all(|index| vxl.limbs[index].native_spans.is_some())
+    {
+        let geometry = native::prepare_geometry(
+            vxl,
+            hva,
+            params.frame,
+            draw_matrix,
+            params.use_buffer,
+            params.section,
+        )?;
         let [x, y, _, _, width, height] = geometry.rect;
         return Some([x, y, width, height]);
     }
     let mut minimum = [f32::INFINITY; 2];
     let mut maximum = [f32::NEG_INFINITY; 2];
-    for (limb_index, limb) in vxl.limbs.iter().enumerate() {
+    for limb_index in indices {
+        let limb = &vxl.limbs[limb_index];
         if limb.size_x == 0 || limb.size_y == 0 || limb.size_z == 0 {
             return None;
         }
@@ -884,35 +931,6 @@ pub fn native_draw_bounds_from_extents(minimum: [f32; 2], maximum: [f32; 2]) -> 
     Some(result)
 }
 
-/// Ordered dirty-rectangle update from cached VXL blit 0x70755D..0x707678.
-/// Rectangles are x/y/width/height in one shared pixel coordinate frame.
-/// Expanding a maximum edge adds one; expanding only a minimum edge does
-/// not. An empty accumulator is replaced. This is not a normal AABB union.
-pub fn union_native_voxel_draw_bounds(accumulated: &mut Option<[i32; 4]>, next: [i32; 4]) {
-    let Some(mut current) = *accumulated else {
-        *accumulated = Some(next);
-        return;
-    };
-    if current[2] <= 0 || current[3] <= 0 {
-        *accumulated = Some(next);
-        return;
-    }
-    if next[2] <= 0 || next[3] <= 0 {
-        return;
-    }
-    for axis in 0..2 {
-        if next[axis] < current[axis] {
-            current[axis + 2] += current[axis] - next[axis];
-            current[axis] = next[axis];
-        }
-        let next_end = next[axis] + next[axis + 2];
-        if next_end > current[axis] + current[axis + 2] {
-            current[axis + 2] = next_end - current[axis] + 1;
-        }
-    }
-    *accumulated = Some(current);
-}
-
 /// Precompute per-limb transforms, voxel grids, lighting pages, and footprints.
 ///
 /// This is Phase 1 of the VXL render pipeline. It builds the combined
@@ -924,6 +942,9 @@ pub fn prepare_limb_data(
     hva: Option<&HvaFile>,
     params: &VxlRenderParams,
 ) -> (Vec<LimbRenderData>, f32) {
+    let Some(indices) = section_indices(vxl, params.section) else {
+        return (Vec::new(), 1.0);
+    };
     // Facing is quantized to 32 steps before the rotation matrix is built, so
     // every voxel body, turret and barrel renders at exactly 1 of 32 orientations.
     let facing_step: u8 = voxel_facing_step(params.facing);
@@ -954,7 +975,8 @@ pub fn prepare_limb_data(
     let mut limb_data: Vec<LimbRenderData> = Vec::new();
     let mut max_footprint: f32 = 1.0;
 
-    for (limb_idx, limb) in vxl.limbs.iter().enumerate() {
+    for limb_idx in indices {
+        let limb = &vxl.limbs[limb_idx];
         if limb.voxels.is_empty() {
             continue;
         }
@@ -1226,7 +1248,85 @@ pub fn render_vxl(
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
 ) -> VxlSprite {
-    if let Some(draw) = prepare_native_draw(vxl, hva, params, vpl)
+    render_vxl_on(vxl, hva, params, vpl, None)
+}
+
+/// A voxel image rasterized on the CPU, or one for the GPU raster
+/// ([`crate::render::voxel_gpu`]) to draw where it lands.
+pub(crate) enum VoxelImage<'a> {
+    Cpu(VxlSprite),
+    /// An ordinary draw: the VXL, what a CPU raster of it needs, and the
+    /// native raster the GPU executes.
+    Paint {
+        vxl: &'a VxlFile,
+        hva: Option<&'a HvaFile>,
+        params: VxlRenderParams,
+        raster: NativeRaster,
+    },
+    /// A ground shadow stencil (756860).
+    Stencil {
+        vxl: &'a VxlFile,
+        raster: shadow::StencilRaster,
+    },
+}
+
+impl VoxelImage<'_> {
+    /// The image rasterized on the CPU; None where that raster fails.
+    pub fn render_cpu(self, vpl: Option<&VplFile>) -> Option<VxlSprite> {
+        match self {
+            Self::Cpu(sprite) => Some(sprite),
+            Self::Paint {
+                vxl, hva, params, ..
+            } => Some(render_vxl(vxl, hva, &params, vpl)),
+            Self::Stencil { vxl, raster } => shadow::render_raster(vxl, &raster),
+        }
+    }
+
+    /// The image's size, and its offset from the draw point.
+    pub fn frame(&self) -> ([u32; 2], [f32; 2]) {
+        let rect_frame = |[x, y, _, _, width, height]: [i32; 6]| {
+            ([width as u32, height as u32], [x as f32, y as f32])
+        };
+        match self {
+            Self::Cpu(sprite) => (
+                [sprite.width, sprite.height],
+                [sprite.offset_x, sprite.offset_y],
+            ),
+            Self::Paint { raster, .. } => rect_frame(raster.rect),
+            Self::Stencil { raster, .. } => rect_frame(raster.rect),
+        }
+    }
+}
+
+/// [`render_vxl`] as an image for the GPU raster wherever the native raster
+/// draws it.
+pub(crate) fn voxel_image<'a>(
+    vxl: &'a VxlFile,
+    hva: Option<&'a HvaFile>,
+    params: &VxlRenderParams,
+    vpl: Option<&VplFile>,
+) -> VoxelImage<'a> {
+    match native::prepare_raster(vxl, hva, params) {
+        Some(raster) => VoxelImage::Paint {
+            vxl,
+            hva,
+            params: params.clone(),
+            raster,
+        },
+        None => VoxelImage::Cpu(render_vxl(vxl, hva, params, vpl)),
+    }
+}
+
+/// [`render_vxl`] on the shared `depth` map when depth-tested; None draws on
+/// a clear one. The legacy fallback ignores it.
+pub(crate) fn render_vxl_on(
+    vxl: &VxlFile,
+    hva: Option<&HvaFile>,
+    params: &VxlRenderParams,
+    vpl: Option<&VplFile>,
+    depth: Option<&mut DepthMap>,
+) -> VxlSprite {
+    if let Some(draw) = prepare_native_draw(vxl, hva, params, vpl, depth)
         && let Some(sprite) = draw.render_cpu()
     {
         return sprite;
@@ -1406,7 +1506,7 @@ pub fn hva_to_mat4(raw: &[f32; 12], limb_scale: f32) -> Mat4 {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
     use crate::assets::vxl_file::{VxlLimb, VxlVoxel};
@@ -1437,30 +1537,6 @@ mod tests {
                 Some(expected),
                 "extents {min_x},{min_y}..{max_x},{max_y}"
             );
-        }
-    }
-
-    #[test]
-    fn native_draw_union_matches_executed_cached_blit_block() {
-        // Execute original 70755D..707678 with old rectangle at B1CFC0 and
-        // signed cached x/y, unsigned w/h. These are native outputs, not a
-        // mathematical AABB-union oracle. The +1 maximum edge is deliberate.
-        let vectors = [
-            ([5, 6, 10, 12], [6, 7, 2, 3], [5, 6, 10, 12]),
-            ([5, 6, 10, 12], [5, 6, 10, 12], [5, 6, 10, 12]),
-            ([5, 6, 10, 12], [1, 2, 8, 8], [1, 2, 14, 16]),
-            ([5, 6, 10, 12], [12, 16, 10, 10], [5, 6, 18, 21]),
-            ([5, 6, 10, 12], [1, 2, 30, 40], [1, 2, 31, 41]),
-            ([5, 6, 10, 12], [15, 18, 0, 0], [5, 6, 10, 12]),
-            ([5, 6, 0, 12], [15, 18, 0, 0], [15, 18, 0, 0]),
-            ([-20, -10, 8, 6], [-12, -4, 4, 4], [-20, -10, 13, 11]),
-            ([0, 0, 0, 0], [124, 123, 20, 30], [124, 123, 20, 30]),
-            ([124, 123, 20, 30], [124, 123, 20, 30], [124, 123, 20, 30]),
-        ];
-        for (initial, next, expected) in vectors {
-            let mut accumulated = Some(initial);
-            union_native_voxel_draw_bounds(&mut accumulated, next);
-            assert_eq!(accumulated, Some(expected), "{initial:?} then {next:?}");
         }
     }
 
@@ -2189,8 +2265,72 @@ mod tests {
         }
         assert_eq!(crashing, 24);
     }
+
+    /// `TunnelLocomotionClass::Draw_Matrix @ 0x00729B40` rotates the facing
+    /// matrix by Y alone (`0x00729E02..0x00729E16`). The Drive/Ship arm would
+    /// also add [`crate::map::voxel_pose::voxel_tilt_frame`]'s support offsets,
+    /// which shift and lift a body by half its extent so a slope tilt keeps it
+    /// on the surface. A digging tunnel has to sink instead, so its body matrix
+    /// stays a pure rotation; the tilted hull is the same facing around the
+    /// model's own origin.
+    #[test]
+    fn a_tunnel_dig_pose_rotates_without_the_drive_support_offsets() {
+        use std::f32::consts::FRAC_PI_2;
+        let half_sizes = [30.0, 20.0];
+        let tunnel = GroundPose {
+            angles: [0., 0.],
+            tunnel_tilt: Some(FRAC_PI_2),
+            body_facing: 0,
+            slope_blend: None,
+            turret_offset: 0,
+        };
+        let body = ground_unit_pose_matrices(0, tunnel, half_sizes, 0, 0)[0];
+        assert_eq!(
+            body.w_axis.truncate(),
+            glam::Vec3::ZERO,
+            "a vertical dig tilt keeps the body's origin on the ground"
+        );
+        let drive = GroundPose {
+            tunnel_tilt: None,
+            angles: [0., FRAC_PI_2],
+            ..tunnel
+        };
+        let lifted = ground_unit_pose_matrices(0, drive, half_sizes, 0, 0)[0];
+        assert!(
+            lifted.w_axis.truncate().length() > 1.0,
+            "the Drive arm lifts and shifts the same tilt: {:?}",
+            lifted.w_axis
+        );
+        let level = ground_unit_pose_matrices(
+            0,
+            GroundPose {
+                tunnel_tilt: Some(0.0),
+                ..tunnel
+            },
+            half_sizes,
+            0,
+            0,
+        )[0];
+        let plain = affine::matrix_product(voxel_camera_view(), voxel_body_facing(0))
+            .expect("finite level body");
+        for col in 0..4 {
+            for row in 0..3 {
+                assert!(
+                    (level.col(col)[row] - plain.col(col)[row]).abs() < 1e-6,
+                    "a level tunnel draws the plain facing: [{row}][{col}]"
+                );
+            }
+        }
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(
+        tests_render_s_z,
+        tests_app_presentation_instances,
+        tests_app_presentation_render
+    )
+))]
 #[path = "ship_pose_tests.rs"]
 pub(crate) mod ship_pose_tests;

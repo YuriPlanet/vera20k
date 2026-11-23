@@ -65,11 +65,14 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
                 EntityCategory::Infantry,
             );
             occupant.veterancy.set_rank_for_test(rank);
-            occupant.passenger_role = PassengerRole::inside_for_test(1, false);
-            building.passenger_role.occupants_mut().add(id);
+            occupant.set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
+            building
+                .passenger_role_mut_for_test()
+                .occupants_mut()
+                .add_for_test(id);
             world.substrate.entities.insert(occupant);
         }
-        assert_eq!(building.passenger_role.occupants().ids(), [2, 3]);
+        assert_eq!(building.passenger_role().occupants().ids(), [2, 3]);
         world.substrate.entities.insert(building);
         world.interner = test_interner();
         crate::sim::arena_fixture::flat_arena(&mut world, &rules);
@@ -116,13 +119,13 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
                 17,
                 &mut emitted,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .is_some()
         );
         assert_eq!(emitted.fire_events.len(), 1);
         let building = world.substrate.entities.get(1).unwrap();
-        assert_eq!(building.passenger_role.occupants().fire_index(), 1);
+        assert_eq!(building.passenger_role().occupants().fire_index(), 1);
         assert!(
             get_weapon(
                 building,
@@ -134,9 +137,9 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
             )
             .is_none()
         );
-        assert_eq!(building.rearm_timer.start_frame(), 17);
+        assert_eq!(building.seldom.rearm_timer.start_frame(), 17);
         assert_eq!(
-            i64::from(building.rearm_timer.duration()),
+            i64::from(building.seldom.rearm_timer.duration()),
             golden["output"].as_i64().unwrap(),
             "missing weapon at occupant rank {rank}"
         );
@@ -218,6 +221,7 @@ pub(super) fn for_each_native_case(
             EntityCategory::Structure,
         );
         building
+            .seldom
             .type_facts
             .set_foundation_for_test(object.foundation.clone().into());
         building
@@ -241,11 +245,14 @@ pub(super) fn for_each_native_case(
             entity
                 .veterancy
                 .set_rank_for_test((occupant["veterancy"].as_f64().unwrap() * 100.0) as u16);
-            building.passenger_role.occupants_mut().add(id);
+            building
+                .passenger_role_mut_for_test()
+                .occupants_mut()
+                .add_for_test(id);
             entities.insert(entity);
         }
         building
-            .passenger_role
+            .passenger_role_mut_for_test()
             .occupants_mut()
             .set_fire_index_for_test(input["fire_index"].as_i64().unwrap() as i32);
         check(case, &building, object, &entities, &rules, &test_interner());
@@ -319,4 +326,47 @@ fn occupied_weapon_and_foundation_queries_match_original_instructions() {
             );
         }
     });
+}
+
+/// Original RA2 keeps the garrison gun on the building's own Primary slot
+/// ([CARUS03] Primary=AlliedOccupyW) and has no CanOccupyFire / OccupyWeapon /
+/// OccupyWeaponRange fields. Verify RA2 Mode: IsOccupied ignores
+/// CanOccupyFire, GetWeapon resolves the building gun (not the occupant's own
+/// Primary), and occupied reach is the gun's Range in cells.
+#[test]
+fn ra2_garrison_fires_building_gun_without_yr_fields() {
+    let ini = IniFile::from_str(
+        "[BuildingTypes]\n0=HOUSE\n[InfantryTypes]\n0=E1\n\
+         [HOUSE]\nStrength=800\nCanBeOccupied=yes\nPrimary=AlliedOccupyW\n\
+         [E1]\nStrength=125\nPrimary=E1Rifle\n\
+         [AlliedOccupyW]\nRange=7\nDamage=30\nWarhead=WH\n\
+         [E1Rifle]\nRange=3\nDamage=15\nWarhead=WH\n[WH]\n",
+    );
+    let mut rules = RuleSet::from_ini(&ini).unwrap();
+    rules.set_ra2_for_test(true);
+    let object = rules.object("HOUSE").unwrap();
+    // RA2 building has no CanOccupyFire -> field default false, yet occupied.
+    assert!(!object.can_occupy_fire);
+    assert!(
+        object.occupants_fire(),
+        "GetFireError's B1 reads the same answer"
+    );
+    let mut building = GameEntity::test_default_of_category(
+        1, "HOUSE", "Test", 10, 10, EntityCategory::Structure,
+    );
+    building
+        .passenger_role_mut_for_test()
+        .occupants_mut()
+        .add_for_test(2);
+    let mut entities = EntityStore::new();
+    entities.insert(GameEntity::test_default_of_category(
+        2, "E1", "Test", 10, 10, EntityCategory::Infantry,
+    ));
+    let interner = test_interner();
+
+    assert!(is_occupied(&building, object), "RA2 garrison must be armed");
+    let selected = get_weapon(&building, object, 0, &entities, &rules, &interner).unwrap();
+    assert_eq!(selected.id, "AlliedOccupyW", "RA2 fires the building gun");
+    let reach = super::combat_weapon::occupied_reach_cells(object, &rules);
+    assert_eq!(reach, 7, "RA2 uses the gun Range (Range=7) cells");
 }

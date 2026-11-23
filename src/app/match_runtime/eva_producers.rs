@@ -103,8 +103,9 @@
 //!   (`0x004D9F81..0x004D9FB0`), and the only retail unit sale (#2710) is a
 //!   computer-owned useless harvester sold at a Service Depot
 //!   (`MissionRepairAndProduce 0x0044C4BC..0x0044C4DB`, owner not
-//!   `IsControlledByHuman 0x0050B730`), which is therefore silent. VERA has
-//!   no unit sale.
+//!   `IsControlledByHuman 0x0050B730`), which is therefore silent. With
+//!   Ares the player's SellUnit click reaches it: `production::foot_on_sold`
+//!   emits the line as a `HouseEva`.
 //! - `SuperClass::AI_Charging 0x006CC179` (`*Ready` on a superweapon granted
 //!   already charged, `SuperClass::Grant 0x006CB560` `+0x6E`): the
 //!   building-complete grant passes 0.
@@ -121,6 +122,33 @@ use crate::rules::object_type::ObjectType;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::spy_infiltration::InfiltrationEffect;
 
+#[derive(Clone, Copy)]
+pub(crate) enum SuperWeaponEvaStage {
+    Ready,
+    Activated,
+    Detected,
+}
+
+/// Ares Ready hooks10035070/100350D0, detection100349D0 and common
+/// Launch10032FC3 select the retained EVA ordinal, when the Rules were read
+/// the Ares way (`ares`, `RuleSet::ares_form`). New handlers suppress stock
+/// fallbacks even for -1; unported stock redirects keep their old owner.
+pub(crate) fn resolved_superweapon_eva<'a>(
+    sw: &'a crate::rules::superweapon_type::SuperWeaponType,
+    stage: SuperWeaponEvaStage,
+    stock: Option<&'static str>,
+    ares: bool,
+) -> Option<&'a str> {
+    if ares && let Some(eva) = sw.ares_eva() {
+        return match stage {
+            SuperWeaponEvaStage::Ready => eva.ready(),
+            SuperWeaponEvaStage::Activated => eva.activated(),
+            SuperWeaponEvaStage::Detected => eva.detected(),
+        };
+    }
+    stock
+}
+
 /// `EVA_NewRallyPointEstablished` (string `0x00818E58`), spoken at
 /// `0x00443A69` by the click handler.
 pub(crate) const EVA_NEW_RALLY_POINT_ESTABLISHED: &str = "EVA_NewRallyPointEstablished";
@@ -130,7 +158,7 @@ pub(crate) const EVA_STRUCTURE_SOLD: &str = "EVA_StructureSold";
 pub(crate) const EVA_REPAIRING: &str = "EVA_Repairing";
 /// String `0x00818FAC`.
 pub(crate) const EVA_BUILDING_CAPTURED: &str = "EVA_BuildingCaptured";
-/// String `0x00818FC4`.
+/// String `0x00818FC4` (a game Ares plays in plays the type's `LostEvaEvent`).
 pub(crate) const EVA_TECH_BUILDING_LOST: &str = "EVA_TechBuildingLost";
 /// String `0x00824B70`.
 pub(crate) const EVA_PLAYER_DEFEATED: &str = "EVA_PlayerDefeated";
@@ -169,7 +197,14 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         SuperWeaponKind::ChronoWarp
         | SuperWeaponKind::NoEffect
         | SuperWeaponKind::GenericWarhead
-        | SuperWeaponKind::UnitDelivery => return None,
+        | SuperWeaponKind::UnitDelivery
+        | SuperWeaponKind::HunterSeeker
+        | SuperWeaponKind::Protect
+        | SuperWeaponKind::Battery
+        | SuperWeaponKind::SonarPulse
+        | SuperWeaponKind::EMPulse
+        | SuperWeaponKind::Firestorm
+        | SuperWeaponKind::DropPod => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",
@@ -197,10 +232,7 @@ pub(crate) fn super_weapon_detected_event(
     // mod places one in an early SuperWeaponTypes slot.
     // Native44693D dispatches by registry ordinal, including ctor Type=-1.
     // GenericWarhead also uses a negative tag, so test extension identity.
-    if matches!(
-        kind,
-        SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
-    ) {
+    if kind.is_extension() {
         return None;
     }
     match list_index {
@@ -242,7 +274,8 @@ pub(crate) fn super_weapon_detected_allowed(
 
 /// The lines the capture block speaks on the local machine
 /// (`BuildingClass::ChangeOwner 0x004483FB..0x0044848F`), in native order:
-/// a `NeedsEngineer=` building says `EVA_TechBuildingLost` when the OLD
+/// a `NeedsEngineer=` building says `tech_lost_event` (`EVA_TechBuildingLost`,
+/// when Ares plays the type's `LostEvaEvent`, hook `0x0044840B`) when the OLD
 /// owner is local (`0x00448415`) and then queues the type's
 /// `CaptureEvaEvent=` when the NEW owner is local (`0x0044842F..0x00448459`);
 /// any other building says `EVA_BuildingCaptured` once the radar event was
@@ -252,6 +285,7 @@ pub(crate) fn capture_eva_events(
     tech_building: bool,
     radar_accepted: bool,
     capture_eva_event: Option<&str>,
+    tech_lost_event: Option<&str>,
     local_is_old_owner: bool,
     local_is_new_owner: bool,
 ) -> Vec<String> {
@@ -260,8 +294,8 @@ pub(crate) fn capture_eva_events(
         return lines;
     }
     if tech_building {
-        if local_is_old_owner {
-            lines.push(EVA_TECH_BUILDING_LOST.to_string());
+        if local_is_old_owner && let Some(event) = tech_lost_event {
+            lines.push(event.to_string());
         }
         if local_is_new_owner && let Some(event) = capture_eva_event {
             lines.push(event.to_string());
@@ -326,6 +360,71 @@ pub(crate) fn infiltration_eva_events(
             }
         }
         InfiltrationEffect::None => {}
+        // Ares 3.0 10012000 (hook 0x004571E0): each arm's lines in its
+        // order, every one behind the radar event.
+        InfiltrationEffect::Ares(arms) => {
+            let either = owner || infiltrator;
+            if let Some(owner_spy_sat) = arms.radar_reset
+                && !owner_spy_sat
+            {
+                if owner {
+                    lines.push(EVA_RADAR_SABOTAGED);
+                }
+                if infiltrator {
+                    lines.push(EVA_BUILDING_INF_RADAR_SABOTAGED);
+                }
+            }
+            if arms.power_outage {
+                if owner {
+                    lines.push(EVA_POWER_SABOTAGED);
+                }
+                if infiltrator {
+                    lines.extend([EVA_BUILDING_INFILTRATED, EVA_ENEMY_BASE_POWERED_DOWN]);
+                }
+            }
+            if arms.tech_stolen {
+                if owner {
+                    lines.push(EVA_TECHNOLOGY_STOLEN);
+                }
+                if infiltrator {
+                    lines.extend([EVA_BUILDING_INFILTRATED, EVA_NEW_TECHNOLOGY_ACQUIRED]);
+                }
+            }
+            if arms.undo_reverse_engineer {
+                if owner {
+                    lines.push(EVA_BUILDING_INFILTRATED);
+                }
+                if infiltrator {
+                    lines.push(EVA_BUILDING_INFILTRATED);
+                }
+            }
+            for applied in [arms.supers_reset, arms.super_granted] {
+                if applied && either {
+                    lines.push(EVA_BUILDING_INFILTRATED);
+                }
+            }
+            if arms.cash_stolen {
+                if owner {
+                    lines.push(EVA_CASH_STOLEN);
+                }
+                if infiltrator {
+                    lines.push(EVA_BUILDING_INF_CASH_STOLEN);
+                }
+            }
+            if arms.veterancy_stolen {
+                if owner {
+                    lines.push(EVA_TECHNOLOGY_STOLEN);
+                }
+                if infiltrator {
+                    lines.extend([EVA_BUILDING_INFILTRATED, EVA_NEW_TECHNOLOGY_ACQUIRED]);
+                }
+            }
+            for revealed in [arms.production_revealed, arms.radar_revealed] {
+                if revealed && either {
+                    lines.push(EVA_BUILDING_INFILTRATED);
+                }
+            }
+        }
     }
     lines.into_iter().map(str::to_string).collect()
 }
@@ -339,7 +438,7 @@ pub(crate) fn rally_point_announces(obj: &ObjectType) -> bool {
     !obj.construction_yard && !obj.resource_destination
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_match))]
 mod tests {
     use super::*;
 
@@ -517,27 +616,73 @@ mod tests {
     fn capture_lines_follow_the_change_owner_block() {
         // Ordinary building: the radar result gates one line for either side.
         assert_eq!(
-            capture_eva_events(false, true, None, false, true),
+            capture_eva_events(false, true, None, Some(EVA_TECH_BUILDING_LOST), false, true),
             vec![EVA_BUILDING_CAPTURED.to_string()]
         );
         assert_eq!(
-            capture_eva_events(false, true, None, true, false),
+            capture_eva_events(false, true, None, Some(EVA_TECH_BUILDING_LOST), true, false),
             vec![EVA_BUILDING_CAPTURED.to_string()]
         );
-        assert!(capture_eva_events(false, false, None, true, false).is_empty());
-        assert!(capture_eva_events(false, true, None, false, false).is_empty());
+        assert!(
+            capture_eva_events(
+                false,
+                false,
+                None,
+                Some(EVA_TECH_BUILDING_LOST),
+                true,
+                false
+            )
+            .is_empty()
+        );
+        assert!(
+            capture_eva_events(
+                false,
+                true,
+                None,
+                Some(EVA_TECH_BUILDING_LOST),
+                false,
+                false
+            )
+            .is_empty()
+        );
         // Tech building: lost line for a local old owner, per-type line for a
         // local new owner, no radar-gated line at all.
         assert_eq!(
-            capture_eva_events(true, false, Some("EVA_OilRefineryCaptured"), false, true),
+            capture_eva_events(
+                true,
+                false,
+                Some("EVA_OilRefineryCaptured"),
+                Some(EVA_TECH_BUILDING_LOST),
+                false,
+                true
+            ),
             vec!["EVA_OilRefineryCaptured".to_string()]
         );
         assert_eq!(
-            capture_eva_events(true, false, Some("EVA_OilRefineryCaptured"), true, false),
+            capture_eva_events(
+                true,
+                false,
+                Some("EVA_OilRefineryCaptured"),
+                Some(EVA_TECH_BUILDING_LOST),
+                true,
+                false
+            ),
             vec![EVA_TECH_BUILDING_LOST.to_string()]
         );
-        assert!(capture_eva_events(true, false, None, false, true).is_empty());
-        assert!(capture_eva_events(true, true, None, false, false).is_empty());
+        assert!(
+            capture_eva_events(true, false, None, Some(EVA_TECH_BUILDING_LOST), false, true)
+                .is_empty()
+        );
+        assert!(
+            capture_eva_events(true, true, None, Some(EVA_TECH_BUILDING_LOST), false, false)
+                .is_empty()
+        );
+        // Ares LostEvaEvent: the type's cue, or none at all.
+        assert_eq!(
+            capture_eva_events(true, false, None, Some("EVA_OurOilLost"), true, false),
+            vec!["EVA_OurOilLost".to_string()]
+        );
+        assert!(capture_eva_events(true, false, None, None, true, false).is_empty());
     }
 
     #[test]
@@ -576,15 +721,12 @@ mod tests {
         u64,
         u64,
     )> {
-        use crate::rules::overlay_types::OverlayTypeRegistry;
         use crate::sim::house_state::HouseState;
         use crate::sim::overlay_grid::OverlayGrid;
         use crate::sim::runtime::{SimResources, SimRuntime};
         use crate::sim::world::Simulation;
 
         let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")?;
-        let overlays =
-            OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
         let rules = retail.rules;
         let mut sim = Simulation::with_seed(0x4F93_E000);
         sim.intern_rule_type_ids(&rules);
@@ -613,7 +755,10 @@ mod tests {
         // no ore (SlaveManager6B0062). Supply map-like ore east of the
         // target's 2x2 foundation, through the shared overlay/recalc owner,
         // so ordinary slaves work while the real attacker closes in.
-        let ore_id = overlays.id_for_name("TIB01").expect("stock ore overlay");
+        let ore_id = rules
+            .overlay_registry()
+            .id_for_name("TIB01")
+            .expect("stock ore overlay");
         let mut ore = OverlayGrid::new(32, 32);
         for ry in 19..=21 {
             for rx in 23..=25 {
@@ -622,7 +767,7 @@ mod tests {
                     sim.resolved_terrain_mut_for_test()
                         .as_mut()
                         .expect("arena terrain"),
-                    &overlays,
+                    rules.overlay_registry(),
                     (rx, ry),
                 );
             }
@@ -642,13 +787,11 @@ mod tests {
         let attacker = sim
             .spawn_object_at_height("CLEG", "Americans", 6, 20, 0, 0, &rules)
             .expect("stock hostile Chrono Legionnaire");
-        let mut resources = SimResources::empty();
-        resources.rules = rules;
-        resources.overlay_registry = overlays;
+        let resources = SimResources::new(rules);
         Some((
             SimRuntime {
                 simulation: sim,
-                resources,
+                resources: resources.into(),
             },
             local,
             enemy,
@@ -701,7 +844,7 @@ mod tests {
             for _ in 0..8 {
                 let due = runtime.simulation.take_due_commands();
                 let frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("settled retail base frame");
                 assert!(
                     frame
@@ -732,7 +875,7 @@ mod tests {
             for _ in 0..1024 {
                 let due = runtime.simulation.take_due_commands();
                 let mut frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("ordinary retail Temporal attack frame");
                 attack_dispatched |= frame
                     .take_admitted_commands()
@@ -784,6 +927,7 @@ mod tests {
                         radar_accepted
                     },
                     &mut output,
+                    None,
                 );
                 assert_eq!(admitted, [radar], "one real local radar admission request");
                 let sounds = output.drain();
@@ -819,7 +963,7 @@ mod tests {
             for _ in 0..4 {
                 let due = runtime.simulation.take_due_commands();
                 let frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("held first-head frame");
                 assert!(
                     frame
@@ -847,7 +991,7 @@ mod tests {
             for _ in 0..128 {
                 let due = runtime.simulation.take_due_commands();
                 let frame = runtime
-                    .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                    .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                     .expect("ordinary Stop/release frame");
                 assert!(
                     frame
@@ -873,5 +1017,62 @@ mod tests {
                 "Stop must release and preserve the stock {target_type}"
             );
         }
+    }
+
+    /// Ares `InfiltratedBy @ 10012000`: each applied arm speaks its lines in
+    /// order, all behind the radar event.
+    #[test]
+    fn ares_infiltration_lines_follow_each_applied_arm() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        use crate::sim::spy_infiltration::{AresInfiltrationArms, InfiltrationEffect};
+        let effect = InfiltrationEffect::Ares(AresInfiltrationArms {
+            radar_reset: Some(false),
+            super_granted: true,
+            cash_stolen: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            infiltration_eva_events(effect, true, false, true),
+            [
+                "EVA_BuildingInfRadarSabotaged",
+                "EVA_BuildingInfiltrated",
+                "EVA_BuildingInfCashStolen"
+            ]
+        );
+        assert_eq!(
+            infiltration_eva_events(effect, true, true, false),
+            [
+                "EVA_RadarSabotaged",
+                "EVA_BuildingInfiltrated",
+                "EVA_CashStolen"
+            ]
+        );
+        assert!(infiltration_eva_events(effect, false, true, false).is_empty());
+    }
+
+    /// The StolenTech arm (`10012000`) plays the owner's
+    /// `EVA_TechnologyStolen` and the spy's two lines, after the outage's.
+    #[test]
+    fn ares_stolen_tech_lines_follow_the_power_outage() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        use crate::sim::spy_infiltration::{AresInfiltrationArms, InfiltrationEffect};
+        let effect = InfiltrationEffect::Ares(AresInfiltrationArms {
+            power_outage: true,
+            tech_stolen: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            infiltration_eva_events(effect, true, true, false),
+            ["EVA_PowerSabotaged", "EVA_TechnologyStolen"]
+        );
+        assert_eq!(
+            infiltration_eva_events(effect, true, false, true),
+            [
+                "EVA_BuildingInfiltrated",
+                "EVA_EnemyBasePoweredDown",
+                "EVA_BuildingInfiltrated",
+                "EVA_NewTechnologyAcquired"
+            ]
+        );
     }
 }

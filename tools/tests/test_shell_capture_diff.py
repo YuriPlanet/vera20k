@@ -316,6 +316,23 @@ class CompareTests(unittest.TestCase):
             self.assertEqual(status, 2)
 
 
+    def test_overflowing_number_and_frame_outside_the_bundle_are_invalid_input(self):
+        with tempfile.TemporaryDirectory() as temp:
+            bundle = Path(temp) / "bundle"
+            bundle.mkdir()
+            write_bundle(bundle, 1, 1, [(0, 0, 0)])
+            native = Path(temp) / "native.png"
+            native.write_bytes(png_bytes(1, 1, 8, 2, [(0, [0, 0, 0])]))
+            argv = ["--capture", str(bundle), "--native", str(native)]
+            manifest = (bundle / "capture.json").read_text(encoding="utf-8")
+            (bundle / "capture.json").write_text(
+                manifest.replace('"capture_frame": 7', '"capture_frame": 1e999'), encoding="utf-8")
+            self.assertEqual(diff.main(argv), 2)
+            (Path(temp) / "frame.bgra").write_bytes((bundle / "frame.bgra").read_bytes())
+            (bundle / "capture.json").write_text(
+                manifest.replace('"path": "frame.bgra"', '"path": "../frame.bgra"'), encoding="utf-8")
+            self.assertEqual(diff.main(argv), 2)
+
     def test_tampered_frame_is_invalid_input(self):
         with tempfile.TemporaryDirectory() as temp:
             temp = Path(temp)

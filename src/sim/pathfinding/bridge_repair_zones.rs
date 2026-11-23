@@ -48,7 +48,9 @@ pub(crate) fn append_repaired_bridge_edges(
             for (from, to) in [(from, to), (to, from)] {
                 // Native sign-extends this word into an unchecked node pointer.
                 // Retain prior writes and expose unsupported pointer inputs.
-                if from > i16::MAX as u16 || usize::from(from) >= graph.record_slot_count() {
+                if (!graph.cell_grid().is_extended() && from > i16::MAX as super::ZoneId)
+                    || from as usize >= graph.record_slot_count()
+                {
                     return Err(format!(
                         "repair bridge hierarchy node {from} is not represented"
                     ));
@@ -135,6 +137,6 @@ impl ZoneGrid {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "bridge_repair_zones_tests.rs"]
 mod tests;

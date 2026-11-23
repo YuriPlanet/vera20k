@@ -139,7 +139,9 @@ fn eva_selection_matches_original_cache_queue_and_restored_side_history() {
                 saved.session_mut_for_test().set_scenario_side_for_test(
                     row["overwritten_before_load"].as_i64().unwrap() as i32,
                 );
-                let loaded = GameSnapshot::load(&bytes).unwrap().sim;
+                let loaded = GameSnapshot::load(&bytes)
+                    .unwrap()
+                    .into_simulation_for_test();
                 assert_eq!(
                     loaded.session().scenario_side(),
                     row["restored_side"].as_i64().unwrap() as i32

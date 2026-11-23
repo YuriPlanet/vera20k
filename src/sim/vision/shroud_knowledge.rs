@@ -2,7 +2,7 @@
 //! projection. Original487630/487690/4876F0,6FB170/6FB470 and578100.
 //! Native counter arithmetic wraps; pending is not equivalent to current sight.
 use crate::sim::intern::InternedId;
-use crate::sim::state_hasher::hash_records;
+use crate::util::state_hasher::hash_records;
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 
@@ -163,9 +163,16 @@ impl ShroudKnowledge {
         if self.counter < 0 {
             return false;
         }
+        self.clear_mapped();
+        true
+    }
+
+    /// The knowledge half of the store 577C90's receiver makes when its
+    /// counter is not negative and 577BB0's makes on every cell (the ground
+    /// half is in `cell_reveal`). Counters, pending and the sources stay.
+    pub(super) fn clear_mapped(&mut self) {
         self.open = false;
         self.transient_visible = false;
-        true
     }
 
     /// The bulk577D90/577AB0 store: shrouded (`reset`) or mapped, with no

@@ -9,7 +9,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — no sim/render dependencies.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use winit::keyboard::KeyCode;
 
@@ -26,20 +26,6 @@ pub(crate) const CLEAR_COLOR: wgpu::Color = wgpu::Color {
 pub(crate) const SIM_TICK_HZ: u32 = crate::util::fixed_math::SIM_TICK_HZ;
 /// Integer tick duration used by deterministic step execution.
 pub(crate) const SIM_TICK_MS: u32 = 1000 / SIM_TICK_HZ;
-/// Verified retail/YR skirmish fallback from rulesmd.ini
-/// `[MultiplayerDialogSettings] GameSpeed=1`.
-pub(crate) const DEFAULT_YR_SKIRMISH_GAME_SPEED: u32 = 1;
-const GAME_SPEED_BUCKET_MS: u32 = 16;
-
-/// Convert the stored speed byte to a UI/debug rate readout. Gameplay frame
-/// admission uses the native 16 ms bucket comparison directly.
-pub(crate) fn tps_for_game_speed(stored_speed: u32) -> u32 {
-    if stored_speed == 0 {
-        return 60;
-    }
-    let bucket_ms = stored_speed.saturating_mul(GAME_SPEED_BUCKET_MS).max(1);
-    ((1000 + bucket_ms / 2) / bucket_ms).max(1)
-}
 
 /// Next right-click order mode selected via hotkey.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,11 +214,9 @@ impl TypeSelectOutcome {
 
 // Cursor identity and software-cursor DTOs are render-owned (F06);
 // re-exported so app consumers keep their paths.
-pub(crate) use crate::render::cursor_atlas::{
-    CursorId, SoftwareCursor, SoftwareCursorFrame, SoftwareCursorSequence,
-};
+pub(crate) use crate::render::cursor_atlas::{CursorId, SoftwareCursor, SoftwareCursorSequence};
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -338,10 +322,17 @@ pub(crate) enum CursorFeedbackKind {
     NoDeploy,
     /// Enter cursor — garrison, capture, board transport, sabotage, grind.
     Enter,
+    /// Tunnel entrance (35) uses the Enter row and the radar drops its action.
+    EnterTunnel,
     /// Grind (11) shares Enter's cursor but is excluded by the radar keep table.
     Grind,
     /// NoEnter cursor (action 0x1F, row 0x1A at `0x004AB382`).
     NoEnter,
+    /// Tote cursor (action 0x11): a Carryall over a Unit it may lift.
+    Tote,
+    /// Heal (action 0x1B): a healer infantryman over a damaged ally without
+    /// Ares, whose arm sets its own cursor.
+    Heal,
     /// Engineer action28 damage cursor. Its uncommon authored-threshold
     /// display route remains outside the ordinary repair cursor proof.
     EngineerDamage,
@@ -362,12 +353,20 @@ pub(crate) enum CursorFeedbackKind {
     NoIvanBomb,
     /// Engineer defuse cursor (action 0x39 `DisarmBomb`, cursor row 59).
     DisarmBomb,
+    /// A bomb carrier's own Detonate (action 0x37, cursor row 52, the
+    /// Demolish frames; `0x004AB5CD`).
+    Detonate,
     /// Repair cursor mode active (sidebar wrench). `true` = an own building is
     /// under the cursor (wrench), `false` = no eligible target (no-repair).
     RepairMode(bool),
     /// Sell cursor mode active (sidebar dollar). `true` = an own building is
     /// under the cursor (sell), `false` = no eligible target (no-sell).
     SellMode(bool),
+    /// Ares 3.0 DisplayClass_ChooseAction_CanSell (10057E70, hook 0x6929FC):
+    /// sell mode over the player's own Unit or Aircraft that can be sold
+    /// (`production::foot_can_be_sold`) answers action 0xD, SellUnit, while
+    /// Ares plays.
+    SellUnit,
     /// Superweapon targeting reticle — shown while a charged SW is armed
     /// and the cursor is over the tactical map. Payload is the per-SW
     /// CursorId resolved from the `Action=` INI string.
@@ -375,6 +374,10 @@ pub(crate) enum CursorFeedbackKind {
     /// Beacon placement mode with nothing selected: action 0x3C, row 0x4E
     /// (`0x004AB754` revealed, `0x004AB3DB` shrouded).
     PlaceBeacon,
+    /// Ares 3.0: a What_Action answer drawn with the `[MouseCursors]` entry
+    /// (this index) its hooks chose, where that entry draws other frames than
+    /// the answer's stock row (`app::input::ares_cursor::tactical`).
+    AresAction(u16),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

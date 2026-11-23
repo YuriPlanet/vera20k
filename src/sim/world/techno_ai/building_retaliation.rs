@@ -74,15 +74,18 @@ impl Simulation {
     ///
     /// `source` is the source object; one no longer in the store is NULL, as
     /// native detaches a destroyed object (a bullet's source is cleared when
-    /// its firer expires).
+    /// its firer expires). `malicious` is the hit warhead's Ares
+    /// `Malicious=` (BuildingClass_ReceiveDamage_Malicious, hook 0x442974,
+    /// hands it to NotifyUnderAttack); a game without Ares passes true.
     pub(crate) fn building_hit_response(
         &mut self,
         id: u64,
         source: Option<u64>,
         result: DamageState,
+        malicious: bool,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<UnderAttackEvent> {
         // No source (`0x00442942`) or a result of 0 (`0x0044294A`).
         let source = source.filter(|&source| self.substrate.entities.contains(source))?;
@@ -99,6 +102,8 @@ impl Simulation {
             ry,
             owner: building.owner(),
             victim_type: building.type_ref(),
+            own_alert: malicious,
+            line: crate::sim::combat::UnderAttackLine::House { allies: true },
         });
         // NotifyUnderAttack (`0x0044297B`) ends with its House Tag raise
         // before `0x00442980` asks the source for its House.
@@ -123,7 +128,7 @@ impl Simulation {
         };
         if building.mission.current().known() == Some(MissionType::Selling)
             || is_ally_by_object(
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
                 building.owner(),
                 source_owner,
@@ -131,7 +136,7 @@ impl Simulation {
             || !building_weapon0_aims(self, rules, id)
             || building.attack_target.target().is_some_and(|attack| {
                 let weapon = select_weapon(self, rules, id, Some(attack));
-                can_fire_at(self, rules, id, attack, weapon, overlay_registry)
+                can_fire_at(self, rules, id, attack, weapon)
             })
         {
             return ping;
@@ -153,14 +158,13 @@ impl Simulation {
                 id,
                 Some(TargetKind::Entity(source)),
                 rules,
-                overlay_registry,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         ping
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_techno))]
 #[path = "building_retaliation_tests.rs"]
 mod tests;

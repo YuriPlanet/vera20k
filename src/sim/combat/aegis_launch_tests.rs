@@ -55,8 +55,7 @@ impl AegisScene {
                     aegis,
                     Some(TargetKind::Entity(target)),
                     &rules,
-                    None,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .is_ok()
         );
@@ -87,6 +86,7 @@ impl AegisScene {
             .entities
             .get(self.aegis)
             .unwrap()
+            .seldom
             .weapon_burst
             .radial_index()
     }
@@ -97,6 +97,7 @@ impl AegisScene {
             .entities
             .get(self.aegis)
             .unwrap()
+            .seldom
             .weapon_burst
             .index()
     }
@@ -143,7 +144,7 @@ impl AegisScene {
             frame,
             &mut emitted,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("admitted retail Medusa creates a Bullet");
         assert_eq!(emitted.fire_events.len(), 1);
@@ -221,8 +222,7 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
                 scene.aegis,
                 Some(TargetKind::Entity(other)),
                 &scene.rules,
-                None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .is_ok()
     );
@@ -234,12 +234,18 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
                 scene.aegis,
                 None,
                 &scene.rules,
-                None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .is_ok()
     );
-    assert_eq!((scene.radial_index(), scene.burst_index()), (1, 0));
+    // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps the
+    // burst word through the NULL target, so the next shot ends the burst
+    // (`mission::concrete_effects::represented_assign_target_admitted`).
+    let ares = scene.rules.ares_form();
+    assert_eq!(
+        (scene.radial_index(), scene.burst_index()),
+        (1, i32::from(ares))
+    );
     assert!(
         scene
             .world
@@ -247,13 +253,15 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
                 scene.aegis,
                 Some(TargetKind::Entity(scene.target)),
                 &scene.rules,
-                None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .is_ok()
     );
     scene.fire(140);
-    assert_eq!((scene.radial_index(), scene.burst_index()), (2, 1));
+    assert_eq!(
+        (scene.radial_index(), scene.burst_index()),
+        (2, i32::from(!ares))
+    );
 }
 
 /// Unit's native Size746DD0 includes +43C and Load70BF50 does not reset it.
@@ -318,6 +326,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
         .entities
         .get(restored.aegis)
         .unwrap()
+        .seldom
         .weapon_burst;
     restored
         .world
@@ -325,6 +334,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
         .entities
         .get_mut(restored.aegis)
         .unwrap()
+        .seldom
         .weapon_burst
         .take_radial_index(10);
     assert_ne!(
@@ -338,6 +348,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
         .entities
         .get_mut(restored.aegis)
         .unwrap()
+        .seldom
         .weapon_burst = saved_burst;
     assert_eq!(hash, restored.world.state_hash());
     for shot in 5..12 {
@@ -429,7 +440,7 @@ fn retail_normal_and_elite_aegis_unit_fire_enrolls_each_returned_bullet() {
             };
             scene
                 .world
-                .commit_fire_visit(visit, &scene.rules, None, FrameEffects::default());
+                .commit_fire_visit(visit, &scene.rules, None, &mut FrameEffects::default());
             assert_eq!(scene.world.projectiles.len(), before + 1);
         }
         let ids: Vec<_> = scene.world.projectiles.iter().map(|(&id, _)| id).collect();

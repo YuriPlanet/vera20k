@@ -9,6 +9,7 @@ from pathlib import Path
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EDX
 
 from tools.native_oracle import finish_vectors, provenance
+from tools.native_oracle import require
 from tools.spatial_oracle.locomotor_track_callback import OriginalCallback
 from tools.spatial_oracle.locomotor_track_cursor import LOCO, SP
 from tools.spatial_oracle.map_queries import dwords
@@ -28,7 +29,7 @@ def sample(native, initial, mutation, chain_cursor):
     u.mem_write(LOCO + 0x4C, dwords(6))
     u.reg_write(UC_X86_REG_EDX, 15)
     u.reg_write(UC_X86_REG_EAX, 0xFFFFFFFF)
-    assert native.run(f['gate'], (f['sample'], f['sentinel'])) == f['sample']
+    require(native.run(f['gate'], (f['sample'], f['sentinel'])) == f['sample'], 'gate did not return the sample')
     cached = native.selected()
     # This is an explicit supplied seam inside the SAME paid point. Neither
     # the survivor increment nor another payment runs before these gates.

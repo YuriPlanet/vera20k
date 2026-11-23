@@ -192,6 +192,18 @@ impl Simulation {
         }
     }
 
+    /// Ares survivor placement10044762/100447F3 stores retained Cell+24
+    /// directly, without a neighbor-count increment/decrement.
+    pub(crate) fn foot_neighbors_store_retained_cell(
+        substrate: &mut ObjectSubstrate,
+        id: u64,
+        cell: (i16, i16),
+    ) {
+        if let Some(entity) = substrate.entities.get_mut(id) {
+            entity.navigation.neighbor_state_mut().cell = cell;
+        }
+    }
+
     /// Aircraft DropPayload415E26..415E6E samples the selected Cell's center,
     /// then truncates /256; it does not change Cell+122 in this suffix.
     pub(crate) fn foot_neighbors_after_payload_drop(
@@ -242,7 +254,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};

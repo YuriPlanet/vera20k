@@ -35,6 +35,10 @@ pub(crate) const PROGRESS_ROW_MEASURE_TEXT: &str = "WWWWWWWWWWWWWWW";
 pub(crate) struct LoadingProgressParticipant {
     pub label: String,
     pub variant: Option<crate::render::loading_screen_chrome::LoadingArtVariant>,
+    /// HouseType array index this row was launched with. `Game_GetFlagSurface @
+    /// 0x1001DCE0` resolves each row's insignia from this index; an observer
+    /// row keeps its `Observer` variant instead.
+    pub country_index: u16,
     pub color_index: crate::rules::house_colors::HouseColorIndex,
     pub backing_rgb: [f32; 3],
     pub ramp: [crate::assets::pal_file::Color; 16],
@@ -47,11 +51,19 @@ pub(crate) struct LoadingProgressParticipant {
 pub(crate) struct LoadingProgressRowSnapshot {
     pub participants: Vec<LoadingProgressParticipant>,
     pub local_player_index: usize,
+    /// The player-colour conversion this snapshot resolved its participants
+    /// with. The map markers repeat the conversion when they look up the
+    /// per-colour atlas rows, so they read it here instead of resolving the
+    /// same priority twice.
+    pub skirmish_colors: crate::rules::skirmish_colors::SkirmishColorMode,
 }
 
 impl LoadingProgressRowSnapshot {
     /// Redraw643C0B..36 iterates source nodes, not color-sorted Houses.
-    pub fn from_launch_session(session: &SkirmishLaunchSession) -> Self {
+    pub fn from_launch_session(
+        session: &SkirmishLaunchSession,
+        skirmish_colors: crate::rules::skirmish_colors::SkirmishColorMode,
+    ) -> Self {
         Self {
             participants: session
                 .humans
@@ -64,10 +76,9 @@ impl LoadingProgressRowSnapshot {
                     } else {
                         super::pump::loading_art_variant_from_launch_country(human.slot.country)
                     },
+                    country_index: human.slot.country.raw_index(),
                     color_index: crate::rules::house_colors::HouseColorIndex(
-                        crate::rules::color_scheme::scheme_entry_for_priority(i32::from(
-                            human.slot.color_index,
-                        )) as u8,
+                        skirmish_colors.entry_for_priority(i32::from(human.slot.color_index)) as u8,
                     ),
                     backing_rgb: super::pump::FALLBACK_BACKING_RGB,
                     ramp: super::pump::FALLBACK_PROGRESS_RAMP,
@@ -76,6 +87,7 @@ impl LoadingProgressRowSnapshot {
                 })
                 .collect(),
             local_player_index: session.local_player_index,
+            skirmish_colors,
         }
     }
 
@@ -160,8 +172,6 @@ pub(crate) enum LoadingProgressRowPlacement {
         participants: usize,
     },
     Campaign([i32; 2]),
-    ///642C80 auto-centres in72AD20's tactical-sized surface extent.
-    AutoCentered([u32; 2]),
 }
 
 /// One `DrawPlayerProgressRow @ 0x00643720` geometry implementation shared by
@@ -182,7 +192,7 @@ pub(crate) fn layout_loading_progress_row(
     scale: ShellScale,
     row_index: usize,
 ) -> LoadingProgressRowLayout {
-    let ([mut base_x, mut base_y], row_width_override) = match placement {
+    let ([base_x, base_y], row_width_override) = match placement {
         LoadingProgressRowPlacement::StandardSkirmish { render_size, .. } => {
             let authored = loading_authored_size(render_size, scale);
             let [origin_x, origin_y] = loading_base_origin(authored);
@@ -194,7 +204,6 @@ pub(crate) fn layout_loading_progress_row(
             ([origin_x + offset_x, origin_y + offset_y], Some(width))
         }
         LoadingProgressRowPlacement::Campaign(point) => (point, None),
-        LoadingProgressRowPlacement::AutoCentered(_) => ([0, 0], None),
     };
     let bar_width = bar_size[0].max(0);
     let bar_height = bar_size[1].max(0);
@@ -244,12 +253,6 @@ pub(crate) fn layout_loading_progress_row(
         .scaled(scale);
     }
 
-    if let LoadingProgressRowPlacement::AutoCentered([width, height]) = placement {
-        //642D9B..642DBD ignores72AD20's origin, using width-168,height-32.
-        base_x = (width as i32 - 168 - row_width) / 2;
-        base_y = (height as i32 - 32 - row_height) / 2;
-    }
-
     // DrawPlayerProgressRow64377D multiplies this measured height by
     // source-player index before the per-element vertical centering.
     let base_y = base_y + row_height * row_index as i32;
@@ -276,13 +279,11 @@ pub(crate) fn layout_loading_progress_row(
     };
     match placement {
         LoadingProgressRowPlacement::StandardSkirmish { .. } => layout.scaled(scale),
-        LoadingProgressRowPlacement::Campaign(_) | LoadingProgressRowPlacement::AutoCentered(_) => {
-            layout
-        }
+        LoadingProgressRowPlacement::Campaign(_) => layout,
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 
@@ -301,7 +302,10 @@ mod tests {
         launch.humans[0].slot.color_index = 6;
         launch.humans.push(guest);
         launch.local_player_index = 1;
-        let mut rows = LoadingProgressRowSnapshot::from_launch_session(&launch);
+        let mut rows = LoadingProgressRowSnapshot::from_launch_session(
+            &launch,
+            crate::rules::skirmish_colors::SkirmishColorMode::VANILLA,
+        );
         assert_eq!(
             rows.participants
                 .iter()
@@ -336,7 +340,7 @@ mod tests {
             [100, 8],
             Some([18, 20]),
             [135, 17],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
         let third = layout_loading_progress_row(
@@ -347,7 +351,7 @@ mod tests {
             [100, 8],
             Some([18, 20]),
             [135, 17],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             2,
         );
         // 64377D: 2 * (max(insignia20,bar8+6,font17)+padding4).
@@ -392,7 +396,7 @@ mod tests {
                 pair("bar_size"),
                 None,
                 pair("font_size"),
-                ShellScale::RETAIL,
+                crate::ui::shell::geom::RETAIL_SCALE,
                 0,
             );
             assert_eq!(
@@ -417,7 +421,7 @@ mod tests {
             [80, 5],
             Some([47, 23]),
             [0, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -436,7 +440,7 @@ mod tests {
             [80, 5],
             Some([47, 23]),
             [0, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -455,7 +459,7 @@ mod tests {
             [80, 5],
             None,
             [0, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -474,7 +478,7 @@ mod tests {
             [80, 5],
             Some([20, 10]),
             [0, 30],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
 
@@ -494,7 +498,7 @@ mod tests {
                     [80, 5],
                     Some([47, 23]),
                     [135, 17],
-                    ShellScale::RETAIL,
+                    crate::ui::shell::geom::RETAIL_SCALE,
                     node,
                 )
             })
@@ -531,7 +535,7 @@ mod tests {
             [80, 5],
             Some([47, 23]),
             [135, 12],
-            ShellScale::RETAIL,
+            crate::ui::shell::geom::RETAIL_SCALE,
             0,
         );
         assert_eq!(native.bar_origin, [20, 267]);
@@ -539,7 +543,7 @@ mod tests {
     }
     #[test]
     fn last_extended_loading_row_uses_the_same_scaled_viewport_as_its_meter() {
-        let scale = ShellScale::from_screen(1280, 720);
+        let scale = crate::ui::shell::geom::shell_scale(1280, 720);
         let row = layout_loading_progress_row(
             LoadingProgressRowPlacement::StandardSkirmish {
                 render_size: [1280, 720],

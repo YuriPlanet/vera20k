@@ -46,7 +46,6 @@ fn retail_middle_perpendicular_live_tiles_match_original_sequences() {
                 frame_effects: crate::sim::world::FrameEffects::default(),
                 sim: &mut runtime.simulation,
                 rules: &runtime.resources.rules,
-                registry: Some(&runtime.resources.overlay_registry),
                 collapsed: false,
             };
             live.perpendicular(

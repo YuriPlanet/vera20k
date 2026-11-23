@@ -73,8 +73,9 @@ pub(crate) struct LocomotorHashFields<'a> {
 /// [`Self::end_piggyback`]).
 ///
 /// `balloon_hover`, `speed_type` and `movement_zone` cache the
-/// Foot's type: set at construction, copied into a BEGIN's temporary and never
-/// written afterwards, so every object of one unit holds the same values.
+/// Foot's type: set at construction, copied into a BEGIN's temporary and
+/// rebound on every object at a type store ([`Self::rebind_type_caches`]), so
+/// every object of one unit holds the same values.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LocomotorState {
     /// Which locomotor class this object is.
@@ -96,7 +97,9 @@ pub struct LocomotorState {
     runtime_payload: LocomotorRuntimePayload,
     /// Which spatial layer the unit currently occupies: the Foot's position,
     /// cached on the active object. `Bridge` is the Ground layer with the
-    /// Foot's OnBridge set.
+    /// Foot's OnBridge set. A Fly or Jumpjet answers its layer from its
+    /// height and a Rocket as Air (`world::entity_layer`); nothing reads a
+    /// Fly's or Rocket's cache, and only VeraX AutoLoad reads a Jumpjet's.
     layer: MovementLayer,
     /// Stay airborne after reaching destination (BalloonHover=yes).
     balloon_hover: bool,
@@ -122,8 +125,41 @@ impl LocomotorState {
             obj.speed_type,
             obj.movement_zone,
         );
-        state.link_to_object(obj);
+        state.link_to_object(obj, None);
         state
+    }
+
+    /// Ares conversion1004382D..100438AD compares the two Type CLSIDs, not
+    /// the active (possibly piggybacked) locomotor. Equal CLSIDs retain the
+    /// instance and its timers, whose type caches the type store has already
+    /// rebound ([`Self::rebind_type_caches`]).
+    pub(crate) fn change_type_binding(
+        &mut self,
+        old_type_kind: LocomotorKind,
+        object: &ObjectType,
+        frame: u32,
+    ) {
+        if old_type_kind != object.locomotor {
+            let mut replacement = Self::from_object_type(object, frame);
+            //10043871..100438AA replaces only Foot+674. The Foot's current
+            // world position and bridge/air occupancy are not constructor state.
+            replacement.layer = self.layer;
+            *self = replacement;
+        }
+    }
+
+    /// Rebind the type caches of this object and every object suspended
+    /// beneath it to the Foot's new type `object`. Native locomotors read
+    /// `BalloonHover=`, `SpeedType=` and `MovementZone=` from the Type when
+    /// they use them, so every type store (Unit `+0x6C4`) changes them at
+    /// once, a bare one included.
+    pub(crate) fn rebind_type_caches(&mut self, object: &ObjectType) {
+        self.balloon_hover = object.balloon_hover;
+        self.speed_type = object.speed_type;
+        self.movement_zone = object.movement_zone;
+        if let Some(saved) = self.piggyback.as_mut() {
+            saved.rebind_type_caches(object);
+        }
     }
 
     /// The class's `Link_To_Object` for a Foot of type `obj`, where it copies
@@ -132,9 +168,15 @@ impl LocomotorState {
     /// (`0x00513CB0`) builds the steering facing at the type's `ROT=`; Fly
     /// (`FlyLocomotionClass::Link_To_Object @ 0x004CCA20`) keeps whether the
     /// type is an `AirportBound=` aircraft (`0x004CCA5B`, `0x004CCA64`).
-    fn link_to_object(&mut self, obj: &ObjectType) {
+    fn link_to_object(
+        &mut self,
+        obj: &ObjectType,
+        jumpjet_params: Option<&crate::rules::jumpjet_params::JumpjetParams>,
+    ) {
         match &mut self.runtime_payload {
-            LocomotorRuntimePayload::Jumpjet(runtime) => runtime.link(&obj.jumpjet_params),
+            LocomotorRuntimePayload::Jumpjet(runtime) => {
+                runtime.link(jumpjet_params.unwrap_or(&obj.jumpjet_params))
+            }
             LocomotorRuntimePayload::Hover(runtime) => runtime.link(obj.turret_rot),
             LocomotorRuntimePayload::Fly(runtime) => runtime.link(
                 obj.category == crate::rules::object_type::ObjectCategory::Aircraft
@@ -174,9 +216,11 @@ impl LocomotorState {
         match kind {
             LocomotorKind::Drive
             | LocomotorKind::Walk
+            | LocomotorKind::Mech
             | LocomotorKind::Hover
             | LocomotorKind::Ship
-            | LocomotorKind::Teleport => MovementLayer::Ground,
+            | LocomotorKind::Teleport
+            | LocomotorKind::Tunnel => MovementLayer::Ground,
             LocomotorKind::Fly | LocomotorKind::Jumpjet | LocomotorKind::Rocket => {
                 MovementLayer::Air
             }
@@ -227,7 +271,11 @@ impl LocomotorState {
     pub fn is_ground_mover(&self) -> bool {
         matches!(
             self.kind,
-            LocomotorKind::Drive | LocomotorKind::Walk | LocomotorKind::Hover | LocomotorKind::Ship
+            LocomotorKind::Drive
+                | LocomotorKind::Walk
+                | LocomotorKind::Mech
+                | LocomotorKind::Hover
+                | LocomotorKind::Ship
         )
     }
 
@@ -334,7 +382,9 @@ impl LocomotorState {
     /// receivers75CA80/517210, tools/spatial_oracle/locomotor_at_coord.
     pub fn step_head(&self) -> Option<crate::sim::components::DriveCoord> {
         match (self.kind, &self.runtime_payload) {
-            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => state.head(),
+            (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                state.head()
+            }
             (LocomotorKind::Hover, LocomotorRuntimePayload::Hover(runtime)) => runtime.head(),
             _ => None,
         }
@@ -342,7 +392,7 @@ impl LocomotorState {
 
     pub(crate) fn set_step_head(&mut self, head: Option<crate::sim::components::DriveCoord>) {
         // Hover's head has one writer, its ProcessMovement (`hover_process`).
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
+        if let (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
         {
             state.store_head(head);
@@ -362,6 +412,31 @@ impl LocomotorState {
             (LocomotorKind::Hover, LocomotorRuntimePayload::Hover(runtime)) => Some(runtime),
             _ => None,
         }
+    }
+
+    /// The active Tunnel object's state.
+    pub fn tunnel_runtime(&self) -> Option<&super::tunnel_movement::TunnelRuntime> {
+        match (self.kind, &self.runtime_payload) {
+            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
+            _ => None,
+        }
+    }
+
+    /// The active Tunnel object's state, lent to `world::tunnel_process`.
+    pub(crate) fn tunnel_runtime_mut(
+        &mut self,
+    ) -> Option<&mut super::tunnel_movement::TunnelRuntime> {
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
+            _ => None,
+        }
+    }
+
+    /// Install a Tunnel payload from a draw test in `vera20k`, which cannot
+    /// reach this crate's `pub(crate)` writer.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_tunnel_runtime_for_test(&mut self, runtime: super::tunnel_movement::TunnelRuntime) {
+        self.runtime_payload = LocomotorRuntimePayload::Tunnel(runtime);
     }
 
     pub(crate) fn teleport_runtime(&self) -> Option<&super::teleport_movement::TeleportRuntime> {
@@ -404,6 +479,18 @@ impl LocomotorState {
         self.piggyback.as_mut()?.warp_teleport_mut()
     }
 
+    /// Teleport Process's own Stop_Moving after a relocation (`0x00719725`,
+    /// body `0x00718230`). Process calls it on itself, so it reaches the
+    /// Teleport even when the arrival's Per_Cell_Process had the Unit
+    /// setter's Drive suspend it (`0x0074276F`).
+    pub(crate) fn teleport_process_stop(&mut self) {
+        if let Some(runtime) = self.teleport_runtime_mut() {
+            runtime.stop();
+        } else if let Some(stash) = self.piggyback.as_mut() {
+            stash.teleport_process_stop();
+        }
+    }
+
     /// Foot warp-effect readers see an effect held by the complete suspended
     /// instance too. This view stores nothing and does not dispatch Process.
     pub(crate) fn teleport_effect_state(&self) -> Option<&super::teleport_movement::TeleportState> {
@@ -443,7 +530,9 @@ impl LocomotorState {
 
     pub fn walk_destination(&self) -> Option<crate::sim::components::DriveCoord> {
         match (self.kind, &self.runtime_payload) {
-            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => state.destination(),
+            (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                state.destination()
+            }
             _ => None,
         }
     }
@@ -464,9 +553,20 @@ impl LocomotorState {
         }
     }
 
+    pub(in crate::sim::movement) fn walk_runtime_mut(
+        &mut self,
+    ) -> Option<&mut piggyback::WalkRuntime> {
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => Some(state),
+            _ => None,
+        }
+    }
+
     pub fn walk_is_moving(&self) -> Option<bool> {
         match (self.kind, &self.runtime_payload) {
-            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => Some(state.moving()),
+            (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                Some(state.moving())
+            }
             _ => None,
         }
     }
@@ -477,7 +577,7 @@ impl LocomotorState {
         &mut self,
         coord: Option<crate::sim::components::DriveCoord>,
     ) {
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
+        if let (LocomotorKind::Walk | LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) =
             (self.kind, &mut self.runtime_payload)
         {
             state.assign_destination(coord);
@@ -499,9 +599,7 @@ impl LocomotorState {
     /// nonnull head is admitted and before testing its remaining distance.
     /// Does not stand for the whole Process.
     pub(crate) fn begin_walk_motion(&mut self) {
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
-            (self.kind, &mut self.runtime_payload)
-        {
+        if let Some(state) = self.walk_runtime_mut() {
             state.begin_motion();
         }
     }
@@ -519,16 +617,28 @@ impl LocomotorState {
         }
     }
 
+    pub(super) fn mech_move_to(&mut self, coord: crate::sim::components::DriveCoord) {
+        if let (LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) =
+            (self.kind, &mut self.runtime_payload)
+        {
+            state.mech_move_to(coord);
+        }
+    }
+
     /// Stop75ADA0 differs from null MoveTo: no-head Stop also clears +36
     /// and dispatches the owner's +54C callback. The world receiver performs
     /// that dispatch before returning; this primitive returns its admission.
     pub(crate) fn stop_walk(&mut self) -> bool {
-        if let (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) =
-            (self.kind, &mut self.runtime_payload)
-        {
-            return state.stop();
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Walk, LocomotorRuntimePayload::Walk(state)) => state.stop(),
+            (LocomotorKind::Mech, LocomotorRuntimePayload::Walk(state)) => {
+                // Mech Stop_Moving 5B0120 drops the destination and keeps
+                // IsMoving while a head remains. It has no infantry callback.
+                state.assign_destination(None);
+                false
+            }
+            _ => false,
         }
-        false
     }
 
     /// `Lock` (ILocomotion +0xB0): Walk `0x0075CB30` nulls its destination
@@ -600,10 +710,11 @@ impl LocomotorState {
         kind: LocomotorKind,
         obj: &ObjectType,
         binary_frame: u32,
+        jumpjet_params: Option<&crate::rules::jumpjet_params::JumpjetParams>,
     ) -> bool {
         let installed = self.begin_piggyback(kind, binary_frame);
         if installed {
-            self.link_to_object(obj);
+            self.link_to_object(obj, jumpjet_params);
         }
         installed
     }
@@ -732,8 +843,17 @@ impl LocomotorState {
         self.runtime_payload = payload;
     }
 
-    /// The Foot's layer, cached on the active object.
+    /// The Foot's layer, cached on the active object. An active Tunnel
+    /// answers from its State instead (`In_Which_Layer @ 0x0072A1A0`):
+    /// underground while it travels below the cells, else the cached ground
+    /// layer.
     pub(crate) fn layer(&self) -> MovementLayer {
+        if self
+            .tunnel_runtime()
+            .is_some_and(super::tunnel_movement::TunnelRuntime::underground)
+        {
+            return MovementLayer::Underground;
+        }
         self.layer
     }
 
@@ -796,6 +916,6 @@ impl LocomotorState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "locomotor_tests.rs"]
 mod locomotor_tests;

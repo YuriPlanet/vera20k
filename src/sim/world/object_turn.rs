@@ -28,35 +28,42 @@ fn tube_active(entity: &crate::sim::game_entity::GameEntity) -> bool {
             entity.category(),
             EntityCategory::Unit | EntityCategory::Infantry
         )
-        && entity.low_bridge_tube_state.is_some()
+        && entity.active_tube().is_some()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "track_object_turn_tests.rs"]
 mod track_object_turn_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "forced_track_object_turn_tests.rs"]
 mod forced_track_object_turn_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "teleport_anim_object_turn_tests.rs"]
 mod teleport_anim_object_turn_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "per_cell_object_turn_tests.rs"]
 mod per_cell_object_turn_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "airborne_cell_tag_tests.rs"]
 mod airborne_cell_tag_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 #[path = "periodic_cell_object_turn_tests.rs"]
 mod periodic_cell_object_turn_tests;
 
+#[cfg(all(test, tests_sim_world_c_o))]
+#[path = "object_turn_lookup_tests.rs"]
+mod object_turn_lookup_tests;
+
 #[derive(Default)]
 pub(super) struct LiveObjectPassOutcome {
+    /// Foots that executed TubeMovement instead of their locomotor. A mover
+    /// which just left already has an empty tube byte.
+    pub(super) tube_turns: std::collections::BTreeSet<u64>,
     pub destroyed_structure: bool,
     pub bridge_state_changed: bool,
     ownership_changed: bool,
@@ -76,6 +83,7 @@ pub(crate) struct GroundLocomotorOutcome {
 
 #[derive(Default)]
 pub(super) struct ObjectTurnOutcome {
+    tube_turn: bool,
     movement: movement::MovementTickStats,
     destroyed_structure: bool,
     bridge_state_changed: bool,
@@ -132,11 +140,10 @@ impl Simulation {
         stable_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: super::FrameEffects<'_>,
+        effects: &mut super::FrameEffects<'_>,
     ) -> Result<bool, String> {
-        use crate::map::cell_index::NativeCellIdentity;
         use crate::sim::mission::MissionType;
-        use crate::sim::movement::{ScatterFlags, locomotor::MovementLayer};
+        use crate::sim::movement::ScatterFlags;
 
         let Some(infantry) = self.substrate.entities.get(stable_id) else {
             return Ok(false);
@@ -154,18 +161,8 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
         };
-        // The caller reads physical Object+9C, not virtual+4C navigation/bridge XY.
         let coord = movement::ground_pose::position_world_coord(&infantry.position);
-        let cell = terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
-        let NativeCellIdentity::Real(index) = cell else {
-            return Ok(false);
-        };
-        let c = &terrain.cells()[index];
-        let Some(building_id) =
-            self.substrate
-                .occupancy
-                .first_building_on_layer(c.rx, c.ry, MovementLayer::Ground)
-        else {
+        let Some(building_id) = self.ground_building_in_cell(infantry) else {
             return Ok(false);
         };
         let Some(building) = self.substrate.entities.get(building_id) else {
@@ -177,12 +174,30 @@ impl Simulation {
         if object.invisible_in_game || (object.gate && building.is_open_gate()) {
             return Ok(false);
         }
+        // Ares 3.0 InfantryClass_Update 10014DB0 (hook 0x51BD4C): an `IsPassable`
+        // building is ignored (0x51BD7D); a `Firestorm.Wall` one takes the
+        // stock FirestormWall branch (0x51BD56) in place of `FirestormWall=`:
+        // only while its owner's firestorm is up does the man scatter.
+        if rules.ares() {
+            if object.building_type_ext().is_passable {
+                return Ok(false);
+            }
+            if object.building_type_ext().firestorm_wall {
+                if !self.ares_firestorm.is_active(building.owner()) {
+                    return Ok(false);
+                }
+            } else if object.laser_fence {
+                return Ok(false);
+            }
+        }
         // RESIDUAL: specialized fence state. This prefix compares LaserFence+618
         // with8/12 and reads its owner's Firestorm+1FA. Their runtime
         // owners are absent. Such types retain the prior no-Scatter behavior
         // until those separate mechanisms establish the required state.
         // Stock GAPILE and all ordinary barracks have both type flags false.
-        if object.laser_fence || object.firestorm_wall {
+        // (While Ares plays, its firestorm arm above takes this place; the
+        // hook leaves the stock `FirestormWall=` flag unread.)
+        if !rules.ares() && (object.laser_fence || object.firestorm_wall) {
             return Ok(false);
         }
         let slaves = crate::sim::slave_deposit::SlaveDepositQuery {
@@ -211,6 +226,28 @@ impl Simulation {
         )
     }
 
+    /// The first ground Building in the cell under `infantry`'s physical
+    /// location (Object+9C, not the virtual+4C navigation or bridge XY), which
+    /// [`Self::scatter_idle_infantry_from_building`] scatters it out of. A
+    /// sleeping infantryman is woken by one (`world::idle_sleep`).
+    pub(super) fn ground_building_in_cell(
+        &self,
+        infantry: &crate::sim::game_entity::GameEntity,
+    ) -> Option<u64> {
+        use crate::map::cell_index::NativeCellIdentity;
+        use crate::sim::movement::locomotor::MovementLayer;
+        let terrain = self.resolved_terrain.as_ref()?;
+        let coord = movement::ground_pose::position_world_coord(&infantry.position);
+        let cell = terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
+        let NativeCellIdentity::Real(index) = cell else {
+            return None;
+        };
+        let c = &terrain.cells()[index];
+        self.substrate
+            .occupancy
+            .first_building_on_layer(c.rx, c.ry, MovementLayer::Ground)
+    }
+
     /// FootClass::AI's one call of the active locomotor's Process
     /// (`0x004DA877`, `ILocomotion` vtable `+0x40`).
     ///
@@ -221,32 +258,51 @@ impl Simulation {
     ///   VERA keeps no link.
     /// - The active class picks the one Process: the ground corridor for
     ///   Drive, Ship and Walk, the air pass for Fly and Jumpjet, and Hover's,
-    ///   Teleport's and Rocket's own.
+    ///   Teleport's, Rocket's and Tunnel's own.
     pub(crate) fn process_active_locomotor(
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
-        ctx: techno_ai::ObjectAiCtx<'_>,
+        ctx: &mut techno_ai::ObjectAiCtx<'_>,
     ) -> Result<LocomotorProcess, super::FrameAdvanceError> {
+        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::MOVEMENT);
         let overlay_registry = ctx.overlay_registry;
         use crate::rules::locomotor_type::LocomotorKind;
+        // A quiet unit is not falling (`world::quiet_units`).
+        let quiet = self.quiet(stable_id);
         let admitted = self.substrate.entities.get(stable_id).and_then(|entity| {
             let sinking = entity.sinking.is_active();
             entity.locomotor.as_ref().and_then(|locomotor| {
-                (!sinking && !entity.is_falling_down() && !entity.lifecycle.in_limbo())
+                (!sinking && (quiet || !entity.is_falling_down()) && !entity.lifecycle.in_limbo())
                     .then(|| locomotor.active_kind())
             })
         });
         let Some(kind) = admitted else {
             return Ok(LocomotorProcess::default());
         };
+        // Ares TechnoExt::CreateWithDroppod (10044030) installs the DropPod
+        // locomotor over the Foot's own: its Process (`0x004B5B70`) is the
+        // one this call makes until the pod lands.
+        if rules.ares()
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.ares_drop_pod().is_some())
+        {
+            self.process_drop_pod_locomotor(stable_id, rules, overlay_registry, &mut ctx.effects);
+            return Ok(LocomotorProcess::admitted());
+        }
         match kind {
-            LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Walk => self
-                .process_ground_locomotor_one(stable_id, rules, overlay_registry, ctx.effects)
+            LocomotorKind::Drive
+            | LocomotorKind::Ship
+            | LocomotorKind::Walk
+            | LocomotorKind::Mech => self
+                .process_ground_locomotor_one(stable_id, rules, overlay_registry, &mut ctx.effects)
                 .map(LocomotorProcess::from_ground),
             LocomotorKind::Hover => {
-                self.complete_pending_order(stable_id, rules, overlay_registry, ctx.effects);
-                self.process_hover_locomotor(stable_id, rules, overlay_registry, ctx.effects)
+                self.complete_pending_order(stable_id, rules, &mut ctx.effects);
+                self.process_hover_locomotor(stable_id, rules, overlay_registry, &mut ctx.effects)
                     .map(|hover| LocomotorProcess {
                         admitted: true,
                         bridge_state_changed: hover.bridge_state_changed,
@@ -255,11 +311,26 @@ impl Simulation {
                     })
             }
             LocomotorKind::Fly | LocomotorKind::Jumpjet => {
-                self.process_air_locomotor(stable_id, rules, overlay_registry, ctx.effects)
+                self.process_air_locomotor(stable_id, rules, overlay_registry, &mut ctx.effects)
             }
             LocomotorKind::Teleport => self.process_teleport_locomotor(stable_id, rules, ctx),
             LocomotorKind::Rocket => {
-                Ok(self.process_rocket_locomotor(stable_id, rules, overlay_registry, ctx.effects))
+                Ok(self.process_rocket_locomotor(stable_id, rules, &mut ctx.effects))
+            }
+            LocomotorKind::Tunnel => {
+                self.complete_pending_order(stable_id, rules, &mut ctx.effects);
+                let tunnel = self.process_tunnel_locomotor(
+                    stable_id,
+                    rules,
+                    overlay_registry,
+                    &mut ctx.effects,
+                );
+                Ok(LocomotorProcess {
+                    admitted: true,
+                    bridge_state_changed: tunnel.bridge_state_changed,
+                    per_cell_ran: tunnel.per_cell_ran,
+                    ..LocomotorProcess::default()
+                })
             }
         }
     }
@@ -271,10 +342,10 @@ impl Simulation {
         stable_id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: super::FrameEffects<'_>,
+        effects: &mut super::FrameEffects<'_>,
     ) -> Result<LocomotorProcess, super::FrameAdvanceError> {
         let mut process = LocomotorProcess::admitted();
-        self.complete_pending_order(stable_id, rules, overlay_registry, effects);
+        self.complete_pending_order(stable_id, rules, effects);
         let jumpjet = self
             .substrate
             .entities
@@ -315,7 +386,7 @@ impl Simulation {
             // The Infantry notice keeps the infantryman: its class AI runs on
             // to the sequencer and locomotion actions.
             self.substrate.aircraft_tracker_remove(stable_id);
-            self.infantry_crash_impact(stable_id, rules, overlay_registry, effects);
+            self.infantry_crash_impact(stable_id, rules, effects);
             return Ok(process);
         }
         // The impact UnInits the object; `FootClass::AI` returns on the
@@ -339,7 +410,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
-        ctx: techno_ai::ObjectAiCtx<'_>,
+        ctx: &mut techno_ai::ObjectAiCtx<'_>,
     ) -> Result<LocomotorProcess, super::FrameAdvanceError> {
         let overlay_registry = ctx.overlay_registry;
         if self
@@ -356,7 +427,7 @@ impl Simulation {
                 ..LocomotorProcess::default()
             });
         }
-        self.complete_pending_order(stable_id, rules, overlay_registry, ctx.effects);
+        self.complete_pending_order(stable_id, rules, &mut ctx.effects);
         let sim = self;
         let mut process = LocomotorProcess::admitted();
         let teleport_armed = sim
@@ -374,7 +445,7 @@ impl Simulation {
             // `0x007193C7`: the detach sweep (`0x0070D4A0`) with the owner,
             // so every Techno aiming at it restores its mission and takes the
             // class NULL target setter.
-            sim.stop_all_targeting_on_detach(stable_id, rules, overlay_registry, ctx.effects);
+            sim.stop_all_targeting_on_detach(stable_id, rules, &mut ctx.effects);
             // 7193CC..7193F4: walk the Bullet array backwards before WarpOut,
             // Mark(UP), or relocation changes the target's original pose.
             sim.lose_projectile_targets(stable_id, rules);
@@ -388,7 +459,7 @@ impl Simulation {
                 .get(stable_id)
                 .and_then(|entity| entity.parasite.eater())
             {
-                sim.parasite_exit_unit(eater, rules, ctx.effects);
+                sim.parasite_exit_unit(eater, rules, &mut ctx.effects);
             }
             // `0x007195DB` Mark(UP) and `0x007196BF` Mark(DOWN) bracket the
             // relocation: the cell list entry, and a Unit's raw 0x20, leave
@@ -396,7 +467,7 @@ impl Simulation {
             // infantryman's sub-cell bit stays: his Mark reaches no receiver,
             // and the window calls none of its own.
             // ChronoOut plays at the old Location (`0x0071962C`).
-            sim.foot_mark_remove(stable_id, rules, overlay_registry, ctx.effects);
+            sim.foot_mark_remove(stable_id, rules, overlay_registry, &mut ctx.effects);
             Self::teleport_warp_sound(
                 &mut sim.interner,
                 &sim.substrate,
@@ -409,7 +480,7 @@ impl Simulation {
         }
         sim.process_teleport(stable_id, rules, ctx);
         if teleport_relocating {
-            sim.foot_mark_put(stable_id, rules, overlay_registry, ctx.effects);
+            sim.foot_mark_put(stable_id, rules, overlay_registry, &mut ctx.effects);
         }
         // Teleport Process's warp step (`0x007192F0`), after the relocation.
         // Its `vt+0x480(NULL, 1)` is the owner's class setter
@@ -417,7 +488,7 @@ impl Simulation {
         // Teleport's own Stop_Moving through Foot's null arm.
         if teleport_reached {
             // 0x007197B4: vt+0x480(NULL, 1) before Stop_Moving.
-            sim.assign_null_destination(stable_id, rules, overlay_registry, ctx.effects);
+            sim.assign_null_destination(stable_id, rules, overlay_registry, &mut ctx.effects);
         }
         if teleport_relocating {
             // 0x00719710: ChronoIn at the new Location.
@@ -437,10 +508,19 @@ impl Simulation {
                 movement::PerCellReason::Arrival,
                 rules,
                 overlay_registry,
-                ctx.effects,
+                &mut ctx.effects,
             )?;
             process.per_cell_ran = true;
-            // 0x00719725 Stop_Moving: the tick retired the request.
+            // 0x00719725: Process's own Stop_Moving, after the arrival
+            // Per_Cell_Process, which still read Is_Moving set.
+            if let Some(locomotor) = sim
+                .substrate
+                .entities
+                .get_mut(stable_id)
+                .and_then(|entity| entity.locomotor.as_mut())
+            {
+                locomotor.teleport_process_stop();
+            }
             // 0x0071972E CellClass::PickupCrate (`0x00481A00`) on the
             // destination cell for the linked Foot; its answer is not read.
             let cell = sim
@@ -449,12 +529,13 @@ impl Simulation {
                 .get(stable_id)
                 .map(|entity| (entity.position.rx() as i16, entity.position.ry() as i16));
             if let Some(cell) = cell {
-                let _ = sim.pickup_crate_at(stable_id, cell, rules, overlay_registry, ctx.effects);
+                let _ =
+                    sim.pickup_crate_at(stable_id, cell, rules, overlay_registry, &mut ctx.effects);
             }
             // 0x0071973C: vt+0x480(NULL, 1). A Teleporter still in radio
             // contact gets a Drive here, which the FootClass::AI tail ends
             // again.
-            sim.assign_null_destination(stable_id, rules, overlay_registry, ctx.effects);
+            sim.assign_null_destination(stable_id, rules, overlay_registry, &mut ctx.effects);
             // 0x00719742..0x00719791: the arrival WarpOut at the Location.
             sim.teleport_warp_out(stable_id, rules);
         }
@@ -468,11 +549,10 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: super::FrameEffects<'_>,
+        effects: &mut super::FrameEffects<'_>,
     ) -> LocomotorProcess {
         let mut process = LocomotorProcess::admitted();
-        let outcome = self.process_rocket(stable_id, rules, overlay_registry, effects);
+        let outcome = self.process_rocket(stable_id, rules, effects);
         process.bridge_state_changed = outcome.bridge_state_changed;
         process.ended = !self
             .substrate
@@ -510,7 +590,7 @@ impl Simulation {
         rules: Option<&RuleSet>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Result<movement::MovementTickStats, super::FrameAdvanceError> {
-        let effects = super::FrameEffects::default();
+        let mut effects = super::FrameEffects::default();
         if self
             .substrate
             .entities
@@ -522,7 +602,7 @@ impl Simulation {
                     stable_id,
                     rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
                     overlay_registry,
-                    effects,
+                    &mut effects,
                 )
                 .map(|turn| turn.movement);
         }
@@ -530,7 +610,7 @@ impl Simulation {
             stable_id,
             rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             overlay_registry,
-            effects,
+            &mut effects,
         )
         .map(|outcome| outcome.movement)
     }
@@ -540,18 +620,63 @@ impl Simulation {
         stable_id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: super::FrameEffects<'_>,
+        effects: &mut super::FrameEffects<'_>,
+    ) -> Result<GroundLocomotorOutcome, super::FrameAdvanceError> {
+        self.complete_pending_order(stable_id, rules, effects);
+        // Walk75AC80..75AC93 keeps the walking controller installed for its
+        // whole Process, including arrival and new-destination callbacks.
+        let guard_walk = self
+            .substrate
+            .entities
+            .get_mut_if(stable_id, |entity| {
+                entity.locomotor.as_ref().is_some_and(|loco| {
+                    loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk
+                        && loco.piggyback().is_some()
+                })
+            })
+            .and_then(|entity| entity.locomotor.as_mut())
+            .is_some_and(|loco| {
+                loco.set_walk_processing(true);
+                true
+            });
+        let result = self.process_ground_movement(stable_id, rules, overlay_registry, effects);
+        if guard_walk
+            && let Some(loco) = self
+                .substrate
+                .entities
+                .get_mut(stable_id)
+                .and_then(|e| e.locomotor.as_mut())
+        {
+            loco.set_walk_processing(false);
+        }
+        result
+    }
+
+    fn process_ground_movement(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut super::FrameEffects<'_>,
     ) -> Result<GroundLocomotorOutcome, super::FrameAdvanceError> {
         let sim = self;
         let mut outcome = GroundLocomotorOutcome::default();
-        sim.complete_pending_order(stable_id, rules, overlay_registry, effects);
+        if let Some(changed) = sim.process_mech_head(stable_id, rules, overlay_registry, effects)? {
+            outcome.bridge_state_changed |= changed;
+            outcome.movement.movers_total += 1;
+            return Ok(outcome);
+        }
         // Drive4B050B..0557 / Ship69FC1B..FC67 samples the containing
         // cell slope before any active-track, destination or turn return.
-        if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-            && let Some(slope) = sim.resolved_terrain.as_ref().and_then(|terrain| {
-                terrain
-                    .cell(entity.position.rx(), entity.position.ry())
-                    .map(|cell| cell.slope_type)
+        let slope = sim.substrate.entities.get(stable_id).and_then(|entity| {
+            sim.resolved_terrain
+                .as_ref()?
+                .cell(entity.position.rx(), entity.position.ry())
+                .map(|cell| cell.slope_type)
+        });
+        if let Some(slope) = slope
+            && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                movement::slope_transition::process_entry_changes(entity, slope)
             })
         {
             movement::slope_transition::sample_process_entry(
@@ -560,28 +685,33 @@ impl Simulation {
                 sim.session.binary_frame(),
             );
         }
-        match sim.process_track_turn(stable_id, rules, overlay_registry, effects) {
+        match sim.process_track_turn(
+            stable_id,
+            rules,
+            overlay_registry,
+            effects,
+            &mut outcome.bridge_state_changed,
+        )? {
             movement::track_turn::TrackProcessEntry::Movement => {}
             movement::track_turn::TrackProcessEntry::Tail => {
-                sim.drive_process_rest_tail(stable_id, rules, overlay_registry, effects);
+                sim.track_process_rest_tail(stable_id, rules, effects);
                 return Ok(outcome);
             }
             movement::track_turn::TrackProcessEntry::Return => return Ok(outcome),
         }
-        let mut pending_movement = {
-            let current_grid = sim.path_grid_snapshot();
-            movement::movement_tick::begin_movement(
-                &mut sim.substrate.entities,
-                stable_id,
-                current_grid.as_deref(),
-                sim.session.binary_frame(),
-                sim.resolved_terrain.as_ref(),
-                sim.playfield_bounds,
-                &mut sim.interner,
-                rules,
-                &sim.houses,
-            )
-        };
+        // The grid is borrowed in place, beside the other fields: a snapshot
+        // would count a shared handle up and down for every mover's visit.
+        let mut pending_movement = movement::movement_tick::begin_movement(
+            &mut sim.substrate.entities,
+            stable_id,
+            sim.path_grid.as_deref(),
+            sim.session.binary_frame(),
+            sim.resolved_terrain.as_ref(),
+            sim.playfield_bounds,
+            &mut sim.interner,
+            rules,
+            &sim.houses,
+        );
         // Process_Movement's no-queue request and the Process_Track after it.
         // When the active-track Process_Track(0) ends its track, the same
         // Process continues into Process_Movement and Process_Track(1)
@@ -596,14 +726,14 @@ impl Simulation {
         let mut retry = false;
         let mut process_tail = true;
         loop {
-            if let Some(request) = pending_movement.take_foot_path_request() {
+            if let Some(mut request) = pending_movement.take_foot_path_request() {
                 let outcome = sim
-                    .run_foot_path_request(&request, rules, overlay_registry, effects)
+                    .run_foot_path_request(&mut request, rules, overlay_registry, effects)
                     .map_err(|cause| frame_error(sim, cause))?;
                 if outcome == movement::FootPathOutcome::Resume {
                     pending_movement.reenter_mover(
                         sim,
-                        movement::movement_tick::MoverReentry::FootPath(Box::new(request)),
+                        movement::movement_tick::MoverReentry::FootPath(request),
                         rules,
                     );
                 }
@@ -630,7 +760,6 @@ impl Simulation {
                         family,
                         movement::ProcessMovementArgs::OUTER,
                         rules,
-                        overlay_registry,
                         effects,
                     )
                     .map_err(|cause| frame_error(sim, cause))?;
@@ -672,6 +801,7 @@ impl Simulation {
             let pass = sim
                 .run_track_process(invocation, rules, overlay_registry, effects)
                 .map_err(|cause| frame_error(sim, cause))?;
+            outcome.bridge_state_changed |= pass.bridge_state_changed;
             pending_movement.record_track_movement(pass.moved);
             // Only the FIRST, active-track call tests Process_Track's AL
             // (4B057B). The post-fresh call ignores AL and goes through the
@@ -716,26 +846,106 @@ impl Simulation {
                 pending_movement,
             ));
         if process_tail {
-            sim.drive_process_rest_tail(stable_id, rules, overlay_registry, effects);
+            sim.track_process_rest_tail(stable_id, rules, effects);
         }
         Ok(outcome)
     }
+
+    /// FootClass::AI's sound steps after the move sound, in native order.
+    /// `quiet`: the object is quiet now (`world::quiet_units`).
+    fn foot_edge_sounds(
+        &mut self,
+        stable_id: u64,
+        quiet: bool,
+        rules: &RuleSet,
+        effects: &mut super::FrameEffects<'_>,
+    ) {
+        let sim = self;
+        // Foot AI 4DAB3C..4DABB1: a DropAsBomb object starting to fall plays
+        // its type's VoiceFalling at its Location, before the sinking/crash
+        // edges and looping-sound position update (PlayAt7509E0, ungated).
+        // A quiet unit has no fall edge.
+        if !quiet
+            && let Some(entity) = sim.substrate.entities.get_mut_if(
+                stable_id,
+                crate::sim::game_entity::GameEntity::falling_edge_pending,
+            )
+            && entity.observe_falling_edge()
+            && let Some(voice) = sim
+                .interner
+                .object_type(entity.type_ref(), rules)
+                .and_then(|object| object.voice_falling.as_deref())
+        {
+            let event = super::SimSoundEvent::voc_at_location(
+                rules.sound_name(voice),
+                entity,
+                sim.resolved_terrain.as_ref(),
+            );
+            sim.sound_events.emit(event);
+        }
+        Self::sinking_edge_sounds(
+            &sim.interner,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            stable_id,
+            rules,
+        );
+        Self::crash_edge_sounds(
+            &sim.interner,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            &sim.session,
+            &sim.houses,
+            stable_id,
+            rules,
+        );
+        // Foot4DADF0 ->750D40 uses the coordinate BEFORE those callbacks
+        // and Unit's subsequent hull lowering. Finish PlayAt/Release first.
+        if let Some(entity) = sim.substrate.entities.get(stable_id) {
+            effects.update_looping_sound(sim, rules, stable_id, Self::movement_sound_world(entity));
+        }
+    }
+
+    /// FootClass::AI's pending entry, then the eater's ParasiteClass AI.
+    /// `quiet`: the object is quiet now (`world::quiet_units`), and has
+    /// neither.
+    fn foot_pending_entry_and_parasite(
+        &mut self,
+        stable_id: u64,
+        quiet: bool,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut super::FrameEffects<'_>,
+    ) {
+        let sim = self;
+        if quiet {
+            return;
+        }
+        // FootClass::AI 0x004DAED0..0x004DAEDC: with vt+0x1D8 (the warp-in)
+        // clear, the pending entry (`Unit+0x500`) asks for its slot.
+        if sim
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| !entity.is_warping_in() && entity.pending_entry().is_some())
+        {
+            crate::sim::docking::building_dock::try_pending_entry(sim, rules, stable_id, effects);
+        }
+        // FootClass::AI tail 0x004DAEE1..0x004DAEF3, after the piggyback swap:
+        // an infected Foot runs its eater's ParasiteClass AI in its own turn.
+        sim.parasite_ai_for_victim(stable_id, rules, overlay_registry, effects);
+    }
+
     pub(super) fn advance_live_object_pass(
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: super::FrameEffects<'_>,
+        effects: &mut super::FrameEffects<'_>,
     ) -> Result<LiveObjectPassOutcome, super::FrameAdvanceError> {
-        #[cfg(all(feature = "telemetry", target_os = "horizon"))]
-        let profile_start = self.frame_profiling.then(std::time::Instant::now);
-        self.answer_batched_path_searches(rules, overlay_registry);
-        #[cfg(all(feature = "telemetry", target_os = "horizon"))]
-        let profile_paths = profile_start.map(|_| std::time::Instant::now());
-
-        #[cfg(all(feature = "telemetry", target_os = "horizon"))]
-        let profile_scans = profile_start.map(|_| std::time::Instant::now());
-        let object_ctx = techno_ai::ObjectAiCtx {
-            effects,
+        self.answer_batched_path_searches(rules);
+        self.answer_batched_scans(rules, overlay_registry);
+        let mut object_ctx = techno_ai::ObjectAiCtx {
+            effects: effects.reborrow(),
             overlay_registry,
         };
 
@@ -754,9 +964,19 @@ impl Simulation {
                 .collect();
             self.fog.defer_plane_writes(kept);
         }
-        // The pass's sight walks ask each owner's viewers once until the ally
-        // graph changes (`vision::RevealViewers`).
-        self.reveal_viewers.begin();
+        // The pass's sight walks ask the client maps once, and each owner's
+        // viewers once until the ally graph changes (`vision::RevealViewers`).
+        let clients = self.fog_viewers();
+        self.reveal_viewers.begin(clients);
+        // Its garrisonable civilian buildings walk the Houses for the
+        // Civilian-side one once between them (`CivilianSideHouse`).
+        self.civilian_house_memo.begin();
+        // A projectile's or warhead's name is first interned when something
+        // fires it, and an anim's when it spawns; bind the names interned
+        // since last frame, so a bullet's visits and hits and an anim's
+        // visits find their types through handles (VERA-only, answers
+        // unchanged).
+        self.interner.cover_types(rules);
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
             #[cfg(feature = "debug-tools")]
             let debug_before = sim
@@ -764,35 +984,37 @@ impl Simulation {
                 .entities
                 .get(stable_id)
                 .and_then(crate::sim::debug_event_log::DebugObservation::capture);
-            let turn = sim.advance_live_object_turn(stable_id, rules, object_ctx)?;
+            // A sleeping object's visit is counted, not run (`idle_sleep`).
+            let check = match sim.visit_sleeper(stable_id, rules, &mut object_ctx.effects) {
+                super::idle_sleep::SleepVisit::Counted => return Ok(()),
+                super::idle_sleep::SleepVisit::Awake => None,
+                super::idle_sleep::SleepVisit::Check(check) => Some(check),
+            };
+            let turn = sim.advance_live_object_turn(stable_id, rules, &mut object_ctx)?;
+            if let Some(check) = check {
+                sim.finish_sleep_check(stable_id, *check);
+            }
+            sim.sleep_after_turn(stable_id, rules);
+            sim.quiet_after_turn(stable_id, rules);
             #[cfg(feature = "debug-tools")]
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
             {
                 before.record(entity, sim.session.binary_frame());
             }
+            if turn.tube_turn {
+                outcome.tube_turns.insert(stable_id);
+            }
             outcome.destroyed_structure |= turn.destroyed_structure;
             outcome.bridge_state_changed |= turn.bridge_state_changed;
             outcome.ownership_changed |= turn.ownership_changed;
             Ok(())
         });
-        #[cfg(all(feature = "telemetry", target_os = "horizon"))]
-        let profile_turns = profile_start.map(|_| std::time::Instant::now());
         self.fog.settle_plane_writes();
         self.reveal_viewers.end();
+        self.civilian_house_memo.end();
         self.finish_batched_path_searches();
-
-        #[cfg(all(feature = "telemetry", target_os = "horizon"))]
-        if let (Some(start), Some(paths), Some(scans), Some(turns)) =
-            (profile_start, profile_paths, profile_scans, profile_turns)
-        {
-            record_object_pass_profile([
-                paths - start,
-                scans - paths,
-                turns - scans,
-                turns.elapsed(),
-            ]);
-        }
+        self.finish_batched_scans();
         walked?;
         Ok(outcome)
     }
@@ -801,50 +1023,61 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
-        object_ctx: techno_ai::ObjectAiCtx<'_>,
+        object_ctx: &mut techno_ai::ObjectAiCtx<'_>,
     ) -> Result<ObjectTurnOutcome, super::FrameAdvanceError> {
         let sim = self;
         let overlay_registry = object_ctx.overlay_registry;
         let mut outcome = ObjectTurnOutcome::default();
+        // The turn looks this object up by id about a hundred times; from
+        // here the store answers for it without its id index (VERA-only,
+        // every answer unchanged).
+        sim.substrate.entities.focus(stable_id);
         // UnitClass::AI / InfantryClass::AI give an active TubeMovement
         // object the whole live-object turn.  Capture before the leaf:
         // successful finalization clears the payload but must still skip
         // every ordinary locomotor tail and the second mission checkpoint.
-        let tube_active_at_entry = sim
+        // A quiet unit holds no tube (`world::quiet_units`). The mark only
+        // clears during a turn, so a turn that starts loud stays loud and
+        // asks no more; one that starts quiet asks the live mark.
+        let (tube_active_at_entry, was_structure, entered_quiet) = sim
             .substrate
             .entities
-            .get(stable_id)
-            .is_some_and(tube_active);
-        let was_structure = sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.category() == EntityCategory::Structure);
+            .get_and_quiet(stable_id)
+            .map_or((false, false, false), |(entity, quiet)| {
+                (
+                    !quiet && tube_active(entity),
+                    entity.category() == EntityCategory::Structure,
+                    quiet,
+                )
+            });
+        let quiet = |sim: &Simulation| entered_quiet && sim.quiet(stable_id);
+        #[cfg(debug_assertions)]
+        if entered_quiet {
+            sim.check_quiet(stable_id, rules);
+        }
+        let _building_area = was_structure
+            .then(|| crate::sim::frame_profile::area(crate::sim::frame_profile::phase::BUILDINGS));
         let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
-        if let Some(error) = ai.fall_error.take() {
+        if let Some(error) = ai.frame_error.take() {
             return Err(error);
         }
         outcome.bridge_state_changed |= ai.bridge_state_changed;
         outcome.destroyed_structure |= ai.destroyed_structure;
         outcome.ownership_changed |= ai.ownership_changed();
-        if was_structure
-            && sim
-                .substrate
-                .entities
-                .get(stable_id)
-                .is_none_or(|entity| entity.death.is_dying())
-        {
+        // One read serves the three gates after the AI visit.
+        let Some(entity) = sim.substrate.entities.get(stable_id) else {
+            outcome.destroyed_structure |= was_structure;
+            return Ok(outcome);
+        };
+        let dying = entity.death.is_dying();
+        let foot = matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+        );
+        if was_structure && dying {
             outcome.destroyed_structure = true;
         }
-        if sim.substrate.entities.get(stable_id).is_none_or(|entity| {
-            entity.death.is_dying()
-                || (!tube_active_at_entry
-                    && matches!(
-                        entity.category(),
-                        EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-                    )
-                    && !entity.lifecycle.object_alive())
-        }) {
+        if dying || (!tube_active_at_entry && foot && !entity.lifecycle.object_alive()) {
             // Foot4DA53E..548 reloads Object+90 after TechnoAI and returns
             // before locomotor Process when false. Health and the Rust dying
             // state are independent: even Process's slope prelude must wait
@@ -855,24 +1088,78 @@ impl Simulation {
         }
         // A temporal-warped object's leaf AI returned before its locomotor
         // Process (Unit 0x007362B5..0x007362CB, Infantry and Aircraft alike;
-        // `Simulation::temporal_ai_prologue`).
-        if sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(crate::sim::game_entity::GameEntity::ai_frozen)
-        {
+        // `Simulation::temporal_ai_prologue`). A quiet unit is not warped.
+        if !quiet(sim) && entity.ai_frozen() {
+            return Ok(outcome);
+        }
+        // BuildingClass::AI calls no FootClass::AI. Every step below returns
+        // on a building's class, or on its missing locomotor, except three:
+        // the sound steps (which also deliver the frame's sounds so far) and
+        // the pending entry and parasite, which read state VERA keeps on
+        // every object, and the fire visit, which commits even when it fires
+        // nothing. A building without a locomotor takes those three, in
+        // their order, and skips the rest (VERA-only, results unchanged).
+        // One that is not alive took none: the tail returned on Object+90
+        // after the Process, before the first of them.
+        if !foot && entity.locomotor.is_none() {
+            if entity.lifecycle.object_alive() {
+                // Only Units go quiet.
+                sim.foot_edge_sounds(stable_id, false, rules, &mut object_ctx.effects);
+                sim.foot_pending_entry_and_parasite(
+                    stable_id,
+                    false,
+                    rules,
+                    overlay_registry,
+                    &mut object_ctx.effects,
+                );
+                // A visit that fires nothing commits no consequences.
+                let receipt = sim.commit_no_fire(rules, &mut object_ctx.effects);
+                outcome.bridge_state_changed |= receipt.bridge_state_changed;
+                outcome.destroyed_structure |= receipt.structure_destroyed;
+            }
             return Ok(outcome);
         }
 
+        // Ares 3.0 10014BA0 (hook 0x4DA53E) burns a live Foot standing in
+        // an active firestorm wall, then heals one in tiberium, right after
+        // FootAI's TechnoAI call; the hook then replays 4DA53E..548's
+        // Object+90 reload, so a burnt Foot returns here.
+        if rules.ares()
+            && !tube_active_at_entry
+            && sim.substrate.entities.get(stable_id).is_some_and(|entity| {
+                matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                )
+            })
+        {
+            outcome.bridge_state_changed |= sim.ares_foot_firestorm(
+                stable_id,
+                rules,
+                overlay_registry,
+                &mut object_ctx.effects,
+            );
+            sim.ares_foot_tiberium_heal(stable_id, rules);
+            if sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_none_or(|entity| entity.death.is_dying() || !entity.lifecycle.object_alive())
+            {
+                return Ok(outcome);
+            }
+        }
         // Foot4DA54E follows the post-TechnoAI Object+90 gate above.
         // An entry-active Tube bypasses FootAI; it must retain the byte.
+        // A quiet unit's latch is clear (`world::quiet_units`).
         if !tube_active_at_entry
-            && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-            && matches!(
-                entity.category(),
-                EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-            )
+            && !quiet(sim)
+            && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                ) && entity.mission_leaf.foot_idle_entry_latch() != 0
+            })
         {
             entity.mission_leaf.set_foot_idle_entry_latch(0);
         }
@@ -886,7 +1173,7 @@ impl Simulation {
                 rules,
                 stable_id,
                 overlay_registry,
-                object_ctx.effects,
+                &mut object_ctx.effects,
             )
         {
             outcome.destroyed_structure |= receipt.structure_destroyed;
@@ -909,28 +1196,37 @@ impl Simulation {
             // Foot4DA63B..670 precedes the high-flight sight block and
             // Process. Cruise crossing itself has no PerCell promotion.
             sim.promote_balloon_playfield_membership_before_process(stable_id, rules);
-            sim.refresh_high_flying_sight_before_process(stable_id, rules, object_ctx.effects);
+            sim.refresh_high_flying_sight_before_process(stable_id, rules, &mut object_ctx.effects);
             sim.dispatch_airborne_cell_tag_event(
                 stable_id,
-                super::UninitContext::new(rules, overlay_registry).with_effects(object_ctx.effects),
+                super::UninitContext::new(rules).with_effects(&mut object_ctx.effects),
             );
         }
 
         // Foot4DA80C captures +538 before locomotor Process. The sound tail
         // compares this same counter after its canonical cadence owner runs.
-        let Some(body_frame_before_process) = sim
-            .substrate
-            .entities
-            .get(stable_id)
-            .map(|entity| entity.body_frame_counter.get())
-        else {
-            return Ok(outcome);
+        // Only that owner below writes it (`animation::tick_foot_body_frame_counter`),
+        // so a quiet unit, which takes neither while it stays quiet
+        // (`world::quiet_units`), reads it only once something writes it.
+        let mut body_frame_before_process = if quiet(sim) {
+            None
+        } else {
+            let Some(counter) = sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .map(|entity| entity.body_frame_counter.get())
+            else {
+                return Ok(outcome);
+            };
+            Some(counter)
         };
         // An entry-active TubeMovement leaf runs in place of the Foot AI and
         // its Process.
         let process = if tube_active_at_entry {
+            outcome.tube_turn = true;
             let tube =
-                sim.tube_object_turn(stable_id, rules, overlay_registry, object_ctx.effects)?;
+                sim.tube_object_turn(stable_id, rules, overlay_registry, &mut object_ctx.effects)?;
             LocomotorProcess {
                 movement: tube.movement,
                 bridge_state_changed: tube.bridge_state_changed,
@@ -958,12 +1254,28 @@ impl Simulation {
         // absolute binary frame, inside the Process admission
         // (`0x004DA81A` bypasses both). The global frame commits only after
         // the complete live-object pass.
-        if process.admitted && foot_body_counter_admitted(tube_active_at_entry) {
+        // Read now what the Process left unwritten if it made the unit loud.
+        if body_frame_before_process.is_none() && !quiet(sim) {
+            body_frame_before_process = sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .map(|entity| entity.body_frame_counter.get());
+        }
+        if process.admitted
+            && foot_body_counter_admitted(tube_active_at_entry)
+            && body_frame_before_process.is_some()
+        {
             let foot_body_cadence = sim.substrate.entities.get(stable_id).and_then(|entity| {
                 if !entity.category().is_foot() {
                     return None;
                 }
                 let object = sim.interner.object_type(entity.type_ref(), rules)?;
+                let air_rate = if rules.ares() {
+                    object.techno_combat().movement().air_rate()
+                } else {
+                    0
+                };
                 Some((
                     crate::sim::animation::FootBodyCadence {
                         walk_rate: object.walk_rate,
@@ -971,10 +1283,23 @@ impl Simulation {
                     },
                     object.hover_attack,
                     object.deploy_to_land,
+                    air_rate,
                 ))
             });
-            if let (Some((cadence, hover_attack, deploy_to_land)), Some(entity)) =
-                (foot_body_cadence, sim.substrate.entities.get_mut(stable_id))
+            let frame = sim.session.binary_frame();
+            if let Some((cadence, hover_attack, deploy_to_land, air_rate)) = foot_body_cadence
+                && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                    crate::sim::animation::foot_body_frame_due(
+                        entity,
+                        crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
+                        cadence,
+                        hover_attack,
+                        deploy_to_land,
+                        air_rate,
+                        sim.resolved_terrain.as_ref(),
+                        frame,
+                    )
+                })
             {
                 crate::sim::animation::tick_foot_body_frame_counter(
                     entity,
@@ -982,6 +1307,7 @@ impl Simulation {
                     cadence,
                     hover_attack,
                     deploy_to_land,
+                    air_rate,
                     sim.resolved_terrain.as_ref(),
                     sim.session.binary_frame(),
                 );
@@ -1000,60 +1326,23 @@ impl Simulation {
         // Foot4DAA01 MoveSound,4DABC7 sinking and4DACDD crash edges run
         // before Scatter/piggyback/pending-entry/Parasite callbacks. In
         // particular, a later Squid cull cannot run this visit's sound edge.
-        Self::tick_move_sound_after_process(
-            &sim.interner,
-            &sim.session,
-            &sim.main_rng,
-            &mut sim.substrate,
-            &mut sim.sound_events,
-            &sim.houses,
-            stable_id,
-            body_frame_before_process,
-            rules,
-        );
-        // Foot AI 4DAB3C..4DABB1: a DropAsBomb object starting to fall plays
-        // its type's VoiceFalling at its Location, before the sinking/crash
-        // edges and looping-sound position update (PlayAt7509E0, ungated).
-        if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-            && entity.observe_falling_edge()
-            && let Some(voice) = sim
-                .interner
-                .object_type(entity.type_ref(), rules)
-                .and_then(|object| object.voice_falling.clone())
-        {
-            let event =
-                super::SimSoundEvent::voc_at_location(voice, entity, sim.resolved_terrain.as_ref());
-            sim.sound_events.emit(event);
-        }
-        Self::sinking_edge_sounds(
-            &sim.interner,
-            &mut sim.substrate,
-            &mut sim.sound_events,
-            stable_id,
-            rules,
-        );
-        Self::crash_edge_sounds(
-            &sim.interner,
-            &mut sim.substrate,
-            &mut sim.sound_events,
-            &sim.session,
-            &sim.houses,
-            stable_id,
-            rules,
-        );
-        // Foot4DADF0 ->750D40 uses the coordinate BEFORE those callbacks
-        // and Unit's subsequent hull lowering. Finish PlayAt/Release first.
-        if let Some(entity) = sim.substrate.entities.get(stable_id) {
-            object_ctx.effects.update_looping_sound(
-                sim,
-                rules,
+        if let Some(body_frame_before_process) = body_frame_before_process {
+            Self::tick_move_sound_after_process(
+                &sim.interner,
+                &sim.session,
+                &mut sim.main_rng,
+                &mut sim.substrate,
+                &mut sim.sound_events,
+                &sim.houses,
                 stable_id,
-                Self::movement_sound_world(entity),
+                body_frame_before_process,
+                rules,
             );
         }
+        sim.foot_edge_sounds(stable_id, quiet(sim), rules, &mut object_ctx.effects);
 
         // FootClass::AI 0x004DADF5..0x004DAE59: the64-frame idle Scatter.
-        match sim.foot_idle_scatter(stable_id, rules, overlay_registry, object_ctx.effects) {
+        match sim.foot_idle_scatter(stable_id, rules, overlay_registry, &mut object_ctx.effects) {
             Ok(changed) => outcome.bridge_state_changed |= changed,
             Err(cause) => log::debug!("Foot {stable_id} did not idle-scatter: {cause}"),
         }
@@ -1062,27 +1351,20 @@ impl Simulation {
         sim.try_end_piggyback(stable_id, rules);
         // Foot4DAECA clears the transient draw lift after piggyback callbacks,
         // before the warp-in/pending-entry predicate and ParasiteAI.
-        if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
-            entity.clear_ion_blast_lift();
-        }
-        // FootClass::AI 0x004DAED0..0x004DAEDC: with vt+0x1D8 (the warp-in)
-        // clear, the pending entry (`Unit+0x500`) asks for its slot.
-        if sim
+        if let Some(entity) = sim
             .substrate
             .entities
-            .get(stable_id)
-            .is_some_and(|entity| !entity.is_warping_in() && entity.pending_entry().is_some())
+            .get_mut_if(stable_id, |entity| entity.ion_blast_lift_pixels() != 0)
         {
-            crate::sim::docking::building_dock::try_pending_entry(
-                sim,
-                rules,
-                stable_id,
-                object_ctx.effects,
-            );
+            entity.clear_ion_blast_lift();
         }
-        // FootClass::AI tail 0x004DAEE1..0x004DAEF3, after the piggyback swap:
-        // an infected Foot runs its eater's ParasiteClass AI in its own turn.
-        sim.parasite_ai_for_victim(stable_id, rules, overlay_registry, object_ctx.effects);
+        sim.foot_pending_entry_and_parasite(
+            stable_id,
+            quiet(sim),
+            rules,
+            overlay_registry,
+            &mut object_ctx.effects,
+        );
 
         // Unit73649C follows the complete Foot tail. Its disguise pick must
         // follow Foot's own Scenario draws and precede Unit's firing suffix.
@@ -1106,9 +1388,18 @@ impl Simulation {
         }) {
             return Ok(outcome);
         }
-        if sim.tick_ship_sinking(stable_id, rules, overlay_registry, object_ctx.effects) {
+        if sim.tick_ship_sinking(stable_id, rules, overlay_registry, &mut object_ctx.effects) {
             return Ok(outcome);
         }
+        // Aircraft414ED0..414F42 emits after sinking, before the off-map
+        // removal below. Its independent child survives that removal.
+        sim.emit_aircraft_trailer(stable_id, rules, &mut object_ctx.effects)
+            .map_err(|cause| super::FrameAdvanceError {
+                tick: sim.session.tick(),
+                binary_frame: sim.session.binary_frame(),
+                entity_id: stable_id,
+                cause,
+            })?;
         // Infantry51BDE7..51BF80 follows the Foot tail: rate-zero fire
         // cancellation, its second Ready/Commence, Fear, firing51BF59,
         // sequencer51BF6A and locomotion actions51BF7B. Inline FireAt
@@ -1119,6 +1410,18 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
         if infantry {
+            // Installed Ares InfantryClass_Update_Reload10047980 replaces
+            // gamemd51BCB2: out of limbo, Reload(+424) before idle Scatter.
+            // The shared Techno owner supplies count/clock semantics; the
+            // Unit-only MobileFire pause is deliberately not used here.
+            if rules.ares()
+                && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
+                && entity.is_object_alive()
+                && !entity.lifecycle.in_limbo()
+                && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
+            {
+                entity.reload_techno_ammo(obj, sim.session.binary_frame() as i32, rules.ares());
+            }
             //51BCA4..51BDCF follows the entire FootAI, including Process and
             // its tails. A successful Scatter invokes Process a second time
             // synchronously, before the Infantry Ready/Commence/fire suffix.
@@ -1127,7 +1430,7 @@ impl Simulation {
                     stable_id,
                     rules,
                     overlay_registry,
-                    object_ctx.effects,
+                    &mut object_ctx.effects,
                 )
                 .map_err(|cause| super::FrameAdvanceError {
                     tick: sim.session.tick(),
@@ -1136,7 +1439,7 @@ impl Simulation {
                     cause,
                 })?;
             let receipt = sim
-                .infantry_action_turn(stable_id, rules, overlay_registry, object_ctx.effects)
+                .infantry_action_turn(stable_id, rules, overlay_registry, &mut object_ctx.effects)
                 .map_err(|cause| super::FrameAdvanceError {
                     tick: sim.session.tick(),
                     binary_frame: sim.session.binary_frame(),
@@ -1156,34 +1459,47 @@ impl Simulation {
         }
         // AircraftClass::AI after FootClass::AI: past the map's edge the
         // aircraft may be removed (`0x00414F47..0x00414FDE`), ending its AI.
-        if sim.remove_aircraft_off_map(stable_id, rules, overlay_registry, object_ctx.effects) {
+        if sim.remove_aircraft_off_map(stable_id, rules, &mut object_ctx.effects) {
             return Ok(outcome);
         }
         // Aircraft414FDF..415046 follows removal, before its Ready/Commence.
-        sim.cleanup_aircraft_dummy_cells(stable_id, rules, overlay_registry, object_ctx.effects);
+        sim.cleanup_aircraft_dummy_cells(stable_id, rules, &mut object_ctx.effects);
         // UnitClass::AI after FootClass::AI, before its second Ready/Commence.
         crate::sim::miner::miner_system::unit_ai_clear_harvesting(&mut sim.substrate, stable_id);
         // Unit7365E1 Fire_At_Target then7365E8 Facing_Update precede
         // its second Ready/Commence. FireAt appends into the live Logic walk.
         if !infantry {
-            let receipt = sim.commit_fire_visit(
-                crate::sim::combat::world_fire::FireVisit::UnitTarget(stable_id),
-                rules,
-                overlay_registry,
-                object_ctx.effects,
-            );
+            // A quiet unit's fire visit fires nothing and changes nothing
+            // (`world::quiet_units`); its commit remains.
+            let receipt = if quiet(sim) {
+                sim.commit_no_fire(rules, &mut object_ctx.effects)
+            } else {
+                sim.commit_fire_visit(
+                    crate::sim::combat::world_fire::FireVisit::UnitTarget(stable_id),
+                    rules,
+                    overlay_registry,
+                    &mut object_ctx.effects,
+                )
+            };
             outcome.bridge_state_changed |= receipt.bridge_state_changed;
             outcome.destroyed_structure |= receipt.structure_destroyed;
+            // Unit73666B..736685: a visceroid's UpdateVisceroid737180.
+            sim.unit_update_visceroid(stable_id, rules, &mut object_ctx.effects);
             // UnitAI736689 Reload+424 follows FireAtTarget/Facing and
             // precedes the second Ready/Commence. Aircraft/Infantry have
             // no corresponding ordinary Reload dispatch here. The native
             // post-Foot alive gate precedes firing; no second gate is added.
-            if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
-                && entity.category() == EntityCategory::Unit
-                && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
+            let now = sim.session.binary_frame() as i32;
+            if let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+                entity.category() == EntityCategory::Unit
+                    && sim
+                        .interner
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|obj| entity.reload_unit_ammo_writes(obj, now))
+            }) && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
             {
                 entity
-                    .reload_unit_ammo(obj, sim.session.binary_frame() as i32)
+                    .reload_unit_ammo(obj, sim.session.binary_frame() as i32, rules.ares())
                     .map_err(|cause| super::FrameAdvanceError {
                         tick: sim.session.tick(),
                         binary_frame: sim.session.binary_frame(),
@@ -1194,40 +1510,18 @@ impl Simulation {
             sim.object_ai_post_movement_promote_one(stable_id, rules);
             // Unit73671F..736817 follows that Commence (the CTF flag block
             // between them is unreachable).
-            sim.unit_ai_seek_repair(stable_id, rules, overlay_registry, object_ctx.effects);
+            sim.unit_ai_seek_repair(stable_id, rules, &mut object_ctx.effects);
             // Unit73681D..73697B, the last block of UnitClass::AI.
             crate::sim::miner::miner_system::unit_ai_nudge_off_refinery_pad(
                 sim,
                 stable_id,
                 rules,
-                overlay_registry,
-                object_ctx.effects,
+                &mut object_ctx.effects,
             );
         }
         sim.aircraft_crash_smoke(stable_id, rules);
+        // Aircraft415136..415184, the last block of AircraftClass::AI.
+        sim.carryall_carry_cargo(stable_id, rules, overlay_registry, &mut object_ctx.effects);
         Ok(outcome)
     }
-}
-
-#[cfg(all(feature = "telemetry", target_os = "horizon"))]
-fn record_object_pass_profile(spans: [std::time::Duration; 4]) {
-    std::thread_local! {
-        static PROFILE: std::cell::RefCell<(u32, [std::time::Duration; 4])> =
-            const { std::cell::RefCell::new((0, [std::time::Duration::ZERO; 4])) };
-    }
-    PROFILE.with(|profile| {
-        let mut profile = profile.borrow_mut();
-        profile.0 += 1;
-        for (total, span) in profile.1.iter_mut().zip(spans) {
-            *total += span;
-        }
-        if profile.0 == 100 {
-            let millis = profile.1.map(|span| span.as_secs_f64() * 10.0);
-            log::info!(target: "switch::perf",
-                "Object pass CPU average: paths={:.3}ms scans={:.3}ms turns={:.3}ms settle={:.3}ms",
-                millis[0], millis[1], millis[2], millis[3],
-            );
-            *profile = (0, [std::time::Duration::ZERO; 4]);
-        }
-    });
 }

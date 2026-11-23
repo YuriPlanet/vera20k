@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::{TeamAiDefinitionSource, TeamAiIniRegistry};
 use crate::sim::team_script_vm::{TeamScriptMember, member_type_identity};
 
@@ -41,7 +42,8 @@ fn scene(extra: &str) -> Option<(RuleSet, Simulation, u64, u64)> {
             .unwrap()
             .map;
     map.ini.merge(&patch);
-    let registry = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
+    let registry =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_multiplayer()).unwrap();
     assert_eq!(
         registry
             .scripts
@@ -59,7 +61,7 @@ fn scene(extra: &str) -> Option<(RuleSet, Simulation, u64, u64)> {
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.intern_rule_type_ids(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.get("Americans").unwrap();
     sim.session.set_current_house_for_test(Some(owner));
     let actor = sim
@@ -105,10 +107,10 @@ fn unpanic_uses_the_type_gate_and_preserves_stance_and_clocks() {
         let leaf = entity.mission_leaf;
         let rng = sim.rng_state();
 
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         expected.set_fear_level_for_test(panic_fear);
         assert_eq!(sim.entities().get(actor).unwrap().infantry, Some(expected));
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         expected.set_fear_level_for_test(unpanic_fear);
         let entity = sim.entities().get(actor).unwrap();
         assert_eq!(entity.infantry, Some(expected), "{patch}");
@@ -124,7 +126,9 @@ fn unpanic_uses_the_type_gate_and_preserves_stance_and_clocks() {
         assert!(state.advance_pending());
         assert!(state.refusal().is_none());
     }
-    assert!(action_is_ported(41));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(41, ares_way));
+    }
 }
 
 fn tick(sim: &mut Simulation, rules: &RuleSet) {

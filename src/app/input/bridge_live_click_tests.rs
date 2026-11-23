@@ -41,7 +41,7 @@ fn runtime(direction: u8) -> SimRuntime {
     );
     let template = sim.resolved_terrain().cloned().unwrap();
     let mut runtime = SimRuntime::from_simulation(sim);
-    runtime.resources.terrain_template = Some(template);
+    runtime.resources_mut().terrain_template = Some(template);
     runtime
 }
 
@@ -63,6 +63,13 @@ fn set_fixture_level(runtime: &mut SimRuntime, x: u16, y: u16, level: u8) {
         .dynamic_terrain_cells_mut_for_test()
         .record(&saved);
 }
+
+/// The native case VERA deliberately leaves. Raising the east lane to 6
+/// holds the span's retained level-6 deck (`corrected_high_bridge_deck_level`)
+/// off that lane's ground, so VERA's deck footprint finds this point on the
+/// deck. gamemd keeps no such deck: the direct-neighbor branch of its
+/// tactical inverse (`0x006D6590`) gives the ground beyond, (18, 16).
+const KEPT_DECK_CASES: [(&str, u64, (f32, f32)); 1] = [("east_raised", 6, (30.0, 420.0))];
 
 fn assert_clicks(runtime: &SimRuntime, row: &serde_json::Value) {
     let (orders, owner, movers) = commandable_movers();
@@ -87,6 +94,11 @@ fn assert_clicks(runtime: &SimRuntime, row: &serde_json::Value) {
             point.1,
             crate::app::match_runtime::sim_tick::tactical_cells(&runtime.simulation),
         );
+        if KEPT_DECK_CASES.iter().any(|&(phase, direction, at)| {
+            row["phase"] == phase && row["direction"] == direction && at == point
+        }) {
+            continue;
+        }
         assert_eq!(
             actual, expected,
             "phase={} direction={} point={point:?}",

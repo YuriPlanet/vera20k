@@ -20,7 +20,7 @@ from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
 
 from types import SimpleNamespace
-from tools.native_oracle import STACK_BASE, STACK_SIZE, RET_MAGIC, finish_vectors, provenance, run_checked
+from tools.native_oracle import STACK_BASE, STACK_SIZE, RET_MAGIC, finish_vectors, provenance, require, run_checked
 from tools.storage_oracle.saved_game_layout import code_guard, check_code
 from tools.sidebar_oracle.geometry import machine as base_machine, put32, call
 
@@ -65,24 +65,24 @@ def observe_draws(u):
         return struct.unpack('<I', u.mem_read(address, 4))[0]
 
     def bounds(_u, address, _size, _data):
-        assert address == callback
+        require(address == callback, f'bounds hook at {address:#x}')
         sp = u.reg_read(UC_X86_REG_ESP)
         output = read32(sp + 4)
-        assert u.reg_read(UC_X86_REG_ECX) == surface
+        require(u.reg_read(UC_X86_REG_ECX) == surface, 'bounds query on another surface')
         u.mem_write(output, struct.pack('<4i', 0, 0, 168, 600))
         bounds_calls.append(True)
         presentation_return(u, read32, 4)
         u.reg_write(UC_X86_REG_EAX, output)
 
     def draw(_u, address, _size, _data):
-        assert address == 0x4aed70
+        require(address == 0x4aed70, f'draw hook at {address:#x}')
         command = shape_command(u, read32)
         args = command['args']
-        assert u.reg_read(UC_X86_REG_ECX) == surface
-        assert u.reg_read(UC_X86_REG_EDX) == convert
-        assert args[0] == shape
-        assert command['clip'] == [0, 0, 168, 600]
-        assert args[4:] == (0x400, 0, 0, 0, 1000, 0, 0, 0, 0, 0)
+        require((u.reg_read(UC_X86_REG_ECX), u.reg_read(UC_X86_REG_EDX), args[0])
+                == (surface, convert, shape), f'draw surface/converter/shape differ: {command}')
+        require(command['clip'] == [0, 0, 168, 600], f'draw clip differs: {command}')
+        require(args[4:] == (0x400, 0, 0, 0, 1000, 0, 0, 0, 0, 0),
+                f'draw arguments differ: {command}')
         x, y = command['point']
         commands.append([args[1], x, y])
         presentation_return(u, read32, 56)
@@ -113,8 +113,7 @@ def collect():
         u.mem_write(sp, struct.pack('<2I', n.STOP, force))
         u.reg_write(UC_X86_REG_ESP, sp)
         u.reg_write(UC_X86_REG_ECX, owner)
-        u.emu_start(0x63fb20, 0x63fda5, count=20000)
-        assert u.reg_read(UC_X86_REG_EIP) == 0x63fda5
+        run_checked(u, 0x63fb20, 0x63fda5, count=20000)
         return {
             'side': side, 'strip_height': height, 'counts_surplus_output_drain': list(counts),
             'flashes': flashes, 'force': force, 'dirty_before': dirty, 'visible': visible,
@@ -175,7 +174,7 @@ def collect_state():
         u.mem_write(clock, b'\xa1' + struct.pack('<I', wall_slot) + b'\xc3')
 
         def inherited(_u, address, _size, _data):
-            assert address in (0x652960, 0x652de0, 0x653850)
+            require(address in (0x652960, 0x652de0, 0x653850), f'inherited hook at {address:#x}')
             presentation_return(u, lambda a: struct.unpack('<I', u.mem_read(a, 4))[0],
                                 8 if address == 0x653850 else 0)
 
@@ -250,13 +249,13 @@ def collect_state():
         totals = []
 
         def observe_total(_u, address, _size, _data):
-            assert address == 0x63f8ab
+            require(address == 0x63f8ab, f'total hook at {address:#x}')
             totals.append(struct.unpack('<i', struct.pack('<I',
                 u.reg_read(UC_X86_REG_EDX)))[0])
 
         u.hook_add(UC_HOOK_CODE, observe_total, begin=0x63f8ab, end=0x63f8ab)
         call(u, 0x63f850, ecx=owner)
-        assert len(totals) == 1, (name, totals)
+        require(len(totals) == 1, f'{name}: rated totals {totals}')
         filled = struct.unpack('<i', struct.pack('<I', u.reg_read(UC_X86_REG_EAX)))[0]
         rated_lists.append(dict(name=name, powers=list(powers), strip_height=90,
                                 total=totals[0], filled=filled))
@@ -376,17 +375,20 @@ def collect_state():
         n.put32(u, wall_slot, load_ms)
         call(u, 0x6a4f20, (owner + 0xf000,), ecx=owner)
         u.hook_del(write_hook)
-        assert u.reg_read(UC_X86_REG_ESP) == n.STACK + STACK_SIZE - 4096 + 8
-        assert {address: excluded_calls.count(address) for address in no_init_boundaries} == {
+        require(u.reg_read(UC_X86_REG_ESP) == n.STACK + STACK_SIZE - 4096 + 8,
+                f'{name}: NoInit stack differs')
+        require({address: excluded_calls.count(address) for address in no_init_boundaries} == {
             0x6ac840: 1, 0x42f670: 1, 0x6ac8d0: 23,
-            0x4f1b00: 1, 0x405be0: 1, 0x4068f0: 4}
+            0x4f1b00: 1, 0x405be0: 1, 0x4068f0: 4}, f'{name}: NoInit boundary calls differ')
         no_init = retained(u)
         for key, value in prior.items():
             if key != 'slide_timer':
-                assert no_init[key] == value, (name, key)
-        assert writes == [[0x1520, 4, (load_ms & 0xffffffff) >> 4], [0x1528, 4, 0]]
-        assert clock_calls == [load_ms & 0xffffffff]
-        assert opaque == [bytes(u.mem_read(owner + offset, 4)) for offset in (0x1514, 0x1524)]
+                require(no_init[key] == value, f'{name}: NoInit changed {key}')
+        require(writes == [[0x1520, 4, (load_ms & 0xffffffff) >> 4], [0x1528, 4, 0]],
+                f'{name}: NoInit writes {writes}')
+        require(clock_calls == [load_ms & 0xffffffff], f'{name}: NoInit clock {clock_calls}')
+        require(opaque == [bytes(u.mem_read(owner + offset, 4)) for offset in (0x1514, 0x1524)],
+                f'{name}: NoInit changed opaque timer words')
         no_init.update(clock_ms=clock_calls.copy(), writes=writes)
         visits = [visit(u, commands, fill_calls,
                         [wall_ms, *input_row[1:]], clock_calls) for wall_ms in schedule]

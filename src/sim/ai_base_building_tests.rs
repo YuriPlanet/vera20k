@@ -105,6 +105,52 @@ fn computer_house(game_mode_nonzero: bool) -> (Simulation, InternedId) {
     (sim, owner)
 }
 
+#[test]
+fn managed_ai_base_controls_reservation_and_production_together() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let campaign_rules = campaign.stock_rule_policy(None);
+    let rules = rules("");
+    let building = rules.object("PLAIN").unwrap();
+    for (mode, policy, site_admitted, production_mode) in [
+        (campaign, campaign_rules, true, 0),
+        (skirmish, skirmish.stock_rule_policy(None), false, 2),
+        (
+            campaign,
+            campaign_rules.with_uses_managed_ai_base(true),
+            false,
+            2,
+        ),
+        (campaign, campaign_rules.with_uses_ai_economy(true), true, 0),
+    ] {
+        let (mut sim, owner) = computer_house(false);
+        sim.install_session_admission(mode, None, policy);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .economy_mut()
+            .set_credits_for_test(0);
+
+        assert_eq!(
+            reserved_near(&sim, &rules, owner, building, (20, 20)),
+            site_admitted,
+        );
+        economy_state_machine(
+            &sim.interner,
+            &sim.session,
+            &mut sim.scenario_rng,
+            &mut sim.houses,
+            &sim.power_states,
+            &rules,
+            owner,
+            true,
+        );
+        assert_eq!(sim.houses[&owner].ai_production().mode(), production_mode);
+    }
+}
+
 /// Checks the native draws (stream `Scenario+0x218`, the range) and returns
 /// the stream the port must leave: `sim`'s, advanced by those draws.
 fn expect_draws(sim: &mut Simulation, draws: &[&Value], low: i32, high: i32) -> SimRng {
@@ -146,7 +192,9 @@ fn the_production_mode_steps_as_native() {
         house
             .ai_production_mut()
             .set_for_test(int(&row["mode"]) as i32, -1, true);
-        house.tracking_mut().set_for_test(0, &[], (0, 0, 0), &owned);
+        house
+            .tracking_mut_for_test()
+            .set_for_test(0, &[], (0, 0, 0), &owned);
         let mut power_state = PowerState::default();
         power_state.set_total_output_for_test(int(&row["output"]) as i32);
         power_state.set_total_drain_for_test(int(&row["drain"]) as i32);
@@ -203,6 +251,14 @@ fn the_building_choice_handles_nodes_as_native() {
             more => panic!("no fixture for prerequisites {more:?}"),
         };
         let rules = rules(prerequisite);
+        // The rows that splice a plant run the stock choice Ares replaces
+        // (`0x004FE782..0x004FE893`); its gates still apply.
+        if rules.ares_form()
+            && row["nodes_after"].as_array().unwrap().len()
+                == row["nodes"].as_array().unwrap().len() + 1
+        {
+            continue;
+        }
         let (mut sim, owner) = computer_house(true);
         // `0x0042E820`'s answers: the house's buildings on those nodes.
         let node_buildings = row["node_buildings"].as_array().unwrap();
@@ -512,7 +568,7 @@ fn exit_fixture() -> (Simulation, RuleSet, InternedId, u64, u64) {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     (sim, rules, owner, yard, product)
@@ -541,7 +597,7 @@ fn a_computer_yard_places_its_building_on_the_node_cell() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(exit, BuildingExit::Placed);
@@ -591,7 +647,7 @@ fn a_computer_yards_building_follows_the_native_computer_route() {
             yard,
             product,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(exit, BuildingExit::Placed, "{name}");
@@ -613,7 +669,7 @@ fn a_computer_yards_building_follows_the_native_computer_route() {
             sim.object_ai_visit_one(
                 product,
                 Some(&rules),
-                crate::sim::world::ObjectAiCtx::default(),
+                &mut crate::sim::world::ObjectAiCtx::default(),
             );
             let building = sim.substrate.entities.get(product).unwrap();
             if native_route::assert_frame(building, frame, &format!("{name} frame {now}")) {
@@ -637,7 +693,7 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
             yard,
             product,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(exit, BuildingExit::TryLater);
         assert!(
@@ -651,6 +707,27 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
         assert_eq!(node_state(&sim, owner), [((16, 16), count)]);
     }
     assert!(sim.substrate.entities.get(tank).is_some());
+    let mut retained = sim.clone();
+    retained.install_session_admission(
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        sim.session
+            .rule_policy()
+            .with_ai_base(crate::rules::rule_policy::AiBasePolicy::RetainAuthoredNodes),
+    );
+    assert_eq!(
+        exit_building(
+            &mut retained,
+            &rules,
+            yard,
+            product,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        ),
+        BuildingExit::TryLater
+    );
+    assert_eq!(node_state(&retained, owner), [((16, 16), 3)]);
+
     // The third failure passes MaximumBuildingPlacementFailures=2: the node
     // goes.
     let exit = exit_building(
@@ -659,7 +736,7 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(exit, BuildingExit::TryLater);
     assert!(node_state(&sim, owner).is_empty());
@@ -680,7 +757,7 @@ fn an_enemy_on_the_site_fails_the_exit_and_the_node_forgets_its_cell() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(exit, BuildingExit::Failed);
@@ -709,7 +786,7 @@ fn a_human_yard_places_nothing() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(exit, BuildingExit::Failed);
@@ -761,5 +838,115 @@ fn a_naval_producer_reads_its_own_vehicle_choice() {
             "U"
         }),
         "only the NPatch build has a naval channel"
+    );
+}
+
+/// Ares hook body `0x1001DDC0`: when no candidate passes CanBuild and the
+/// prerequisite filter (this house has no Construction Yard), the splice takes
+/// the country's first listed plant (`0x1001DEA2..0x1001DEC6`) without a draw.
+#[test]
+fn ares_power_plants_fall_back_to_the_first_candidate_without_a_draw() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Countries]\n0=Greece\n[Greece]\nAI.PowerPlants=NAAPWR,NAPOWR\n\
+         [BuildingTypes]\n0=GAPOWR\n1=NAAPWR\n2=NAPOWR\n3=RADAR\n\
+         [GAPOWR]\n[NAAPWR]\n[NAPOWR]\n[RADAR]\nPower=-50\n\
+         [General]\nGDIPowerPlant=GAPOWR\n",
+    ))
+    .expect("country power plant rules");
+    let mut sim = Simulation::new();
+    let country = sim.interner.intern("Greece");
+    let owner = sim.interner.intern("AI");
+    sim.houses
+        .register(HouseState::new(owner, 0, Some(country), false, 10_000, 10));
+    sim.power_states
+        .map_mut_for_test()
+        .insert(owner, PowerState::default());
+    let before = sim.scenario_rng.logical_state();
+    let radar = rules.object("RADAR").expect("consumer type");
+    assert_eq!(
+        super::power_plant_to_splice(&mut sim, &rules, owner, radar),
+        rules.building_type_index("NAAPWR"),
+    );
+    assert_eq!(sim.scenario_rng.logical_state(), before, "no draw");
+}
+
+/// Phobos `[AI] EnablePowerSurplus=yes` makes House+0x160B4 `PowerSurplus`,
+/// which the splice takes off the output (`0x004FE6FC..0x004FE71D`, `JLE`
+/// past the splice): drain 100 plus the radar's 50 fits under 200 less 50
+/// exactly, but not under 200 less 51, so that house builds a plant first.
+/// Without the switch the stock `PowerSurplus=` changes nothing.
+#[test]
+fn phobos_spare_power_puts_a_power_plant_first() {
+    let (mut sim, owner) = computer_house(true);
+    let mut power = PowerState::default();
+    power.set_total_output_for_test(200);
+    power.set_total_drain_for_test(100);
+    sim.power_states.map_mut_for_test().insert(owner, power);
+    for (ai, plant) in [
+        ("PowerSurplus=51", None),
+        ("EnablePowerSurplus=yes\nPowerSurplus=50", None),
+        ("EnablePowerSurplus=yes\nPowerSurplus=51", Some("GAPOWR")),
+    ] {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[BuildingTypes]\n0=GAPOWR\n1=RADAR\n[GAPOWR]\nPower=200\n[RADAR]\nPower=-50\n\
+             [General]\nGDIPowerPlant=GAPOWR\n[AI]\n{ai}\n"
+        )))
+        .expect("spare power rules");
+        assert_eq!(
+            rules.phobos(),
+            ai.starts_with("Enable") || crate::rules::PHOBOS_ENABLED
+        );
+        let radar = rules.object("RADAR").expect("consumer type");
+        assert_eq!(
+            super::power_plant_to_splice(&mut sim, &rules, owner, radar),
+            plant.and_then(|name| rules.building_type_index(name)),
+            "{ai:?}"
+        );
+    }
+}
+
+/// Retail rules through the production layers: no retail country sets
+/// `AI.PowerPlants=`, so with Ares a Soviet computer house is offered
+/// `[NodRegularPower, NodAdvancedPower]`, NAPOWR and NANRCT
+/// (`0x1001BD6C..0x1001BD8C`). With its Construction Yard and Battle Lab
+/// (NANRCT's `Prerequisite=NATECH,NACNST`) both pass, and one
+/// `Randomizer(0, 1)` on Scenario+0x218 picks the reactor. Stock gamemd
+/// always splices NAPOWR here.
+#[test]
+fn ares_retail_soviet_computer_draws_between_both_nod_plants() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let plants = &rules.general.building_types;
+    assert_eq!(plants.nod_regular_power.as_deref(), Some("NAPOWR"));
+    assert_eq!(plants.nod_advanced_power.as_deref(), Some("NANRCT"));
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    let owner = sim.interner.intern("Russians");
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_side_index_for_test(1);
+    for (name, x) in [("NACNST", 4), ("NATECH", 12)] {
+        sim.spawn_object_at_height(name, "Russians", x, 4, 0, 0, &rules)
+            .unwrap_or_else(|| panic!("{name} spawns"));
+    }
+    sim.power_states
+        .map_mut_for_test()
+        .insert(owner, PowerState::default());
+    sim.scenario_rng = SimRng::answering(0, 1, 1);
+    let mut expected = sim.scenario_rng.clone();
+    expected.next_range_i32_inclusive(0, 1);
+    let radar = rules.object("NARADR").expect("retail NARADR");
+    assert_eq!(
+        super::power_plant_to_splice(&mut sim, &rules, owner, radar),
+        rules.building_type_index("NANRCT"),
+    );
+    assert_eq!(
+        sim.scenario_rng.logical_state(),
+        expected.logical_state(),
+        "one Randomizer(0, 1)"
     );
 }

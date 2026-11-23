@@ -11,9 +11,10 @@ use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 
 use crate::skirmish_launch::{
-    AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishAiSlot,
+    AiDifficulty, BATTLE_MODE_ID, LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishAiSlot,
     SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
 };
+use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 
 pub(crate) use super::integrity::{
     SealedJsonFile, parse_strict_json, read_stable_regular_bytes, sha256_file, sha256_hex,
@@ -106,26 +107,13 @@ pub(crate) struct Dimensions {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct TacticalLaunch {
-    pub(crate) mode: TacticalMode,
+    pub(crate) mode: SkirmishLaunchMode,
     pub(crate) seed: u32,
     pub(crate) input_delay_ticks: u32,
     pub(crate) player_name: String,
     pub(crate) local: TacticalSlot,
     pub(crate) opponents: Vec<TacticalAiSlot>,
     pub(crate) options: TacticalOptions,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct TacticalMode {
-    pub(crate) id: i32,
-    pub(crate) ui_name_key: String,
-    pub(crate) tooltip_key: String,
-    pub(crate) override_file: String,
-    pub(crate) map_filter: String,
-    pub(crate) random_maps_allowed: bool,
-    pub(crate) allies_allowed: bool,
-    pub(crate) must_ally: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -202,7 +190,8 @@ pub(crate) struct TacticalCaptureSettings {
     pub(crate) output_width: u32,
     pub(crate) output_height: u32,
     pub(crate) surface_formats: Vec<String>,
-    /// Always true: the window always presents in step with the display. The
+    /// Always true: a capture presents in step with the display whatever the
+    /// Options page's VSync box says (`App::sync_present_mode`). The
     /// sealed profiles keep the key.
     pub(crate) vsync: bool,
     /// Always false: a capture never zooms. The sealed profiles keep the key.
@@ -399,16 +388,8 @@ impl TacticalCaptureProfile {
 
     fn validate_launch(&self) -> Result<()> {
         let launch = &self.launch;
-        let mode = &launch.mode;
         ensure!(
-            mode.id == 1
-                && mode.ui_name_key == "GUI:Battle"
-                && mode.tooltip_key == "STT:ModeBattle"
-                && mode.override_file == "MPBattleMD.ini"
-                && mode.map_filter == "standard"
-                && mode.random_maps_allowed
-                && mode.allies_allowed
-                && !mode.must_ally,
+            SkirmishLaunchMode::stock(BATTLE_MODE_ID).as_ref() == Some(&launch.mode),
             "launch mode is not the fixed stock Battle descriptor"
         );
         ensure!(launch.seed == 0x1234_5678, "wrong controlled seed");
@@ -561,22 +542,22 @@ impl TacticalCaptureProfile {
         Ok(())
     }
 
+    /// The sealed row must still be the selected roster's row for its id, as
+    /// the skirmish shell would launch it; a changed install fails here.
+    pub(crate) fn check_roster_mode(&self, modes: &[SkirmishGameMode]) -> Result<()> {
+        let roster = mode_by_id(modes, self.launch.mode.id).map(SkirmishLaunchMode::from_game_mode);
+        ensure!(
+            roster.as_ref() == Some(&self.launch.mode),
+            "sealed Battle mode differs from the MPModesMD.ini roster row"
+        );
+        Ok(())
+    }
+
     pub(crate) fn launch_session(&self) -> SkirmishLaunchSession {
-        let mode = &self.launch.mode;
-        SkirmishLaunchSession {
-            mode: SkirmishLaunchMode {
-                class: crate::skirmish_modes::MpModeClass::Battle,
-                id: mode.id,
-                ui_name_key: mode.ui_name_key.clone(),
-                tooltip_key: mode.tooltip_key.clone(),
-                override_file: mode.override_file.clone(),
-                map_filter: mode.map_filter.clone(),
-                random_maps_allowed: mode.random_maps_allowed,
-                allies_allowed: mode.allies_allowed,
-                must_ally: mode.must_ally,
-            },
-            selected_map_file: Some(self.fixture.logical_map_name.clone()),
-            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+        SkirmishLaunchSession::from_rows(
+            self.launch.mode.clone(),
+            Some(self.fixture.logical_map_name.clone()),
+            vec![crate::skirmish_launch::SkirmishHumanSlot {
                 raw_slot_index: Some(0),
                 name: self.launch.player_name.clone(),
                 slot: SkirmishLocalSlot {
@@ -589,10 +570,8 @@ impl TacticalCaptureProfile {
                 },
                 role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
             }],
-            local_player_index: 0,
-            ai_player_count: self.launch.opponents.len() as i32,
-            opponents: self
-                .launch
+            0,
+            self.launch
                 .opponents
                 .iter()
                 .enumerate()
@@ -607,12 +586,8 @@ impl TacticalCaptureProfile {
                     difficulty: AiDifficulty::Easy,
                 })
                 .collect(),
-            pre_fill_house_roster:
-                crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(
-                    self.launch.opponents.len(),
-                ),
-            options: self.launch.options.to_launch_options(),
-        }
+            self.launch.options.to_launch_options(),
+        )
     }
 }
 
@@ -637,6 +612,11 @@ impl TacticalOptions {
             multi_engineer: self.multi_engineer,
             harvester_truce: self.harvester_truce,
             ally_change_allowed: self.ally_change_allowed,
+            bans: Default::default(),
+            teams: None,
+            auto_balance: false,
+            queue: Vec::new(),
+            host_rules: Default::default(),
         }
     }
 }
@@ -769,7 +749,7 @@ fn validate_options(options: &TacticalOptions) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use std::path::PathBuf;
@@ -785,6 +765,22 @@ mod tests {
             "environment_denylist":[]
         }"#;
         assert!(parse_strict_json::<TacticalCaptureContract>(boolean_timeout, "test").is_err());
+    }
+
+    #[test]
+    fn sealed_battle_mode_fails_when_the_roster_row_drifts() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let profile = TacticalCaptureProfile::load_strict(
+            &root.join("tools/tactical_certification/profiles/soviet-radar-online-v3.json"),
+        )
+        .unwrap()
+        .value;
+        let mut modes = crate::skirmish_modes::stock_skirmish_modes();
+        profile.check_roster_mode(&modes).unwrap();
+
+        let battle = modes.iter_mut().find(|mode| mode.id == 1).unwrap();
+        battle.override_file = "MPCustomMD.ini".into();
+        assert!(profile.check_roster_mode(&modes).is_err());
     }
 
     #[test]
@@ -824,6 +820,8 @@ mod tests {
                 ),
                 (632.0, 158.0, 227.0, 527.0, 6)
             );
+            // The NOD position table moves the top buttons, not the radar
+            // aperture (MapAreaX 16 in both Init_For_House arms).
             let aperture = radar_minimap_rect_with_spec(800.0, spec);
             assert_eq!(
                 (aperture.x, aperture.y, aperture.w, aperture.h),

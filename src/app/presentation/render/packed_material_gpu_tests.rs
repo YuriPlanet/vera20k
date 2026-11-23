@@ -1,8 +1,9 @@
 //! Original executed packed-material words through retained production replay.
 use super::super::draw_plan_lowering::{
-    ObjectPieceInstance, PlannedObjectInstance, lower_object_instances,
+    ObjectPieceInstance, OwnedPlannedObject, lower_object_instances,
 };
 use super::*;
+use crate::app::presentation::frame::ObjectRecord;
 use crate::render::batch::{InstanceBufferPool, SpriteInstance};
 use crate::render::draw_state::{DrawState, FX_CLOAK};
 use crate::render::palette_light::PaletteLight;
@@ -47,10 +48,15 @@ fn retained_mobile_translucency_matches_original_packed_words() {
             assert!(!groups.is_empty());
             for (rgb, all_cases) in groups {
                 for cases in all_cases.chunks(512) {
-                    let size = [8, cases.len() as u32 * 3];
-                    // Native inputs contain a guarded nineteen-word destination window.
-                    // An eight-word pitch and a three-row block preserve the +/-8 controls
-                    // without treating a signed surface-word offset as a horizontal UV.
+                    // Each case has a two-row block of an eight-word surface. A
+                    // warp case sits where Bit_Blit 0x004373B0's row and clipped
+                    // left parities give the warp its native leaf read: row 2y
+                    // plus d >> 1, left column 2 plus (d ^ d >> 1) & 1.
+                    let size = [8, cases.len() as u32 * 2];
+                    let place = |y: usize, row: &Value| {
+                        let warp = row["displacement"].as_u64().unwrap() as usize;
+                        (y * 2 + (warp >> 1), 2 + ((warp ^ (warp >> 1)) & 1))
+                    };
                     let indices: Vec<u8> = cases
                         .iter()
                         .flat_map(|row| {
@@ -58,16 +64,16 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                             let middle = row
                                 .get("overlap_sources")
                                 .map_or(0, |source| source[1].as_u64().unwrap() as u8);
-                            (0..24).map(move |word| match word {
-                                10 | 12 => index,
-                                11 => middle,
+                            (0..16).map(move |word| match word {
+                                2 | 4 => index,
+                                3 => middle,
                                 _ => 0,
                             })
                         })
                         .collect();
                     let a: Vec<u8> = cases
                         .iter()
-                        .flat_map(|row| [row["a"].as_u64().unwrap() as u8; 24])
+                        .flat_map(|row| [row["a"].as_u64().unwrap() as u8; 16])
                         .collect();
                     for format in [
                         wgpu::TextureFormat::Bgra8UnormSrgb,
@@ -128,10 +134,11 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                             &crate::rules::house_colors::HouseColorRamps::from_schemes(&[]),
                             &[],
                         );
-                        let parents = cases
+                        let parents: Vec<_> = cases
                             .iter()
                             .enumerate()
                             .flat_map(|(y, row)| {
+                                let (drawn, left) = place(y, row);
                                 let bits = row["selector_bits"].as_u64().unwrap();
                                 let opacity = match bits & 6 {
                                     2 => 0.75,
@@ -139,7 +146,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                     6 => 0.25,
                                     _ => unreachable!(),
                                 };
-                                let mut parent = PlannedObjectInstance::object(
+                                let mut parent = OwnedPlannedObject::object(
                                     ObjectDraw {
                                         id: y as u64,
                                         layer: TacticalLayer(3),
@@ -158,21 +165,17 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                             RenderZPolicy::ReadOnly
                                         },
                                         instance: SpriteInstance {
-                                            position: [2.0, (y * 3 + 1) as f32],
+                                            position: [left as f32, drawn as f32],
                                             size: [3.0, 1.0],
-                                            uv_origin: [0.25, (y * 3 + 1) as f32 / size[1] as f32],
+                                            uv_origin: [0.25, (y * 2) as f32 / size[1] as f32],
                                             uv_size: [3.0 / 8.0, 1.0 / size[1] as f32],
                                             tint: [1.0; 3],
                                             alpha: 1.0,
-                                            z_adjust: (4096 - (32768 - (y * 3 + 1) as i32)) as f32,
+                                            z_adjust: (4096 - (32768 - drawn as i32)) as f32,
                                             palette_light: native_light(row),
                                             source_palette,
                                             draw_state: DrawState {
                                                 fx_flags: FX_CLOAK,
-                                                native_offset_words: row["displacement"]
-                                                    .as_i64()
-                                                    .unwrap()
-                                                    as i32,
                                                 fx_params: [opacity, bits as f32, 1.0, 0.0],
                                                 ..Default::default()
                                             },
@@ -191,7 +194,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                 let replays = row["replay_count"].as_u64().unwrap_or(1) as usize;
                                 (0..replays)
                                     .map(|repeat| {
-                                        PlannedObjectInstance::object(
+                                        OwnedPlannedObject::object(
                                             ObjectDraw {
                                                 id: (y * 4 + repeat) as u64,
                                                 layer: parent.parent.layer,
@@ -212,7 +215,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                     .collect::<Vec<_>>()
                             })
                             .collect();
-                        let layers = lower_object_instances(parents);
+                        let layers = lower_object_instances(parents.into());
                         let layer = &layers[3];
                         let mut pool = InstanceBufferPool::new();
                         pool.upload_on_device(
@@ -233,6 +236,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                             .iter()
                             .enumerate()
                             .flat_map(|(y, row)| {
+                                let (drawn, left) = place(y, row);
                                 row["prior_depths"]
                                     .as_array()
                                     .unwrap()
@@ -240,13 +244,13 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                     .enumerate()
                                     .filter(|(_, depth)| depth.as_u64().unwrap() < 65535)
                                     .map(move |(x, depth)| SpriteInstance {
-                                        position: [(2 + x) as f32, (y * 3 + 1) as f32],
+                                        position: [(left + x) as f32, drawn as f32],
                                         size: [1.0; 2],
                                         uv_size: [1.0; 2],
                                         tint: [1.0; 3],
                                         alpha: 1.0,
                                         z_adjust: (depth.as_u64().unwrap() as i32
-                                            - (32768 - (y * 3 + 1) as i32))
+                                            - (32768 - drawn as i32))
                                             as f32,
                                         palette_light: PaletteLight::plain(1, 1000),
                                         ..Default::default()
@@ -267,12 +271,13 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                     ..Default::default()
                                 }
                             };
-                            raw.push(seed([0.0, (y * 3) as f32], [8.0, 3.0], word));
-                            let displacement = row["displacement"].as_i64().unwrap() as i32;
-                            if displacement != 0 {
-                                let guard = 10 + displacement;
+                            raw.push(seed([0.0, (y * 2) as f32], [8.0, 2.0], word));
+                            // The native window's guard word at the warp read.
+                            let warp = row["displacement"].as_u64().unwrap() as usize;
+                            if warp != 0 {
+                                let (drawn, left) = place(y, row);
                                 raw.push(seed(
-                                    [(guard % 8) as f32, (y * 3) as f32 + (guard / 8) as f32],
+                                    [(left + warp) as f32, drawn as f32],
                                     [1.0; 2],
                                     word ^ 0x07e0,
                                 ));
@@ -360,8 +365,9 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                         ];
                         let output = gpu.finish(encoder, &reads, size);
                         for (y, row) in cases.iter().enumerate() {
+                            let (drawn, left) = place(y, row);
                             for x in 0..3 {
-                                let offset = ((y * 3 + 1) * 8 + 2 + x) * 4;
+                                let offset = (drawn * 8 + left + x) * 4;
                                 assert_eq!(
                                     &output[0][offset..offset + 4],
                                     &encoded(row["colors"][x].as_u64().unwrap() as u16, format),
@@ -503,7 +509,8 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
     ] {
         let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
         let mut uniform = camera(size);
-        uniform.native_z_origin_y = int(&native["surface"]["depth_baseline"]) as f32 - 32768.;
+        // The capture's Z buffer seeds at its baseline (`native_z::ZSeed`).
+        uniform.native_z_pan = (32768 - int(&native["surface"]["depth_baseline"])) as f32;
         batch.write_camera(&gpu.queue, uniform);
         let palettes = PaletteSet::new_on_device(
             &gpu.device,
@@ -548,7 +555,7 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
             let light = PaletteLight::color_scheme([1000; 3], int(&arm["intensity"]))
                 .with_colour_word(int(&arm["word"]) as u16);
             let (tint, light) = techno_effect_light(
-                &unit,
+                &ObjectRecord::of_test(&unit),
                 [1.; 3],
                 light,
                 &sim,
@@ -556,7 +563,7 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
                 crate::app::presentation::lighting::TechnoDraw::Voxel,
             );
             let (tint, light) = unit_voxel_effect_light(
-                &unit,
+                &ObjectRecord::of_test(&unit),
                 tint,
                 light,
                 Some(&rules_by_selector[&(int(&arm["iron_color"]), int(&arm["berserk_color"]))]),
@@ -597,42 +604,46 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
             assert_eq!(position[0], int(&row["leaves"][0]["x"]) as f32);
             assert_eq!(position[1], int(&row["leaves"][0]["y"]) as f32);
             for pose in [false, true] {
-                let layer = lower_object_instances(vec![PlannedObjectInstance::object(
-                    ObjectDraw {
-                        id: 1,
-                        layer: TacticalLayer(3),
-                        display_order: 0,
-                        policy,
-                    },
-                    vec![ObjectPieceInstance {
-                        target: if pose {
-                            ObjectTexture::UnitPosePage(0)
-                        } else {
-                            ObjectTexture::UnitAtlasPage(0)
+                let layer = lower_object_instances(
+                    vec![OwnedPlannedObject::object(
+                        ObjectDraw {
+                            id: 1,
+                            layer: TacticalLayer(3),
+                            display_order: 0,
+                            policy,
                         },
-                        render_z: RenderZPolicy::ReadOnly,
-                        instance: SpriteInstance {
-                            position,
-                            size: [crop[2] as f32, crop[3] as f32],
-                            uv_origin: [
-                                crop[0] as f32 / source_size[0] as f32,
-                                crop[1] as f32 / source_size[1] as f32,
-                            ],
-                            uv_size: [
-                                crop[2] as f32 / source_size[0] as f32,
-                                crop[3] as f32 / source_size[1] as f32,
-                            ],
-                            tint,
-                            palette_light: light,
-                            alpha: 1.,
-                            draw_state: DrawState::from_native_selector(remap_row, selector),
-                            z_adjust: int(&row["prepared_z_adjust"][0]) as f32,
-                            z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, false),
-                            zshape_origin: [position[1], crop[3] as f32],
-                            ..Default::default()
-                        },
-                    }],
-                )]);
+                        vec![ObjectPieceInstance {
+                            target: if pose {
+                                ObjectTexture::UnitPosePage(0)
+                            } else {
+                                ObjectTexture::UnitAtlasPage(0)
+                            },
+                            render_z: RenderZPolicy::ReadOnly,
+                            instance: SpriteInstance {
+                                position,
+                                size: [crop[2] as f32, crop[3] as f32],
+                                uv_origin: [
+                                    crop[0] as f32 / source_size[0] as f32,
+                                    crop[1] as f32 / source_size[1] as f32,
+                                ],
+                                uv_size: [
+                                    crop[2] as f32 / source_size[0] as f32,
+                                    crop[3] as f32 / source_size[1] as f32,
+                                ],
+                                tint,
+                                palette_light: light,
+                                alpha: 1.,
+                                // Bit_Blit clipped to the whole surface.
+                                draw_state: DrawState::from_native_selector(remap_row, selector),
+                                z_adjust: int(&row["prepared_z_adjust"][0]) as f32,
+                                z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, false),
+                                zshape_origin: [position[1], crop[3] as f32],
+                                ..Default::default()
+                            },
+                        }],
+                    )]
+                    .into(),
+                );
                 let layer = &layer[3];
                 let mut pool = InstanceBufferPool::new();
                 pool.upload_on_device(
@@ -785,7 +796,7 @@ fn retained_packed_high_resolution_dispatch_preserves_native_pixels() {
                 .iter()
                 .enumerate()
                 .map(|(i, &position)| {
-                    PlannedObjectInstance::object(
+                    OwnedPlannedObject::object(
                         ObjectDraw {
                             id: i as u64,
                             layer: TacticalLayer(3),
@@ -865,127 +876,5 @@ fn retained_packed_high_resolution_dispatch_preserves_native_pixels() {
         }
         let middle = ((size[1] / 2 * size[0] + size[0] / 2) * 4) as usize;
         assert_eq!(&output[0][middle..middle + 4], &[0, 0, 0, 255]);
-    }
-}
-
-/// Production replay cost, including continuation submissions. This reports
-/// encode and completed wall time, not ordinary gameplay FPS or GPU timestamps.
-#[test]
-#[ignore = "requires GPU; packed replay workload at 1,000 and 20,000 parents"]
-fn retained_packed_workload_timing() {
-    let gpu = Gpu::new();
-    let size = [1280, 720];
-    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
-    let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
-    batch.write_camera(&gpu.queue, camera(size));
-    let fog = ShroudBuffer::fixture(
-        &gpu.device,
-        &gpu.queue,
-        size,
-        [0.0; 2],
-        &vec![0; (size[0] * size[1]) as usize],
-    );
-    batch.bind_shroud(&gpu.device, Some(&fog));
-    let shp = SpriteAtlas::from_test_pages(vec![crate::render::sprite_atlas::SpriteAtlasPage {
-        texture: batch.create_texture_on_device(
-            &gpu.device,
-            &gpu.queue,
-            &[200, 100, 50, 255],
-            1,
-            1,
-            Some(&[1]),
-        ),
-    }]);
-    let color = gpu.target(size, format);
-    let cv = color.create_view(&Default::default());
-    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-    let dv = depth.create_view(&Default::default());
-    let mut terrain = crate::render::terrain_draw::TerrainDrawRenderer::new(
-        &gpu.device,
-        &gpu.queue,
-        format,
-        &batch,
-    );
-    for count in [1_000u32, 20_000] {
-        let parents = (0..count)
-            .map(|i| {
-                PlannedObjectInstance::object(
-                    ObjectDraw {
-                        id: u64::from(i),
-                        layer: TacticalLayer(3),
-                        display_order: u64::from(i),
-                        policy: BlitPolicy::z_read(SpriteEncoding::Plain),
-                    },
-                    vec![ObjectPieceInstance {
-                        target: ObjectTexture::ShpPage(0),
-                        render_z: RenderZPolicy::ReadOnly,
-                        instance: SpriteInstance {
-                            position: [(i % 80 * 16) as f32, ((i / 80) % 45 * 16) as f32],
-                            size: [16.0; 2],
-                            uv_size: [1.0; 2],
-                            tint: [1.0; 3],
-                            alpha: 1.0,
-                            palette_light: PaletteLight::plain(1, 1000),
-                            draw_state: DrawState {
-                                fx_flags: FX_CLOAK,
-                                fx_params: [0.5, 4.0, 1.0, 0.0],
-                                ..Default::default()
-                            },
-                            ..Default::default()
-                        },
-                    }],
-                )
-            })
-            .collect();
-        let layers = lower_object_instances(parents);
-        let layer = &layers[3];
-        let mut pool = InstanceBufferPool::new();
-        pool.upload_on_device(&gpu.device, &gpu.queue, "packed_workload", &layer.instances);
-        terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-        let start = std::time::Instant::now();
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
-        clear(
-            &mut encoder,
-            &cv,
-            &dv,
-            65535,
-            wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-        );
-        let stats = draw_native_object_pass(
-            &mut encoder,
-            crate::app::render::merge_passes::ObjectDrawPhase::Display,
-            &cv,
-            &dv,
-            &mut terrain,
-            [0, 0, size[0], size[1]],
-            &batch,
-            pool.get("packed_workload"),
-            layer,
-            None,
-            None,
-            None,
-            Some(&shp),
-            None,
-            batch.default_zshape_bind_group(),
-            None,
-            None,
-        );
-        let command = encoder.finish();
-        let encode_ms = start.elapsed().as_secs_f64() * 1000.0;
-        let submission = gpu.queue.submit([command]);
-        gpu.device
-            .poll(wgpu::PollType::Wait {
-                submission_index: Some(submission),
-                timeout: Some(std::time::Duration::from_secs(60)),
-            })
-            .unwrap();
-        eprintln!(
-            "PACKED_WORKLOAD count={count} encode_ms={encode_ms:.3} completed_wall_ms={:.3} waves={} passes={} debug_assertions={}",
-            start.elapsed().as_secs_f64() * 1000.0,
-            stats.waves,
-            stats.passes,
-            cfg!(debug_assertions),
-        );
-        assert_eq!(stats.pieces, count as usize);
     }
 }

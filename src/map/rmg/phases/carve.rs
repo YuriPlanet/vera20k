@@ -47,6 +47,9 @@ pub struct CarveCtx<'a> {
     pub blocks: &'a dyn TileBlocks,
     pub rng: &'a mut RmgRng,
     pub playfield: &'a PlayfieldBounds,
+    /// Ares.dll is loaded for this generation: the game is read the Ares way
+    /// (`GenerationObjects::ares`). Only the low-bridge decks read it.
+    pub ares: bool,
 }
 
 /// The two plateaus a carve joins.
@@ -1009,6 +1012,8 @@ pub fn carve_corner_ramp_reflected(
 /// slope 8 appears nowhere else.
 ///
 /// Two end blocks, `+7` and `+1` — a pair no other routine uses together.
+///
+/// Native: 0x00593AF0.
 pub fn carve_corner_ramp_north_east(
     ctx: &mut CarveCtx<'_>,
     regions: CarveRegions,
@@ -1283,7 +1288,7 @@ pub fn try_carve_connector_at_cell(
     false
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock};
@@ -1393,6 +1398,7 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
+            ares: false,
         };
         assert!(carve_straight_ramp_clear_south(
             &mut ctx,
@@ -1432,6 +1438,7 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
+            ares: false,
         };
         assert!(carve_straight_ramp_clear_south(
             &mut ctx,
@@ -1464,6 +1471,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(carve_straight_ramp_clear_south(
                 &mut ctx,
@@ -1512,6 +1520,7 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
+                ares: false,
             };
             assert!(
                 !carve_straight_ramp_clear_south(&mut ctx, regions(), (40, 50), b),
@@ -1550,6 +1559,7 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
+            ares: false,
         };
         assert!(carve_straight_ramp_clear_south(
             &mut ctx,
@@ -1585,6 +1595,7 @@ mod tests {
                 blocks: &$blocks,
                 rng: &mut $rng,
                 playfield: &$pf,
+                ares: false,
             }
         };
     }
@@ -2716,10 +2727,10 @@ mod tests {
         // fixed-geometry fallbacks can carve. Fifty steps of the float nearest
         // 0.01 land just under a half, so attempt 50 must not reach them;
         // attempt 51 carves the first, the south-clear straight.
-        use super::super::connector::{LENIENCY_STEP, ring_orientation_mask};
+        use super::super::connector::{leniency, ring_orientation_mask};
         let cell = (51, 50);
         for (attempt, carves) in [(50, false), (51, true)] {
-            let leniency = attempt as f32 * LENIENCY_STEP;
+            let leniency = leniency(attempt);
             let (mut grid, mut scratch) = harness();
             ring_with_windows(&mut scratch, cell, &[]);
             assert_eq!(
@@ -2756,9 +2767,9 @@ mod tests {
         // second, and the south bit again the third -- the original gates two
         // fallbacks on one bit. So the fourth, the west-clear straight, carves;
         // a port gating the third on north would carve the north-clear one.
-        use super::super::connector::{E, LENIENCY_STEP, NE, S, SE, SW, ring_orientation_mask};
+        use super::super::connector::{E, NE, S, SE, SW, leniency, ring_orientation_mask};
         let cell = (51, 50);
-        let leniency = 51.0 * LENIENCY_STEP;
+        let leniency = leniency(51);
         let (mut grid, mut scratch) = harness();
         ring_with_windows(
             &mut scratch,

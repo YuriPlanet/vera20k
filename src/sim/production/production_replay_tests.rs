@@ -169,10 +169,9 @@ fn record(
             .advance_app_frame(
                 &due,
                 rules,
-                None,
                 TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         hashes.push(output.tick.state_hash);
@@ -246,6 +245,12 @@ fn retail_builds_step_at_the_native_frames() {
         ("E1", "GAPILE", ProductionCategory::Infantry),
     ] {
         let mut sim = Simulation::new();
+        // A skirmish session: a campaign House counts only the buildings it
+        // has discovered toward power (House508CC7), and the native rows
+        // supply the plants' power directly.
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.intern("Americans");
@@ -323,7 +328,7 @@ fn retail_builds_step_at_the_native_frames() {
                     .entities
                     .get(held.unwrap())
                     .expect("held head");
-                assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector.is_member());
+                assert!(entity.lifecycle.in_limbo() && !entity.seldom.in_logic_vector.is_member());
                 break;
             }
         }

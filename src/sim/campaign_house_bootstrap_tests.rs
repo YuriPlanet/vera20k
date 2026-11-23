@@ -5,17 +5,20 @@
 use serde_json::Value;
 
 use super::{
-    FreshScenarioPrefix, FreshScenarioPrefixError, ScenarioBootstrapRng,
+    AuthoredCampaignStart, FreshScenarioPrefix, FreshScenarioPrefixError, ScenarioBootstrapRng,
     initialize_campaign_current_house, initialize_map_roster_houses,
 };
+use crate::map::campaign_manifest::{CampaignGrant, CampaignManifest, ManifestControlScope};
 use crate::map::houses::{HouseRoster, is_allied_with, parse_house_roster};
 use crate::map::map_file::MapFile;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+use crate::sim::house_state::HouseDifficulty;
 use crate::sim::native_identity::NativeUniqueIdCursor;
 use crate::sim::rng::SimRng;
-use crate::sim::scenario_session::ScenarioDescriptor;
+use crate::sim::scenario_bootstrap::prefix_plan::AuthoredCampaignLaunch;
+use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode};
 use crate::sim::world::Simulation;
 
 fn corpus() -> Value {
@@ -319,6 +322,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                 None,
                 0,
                 crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                None,
             )
             .unwrap();
         sim.native_unique_ids = Some(NativeUniqueIdCursor::begin_campaign_prefix(
@@ -328,8 +332,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&ini));
@@ -392,6 +395,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                 .into_fresh_staged_simulation(
                     &descriptor,
                     FreshScenarioPrefix::Campaign {
+                        network: None,
                         native_rules_receipt: receipt,
                         rules: &rules,
                         map_data: &map,
@@ -492,6 +496,7 @@ fn fresh_campaign_constructs_registered_supers_without_supported_dispatch_bodies
                 ..Default::default()
             },
             FreshScenarioPrefix::Campaign {
+                network: None,
                 native_rules_receipt: receipt,
                 rules: &rules,
                 map_data: &map,
@@ -543,6 +548,7 @@ fn fresh_campaign_rejects_an_absent_stock_roster_instead_of_fabricating_offline_
     let result = ScenarioBootstrapRng::new(31).into_fresh_staged_simulation(
         &ScenarioDescriptor::default(),
         FreshScenarioPrefix::Campaign {
+            network: None,
             native_rules_receipt: receipt,
             rules: &rules,
             map_data: &map,
@@ -590,6 +596,7 @@ fn fresh_campaign_rejects_unknown_country_factory_before_house_construction() {
     let result = ScenarioBootstrapRng::new(31).into_fresh_staged_simulation(
         &ScenarioDescriptor::default(),
         FreshScenarioPrefix::Campaign {
+            network: None,
             native_rules_receipt: receipt,
             rules: &rules,
             map_data: &map,
@@ -606,4 +613,139 @@ fn fresh_campaign_rejects_unknown_country_factory_before_house_construction() {
         Err(FreshScenarioPrefixError::UnsupportedCampaignCountryConstructor { house, country })
             if house == "UnknownHouse" && country == "UnregisteredCountry"
     ));
+}
+
+fn authored_start(difficulty: i32) -> AuthoredCampaignStart {
+    let manifest = CampaignManifest::read(
+        "campaign.ini",
+        b"[Stage Start]\nMap=first.map\n[Roles Start]\nLead=One\nSupport=Two\n\
+          [Grants Start]\nSupport.Computer=UnitsOnly\n"
+            .as_slice(),
+    )
+    .unwrap();
+    AuthoredCampaignStart::from_stage(&manifest.stages[0], 0, difficulty, Default::default())
+        .unwrap()
+}
+
+fn construct_authored_campaign(
+    start: &AuthoredCampaignStart,
+    local_source: Option<i8>,
+) -> Simulation {
+    let root = IniFile::from_str(
+        "[Colors]\nLightGold=25,255,255\nGold=43,239,255\n\
+         [Countries]\n0=Americans\n[Americans]\nColor=Gold\n\
+         [General]\nTeamDelays=1,1,1\nCampaignMoneyDeltaEasy=250\nCampaignMoneyDeltaHard=-150\n",
+    );
+    let mut process = NativeRulesProcessOwner::from_cold_start_sources(
+        root,
+        None,
+        IniFile::empty(),
+        std::sync::Arc::default(),
+        Default::default(),
+    )
+    .unwrap();
+    let map = MapFile::from_bytes(
+        b"[Map]\nSize=0,0,4,4\n[IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n\
+          [Basic]\nPlayer=One\n[Houses]\n0=One\n1=Two\n2=Computer\n\
+          [One]\nCountry=Americans\nCredits=10\nPlayerControl=Yes\n\
+          [Two]\nCountry=Americans\nCredits=10\n\
+          [Computer]\nCountry=Americans\nCredits=10\nPlayerControl=Yes\n",
+    )
+    .unwrap();
+    let (rules, _, _, receipt) = process
+        .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &map.ini)
+        .unwrap()
+        .into_parts();
+    let roster = parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    ScenarioBootstrapRng::new(31)
+        .into_fresh_staged_simulation(
+            &ScenarioDescriptor::default(),
+            FreshScenarioPrefix::Campaign {
+                native_rules_receipt: receipt,
+                rules: &rules,
+                map_data: &map,
+                house_roster: &roster,
+                difficulty: 1,
+                mission_counter: 1,
+                game_options: None,
+                campaign_index: 0,
+                restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                network: Some(AuthoredCampaignLaunch {
+                    start,
+                    mode: ScenarioGameMode::Wol,
+                    local_source,
+                }),
+            },
+        )
+        .unwrap()
+        .0
+}
+
+#[test]
+fn authored_roles_receive_player_difficulty_and_credits_on_easy_and_hard() {
+    for (difficulty, balance) in [(0, 1250), (2, 850)] {
+        let sim = construct_authored_campaign(&authored_start(difficulty), Some(0));
+        let second = &sim.houses[&sim.interner.get("Two").unwrap()];
+        assert!(second.is_human() && !second.player_control());
+        assert_eq!(
+            (second.difficulty(), second.economy().credits()),
+            (HouseDifficulty::from_native(difficulty).unwrap(), balance),
+        );
+        let opponent = &sim.houses[&sim.interner.get("Computer").unwrap()];
+        assert!(!opponent.is_human() && opponent.player_control());
+        assert_eq!(
+            opponent.difficulty(),
+            HouseDifficulty::from_native(2 - difficulty).unwrap()
+        );
+        assert_eq!(opponent.economy().credits(), 1000);
+    }
+}
+
+#[test]
+fn authored_campaign_local_source_changes_only_the_view() {
+    let start = authored_start(1);
+    let first = construct_authored_campaign(&start, Some(0));
+    let second = construct_authored_campaign(&start, Some(1));
+    assert_eq!(second.session.game_mode(), ScenarioGameMode::Wol);
+    assert_eq!(second.session.local_shared_house_source(), Some(1));
+    assert_eq!(second.session.current_house(), second.interner.get("Two"));
+    let target = second.interner.get("Computer").unwrap();
+    assert_eq!(
+        second.control_scope_for_source(1, target),
+        crate::sim::control_authority::ControlScope::UnitsOnly
+    );
+    assert_eq!(first.state_hash(), second.state_hash());
+    let watcher = construct_authored_campaign(&start, None);
+    assert!(watcher.session.watcher());
+    assert_eq!(watcher.session.local_shared_house_source(), None);
+    assert_eq!(watcher.houses.len(), first.houses.len());
+    assert_eq!(watcher.state_hash(), first.state_hash());
+}
+
+#[test]
+fn authored_start_rejects_unknown_and_conflicting_grants_before_construction() {
+    let start = authored_start(0);
+    assert!(start.validate().is_ok());
+    let mut unknown = start.clone();
+    unknown.grants[0].role = "Watcher".into();
+    assert!(
+        unknown
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("unknown campaign role")
+    );
+    let mut conflicting = start;
+    conflicting.grants.push(CampaignGrant {
+        role: "support".into(),
+        house: "computer".into(),
+        scope: ManifestControlScope::FullControl,
+    });
+    assert!(
+        conflicting
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("repeats its grant")
+    );
 }

@@ -36,6 +36,7 @@ pub(crate) struct LaserDraw {
     pub color: LaserDrawColor,
     pub age: i32,
     pub duration: i32,
+    pub fade_start: NativeF32Bits,
     pub fade_end: NativeF32Bits,
 }
 
@@ -43,10 +44,14 @@ impl LaserDraw {
     /// The native f32 store precedes both downstream consumers. Reuse the
     /// existing finite numeric owner rather than an independent approximation.
     pub(crate) fn intensity(self) -> NativeF32Bits {
-        let end = X::load_f32(self.fade_end).expect("finite laser fade endpoint");
+        // Draw5505EF: (start - end) * (duration - age) / duration + end.
+        // No INI value reaches these: sim::combat::laser::construct seeds 1.0,
+        // and its callers pass the constants 0.0 or 0.5 (railgun 0.5 start).
+        let start = X::load_f32(self.fade_start).expect("laser fade start is a code constant");
+        let end = X::load_f32(self.fade_end).expect("laser fade end is a code constant");
         X::div(
             X::mul(
-                X::sub(X::load_i32(1), end),
+                X::sub(start, end),
                 X::load_i32(self.duration.wrapping_sub(self.age)),
             ),
             X::load_i32(self.duration),
@@ -79,7 +84,8 @@ impl LaserDraw {
                 .wrapping_sub(2),
             (-2i32).wrapping_sub(crate::util::native_x87::adjust_for_z_standard(self.to.z)),
         ];
-        let intensity = X::load_f32(self.intensity()).expect("finite laser fade");
+        let intensity =
+            X::load_f32(self.intensity()).expect("intensity() stores only finite binary32");
         // 550C21 multiplies the retained float by float[7E2220]=255.
         let toward_white = X::ftol_i32_low_masked(X::mul(intensity, X::load_i32(255))) as u8;
         let mut line = |from, to, rgb: [u8; 3]| {
@@ -139,9 +145,11 @@ impl LaserDraw {
             if high_detail && outer.is_none() {
                 // RESIDUAL: General outerRGB[0,0,0] selects DSurface4BC750
                 // with per-channel masks and interpolated Z. Those shared
-                // AA branches remain unported; stock frequency is unknown.
-                // Missing AA pixels affect generic laser/ray coverage, not
-                // this stock DiskLaser's nonzero80/0/88 outer-color arm.
+                // AA branches remain unported. Dormant in retail: only
+                // LaserFire and LaserFire2 set LaserOuterColor=0,0,0, and no
+                // retail object fires them; house-colour lasers take the
+                // Special arm (0x005509F0), and this stock DiskLaser's
+                // outer color is the nonzero 80/0/88.
                 return;
             }
             // General detail0 draws center/A/B without fade; detail!=0

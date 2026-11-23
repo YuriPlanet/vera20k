@@ -3,16 +3,36 @@
 //! Identifies leaf-asset formats by structural signatures (no dependency on
 //! XCC's filename database). Shared by asset tooling and the
 //! retail corpus regression checks so both classify the same leaf formats.
+//! Tooling only: no game path calls it.
 //!
 //! ## Dependency rules
-//! - Part of assets/ — depends only on assets::mix_archive.
+//! - Part of assets/ — depends only on assets::mix_archive and assets::shp_file.
+
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 
 use crate::assets::mix_archive::MixArchive;
+use crate::assets::shp_file::ShpFile;
 
 /// Detect the format of an asset by magic bytes / structural signatures.
 ///
 /// Returns `None` for things we don't audit (nested MIX, INI text, BIK video,
 /// VQA, audio bags, raw binary blobs we don't parse, etc.).
+///
+/// A leading zero word opens an RA2 MIX header, an SHP(TS) header and any
+/// palette whose first colour is black, and [`MixArchive::looks_like_mix`]
+/// only checks a plausible header extent. So it never excludes bytes on its
+/// own: the exact-size and exact-header leaf tests run on everything, and only
+/// the loose SHP header test defers to a full parse when the bytes also read as
+/// a MIX header. A nested MIX that no leaf test claims falls through to `None`.
 pub fn detect_format(data: &[u8]) -> Option<&'static str> {
     if data.len() < 4 {
         return None;
@@ -46,12 +66,7 @@ pub fn detect_format(data: &[u8]) -> Option<&'static str> {
         return Some("pcx");
     }
 
-    // 2. Nested MIX archive — skip (it's a container, not a leaf asset).
-    if data[0] == 0 && data[1] == 0 && MixArchive::looks_like_mix(data) {
-        return None;
-    }
-
-    // 3. INI / text — skip.
+    // 2. INI / text — skip.
     if matches!(data[0], b'[' | b';') {
         return None;
     }
@@ -60,7 +75,7 @@ pub fn detect_format(data: &[u8]) -> Option<&'static str> {
         return None;
     }
 
-    // 4. TMP: tile_width=60, tile_height=30 at offsets 8/12 (RA2 isometric).
+    // 3. TMP: tile_width=60, tile_height=30 at offsets 8/12 (RA2 isometric).
     if data.len() >= 16 {
         let tile_w = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
         let tile_h = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
@@ -69,7 +84,9 @@ pub fn detect_format(data: &[u8]) -> Option<&'static str> {
         }
     }
 
-    // 5. SHP: bytes[0..2] = 0, reasonable width/height/frame_count.
+    // 4. SHP: bytes[0..2] = 0, reasonable width/height/frame_count. A
+    //    checksummed or encrypted MIX keeps its small flag word where SHP keeps
+    //    its width, so bytes that also read as a MIX header must parse in full.
     if data.len() >= 8 && data[0] == 0 && data[1] == 0 {
         let w = u16::from_le_bytes([data[2], data[3]]);
         let h = u16::from_le_bytes([data[4], data[5]]);
@@ -78,12 +95,13 @@ pub fn detect_format(data: &[u8]) -> Option<&'static str> {
             && (1..=2048).contains(&h)
             && (1..=10000).contains(&frames)
             && data.len() >= 8 + (frames as usize) * 24
+            && (!MixArchive::looks_like_mix(data) || ShpFile::from_bytes(data).is_ok())
         {
             return Some("shp");
         }
     }
 
-    // 6. AUD: byte 11 is the format byte (1 = WS_ADPCM, 99 = IMA_ADPCM).
+    // 5. AUD: byte 11 is the format byte (1 = WS_ADPCM, 99 = IMA_ADPCM).
     //    Also require a reasonable sample rate.
     if data.len() >= 12 {
         let format_byte = data[11];
@@ -95,7 +113,7 @@ pub fn detect_format(data: &[u8]) -> Option<&'static str> {
         }
     }
 
-    // 7. VPL: header has first_remap, last_remap, num_sections; total size is
+    // 6. VPL: header has first_remap, last_remap, num_sections; total size is
     //    16 + 768 (palette) + num_sections * 256.
     if data.len() >= 16 + 768 {
         let first_remap = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
@@ -111,12 +129,12 @@ pub fn detect_format(data: &[u8]) -> Option<&'static str> {
         }
     }
 
-    // 8. PAL: exactly 768 bytes (256 RGB triplets, 6-bit values).
+    // 7. PAL: exactly 768 bytes (256 RGB triplets, 6-bit values).
     if data.len() == 768 {
         return Some("pal");
     }
 
-    // 9. HVA: no magic, but offset 16 = frame_count, offset 20 = section_count.
+    // 8. HVA: no magic, but offset 16 = frame_count, offset 20 = section_count.
     //    Total size = 24 + section_count*16 + frame_count*section_count*48.
     if data.len() >= 24 {
         let frame_count = u32::from_le_bytes([data[16], data[17], data[18], data[19]]) as usize;
@@ -131,4 +149,51 @@ pub fn detect_format(data: &[u8]) -> Option<&'static str> {
     }
 
     None
+}
+
+#[cfg(all(test, tests_assets))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn palette_whose_first_colour_is_black_is_a_palette() {
+        // Also an empty MIX header: marker 0, flags 0, no entries, no body.
+        let pal = [0u8; 768];
+        assert!(MixArchive::looks_like_mix(&pal));
+        assert_eq!(detect_format(&pal), Some("pal"));
+    }
+
+    #[test]
+    fn shp_whose_header_reads_as_a_mix_is_an_shp() {
+        // One raw 4x2 frame. As a MIX header: flags 4, two entries, 1-byte body.
+        let mut shp = vec![0u8; 8 + 24 + 8];
+        shp[2..4].copy_from_slice(&4u16.to_le_bytes()); // width
+        shp[4..6].copy_from_slice(&2u16.to_le_bytes()); // height
+        shp[6..8].copy_from_slice(&1u16.to_le_bytes()); // frame count
+        shp[12..14].copy_from_slice(&4u16.to_le_bytes()); // frame width
+        shp[14..16].copy_from_slice(&2u16.to_le_bytes()); // frame height
+        shp[28..32].copy_from_slice(&32u32.to_le_bytes()); // pixel data offset
+        assert!(MixArchive::looks_like_mix(&shp));
+        assert_eq!(detect_format(&shp), Some("shp"));
+    }
+
+    #[test]
+    fn nested_mix_passing_the_shp_header_test_stays_unclassified() {
+        // Checksummed MIX of two 1-byte entries. Read as SHP: width 1 (flags),
+        // height 2 (entries), 2 frames (body size); frame 0 points past the end.
+        let mut mix = Vec::new();
+        mix.extend_from_slice(&0u16.to_le_bytes());
+        mix.extend_from_slice(&1u16.to_le_bytes()); // checksum flag
+        mix.extend_from_slice(&2u16.to_le_bytes()); // entries
+        mix.extend_from_slice(&2u32.to_le_bytes()); // body size
+        for (id, offset) in [(0x0001_0001u32, 1u32), (0x0002_0002, 0)] {
+            mix.extend_from_slice(&id.to_le_bytes());
+            mix.extend_from_slice(&offset.to_le_bytes());
+            mix.extend_from_slice(&1u32.to_le_bytes());
+        }
+        mix.extend_from_slice(&[7, 9]); // body
+        mix.extend_from_slice(&[0; 20]); // checksum
+        assert!(MixArchive::from_bytes(mix.clone()).is_ok());
+        assert_eq!(detect_format(&mix), None);
+    }
 }

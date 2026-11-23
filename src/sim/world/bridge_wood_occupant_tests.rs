@@ -93,7 +93,7 @@ fn spawn(scene: &mut HeadlessScenario, point: (u16, u16)) -> u64 {
             point.1,
             0,
             &runtime.resources.rules,
-            &runtime.resources.overlay_registry,
+            runtime.resources.rules.overlay_registry(),
         )
         .expect("retail MTNK on repaired Road")
 }
@@ -124,7 +124,10 @@ fn prime(scene: &mut HeadlessScenario, input: &Value, initial: &Value, rng: &Val
     for &id in &actors {
         let actor = sim.substrate.entities.get_mut(id).unwrap();
         actor.set_on_bridge(false);
-        actor.rearm_timer.set_for_test(CdTimer::from_raw(0, 0));
+        actor
+            .seldom
+            .rearm_timer
+            .set_for_test(CdTimer::from_raw(0, 0));
         actor.navigation.set_nav_com_for_test(None);
         actor.navigation.set_suspended_nav_com_for_test(None);
         actor.mission.apply_test_fixture(MissionTestFixture {
@@ -144,7 +147,7 @@ fn prime(scene: &mut HeadlessScenario, input: &Value, initial: &Value, rng: &Val
         actor.attack_target.set_for_test(
             (id == primary && input["target_impact"] == true).then(|| TargetKind::Cell(115, 59)),
         );
-        actor.suspended_attack_target.set_for_test(
+        actor.seldom.suspended_attack_target.set_for_test(
             (id == primary)
                 .then(|| input.get("restore_target"))
                 .flatten()
@@ -260,10 +263,10 @@ fn snapshot(
         "impact_land":terrain.cell(115,59).unwrap().land_type,
         "target":target_name(actor.attack_target.target().as_ref()),
         "mission":actor.mission.current().raw(),"suspended":actor.mission.suspended().raw(),
-        "suspended_target":target_name(actor.suspended_attack_target.target().as_ref()),
+        "suspended_target":target_name(actor.seldom.suspended_attack_target.target().as_ref()),
         "nav":if actor.navigation.nav_com().is_none(){"null"}else{"unexpected nav"},
         "head":head,"xyz":[xyz.x,xyz.y,xyz.z],
-        "timer":[actor.rearm_timer.start_frame(),0,actor.rearm_timer.duration()],
+        "timer":[actor.seldom.rearm_timer.start_frame(),0,actor.seldom.rearm_timer.duration()],
     })
 }
 
@@ -514,7 +517,6 @@ fn retail_wood_occupants_match_native_list_lifetime_detach_and_rng() {
                 frame_effects: crate::sim::world::FrameEffects::default(),
                 sim,
                 rules: &runtime.resources.rules,
-                registry: Some(&runtime.resources.overlay_registry),
                 collapsed: false,
             };
             let mut host = Observed {
@@ -536,8 +538,7 @@ fn retail_wood_occupants_match_native_list_lifetime_detach_and_rng() {
                     115,
                     59,
                     &runtime.resources.rules,
-                    Some(&runtime.resources.overlay_registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
             }
             assert_eq!(
@@ -633,8 +634,11 @@ fn retail_wood_hut_collapse_matches_native_live_occupants_and_animation_order() 
         // Already-admitted Map574C20 boundary. Original Bomb/Building prefix
         // and later AnimAI are separate consumers, not supplied return values.
         assert!(crate::sim::world::bridge_orchestrator::dispatch_bridge_collapse_from_hut_with_overlay_registry(
-            &mut runtime.simulation, &runtime.resources.rules, hut,
-            Some(&runtime.resources.overlay_registry), crate::sim::world::FrameEffects::default()));
+            &mut runtime.simulation,
+            &runtime.resources.rules,
+            hut,
+            &mut crate::sim::world::FrameEffects::default(),
+        ));
         let sim = &runtime.simulation;
         assert_state(
             sim,

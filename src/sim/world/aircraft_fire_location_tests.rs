@@ -52,6 +52,10 @@ fn insert(
 }
 
 fn fixture(input: &Value) -> (Simulation, RuleSet) {
+    fixture_with_art(input, &IniFile::empty())
+}
+
+fn fixture_with_art(input: &Value, art: &IniFile) -> (Simulation, RuleSet) {
     let passengers = input["passengers"].as_array().cloned().unwrap_or_default();
     let mut definitions = String::new();
     let mut registered = String::new();
@@ -125,7 +129,9 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         input["rot"].as_i64().unwrap_or(3),
         input["inviso"].as_bool().unwrap_or(false),
     );
-    let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&ini), art).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(art));
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap_or(31));
     sim.session.set_map_width_for_test(128);
     sim.session.set_map_height_for_test(128);
@@ -194,7 +200,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         .veterancy
         .set_rank_for_test((input["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
     if input["flag_3d4"].as_bool().unwrap_or(false) {
-        owner.mission_only.mark();
+        owner.seldom.mission_only.mark();
     }
     if input["carryall_target"].as_bool().unwrap_or(false) {
         owner
@@ -270,7 +276,11 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         e.set_gunner_selection_for_test(passenger["current"].as_i64().unwrap_or(0) as i32, -1);
         cargo.board_forced_chain(&[(id, 1.0)]);
     }
-    sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_passenger_role_for_test(PassengerRole::transport(cargo));
     // The original global Cell flags belong to CurrentHouse, even when the
     // searching aircraft belongs to a different house. No UI cache is built.
     let viewer = sim.interner.intern("CURRENT_HOUSE");
@@ -306,12 +316,16 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
 }
 
 pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
+    reengagement_fixture_with_art(input, &IniFile::empty())
+}
+
+pub(super) fn reengagement_fixture_with_art(input: &Value, art: &IniFile) -> (Simulation, RuleSet) {
     use crate::sim::ammo::TechnoAmmo;
     use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionLeafState};
     use crate::sim::movement::locomotor::LocomotorState;
     let mut case = input.clone();
     case["open_topped"] = json!(input["open_transport"].as_bool().unwrap_or(false));
-    let (mut sim, mut rules) = fixture(&case);
+    let (mut sim, mut rules) = fixture_with_art(&case, art);
     rules.general.blockage_path_delay_ticks = 11;
     rules.mission_control =
         crate::rules::mission_data::MissionControl::from_ini(&IniFile::from_str(&format!(
@@ -371,7 +385,7 @@ pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
         .lift
         .set_swap_active_for_test(input["swap"].as_bool().unwrap_or(false));
     if input["open_transport"].as_bool().unwrap_or(false) {
-        entity.passenger_role = PassengerRole::inside_for_test(4, true);
+        entity.set_passenger_role_for_test(PassengerRole::inside_for_test(4, true));
     }
     if input["bunker"].as_bool().unwrap_or(false) {
         entity
@@ -719,8 +733,7 @@ fn retail_hornet_launch_move_ignores_an_unmarked_sinking_aegis() {
             &mut sim,
             &rules,
             carrier,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
     let target = Some(NavTargetRef::cell(59, 64));
@@ -767,7 +780,7 @@ fn retail_hornet_launch_move_ignores_an_unmarked_sinking_aegis() {
             arg6: false,
         },
     );
-    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
     let retained = sim.substrate.entities.get(ship).unwrap();
     assert!(retained.sinking.is_active());
     assert_eq!(retained.health.current(), 1);
@@ -786,7 +799,7 @@ fn retail_hornet_launch_move_ignores_an_unmarked_sinking_aegis() {
     );
     assert_eq!(sim.scenario_rng.logical_state(), before, "no ring search");
 
-    crate::sim::aircraft::dispatch_mission(&mut sim, hornet, &rules, ObjectAiCtx::default());
+    crate::sim::aircraft::dispatch_mission(&mut sim, hornet, &rules, &mut ObjectAiCtx::default());
     let actor = sim.substrate.entities.get(hornet).unwrap();
     assert_eq!(
         actor.mission.current().known(),

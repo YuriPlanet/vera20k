@@ -6,12 +6,13 @@
 
 use crate::headless_scenario::{SIM_TICK_MS, battle_session, load_session};
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::mission::MissionType;
 use crate::sim::world::{FrameEffects, SimSoundEvent, TickLane};
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam};
 
-fn insert_section_records(map: &mut String, section: &str, records: &str) {
+pub(super) fn insert_section_records(map: &mut String, section: &str, records: &str) {
     let marker = format!("[{section}]");
     if let Some(start) = map.find(&marker) {
         let end = start + map[start..].find('\n').unwrap() + 1;
@@ -21,7 +22,7 @@ fn insert_section_records(map: &mut String, section: &str, records: &str) {
     }
 }
 
-fn scenario(stock: &str, action: i32) -> String {
+pub(super) fn scenario(stock: &str, script: &str) -> String {
     let mut map = stock.to_owned();
     // Normal map definitions and actors only. Trigger4 must create a real
     // Team; ordinary Team AI must recruit, form and execute its script.
@@ -45,10 +46,7 @@ fn scenario(stock: &str, action: i32) -> String {
                 .to_owned(),
         ),
         ("ScriptTypes", "FS52=F0520002\n".to_owned()),
-        (
-            "F0520002",
-            format!("Name=FireSale step\n0={action},0\n1=2,0\n"),
-        ),
+        ("F0520002", format!("Name=FireSale step\n{script}\n")),
         ("TaskForces", "FS52=F0520003\n".to_owned()),
         (
             "F0520003",
@@ -76,7 +74,7 @@ fn authored_team_sets_then_clears_global_to_finish_the_battle() {
     };
     let physical = assets.resolve_ref("XMP03T4.MAP").unwrap();
     let stock = String::from_utf8(physical.bytes.to_vec()).unwrap();
-    let mut map = scenario(&stock, 2).replace(
+    let mut map = scenario(&stock, "0=2,0\n1=2,0").replace(
         "Name=FireSale step\n0=2,0\n1=2,0\n",
         "Name=Set same then clear global\n0=12,7\n1=5,2\n2=12,7\n3=5,2\n4=38,7\n5=2,0\n",
     );
@@ -145,7 +143,7 @@ fn authored_team_sets_then_clears_global_to_finish_the_battle() {
                 &commands,
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();
@@ -201,8 +199,12 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
     let stock = String::from_utf8(physical.bytes.to_vec()).unwrap();
     // Census through the production fixed-AIMD/scenario reader, not grep.
     // It bounds this fixture to authored reachability; other maps remain open.
-    let stock_registry =
-        TeamAiIniRegistry::load_retail(&assets, &IniFile::from_str(&stock), true).unwrap();
+    let stock_registry = TeamAiIniRegistry::load_retail(
+        &assets,
+        &IniFile::from_str(&stock),
+        RulePolicy::stock_multiplayer(),
+    )
+    .unwrap();
     assert!(!stock_registry.scripts.is_empty() && !stock_registry.team_types.is_empty());
     assert!(
         stock_registry
@@ -213,7 +215,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
     );
     let directory = crate::map::source::test_support::TestDirectory::new("team-fire-sale");
     for action in [2, 30] {
-        let map = scenario(&stock, action);
+        let map = scenario(&stock, &format!("0={action},0\n1=2,0"));
         let path = directory.path().join(format!("fire-sale-{action}.map"));
         std::fs::write(&path, &map).unwrap();
         let name = path.to_str().unwrap();
@@ -283,11 +285,11 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
                     &commands,
                     SIM_TICK_MS,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             sold_events += frame.sound_events.iter().filter(|event| {
-                matches!(event, SimSoundEvent::StructureSold { owner } if *owner == computer)
+                matches!(event, SimSoundEvent::StructureSold { owner, .. } if *owner == computer)
             }).count();
             let sim = scene.sim();
             let house = &sim.houses[&computer];

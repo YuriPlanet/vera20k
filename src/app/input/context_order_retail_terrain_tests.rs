@@ -254,7 +254,7 @@ fn shift_alt_and_ctrl_alt_over_a_tree_take_the_key_rungs() {
             (OrderModifier::ForceFire, false, None),
         ] {
             assert_eq!(
-                object_key_action(&sim, rules, actor, None, modifier, alt),
+                object_key_action(&sim, rules, actor, tree, None, modifier, alt),
                 action,
                 "{modifier:?} alt {alt}"
             );
@@ -282,18 +282,17 @@ fn shift_alt_and_ctrl_alt_over_a_tree_take_the_key_rungs() {
         (OrderModifier::ForceMove, ObjectKeyAction::Move),
     ] {
         assert_eq!(
-            object_key_action(&sim, rules, tank, Some(gi), modifier, true),
+            object_key_action(&sim, rules, tank, gi, Some(gi), modifier, true),
             Some(action),
             "{modifier:?} over the GI"
         );
     }
-    sim.entities_mut_for_test()
-        .get_mut(tank)
+    sim.entity_mut_for_test(tank)
         .unwrap()
         .berserk
         .set_active_for_test(true);
     assert_eq!(
-        object_key_action(&sim, rules, tank, None, OrderModifier::Shift, false),
+        object_key_action(&sim, rules, tank, tree, None, OrderModifier::Shift, false),
         None
     );
 }
@@ -387,7 +386,15 @@ fn ctrl_shift_over_a_tree_attack_moves_near_it() {
     let (sim, tank, gi, tree) = scene(rules, "TREE01");
     for actor in [tank, gi] {
         assert_eq!(
-            object_key_action(&sim, rules, actor, None, OrderModifier::AttackMove, false),
+            object_key_action(
+                &sim,
+                rules,
+                actor,
+                tree,
+                None,
+                OrderModifier::AttackMove,
+                false
+            ),
             None
         );
         assert_eq!(
@@ -470,7 +477,15 @@ fn ctrl_alt_over_a_tree_forces_a_pillbox_that_takes_no_key_rung() {
         .spawn_object("GAPILL", "Americans", 15, 15, 0, rules)
         .expect("pillbox");
     assert_eq!(
-        object_key_action(&sim, rules, pillbox, None, OrderModifier::GuardArea, true),
+        object_key_action(
+            &sim,
+            rules,
+            pillbox,
+            tree,
+            None,
+            OrderModifier::GuardArea,
+            true
+        ),
         None
     );
     assert!(terrain_forced(OrderModifier::GuardArea));

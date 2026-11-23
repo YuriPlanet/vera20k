@@ -15,6 +15,7 @@
 
 use crate::rules::animation_sequence::{
     FacingSlots, FootBodyCadence, LoopMode, SequenceDef, SequenceKind, SequenceSet,
+    ShpVehicleTurret,
 };
 use crate::rules::art_data::ArtEntry;
 use crate::rules::ini_parser::IniSection;
@@ -24,7 +25,7 @@ use crate::rules::ini_parser::IniSection;
 /// can change between reached Rules passes. The final image metadata alone
 /// cannot reconstruct this state. Native controls: mirage_disguise.json.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct UnitShpReadState {
+pub struct UnitShpReadState {
     walk_frames: i8,
     firing_frames: i8,
     standing_frames: i32,
@@ -61,6 +62,43 @@ impl Default for UnitShpReadState {
 impl UnitShpReadState {
     pub(crate) const fn firing_frames(&self) -> i8 {
         self.firing_frames
+    }
+
+    /// `DeathFrames=` (`+0xE20`): above zero, a lethal hit defers the Unit's
+    /// death to its counter (`UnitClass::ReceiveDamage`, `0x00737DA7`).
+    pub(crate) const fn death_frames(&self) -> i32 {
+        self.death_frames
+    }
+
+    /// `Facings=` (`+0xE3C`), which picks the body's facing bucket
+    /// (`sim::animation::shp_vehicle_facing_slot`).
+    pub const fn facings(&self) -> i32 {
+        self.facings
+    }
+
+    /// The first turret frame of a `Turret=yes` SHP Unit under Ares 3.0's
+    /// `UnitClass_DrawSHP_FacingsB` (hook `0x0073CD01`, Ares.dll
+    /// `0x10048150`, resuming at `0x0073CD06`): `WalkFrames * Facings` of the
+    /// actual type (`+0xE5C`, `+0xE3C`) in place of the stock
+    /// `WalkFrames * 8` ([`ShpVehicleTurret`]). `None` past the atlas's
+    /// frame numbering.
+    pub fn ares_turret_start_frame(&self) -> Option<u16> {
+        u16::try_from(i32::from(self.walk_frames).wrapping_mul(self.facings)).ok()
+    }
+
+    /// `MaxDeathCounter=` (`+0xE38`), the count `UnitClass::AI` ends it at.
+    pub(crate) const fn max_death_counter(&self) -> i32 {
+        self.max_death_counter
+    }
+
+    pub(crate) const fn death_layout(
+        &self,
+    ) -> crate::rules::animation_sequence::ShpVehicleDeathFrames {
+        crate::rules::animation_sequence::ShpVehicleDeathFrames::new(
+            self.start_death_frame,
+            self.death_frames,
+            self.death_frame_rate,
+        )
     }
 
     pub(crate) fn read_pass(&mut self, art: &IniSection, has_turret: bool) {
@@ -147,9 +185,13 @@ pub(crate) fn build_shp_vehicle_sequences(
     art: &ArtEntry,
     cadence: FootBodyCadence,
     retained: Option<&UnitShpReadState>,
+    has_turret: bool,
 ) -> SequenceSet {
     let mut set = SequenceSet::new();
     set.set_shp_vehicle_cadence(cadence);
+    if let Some(retained) = retained {
+        set.set_shp_vehicle_death(retained.death_layout());
+    }
     let (
         facings,
         walk_frames,
@@ -203,19 +245,30 @@ pub(crate) fn build_shp_vehicle_sequences(
         let stand = art
             .standing_frames
             .unwrap_or_else(|| implicit_standing_frames(fire));
+        // The unit reader's defaults (`0x00747967..0x00747A11`) are dword
+        // products; one past `u16` is a layout this projection cannot
+        // represent, so it is refused like the retained path above.
         let start_stand = if stand > 0 {
-            walk * u16::from(facings)
+            walk.checked_mul(u16::from(facings))
         } else {
-            0
+            Some(0)
         };
         let start_fire = if fire > 0 {
-            (walk + stand) * u16::from(facings)
+            walk.checked_add(stand)
+                .and_then(|frames| frames.checked_mul(u16::from(facings)))
         } else {
             start_stand
+        };
+        let (Some(start_stand), Some(start_fire)) = (start_stand, start_fire) else {
+            return set;
         };
         (facings, walk, fire, stand, 0, start_stand, start_fire)
     };
 
+    set.set_shp_vehicle_fire(crate::rules::animation_sequence::ShpVehicleFireFrames::new(
+        i32::from(start_firing_frame),
+        i32::from(firing_frames),
+    ));
     if walk_frames > 0 {
         set.insert(
             SequenceKind::Walk,
@@ -280,10 +333,27 @@ pub(crate) fn build_shp_vehicle_sequences(
         );
     }
 
+    // A `Turret=yes` SHP Unit draws its turret from the body SHP at
+    // `WalkFrames * 8` (UnitClass SHP draw `0x0073CCF7..0x0073CD03`: the
+    // signed `WalkFrames` byte at UnitType `+0xE5C` times a literal 8, plus
+    // the heading frame). `Facings`, `StartWalkFrame` and the standing and
+    // firing blocks do not move it in stock; Ares' draw reads `Facings`
+    // instead of the 8 (`UnitShpReadState::ares_turret_start_frame`).
+    // `WalkFrames=22` starts it at 176.
+    if has_turret {
+        let start = u32::from(walk_frames).wrapping_mul(8);
+        if let Ok(start_frame) = u16::try_from(start) {
+            set.set_shp_vehicle_turret(ShpVehicleTurret {
+                start_frame,
+                facings: crate::rules::art_data::SHP_TURRET_FACING_FRAMES,
+            });
+        }
+    }
+
     set
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -398,6 +468,10 @@ mod tests {
     }
 
     fn build_test(art: &ArtEntry) -> SequenceSet {
+        build_test_with_turret(art, false)
+    }
+
+    fn build_test_with_turret(art: &ArtEntry, has_turret: bool) -> SequenceSet {
         let mut source = format!("[IMAGE]\nFacings={}\n", art.shp_facings);
         for (key, value) in [
             ("WalkFrames", art.walk_frames),
@@ -410,8 +484,80 @@ mod tests {
         }
         let ini = IniFile::from_str(&source);
         let mut native = UnitShpReadState::default();
-        native.read_pass(ini.section_or_empty("IMAGE"), false);
-        build_shp_vehicle_sequences(art, TEST_CADENCE, Some(&native))
+        native.read_pass(ini.section_or_empty("IMAGE"), has_turret);
+        build_shp_vehicle_sequences(art, TEST_CADENCE, Some(&native), has_turret)
+    }
+
+    #[test]
+    fn a_turreted_shp_unit_appends_its_thirty_two_facing_frames() {
+        // A walker: Voxel=no, Turret=yes, Facings=8, WalkFrames=22,
+        // no standing or firing block. Its SHP carries the walk block in
+        // 0..175 and a 32-frame turret rotation in 176..207 before the shadow
+        // half, the layout the unit SHP convention puts after the body blocks.
+        let walker = make_art_entry(Some(22), None);
+        let turreted = build_test_with_turret(&walker, true);
+        assert_eq!(
+            turreted.shp_vehicle_turret(),
+            Some(ShpVehicleTurret {
+                start_frame: 176,
+                facings: 32,
+            })
+        );
+
+        // A `Turret=no` body has no turret block. A standing block does not
+        // move the ring: 0x0073CD03 adds only `WalkFrames * 8`.
+        assert_eq!(build_test(&walker).shp_vehicle_turret(), None);
+        let mut with_standing = make_art_entry(Some(22), None);
+        with_standing.standing_frames = Some(4);
+        assert_eq!(
+            build_test_with_turret(&with_standing, true)
+                .shp_vehicle_turret()
+                .map(|turret| turret.start_frame),
+            Some(176),
+            "the ring starts at WalkFrames * 8 whatever else the layout holds"
+        );
+    }
+
+    /// The firing image is StartFiringFrame + FiringFrames * bucket +
+    /// counter / 2 with no bound (`0x0073C65B..0x0073C672`). Under Ares a
+    /// water type (`UnitClass_DrawSHP_ChangeType1`) draws with the actual
+    /// type's counter, so one with fewer firing frames, or none, steps past
+    /// its own block.
+    #[test]
+    fn a_firing_counter_past_the_block_still_draws() {
+        let image = |set: &SequenceSet| {
+            crate::sim::animation::resolve_shp_vehicle_body_frame(set, 2, 0, 3, -1, false, true)
+        };
+        // Walk 0..7, the forced stand 8..15, fire 16..23.
+        assert_eq!(
+            image(&build_test(&make_art_entry(Some(1), Some(1)))),
+            Some(16 + 2 + 1)
+        );
+        // No firing block: StartFiringFrame is StartStandFrame, the walk start.
+        assert_eq!(image(&build_test(&make_art_entry(Some(1), None))), Some(1));
+    }
+
+    /// A still body whose Foot occupation enable (`+0x6B6`) is clear draws
+    /// its bare facing bucket, not its Stand image (`0x0073C6D5..0x0073C6DD`).
+    #[test]
+    fn a_still_body_off_its_occupation_draws_the_bare_bucket() {
+        let mut set = build_test(&make_art_entry(Some(2), None));
+        // A nonzero IdleRate walks first (`0x0073C69D..0x0073C6AB`).
+        set.set_shp_vehicle_cadence(FootBodyCadence {
+            walk_rate: 3,
+            idle_rate: 0,
+        });
+        let image = |occupation| {
+            crate::sim::animation::resolve_shp_vehicle_body_frame(
+                &set, 3, 0, -1, -1, false, occupation,
+            )
+        };
+        assert_eq!(
+            image(true),
+            Some(6),
+            "Stand: StartWalkFrame + WalkFrames * bucket"
+        );
+        assert_eq!(image(false), Some(3));
     }
 
     fn make_art_entry(walk: Option<u16>, firing: Option<u16>) -> ArtEntry {
@@ -419,10 +565,9 @@ mod tests {
             image: None,
             cameo: None,
             alt_cameo: None,
-            #[cfg(feature = "ares")]
             cameo_pcx: None,
-            #[cfg(feature = "ares")]
             alt_cameo_pcx: None,
+            cameo_palette: None,
             new_theater: false,
             theater: false,
             scorch: false,
@@ -444,15 +589,6 @@ mod tests {
             factory_door: Default::default(),
             palette: None,
             sequence: None,
-            crawls: false,
-            primary_fire_flh: Default::default(),
-            secondary_fire_flh: Default::default(),
-            elite_primary_fire_flh: None,
-            elite_secondary_fire_flh: None,
-            numbered_weapon_flh: [Default::default(); crate::rules::object_type::WEAPON_SLOT_COUNT],
-            elite_numbered_weapon_flh: [Default::default();
-                crate::rules::object_type::WEAPON_SLOT_COUNT],
-            alternate_flh: Default::default(),
             second_spawn_offset: Default::default(),
             primary_fire_pixel_offset: None,
             secondary_fire_pixel_offset: None,
@@ -464,15 +600,11 @@ mod tests {
             firing_frames: firing,
             standing_frames: None,
             shp_facings: 8,
-            fire_up: 0,
-            fire_prone: 0,
-            secondary_fire: 0,
-            secondary_prone: 0,
-            report: None,
-            start_sound: None,
             extra_light: 0,
             terrain_palette: false,
             use_buffer: false,
+            disable_voxel_cache: false,
+            disable_shadow_cache: false,
             can_be_hidden: true,
             queueing_cell: [0, 0],
             pads: Vec::new(),
@@ -572,6 +704,16 @@ mod tests {
         assert_eq!(stand.facing_multiplier, 4, "strides by WalkFrames");
         assert!(set.get(&SequenceKind::Walk).is_some());
         assert!(set.get(&SequenceKind::Attack).is_none());
+    }
+
+    /// The Aircraft projection refuses a layout past `u16` instead of
+    /// overflowing its start frames.
+    #[test]
+    fn an_aircraft_layout_past_u16_is_refused() {
+        let mut art = make_art_entry(Some(3000), Some(1));
+        art.shp_facings = 32;
+        let set = build_shp_vehicle_sequences(&art, TEST_CADENCE, None, false);
+        assert!(set.is_empty());
     }
 
     #[test]

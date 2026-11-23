@@ -14,8 +14,8 @@
 use glam::IVec3;
 use thiserror::Error;
 
-use super::{Particle, ParticleSystem, SparkRuntimeState};
-use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
+use super::{Particle, ParticleSystem};
+use crate::rules::particle_type::ParticleType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
@@ -43,8 +43,6 @@ const FACING_STEP: i32 = 3;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub(crate) enum SparkSpawnError {
-    #[error("particle type {0} is not behavior-3 Spark")]
-    NonSparkParticle(String),
     #[error("spark spawn x87 evaluation failed: {0}")]
     X87(#[from] NativeX87Error),
     #[error(transparent)]
@@ -77,7 +75,7 @@ pub(super) fn spark_spawn_pass(
     }
 
     let pst = rules.particle_system_type(sys.type_id);
-    let particle_cap = pst.particle_cap as i32;
+    let particle_cap = pst.particle_cap;
     let holds_what = pst.holds_what;
     let spawn_spark_percentage = pst.spawn_spark_percentage;
     let spawn_direction = pst.spawn_direction;
@@ -99,38 +97,29 @@ pub(super) fn spark_spawn_pass(
 
     if bursts {
         // (2) Burst size: `|Next()| % (cap / 2) + (cap / 2)`, the halving being
-        // `CDQ; SUB EAX,EDX; SAR ECX,1` — truncation toward zero.
-        // VERA-internal, gamemd equivalent UNCHECKED: `half <= 0` short-circuits
-        // where native would `IDIV` by zero and raise `#DE`. Every stock Spark
-        // system authors `ParticleCap` (6, 7, 15, 20), so the branch is
-        // unreachable in stock; it exists because a mod could author 0 or 1.
+        // `CDQ; SUB EAX,EDX; SAR ECX,1` — truncation toward zero. A negative
+        // half still takes its draw (`0x0062E8AA`) and gives a count below
+        // one, so nothing spawns. RESIDUAL: `half == 0` (a `ParticleCap` of
+        // -1..=1, mod data only) skips the draw where native's `IDIV` by zero
+        // raises `#DE`. Every stock Spark system authors 6, 7, 15 or 20.
         let half = particle_cap / 2;
-        let burst = if half <= 0 {
+        let burst = if half == 0 {
+            0
+        } else if half < 0 {
+            sim.particle_rng().next_u32();
             0
         } else {
-            sim.particle_rng().next_raw_abs_modulo(half as u32) as i32 + half
+            // `0x0062E8C2..0x0062E8CC`: a raw i32::MIN keeps its sign through
+            // the absolute value, so its remainder is negative.
+            crate::sim::rng::abs_before_modulo(sim.particle_rng().next_u32(), half) + half
         };
 
-        // VERA-internal, gamemd equivalent UNCHECKED, and both arms diverge on
-        // the RNG stream rather than merely on the picture:
-        // - Native fetches the particle type at `0x0062E8EA` and takes the three
-        //   shared draws at `0x0062E8EF`/`0x0062E903`/`0x0062E90E`
-        //   unconditionally; with `HoldsWhat` absent it would index
-        //   `g_ParticleTypeClass_Array[-1]` and fault. Skipping the draws here
-        //   is a divergence, not a no-op — but only for a system that authors
-        //   no `HoldsWhat`, which no stock Spark system does.
-        // - Native never tests the particle's `BehavesLike` on this path. The
-        //   `Err` below additionally skips the countdown, `done_spawning` and
-        //   the facing draw for that tick, so a Spark SYSTEM holding a
-        //   non-Spark particle behaves differently here. Stock authors no such
-        //   pairing.
+        // AI_Spark62E840 dispatches the held particle's own behavior; the
+        // system writes its shared +10C velocity regardless of that behavior.
+        // Null (<none>) retains the existing safety skip for native's invalid
+        // array[-1] route. Missing HoldsWhat binds a real empty-named type.
         if let Some(particle_type_id) = holds_what {
-            let particle_type = rules.particle_type(particle_type_id).clone();
-            if particle_type.behaves_like != ParticleBehavesLike::Spark {
-                return Err(SparkSpawnError::NonSparkParticle(
-                    particle_type.name.clone(),
-                ));
-            }
+            let particle_type = rules.particle_type(particle_type_id);
 
             // (3) Three shared draws, taken unconditionally at `0x0062E8EF`,
             // `0x0062E903` and `0x0062E90E`. Native divides them (crossed: the
@@ -154,7 +143,7 @@ pub(super) fn spark_spawn_pass(
                 // exceed `ParticleCap`. `WeldingSys` (cap 15, 20 spawn frames)
                 // relies on that.
                 let particle =
-                    construct_spark_particle(sim, &particle_type, particle_type_id, system_coords)?;
+                    construct_spark_particle(sim, rules, particle_type_id, system_coords)?;
                 sys.particles.push(particle);
                 let particle = sys
                     .particles
@@ -172,8 +161,9 @@ pub(super) fn spark_spawn_pass(
                     sim.particle_rng().next_u32() as i32,
                     particle_type.y_velocity,
                 );
-                let velocity_z = abs_modulo(
-                    sim.particle_rng().next_u32() as i32,
+                // `0x0062EA62..0x0062EA6B`: absolute value first, then IDIV.
+                let velocity_z = crate::sim::rng::abs_before_modulo(
+                    sim.particle_rng().next_u32(),
                     particle_type.z_velocity_range,
                 )
                 .wrapping_add(particle_type.min_z_velocity);
@@ -191,12 +181,13 @@ pub(super) fn spark_spawn_pass(
                 // type's `SpawnDirection` (`psType+0x2BC`/`+0x2C0`/`+0x2C4`,
                 // written by `ParticleSystemTypeClass::ReadINI @ 0x006442D0`),
                 // because the `ParticleSystem+0xF9` arm that would take the
-                // shared draws instead is unreachable — see (3). No stock Spark
-                // system authors `SpawnDirection`, so in practice this folds
-                // zero and each particle keeps its own three velocity draws.
-                vx = add_i32(vx, spawn_direction.x)?;
-                vy = add_i32(vy, spawn_direction.y)?;
-                vz = add_i32(vz, spawn_direction.z)?;
+                // shared draws instead is unreachable — see (3). Each float is
+                // `FLD`ed and `FADD`ed to the velocity (`0x0062EAFD..0x0062EB37`).
+                // No stock Spark system authors `SpawnDirection`, so in practice
+                // this folds zero and each particle keeps its own draws.
+                vx = add_f32(vx, spawn_direction[0])?;
+                vy = add_f32(vy, spawn_direction[1])?;
+                vz = add_f32(vz, spawn_direction[2])?;
 
                 // (4d) Renormalise, then rescale by the ORIGINAL magnitude, so
                 // the offset changes direction without changing speed. The
@@ -218,13 +209,7 @@ pub(super) fn spark_spawn_pass(
                 vy = X87Chop53::store_f32(X87Chop53::mul(scale, X87Chop53::load_f32(vy)?))?;
                 vz = X87Chop53::store_f32(X87Chop53::mul(scale, X87Chop53::load_f32(vz)?))?;
 
-                let spark = particle
-                    .spark
-                    .as_mut()
-                    .expect("a Spark particle carries its runtime state");
-                spark.velocity_x = vx;
-                spark.velocity_y = vy;
-                spark.velocity_z = vz;
+                particle.direction = [vx, vy, vz];
             }
         }
         // Original62EBF2..62EC60, inside the admitted burst and before the
@@ -285,24 +270,18 @@ pub(super) fn spark_spawn_pass(
     Ok(())
 }
 
-/// `ParticleClass::Constructor @ 0x0062B5E0`, restricted to what a Spark
-/// particle needs. Consumes one lifetime draw always, and one colour draw when
-/// the type authors a non-zero `StartColor1`/`StartColor2` pair.
-///
-/// The constructor has a third conditional draw, at `0x0062B7F2`, gated on
-/// `ParticleType+0x314 == 1`. `+0x314` is `BehavesLike` and Spark is 3, so it
-/// never fires on this path; it is named here so the ledger is complete rather
-/// than merely correct.
-///
+/// AI_Spark62E840 calls the shared Particle constructor with identical
+/// source and target, then replaces its direction. The held particle's own
+/// type controls the constructor's Smoke draw and colour/lifetime draws.
 fn construct_spark_particle(
     sim: &mut Simulation,
-    particle_type: &ParticleType,
+    rules: &RuleSet,
     particle_type_id: crate::rules::particle_type::ParticleTypeId,
     system_coords: IVec3,
 ) -> Result<Particle, SparkSpawnError> {
     construct_spark_particle_with_ground(
         sim,
-        particle_type,
+        rules,
         particle_type_id,
         system_coords,
         |sim, x, y| Ok(super::spark_world::constructor_ground_height(sim, x, y)?),
@@ -311,7 +290,7 @@ fn construct_spark_particle(
 
 fn construct_spark_particle_with_ground<F>(
     sim: &mut Simulation,
-    particle_type: &ParticleType,
+    rules: &RuleSet,
     particle_type_id: crate::rules::particle_type::ParticleTypeId,
     system_coords: IVec3,
     mut ground_height: F,
@@ -321,53 +300,52 @@ where
 {
     // The shared constructor allocates AbstractClass+10 before its lifetime
     // draw, as original62B5E0 does for every particle behavior.
-    let mut particle = Particle::new_with_ground(
+    let particle = Particle::new_with_ground(
         particle_type_id,
         system_coords,
         system_coords,
-        particle_type,
+        rules.particle_type(particle_type_id),
         sim,
         &mut ground_height,
     )?;
 
-    // The colour seed. Native reads the list only when it has entries, and
-    // takes the interpolated arm only when at least one of the six
-    // `StartColor1`/`StartColor2` bytes is non-zero (`0x0062B7C4` onward). The
-    // stock damage-spark types `[Spark]` and `[LargeSpark]` author neither, so
-    // they take the no-draw arm; `[WeldingSpark]` authors both and draws.
-    let start_rgb = if particle_type.color_list.is_empty() {
-        [0, 0, 0]
-    } else if particle_type.start_color_1 == [0, 0, 0] && particle_type.start_color_2 == [0, 0, 0] {
-        particle_type.color_list[0]
-    } else {
-        let sample = sim
-            .particle_rng()
-            .next_range_u32_inclusive(0, MAX_RANDOM_RANGED_SAMPLE);
-        // Original Particle62BADF..62BAEE narrows the scaled draw to float
-        // before661020. The helper owns weighted RGB arithmetic, not RNG.
-        let fraction = X87Chop53::store_f32(X87Chop53::mul(
-            X87Chop53::load_i32(sample as i32),
-            X87Chop53::load_f64(RANDOM_RANGED_UNIT_SCALE)?,
-        ))?;
-        crate::util::native_color::interpolate_rgb8(
-            particle_type.start_color_1,
-            particle_type.start_color_2,
-            fraction,
-        )?
-    };
-
-    // Both coordinate arguments are the system's own coordinate, so direction
-    // normalization is a no-op; the caller supplies the Spark velocity.
-    particle.spark = Some(SparkRuntimeState {
-        velocity_x: NativeF32Bits::POSITIVE_ZERO,
-        velocity_y: NativeF32Bits::POSITIVE_ZERO,
-        velocity_z: NativeF32Bits::POSITIVE_ZERO,
-        start_rgb,
-        color_index: 0,
-        color_accumulator: NativeF64Bits::POSITIVE_ZERO,
-    });
     Simulation::reveal_particle(&mut sim.substrate, particle.stable_id());
+    sim.unlimbo_particle_alpha_shape(&particle, rules);
     Ok(particle)
+}
+
+/// The constructor's colour seed (`ParticleClass::Constructor @ 0x0062BA51`),
+/// for every behavior ([`Particle::new_with_ground`] calls it): native reads
+/// the list only when it has entries, and
+/// takes the interpolated arm only when at least one of the six
+/// `StartColor1`/`StartColor2` bytes is non-zero. The stock damage-spark types
+/// `[Spark]` and `[LargeSpark]` and both stock Railgun particles author
+/// neither, so they take the no-draw arm; `[WeldingSpark]` authors both and
+/// draws.
+pub(super) fn constructor_start_color(
+    sim: &mut Simulation,
+    particle_type: &ParticleType,
+) -> Result<[u8; 3], NativeX87Error> {
+    if particle_type.color_list.is_empty() {
+        return Ok([0, 0, 0]);
+    }
+    if particle_type.start_color_1 == [0, 0, 0] && particle_type.start_color_2 == [0, 0, 0] {
+        return Ok(particle_type.color_list[0]);
+    }
+    let sample = sim
+        .particle_rng()
+        .next_range_u32_inclusive(0, MAX_RANDOM_RANGED_SAMPLE);
+    // Original Particle62BADF..62BAEE narrows the scaled draw to float
+    // before661020. The helper owns weighted RGB arithmetic, not RNG.
+    let fraction = X87Chop53::store_f32(X87Chop53::mul(
+        X87Chop53::load_i32(sample as i32),
+        X87Chop53::load_f64(RANDOM_RANGED_UNIT_SCALE)?,
+    ))?;
+    crate::util::native_color::interpolate_rgb8(
+        particle_type.start_color_1,
+        particle_type.start_color_2,
+        fraction,
+    )
 }
 
 /// `Sqrt_Approx((x*x + y*y) + z*z)`.
@@ -377,11 +355,11 @@ where
 /// only then `z*z`. x87 addition is not associative at this precision, so the
 /// order is load-bearing and the decompiler's commutative reordering
 /// (`z*z + y*y + x*x`) is wrong.
-fn magnitude(
+pub(super) fn magnitude(
     x: NativeF32Bits,
     y: NativeF32Bits,
     z: NativeF32Bits,
-) -> Result<NativeF32Bits, SparkSpawnError> {
+) -> Result<NativeF32Bits, NativeX87Error> {
     let x = X87Chop53::load_f32(x)?;
     let y = X87Chop53::load_f32(y)?;
     let z = X87Chop53::load_f32(z)?;
@@ -389,12 +367,15 @@ fn magnitude(
         X87Chop53::add(X87Chop53::mul(x, x), X87Chop53::mul(y, y)),
         X87Chop53::mul(z, z),
     );
-    Ok(sqrt_approx_f32(sum)?)
+    sqrt_approx_f32(sum)
 }
 
-fn add_i32(value: NativeF32Bits, addend: i32) -> Result<NativeF32Bits, SparkSpawnError> {
+/// RESIDUAL: an infinite `SpawnDirection=` (mod data such as `1e400`) fails
+/// this load and ends the system's spawning; native's masked `FADD` keeps
+/// spawning sparks with non-finite velocities.
+fn add_f32(value: NativeF32Bits, addend: NativeF32Bits) -> Result<NativeF32Bits, SparkSpawnError> {
     Ok(X87Chop53::store_f32(X87Chop53::add(
-        X87Chop53::load_i32(addend),
+        X87Chop53::load_f32(addend)?,
         X87Chop53::load_f32(value)?,
     ))?)
 }
@@ -416,21 +397,7 @@ fn signed_modulo(raw: i32, divisor: i32) -> i32 {
     if divisor == 0 { 0 } else { raw % divisor }
 }
 
-/// `CDQ; XOR EAX,EDX; SUB EAX,EDX; CDQ; IDIV` — absolute value first, then the
-/// remainder. Equal to modulo-then-abs for every input except `i32::MIN`,
-/// where native's `NEG` overflows.
-///
-/// VERA-internal, gamemd equivalent UNCHECKED: a zero divisor returns 0 where
-/// native raises `#DE`.
-fn abs_modulo(raw: i32, divisor: i32) -> i32 {
-    if divisor == 0 {
-        0
-    } else {
-        (raw.unsigned_abs() % divisor.unsigned_abs()) as i32
-    }
-}
-
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::super::floor_constructor_coords_with;
     use super::*;
@@ -439,7 +406,7 @@ mod tests {
     use crate::sim::rng::SimRng;
 
     /// A stock-shaped Spark system: `[SparkSys]` holding `[Spark]`.
-    fn spark_rules(spawn_frames: u32, cap: u32, percentage: &str) -> RuleSet {
+    fn spark_rules(spawn_frames: u32, cap: i32, percentage: &str) -> RuleSet {
         let ini = IniFile::from_str(&format!(
             "[General]\nFixtureOnly=1\n\
              [ParticleSystems]\n1=SparkSys\n\
@@ -466,7 +433,6 @@ mod tests {
     fn gsi_04_03_particle_constructor_clamps_at_or_below_level_two_104_floor() {
         let rules = spark_rules(1, 2, "1");
         let particle_type_id = crate::rules::particle_type::ParticleTypeId(0);
-        let particle_type = rules.particle_type(particle_type_id).clone();
         let mut cell = super::super::spark_world::tests::terrain_cell(0, 0);
         cell.level = 2;
         let mut sim = super::super::spark_world::tests::one_cell_sim(cell);
@@ -474,7 +440,7 @@ mod tests {
         for (input_z, expected_z) in [(207, 208), (208, 208), (209, 209)] {
             let particle = construct_spark_particle(
                 &mut sim,
-                &particle_type,
+                &rules,
                 particle_type_id,
                 IVec3::new(128, 128, input_z),
             )
@@ -530,7 +496,7 @@ mod tests {
 
         let particle = construct_spark_particle_with_ground(
             &mut sim,
-            &particle_type,
+            &rules,
             particle_type_id,
             IVec3::new(7, 9, 100),
             |sim, x, y| {
@@ -556,20 +522,15 @@ mod tests {
     fn gsi_04_03_constructor_miss_uses_dummy_nonzero_slope_off_center() {
         let rules = spark_rules(1, 2, "1");
         let particle_type_id = crate::rules::particle_type::ParticleTypeId(0);
-        let particle_type = rules.particle_type(particle_type_id).clone();
         let mut sim = super::super::spark_world::tests::one_cell_sim(
             super::super::spark_world::tests::terrain_cell(0, 0),
         );
         let terrain = sim.resolved_terrain.as_ref().unwrap();
         terrain.test_set_dummy_cell_level_slope(2, 1);
 
-        let particle = construct_spark_particle(
-            &mut sim,
-            &particle_type,
-            particle_type_id,
-            IVec3::new(320, 192, 0),
-        )
-        .unwrap();
+        let particle =
+            construct_spark_particle(&mut sim, &rules, particle_type_id, IVec3::new(320, 192, 0))
+                .unwrap();
 
         assert_eq!(
             particle.coords.z, 234,
@@ -698,6 +659,40 @@ mod tests {
             SimRng::new(5).logical_view(),
             "a finished system consumes no RNG at all"
         );
+    }
+
+    /// A negative `ParticleCap` halves to a negative divisor: native still
+    /// draws the burst size (`0x0062E8AA`), which comes out below one, so no
+    /// spark spawns but the shared draws and the facing draw follow.
+    #[test]
+    fn a_negative_particle_cap_takes_the_burst_draw_and_spawns_nothing() {
+        let rules = spark_rules(1, -4, "1");
+        let mut sim = Simulation::with_seed(4242);
+        let mut sys = spark_system(1);
+
+        spark_spawn_pass(&mut sys, &mut sim, &rules).expect("spark spawn");
+
+        assert!(sys.particles.is_empty());
+        let mut expected = SimRng::new(4242);
+        for _ in 0..4 {
+            expected.next_u32();
+        }
+        expected.next_range_u32_inclusive(0, MAX_RANDOM_RANGED_SAMPLE);
+        assert_eq!(sim.rng_views().scenario, expected.logical_view());
+    }
+
+    /// `0x0062E8C2..0x0062E8CC` takes the absolute value before the IDIV: a
+    /// raw i32::MIN stays negative, so ParticleCap=6 bursts -2 + 3 = 1 spark.
+    #[test]
+    fn an_int_min_burst_draw_keeps_its_sign() {
+        let rules = spark_rules(1, 6, "1");
+        let mut sim = Simulation::with_seed(1);
+        sim.scenario_rng = SimRng::with_next_draws_for_test(&[0x8000_0000]);
+        let mut sys = spark_system(1);
+
+        spark_spawn_pass(&mut sys, &mut sim, &rules).expect("spark spawn");
+
+        assert_eq!(sys.particles.len(), 1);
     }
 
     #[test]

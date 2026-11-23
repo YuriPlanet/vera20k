@@ -33,7 +33,7 @@ fn scene(rules: &RuleSet) -> (Simulation, u64) {
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.set_cell_marked_for_test(true);
     let shield = rules.shield_type("TestShield").expect("fixture type");
-    entity.shield = Some(ShieldState::new(
+    entity.seldom.shield = Some(ShieldState::new(
         "TestShield".to_owned(),
         shield.initial_strength(),
         shield.strength(),
@@ -55,7 +55,7 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, damage: i32) {
             None,
             warhead,
         )],
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -64,6 +64,7 @@ fn shield(sim: &Simulation) -> &ShieldState {
         .entities
         .get(1)
         .unwrap()
+        .seldom
         .shield
         .as_ref()
         .unwrap()
@@ -202,6 +203,7 @@ fn self_healing_restores_points_on_its_rate() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -260,6 +262,7 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
             .entities
             .get(target)
             .unwrap()
+            .seldom
             .shield
             .as_ref()
             .unwrap()
@@ -269,17 +272,24 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
         .entities
         .get_mut(target)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
         .hp = 40;
     super::tick(&mut sim, target, &rules);
     sim.session.set_binary_frame_for_test(30);
-    sim.temporal_initiate_warp(warper, Some(target), &rules, None, FrameEffects::default());
+    sim.temporal_initiate_warp(
+        warper,
+        Some(target),
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(sim.substrate.entities.get(target).unwrap().ai_frozen());
-    sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
     sim.session.set_binary_frame_for_test(300);
-    sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
     assert_eq!(
         points(&sim),
         40,
@@ -290,8 +300,9 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
         &mut sim.houses,
         &mut sim.power_states,
         warper,
+        rules.ares_form(),
     );
-    sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
     sim.session.set_binary_frame_for_test(359);
     super::tick(&mut sim, target, &rules);
     assert_eq!(points(&sim), 40, "the saved recovery time has not elapsed");
@@ -308,6 +319,7 @@ fn chronosphere_launch_latch_suppresses_due_recovery_before_warp_out() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -331,6 +343,7 @@ fn chronosphere_skips_recovery_but_keeps_the_original_countdown() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -338,7 +351,7 @@ fn chronosphere_skips_recovery_but_keeps_the_original_countdown() {
     super::tick(&mut sim, 1, &rules);
     sim.session.set_binary_frame_for_test(30);
     arm_chrono_warp(&mut sim);
-    sim.process_chrono_warp(1, &rules, ObjectAiCtx::default())
+    sim.process_chrono_warp(1, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     assert!(sim.substrate.entities.get(1).unwrap().is_warped_out());
     super::tick(&mut sim, 1, &rules);
@@ -373,7 +386,7 @@ fn construction_binds_the_shield_type() {
     let shield = sim
         .entities()
         .get(id)
-        .and_then(|entity| entity.shield.as_ref())
+        .and_then(|entity| entity.seldom.shield.as_ref())
         .expect("ShieldType= allocated the shield");
     assert_eq!(shield.hp(), 100);
 }
@@ -386,6 +399,7 @@ fn an_offline_shield_absorbs_nothing() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -413,6 +427,7 @@ fn ignore_defenses_skips_the_shield_stage() {
         &rules,
         &sim.interner,
         &sim.houses,
+        target.phobos_armor_multiplier(),
     );
     assert!(
         pre_receive_damage(&mut sim, &rules, &event, input, &divisors).is_none(),
@@ -425,7 +440,7 @@ fn ignore_defenses_skips_the_shield_stage() {
 fn control_hit_reaches_health_without_a_shield() {
     let rules = rules("", "");
     let (mut sim, _) = scene(&rules);
-    sim.substrate.entities.get_mut(1).unwrap().shield = None;
+    sim.substrate.entities.get_mut(1).unwrap().seldom.shield = None;
     hit(&mut sim, &rules, 40);
     assert_eq!(health(&sim), 160);
 }
@@ -445,6 +460,7 @@ fn pre_stage_absorbs_before_the_receiver() {
         &rules,
         &sim.interner,
         &sim.houses,
+        target.phobos_armor_multiplier(),
     );
     let receipt = pre_receive_damage(&mut sim, &rules, &event, input, &divisors)
         .expect("a shield owns the hit");
@@ -495,31 +511,28 @@ fn a_warhead_that_cannot_target_the_owners_house_skips_absorption() {
     assert!(can_target_house(warhead, Some(enemy), owner, &sim));
 }
 
-/// The wave lookahead reads the surviving damage without consuming the
-/// shield; the commit path then absorbs the hit exactly once.
 #[test]
-fn the_wave_preview_reports_the_surviving_damage_without_consuming_the_shield() {
+fn the_dispatched_receiver_returns_the_damage_left_by_the_shield() {
+    use crate::sim::combat::{combat_aoe::AreaDamageReceiver, world_receiver};
     let rules = rules("", "");
     let (mut sim, _) = scene(&rules);
-    let warhead_ref = sim.interner.intern("WH");
-    let event = EntityDamageEvent::area(1, 40, 0, RAD_NO_ATTACKER, None, warhead_ref);
-
-    assert_eq!(preview_receive_damage(&sim, &rules, &event, 40), Some(0));
-    assert_eq!(shield(&sim).hp(), 100, "the preview wrote no state");
-
-    let target = sim.substrate.entities.get(1).unwrap();
-    let target_type = sim.interner.object_type(target.type_ref(), &rules);
-    let divisors = crate::sim::combat::receiver_divisors(
-        target,
-        target_type,
+    let warhead = sim.interner.intern("WH");
+    let event = EntityDamageEvent::area(1, 40, 0, RAD_NO_ATTACKER, None, warhead);
+    let (_, packet) = world_receiver::commit_receiver(
+        &mut sim,
+        &mut world_receiver::ReceiverRun::default(),
+        AreaDamageReceiver::Entity(event),
         &rules,
-        &sim.interner,
-        &sim.houses,
+        None,
+        &mut Vec::new(),
     );
-    let receipt =
-        pre_receive_damage(&mut sim, &rules, &event, 40, &divisors).expect("a shield owns the hit");
-    assert_eq!(receipt.remaining, 0);
-    assert_eq!(shield(&sim).hp(), 60);
+    assert_eq!(packet, 0);
+    assert_eq!(health(&sim), 200);
+    assert_eq!(
+        shield(&sim).hp(),
+        60,
+        "one receiver absorbed the 40-point hit once"
+    );
 }
 
 /// `IsBrokenAndNonRespawning` gates the shield bar: a broken shield with no
@@ -604,4 +617,42 @@ fn a_temporal_warhead_still_applies_the_minimum_shield_damage() {
     hit(&mut sim, &rules, 40);
     assert_eq!(shield(&sim).hp(), 90);
     assert_eq!(health(&sim), 200);
+}
+
+/// Phobos `ShieldClass::ReceiveDamage` (`ShieldClass.cpp:249..255`) uncloaks
+/// a target whose shield absorbed a positive hit, gated by the warhead's
+/// `DecloakDamagedTargets`. Only `ares,phobos` isolates the shield call: there
+/// Ares skips the native-slot uncloak for the unaffected hull (`1004AB68`),
+/// while plain `phobos` also uncloaks in the native slot.
+#[cfg(feature = "phobos")]
+#[test]
+fn phobos_shield_damage_decloaks_only_when_the_warhead_allows_it() {
+    fn hit_cloaked(rules: &RuleSet) -> i32 {
+        let (mut sim, _) = scene(rules);
+        let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
+        cloak.establish_unlimbo_fully_cloaked();
+        sim.substrate.entities.get_mut(1).unwrap().cloak = Some(Box::new(cloak));
+        hit(&mut sim, rules, 40);
+        assert_eq!(shield(&sim).hp(), 60, "the shield owns the hit");
+        assert_eq!(health(&sim), 200, "no hull damage reaches the receiver");
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .cloak
+            .as_ref()
+            .unwrap()
+            .state()
+    }
+
+    assert_eq!(
+        hit_cloaked(&rules("", "")),
+        3,
+        "an admitting warhead starts uncloaking"
+    );
+    assert_eq!(
+        hit_cloaked(&rules("", "DecloakDamagedTargets=no")),
+        2,
+        "the per-warhead no keeps the shield owner hidden"
+    );
 }

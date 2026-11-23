@@ -19,20 +19,15 @@ pub(crate) fn map<T: Sync, R: Send>(items: &[T], work: impl Fn(&T) -> R + Sync) 
 /// [`map`] that starts the items in slice order, each on the next free
 /// worker, with the results in item order. Starting the costliest items
 /// first keeps the slowest from running alone at the end. `work` also gets
-/// what `before` read just before its item was taken: whatever earlier
-/// items publish with `Release` and `before` reads with `Acquire` comes
-/// only from items earlier in the slice.
-pub(crate) fn map_in_order<T: Sync, B, R: Send>(
+/// the item's index.
+pub(crate) fn map_in_order<T: Sync, R: Send>(
     items: &[T],
-    before: impl Fn() -> B + Sync,
-    work: impl Fn(&T, B) -> R + Sync,
+    work: impl Fn(usize, &T) -> R + Sync,
 ) -> Vec<R> {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let next = AtomicUsize::new(0);
     // A puller per worker takes the next item until none is left; one a
-    // busy worker never starts finds none left. An item's publication
-    // happens before a later read that sees it, so its take precedes the
-    // reader's next take in `next`'s order.
+    // busy worker never starts finds none left.
     let pullers = rayon::current_num_threads().min(items.len());
     let done: Vec<Vec<(usize, R)>> = (0..pullers)
         .into_par_iter()
@@ -40,12 +35,11 @@ pub(crate) fn map_in_order<T: Sync, B, R: Send>(
         .map(|_| {
             let mut done = Vec::new();
             loop {
-                let seen = before();
                 let index = next.fetch_add(1, Ordering::Relaxed);
                 let Some(item) = items.get(index) else {
                     break;
                 };
-                done.push((index, work(item, seen)));
+                done.push((index, work(index, item)));
             }
             done
         })
@@ -106,14 +100,44 @@ pub(crate) fn any_index(len: usize, test: impl Fn(usize) -> bool + Sync) -> bool
 /// return once both are done. Only `pooled` crosses threads, so `here` may
 /// hold this thread's `&mut` borrows and read its thread-locals. A panic in
 /// either resumes on the caller.
-pub(crate) fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
     rayon::in_place_scope(|scope| {
         scope.spawn(move |_| pooled());
         here();
     });
 }
 
-#[cfg(test)]
+/// The browser's main thread traps if it waits on a contended lock, so it runs
+/// no engine work while the pool does: `pooled` (whose own parallel work runs
+/// on the pool) finishes before `here` starts. The two share only reads, so
+/// their order changes no result.
+#[cfg(target_arch = "wasm32")]
+pub fn alongside(pooled: impl FnOnce() + Send, here: impl FnOnce()) {
+    pooled();
+    here();
+}
+
+/// Drop `value` on the worker pool, so the caller does not wait for it to be
+/// freed. The browser drops it here: its pool may not run.
+pub fn drop_on_pool<T: Send + 'static>(value: T) {
+    #[cfg(not(target_arch = "wasm32"))]
+    rayon::spawn(move || drop(value));
+    #[cfg(target_arch = "wasm32")]
+    drop(value);
+}
+
+/// Run a fixture on the pool's only worker so deferred drops stay queued until it yields.
+#[cfg(all(not(target_arch = "wasm32"), any(test, feature = "test-support")))]
+pub fn on_single_worker_for_test(work: impl FnOnce() + Send) {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(1)
+        .build()
+        .expect("a worker pool")
+        .install(work);
+}
+
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     #[test]
     fn results_keep_item_order() {
@@ -137,8 +161,11 @@ mod tests {
         assert!(super::any_index(1000, |index| index == 999));
         assert!(!super::any_index(1000, |index| index >= 1000));
         assert_eq!(
-            super::map_in_order(&items, || (), |item, ()| item * item),
-            squares
+            super::map_in_order(&items, |index, item| item * item + index as u64),
+            items
+                .iter()
+                .map(|item| item * item + item)
+                .collect::<Vec<_>>()
         );
     }
 

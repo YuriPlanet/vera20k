@@ -10,13 +10,10 @@ distinct from LOBRDB01..28 (205..232, native Name `Concrete Low Bridge`).
 
 The native-only corpora use original `gamemd.exe`:
 
-- `naval_occupants` executes Cell487A10, Unit73F0A0/Foot4D9C10 admission,
-  Ship6A3F50 AtCoord, and Unit737C90→Foot4D7330→Techno701900→Object5F5390.
-  The 22 rows include a resident ship, moving-head neighbors, height-tolerance
-  boundaries, and explicit type/receiver gate controls. A resident on repaired
-  Road reaches Death_Explosion. A ship still on adjacent Water whose head
-  matches the repaired cell returns Health1/Alive1/+3CD1. Main, Scenario and
-  MapGen states remain unchanged during the measured repair receiver.
+- `naval_occupants` is the shared fixture: it sets up Cell487A10,
+  Unit73F0A0/Foot4D9C10 admission, Ship6A3F50 AtCoord, and
+  Unit737C90→Foot4D7330→Techno701900→Object5F5390 for the packets below. Its
+  has no corpus of its own.
 - `naval_sink_tick` executes 15 bounded UnitAI7364A1 visits after that receiver:
   raw Z drops by5, height below -400 calls a second RecordKill before UnInit,
   and nonterminal frames divisible by4 request Y then X Scenario jitter
@@ -50,11 +47,10 @@ With the native-oracle Python environment and original executable configured:
 
 ```sh
 export VERA20K_SHRAPNEL_INPUTS=target/shrapnel-native-inputs/extract
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python tools/spatial_oracle/naval_occupants.py --check
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python tools/spatial_oracle/naval_sink_tick.py --check
 ```
 
-Both default to read-only check; `--write` explicitly regenerates references.
+It defaults to read-only check; `--write` explicitly regenerates references.
 Portable-path integration and correcting the mode filename changed no native
 case output. The metadata preserves original byte slices, reader boundaries,
 allocator/OS seams and complete input provenance. Rust tests bind these outputs
@@ -164,6 +160,5 @@ for packet in naval_lifetime_audio naval_lifetime_cleanup naval_lifetime_control
 done
 ```
 
-The Shrapnel packet records a separate required CliffBack constructor/retention
-follow-up. Other low/raised types and affected gameplay mechanisms remain work
-for the whole-bridge audit.
+Other low/raised types and affected gameplay mechanisms remain work for the
+whole-bridge audit.

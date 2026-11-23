@@ -23,7 +23,7 @@ fn action(kind: i32, raw: &str, tail: &str) -> RuntimeAction {
         .unwrap()
         .entries()[0]
         .clone();
-    RuntimeDefinitions::default().resolve_action(entry, None, None)
+    RuntimeDefinitions::default().resolve_action(entry, None, None, None)
 }
 
 fn run(
@@ -42,7 +42,7 @@ fn run(
         &mut Vec::new(),
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
         registry,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -132,6 +132,7 @@ fn seed_growth(
                 sim.session.binary_frame(),
                 &mut sim.scenario_rng,
             )
+            .unwrap()
             .is_some()
     );
 }
@@ -308,11 +309,12 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
         &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
         None,
         None,
+        None,
     );
     sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     waypoints(&mut sim, &[(0, (8, 9)), (1, (8, 8))]);
     sim.session.publish_started();
-    sim.advance_triggers(&rules, Some(registry), FrameEffects::default());
+    sim.advance_triggers(&rules, Some(registry), &mut FrameEffects::default());
     assert!(!sim.ore_growth_config.grows());
     assert!(sim.trigger_runtime.logic_tags.is_empty());
     assert!(
@@ -332,10 +334,9 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(registry),
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(frame.tick.frame_committed);
@@ -364,10 +365,9 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
         .advance_app_frame(
             &[],
             &rules,
-            Some(registry),
             134,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(frame.tick.frame_committed);

@@ -159,7 +159,7 @@ fn retail_signed_terrain_dummy_suffix_survives_save_and_limbo_without_replacemen
         true,
     );
     loaded.dirty_cells.clear_radar_for_test();
-    loaded.uninit_with_context(id, UninitContext::with_rules(&rules));
+    loaded.uninit_with_context(id, UninitContext::new(&rules));
     assert_eq!(
         dummy.neighbor_count(),
         248,
@@ -177,7 +177,7 @@ fn retail_signed_terrain_dummy_suffix_survives_save_and_limbo_without_replacemen
     assert_eq!(loaded.dirty_cells.radar(), [(0, 0)]);
     assert!(!loaded.terrain_objects.get(id).unwrap().object_alive());
     assert!(loaded.substrate.display.layer_of(id).is_none());
-    loaded.process_pending_delete_with(&rules, Some(registry), Default::default(), 1, true);
+    loaded.process_pending_delete_with(&rules, &mut Default::default(), 1, true);
     assert!(loaded.terrain_objects.get(id).is_none());
     assert_eq!(loaded.terrain_objects.cell_index().len(), 1);
     assert_eq!(

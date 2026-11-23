@@ -10,7 +10,6 @@ use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::world::FrameEffects;
-use crate::util::fixed_math::SIM_ZERO;
 #[cfg(test)]
 use crate::util::fixed_math::SimFixed;
 
@@ -265,15 +264,27 @@ impl NavigationState {
         self.nav_queue.clear();
     }
 
+    /// Insert at the NavQueue's front (`DynamicVectorClass` growth then a
+    /// `memmove` up and a store at index 0, `0x0074231E..0x00742374`).
+    pub(crate) fn push_nav_queue_front(&mut self, target: NavTargetRef) {
+        self.nav_queue.insert(0, target);
+    }
+
     /// Take the NavQueue's oldest entry.
     pub(crate) fn pop_nav_queue_front(&mut self) -> Option<NavTargetRef> {
         (!self.nav_queue.is_empty()).then(|| self.nav_queue.remove(0))
     }
 
+    /// Unit7447B0 appends route posts, then returns the first through the
+    /// same queue owner. Entries retain their native order and duplicates.
+    pub(crate) fn append_nav_queue(&mut self, target: NavTargetRef) {
+        self.nav_queue.push(target);
+    }
+
     /// Append to a fixture's NavQueue.
     #[cfg(any(test, feature = "test-support"))]
     pub fn push_nav_queue_for_test(&mut self, target: NavTargetRef) {
-        self.nav_queue.push(target);
+        self.append_nav_queue(target);
     }
 
     /// Keep only the NavQueue entries `keep` accepts.
@@ -289,6 +300,12 @@ impl NavigationState {
     /// `Foot+0x6B1`, the list's loop flag.
     pub(crate) fn nav_list_loops(&self) -> bool {
         self.nav_list_loops
+    }
+
+    /// Unit741F40..741FB6 prepends a moving Drive's next destination without
+    /// Queue_Navigation_List's self-reference or empty-list loop rewrites.
+    pub(crate) fn prepend_nav_list(&mut self, target: NavTargetRef) {
+        self.nav_list.insert(0, target);
     }
 
     /// Queue_Navigation_List's list writes (`0x004DA0F1..0x004DA157`): the
@@ -354,6 +371,11 @@ impl NavigationState {
         self.pending_destination_setter = false;
     }
 
+    /// Whether a call is owed for `Simulation::complete_pending_order`.
+    pub(crate) fn destination_setter_owed(&self) -> bool {
+        self.pending_destination_setter
+    }
+
     /// Take the owed call for `Simulation::complete_pending_order` to make.
     pub(crate) fn take_destination_setter(&mut self) -> bool {
         std::mem::take(&mut self.pending_destination_setter)
@@ -410,22 +432,27 @@ pub(crate) fn set_walk_destination_coord(
     entity: &mut GameEntity,
     coord: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
+    binary_frame: u32,
 ) {
-    // Walk75ACBD/75ACD0/75ACE3 checks EMP and both owner warp bytes.
-    // The teleport owner represents the latter; the native EMP timer still
-    // lacks its production writer. There is deliberately no power gate here.
-    if super::locomotor_owner::owner_is_warping(entity) {
-        return;
-    }
-    let Some(loco) = entity
-        .locomotor
-        .as_mut()
-        .filter(|l| l.active_kind() == LocomotorKind::Walk)
+    let Some(kind @ (LocomotorKind::Walk | LocomotorKind::Mech)) =
+        entity.locomotor.as_ref().map(|loco| loco.active_kind())
     else {
         return;
     };
+    // Both Move_To slots (Walk 75ACBD, Mech 5B008A) check EMP and the
+    // two warp bytes. Only Mech checks the Foot's paralysis timer at 5B0099.
+    if entity.is_under_emp()
+        || super::locomotor_owner::owner_is_warping(entity)
+        || (kind == LocomotorKind::Mech && entity.parasite.is_paralyzed(binary_frame))
+    {
+        return;
+    }
+    let loco = entity
+        .locomotor
+        .as_mut()
+        .expect("installed Move_To receiver");
     let mut coord = coord;
-    if coord != (DriveCoord { x: 0, y: 0, z: 0 })
+    if (kind == LocomotorKind::Mech || coord != super::foot_coordinate::NULL_COORD)
         && let Some(terrain) = terrain
     {
         let cell = terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
@@ -437,7 +464,11 @@ pub(crate) fn set_walk_destination_coord(
                 ));
         }
     }
-    loco.set_walk_destination(Some(coord));
+    if kind == LocomotorKind::Mech {
+        loco.mech_move_to(coord);
+    } else {
+        loco.set_walk_destination(Some(coord));
+    }
 }
 
 /// The Foot's Locomotor (`+0x674`) is a `DriveLocomotionClass` (Move_To `0x004AFD40`).
@@ -454,6 +485,14 @@ fn is_ship_locomotor(entity: &GameEntity) -> bool {
         .locomotor
         .as_ref()
         .is_some_and(|loco| matches!(loco.active_kind(), LocomotorKind::Ship))
+}
+
+/// The Foot's Locomotor (`+0x674`) is a `HoverLocomotionClass` (CLSID `0x007E9A40`).
+fn is_hover_locomotor(entity: &GameEntity) -> bool {
+    entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|loco| matches!(loco.active_kind(), LocomotorKind::Hover))
 }
 
 /// `CellClass::GetCoords` (`0x00486840`) of the cell `MapClass::Get_CellClass`
@@ -520,9 +559,22 @@ fn adjusted_destination(
         let cell = terrain.native_cell_identity((rx, ry));
         let structural = terrain.native_cell_flags(cell) & 0x100 != 0;
         if structural {
-            coord.z = coord
-                .z
-                .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+            use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
+            // VERA's independent deck height replaces the Drive4AFD40 /
+            // Ship69F450 bridge lift, keeping the caller's relative Z.
+            let lift = terrain
+                .corrected_high_bridge_deck_at(cell)
+                .and_then(|deck| {
+                    super::ground_pose::ground_surface_z_at(
+                        [coord.x, coord.y],
+                        false,
+                        Some(terrain),
+                        None,
+                    )
+                    .map(|ground| i32::from(deck) * GROUND_LEVEL_HEIGHT_LEPTONS - ground)
+                })
+                .unwrap_or(BRIDGE_DECK_HEIGHT_LEPTONS);
+            coord.z = coord.z.wrapping_add(lift);
         }
     }
     Some(coord)
@@ -587,7 +639,7 @@ pub(crate) fn building_dock_coordinate(
         super::ground_pose::object_location(building, terrain),
         super::ground_pose::object_get_coords(building, terrain),
         object,
-        &building.radio_contacts,
+        &building.seldom.radio_contacts,
         requester,
         || {
             let id = requester.ok_or("Bunker dock coordinate needs a requester")?;
@@ -637,6 +689,29 @@ pub(crate) fn nav_target_coordinate(
         )
         .ok_or_else(|| format!("NavCom coordinate target {id} disappeared"));
     };
+    object_navigation_coordinate(entity, requester, terrain, rules, || {
+        let id = requester.expect("Bunker only reads a non-null requester");
+        let entity = entities
+            .get(id)
+            .ok_or_else(|| format!("Navigation requester {id} disappeared"))?;
+        Ok(super::ground_pose::object_get_coords(entity, terrain))
+    })
+}
+
+/// A live object's virtual+4C coordinate: Building `0x00447E90` (its type's
+/// dock policy, which reads the requester only for a Bunker) or Foot
+/// `0x004DBDF0` (its tube exit, else its locomotor's retained head).
+pub(crate) fn object_navigation_coordinate(
+    entity: &GameEntity,
+    requester: Option<u64>,
+    terrain: Option<&ResolvedTerrainGrid>,
+    rules: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
+    requester_coordinate: impl FnOnce() -> Result<DriveCoord, String>,
+) -> Result<DriveCoord, String> {
+    let id = entity.stable_id();
     if entity.category() == crate::map::entities::EntityCategory::Structure {
         let (rules, interner) =
             rules.ok_or_else(|| format!("Building {id} navigation requires type data"))?;
@@ -647,15 +722,9 @@ pub(crate) fn nav_target_coordinate(
             super::ground_pose::object_location(entity, terrain),
             super::ground_pose::object_get_coords(entity, terrain),
             object,
-            &entity.radio_contacts,
+            &entity.seldom.radio_contacts,
             requester,
-            || {
-                let id = requester.expect("Bunker only reads a non-null requester");
-                let entity = entities
-                    .get(id)
-                    .ok_or_else(|| format!("Navigation requester {id} disappeared"))?;
-                Ok(super::ground_pose::object_get_coords(entity, terrain))
-            },
+            requester_coordinate,
         );
     }
     super::foot_coordinate::navigation_coordinate(entity, terrain)
@@ -684,12 +753,13 @@ impl crate::sim::world::Simulation {
 
 /// Cell callers of the shared non-null destination owner. Object callers
 /// capture their receiver's +4C through `nav_target_coordinate` instead.
+#[cfg(test)]
 pub(crate) fn set_destination_internal_cell(
     entity: &mut GameEntity,
     target: (u16, u16),
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     binary_frame: u32,
-) {
+) -> bool {
     let coord = target_cell_coord(
         target.0,
         target.1,
@@ -703,36 +773,63 @@ pub(crate) fn set_destination_internal_cell(
         coord,
         resolved_terrain,
         binary_frame,
-    );
+    )
 }
 
 /// Foot4D9510/4D9628 publishes the reference and dispatches its captured +4C
 /// coordinate. Cell and object orders reach the same active locomotor owner;
-/// `binary_frame` is the locomotor Move_To paralysis clock.
+/// `binary_frame` is the locomotor Move_To paralysis clock. True when Hover's
+/// Move_To still owes `Simulation::hover_move_to_path_step`.
 pub(crate) fn set_destination_internal_coord(
     entity: &mut GameEntity,
     target: NavTargetRef,
     coord: DriveCoord,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     binary_frame: u32,
-) {
+) -> bool {
     publish_nav_com(entity, target);
 
     if is_drive_locomotor(entity) {
         drive_set_destination(entity, coord, resolved_terrain, binary_frame);
     } else if is_ship_locomotor(entity) {
         ship_set_destination(entity, coord, resolved_terrain, binary_frame);
-    } else if super::hover::hover_move_to(entity, coord, resolved_terrain, binary_frame) {
     } else {
-        set_walk_destination_coord(entity, coord, resolved_terrain);
+        use super::hover::HoverMoveTo;
+        // 0x004D95B3..0x004D9601: ahead of Hover's Move_To an expired +640
+        // restarts for one frame, so Path_And_Arrival's gate
+        // (0x00516621..0x00516645) refuses the search inside the order. The
+        // setter's tail (`DestinationTiming::accept`) zeroes the timer, and
+        // the first search is the next Process's.
+        if is_hover_locomotor(entity)
+            && entity
+                .navigation
+                .path_runtime()
+                .movement_timer()
+                .expired(binary_frame as i32)
+        {
+            entity
+                .navigation
+                .path_runtime_mut()
+                .start_movement(binary_frame, 1);
+        }
+        match super::hover::hover_move_to(entity, coord, resolved_terrain, binary_frame) {
+            HoverMoveTo::PathStepOwed => return true,
+            HoverMoveTo::Done => {}
+            HoverMoveTo::NotHover => {
+                set_walk_destination_coord(entity, coord, resolved_terrain, binary_frame)
+            }
+        }
     }
+    false
 }
 
 /// Foot4D94C7/4D9510: NavComAux cleared and the reference published, before
-/// the locomotor dispatch. The Foot+0x6AC skip (4D9607) stops here, and a
-/// Teleport owner's Move_To is dispatched by the Unit setter.
-pub(super) fn publish_nav_com(entity: &mut GameEntity, target: NavTargetRef) {
+/// the locomotor dispatch; a non-null destination then releases the Fire
+/// system link (`0x004D954B`). The Foot+0x6AC skip (4D9607) stops after this,
+/// and a Teleport owner's Move_To is dispatched by the Unit setter.
+pub(crate) fn publish_nav_com(entity: &mut GameEntity, target: NavTargetRef) {
     entity.navigation.publish_nav_com(Some(target));
+    entity.release_fire_particle_system();
 }
 
 /// Foot4D94C7/4D9510 NULL reference publication, before locomotor Stop.
@@ -748,7 +845,8 @@ fn drive_set_destination(
 ) -> bool {
     // Drive4AFD5E calls FootIsParalyzed4DE770 before destination/map access,
     // including a zero Move_To. Refusal retains Foot's NavCom/timer writes.
-    // Owner warp bytes follow at4AFD71/80; EMP/Unit+6D8 is still unported.
+    // Owner warp bytes follow at4AFD71/80; vt+0x37C (4AFD4B, EMP or a Unit's
+    // death counter) is still unported, as for Process_Movement (track_fresh).
     // Original whole-call comparisons: tools/spatial_oracle/track_destination.
     if entity.parasite.is_paralyzed(binary_frame)
         || super::locomotor_owner::owner_is_warping(entity)
@@ -781,10 +879,9 @@ pub(super) fn track_move_to(
     }
 }
 
-/// ILocomotion +0x48 Stop_Moving of the active Drive, Ship or Hover
-/// instance, as FootStopDriver4D55C0/Unit+500 dispatches from FindPath,
-/// FireAt and first-Limbo. It clears the locomotor destination; NavCom and the committed
-/// head are untouched.
+/// The class-local writes of ILocomotion +0x48 Stop_Moving for Drive, Ship
+/// and Hover. The simulation dispatcher stops linked cars before this point.
+/// NavCom and the committed head are untouched.
 pub(crate) fn track_stop_moving(entity: &mut GameEntity) -> bool {
     if is_drive_locomotor(entity) {
         drive_stop_moving(entity);
@@ -796,14 +893,50 @@ pub(crate) fn track_stop_moving(entity: &mut GameEntity) -> bool {
     true
 }
 
+/// Process_Drive_Track and Stop_Moving (Drive 4B1228/4AFE4D, Ship
+/// 6A08F0/69F55D) walk Unit+6C8 anew after each callback. Both skip a
+/// self-linked successor. Break longer cycles from malformed map/save data.
+pub(super) struct TrackFollowers {
+    first: Option<u64>,
+    current: u64,
+    seen: std::collections::BTreeSet<u64>,
+}
+
+impl TrackFollowers {
+    pub(super) fn new(head: u64, first: u64) -> Self {
+        Self {
+            first: Some(first),
+            current: head,
+            seen: std::collections::BTreeSet::from([head]),
+        }
+    }
+
+    pub(super) fn next(&mut self, entities: &EntityStore) -> Option<u64> {
+        let id = if let Some(first) = self.first.take() {
+            first
+        } else {
+            let next = entities.get(self.current)?.unit_follower()?;
+            if entities.get(next)?.unit_follower() == Some(next) {
+                return None;
+            }
+            next
+        };
+        if !self.seen.insert(id) {
+            return None;
+        }
+        self.current = id;
+        Some(id)
+    }
+}
+
 fn drive_stop_moving(entity: &mut GameEntity) {
     let Some(loco) = entity.locomotor.as_mut() else {
         return;
     };
     loco.ensure_installed_track_state();
     // 0x4AFE00 clamps the class target fraction (+0x50), then clears only
-    // the destination; the head (+0x40) may continue to its endpoint. The
-    // IsTrain follower cascade has no stock type (no retail IsTrain=yes).
+    // the destination; the head (+0x40) may continue to its endpoint.
+    // The locomotor host has already stopped linked cars.
     if let Some(target) = loco.track_target_fraction_native(TrackFamily::Drive) {
         loco.store_track_target_fraction_native(
             TrackFamily::Drive,
@@ -849,18 +982,36 @@ fn ship_stop_moving(entity: &mut GameEntity) {
         loco.store_track_target_fraction_native(TrackFamily::Ship, stopped_target_fraction(target));
     }
     loco.store_track_destination(TrackFamily::Ship, None);
-
-    // OPEN Process-host correction: this preexisting adapter applies the
-    // rest speed before the native Process-tail admission. FootStop4DF0D0
-    // does NOT clear Foot+5E0; explicit abandonment is a separate owner call.
-    if loco.track_head(TrackFamily::Ship).is_none()
-        && entity.foot_speed.speed_fraction_is_positive()
-    {
-        entity.foot_speed.set_speed_fraction(SIM_ZERO);
-    }
+    // Foot+578 is retained here. The common Process tail 0x69FEF0 owns its
+    // eventual zero, after the destination/head/path gates (track_turn).
 }
 
 impl crate::sim::world::Simulation {
+    /// FootClass::Set_Destination_Internal calls the installed ground
+    /// locomotor's Move_To (0x004D965D). Hover's immediate path step belongs
+    /// to that call, for both Infantry and Unit receivers.
+    pub(super) fn ground_foot_move_to(
+        &mut self,
+        id: u64,
+        requested: NavTargetRef,
+        coord: DriveCoord,
+        rules: &crate::rules::ruleset::RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<(), crate::sim::world::FrameAdvanceError> {
+        if let Some(actor) = self.substrate.entities.get_mut(id)
+            && set_destination_internal_coord(
+                actor,
+                requested,
+                coord,
+                self.resolved_terrain.as_ref(),
+                self.session.binary_frame(),
+            )
+        {
+            self.hover_move_to_path_step(id, rules, effects)?;
+        }
+        Ok(())
+    }
+
     /// Foot4D94B0 clears NavComAux before its three nonnull admission gates:
     /// a Magnetron-lifted object (`+0x6AD`), a passenger of an open transport
     /// (`+0x82`) and a bunkered vehicle (`+0x2E4`) take no destination. An
@@ -875,14 +1026,14 @@ impl crate::sim::world::Simulation {
         nonnull: bool,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
         let refused = nonnull
             && (entity.lift.swap_active()
-                || entity.passenger_role.in_open_transport()
+                || entity.passenger_role().in_open_transport()
                 || entity.bunker.link().installed_in().is_some());
         let holds = entity.lift.target().is_some();
         self.substrate
@@ -920,7 +1071,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::mission::{MissionId, MissionType};
         let Some(entity) = self.substrate.entities.get_mut(id) else {
@@ -962,7 +1113,9 @@ impl crate::sim::world::Simulation {
     ///   ([`teleport_stop_moving`](super::teleport_movement::teleport_stop_moving));
     /// - Fly `0x004CCFD0` (`Simulation::fly_stop_moving`), which re-targets a
     ///   moving aircraft through its own class setter;
-    /// - Rocket `0x006633C0`, an empty body (`RET 4`).
+    /// - Rocket `0x006633C0`, an empty body (`RET 4`);
+    /// - Tunnel `0x00728C00` (`Simulation::tunnel_stop_moving`), which
+    ///   re-targets an owner travelling underground far from its destination.
     ///
     /// The Jumpjet's needs the map and, for a failed search, the rules; the
     /// Fly's needs the rules. A world without them leaves the owner as it
@@ -972,7 +1125,59 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> Result<(), String> {
+        if let Some(cars) = self.train_cars_to_stop(id, rules) {
+            // A car normally has its follower byte set. A change of owner can
+            // clear it; that car then stops its own followers before itself.
+            // Use explicit frames so a long chain never consumes the call stack.
+            let mut pending = vec![(id, cars)];
+            let mut expanded = std::collections::BTreeSet::from([id]);
+            while let Some((engine, cars)) = pending.last_mut() {
+                if let Some(car) = cars.next(&self.substrate.entities) {
+                    if let Some(followers) = self.train_cars_to_stop(car, rules)
+                        && expanded.insert(car)
+                    {
+                        pending.push((car, followers));
+                    } else {
+                        self.stop_active_locomotor(car, rules, registry, frame_effects)?;
+                    }
+                } else {
+                    self.stop_active_locomotor(*engine, rules, registry, frame_effects)?;
+                    pending.pop();
+                }
+            }
+            Ok(())
+        } else {
+            self.stop_active_locomotor(id, rules, registry, frame_effects)
+        }
+    }
+
+    /// Drive 4AFE0C..4AFE57 / Ship 69F51C..69F567: a nonzero committed
+    /// HeadToCoord, IsTrain and a clear Unit follower byte dispatch a Stop
+    /// through every linked car's currently installed locomotor.
+    fn train_cars_to_stop(
+        &self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<TrackFollowers> {
+        let unit = self.substrate.entities.get(id)?;
+        let first = unit.unit_follower()?;
+        if unit.is_unit_follower() || !self.object_type(unit.type_ref(), rules)?.is_train {
+            return None;
+        }
+        let locomotor = unit.locomotor.as_ref()?;
+        let family = TrackFamily::from_kind(locomotor.active_kind())?;
+        let head = locomotor.track_head(family)?;
+        (head.x != 0 || head.y != 0 || head.z != 0).then(|| TrackFollowers::new(id, first))
+    }
+
+    fn stop_active_locomotor(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return Ok(());
@@ -984,7 +1189,9 @@ impl crate::sim::world::Simulation {
             LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover => {
                 track_stop_moving(entity);
             }
-            LocomotorKind::Walk => self.walk_stop_moving(id, rules, frame_effects)?,
+            LocomotorKind::Walk | LocomotorKind::Mech => {
+                self.walk_stop_moving(id, rules, frame_effects)?
+            }
             LocomotorKind::Jumpjet => {
                 if !self.jumpjet_stop_moving(id, rules, registry, frame_effects) {
                     log::debug!("Jumpjet {id} Stop_Moving lacks the map or rules");
@@ -997,12 +1204,13 @@ impl crate::sim::world::Simulation {
                 }
             }
             LocomotorKind::Rocket => {}
+            LocomotorKind::Tunnel => self.tunnel_stop_moving(id, rules, registry, frame_effects),
         }
         Ok(())
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_movement))]
 #[path = "track_destination_tests.rs"]
 mod native_destination_tests;
 

@@ -12,13 +12,13 @@
 
 use super::super::passability::is_passable_for_zone;
 use super::super::zone_hierarchy::{
-    ZONE_PRECHECK_LEVELS, ZoneHierarchy, ZoneLevelGraph, ZonePrecheckExclusions,
+    ZoneHierarchy, ZoneLevelGraph, ZonePrecheckExclusions, ZonePrecheckResult,
 };
 use super::super::zone_map::{ZONE_INVALID, ZoneGrid, ZoneId};
 use super::super::{SearchEntryCandidate, SearchEntryQuery, SearchFootEntry};
 use super::PathSearchFailure;
 use super::native_path_entry::live_mode_one;
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::MovementZone;
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::util::direction::DIRECTION_DELTAS;
@@ -59,13 +59,13 @@ impl RetryInputs<'_> {
 /// [`invalidate_zone_edge`] clears).
 pub(super) fn update_hierarchical_edges(
     inputs: &RetryInputs<'_>,
-    routes: &[Vec<ZoneId>; ZONE_PRECHECK_LEVELS],
+    routes: &ZonePrecheckResult,
     cell: (u16, u16),
     exclusions: &mut ZonePrecheckExclusions,
 ) -> Result<bool, PathSearchFailure> {
     let cell = (cell.0 as i16, cell.1 as i16);
     let mut hierarchy_usable = true;
-    for (level, route) in routes.iter().enumerate() {
+    for (level, route) in routes.routes().into_iter().enumerate() {
         let zone = inputs.zone_at(level, cell)?;
         match flood_fill_reachable_zones(inputs, cell, level, zone)? {
             // 0x0042CDD8..0x0042CE5A, from the vector's last entry.
@@ -169,8 +169,11 @@ fn flood_fill_reachable_zones(
     let unmarked = visited[..side]
         .iter()
         .any(|row| row[..side].contains(&false));
-    if live_mode_one(terrain, inputs.bounds, (probe.0 as u16, probe.1 as u16))
-        && inputs.zone_at(level, probe)? == zone
+    if live_mode_one(
+        &NativeCellQuery::canonical(terrain),
+        inputs.bounds,
+        (probe.0 as u16, probe.1 as u16),
+    ) && inputs.zone_at(level, probe)? == zone
         && unmarked
     {
         return Ok(ZoneFlood::Split);
@@ -228,6 +231,6 @@ fn invalidate_zone_edge(
     true
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 #[path = "precheck_retry_tests.rs"]
 mod precheck_retry_tests;

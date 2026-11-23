@@ -4,12 +4,13 @@
 //! lookup order. Only after OverlayData, the shared drain, and the first live
 //! Recalc sweep does it move a linear payload into the simulation OverlayGrid.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::map::bridge_facts::{
     BridgeFlagStamp, BridgeStampFamily, BridgeStampSlot, high_bridge_stamp_for_overlay,
 };
 use crate::map::map_file::AuthoredOverlayPackReceipt;
+use crate::map::overlay::OverlayIdentityPack;
 use crate::map::overlay_mark::{
     MarkCrateImages, OverlayCellAnim, OverlayMarkHost, OverlayMarkOutcome, OverlayMarkRequest,
     mark_overlay,
@@ -21,6 +22,7 @@ use crate::map::resolved_terrain::{
 };
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::rule_policy::AuthoredCratePolicy;
 use crate::rules::tiberium_type::TiberiumTypeRegistry;
 
 pub(crate) const NO_OVERLAY_IDENTITY: i32 = -1;
@@ -141,23 +143,24 @@ impl NativeOverlayMapShape {
         crate::map::playfield::size_diamond_contains(self.width, self.height, (x, y))
     }
 
-    /// Exact real-cell anti-diagonal order used by `Full_Init @ 0x00686B20`
-    /// through `CellIterator_Init @ 0x00578350` / `Next @ 0x00578290`:
-    /// increasing `x`, decreasing `y` for each sum in
-    /// `W+1 ..= W+2H`. Valid fresh maps keep both dimensions in `1..=512`.
+    /// The real cells `Full_Init @ 0x00686B20` visits: the allocated-cell
+    /// walk over the cells [`Self::admits`]
+    /// ([`SizeDiamond::allocated_cells`](crate::map::playfield::SizeDiamond::allocated_cells)),
+    /// which on a Size one cell wide ends after (1, 1). Dimensions must fit
+    /// the selected cell grid.
     pub(crate) fn recalc_cells(self) -> Vec<(i16, i16)> {
-        if !(1..=512).contains(&self.width) || !(1..=512).contains(&self.height) {
+        if !(1..=crate::map::cell_index::MAX_CELL_SIDE as i32).contains(&self.width)
+            || !(1..=crate::map::cell_index::MAX_CELL_SIDE as i32).contains(&self.height)
+        {
             return Vec::new();
         }
         let mut cells =
             Vec::with_capacity(usize::try_from(self.height * (2 * self.width - 1)).unwrap_or(0));
-        for sum in self.width + 1..=self.width + 2 * self.height {
-            let first_x = (sum - self.width) / 2 + 1;
-            let last_x = (sum + self.width - 1) / 2;
-            for x in first_x..=last_x {
-                cells.push((x as i16, (sum - x) as i16));
-            }
-        }
+        cells.extend(
+            crate::map::playfield::SizeDiamond::from_size(self.width, self.height)
+                .allocated_cells()
+                .map(|(x, y)| (x as i16, y as i16)),
+        );
         cells
     }
 }
@@ -176,6 +179,7 @@ pub(crate) enum MapLoadDirtyKind {
 pub(crate) trait AuthoredOverlayLoadHost {
     type Handle: Copy;
     type Error;
+    type CellAnim;
 
     fn try_construct_overlay(
         &mut self,
@@ -225,7 +229,13 @@ pub(crate) trait AuthoredOverlayLoadHost {
         handle: Self::Handle,
         request: OverlayCellAnim<'_>,
         terrain: &ResolvedTerrainGrid,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<Self::CellAnim, Self::Error>;
+
+    fn tint_cell_anim(
+        &mut self,
+        anim: Self::CellAnim,
+        tiberium: crate::rules::tiberium_type::TiberiumTypeId,
+    );
 
     fn finish_common(&mut self, handle: Self::Handle) -> Result<(), Self::Error>;
 
@@ -236,6 +246,7 @@ pub(crate) trait AuthoredOverlayLoadHost {
 
 #[derive(Debug)]
 pub enum AuthoredOverlayFinalizeError<E> {
+    Tiberium(crate::rules::overlay_types::TiberiumImageError),
     InvalidMapShape {
         width: i32,
         height: i32,
@@ -276,6 +287,7 @@ pub enum AuthoredOverlayFinalizeError<E> {
 impl<E: std::fmt::Display> std::fmt::Display for AuthoredOverlayFinalizeError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Tiberium(error) => std::fmt::Display::fmt(error, f),
             Self::InvalidMapShape { width, height } => {
                 write!(f, "invalid authored overlay map shape {width}x{height}")
             }
@@ -328,6 +340,7 @@ where
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Host(error) => Some(error),
+            Self::Tiberium(error) => Some(error),
             _ => None,
         }
     }
@@ -450,7 +463,7 @@ pub(crate) struct AuthoredOverlayFinalizer<'load, 'resources, H> {
     tiberium_types: &'resources TiberiumTypeRegistry,
     overlay_shp_ids: &'resources BTreeSet<u8>,
     signed_new_ini_format: i32,
-    game_mode_nonzero: bool,
+    authored_crate_policy: AuthoredCratePolicy,
     host: &'load mut H,
 }
 
@@ -463,7 +476,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         tiberium_types: &'resources TiberiumTypeRegistry,
         overlay_shp_ids: &'resources BTreeSet<u8>,
         signed_new_ini_format: i32,
-        game_mode_nonzero: bool,
+        authored_crate_policy: AuthoredCratePolicy,
         host: &'load mut H,
     ) -> Self {
         let cells = LiveOverlayCells::empty_for_terrain(terrain);
@@ -476,7 +489,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
             tiberium_types,
             overlay_shp_ids,
             signed_new_ini_format,
-            game_mode_nonzero,
+            authored_crate_policy,
             host,
         }
     }
@@ -489,7 +502,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         tiberium_types: &'resources TiberiumTypeRegistry,
         overlay_shp_ids: &'resources BTreeSet<u8>,
         signed_new_ini_format: i32,
-        game_mode_nonzero: bool,
+        authored_crate_policy: AuthoredCratePolicy,
         host: &'load mut H,
     ) -> Self {
         let cells = LiveOverlayCells::empty_for_terrain(terrain);
@@ -503,7 +516,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
             tiberium_types,
             overlay_shp_ids,
             signed_new_ini_format,
-            game_mode_nonzero,
+            authored_crate_policy,
             host,
         }
     }
@@ -514,7 +527,9 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
     ) -> Result<FinalizedOverlayPayload, AuthoredOverlayFinalizeError<H::Error>> {
         // gamemd-derived: ReadMapOverlayPacks @ 0x005FD2E0, followed by the
         // Full_Init first Recalc boundary @ 0x00687A3E..0x00687A6B.
-        if !(1..=512).contains(&self.shape.width) || !(1..=512).contains(&self.shape.height) {
+        if !(1..=crate::map::cell_index::MAX_CELL_SIDE as i32).contains(&self.shape.width)
+            || !(1..=crate::map::cell_index::MAX_CELL_SIDE as i32).contains(&self.shape.height)
+        {
             return Err(AuthoredOverlayFinalizeError::InvalidMapShape {
                 width: self.shape.width,
                 height: self.shape.height,
@@ -522,22 +537,36 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         }
         let (identity, data) = packs.into_parts();
         if self.signed_new_ini_format > 1 && identity.has_positive_length() {
-            for y in 0..512u16 {
-                for x in 0..512u16 {
+            let side =
+                crate::map::cell_index::CellGrid::for_map_size(self.shape.width, self.shape.height)
+                    .side();
+            let bridge_decks = self.authored_high_bridge_decks(&identity, side);
+            for y in 0..side {
+                for x in 0..side {
                     let Some(overlay_id) = identity.read_byte(x, y) else {
                         continue;
                     };
                     if overlay_id == u8::MAX {
                         continue;
                     }
-                    self.run_identity_row(x, y, overlay_id)?;
+                    self.run_identity_row(x, y, overlay_id, bridge_decks.get(&(x, y)).copied())?;
                 }
             }
         }
 
         if self.signed_new_ini_format > 1 && data.has_positive_length() {
-            for y in 0..512u16 {
-                for x in 0..512u16 {
+            for y in 0..crate::map::cell_index::CellGrid::for_map_size(
+                self.shape.width,
+                self.shape.height,
+            )
+            .side()
+            {
+                for x in 0..crate::map::cell_index::CellGrid::for_map_size(
+                    self.shape.width,
+                    self.shape.height,
+                )
+                .side()
+                {
                     let cell = (x as i16, y as i16);
                     if !self.shape.admits(cell.0, cell.1) {
                         continue;
@@ -561,11 +590,32 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         Ok(self.cells.finish())
     }
 
+    fn authored_high_bridge_decks(
+        &self,
+        identity: &OverlayIdentityPack,
+        side: u16,
+    ) -> BTreeMap<(u16, u16), i16> {
+        let anchors = (0..side)
+            .flat_map(|y| (0..side).map(move |x| (x, y)))
+            .filter_map(|(x, y)| {
+                let id = identity.read_byte(x, y)?;
+                let stamp = high_bridge_stamp_for_overlay(id)?;
+                let flags = self.overlay_types.flags(id)?;
+                (self.overlay_shp_ids.contains(&id) || flags.cell_anim.is_some())
+                    .then_some(((x, y), stamp))
+            });
+        self.terrain
+            .recover_authored_high_bridge_decks(anchors, |(x, y)| {
+                x < side && y < side && self.shape.admits(x as i16, y as i16)
+            })
+    }
+
     fn run_identity_row(
         &mut self,
         x: u16,
         y: u16,
         overlay_id: u8,
+        span_deck: Option<i16>,
     ) -> Result<(), AuthoredOverlayFinalizeError<H::Error>> {
         // gamemd-derived: ReadMapOverlayPacks row corridor @
         // 0x005FD36D..0x005FD55D -> OverlayClass::Mark @ 0x005FC570.
@@ -576,7 +626,9 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
         if !self.overlay_shp_ids.contains(&overlay_id) && flags.cell_anim.is_none() {
             return Ok(());
         }
-        if self.game_mode_nonzero && flags.crate_type {
+        // ReadMapOverlayPacks 0x005FD469..0x005FD47C skips a crate
+        // before construction in nonzero GameMode.
+        if flags.crate_type && self.authored_crate_policy == AuthoredCratePolicy::Skip {
             return Ok(());
         }
         let packed = (x as i16, y as i16);
@@ -633,6 +685,7 @@ impl<'load, 'resources, H: AuthoredOverlayLoadHost> AuthoredOverlayFinalizer<'lo
             overlay_types,
             host: &mut *self.host,
             handle,
+            span_deck,
         };
         match mark_overlay(&mut mark, &request)? {
             OverlayMarkOutcome::SlopeRefused => self
@@ -689,10 +742,16 @@ struct FinalizerMarkHost<'a, 'resources, H: AuthoredOverlayLoadHost> {
     overlay_types: &'resources OverlayTypeRegistry,
     host: &'a mut H,
     handle: H::Handle,
+    span_deck: Option<i16>,
 }
 
 impl<H: AuthoredOverlayLoadHost> OverlayMarkHost for FinalizerMarkHost<'_, '_, H> {
     type Error = AuthoredOverlayFinalizeError<H::Error>;
+    type CellAnim = H::CellAnim;
+
+    fn tiberium_error(error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error {
+        AuthoredOverlayFinalizeError::Tiberium(error)
+    }
 
     fn cell(&mut self, coord: (i16, i16)) -> NativeOverlayCellTarget {
         self.cells.target(coord.0, coord.1)
@@ -708,6 +767,10 @@ impl<H: AuthoredOverlayLoadHost> OverlayMarkHost for FinalizerMarkHost<'_, '_, H
 
     fn slope(&self, cell: NativeOverlayCellTarget) -> u8 {
         self.terrain.native_cell_ground_fields(cell).1
+    }
+
+    fn admits_authored_bridge_grade(&self, _anchor: NativeOverlayCellTarget) -> bool {
+        self.span_deck.is_some()
     }
 
     fn identity(&self, cell: NativeOverlayCellTarget) -> i32 {
@@ -759,6 +822,9 @@ impl<H: AuthoredOverlayLoadHost> OverlayMarkHost for FinalizerMarkHost<'_, '_, H
     ) -> Result<(), Self::Error> {
         // gamemd-derived: CellClass::SetBridgeDirection_NESW @ 0x0047E040 and
         // SetBridgeDirection_NWSE @ 0x0047E470 with (direction, 1).
+        if let Some(deck) = self.span_deck {
+            self.terrain.set_authored_high_bridge_deck(anchor, deck);
+        }
         let coord = self.cells.coord_of(anchor);
         let stamp = BridgeFlagStamp::new((coord.0 as u16, coord.1 as u16), direction, true);
         let Some(slots) = stamp.slots() else {
@@ -836,10 +902,21 @@ impl<H: AuthoredOverlayLoadHost> OverlayMarkHost for FinalizerMarkHost<'_, '_, H
             .map_err(AuthoredOverlayFinalizeError::Host)
     }
 
-    fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), Self::Error> {
+    fn spawn_cell_anim(
+        &mut self,
+        request: OverlayCellAnim<'_>,
+    ) -> Result<Self::CellAnim, Self::Error> {
         self.host
             .spawn_cell_anim(self.handle, request, self.terrain)
             .map_err(AuthoredOverlayFinalizeError::Host)
+    }
+
+    fn tint_cell_anim(
+        &mut self,
+        anim: Self::CellAnim,
+        tiberium: crate::rules::tiberium_type::TiberiumTypeId,
+    ) {
+        self.host.tint_cell_anim(anim, tiberium);
     }
 
     fn recalc(&mut self, cell: NativeOverlayCellTarget) -> Result<(), Self::Error> {
@@ -879,10 +956,11 @@ impl LiveOverlayCells {
     /// `MapClass::Get_CellClass` narrows both operands to signed words before
     /// sign-extending `y * 512 + x`. A true miss stamps only dummy coordinates.
     pub(crate) fn target(&self, x: i16, y: i16) -> NativeOverlayCellTarget {
-        let real = crate::map::cell_index::cell_linear_index(i32::from(x), i32::from(y)).and_then(
-            |linear| {
-                let rx = (linear % crate::map::cell_index::CELL_ROW_STRIDE) as usize;
-                let ry = (linear / crate::map::cell_index::CELL_ROW_STRIDE) as usize;
+        let grid = crate::map::cell_index::CellGrid::for_extent(self.width, self.height);
+        let real = grid
+            .canonical_coord(i32::from(x), i32::from(y))
+            .and_then(|(rx, ry)| {
+                let (rx, ry) = (usize::from(rx), usize::from(ry));
                 if rx >= usize::from(self.width) || ry >= usize::from(self.height) {
                     return None;
                 }
@@ -893,8 +971,7 @@ impl LiveOverlayCells {
                         .as_deref()
                         .is_none_or(|mask| mask.get(index).copied().unwrap_or(false)))
                 .then_some(index)
-            },
-        );
+            });
         if let Some(index) = real {
             return NativeOverlayCellTarget::Real(index);
         }
@@ -1069,7 +1146,7 @@ impl LiveOverlayCells {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_map))]
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::{SharedCellDummy, zone_class};
@@ -1082,6 +1159,93 @@ mod tests {
             height,
             crate::map::resolved_terrain::test_loader_clear_cell,
         )
+    }
+
+    #[test]
+    fn authored_high_bridge_spans_an_interior_steep_depression() {
+        let mut terrain = flat_terrain(24, 24);
+        for (x, level, slope) in [(10, 6, 0), (11, 0, 9), (12, 6, 9), (13, 6, 0)] {
+            let cell = terrain.cell_mut_for_test(x, 10).unwrap();
+            cell.level = level;
+            cell.slope_type = slope;
+        }
+        let registry = registry_with_count(25);
+        let payload = AuthoredOverlayFinalizer::new(
+            &mut terrain,
+            NativeOverlayMapShape::new(10, 10),
+            &registry,
+            &TiberiumTypeRegistry::default(),
+            &BTreeSet::from([0x18]),
+            4,
+            AuthoredCratePolicy::Keep,
+            &mut LoadHost::default(),
+        )
+        .run(raw_packs(
+            &[
+                (10, 10, 0x18),
+                (11, 10, 0x18),
+                (12, 10, 0x18),
+                (13, 10, 0x18),
+            ],
+            &[],
+        ))
+        .unwrap();
+        let (_, _, overlays, _) = payload.into_parts();
+        for x in [11, 12] {
+            let index = terrain.native_fixed_cell_index(x, 10).unwrap();
+            assert_eq!(overlays[index].overlay_id(), Some(0x18));
+            assert_eq!(
+                terrain.corrected_high_bridge_deck_level((x as u16, 10)),
+                Some(10)
+            );
+        }
+    }
+
+    #[test]
+    fn authored_high_bridge_uses_rim_deck_at_depressed_overlay_ends() {
+        let mut terrain = flat_terrain(24, 24);
+        terrain.test_set_high_bridge_rim_tiles(
+            crate::map::bridge_rim_tiles::HighBridgeRimTiles::from_ini(
+                100,
+                b"[General]\nBridgeTopRight1=5\nBridgeBottomLeft1=7\n",
+            ),
+        );
+        for (y, level, slope, tile, sub) in [
+            (9, 10, 0, 104, 8),
+            (10, 0, 9, 104, 12),
+            (11, 0, 9, 0, 0),
+            (12, 0, 9, 0, 0),
+            (13, 10, 0, 106, 2),
+        ] {
+            let cell = terrain.cell_mut_for_test(10, y).unwrap();
+            cell.level = level;
+            cell.slope_type = slope;
+            cell.final_tile_index = tile;
+            cell.final_sub_tile = sub;
+        }
+        let registry = registry_with_count(26);
+        let payload = AuthoredOverlayFinalizer::new(
+            &mut terrain,
+            NativeOverlayMapShape::new(10, 10),
+            &registry,
+            &TiberiumTypeRegistry::default(),
+            &BTreeSet::from([0x19]),
+            4,
+            AuthoredCratePolicy::Keep,
+            &mut LoadHost::default(),
+        )
+        .run(raw_packs(
+            &[(10, 10, 0x19), (10, 11, 0x19), (10, 12, 0x19)],
+            &[],
+        ))
+        .unwrap()
+        .into_parts()
+        .2;
+        for y in [10, 12] {
+            let index = terrain.native_fixed_cell_index(10, y as i16).unwrap();
+            assert_eq!(payload[index].overlay_id(), Some(0x19));
+            assert_eq!(terrain.corrected_high_bridge_deck_level((10, y)), Some(10));
+        }
     }
 
     fn wall_registry() -> OverlayTypeRegistry {
@@ -1125,8 +1289,14 @@ mod tests {
             data[usize::from(y) * 512 + usize::from(x)] = value;
         }
         AuthoredOverlayPackReceipt::from_parts_for_test(
-            crate::map::overlay::OverlayIdentityPack::from_decoded(identity),
-            crate::map::overlay::OverlayDataPack::from_decoded(data),
+            crate::map::overlay::OverlayIdentityPack::from_decoded(
+                identity,
+                crate::map::cell_index::CellGrid::Retail,
+            ),
+            crate::map::overlay::OverlayDataPack::from_decoded(
+                data,
+                crate::map::cell_index::CellGrid::Retail,
+            ),
         )
     }
 
@@ -1139,6 +1309,7 @@ mod tests {
              [Tiberiums]\n0=Riparius\n\
              [Riparius]\nImage=1\nMaxDensity=12\n",
         );
+        let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
         (
             OverlayTypeRegistry::from_ini(&ini, None),
             TiberiumTypeRegistry::from_ini(&ini),
@@ -1154,7 +1325,6 @@ mod tests {
 
     /// The one Mark port on load-local cells through the production load
     /// host, outside a reader row (handle 0, synthetic Recalc inputs).
-    #[allow(clippy::too_many_arguments)]
     fn mark_live(
         terrain: &mut ResolvedTerrainGrid,
         cells: &mut LiveOverlayCells,
@@ -1188,6 +1358,7 @@ mod tests {
                 overlay_types,
                 host,
                 handle: 0,
+                span_deck: None,
             },
             &request,
         )
@@ -1212,7 +1383,8 @@ mod tests {
         Recalc(AuthoredOverlayCellRef, FinalizedOverlayCell),
         WallZone(AuthoredOverlayCellRef),
         BlockerIncrement(AuthoredOverlayCellRef),
-        CellAnim(u32, String, NativeOverlayCellTarget, [i32; 2], Option<u8>),
+        CellAnim(u32, String, NativeOverlayCellTarget, [i32; 2]),
+        CellAnimTint(u32, u8),
         FinishCommon(u32),
         FinishSlope(u32),
         Drain,
@@ -1231,6 +1403,7 @@ mod tests {
     impl AuthoredOverlayLoadHost for LoadHost {
         type Handle = u32;
         type Error = Infallible;
+        type CellAnim = u32;
 
         fn try_construct_overlay(
             &mut self,
@@ -1308,15 +1481,22 @@ mod tests {
             handle: Self::Handle,
             request: OverlayCellAnim<'_>,
             _terrain: &ResolvedTerrainGrid,
-        ) -> Result<(), Self::Error> {
+        ) -> Result<Self::CellAnim, Self::Error> {
             self.events.push(LoadEvent::CellAnim(
                 handle,
                 request.anim.to_string(),
                 request.cell,
                 request.anim_xy,
-                request.tiberium.map(|tiberium| tiberium.0),
             ));
-            Ok(())
+            Ok(handle)
+        }
+
+        fn tint_cell_anim(
+            &mut self,
+            anim: Self::CellAnim,
+            tiberium: crate::rules::tiberium_type::TiberiumTypeId,
+        ) {
+            self.events.push(LoadEvent::CellAnimTint(anim, tiberium.0));
         }
 
         fn finish_common(&mut self, handle: Self::Handle) -> Result<(), Self::Error> {
@@ -1372,6 +1552,16 @@ mod tests {
     }
 
     #[test]
+    fn a_one_cell_wide_walk_ends_at_its_first_null() {
+        // The walk steps from (1, 1) to (2, 1), outside a one-wide Size, where
+        // Next @ 0x00578290 returns null before the diagonal's (2, 2).
+        assert_eq!(
+            NativeOverlayMapShape::new(1, 3).recalc_cells(),
+            vec![(1, 1)]
+        );
+    }
+
+    #[test]
     fn authored_rows_data_drain_and_first_sweep_form_one_consuming_transaction() {
         let mut terrain = flat_terrain(6, 6);
         let shape = NativeOverlayMapShape::new(2, 2);
@@ -1388,7 +1578,7 @@ mod tests {
             &tiberium_types,
             &shp_ids,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut host,
         )
         .run(packs)
@@ -1467,7 +1657,7 @@ mod tests {
             &tiberium_types,
             &shp_ids,
             1,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut host,
         )
         .run(packs)
@@ -1509,7 +1699,7 @@ mod tests {
             &tiberium_types,
             &malformed_shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut malformed_host,
         )
         .run(raw_packs(&[(0, 0, 1)], &[]));
@@ -1531,7 +1721,7 @@ mod tests {
             &tiberium_types,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut null_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))
@@ -1552,7 +1742,7 @@ mod tests {
             &tiberium_types,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut slope_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))
@@ -1590,7 +1780,7 @@ mod tests {
             &tiberium_types,
             &b2_shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut b2_host,
         )
         .run(raw_packs(&[(2, 1, 0xB2)], &[]))
@@ -1623,7 +1813,7 @@ mod tests {
             &tiberium_types,
             &BTreeSet::new(),
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut cell_anim_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))
@@ -1640,7 +1830,6 @@ mod tests {
                     "SPARK".to_string(),
                     NativeOverlayCellTarget::Real(8),
                     [2 * 256 + 128 + 0x180, 256 + 128 + 0x180],
-                    None,
                 ),
                 LoadEvent::Recalc(
                     real(8, (2, 1)),
@@ -1666,7 +1855,7 @@ mod tests {
             &tiberium_types,
             &crate_shp,
             4,
-            true,
+            AuthoredCratePolicy::Skip,
             &mut rejected_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))
@@ -1686,7 +1875,7 @@ mod tests {
             &tiberium_types,
             &crate_shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut accepted_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[]))
@@ -1719,7 +1908,7 @@ mod tests {
             &tiberium_types,
             &BTreeSet::new(),
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut rejected_host,
         )
         .run(raw_packs(&[(2, 1, 0)], &[(2, 1, 7)]))
@@ -1740,7 +1929,7 @@ mod tests {
             &tiberium_types,
             &low_shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut short_host,
         )
         .run(raw_packs(&[(2, 2, 0x7B)], &[(0, 0, 37)]))
@@ -1775,7 +1964,7 @@ mod tests {
             &tiberium_types,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut no_data_host,
         )
         .run(raw_packs(&identity_rows, &[]))
@@ -1816,7 +2005,7 @@ mod tests {
             &tiberium_types,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut data_host,
         )
         .run(raw_packs(&identity_rows, &data_rows))
@@ -1830,6 +2019,7 @@ mod tests {
              [Tiberiums]\n0=Riparius\n\
              [Riparius]\nImage=1\n",
         );
+        let crate_ini = crate::rules::tiberium_type::with_tiberium_image_slots(&crate_ini);
         let crate_registry = OverlayTypeRegistry::from_ini(&crate_ini, None);
         let crate_tiberium = TiberiumTypeRegistry::from_ini(&crate_ini);
         let mut crate_terrain = flat_terrain(12, 12);
@@ -1841,7 +2031,7 @@ mod tests {
             &crate_tiberium,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut crate_host,
         )
         .run(raw_packs(&[(4, 3, 0)], &[]))
@@ -1875,7 +2065,7 @@ mod tests {
             &tiberium_types,
             &shp,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut host,
         )
         .run(raw_packs(&[(8, 8, 0x7B), (12, 8, 0x7A)], &[]))
@@ -1994,7 +2184,7 @@ mod tests {
                 &tiberium_types,
                 &shp_ids,
                 4,
-                false,
+                AuthoredCratePolicy::Keep,
                 &mut host,
             )
             .run(packs)
@@ -2043,7 +2233,7 @@ mod tests {
             &tiberium_types,
             &shp_ids,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut host,
         )
         .run(packs)
@@ -2116,7 +2306,7 @@ mod tests {
             &tiberium_types,
             &shp_ids,
             4,
-            false,
+            AuthoredCratePolicy::Keep,
             &mut host,
         )
         .run(packs)

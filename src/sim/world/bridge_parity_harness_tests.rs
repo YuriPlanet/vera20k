@@ -2,12 +2,10 @@
 //! scenario no committed fixture in this repo covered: a ground vehicle driving
 //! across a **high bridge** under the live `advance_tick` path.
 //!
-//! `global_parity_harness_tests.rs` is the model for the shape (record a
-//! `ReplayLog`, replay it through `ReplayRunner` on a fresh `Simulation`, assert
-//! tick-for-tick hash equality plus a committed final baseline). Every "bridge"
-//! in that harness is the *mission* bridge — a code concept — so a regression in
-//! deck height, the `on_bridge` flag, or the bridge occupancy layer sails
-//! straight through the default `--lib` suite. This file closes that gap.
+//! It records a `ReplayLog`, replays it through `ReplayRunner` on a fresh
+//! `Simulation`, and asserts tick-for-tick hash equality plus a committed final
+//! baseline, so a regression in deck height, the `on_bridge` flag, or the
+//! bridge occupancy layer does not sail through the default `--lib` suite.
 //!
 //! Scope note: the fixture stamps a synthetic span into matching path and resolved terrain rather than
 //! loading a retail map, so it runs with no assets and belongs in the DEFAULT
@@ -404,7 +402,58 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // source. This remains a Rust regression pin, not a native game golden.
 // Previous: 0x8BD4_EE67_3F59_0830.
 // Hash composition includes constructor planning registration and the shared ammo reload clock.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x4FC5_48E8_B854_D13D;
+// The native-speed migration (60da53f9c) replaces fixed fraction hashes with
+// binary64 and reaches the far cell at frame147 instead of146. Compared with
+// e59f6914f, the final facing timer moves166->167 and track residual7->6;
+// route, per-frame replay equality and all three absolute RNG pins still hold.
+// Residual: the fog/alliance digest also differs; final visibility planes match.
+// #3099 adds the permanent-stealth grant byte for every entity, false here.
+// Omitting only that hash fold recovers 0x8934_6F95_0887_B80C; the unchanged
+// replay, route and absolute RNG assertions pass with either hash composition.
+// #3234 removed the entity hash's sensor deposit, a None byte for every object
+// here. It sat in the same run of zero bytes as that grant byte, so the pin
+// returns to the value above. Hash composition only: a temporary control
+// restoring the byte gave the previous value, with every tripwire above green.
+// Control removed. Previous: 0x57D9_C8C7_DA7A_FBD6.
+// The dynamic terrain cells now fold without their presentation-only tile
+// variant, render offset and radar colours (tag v2): hash composition only.
+// A temporary control restoring the v1 fold gave the previous value, with
+// every tripwire above green. Control removed. Previous: 0x8934_6F95_0887_B80C.
+// #3710 folds the game options' room bans (all off here): hash composition
+// only. A temporary control omitting that fold gave the previous value, with
+// every tripwire above green. Control removed. Previous: 0x0722_C90C_F923_6AA2.
+// The fixture's owner seats no client map, so its arrivals no longer
+// materialize that default fog-owner plane: RevealArea writes only a
+// client's PlayerPtr map (`0x00567AB0..0x00567B12`). Only the fog digest
+// moves; route, replay and absolute RNG tripwires above stay green.
+// Previous: 0x8962_19D2_2722_4F7D.
+// An Ares game also folds two retained Ares states for every actor here:
+// AttachEffectClass::Update10058E00 (TechnoClass_Update hook 0x6F9E50 ->
+// 1004B320) settles the type-effect state at Disabled on each actor's first
+// update, since no type sets AttachEffect.Duration, and RecalculateStats
+// 100460A0's attached-cloak byte folds even while false. Hash composition
+// only: a temporary control skipping just those two folds in an Ares game
+// gave the stock value, every per-frame replay diagnostic field matched
+// the stock game's, and every tripwire above stayed green. Control removed.
+// The entity hash now folds `idle_wander` (UnitClass::UpdateVisceroid
+// 0x00737180's direction) for every actor, and an Ares game also folds each
+// Unit's AltOccupation plane (TechnoExt +0x99). Hash composition only: a
+// temporary control skipping just those two folds gave the previous values
+// in both games, with every tripwire above green. Control removed.
+// Previous: 0x534D_F91E_A02A_F8B2, Ares 0xF5A9_CCCB_69E6_AD58.
+// An Ares game no longer folds RecalculateStats100460A0's attached-cloak
+// byte while it is false: the byte moved into the object's Ares part, which a
+// game without Ares never writes, so the fold asks first. Hash composition
+// only, in an Ares game alone: the stock value above is unchanged, and the
+// tripwires below stayed green in both games.
+// Previous Ares: 0x83AC_A9D6_3E40_9C5D.
+fn bridge_harness_final_hash(ares: bool) -> u64 {
+    if ares {
+        0xA06F_A011_54C1_FA40
+    } else {
+        0x0D31_C373_DA29_2EB6
+    }
+}
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -435,9 +484,6 @@ fn bridge_rules() -> RuleSet {
     let art = IniFile::from_str(crate::rules::retail_ini_fixture::GI_ART_EXCERPT);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     rules
 }
 
@@ -590,7 +636,8 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
         recruitable_a: true,
         recruitable_b: true,
         group: -1,
-        structure_upgrades: [None, None, None],
+        follows: None,
+        structure_columns: Default::default(),
         structure_ai_sellable: false,
         structure_ai_repairable: false,
         structure_online: true,
@@ -995,7 +1042,8 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
         .expect("every replayed frame hashes");
     super::global_parity_harness_tests::print_replay_summary("bridge", &rep);
     assert_eq!(
-        final_hash, BRIDGE_HARNESS_FINAL_HASH,
+        final_hash,
+        bridge_harness_final_hash(rules.ares()),
         "committed bridge-harness baseline drifted. Do not paste the observed value \
          until the tripwires above are still green and you can say which behavior \
          moved; this constant is a Rust-vs-prior-Rust ratchet, not gamemd evidence"

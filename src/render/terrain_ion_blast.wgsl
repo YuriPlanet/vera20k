@@ -43,7 +43,5 @@ fn fs_main(input: Output) -> @location(0) vec4f {
     let read = clamp(p + vec2i(round(vec2f(moves.by_byte[byte].xy) * input.zoom)),
         vec2i(0), size - 1);
     let word = textureLoad(old_words, read, 0).r;
-    let encoded = vec3f(f32(RETAIL_FIVE[(word >> 11u) & 31u]),
-        f32(RETAIL_SIX[(word >> 5u) & 63u]), f32(RETAIL_FIVE[word & 31u])) / 255.0;
-    return vec4f(srgb_decode(encoded), 1);
+    return vec4f(retail_linear(word), 1);
 }

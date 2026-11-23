@@ -13,7 +13,7 @@ struct Camera {
     world_height: f32,
     pad1: f32,
     native_z_origin_y: f32,
-    native_z_pad: f32,
+    native_z_pan: f32,
 };
 @group(0) @binding(0) var<uniform> camera: Camera;
 
@@ -58,8 +58,8 @@ fn vs_main(
 
     let local: vec2f = quad_pos[idx];
     let is_zoomed: bool = abs(camera.zoom - 1.0) >= 0.001;
-    let pad: f32 = select(0.0, 0.5 / camera.zoom, is_zoomed);
-    let raw_pos: vec2f = (instance.position - vec2f(pad, pad) + local * (instance.size + vec2f(pad * 2.0, pad * 2.0)) - camera.camera_pos) * camera.zoom;
+    // Match the exact source scale used by the other tactical blitters.
+    let raw_pos: vec2f = (instance.position + local * instance.size - camera.camera_pos) * camera.zoom;
     let pixel_pos: vec2f = select(raw_pos, floor(raw_pos + vec2f(0.5, 0.5)), !is_zoomed);
 
     let clip_x: f32 = (pixel_pos.x / camera.screen_size.x) * 2.0 - 1.0;
@@ -80,7 +80,8 @@ fn vs_main(
 // RA2_DEBUG_DEPTH_VIEW (camera.pad1 > 0.5): depth as grey, wrapping every
 // 128 world rows, so depth ordering can be read off a screenshot.
 fn debug_depth_color(depth: f32) -> vec4f {
-    let rows: f32 = world_row_from_native_depth(depth, camera.camera_pos.y + camera.native_z_origin_y);
+    let rows: f32 = world_row_from_native_depth(depth,
+        native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan));
     let g: f32 = fract(rows / 128.0);
     return vec4f(g, g, g, 1.0);
 }
@@ -95,6 +96,7 @@ struct FragOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> FragOutput {
+    // Tile pages are Rgba8Unorm: this is already the encoded colour.
     let color: vec4f = textureSample(t_sprite, s_sprite, input.uv);
     if (color.a < 0.01) {
         discard;
@@ -103,7 +105,9 @@ fn fs_main(input: VertexOutput) -> FragOutput {
     // R8 depth atlas: byte 0..255 stored as 0..1.
     let z_byte: f32 = round(textureSample(t_zdepth, s_sprite, input.uv).r * 255.0);
     let ground_row: f32 = input.canvas_top - (input.z_adjust + z_byte);
-    let frag_depth: f32 = stored_native_depth(32768 + i32(round(camera.camera_pos.y + camera.native_z_origin_y)) - i32(round(ground_row)));
+    let frag_depth: f32 = stored_native_depth(32768
+        + native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan)
+        - i32(round(ground_row)));
 
     var output: FragOutput;
     output.color = vec4f(resolve_palette(color.rgb, input.tint, opaque_palette(input.palette_light, color.a, 0u), 1u, tactical_a_at(input.position.xy)), color.a);

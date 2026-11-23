@@ -1,8 +1,10 @@
-//! Rust regression tests for script actions that act on every member, and
-//! for the building actions 46 and 47.
+//! Rust regression tests for script actions that act on every member, for
+//! the building actions 46 and 47, and for a member leaving its team inside
+//! an object-placement scope.
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::combat::TargetKind;
 use crate::sim::house_state::HouseState;
@@ -51,9 +53,9 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
     sim.resolve_type_handles(&rules);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.session
-        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
+        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED, None)
         .unwrap();
-    sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let roster = crate::map::houses::parse_house_roster(&map, &rules.color_schemes, Some(&rules));
     bootstrap::initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&map));
     bootstrap::initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &map);
@@ -69,15 +71,16 @@ fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
     let member = sim
         .spawn_object("HTNK", "Russians", 20, 20, 0, &rules)
         .unwrap();
-    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    let registry =
+        TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, RulePolicy::stock_campaign());
+    sim.install_team_ai_registry(&registry, &rules);
     let owner = sim.interner.get("Russians").unwrap();
     let ty = sim.interner.get("TREE-TEAM").unwrap();
     let team = sim.create_team(ty, Some(owner), &rules).unwrap();
     sim.session.publish_started();
     let mut runtime = SimRuntime {
         simulation: sim,
-        resources: SimResources::new(rules),
+        resources: std::sync::Arc::new(SimResources::new(rules)),
     };
     // Formation, recruitment and dispatch use the ordinary Team AI caller.
     for _ in 0..30 {
@@ -108,7 +111,7 @@ fn script1_tree_identity_survives_reload_then_expiry_advances_the_script() {
     };
     let sim = &runtime.simulation;
     let rules = &runtime.resources.rules;
-    let overlays = &runtime.resources.overlay_registry;
+    let overlays = runtime.resources.rules.overlay_registry();
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Object(tree))
@@ -169,16 +172,14 @@ fn coordinate_attack_resolves_a_cell_focus_to_its_terrain_object() {
     };
     let sim = &mut runtime.simulation;
     let rules = &runtime.resources.rules;
-    let overlays = &runtime.resources.overlay_registry;
     sim.team_assign_mission_target(
         team,
         Some(TeamTarget::Cell { x: 25, y: 20 }),
         &rules,
-        Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let rng = sim.rng_state();
-    sim.team_coordinate_attack(team, &rules, Some(&overlays), FrameEffects::default());
+    sim.team_coordinate_attack(team, &rules, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().focus,
         Some(TeamTarget::Object(tree))
@@ -226,18 +227,19 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
         let team = sim
             .team_script_vm
             .create_team(receiver, script, vec![id], 0);
-        sim.team_assign_mission_target(team, target, &rules, None, FrameEffects::default());
+        sim.team_assign_mission_target(team, target, &rules, &mut FrameEffects::default());
         let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
         state.focus = focus;
         state.zone = sold;
         teams.push((team, expected_target, expected_focus, id));
     }
     assert!(sim.apply_command_with_overlays(
+        None,
         "Receiver",
         &Command::SellWallAtCell { x: 4, y: 4 },
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     for (team, expected_target, expected_focus, id) in teams {
         let state = sim.team_script_vm.team(team).unwrap();
@@ -261,12 +263,12 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
         .get_mut(&team)
         .unwrap()
         .mission_target = Some(TeamTarget::Cell { x: 516, y: 3 }); // same allocation as4,4
-    sim.stop_all_targeting_cell(4, 4, &rules, Some(&overlays), FrameEffects::default());
+    sim.stop_all_targeting_cell(4, 4, &rules, &mut FrameEffects::default());
     assert_eq!(sim.team_script_vm.team(team).unwrap().mission_target, None);
     let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
     state.mission_target = Some(TeamTarget::Cell { x: -1, y: 0 });
     state.focus = Some(TeamTarget::Cell { x: 9, y: 9 });
-    sim.stop_all_targeting_cell(12, 12, &rules, Some(&overlays), FrameEffects::default());
+    sim.stop_all_targeting_cell(12, 12, &rules, &mut FrameEffects::default());
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!((state.mission_target, state.focus), (None, None));
 }
@@ -284,8 +286,7 @@ fn object_detach_clears_team_targets_without_expiring_zone_or_members() {
     sim.stop_all_targeting_on_detach(
         44,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.mission_target, None);
@@ -308,14 +309,13 @@ fn tesla_charger_team_recalls_an_automatic_target_but_keeps_an_explicit_attack()
         let source = sim
             .spawn_object("SHK", "Americans", 11, 12, 0, &rules)
             .unwrap();
-        assert!(sim.acquire_adjacent_tesla_coil(source, &rules, None, FrameEffects::default()));
+        assert!(sim.acquire_adjacent_tesla_coil(source, &rules, &mut FrameEffects::default()));
         if !automatic {
             sim.assign_target_represented(
                 source,
                 Some(TargetKind::Entity(coil)),
                 &rules,
-                None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         }
@@ -360,11 +360,11 @@ fn tesla_charger_team_recalls_an_automatic_target_but_keeps_an_explicit_attack()
         state.team_type_id = Some(type_id);
         state.mission_target = Some(TeamTarget::Cell { x: 25, y: 25 });
         state.focus = state.mission_target;
-        sim.team_coordinate_move(team, &rules, None, FrameEffects::default());
+        sim.team_coordinate_move(team, &rules, None, &mut FrameEffects::default());
         let actor = sim.substrate.entities.get(source).unwrap();
         if automatic {
             assert_eq!(actor.attack_target.target(), None);
-            assert!(!actor.tesla_charger.is_active());
+            assert!(!actor.seldom.tesla_charger.is_active());
             assert_eq!(
                 actor.mission.effective(),
                 MissionId::from_known(MissionType::Move)
@@ -519,28 +519,25 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
         team,
         Some(TeamTarget::Object(old)),
         &rules,
-        None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     for &member in &members {
         sim.team_member_assign_target(
             member,
             TeamTarget::Object(old),
             &rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         sim.team_member_set_destination(
             member,
             Some(TeamTarget::Object(old)),
             &rules,
-            None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
     sim.session
         .set_binary_frame_for_test(rules.general.patrol_scan_frames() as u32);
-    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.mission_target, None);
     assert_eq!(
@@ -553,7 +550,7 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
     }));
     sim.session
         .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Cell { x: 30, y: 20 })
@@ -570,14 +567,14 @@ fn patrol_scans_on_the_global_period_and_orders_members_to_attack() {
     crate::sim::vision::reveal_radius(&mut sim.fog, owner, 14, 10, 8);
     sim.session
         .set_binary_frame_for_test((rules.general.patrol_scan_frames() - 1) as u32);
-    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Cell { x: 30, y: 20 })
     );
     sim.session
         .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Object(enemy))
@@ -722,8 +719,12 @@ fn retail_all01_patrol_scripts_and_rules_use_the_production_readers() {
         i64::from(rules.general.patrol_scan_frames()),
         row["ticks"].as_i64().unwrap()
     );
-    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-        .unwrap();
+    let teams = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        RulePolicy::stock_campaign(),
+    )
+    .unwrap();
     assert_eq!(
         teams
             .scripts
@@ -733,7 +734,9 @@ fn retail_all01_patrol_scripts_and_rules_use_the_production_readers() {
             .count(),
         27
     );
-    assert!(action_is_ported(16));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(16, ares_way));
+    }
 }
 
 const RULES: &str = "\
@@ -755,6 +758,60 @@ fn rules() -> RuleSet {
         &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
     )
     .expect("team action rules")
+}
+
+/// `TeamClass::Remove_Member @ 0x006EA870` enters a leaving member's idle
+/// mode only while the object-placement counter `[0x00A8E7AC]` is zero
+/// (`0x006EAA1E`). `BuildingClass::SellBuilding @ 0x00457DE0` raises it from
+/// `0x00458092` to `0x004581B2`, around its Remove_Member call at `0x0045812B`.
+#[test]
+fn a_member_leaving_inside_a_placement_scope_skips_idle_mode() {
+    let rules = rules();
+    let mut sim = Simulation::with_seed(0x6EAA1E);
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let (team, members, _) = building_team(&mut sim, &rules, &[], &[]);
+    let hunt = MissionId::from_known(MissionType::Hunt);
+    for &member in &members[..2] {
+        let entity = sim.substrate.entities.get_mut(member).unwrap();
+        entity.mission.set_current_for_test(hunt, 0);
+    }
+    sim.with_object_placement_scope(|sim| {
+        sim.team_remove_member(
+            team,
+            members[0],
+            false,
+            &rules,
+            &mut FrameEffects::default(),
+        );
+    });
+    sim.team_remove_member(
+        team,
+        members[1],
+        false,
+        &rules,
+        &mut FrameEffects::default(),
+    );
+    let queued = |id| sim.substrate.entities.get(id).unwrap().mission.queued();
+    assert_eq!(queued(members[0]), MissionId::NONE, "inside the scope");
+    assert_ne!(queued(members[1]), MissionId::NONE, "outside the scope");
+}
+
+/// `FootClass::Detach_All @ 0x004D9720` removes the object from its team only
+/// while `[0x00A8E7AC]` is zero (`0x004D9736..0x004D9744`). Neither member
+/// heads the list, which `TeamClass::PointerExpired @ 0x006EAE60` would
+/// unlink either way (`0x006EAE71..0x006EAE84`).
+#[test]
+fn a_member_detached_inside_a_placement_scope_stays_in_its_team() {
+    let rules = rules();
+    let mut sim = Simulation::with_seed(0x4D9736);
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let (team, members, _) = building_team(&mut sim, &rules, &[], &[]);
+    let mut context = crate::sim::world::UninitContext::new(&rules);
+    sim.with_object_placement_scope(|sim| sim.detach_all(members[1], true, context.reborrow()));
+    sim.detach_all(members[2], true, context);
+    let team_of = |id| sim.team_script_vm.member_team.get(&id).copied();
+    assert_eq!(team_of(members[1]), Some(team), "inside the scope");
+    assert_eq!(team_of(members[2]), None, "outside the scope");
 }
 
 #[test]
@@ -795,7 +852,7 @@ fn script17_replacement_and_next_visit_match_original_controls() {
         state.focus = Some(target);
         let old_timer = state.guard_timer;
         let rng_before = sim.scenario_rng.native_state_hex();
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(state.script_id(), expected_script, "{row}");
         assert_eq!(i64::from(state.cursor()), row["cursor"].as_i64().unwrap());
@@ -808,7 +865,7 @@ fn script17_replacement_and_next_visit_match_original_controls() {
         assert_eq!(state.guard_timer, old_timer, "{row}");
         assert_eq!(state.members().collect::<Vec<_>>(), members, "{row}");
         if !state.advance_pending() {
-            sim.team_step_script(team, &rules, None, FrameEffects::default());
+            sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
             let state = sim.team_script_vm.team(team).unwrap();
             assert_eq!(
                 i64::from(state.cursor()),
@@ -825,7 +882,9 @@ fn script17_replacement_and_next_visit_match_original_controls() {
             save_codec::deserialize(&save_codec::serialize(&sim.team_script_vm).unwrap()).unwrap();
         assert_eq!(restored.team(team), sim.team_script_vm.team(team));
     }
-    assert!(action_is_ported(17));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(17, ares_way));
+    }
 }
 
 #[test]
@@ -853,13 +912,16 @@ fn retail_sov01_script17_uses_the_production_script_registry() {
         )
         .unwrap()
         .into_parts();
-    let registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-            .unwrap();
+    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        RulePolicy::stock_campaign(),
+    )
+    .unwrap();
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let mut switches = Vec::new();
     for (name, ordinal) in [
@@ -899,7 +961,7 @@ fn retail_sov01_script17_uses_the_production_script_registry() {
             state.cursor = 0;
             state.advance_pending = true;
         }
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(state.script_id(), expected);
         assert_eq!(state.cursor(), -1);
@@ -936,7 +998,7 @@ fn sound_movie_and_music_actions_play_and_advance() {
         state.advance_pending = true;
     }
     for _ in 0..3 {
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     }
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.cursor(), 2);
@@ -955,6 +1017,56 @@ fn sound_movie_and_music_actions_play_and_advance() {
             }
         ]
     ));
+}
+
+/// Script actions 32 (`0x006E9A74`) and 33 (`0x006E9AAE`) start and end the
+/// Lightning Storm as trigger actions 44 and 45 do, and finish either way
+/// instead of leaving the team stalled.
+#[test]
+fn lightning_storm_actions_start_and_end_the_storm_and_advance() {
+    use crate::sim::superweapon::lightning_storm::LightningStorm;
+    let rules = rules();
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Russians");
+    sim.houses
+        .register(HouseState::new(owner, 1, None, false, 0, 10));
+    let script = sim.interner.intern("STORM SCRIPT");
+    sim.team_script_vm.register_script(TeamScriptDefinition {
+        id: script,
+        source: TeamAiDefinitionSource::FixedAimd,
+        actions: [(32, 600), (33, 0), (33, 0), (32, 900)]
+            .map(|(action_id, argument)| TeamScriptAction {
+                action_id,
+                argument,
+            })
+            .to_vec(),
+    });
+    let team = sim.team_script_vm.create_team(owner, script, Vec::new(), 0);
+    {
+        let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+        state.cursor = -1;
+        state.advance_pending = true;
+    }
+    let deferment = rules.general.lightning_deferment;
+    assert_ne!(deferment, 0);
+    let step = |sim: &mut Simulation| {
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
+        sim.lightning_storm.globals_for_test()
+    };
+    // No storm: the argument becomes the deferred storm's duration.
+    assert_eq!(
+        step(&mut sim),
+        (false, false, deferment, 600, -1, (0, 0), None)
+    );
+    // Only a raging storm takes the end request.
+    assert!(!step(&mut sim).1);
+    sim.lightning_storm = LightningStorm::raging_for_test(owner, (5, 5));
+    assert!(step(&mut sim).1);
+    // A raging storm is not restarted.
+    assert_eq!(step(&mut sim), (true, true, 0, -1, -1, (5, 5), Some(owner)));
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert_eq!(state.cursor(), 3);
+    assert!(state.refusal().is_none());
 }
 
 /// Script34 uses Zone GetCoords, then the same ground/deck owners as the
@@ -1028,7 +1140,7 @@ fn script34_focuses_the_zone_at_ground_or_bridge_height_and_finishes_immediately
             }
         });
         let rng = sim.rng_state();
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         assert_eq!(
             sim.drain_trigger_effects(),
             [TriggerEffect::CameraAtCoord {
@@ -1040,7 +1152,7 @@ fn script34_focuses_the_zone_at_ground_or_bridge_height_and_finishes_immediately
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(state.cursor(), 0);
         assert!(state.advance_pending());
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         assert_eq!(sim.team_script_vm.team(team).unwrap().cursor(), 1);
         assert!(sim.drain_trigger_effects().is_empty());
     }
@@ -1173,7 +1285,7 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
         }
         if input["count"] == 0 {
             for &member in &members {
-                sim.team_remove_member(team, member, false, &rules, FrameEffects::default());
+                sim.team_remove_member(team, member, false, &rules, &mut FrameEffects::default());
             }
         }
         if !first {
@@ -1181,8 +1293,7 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
                 team,
                 Some(TeamTarget::Object(buildings[0])),
                 &rules,
-                None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             // Changed waypoint now contains no building. A repeated visit
             // must retain the old target without running the first query.
@@ -1201,7 +1312,7 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
         let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
         state.cursor = if first { -1 } else { 0 };
         state.advance_pending = first;
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(
             state.mission_target.is_some(),
@@ -1260,13 +1371,16 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
         )
         .unwrap()
         .into_parts();
-    let registry =
-        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, false)
-            .unwrap();
+    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &map.ini,
+        RulePolicy::stock_campaign(),
+    )
+    .unwrap();
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.install_team_ai_registry(&registry, &rules);
     let programs: Vec<_> = sim
         .team_script_vm
         .scripts
@@ -1301,7 +1415,9 @@ fn retail_all01_script59_inputs_fit_the_existing_ammunition_owner() {
             );
         }
     }
-    assert!(action_is_ported(59));
+    for ares_way in [false, true] {
+        assert!(action_is_ported(59, ares_way));
+    }
 }
 
 /// Advance until `done` holds for the team, at most `frames` frames.
@@ -1404,12 +1520,15 @@ fn the_retail_scatter_script_runs_ported_actions() {
         return;
     };
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let scripts: Vec<_> = vm
         .scripts
@@ -1423,7 +1542,13 @@ fn the_retail_scatter_script_runs_ported_actions() {
         .map(|action| action.action_id)
         .collect();
     assert_eq!(actions, [58, 21, 11]);
-    assert!(actions.iter().all(|&action| action_is_ported(action)));
+    for ares_way in [false, true] {
+        assert!(
+            actions
+                .iter()
+                .all(|&action| action_is_ported(action, ares_way))
+        );
+    }
     let running = vm
         .team_types
         .values()
@@ -1553,6 +1678,10 @@ fn attack_building_target(
 /// (1, 5) and 400 at (7, 5) spill 500 onto A's Location block and 200 onto
 /// B's GetCoords block, so mode 1 (most threat) takes B and mode 0 (least)
 /// takes A, where Location reads would pick the other.
+///
+/// Stock only: Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook
+/// `0x0056BC54`) moves the row 21 writes away from the blocks these reads
+/// take ([`ares_threat_index_moves_a_pillbox_s_threat_off_its_cell`]).
 #[test]
 fn the_threat_modes_read_each_building_s_getcoords_cell() {
     let rules = rules();
@@ -1570,8 +1699,12 @@ fn the_threat_modes_read_each_building_s_getcoords_cell() {
         let house = sim.houses.get_mut(&russians).unwrap();
         house.clear_spatial_threat();
         if threat {
-            house.adjust_spatial_threat((5, 21), 1000).unwrap();
-            house.adjust_spatial_threat((29, 21), 400).unwrap();
+            house
+                .adjust_spatial_threat((5, 21), 1000, rules.ares_form())
+                .unwrap();
+            house
+                .adjust_spatial_threat((29, 21), 400, rules.ares_form())
+                .unwrap();
         }
         let (_, target) = attack_building_target(&mut sim, &rules, &grid, team);
         assert_eq!(
@@ -1580,6 +1713,35 @@ fn the_threat_modes_read_each_building_s_getcoords_cell() {
             "threat {threat}, mode {mode}"
         );
     }
+}
+
+/// Retail GAPILLs threaten the computer Russians, whose team picks the
+/// least-threatened (mode 0) of them to attack. Each pillbox's Unlimbo writes
+/// its `ThreatPosed=` through Cell UpdateThreat (`0x00481884`, which calls
+/// `0x0056BC50`); the pick reads it at the pillbox's cell (`0x0056BCD0`,
+/// inline). In stock both read the same threat and the first built wins.
+/// Ares 3.0 ThreatPosedEstimates_GetIndex `1005D4A0` (hook `0x0056BC54`)
+/// scales the row before dividing it, so the write for row 22 lands 65
+/// slots on and the second pillbox reads none; row 12's write stays put.
+#[test]
+fn ares_threat_index_moves_a_pillbox_s_threat_off_its_cell() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = Simulation::with_seed(0x56BC54);
+    let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    let pillbox = rules.building_type_index("GAPILL").unwrap();
+    let (team, _, _) = building_team(&mut sim, &rules, &[(24, 0), (46, pillbox), (5, 100)], &[]);
+    let pillboxes = [(20, 12), (20, 22)].map(|(rx, ry)| {
+        sim.spawn_object_at_height("GAPILL", "Americans", rx, ry, 0, 0, &rules)
+            .expect("GAPILL spawns")
+    });
+    let russians = sim.interner.get("Russians").unwrap();
+    assert!(sim.house_threat_at_cell(russians, (20, 12)).unwrap() > 0);
+    let (_, target) = attack_building_target(&mut sim, &rules, &grid, team);
+    let pick = if rules.ares_form() { 1 } else { 0 };
+    assert_eq!(target, Some(TeamTarget::Object(pillboxes[pick])));
 }
 
 /// The search's admission inputs (`0x006EEC27..0x006EEC6A`, `0x006EE32B`):
@@ -1679,12 +1841,15 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
         assert_eq!(rules.object(name).unwrap().base_plan_type_index, index);
     }
     let aimd = retail_ini("aimd.ini").expect("retail AIMD");
-    let registry = TeamAiIniRegistry::from_sources(&aimd, &IniFile::from_str(""), true);
+    let registry = TeamAiIniRegistry::from_sources(
+        &aimd,
+        &IniFile::from_str(""),
+        RulePolicy::stock_multiplayer(),
+    );
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.install_team_ai_registry(&registry, &rules)
-        .expect("retail AIMD installs");
+    sim.install_team_ai_registry(&registry, &rules);
     let vm = &sim.team_script_vm;
     let capture: Vec<_> = vm
         .scripts
@@ -1699,12 +1864,14 @@ fn the_retail_tech_capture_scripts_run_ported_actions() {
         .collect();
     assert!(!capture.is_empty());
     for script in &capture {
-        assert!(
-            script
-                .actions
-                .iter()
-                .all(|action| action_is_ported(action.action_id))
-        );
+        for ares_way in [false, true] {
+            assert!(
+                script
+                    .actions
+                    .iter()
+                    .all(|action| action_is_ported(action.action_id, ares_way))
+            );
+        }
     }
     let running = vm
         .team_types
@@ -1823,7 +1990,7 @@ impl DeployTeam {
     /// Runs action 9 for the team once, outside a frame.
     fn deploy_action(&mut self) {
         self.sim
-            .team_action_deploy(self.team, &self.rules, None, FrameEffects::default());
+            .team_action_deploy(self.team, &self.rules, None, &mut FrameEffects::default());
     }
 
     /// Whether `id` was ordered to Unload: queued, or already its mission.
@@ -1915,4 +2082,148 @@ fn deploy_refused_for_a_computer_owner_clears_the_site() {
         let yards = if human { vec![] } else { vec![(19, 21)] };
         assert_eq!(team.yards(), yards, "human {human}");
     }
+}
+
+#[test]
+fn script_action_51_plays_an_animation_and_finishes_the_step() {
+    // TeamClass action 51 (`0x006EF610`): a team that reaches it must not be
+    // refused; without the port the whole script froze on an unported action.
+    // The argument's high 16 bits are the AnimClass constructor's loop count,
+    // which multiplies ELECTRO's retail LoopCount.
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let index = retail
+        .rules
+        .anim_type_art_read_states()
+        .iter()
+        .position(|(name, _)| name == "ELECTRO")
+        .unwrap() as i32;
+    let script = format!("0=51,{}\n1=51,{index}\n2=5,300", (3 << 16) | index);
+    let Some((mut scene, team, member)) =
+        crate::sim::team_script_vm::packed_cell_tests::scene(&script, "E2", false, |_| {})
+    else {
+        return;
+    };
+    crate::sim::team_script_vm::packed_cell_tests::frame(&mut scene);
+    let sim = scene.sim();
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert!(state.cursor() >= 1, "action 51 advances the cursor");
+    assert!(
+        state.refusal().is_none(),
+        "action 51 is ported, got {:?}",
+        state.refusal()
+    );
+    let mut loops: Vec<_> = sim
+        .anims()
+        .filter(|(_, anim)| {
+            anim.owner_entity() == Some(member) && sim.interner.resolve(anim.type_id()) == "ELECTRO"
+        })
+        .map(|(_, anim)| (anim.native_unique_id(), anim.runtime().loop_remaining))
+        .collect();
+    loops.sort_unstable();
+    let loops: Vec<u8> = loops.into_iter().map(|(_, loops)| loops).collect();
+    assert_eq!(loops.len(), 2, "one Anim per visit, attached to the member");
+    assert!(loops[1] > 1);
+    assert_eq!(u16::from(loops[0]), u16::from(loops[1]) * 3);
+}
+
+#[test]
+fn script_action_52_shows_a_talk_bubble_over_the_first_member_and_finishes_the_step() {
+    // TeamClass action 52 (`0x006E9D42..0x006E9D5B`): TalkBubble
+    // SetObjectAndFrame (`0x0070F120`) over the first member, then the step
+    // finishes. Unported, the refusal froze the team on this step. The scene
+    // returns after step 0's visit, so the observed frame runs step 1.
+    let Some((mut scene, team, member)) = crate::sim::team_script_vm::packed_cell_tests::scene(
+        "0=52,0\n1=52,7\n2=5,300",
+        "E2",
+        false,
+        |_| {},
+    ) else {
+        return;
+    };
+    let commands = scene.runtime.simulation.take_due_commands();
+    let output = scene
+        .runtime
+        .advance_frame(
+            &commands,
+            22,
+            crate::sim::world::TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
+        .unwrap();
+    let state = scene.sim().team_script_vm.team(team).unwrap();
+    assert!(state.refusal().is_none(), "{:?}", state.refusal());
+    assert!(state.cursor() >= 1, "action 52 finishes its step");
+    let bubbles: Vec<_> = output
+        .trigger_effects
+        .iter()
+        .filter_map(|effect| match effect {
+            crate::sim::trigger_runtime::TriggerEffect::TalkBubble { actor, value, .. } => {
+                Some((*actor, *value))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(bubbles, vec![(Some(member), 7)]);
+}
+
+#[test]
+fn script_action_51_binds_the_art_of_an_anim_only_a_script_names() {
+    // Loading roots the AnimType action 51 (`0x006EF610`) indexes with its
+    // argument's low 16 bits. No other root reaches PARABOMB: unbound, it
+    // never constructed.
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let index = retail
+        .rules
+        .anim_type_art_read_states()
+        .iter()
+        .position(|(name, _)| name == "PARABOMB")
+        .unwrap() as i32;
+    let script = format!("0=51,{}\n1=5,300", (2 << 16) | index);
+    let Some((mut scene, _, member)) =
+        crate::sim::team_script_vm::packed_cell_tests::scene(&script, "E2", false, |_| {})
+    else {
+        return;
+    };
+    crate::sim::team_script_vm::packed_cell_tests::frame(&mut scene);
+    let sim = scene.sim();
+    assert!(sim.anims().any(|(_, anim)| {
+        anim.owner_entity() == Some(member) && sim.interner.resolve(anim.type_id()) == "PARABOMB"
+    }));
+}
+
+#[test]
+fn script_action_51_plays_art_whose_loop_passes_its_frames() {
+    // Retail GAWEAP_3's LoopEnd=9 passes its 4 frames. Native stores it as
+    // written (`0x0042801C`) and action 51 (`0x006EF610`) builds the Anim on
+    // the member; its frames past the SHP draw nothing.
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let index = retail
+        .rules
+        .anim_type_art_read_states()
+        .iter()
+        .position(|(name, _)| name == "GAWEAP_3")
+        .unwrap();
+    let script = format!("0=51,{index}\n1=5,300");
+    let Some((mut scene, team, member)) =
+        crate::sim::team_script_vm::packed_cell_tests::scene(&script, "E2", false, |_| {})
+    else {
+        return;
+    };
+    crate::sim::team_script_vm::packed_cell_tests::frame(&mut scene);
+    let sim = scene.sim();
+    assert!(sim.team_script_vm.team(team).unwrap().cursor() >= 1);
+    assert!(
+        sim.anims()
+            .any(|(_, anim)| anim.owner_entity() == Some(member)
+                && sim.interner.resolve(anim.type_id()) == "GAWEAP_3")
+    );
 }

@@ -9,17 +9,23 @@
 //! both (`wgpu_hal=error`); the longest matching prefix wins. A `/text` suffix
 //! keeps only messages containing `text`.
 
+use crate::util::time::{SystemTime, UNIX_EPOCH};
 use std::backtrace::Backtrace;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Mutex, OnceLock};
 
 use log::{LevelFilter, Log, Metadata, Record};
 
+/// Whether a panic is writing `except.txt`: the panic hook has no receiver
+/// and runs on whichever thread panicked, so the claim is a process-wide
+/// atomic.
 static EXCEPTION_DUMP_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// The file [`init_file_logger`] opened, for messages that point the player
+/// at it.
+static LOG_FILE: OnceLock<PathBuf> = OnceLock::new();
 
 /// Buffered bytes before a log line reaches the SD card. 32 KiB is a few
 /// hundred lines, which keeps card writes rare without hiding much of the tail
@@ -37,27 +43,93 @@ pub use telemetry::{enable_telemetry_capture, ring};
 /// Honors `RUST_LOG` and defaults to `info` when the variable is unset.
 /// Returns the resolved log file path on success.
 pub fn init_file_logger(name: &str) -> io::Result<PathBuf> {
-    let mut log_dir = std::env::current_dir()?;
+    // A platform that hands the engine a data directory (Android) keeps its
+    // logs there; desktop launches keep the working-directory convention.
+    let mut log_dir = match crate::util::platform_dir::get() {
+        Some(dir) => dir.to_path_buf(),
+        None => std::env::current_dir()?,
+    };
     log_dir.push("logs");
     fs::create_dir_all(&log_dir)?;
 
     let mut log_path = log_dir;
     log_path.push(format!("{name}.log"));
+    roll_over_large_log(&log_path, LOG_ROLL_OVER_BYTES);
 
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)?;
+    let file = RollingFile::open(log_path.clone(), LOG_ROLL_OVER_BYTES)?;
 
     // Suppress wgpu_hal's per-frame "Suboptimal present" warnings which
     // flood the log (~100K+ lines per session on AMD Vulkan).
     install(
         "info,wgpu_hal=error",
-        Destination::File(Mutex::new(BufWriter::with_capacity(LOG_BUFFER_BYTES, file))),
+        Destination::File(Mutex::new(file)),
     )
     .map_err(|error| io::Error::other(error.to_string()))?;
 
+    let _ = LOG_FILE.set(log_path.clone());
     Ok(log_path)
+}
+
+/// A log past this size, at start-up or while the game runs, becomes
+/// `<name>.log.1` and a new one starts, so the folder holds at most about
+/// twice this however much one session writes.
+const LOG_ROLL_OVER_BYTES: u64 = 10 * 1024 * 1024;
+
+/// The open log, rolled over once a write takes it past `limit`.
+struct RollingFile {
+    file: BufWriter<File>,
+    path: PathBuf,
+    len: u64,
+    limit: u64,
+}
+
+impl RollingFile {
+    fn open(path: PathBuf, limit: u64) -> io::Result<Self> {
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
+        let len = file.metadata().map_or(0, |meta| meta.len());
+        Ok(Self {
+            file: BufWriter::with_capacity(LOG_BUFFER_BYTES, file),
+            path,
+            len,
+            limit,
+        })
+    }
+
+    fn write_line(&mut self, line: &[u8]) -> io::Result<()> {
+        self.file.write_all(line)?;
+        self.len += line.len() as u64;
+        if self.len > self.limit {
+            self.file.flush()?;
+            roll_over_large_log(&self.path, self.limit);
+            // A failed reopen keeps appending to the file already open. The
+            // count restarts either way, so a refused rename is retried after
+            // another `limit` bytes, not on every line.
+            if let Ok(file) = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.path)
+            {
+                self.file = BufWriter::with_capacity(LOG_BUFFER_BYTES, file);
+            }
+            self.len = 0;
+        }
+        Ok(())
+    }
+}
+
+/// Move a log larger than `limit` to `<file>.1`, replacing the older copy.
+/// A failure keeps appending to the old file rather than stopping start-up.
+fn roll_over_large_log(log_path: &Path, limit: u64) {
+    if fs::metadata(log_path).is_ok_and(|meta| meta.len() > limit) {
+        let mut previous = log_path.as_os_str().to_owned();
+        previous.push(".1");
+        let _ = fs::rename(log_path, previous);
+    }
+}
+
+/// The log file [`init_file_logger`] opened; None when the log goes to stderr.
+pub fn log_file() -> Option<&'static Path> {
+    LOG_FILE.get().map(PathBuf::as_path)
 }
 
 /// Install a logger that writes to stderr, filtered by `RUST_LOG` or else
@@ -80,10 +152,9 @@ fn install(default_filter: &str, destination: Destination) -> Result<(), log::Se
 
 enum Destination {
     Stderr,
-    /// Buffered: an SD-card write per log line costs far more than formatting
-    /// it, and a campaign can emit several lines a second. Warnings and errors
-    /// flush immediately so a crash still leaves its cause on the card.
-    File(Mutex<BufWriter<File>>),
+    /// Locked because the `log` crate's logger is one process-wide `Sync`
+    /// value that every thread writes through `&self`.
+    File(Mutex<RollingFile>),
 }
 
 struct Logger {
@@ -119,9 +190,12 @@ impl Log for Logger {
         let _ = match &self.destination {
             Destination::Stderr => io::stderr().lock().write_all(line.as_bytes()),
             Destination::File(file) => match file.lock() {
-                Ok(mut file) => file
-                    .write_all(line.as_bytes())
-                    .and_then(|()| if flush_now { file.flush() } else { Ok(()) }),
+                Ok(mut file) => file.write_line(line.as_bytes()).and_then(|()| {
+                    if flush_now {
+                        file.file.flush()?;
+                    }
+                    Ok(())
+                }),
                 Err(_) => Ok(()),
             },
         };
@@ -130,7 +204,7 @@ impl Log for Logger {
     fn flush(&self) {
         let _ = match &self.destination {
             Destination::Stderr => io::stderr().flush(),
-            Destination::File(file) => file.lock().map_or(Ok(()), |mut file| file.flush()),
+            Destination::File(file) => file.lock().map_or(Ok(()), |mut file| file.file.flush()),
         };
     }
 }
@@ -196,12 +270,16 @@ impl Filter {
                     .is_none_or(|prefix| target.starts_with(prefix))
             })
             .map_or(LevelFilter::Off, |&(_, level)| level);
-        // ureq TRACE includes unredacted HTTP wire data. This logger owns
+        // ureq and tungstenite TRACE include unredacted HTTP and WebSocket
+        // wire data (the lobby stream's bearer and frames). This logger owns
         // every destination (including telemetry); RUST_LOG must never expose
         // account passwords, bearer tokens or relay grants. Keep diagnostic
         // errors without accepting dependency wire/debug logs.
         // https://docs.rs/ureq/3.5.0/ureq/#unversioned
-        if matches!(target.split("::").next(), Some("ureq" | "ureq_proto")) {
+        if matches!(
+            target.split("::").next(),
+            Some("ureq" | "ureq_proto" | "tungstenite")
+        ) {
             level.min(LevelFilter::Info)
         } else {
             level
@@ -250,8 +328,12 @@ fn utc_timestamp(time: SystemTime) -> String {
 /// file when one is available. Each outermost panic creates or replaces
 /// retail's `except.txt` report in the current working directory; recursive
 /// hook entry is suppressed. The default stderr hook is preserved so terminal
-/// users still see output.
-pub fn install_panic_hook(log_path: Option<&Path>) {
+/// users still see output. `notify` runs last, once all of that is written,
+/// so a player without a terminal can be told; it must not panic.
+pub fn install_panic_hook(
+    log_path: Option<&Path>,
+    notify: Option<fn(&std::panic::PanicHookInfo<'_>)>,
+) {
     let prev_hook = std::panic::take_hook();
     let log_path = log_path.map(Path::to_owned);
 
@@ -281,6 +363,10 @@ pub fn install_panic_hook(log_path: Option<&Path>) {
 
         // Preserve default stderr output for terminal users.
         prev_hook(info);
+
+        if let Some(notify) = notify {
+            notify(info);
+        }
     }));
 }
 
@@ -328,14 +414,55 @@ fn normalize_crlf(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\n', "\r\n")
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use std::sync::atomic::AtomicBool;
     use std::time::{Duration, UNIX_EPOCH};
 
     use log::LevelFilter;
 
-    use super::{Filter, claim_exception_dump, utc_timestamp};
+    use super::{Filter, RollingFile, claim_exception_dump, roll_over_large_log, utc_timestamp};
+
+    #[test]
+    fn a_log_past_the_limit_moves_aside_and_a_small_one_stays() {
+        let dir = std::env::temp_dir().join(format!("vera20k-log-roll-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("ra2.log");
+        let previous = dir.join("ra2.log.1");
+        std::fs::write(&previous, b"oldest").unwrap();
+
+        std::fs::write(&log, [0u8; 8]).unwrap();
+        roll_over_large_log(&log, 8);
+        assert!(log.exists(), "a log at the limit keeps growing");
+
+        std::fs::write(&log, [0u8; 9]).unwrap();
+        roll_over_large_log(&log, 8);
+        assert!(!log.exists());
+        assert_eq!(std::fs::read(&previous).unwrap().len(), 9);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_session_that_writes_past_the_limit_rolls_over_while_running() {
+        use std::io::Write as _;
+
+        let dir = std::env::temp_dir().join(format!("vera20k-log-live-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("ra2.log");
+        let mut file = RollingFile::open(log.clone(), 8).unwrap();
+        file.write_line(b"12345678").unwrap();
+        assert!(
+            !dir.join("ra2.log.1").exists(),
+            "a log at the limit keeps growing"
+        );
+
+        file.write_line(b"9").unwrap();
+        file.write_line(b"next").unwrap();
+        file.file.flush().unwrap();
+        assert_eq!(std::fs::read(dir.join("ra2.log.1")).unwrap(), b"123456789");
+        assert_eq!(std::fs::read(&log).unwrap(), b"next");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn rust_log_directives_pick_the_longest_matching_target() {
@@ -373,9 +500,13 @@ mod tests {
 
     #[test]
     fn http_wire_logging_cannot_expose_credentials_even_with_explicit_trace() {
-        let filter = Filter::parse("trace,ureq=trace,ureq_proto::client=trace");
+        let filter = Filter::parse("trace,ureq=trace,ureq_proto::client=trace,tungstenite=trace");
         assert_eq!(filter.level_for("ureq::request"), LevelFilter::Info);
         assert_eq!(filter.level_for("ureq_proto::client"), LevelFilter::Info);
+        assert_eq!(
+            filter.level_for("tungstenite::handshake::client"),
+            LevelFilter::Info
+        );
         assert_eq!(filter.level_for("vera20k::app"), LevelFilter::Trace);
         assert_eq!(Filter::parse("off").level_for("ureq"), LevelFilter::Off);
     }
@@ -408,8 +539,6 @@ mod tests {
 
     #[test]
     fn file_logger_buffers_info_and_flushes_warnings() {
-        use std::fs::OpenOptions;
-        use std::io::BufWriter;
         use std::sync::Mutex;
 
         use log::{Log, Record};
@@ -420,17 +549,11 @@ mod tests {
             std::thread::current().id()
         ));
         let _ = std::fs::remove_file(&path);
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
+        let file = RollingFile::open(path.clone(), super::LOG_ROLL_OVER_BYTES)
             .expect("create log file");
         let logger = super::Logger {
             filter: Filter::parse("info"),
-            destination: super::Destination::File(Mutex::new(BufWriter::with_capacity(
-                super::LOG_BUFFER_BYTES,
-                file,
-            ))),
+            destination: super::Destination::File(Mutex::new(file)),
         };
         // `format_args!` with only literal interpolations is 'static, so the
         // record can borrow it directly.

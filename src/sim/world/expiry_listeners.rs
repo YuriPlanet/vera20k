@@ -19,7 +19,7 @@ use super::Simulation;
 use super::substrate::ObjectKind;
 use crate::sim::anim_class::{AnimStore, AnimTouchReader};
 use crate::sim::entity_store::{EntityStore, TouchReader};
-use crate::sim::particles::ParticleSystemStore;
+use crate::sim::particles::{ParticleSystemStore, ParticleTouchReader};
 use crate::sim::projectile::ProjectileStore;
 use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::touch_log::Touched;
@@ -63,11 +63,6 @@ impl Holds {
 fn named(names: &mut Vec<u64>, held: impl IntoIterator<Item = Option<u64>>) -> bool {
     names.extend(held.into_iter().flatten());
     false
-}
-
-thread_local! {
-    /// A thread's scratch for the ids a re-read listener names.
-    static NAMES: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 #[derive(Debug, Clone, Default)]
@@ -126,7 +121,7 @@ impl ExpiryListeners {
             anims.get(id).map(|anim| named(names, anim.expiry_names()))
         });
         let ids = self.particle_systems.rereads(
-            particle_systems.take_touched(),
+            particle_systems.take_touched(ParticleTouchReader::ExpiryListeners),
             particle_systems.len(),
             || particle_systems.iter().map(|(&id, _)| id).collect(),
         );
@@ -230,17 +225,6 @@ impl ExpiryListeners {
         reached
     }
 
-    /// Dedicated Anim callbacks select Parasite holders through the same
-    /// entity-reference index, without a generic Object callback broadcast.
-    pub(crate) fn entities_reached_by(
-        &mut self,
-        entities: &mut EntityStore,
-        expired: u64,
-    ) -> Vec<u64> {
-        self.refresh_entities(entities);
-        self.entities.reaching(expired).collect()
-    }
-
     fn refresh_entities(&mut self, entities: &mut EntityStore) {
         let ids = self.entities.rereads(
             entities.take_touched(TouchReader::ExpiryListeners),
@@ -319,11 +303,11 @@ impl StoreIndex {
     /// answers `None` for a removed one, and record what changed.
     fn reread(&mut self, ids: Vec<u64>, read: impl Fn(u64, &mut Vec<u64>) -> Option<bool>) {
         let index = &*self;
-        let changes: Vec<_> = NAMES.with_borrow_mut(|names| {
-            ids.iter()
-                .map(|&id| index.change(id, names, |names| read(id, names)))
-                .collect()
-        });
+        let mut names = Vec::new();
+        let changes: Vec<_> = ids
+            .iter()
+            .map(|&id| index.change(id, &mut names, |names| read(id, names)))
+            .collect();
         self.record(ids, changes);
     }
 
@@ -338,8 +322,9 @@ impl StoreIndex {
             return self.reread(ids, read);
         }
         let index = &*self;
-        let changes = crate::sim::parallel::map(&ids, |&id| {
-            NAMES.with_borrow_mut(|names| index.change(id, names, |names| read(id, names)))
+        // Each worker names into its own scratch.
+        let changes = crate::sim::parallel::map_with(&ids, Vec::new(), |names, &id| {
+            index.change(id, names, |names| read(id, names))
         });
         self.record(ids, changes);
     }
@@ -409,7 +394,7 @@ impl StoreIndex {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_world_c_o))]
 mod tests {
     use super::*;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
@@ -460,8 +445,8 @@ mod tests {
         reached.into_iter().map(|(id, _)| id).collect()
     }
 
-    fn anim(id: u64, owner: Option<u64>) -> AnimObject {
-        let mut anim = AnimObject::new_unattached_for_test(
+    fn anim(id: u64) -> AnimObject {
+        AnimObject::new_unattached_for_test(
             id,
             id as i32,
             InternedId::from_index(0),
@@ -479,9 +464,7 @@ mod tests {
                 paused: false,
                 temporal_paused: false,
             },
-        );
-        anim.set_owner_entity_for_test(owner);
-        anim
+        )
     }
 
     fn bullet(stores: &mut Stores, id: u64, source: u64, target: ProjectileTarget) {
@@ -504,8 +487,11 @@ mod tests {
         let mut entities = EntityStore::new();
         entities.insert(attacker(1, 3));
         let mut controller = GameEntity::test_default(2, "YURI", "Russians", 12, 12);
-        controller.capture_manager =
-            Some(CaptureManagerState::with_victims_for_test(3, false, &[3]));
+        controller.capture_manager = Some(Box::new(CaptureManagerState::with_victims_for_test(
+            3,
+            false,
+            &[3],
+        )));
         entities.insert(controller);
         entities.insert(GameEntity::test_default(3, "HTNK", "Russians", 14, 14));
         let mut docked = attacker(4, 3);
@@ -563,7 +549,7 @@ mod tests {
         );
         manager.set_current_target_for_test(Some(TargetKind::Entity(6)));
         manager.set_queued_target_for_test(Some(TargetKind::Cell(3, 3)));
-        launcher.spawn_manager = Some(manager);
+        launcher.spawn_manager = Some(Box::new(manager));
         let mut entities = EntityStore::new();
         entities.insert(launcher);
         let mut stores = Stores {
@@ -641,8 +627,9 @@ mod tests {
         // An anim owned by 3 and one owning nothing; a system on 3 owned by
         // 4; a bullet from 4 at 3 and one from no attacker at a cell; a wave
         // from 3 at 4.
-        stores.anims.insert(anim(10, Some(3)));
-        stores.anims.insert(anim(11, None));
+        stores.anims.insert(anim(10));
+        stores.anims.set_owner_entity_for_test(10, Some(3));
+        stores.anims.insert(anim(11));
         let mut system =
             ParticleSystem::test_fixture(20, ParticleSystemTypeId(0), glam::IVec3::ZERO);
         system.set_target_ref_for_test(Some(crate::sim::combat::TargetKind::Entity(3)));
@@ -668,11 +655,7 @@ mod tests {
         assert_eq!(reach(&mut index, &mut stores, RAD_NO_ATTACKER), [0u64; 0]);
         // A new owner, a retarget, a cleared target and a removal are read
         // back on the next expiry.
-        stores
-            .anims
-            .get_mut(11)
-            .unwrap()
-            .set_owner_entity_for_test(Some(4));
+        stores.anims.set_owner_entity_for_test(11, Some(4));
         stores
             .projectiles
             .get_mut(30)

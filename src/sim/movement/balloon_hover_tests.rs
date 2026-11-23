@@ -168,8 +168,7 @@ fn balloon_approach_arm_matches_the_original() {
                 sim.approach_unit_head(
                     ACTOR,
                     &rules,
-                    None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default(),
                 ),
                 assigned,
                 "{input}"

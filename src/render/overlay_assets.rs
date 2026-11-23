@@ -36,6 +36,8 @@ fn is_resource_overlay_name(name: &str) -> bool {
 }
 
 fn tiberium_id_offset() -> isize {
+    // A process-wide debug switch, read once from the environment (listed with
+    // the render toggles in tools/telemetry-dashboard/README.md).
     static TIB_ID_OFFSET: OnceLock<isize> = OnceLock::new();
     *TIB_ID_OFFSET.get_or_init(|| {
         std::env::var("RA2_TIB_ID_OFFSET")
@@ -87,7 +89,7 @@ pub fn render_overlay_names(reg: &OverlayTypeRegistry) -> BTreeMap<u8, String> {
         .collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
 

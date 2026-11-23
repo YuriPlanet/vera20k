@@ -16,12 +16,29 @@
 
 use anyhow::Result;
 
+use crate::app::movie_subtitles::{BAND_HEIGHT, BAND_WIDTH, SubtitleTrack, text_origin};
 use crate::render::batch::SpriteInstance;
 use crate::render::bink_movie::BinkMovieSurface;
-use crate::render::shell_paint::MOVIE_DEPTH;
+use crate::render::bit_font::BitFont;
+use crate::render::native_surface_format::{ACTIVE_RETAIL_RGB565_PRESENTATION, RGB565};
+use crate::render::shell_paint::{MOVIE_DEPTH, TEXT_DEPTH};
+use crate::render::shell_text::{ScissorRect, ShellTextDraw, TextRect};
+use crate::ui::shell::geom::ShellAlign;
+
+/// `Init_Game` `0x0052C5E2..0x0052C5EE`: the logo Play_Movie plays on every
+/// launch, before the startup splash (name `0x825F20`).
+pub(crate) const STARTUP_LOGO_MOVIE: &str = "EA_WWLOGO";
+/// `0x0052CB50` (called at `0x0052CA65`): the intro Play_Movie plays while
+/// WinMain's `[Intro] Play=` bit `[0xA8E960] & 4` is set (name `0x82618C`).
+pub(crate) const STARTUP_INTRO_MOVIE: &str = "A00_F00E";
 
 /// The continuation owned by Play_Movie's caller.
 pub(crate) enum MovieReturn {
+    /// `Init_Game` presents the startup splash next (`0x0052C5F3`).
+    StartupLogo,
+    /// `0x0052CB50` draws the empty shell backdrop next; the main menu's
+    /// first paint follows.
+    StartupIntro,
     /// State `0xD` (Sneak Peeks) sets state 4: Movies & Credits `0x101`.
     MoviesAndCredits,
     /// State `0xE` stays in place: the movie list `0x129` reopens.
@@ -85,11 +102,14 @@ pub(crate) fn movie_rect(screen_w: i32, screen_h: i32, movie_w: i32, movie_h: i3
     [(screen_w - w) / 2, (screen_h - h) / 2, w, h]
 }
 
+/// Hidden windows park the fullscreen renderer even if the platform still reports focus.
+pub(crate) fn playback_active(state: &crate::app::AppState) -> bool {
+    state.platform.window_active && !state.platform.window_hidden
+}
+
 pub(crate) struct FullscreenMovie {
     playback: crate::app::movie_playback::MoviePlayback,
     return_to: MovieReturn,
-    subtitles: Option<crate::assets::subtitle_file::SubtitleTable>,
-    movie_stem: String,
 }
 
 impl FullscreenMovie {
@@ -97,24 +117,36 @@ impl FullscreenMovie {
         surface: BinkMovieSurface,
         mixer: Option<&rodio::mixer::Mixer>,
         voice_volume: f32,
+        subtitles: Option<SubtitleTrack>,
         return_to: MovieReturn,
-        subtitles: Option<crate::assets::subtitle_file::SubtitleTable>,
-        movie_stem: &str,
+        active: bool,
     ) -> Self {
         Self {
-            playback: crate::app::movie_playback::MoviePlayback::new(surface, mixer, voice_volume),
+            playback: crate::app::movie_playback::MoviePlayback::new(
+                surface,
+                mixer,
+                voice_volume,
+                subtitles,
+                active,
+            ),
             return_to,
-            subtitles,
-            movie_stem: movie_stem.to_owned(),
         }
     }
     pub(crate) fn into_return(self) -> MovieReturn {
         self.return_to
     }
+    pub(crate) fn return_to(&self) -> &MovieReturn {
+        &self.return_to
+    }
     pub(crate) fn set_active(&mut self, active: bool) {
         self.playback.set_active(active);
     }
-    pub(crate) fn step(&mut self, gpu: &crate::render::gpu::GpuContext) -> Result<bool> {
+    pub(crate) fn step(
+        &mut self,
+        gpu: &crate::render::gpu::GpuContext,
+        voice_volume: f32,
+    ) -> Result<bool> {
+        self.playback.set_voice_volume(voice_volume);
         self.playback.step(gpu)
     }
     pub(crate) fn abort(&mut self) {
@@ -132,11 +164,6 @@ impl FullscreenMovie {
     }
     pub(crate) fn surface(&self) -> &BinkMovieSurface {
         self.playback.surface()
-    }
-    pub(crate) fn subtitle_cue(&self) -> Option<&crate::assets::subtitle_file::SubtitleCue> {
-        self.subtitles
-            .as_ref()?
-            .cue_at(&self.movie_stem, self.playback.elapsed_seconds())
     }
     pub(crate) fn instance(&self, screen_w: i32, screen_h: i32) -> SpriteInstance {
         let [x, y, w, h] = movie_rect(
@@ -156,9 +183,89 @@ impl FullscreenMovie {
             ..Default::default()
         }
     }
+
+    /// The shown subtitle's glyphs over the movie, scaled with it.
+    /// `0x006C9D40` measures the text with the game font wrapped at the band
+    /// width, aligns the whole block, and draws it in the cue's colour packed
+    /// to 16 bits; `0x00433270` copies only the text's rectangle, clipped to
+    /// the band, with packed colour 0 transparent.
+    pub(crate) fn subtitle_text(
+        &self,
+        font: &BitFont,
+        screen_w: i32,
+        screen_h: i32,
+    ) -> Option<ShellTextDraw> {
+        let cue = self.playback.shown_subtitle()?;
+        let text = cue.text.as_deref()?;
+        if RGB565.pack_rgb8(cue.rgb()) == 0 {
+            return None;
+        }
+        let (movie_w, movie_h) = (
+            self.surface().width() as i32,
+            self.surface().height() as i32,
+        );
+        let [movie_x, movie_y, scaled_w, _] = movie_rect(screen_w, screen_h, movie_w, movie_h);
+        let scale = scaled_w as f32 / movie_w as f32;
+        let layout = font.wrap_layout(text, BAND_WIDTH as u32);
+        let [x, y] = text_origin(
+            cue,
+            layout.width as i32,
+            font.cell_height() as i32,
+            movie_w,
+            movie_h,
+        );
+        let [r, g, b, _] = ACTIVE_RETAIL_RGB565_PRESENTATION.quantize_rgba8([
+            cue.rgb()[0],
+            cue.rgb()[1],
+            cue.rgb()[2],
+            255,
+        ]);
+        let mut draw = crate::render::shell_text::draw_in_rect_scaled(
+            font,
+            text,
+            TextRect {
+                x: (x as f32 * scale) as i32,
+                y: (y as f32 * scale) as i32,
+                w: (BAND_WIDTH as f32 * scale) as u32,
+                h: (BAND_HEIGHT as f32 * scale) as u32,
+            },
+            [r, g, b].map(|channel| f32::from(channel) / 255.0),
+            ShellAlign::NONE,
+            [movie_x as f32, movie_y as f32],
+            TEXT_DEPTH,
+            scale,
+        );
+        // The copied rectangle: the measured text inside the band, on screen.
+        let band = [(movie_w - BAND_WIDTH) / 2, movie_h - BAND_HEIGHT];
+        let left = x.max(band[0]);
+        let top = y.max(band[1]);
+        let right = (x + layout.width as i32).min(band[0] + BAND_WIDTH);
+        let bottom = (y + layout.height as i32).min(band[1] + BAND_HEIGHT);
+        let to_screen = |value: i32, origin: i32, limit: i32| {
+            (origin + (value as f32 * scale).round() as i32).clamp(0, limit)
+        };
+        let [x0, y0] = [
+            to_screen(left, movie_x, screen_w),
+            to_screen(top, movie_y, screen_h),
+        ];
+        let [x1, y1] = [
+            to_screen(right, movie_x, screen_w),
+            to_screen(bottom, movie_y, screen_h),
+        ];
+        if x1 <= x0 || y1 <= y0 {
+            return None;
+        }
+        draw.scissor = ScissorRect {
+            x: x0 as u32,
+            y: y0 as u32,
+            w: (x1 - x0) as u32,
+            h: (y1 - y0) as u32,
+        };
+        Some(draw)
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
 

@@ -98,6 +98,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         origin_x: 0.0,
         origin_y: 0.0,
         bridge_middle_tiles: None,
+        deformation_tiles: Vec::new(),
     };
     let mut lighting = MatchLighting::default();
     lighting.install(
@@ -131,6 +132,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         tile.height as f32,
         Some(&lookup),
         None,
+        Vec::new(),
     )
     .normal
     .remove(0);
@@ -143,10 +145,10 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         .discard_pending();
     scenario.runtime.simulation.apply_fatal_lifecycle_stage(
         rules,
-        crate::sim::combat::FatalLifecycleStage::BeforeDeathEffects { attacker: None },
+        crate::sim::combat::FatalLifecycleStage::BeforeBuildingDestruction,
         id,
         crate::map::entities::EntityCategory::Structure,
-        crate::sim::world::UninitContext::with_rules(rules),
+        crate::sim::world::UninitContext::new(rules),
     );
     let events = scenario
         .runtime
@@ -177,6 +179,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         tile.height as f32,
         Some(&lookup),
         None,
+        Vec::new(),
     )
     .normal
     .remove(0);

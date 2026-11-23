@@ -21,15 +21,15 @@ fn post_foot_dead_aircraft_skips_sink_suffix() {
         aircraft,
         LivingSinkTrigger::PostWarpValidation,
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let drone = sim
         .spawn_object_at_height("DRON", "Russians", 22, 21, 0, 0, &rules)
         .expect("stock Terror Drone");
     // Supply AttachTo's prior after Stun, not a surviving pre-warp infection.
-    sim.techno_limbo_with_rules(drone, &rules, None);
+    sim.techno_limbo_with_rules(drone, &rules);
     assert!(sim.parasite_can_infect(drone, Some(aircraft), &rules));
-    sim.parasite_attach(drone, Some(aircraft), &rules, FrameEffects::default());
+    sim.parasite_attach(drone, Some(aircraft), &rules, &mut FrameEffects::default());
     assert_eq!(
         sim.substrate
             .entities
@@ -42,7 +42,7 @@ fn post_foot_dead_aircraft_skips_sink_suffix() {
     // Two real damage deliveries establish Health50 with the third due at121.
     for frame in [1, 61] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.parasite_ai_for_victim(aircraft, &rules, None, FrameEffects::default());
+        sim.parasite_ai_for_victim(aircraft, &rules, None, &mut FrameEffects::default());
     }
     assert_eq!(
         sim.substrate
@@ -54,7 +54,7 @@ fn post_foot_dead_aircraft_skips_sink_suffix() {
         50
     );
     sim.session.set_binary_frame_for_test(120);
-    assert!(!sim.tick_ship_sinking(aircraft, &rules, None, FrameEffects::default()));
+    assert!(!sim.tick_ship_sinking(aircraft, &rules, None, &mut FrameEffects::default()));
     let before = position_world_coord(&sim.substrate.entities.get(aircraft).unwrap().position);
     assert_eq!(before.z, -5);
     let wake_count = |sim: &Simulation| {
@@ -71,7 +71,7 @@ fn post_foot_dead_aircraft_skips_sink_suffix() {
     sim.advance_live_object_turn(
         aircraft,
         &rules,
-        super::super::techno_ai::ObjectAiCtx::default(),
+        &mut super::super::techno_ai::ObjectAiCtx::default(),
     )
     .expect("lethal parasite in the ordinary Foot tail");
     let actor = sim

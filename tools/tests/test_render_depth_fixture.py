@@ -75,6 +75,26 @@ def decode_iso_cells(section):
 
 
 class RenderDepthFixtureTests(unittest.TestCase):
+    def test_magnetic_wave_uses_sleeping_stock_actors_on_clear_ground(self):
+        ini = parse_ini(build_fixture(magnetic_wave=True))
+        units = [row.split(',') for row in ini['Units'].values()]
+        self.assertEqual([row[:7] for row in units], [
+            ['Computer', 'MTNK', '256', '50', '48', '192', 'Sleep'],
+            ['<human player>', 'TELE', '256', '44', '48', '64', 'Sleep'],
+        ])
+        plant = ini['Structures']['0'].split(',')
+        self.assertEqual(plant[:5], ['Computer', 'GAPOWR', '256', '60', '60'])
+        cells = decode_iso_cells(ini['IsoMapPack5'])
+        for row in units + [plant]:
+            self.assertEqual(cells[int(row[3]), int(row[4])], (0, 0, 0))
+        self.assertFalse(ini['Infantry'])
+        self.assertEqual(set(decode_overlay_section(ini['OverlayPack'])), {255})
+        for section in ('General', 'TELE', 'MTNK', 'MagneticBeam',
+                        'MagneticBeamE', 'LocomotorBeam'):
+            self.assertNotIn(section, ini)
+        with self.assertRaises(ValueError):
+            build_fixture(magnetic_wave=True, disk_laser=True)
+
     def test_sonic_scene_retains_template_packs_and_keeps_stock_weapon_fields(self):
         # Transport-only fixture check; actual naval admission is exercised by
         # the production retail map capture, not this flat input template.
@@ -205,7 +225,7 @@ class RenderDepthFixtureTests(unittest.TestCase):
         self.assertEqual(ini['Structures'], stock['Structures'])
         self.assertEqual(ini['Units']['0'], stock['Units']['0'])
         attacker = ini['Units']['1'].split(',')
-        self.assertEqual(attacker[:5], ['Americans', 'MTNK', '256', '48', '44'])
+        self.assertEqual(attacker[:5], ['<human player>', 'MTNK', '256', '48', '44'])
         cells = decode_iso_cells(ini['IsoMapPack5'])
         self.assertEqual(cells[48, 44], (0, 0, 0))
         self.assertNotIn('General', ini)
@@ -282,12 +302,34 @@ class RenderDepthFixtureTests(unittest.TestCase):
             with self.subTest(other=other), self.assertRaises(ValueError):
                 build_fixture(temporal_gunner=True, **other)
 
+    def test_every_mode_names_only_houses_a_skirmish_creates(self):
+        # FromName50C170 resolves <human player>/Computer; ReadBuildings44F8CB
+        # skips the local House's Structures. Others never load (#1889).
+        modes = ({}, {'walls_only': True}, {'cliff_back': True},
+                 {'building_brackets': True}, {'building_repair': True},
+                 {'attack_order_voice': 'unit'}, {'attack_order_voice': 'building'},
+                 {'house_self_heal': 'recovery'}, {'damage_feedback': 'single'},
+                 {'move_order_voice': 'stock'}, {'bomb_clock': True},
+                 {'ifv_welding': 'repair'}, {'disk_laser': True}, {'magnetic_wave': True},
+                 {'temporal_gunner': True}, {'drone_fire': True})
+        for mode in modes:
+            with self.subTest(mode=mode):
+                ini = parse_ini(build_fixture(**mode))
+                owners = {section: {row.split(',')[0] for row in ini[section].values()}
+                          for section in ('Structures', 'Units', 'Infantry')}
+                self.assertLessEqual(owners['Structures'], {'Computer'})
+                self.assertLessEqual(owners['Units'] | owners['Infantry'],
+                                     {'<human player>', 'Computer'})
+        plants = parse_ini(build_fixture(building_brackets=True))['Structures'].values()
+        self.assertEqual([row.split(',')[:2] for row in plants], [['Computer', 'GAPOWR']] * 3)
+
     def test_existing_fixture_modes_keep_their_authored_bytes(self):
-        # Captured from HEAD's generator before the separate --cliff-back mode.
-        # Preserve both map payloads, including compression and entity order.
+        # Captured from HEAD's generator before the separate --cliff-back mode,
+        # then with the skirmish House names. Preserve both map payloads,
+        # including compression and entity order.
         expected = {
-            False: '68410ab0ac06c25ddc9ff213521247e9bb03d54ba114ffe2a583211fb2577977',
-            True: 'd3fec532c844de7226c433e073d861ff646ec7af3fb622f3441f1ec102cb3ef6',
+            False: 'df90e1bf999a70bd973d9fcf40bbeec3e06baf6970d5fe7fc606f7641ed42c2c',
+            True: '79e7867585d6d6086cbd966987839bcb1e18de64ba7583f0941dbb01d6a9e0a6',
         }
         for walls_only, digest in expected.items():
             with self.subTest(walls_only=walls_only):

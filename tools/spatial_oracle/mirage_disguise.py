@@ -21,6 +21,7 @@ from tools.native_oracle import (
     RET_MAGIC, NativeCallTrace, finish_vectors, provenance,
     run_checked,
 )
+from tools.native_oracle import require
 from tools.projectile_oracle.bridge_render_inputs import BulletReader, lexical
 from tools.spatial_oracle.anytown_damage import mtnk_attack as base
 from tools.spatial_oracle.anytown_damage.foot_missions import FootMissions, source_paths
@@ -335,7 +336,7 @@ class Mirage(FootMissions):
     def relocate_infantry(self, actor, cell):
         m, u = self.m, self.u
         if not u.mem_read(actor+0x81, 1)[0]:
-            assert m.invoke(0x51DF10, actor) & 255
+            require(m.invoke(0x51DF10, actor) & 255, 'native 0x51DF10 returned an unexpected result')
         m.invoke(0x486840, self.resident.ptrs[cell], (self.coord,))
         result = m.invoke(0x51DFF0, actor, (self.coord, 0x80)) & 255
         return dict(actor=hex(actor), cell=list(cell), returned_al=result,

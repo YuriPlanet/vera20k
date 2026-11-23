@@ -1,0 +1,164 @@
+name: Determinism
+
+# Plays long retail-map skirmishes headlessly on every platform VERA20k builds
+# for, and in wasm, and fails unless every frame's state hash and multiplayer
+# sync checksum match across them (`sim-bench --scenario skirmish --lan
+# --frame-hashes`). The runners hold no retail game data, so each job fetches
+# a zip of the retail install from the URL in the RETAIL_GAME_DATA_URL secret
+# and fails without it. The zip needs the install folder's .mix, .mmx and .yro
+# files; MOVIES01.MIX, MOVIES02.MIX, THEME.MIX and THEMEMD.MIX can be left out,
+# but the stock digital start requires MOVMD03.MIX. Manual only: run it from
+# the Actions tab or with `gh workflow run determinism.yml --ref <branch>`.
+on:
+  workflow_dispatch:
+    inputs:
+      maps:
+        description: Retail maps to play, separated by spaces
+        default: Death.mmx Hills.mmx Dustbowl.mmx
+      ticks:
+        description: Frames per skirmish (9000 is ten minutes of game time)
+        default: '9000'
+
+permissions:
+  contents: read
+
+env:
+  MAPS: ${{ inputs.maps }}
+  TICKS: ${{ inputs.ticks }}
+
+jobs:
+  native:
+    name: play (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Fetch the retail game data
+        shell: bash
+        env:
+          RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
+        run: |
+          python - <<'EOF'
+          import os, pathlib, sys, urllib.request, zipfile
+          if not os.environ.get('RETAIL_GAME_DATA_URL'):
+              print('::error::Set the RETAIL_GAME_DATA_URL secret to a zip of the retail install')
+              sys.exit(1)
+          urllib.request.urlretrieve(os.environ['RETAIL_GAME_DATA_URL'], 'retail.zip')
+          with zipfile.ZipFile('retail.zip') as archive:
+              archive.extractall('retail')
+          os.remove('retail.zip')
+          mix = next(p for p in pathlib.Path('retail').rglob('*') if p.name.lower() == 'ra2md.mix')
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'RA2_DIR={mix.parent.resolve()}\n')
+          EOF
+      - name: Build sim-bench
+        run: cargo build --locked --release -p vera20k-core --bin sim-bench
+      - name: Play the skirmishes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p hashes
+          for map in $MAPS; do
+            target/release/sim-bench --ra2-dir "$RA2_DIR" --scenario skirmish --lan \
+              --map "$map" --ticks "$TICKS" --frame-hashes "hashes/$map.txt"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hashes-${{ matrix.os }}
+          path: hashes/
+          if-no-files-found: error
+
+  wasm:
+    name: play (wasm32-wasip1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Fetch the retail game data
+        shell: bash
+        env:
+          RETAIL_GAME_DATA_URL: ${{ secrets.RETAIL_GAME_DATA_URL }}
+        run: |
+          python - <<'EOF'
+          import os, pathlib, sys, urllib.request, zipfile
+          if not os.environ.get('RETAIL_GAME_DATA_URL'):
+              print('::error::Set the RETAIL_GAME_DATA_URL secret to a zip of the retail install')
+              sys.exit(1)
+          urllib.request.urlretrieve(os.environ['RETAIL_GAME_DATA_URL'], 'retail.zip')
+          with zipfile.ZipFile('retail.zip') as archive:
+              archive.extractall('retail')
+          os.remove('retail.zip')
+          mix = next(p for p in pathlib.Path('retail').rglob('*') if p.name.lower() == 'ra2md.mix')
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'RA2_DIR={mix.parent.resolve()}\n')
+          EOF
+      - name: Build sim-bench
+        # The default 1 MiB wasm stack is too small for a map load.
+        run: >
+          cargo rustc --locked --release -p vera20k-core --bin sim-bench
+          --target wasm32-wasip1 -- -C link-arg=-zstack-size=8388608
+      - name: Play the skirmishes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p hashes
+          for map in $MAPS; do
+            node tools/wasm/wasi_run.mjs target/wasm32-wasip1/release/sim-bench.wasm \
+              --dir "/game=$RA2_DIR" --dir "/out=$PWD/hashes" -- \
+              --ra2-dir /game --scenario skirmish --lan \
+              --map "$map" --ticks "$TICKS" --frame-hashes "/out/$map.txt"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hashes-wasm32-wasip1
+          path: hashes/
+          if-no-files-found: error
+
+  compare:
+    name: compare
+    needs: [native, wasm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: hashes-*
+      - name: Every platform played the same frames
+        shell: bash
+        run: |
+          set -euo pipefail
+          reference=hashes-ubuntu-latest
+          status=0
+          for map in $MAPS; do
+            echo "$map: $(wc -l < "$reference/$map.txt") frames"
+            for platform in hashes-*; do
+              if ! cmp -s "$reference/$map.txt" "$platform/$map.txt"; then
+                echo "::error::$platform differs from $reference on $map"
+                diff "$reference/$map.txt" "$platform/$map.txt" | head -n 4 || true
+                status=1
+              fi
+            done
+          done
+          exit $status

@@ -103,18 +103,23 @@ impl GpuProfile {
             };
             match receiver.try_recv() {
                 Ok(Ok(())) => {
-                    let data = slot.readback.slice(..).get_mapped_range();
-                    let start = u64::from_ne_bytes(data[..8].try_into().unwrap());
-                    let end = u64::from_ne_bytes(data[8..16].try_into().unwrap());
-                    if *collect {
-                        if start != 0 && end > start {
-                            self.samples_ms
-                                .push((end - start) as f64 * self.period_ns / 1_000_000.0);
-                        } else {
+                    match slot.readback.slice(..).get_mapped_range() {
+                        Ok(data) if *collect => {
+                            let start = u64::from_ne_bytes(data[..8].try_into().unwrap());
+                            let end = u64::from_ne_bytes(data[8..16].try_into().unwrap());
+                            if start != 0 && end > start {
+                                self.samples_ms
+                                    .push((end - start) as f64 * self.period_ns / 1_000_000.0);
+                            } else {
+                                self.errors += 1;
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            log::warn!(target: "switch::perf", "GPU timestamp readback: {error}");
                             self.errors += 1;
                         }
                     }
-                    drop(data);
                     slot.readback.unmap();
                     slot.pending = None;
                 }

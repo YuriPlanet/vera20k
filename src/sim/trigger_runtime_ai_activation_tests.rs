@@ -1,7 +1,62 @@
 //! Trigger controls through the shared House activation and ordinary team owners.
 use super::*;
+use crate::rules::rule_policy::RulePolicy;
 use crate::sim::house_state::HouseAiActivationLatches;
 use crate::util::save_codec;
+
+#[test]
+fn team_lookup_fixed_ai_uses_final_map_names_and_dependencies() {
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet, team_ai_ini::TeamAiIniRegistry};
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n1=E2\n[E1]\nStrength=100\nTechLevel=1\n\
+         [E2]\nStrength=100\nTechLevel=7\n",
+    ))
+    .unwrap();
+    let fixed = IniFile::from_str(&format!(
+        "[TeamTypes]\n0=FIRST\n[FIRST]\nName=OLD\nScript=S\nTaskForce=F\n\
+         [ScriptTypes]\n0=S\n[S]\n0=5,1\n\
+         [TaskForces]\n0=F\n[F]\n0=1,E1\n\
+         [AITriggerTypes]\nA=Lookup,FINAL_ALIAS,<all>,0,-1,<none>,{},40,10,40,1,0,0,0,MAP_ALIAS,1,1,1\n",
+        "0".repeat(64)
+    ));
+    let map = crate::map::map_file::MapFile::from_ini(IniFile::from_str(
+        "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+         [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+         [TeamTypes]\n0=FIRST\n1=MAP\n[FIRST]\nName=FINAL_ALIAS\n\
+         [MAP]\nName=MAP_ALIAS\nScript=S\nTaskForce=F\n\
+         [TaskForces]\n0=F\n[F]\n0=1,E2\n\
+         [Triggers]\nT=Neutral,<none>,constructor,0,1,1,1,0\n\
+         [Actions]\nT=1,7,1,LATE,0,0,0,0,A\n",
+    ))
+    .unwrap();
+    let registry =
+        TeamAiIniRegistry::from_sources(&fixed, &map.ini, RulePolicy::stock_multiplayer());
+    for prepared in [false, true] {
+        let mut sim = Simulation::new();
+        sim.intern_rule_type_ids(&rules);
+        if prepared {
+            sim.initialize_trigger_definitions(&map, &registry, None, None, None);
+        }
+        let rng = sim.scenario_rng.native_state_hex();
+        let diagnostics = sim.install_team_ai_registry(&registry, &rules);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        let trigger = sim.team_script_vm.ai_triggers_in_order().next().unwrap().0;
+        assert_eq!(trigger.primary_team_type, sim.interner.get("FIRST"));
+        assert_eq!(trigger.secondary_team_type, sim.interner.get("MAP"));
+        assert_eq!(
+            trigger.threshold, 7,
+            "the selected final TaskForce owns TechLevel"
+        );
+        let expected = if prepared {
+            vec!["FIRST", "MAP", "LATE"]
+        } else {
+            vec!["FIRST", "MAP"]
+        };
+        assert_eq!(sim.trigger_runtime.definitions.team_types, expected);
+        assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+    }
+}
 
 #[test]
 fn authored_ai_trigger_actions_change_only_the_selected_house_latch() {
@@ -48,7 +103,7 @@ fn authored_ai_trigger_actions_change_only_the_selected_house_latch() {
             sim.main_rng.native_state_hex(),
             sim.mapgen_rng.native_state_hex(),
         );
-        let _ = sim.advance_triggers(&rules, Some(&registry), FrameEffects::default());
+        let _ = sim.advance_triggers(&rules, Some(&registry), &mut FrameEffects::default());
         for (index, owner) in houses.iter().enumerate() {
             let house = &sim.houses[owner];
             let wanted = HouseAiActivationLatches {
@@ -107,7 +162,7 @@ fn latches(value: &serde_json::Value) -> HouseAiActivationLatches {
 fn supply_rng(sim: &mut Simulation, states: &serde_json::Value) {
     use crate::sim::rng::SimRng;
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
 }
 
@@ -230,7 +285,7 @@ fn run_native_action(
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(result, number(&row["result"]) != 0, "{context}: AL");
     for (index, owner) in houses.iter().enumerate() {
@@ -449,7 +504,7 @@ fn ai_activation_replays_original_action_to_timer_selector_histories() {
                 &mut sim,
                 &rules,
                 owner,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             assert_eq!(
                 sim.scenario_rng.native_state_hex(),
@@ -569,7 +624,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
     let fixed_ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")
         .unwrap()
         .ini;
-    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, false);
+    let teams = TeamAiIniRegistry::from_sources(&fixed_ai, &map.ini, RulePolicy::stock_campaign());
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(31);
@@ -584,8 +639,8 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
         Some(&map.ini),
     );
     sim.session.install_waypoints(&map.waypoints);
-    sim.install_team_ai_registry(&teams, &rules).unwrap();
-    sim.initialize_trigger_definitions(&map, &teams, None, None);
+    sim.install_team_ai_registry(&teams, &rules);
+    sim.initialize_trigger_definitions(&map, &teams, None, None, None);
     let targets: Vec<_> = retail["target_houses"]
         .as_array()
         .unwrap()
@@ -649,7 +704,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
     }
     assert!(
@@ -668,7 +723,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
         &mut Vec::new(),
         &rules,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert!(
         targets
@@ -703,7 +758,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
         assert_eq!(
             candidate
@@ -762,7 +817,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
         assert!(candidate.team_script_vm.teams_in_order().count() > count);
         let frame = candidate.session.binary_frame() as i32;
@@ -776,7 +831,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
                 candidate,
                 &rules,
                 *id,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             let timer = candidate.houses[id].team_creation().timer();
             assert_eq!(
@@ -835,7 +890,7 @@ fn house_control_action(
         .unwrap()
         .entries()[0]
         .clone();
-    let action = RuntimeDefinitions::default().resolve_action(entry, None, None);
+    let action = RuntimeDefinitions::default().resolve_action(entry, None, None, None);
     sim.apply_live_trigger_action(
         &action,
         TriggerActionContext {
@@ -846,7 +901,7 @@ fn house_control_action(
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -1057,10 +1112,10 @@ fn house_trigger_retail_base_plan_gate_and_anchor_survive_production_snapshot_re
     );
     // The existing early House update consumes the latch even at low IQ;
     // TAction30 itself does not co-enable its three sibling activation bytes.
-    sim.houses
-        .get_mut(&owner)
-        .unwrap()
-        .update_ai_activation(false, i32::MAX);
+    sim.houses.get_mut(&owner).unwrap().update_ai_activation(
+        crate::rules::rule_policy::RulePolicy::stock_campaign(),
+        i32::MAX,
+    );
     assert!(sim.houses[&owner].ai_activation().production);
     assert!(sim.houses[&owner].ai_activation().autocreate_allowed);
     assert!(!sim.houses[&owner].ai_activation().ai_triggers_active);
@@ -1179,7 +1234,7 @@ fn house_trigger_ratio_original_writer_and_due_selector_keep_signed_values_timer
             &mut sim,
             &rules,
             owner,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_rng(&sim, &corpus()["actions"]["rng_full_seed31"], "not yet due");
         sim.session.set_binary_frame_for_test(10);
@@ -1189,7 +1244,7 @@ fn house_trigger_ratio_original_writer_and_due_selector_keep_signed_values_timer
             &mut sim,
             &rules,
             owner,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         // Original seed31: ratio request(1,100)->84 from raw2026076499;
         // admitted weight request(1,100)->22 from raw2287577493. The native
@@ -1297,7 +1352,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
     let main_before = sim.main_rng.native_state_hex();
     let mapgen_before = sim.mapgen_rng.native_state_hex();
     let untouched = save_codec::serialize(&sim.houses[&houses[2]]).unwrap();
-    sim.advance_triggers(&rules, Some(&registry), FrameEffects::default());
+    sim.advance_triggers(&rules, Some(&registry), &mut FrameEffects::default());
     // Original consecutive Read/Execute13/77/78/79, Steam gamemd:
     // 13 selects Country7, while all three ratio actions use incoming House0.
     assert_eq!(
@@ -1348,7 +1403,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
         &mut sim,
         &rules,
         houses[0],
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     // Same original history: only the independent +565C/AITriggersActive
     // gate participates. Draws are (1,100)->84, then weight(1,100)->22;

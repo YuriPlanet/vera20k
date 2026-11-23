@@ -212,8 +212,17 @@ impl From<&AttackerSnapshot> for FireSource {
 /// locomotor's vt+0x24 at `0x006F3DB7`), including the translation of a
 /// rocking hull.
 ///
-/// BuildingClass's override (`0x00453A70`) has no port: neither caller
-/// reaches a building.
+/// BuildingClass's override (`0x00453A70`), which an EMP cannon's Missile
+/// mission launches from (`0x0043EC12`, `0x0044D1F9`), returns before that
+/// body for an occupied building or a `PrimaryFirePixelOffset=` type (the
+/// object coordinate, vt+0xAC, plus the port's or offset's
+/// IsometricPixelToWorld at its Z, `0x00453A9D..0x00453AE7`) and for a
+/// `BarrelAnimIsVoxel=` type (GetTurretDrawPosition, [`barrel_voxel_coordinate`]);
+/// otherwise a `TurretAnimIsVoxel=` type adds the pixel offset of its
+/// `TurretAnimX=`/`TurretAnimY=` to the body's result (`0x00453A12..
+/// 0x00453A4C` in shape). [`FireSource::of_entity`] has no firing port, so an
+/// occupied building takes the unoccupied arms here (no EMP cannon is
+/// occupiable in any retail type).
 pub fn turret_pivot_coordinate(
     world: &Simulation,
     rules: &RuleSet,
@@ -230,13 +239,32 @@ pub fn turret_pivot_coordinate(
                 &source,
                 obj,
                 weapon_index,
-                entity.weapon_burst.index() as u8,
+                entity.seldom.weapon_burst.index() as u8,
                 Flh::default(),
             )
             .coord,
         );
     }
     let base = fire_coordinate_base(world, rules, &source, obj);
+    let building = entity.category() == EntityCategory::Structure;
+    if building {
+        if let Some((px, py)) = building_pixel_offset(base.art, &source) {
+            let (dx, dy) = PixelConversionBounds::isometric_pixel_to_leptons(px, py);
+            return Some(ProjectileCoord::new(
+                base.x.wrapping_add(dx),
+                base.y.wrapping_add(dy),
+                base.z,
+            ));
+        }
+        if obj.barrel_anim_is_voxel {
+            return barrel_voxel_coordinate(world, &source, obj, &base).map(|fire| fire.coord);
+        }
+    }
+    let (voxel_x, voxel_y) = if building && obj.turret_anim_is_voxel {
+        PixelConversionBounds::isometric_pixel_to_leptons(obj.turret_anim_x, obj.turret_anim_y)
+    } else {
+        (0, 0)
+    };
     let offset = base.art.map_or(0, |art| art.turret_offset);
     let delta = if entity.locomotor.is_some() {
         // Authored TurretOffset is not clamped by the ART reader; ftol keeps
@@ -254,8 +282,8 @@ pub fn turret_pivot_coordinate(
         (offset, 0, 0)
     };
     Some(ProjectileCoord::new(
-        base.x.wrapping_add(delta.0),
-        base.y.wrapping_add(delta.1),
+        base.x.wrapping_add(delta.0).wrapping_add(voxel_x),
+        base.y.wrapping_add(delta.1).wrapping_add(voxel_y),
         base.z.wrapping_add(delta.2),
     ))
 }
@@ -281,32 +309,50 @@ pub fn turret_pivot_coordinate(
 /// - A `PrimaryFirePixelOffset` (`+0xE44`): the same pixel conversion added to
 ///   the building coordinate, or added to base GetFLH when
 ///   `PrimaryFireDualOffset=` is set.
+/// - A `BarrelAnimIsVoxel=` (`+0x16C6`) type: the whole coordinate is
+///   `GetTurretDrawPosition @ 0x00453BF0`'s voxel-barrel projection
+///   ([`barrel_voxel_coordinate`], the chain in
+///   [`crate::util::flh_transform::native_building_barrel_world_delta`]);
+///   base `GetFLH` never runs, so no weapon FLH joins the result and the
+///   tail's own `TurretAnimX`/`TurretAnimY` add (`0x00453D08..0x00453D44`)
+///   is the only pixel term.
 /// - Otherwise the base `GetFLH`, plus, for a `TurretAnimIsVoxel=` (`+0x16C5`)
 ///   type, `IsometricPixelToWorld` of its signed `TurretAnimX=`/`TurretAnimY=`
 ///   (`+0x11E0`/`+0x11E4`) on X and Y (`0x00453A12..0x00453A4C`). Stock GTGCAN
 ///   (3,28) and YAGGUN (0,15) take it; their projectile, muzzle animation and
 ///   positioned report sound use the resulting fire coordinate.
 ///
-/// RESIDUAL: the earlier `+0x16C6` arm (`BarrelAnimIsVoxel=`,
-/// `0x004539A1..0x004539DE`, through `GetTurretDrawPosition 0x00453BF0`) is
-/// unported; VERA parses no `+0x16C6` byte at all, so a type or map setting it
-/// diverges silently. Native reaches it only for an unoccupied building with
-/// `PrimaryFirePixelOffset=` unset. The checked stock Battle layers leave
-/// the flag unset. `+0x1764` is
-/// native-established PrimaryFireDualOffset; all callers share the corrected
-/// primary-pixel/selected-FLH path. The beam arms (`0x006FF4CC`/`0x006FD210`,
-/// [`super::laser`], and `electric_bolt`) call this same coordinate owner.
-/// - Trigger: an unoccupied building with `BarrelAnimIsVoxel=` and no
-///   primary pixel offset firing a weapon.
-/// - Effect: VERA uses base FLH instead of GetTurretDrawPosition and may
-///   also add TurretAnimX/Y when TurretAnimIsVoxel is set. Projectile,
-///   muzzle animation, report sound and beam origins can all differ.
-/// - Frequency: authored mods/maps; dormant in the checked stock Battle data.
-/// - Downstream risk: the projectile origin is hashed.
+/// RESIDUALS on the `BarrelAnimIsVoxel` arm, which no retail type arms, so
+/// each reaches modded types only:
+/// - Nothing initializes the type's `+0x1728` chain scale or its
+///   `VoxelBarrelOffsetTo*` triples: the constructor `0x0045DD90` skips
+///   `+0x1718..+0x175F`, `FindOrAllocate @ 0x004653C0` does not zero the
+///   heap block, and no instruction stores the scale. Native fires with
+///   that block's stale content as the scale and as any pivot no rules
+///   layer sets (`Read3Int`'s self-default); VERA uses 0.0 and `(0,0,0)`,
+///   a never-used page's content. The difference moves the projectile's
+///   start coordinate (simulation state), its muzzle animation and report
+///   sound.
+/// - `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754`, read at `0x00464712`) and
+///   the weapon `Burst` that signs it (`0x00453C02..0x00453C67`) feed only
+///   the point VERA's zero scale multiplies away (see the projection fn),
+///   so VERA reads neither; a nonzero stale scale lets them move the native
+///   shot.
+/// - `VoxelBarrelFile=` (`+0x1714`, read at `0x0046467E`) names the barrel
+///   model; nothing on this fire path consumes it — only the unported voxel
+///   loader (`0x0045FCAF`) would — so VERA does not read the key at all.
+/// - `BuildingClass`'s two-argument `GetFLH` variant `0x00453A70` (vtable
+///   `+0x300`, whose barrel arm calls `0x00453BF0` with the raw
+///   `CurrentBurstIndex`) has no port; neither caller reaches a building.
+///
+/// `+0x1764` is native-established PrimaryFireDualOffset; all callers share
+/// the corrected primary-pixel/selected-FLH path. The beam arms
+/// (`0x006FF4CC`/`0x006FD210`, [`super::laser`], and `electric_bolt`) call
+/// this same coordinate owner.
 ///
 /// Executed stock and asymmetric slot/burst controls:
 /// building_prism.json::laser_flh; the voxel-turret arm and its precedence
-/// controls: building_voxel_flh.json.
+/// controls, plus the `BarrelAnimIsVoxel` rows: building_voxel_flh.json.
 ///
 /// A building's base GetFLH is TechnoClass::GetFLH's arm without a locomotor
 /// (`0x006F3C1A`): identity, world-X TurretOffset, then one turn by vt+0x2A8
@@ -339,33 +385,40 @@ pub(crate) fn fire_coordinate(
     let aim_facing16 = base.fire_facing;
     let art = base.art;
 
-    let flh_delta = art
-        .and_then(|art| {
-            // GetFLH6F3B28 calls GetWeapon70E140. Its elite FLH belongs to
-            // the elite weapon record, which is used only when nonnull.
-            let use_elite = usize::try_from(weapon_index).is_ok_and(|index| {
-                super::combat_weapon::uses_elite_weapon(obj, snap.veterancy, index)
-            });
-            // GetFLH6F3AF5..6F3B21 selects AlternateFLH before GetWeapon.
-            let flh = if weapon_index < 0 {
-                art.alternate_fire_flh(
-                    (-i64::from(weapon_index) - 1) as usize,
-                    obj.turret_count,
-                    obj.weapon_count,
-                )
-            } else {
-                art.weapon_flh(obj.turret_count, obj.weapon_count, weapon_index, use_elite)
-            };
-            let flh = Flh {
-                forward: flh.forward.wrapping_add(base_coords.forward),
-                lateral: flh.lateral.wrapping_add(base_coords.lateral),
-                height: flh.height.wrapping_add(base_coords.height),
-            };
-            flh_world_delta(art, flh, base.facings, burst_index, base.locomotor_basis)
-        })
-        .unwrap_or((0, 0, 0));
+    // GetFLH6F3B28 reads virtual GetWeapon's complete record, including an
+    // installed upgrade's normal FLH (Building4526F0), at this query point.
+    let flh = if weapon_index < 0 {
+        obj.alternate_fire_flh((-i64::from(weapon_index) - 1) as usize)
+    } else {
+        let record = if let Some(entity) = world.substrate.entities.get(snap.stable_id) {
+            super::combat_weapon::get_weapon_record(
+                entity,
+                obj,
+                weapon_index,
+                &world.substrate.entities,
+                rules,
+                &world.interner,
+            )
+        } else {
+            super::combat_weapon::weapon_for_index(obj, snap.veterancy, weapon_index)
+        };
+        record.map_or_else(Flh::default, |record| record.flh)
+    };
+    let flh = Flh {
+        forward: flh.forward.wrapping_add(base_coords.forward),
+        lateral: flh.lateral.wrapping_add(base_coords.lateral),
+        height: flh.height.wrapping_add(base_coords.height),
+    };
+    let flh_delta = flh_world_delta(
+        art.map_or(0, |art| art.turret_offset),
+        flh,
+        base.facings,
+        burst_index,
+        base.locomotor_basis,
+    )
+    .unwrap_or((0, 0, 0));
     if snap.category == EntityCategory::Structure
-        && let Some((px, py)) = art.and_then(|art| building_pixel_offset(art, snap))
+        && let Some((px, py)) = building_pixel_offset(art, snap)
     {
         let (dx, dy) = PixelConversionBounds::isometric_pixel_to_leptons(px, py);
         // Building4538ED..45395A: PrimaryFireDualOffset+1764 adds the
@@ -391,14 +444,28 @@ pub(crate) fn fire_coordinate(
         };
     }
 
+    // Building4539A1..4539DE: `BarrelAnimIsVoxel=` (`+0x16C6`) replaces the
+    // whole coordinate with GetTurretDrawPosition 0x453BF0 and returns before
+    // the voxel-turret term; base GetFLH never runs on this path. Native
+    // reaches it only for an unoccupied building with `PrimaryFirePixelOffset=`
+    // unset, which is exactly `building_pixel_offset` answering None (an
+    // occupied building keeps its muzzle-port arm above). The checked stock
+    // Battle layers leave the flag unset.
+    if snap.category == EntityCategory::Structure
+        && building_pixel_offset(art, snap).is_none()
+        && obj.barrel_anim_is_voxel
+        && let Some(fire) = barrel_voxel_coordinate(world, snap, obj, &base)
+    {
+        return fire;
+    }
+
     // Building453A12..453A4C: `TurretAnimIsVoxel=` (`+0x16C5`) adds
     // `IsometricPixelToWorld` of the type's signed `+0x11E0`/`+0x11E4` to the
     // base `GetFLH` coordinate. The conversion is world-axis, after GetFLH's
     // own rotation. Occupied buildings with ART and primary-pixel types
-    // return above. Without ART, an occupied building retains its zero-port
-    // fallback and must not enter this arm either. The unported `+0x16C6`
-    // (BarrelAnimIsVoxel) arm would return first; the checked stock Battle
-    // layers leave that flag unset.
+    // return above, and an armed `BarrelAnimIsVoxel` type returned before
+    // this block. Without ART, an occupied building retains its zero-port
+    // fallback and must not enter this arm either.
     let (voxel_x, voxel_y) = if snap.category == EntityCategory::Structure
         && snap.garrison_fire_index.is_none()
         && obj.turret_anim_is_voxel
@@ -582,7 +649,7 @@ fn fire_coordinate_base<'r>(
                 ));
             }
             use crate::map::voxel_pose::{VxlSlopeBlend, ground_locomotor_matrix};
-            use crate::sim::movement::slope_transition::{SlopeRenderPhase, state_for_entity};
+            use crate::sim::movement::slope_transition::{SlopeRenderPhase, phase_for_entity};
             if !matches!(
                 kind,
                 LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover
@@ -604,7 +671,7 @@ fn fire_coordinate_base<'r>(
                     None,
                 )
             } else {
-                match state_for_entity(entity).map(|state| state.render_phase(binary_frame)) {
+                match phase_for_entity(entity, binary_frame) {
                     Some(SlopeRenderPhase::Stable(slope)) => (slope, None),
                     Some(SlopeRenderPhase::Transition {
                         from_slope,
@@ -632,7 +699,7 @@ fn fire_coordinate_base<'r>(
             ))
         });
     let (flh_facing16, fire_facing) = if snap.category == EntityCategory::Structure {
-        building_fire_facings(world, snap, obj, art, aim_facing16)
+        building_fire_facings(world, rules, snap, obj, art, aim_facing16)
     } else {
         (aim_facing16, aim_facing16)
     };
@@ -669,8 +736,8 @@ pub fn firer_art<'r>(rules: &'r RuleSet, obj: &ObjectType) -> Option<&'r ArtEntr
 /// (vt+0x308, `0x0044D7D0`), which picks the 8-way muzzle anim
 /// (`0x006FF2E5`) and heads a `ROT=` or dropping bullet (`0x006FE950`).
 /// - vt+0x2A8: `current` for a building with a turret (HasTurret, vt+0x3FC
-///   `0x004527D0`: `Turret=`, or an upgrade's, dormant with no retail
-///   `PowersUpBuilding=`) or without a TarCom; otherwise the direction
+///   `0x004527D0`: host or installed upgrade) or without a TarCom; otherwise
+///   the direction
 ///   between the two GetCoords.
 /// - vt+0x308: without a TarCom, `current` rounded to 1/256 turn; with a
 ///   turret that is not `TurretAnimIsVoxel=` (`+0x16C5`), rounded to 1/32;
@@ -679,15 +746,15 @@ pub fn firer_art<'r>(rules: &'r RuleSet, obj: &ObjectType) -> Option<&'r ArtEntr
 /// A TarCom no longer stored reads as none: native detaches it.
 fn building_fire_facings(
     world: &Simulation,
+    rules: &RuleSet,
     snap: &FireSource,
     obj: &ObjectType,
     art: Option<&ArtEntry>,
     current: u16,
 ) -> (u16, u16) {
     let entities = &world.substrate.entities;
-    let origin = entities
-        .get(snap.stable_id)
-        .map(|building| coords_xy(super::target_coords(building)));
+    let building = entities.get(snap.stable_id);
+    let origin = building.map(|entity| coords_xy(super::target_coords(entity)));
     let target = snap
         .tar_com
         .and_then(|target| super::resolve_target_coords(&target, world));
@@ -695,7 +762,11 @@ fn building_fire_facings(
         // `0x0044D7F4..0x0044D7FF`: `((current >> 7) + 1) >> 1` as the high byte.
         return (current, u16::from(round_facing16_to_8(current)) << 8);
     };
-    if obj.has_turret {
+    if building.is_some_and(|entity| {
+        entity
+            .building_upgrades()
+            .has_turret(obj, rules, &world.interner)
+    }) {
         // `0x0044D83A..0x0044D844`.
         let fire = if obj.turret_anim_is_voxel {
             facing16_between(aim_origin(origin, obj, art), target)
@@ -770,7 +841,7 @@ fn coords_xy(
 /// `TechnoClass::GetFLH @ 0x006F3AD0`'s transform of one FLH triple about
 /// the object's turret offset.
 fn flh_world_delta(
-    art: &ArtEntry,
+    turret_offset: i32,
     flh: crate::rules::flh::Flh,
     facings: crate::util::flh_transform::FlhFacings,
     burst_index: u8,
@@ -780,7 +851,7 @@ fn flh_world_delta(
         flh.forward,
         flh.lateral,
         flh.height,
-        art.turret_offset,
+        turret_offset,
         facings,
         burst_index,
         locomotor_basis,
@@ -804,10 +875,10 @@ fn open_topped_port_coordinate(
 ) -> Option<FireCoordinate> {
     let entities = &world.substrate.entities;
     let rider = entities.get(snap.stable_id)?;
-    let transport_id = rider.passenger_role.open_transport_id()?;
+    let transport_id = rider.passenger_role().open_transport_id()?;
     let transport = entities.get(transport_id)?;
     let port = transport
-        .passenger_role
+        .passenger_role()
         .cargo()?
         .passengers()
         .iter()
@@ -815,14 +886,16 @@ fn open_topped_port_coordinate(
     let transport_obj = world.interner.object_type(transport.type_ref(), rules)?;
     let source = FireSource::of_entity(transport);
     let base = fire_coordinate_base(world, rules, &source, transport_obj);
-    let flh = base.art.map_or_else(Default::default, |art| {
-        art.alternate_fire_flh(port, transport_obj.turret_count, transport_obj.weapon_count)
-    });
-    let burst_index = (transport.weapon_burst.index() & 1) as u8;
-    let delta = base
-        .art
-        .and_then(|art| flh_world_delta(art, flh, base.facings, burst_index, base.locomotor_basis))
-        .unwrap_or((0, 0, 0));
+    let flh = transport_obj.alternate_fire_flh(port);
+    let burst_index = (transport.seldom.weapon_burst.index() & 1) as u8;
+    let delta = flh_world_delta(
+        base.art.map_or(0, |art| art.turret_offset),
+        flh,
+        base.facings,
+        burst_index,
+        base.locomotor_basis,
+    )
+    .unwrap_or((0, 0, 0));
     let rider_aim = fire_coordinate_base(
         world,
         rules,
@@ -840,18 +913,72 @@ fn open_topped_port_coordinate(
 }
 
 /// The art pixel offset a building's shot leaves from, if it has one.
-fn building_pixel_offset(art: &ArtEntry, snap: &FireSource) -> Option<(i32, i32)> {
+fn building_pixel_offset(art: Option<&ArtEntry>, snap: &FireSource) -> Option<(i32, i32)> {
     if let Some(fire_index) = snap.garrison_fire_index {
+        // BuildingClass::GetFLH453849..4538C2 returns the stored muzzle
+        // port before TechnoClass's weapon coordinate. Missing metadata
+        // supplies the existing zero-port fallback, never a weapon FLH.
         return Some(
-            art.muzzle_flash_positions
-                .get(usize::try_from(fire_index).ok()?)
-                .copied()
+            usize::try_from(fire_index)
+                .ok()
+                .and_then(|index| art?.muzzle_flash_positions.get(index).copied())
                 .unwrap_or((0, 0)),
         );
     }
     // Original4538D1 tests only +E44 even for weapon1; the prior secondary
     // offset and pixel-X mirror here had no native counterpart.
-    primary_fire_pixel_offset(Some(art))
+    primary_fire_pixel_offset(art)
+}
+
+/// `BuildingClass::GetFLH @ 0x00453840`'s `BarrelAnimIsVoxel=` arm
+/// (`0x004539A1..0x004539DE`): the whole coordinate is
+/// `GetTurretDrawPosition @ 0x00453BF0`, reached only for an unoccupied
+/// building with both `PrimaryFirePixelOffset=` words unset (the caller
+/// gates on [`building_pixel_offset`] answering `None`).
+///
+/// The projection adds, to the object coordinate (`vtable+0xAC`), the type's
+/// `VoxelBarrelOffsetTo*` pivot translation
+/// ([`crate::util::flh_transform::native_building_barrel_world_delta`]) plus
+/// `IsometricPixelToWorld` of the type's `TurretAnimX=`/`TurretAnimY=`
+/// (`0x00453D08..0x00453D44`) — the tail's own add, unconditional on this
+/// path. Native also fetches the weapon (`0x00453C02`) and signs a
+/// burst-selected barrel end (`0x00453C1A..0x00453C67`), but VERA's zero
+/// chain scale (a [`fire_coordinate`] residual) multiplies that point away,
+/// so neither moves the shot. No weapon FLH joins the result; the
+/// coordinate and its `ZAdjust` input `offset_y` follow the other arms'
+/// shape.
+fn barrel_voxel_coordinate(
+    world: &Simulation,
+    snap: &FireSource,
+    obj: &ObjectType,
+    base: &FireBase,
+) -> Option<FireCoordinate> {
+    // Native reads a live building's `+0x370` barrel elevation; the
+    // synthetic unstored sources of the shared fixtures keep the base arms.
+    let entity = world.substrate.entities.get(snap.stable_id)?;
+    let frame = world.session.binary_frame();
+    // 0x00453C98..0x00453CDD: the chain and its truncations. The steps stay
+    // inside the trig table for every facing, so `None` is unreachable.
+    let (delta_x, delta_y, delta_z) =
+        crate::util::flh_transform::native_building_barrel_world_delta(
+            obj.barrel_voxel.building_pivot,
+            obj.barrel_voxel.rotate_pivot,
+            obj.barrel_voxel.pitch_pivot,
+            snap.hull_facing.current(frame),
+            entity.barrel_elevation().current(frame),
+        )?;
+    let (voxel_x, voxel_y) =
+        PixelConversionBounds::isometric_pixel_to_leptons(obj.turret_anim_x, obj.turret_anim_y);
+    Some(FireCoordinate {
+        coord: ProjectileCoord::new(
+            base.x.wrapping_add(delta_x).wrapping_add(voxel_x),
+            base.y.wrapping_add(delta_y).wrapping_add(voxel_y),
+            base.z.wrapping_add(delta_z),
+        ),
+        source_z: base.z,
+        aim_facing16: base.fire_facing,
+        offset_y: delta_y.wrapping_add(voxel_y),
+    })
 }
 
 /// The muzzle animation type a shot constructs.
@@ -865,27 +992,53 @@ fn building_pixel_offset(art: &ArtEntry, snap: &FireSource) -> Option<(i32, i32)
 /// building's state, not a record of which weapon was chosen, so VERA keys it
 /// on the building being occupied.
 ///
+/// RA2 has no `OccupantAnim=` field at all (it is a YR addition): the retail
+/// garrison weapons carry their flash in `Anim=`, e.g. `AlliedOccupyW` and
+/// `SovietOccupyW` both use `Anim=UCFLASH`. Under `-ra2` an occupied building
+/// therefore keeps the ordinary `Anim=` ladder instead of being told to play
+/// a null override.
+///
 /// When nothing is picked and the firer rides an open-topped transport
 /// (`+0x82`), the weapon's `OpenToppedAnim=` (`+0x118`) plays instead
 /// (`0x006FF32F..0x006FF347`); stock gives it to PsychicJab and Virusgun.
+///
+/// Under Ares, 3.0 `TechnoClass_Fire_Facings` (hook `0x006FF2D1`, Ares.dll
+/// `0x10047CF0`, resuming at `0x006FF31B`) replaces the facing pick: a list of
+/// eight or more anims picks entry [`ares_facing_bucket`] of the fire facing
+/// (nothing when that is past the end, which only a list of 65,536 can
+/// reach); a shorter non-empty list picks its first entry. The occupant and open-topped steps still follow.
+///
+/// [`ares_facing_bucket`]: crate::util::direction_tables::ares_facing_bucket
+///
+/// RESIDUAL: the facing pick takes its facing from vt+0x308
+/// (`0x006FF2E5`), which for an aircraft is its SecondaryFacing (`+0x3A0`,
+/// `0x0041A570`); `aim_facing16` carries an aircraft's body facing. No retail
+/// aircraft weapon has `Anim=`.
 pub(crate) fn muzzle_anim_name(
     weapon: &crate::rules::weapon_type::WeaponType,
     aim_facing16: u16,
     occupied_fire: bool,
     in_open_transport: bool,
+    ares: bool,
+    ra2: bool,
 ) -> Option<&str> {
-    let picked = if occupied_fire {
+    use crate::util::direction_tables::{ares_facing_bucket, muzzle_anim_index_8way};
+    let picked = if occupied_fire && !ra2 {
         weapon.occupant_anim.as_deref()
     } else {
-        match weapon.anim.len() {
-            0 => None,
-            8 => {
-                let index =
-                    crate::util::direction_tables::quantize::muzzle_anim_index_8way(aim_facing16);
-                weapon.anim.get(usize::from(index)).map(String::as_str)
-            }
-            _ => weapon.anim.first().map(String::as_str),
-        }
+        let count = weapon.anim.len();
+        let index = if ares {
+            usize::try_from(ares_facing_bucket(
+                u32::try_from(count).unwrap_or(u32::MAX),
+                aim_facing16,
+            ))
+            .unwrap_or(usize::MAX)
+        } else if count == 8 {
+            usize::from(muzzle_anim_index_8way(aim_facing16))
+        } else {
+            0
+        };
+        weapon.anim.get(index).map(String::as_str)
     };
     picked.or_else(|| {
         in_open_transport
@@ -909,7 +1062,7 @@ pub fn building_muzzle_z_adjust(offset_y: i32, occupied: bool) -> i32 {
 /// `0x006FF41D`: `MOV [anim+0x100], 0xFFFFFF38`.
 const OCCUPIED_MUZZLE_Z_ADJUST: i32 = -200;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::rules::art_data::ArtRegistry;
@@ -917,9 +1070,11 @@ mod tests {
     use crate::util::fixed_math::SimFixed;
 
     fn rules() -> RuleSet {
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n[AircraftTypes]\n\
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n[AircraftTypes]\n\
              [BuildingTypes]\n0=BUNK\n1=TOWER\n\
+             [Animations]\n0=F0\n1=F1\n2=F2\n3=F3\n4=F4\n5=F5\n6=F6\n7=F7\n8=GUNFIRE\n9=SPARE\n\
              [E1]\nStrength=125\nImage=GI\nPrimary=M60\nSecondary=ONE\n\
              [INIT]\nStrength=125\nPrimary=JAB\n\
              [BUNK]\nStrength=500\nCanBeOccupied=yes\n\
@@ -930,8 +1085,14 @@ mod tests {
              [BARE]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\n\
              [JAB]\nDamage=25\nROF=20\nRange=5\nWarhead=SA\nOpenToppedAnim=GUNFIRE\n\
              [SA]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        ))
-        .expect("rules");
+            ),
+            &IniFile::from_str(
+                "[GI]\nPrimaryFireFLH=0,0,105\nSecondaryFireFLH=0,0,90\n\
+             [BUNK]\nMuzzleFlash0=30,15\nMuzzleFlash1=-30,15\n\
+             [TOWER]\nPrimaryFirePixelOffset=30,15\nPrimaryFireDualOffset=yes\n",
+            ),
+        )
+        .unwrap();
         rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
             "[GI]\nPrimaryFireFLH=0,0,105\nSecondaryFireFLH=0,0,90\n\
              [BUNK]\nMuzzleFlash0=30,15\nMuzzleFlash1=-30,15\n\
@@ -1057,15 +1218,18 @@ mod tests {
             for (key, value) in row["art"].as_object().unwrap() {
                 text.push_str(&format!("{key}={}\n", value.as_str().unwrap()));
             }
-            let art = ArtRegistry::from_ini(&IniFile::from_str(&text));
-            let entry = art.get("FV").unwrap();
+            let ini = IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=FV\n[FV]\nTurretCount={}\nWeaponCount={}\n",
+                row["turret_count"].as_i64().unwrap(),
+                row["weapon_count"].as_i64().unwrap(),
+            ));
+            let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+                .process_with_fixed_art(&IniFile::from_str(&text))
+                .unwrap();
+            let rules = RuleSet::from_processed_rules(&processed).unwrap();
+            let object = rules.object("FV").unwrap();
             for (elite, expected) in [(false, "normal"), (true, "elite")] {
-                let flh = entry.weapon_flh(
-                    row["turret_count"].as_i64().unwrap() as i32,
-                    row["weapon_count"].as_i64().unwrap() as i32,
-                    row["index"].as_i64().unwrap() as i32,
-                    elite,
-                );
+                let flh = object.weapon_flh(row["index"].as_i64().unwrap() as i32, elite);
                 let xyz = [flh.forward, flh.lateral, flh.height];
                 let original =
                     std::array::from_fn::<_, 3, _>(|i| row[expected][i].as_i64().unwrap() as i32);
@@ -1226,7 +1390,7 @@ mod tests {
             let obj = rules.object("DISK").unwrap();
             assert_eq!(obj.has_turret, input["has_turret"].as_bool().unwrap());
             assert_eq!(
-                rules.art().get("DISK").unwrap().primary_fire_flh,
+                rules.object("DISK").unwrap().weapon_flh(0, false),
                 Flh::from(triple(&input["primary_flh"]))
             );
             let before = world.state_hash();
@@ -1278,10 +1442,16 @@ mod tests {
 
     #[test]
     fn numbered_weapon_index_and_elite_weapon_binding_reach_fire_coordinate() {
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=FV\n[FV]\nTurretCount=4\nWeaponCount=3\n\
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[VehicleTypes]\n0=FV\n[FV]\nTurretCount=4\nWeaponCount=3\n\
              Weapon1=W\nWeapon3=W\nEliteWeapon3=WE\n[W]\nDamage=1\n[WE]\nDamage=2\n",
-        ))
+            ),
+            &IniFile::from_str(
+                "[FV]\nWeapon1FLH=0,0,3\nWeapon3FLH=0,0,6\n\
+             EliteWeapon1FLH=0,0,99\nEliteWeapon3FLH=0,0,9\n",
+            ),
+        )
         .unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(
             "[FV]\nWeapon1FLH=0,0,3\nWeapon3FLH=0,0,6\n\
@@ -1311,6 +1481,65 @@ mod tests {
                 .z,
             Z + 3
         );
+    }
+
+    fn layered_firing_offset_rules(map: &str) -> RuleSet {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=TEST\n[TEST]\nImage=OLD\nTurretCount=2\nWeaponCount=1\nWeapon1=W\n[W]\nDamage=1\n",
+        ));
+        layers.push(RulesLayerKind::Scenario, IniFile::from_str(map));
+        let art = IniFile::from_str("[OLD]\nVoxel=yes\nWeapon1FLH=0,0,73\n[NEW]\nVoxel=yes\n");
+        let mut rules =
+            RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap()).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        rules
+    }
+
+    #[test]
+    fn image_change_keeps_the_previously_read_weapon_firing_offset() {
+        // TechnoType::ReadINI712170:715B76 supplies the stored coordinate as
+        // ReadCoord3's default after ObjectType5F92F8 changes Image.
+        let retained = layered_firing_offset_rules("[TEST]\nImage=NEW\n");
+        let unchanged = layered_firing_offset_rules("[TEST]\n");
+        let world = Simulation::new();
+        let source = source(EntityCategory::Unit);
+        let shot = |rules: &RuleSet| {
+            fire_coordinate(
+                &world,
+                rules,
+                &source,
+                rules.object("TEST").unwrap(),
+                0,
+                0,
+                Flh::default(),
+            )
+        };
+        assert_eq!(shot(&retained), shot(&unchanged));
+        assert_eq!(shot(&retained).coord.z, Z + 73);
+    }
+
+    #[test]
+    fn reducing_weapon_count_keeps_the_skipped_firing_offset() {
+        //715B27 jumps over numbered coordinate writes at count0; GetFLH
+        //6F3B28 still reads the retained WeaponStruct at the supplied index.
+        let retained = layered_firing_offset_rules("[TEST]\nWeaponCount=0\n");
+        let unchanged = layered_firing_offset_rules("[TEST]\n");
+        let world = Simulation::new();
+        let source = source(EntityCategory::Unit);
+        let shot = |rules: &RuleSet| {
+            fire_coordinate(
+                &world,
+                rules,
+                &source,
+                rules.object("TEST").unwrap(),
+                0,
+                0,
+                Flh::default(),
+            )
+        };
+        assert_eq!(shot(&retained), shot(&unchanged));
+        assert_eq!(shot(&retained).coord.z, Z + 73);
     }
 
     /// The source Z is the stored firer's actual height, not its level byte.
@@ -1364,33 +1593,109 @@ mod tests {
         let eight = rules.weapon("M60").unwrap();
         // `(dir8 + 1) & 7`: facing north picks entry 1, and the last octant
         // wraps to entry 0.
-        assert_eq!(muzzle_anim_name(eight, 0x0000, false, false), Some("F1"));
-        assert_eq!(muzzle_anim_name(eight, 0x4000, false, false), Some("F3"));
-        assert_eq!(muzzle_anim_name(eight, 0xE000, false, false), Some("F0"));
+        assert_eq!(
+            muzzle_anim_name(eight, 0x0000, false, false, false, false),
+            Some("F1")
+        );
+        assert_eq!(
+            muzzle_anim_name(eight, 0x4000, false, false, false, false),
+            Some("F3")
+        );
+        assert_eq!(
+            muzzle_anim_name(eight, 0xE000, false, false, false, false),
+            Some("F0")
+        );
         // An occupied building's shot takes `OccupantAnim=` instead.
         assert_eq!(
-            muzzle_anim_name(eight, 0x4000, true, false),
+            muzzle_anim_name(eight, 0x4000, true, false, false, false),
             Some("UCFLASH")
         );
         // Any other list length: the first entry, whatever the facing.
         let one = rules.weapon("ONE").unwrap();
-        assert_eq!(muzzle_anim_name(one, 0x4000, false, false), Some("GUNFIRE"));
-        // `OccupantAnim=` replaces the pick even when it is absent.
-        assert_eq!(muzzle_anim_name(one, 0x4000, true, false), None);
         assert_eq!(
-            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, false),
+            muzzle_anim_name(one, 0x4000, false, false, false, false),
+            Some("GUNFIRE")
+        );
+        // `OccupantAnim=` replaces the pick even when it is absent.
+        assert_eq!(
+            muzzle_anim_name(one, 0x4000, true, false, false, false),
+            None
+        );
+        assert_eq!(
+            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, false, false, false),
             None
         );
         // From an open-topped transport, `OpenToppedAnim=` fills only an
         // empty pick.
         let jab = rules.weapon("JAB").unwrap();
-        assert_eq!(muzzle_anim_name(jab, 0, false, true), Some("GUNFIRE"));
-        assert_eq!(muzzle_anim_name(jab, 0, false, false), None);
-        assert_eq!(muzzle_anim_name(eight, 0x4000, false, true), Some("F3"));
         assert_eq!(
-            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, true),
+            muzzle_anim_name(jab, 0, false, true, false, false),
+            Some("GUNFIRE")
+        );
+        assert_eq!(muzzle_anim_name(jab, 0, false, false, false, false), None);
+        assert_eq!(
+            muzzle_anim_name(eight, 0x4000, false, true, false, false),
+            Some("F3")
+        );
+        assert_eq!(
+            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, true, false, false),
             None
         );
+    }
+
+    /// Retail RA2 garrison weapons have `Anim=UCFLASH` but no `OccupantAnim=`.
+    /// The YR-only null override used to swallow their flash entirely, which
+    /// is why a garrisoned building dealt damage and played its Report sound
+    /// but showed no muzzle animation.
+    #[test]
+    fn ra2_occupied_building_keeps_the_weapons_own_anim() {
+        let rules = rules();
+        let one = rules.weapon("ONE").unwrap();
+        let m60 = rules.weapon("M60").unwrap();
+
+        // Baseline: YR still honours the (possibly null) OccupantAnim override.
+        assert_eq!(
+            muzzle_anim_name(one, 0x4000, true, false, false, false),
+            None
+        );
+        assert_eq!(
+            muzzle_anim_name(m60, 0x4000, true, false, false, false),
+            Some("UCFLASH")
+        );
+
+        assert_eq!(
+            muzzle_anim_name(one, 0x4000, true, false, false, true),
+            Some("GUNFIRE"),
+            "RA2 has no OccupantAnim, so the weapon's Anim must play"
+        );
+        assert_eq!(
+            muzzle_anim_name(m60, 0x4000, true, false, false, true),
+            Some("F3"),
+            "RA2 keeps the ordinary facing-picked Anim ladder"
+        );
+    }
+
+    #[test]
+    fn ares_picks_a_muzzle_anim_from_any_list_of_eight_or_more() {
+        let mut weapon = rules().weapon("M60").unwrap().clone();
+        weapon.anim = (0..16).map(|i| format!("A{i}")).collect();
+        // `TechnoClass_Fire_Facings` (Ares.dll `0x10047CF0`): sixteen anims
+        // take the sixteen-way bucket of `facing + 0x2000`; stock takes the
+        // first entry.
+        fn pick(
+            weapon: &crate::rules::weapon_type::WeaponType,
+            facing: u16,
+            ares: bool,
+        ) -> Option<&str> {
+            muzzle_anim_name(weapon, facing, false, false, ares, false)
+        }
+        assert_eq!(pick(&weapon, 0x0000, true), Some("A2"));
+        assert_eq!(pick(&weapon, 0xF000, true), Some("A1"));
+        assert_eq!(pick(&weapon, 0x0000, false), Some("A0"));
+        // Nine anims bucket eight ways.
+        weapon.anim.truncate(9);
+        assert_eq!(pick(&weapon, 0x4000, true), Some("A3"));
+        assert_eq!(pick(&weapon, 0x4000, false), Some("A0"));
     }
 
     #[test]
@@ -1406,15 +1711,15 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "fire_coord_building_tests.rs"]
 mod building_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "fire_coord_hover_tests.rs"]
 mod hover_tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod control_link_port_tests {
     use super::*;
     use crate::rules::art_data::ArtRegistry;
@@ -1458,7 +1763,7 @@ mod control_link_port_tests {
                     0,
                     4,
                     &rules,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             let actor = sim.substrate.entities.get_mut(id).unwrap();

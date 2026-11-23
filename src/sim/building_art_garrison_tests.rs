@@ -69,6 +69,8 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
         })
         .collect();
     rules.install_art_data(art);
+    // Slot 9's record belongs to the rules type, not to art.
+    rules.set_turret_anim_names_for_test("B", "OLD", "OLD");
     let (mut sim, _, id) = slot_test_fixture();
     for slot in input["live_slots"].as_array().unwrap() {
         let slot = integer(slot) as u8;
@@ -81,6 +83,13 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
             .unwrap()
             .runtime_mut_for_test()
             .current_frame = i32::from(slot) + 1;
+    }
+    if let Some(variants) = input["slot_names"].get("9") {
+        rules.set_turret_anim_names_for_test(
+            "B",
+            variants["normal"].as_str().unwrap(),
+            variants["damaged"].as_str().unwrap(),
+        );
     }
     let entry = rules.art_entry_mut_for_test("B").unwrap();
     for (slot, variants) in input["slot_names"].as_object().unwrap() {
@@ -118,13 +127,13 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
         );
         occupant.set_type_ref_for_test(sim.interner.intern("E1"));
         occupant.set_owner_for_test(sim.interner.intern("A"));
-        occupant.passenger_role = PassengerRole::inside_for_test(id, false);
+        occupant.set_passenger_role_for_test(PassengerRole::inside_for_test(id, false));
         sim.substrate.entities.insert(occupant);
         occupants.push(occupant_id);
     }
     let building = sim.substrate.entities.get_mut(id).unwrap();
     building
-        .passenger_role
+        .passenger_role_mut_for_test()
         .occupants_mut()
         .set_ids_for_test(occupants);
     building.health.set_for_test(integer(&input["current_hp"]));

@@ -136,8 +136,7 @@ fn accepted_direct_and_regular_orders_keep_signed_rules_delays_and_retry_word() 
                                 1,
                                 Some(crate::sim::components::NavTargetRef::cell(10, 8)),
                                 &rules,
-                                None,
-                                crate::sim::world::FrameEffects::default(),
+                                &mut crate::sim::world::FrameEffects::default(),
                             )
                             .unwrap();
                         }

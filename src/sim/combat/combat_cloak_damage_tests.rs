@@ -21,6 +21,7 @@
 //! Dolphin is the trigger for (2).
 
 use super::*;
+use crate::map::houses::HouseAllianceMap;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::cloak_disguise::CloakRuntime;
 use crate::sim::game_entity::GameEntity;
@@ -32,6 +33,7 @@ fn dolphin_rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
         "[General]\nCloakingStages=9\n\
          [AudioVisual]\nCloakSound=NavalUnitEmerge\n\
+         [Warheads]\n0=SonicWH\n1=AllyBlindWH\n2=NoDecloakWH\n\
          [VehicleTypes]\n0=DLPH\n1=DEST\n\
          [DLPH]\nStrength=600\nArmor=none\nSpeed=4\nCloakable=yes\nCloakingSpeed=1\n\
          TypeImmune=yes\nPrimary=SonicZap\n\
@@ -40,6 +42,8 @@ fn dolphin_rules() -> RuleSet {
          [SonicZap]\nDamage=40\nROF=20\nRange=8\nWarhead=SonicWH\n\
          [AllyBlindZap]\nDamage=40\nROF=20\nRange=8\nWarhead=AllyBlindWH\n\
          [SonicWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [NoDecloakWH]\nDecloakDamagedTargets=no\n\
+         Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [AllyBlindWH]\nAffectsAllies=no\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
@@ -66,7 +70,7 @@ fn store(attacker_type: &str, attacker_owner: &str) -> EntityStore {
     let mut victim = live(GameEntity::test_default(2, "DLPH", "Soviet", 11, 10));
     let mut cloak = CloakRuntime::new(0);
     cloak.establish_unlimbo_fully_cloaked();
-    victim.cloak = Some(cloak);
+    victim.cloak = Some(Box::new(cloak));
     store.insert(victim);
     store
 }
@@ -184,4 +188,40 @@ fn a_hit_on_an_already_dead_cloaked_dolphin_never_reaches_the_uncloak() {
         "no CloakSound: {:?}",
         landed.sounds
     );
+}
+
+/// Phobos `TechnoClass_ReceiveDamage_Decloak @ 0x00702819`: the warhead's
+/// `DecloakDamagedTargets` value replaces the retail unconditional
+/// `StartUncloaking(0)`.
+#[cfg(feature = "phobos")]
+#[test]
+fn phobos_decloak_damaged_targets_no_keeps_a_surviving_cloaked_victim_hidden() {
+    let rules = dolphin_rules();
+    let mut entities = store("DEST", "Americans");
+    entities
+        .get_mut(2)
+        .expect("victim present")
+        .health
+        .set_for_test(600);
+
+    let hidden = hit(
+        &mut entities,
+        &rules,
+        "NoDecloakWH",
+        &HouseAllianceMap::new(),
+    );
+    assert_eq!(hidden.victim_hp, 560);
+    assert_eq!(hidden.cloak_state, 2, "the key suppresses StartUncloaking");
+    assert!(
+        cloak_sounds(&hidden.sounds).is_empty(),
+        "no CloakSound: {:?}",
+        hidden.sounds
+    );
+
+    let surfaced = hit(&mut entities, &rules, "SonicWH", &HouseAllianceMap::new());
+    assert_eq!(
+        surfaced.cloak_state, 3,
+        "the default warhead still starts uncloaking"
+    );
+    assert_eq!(cloak_sounds(&surfaced.sounds).len(), 1);
 }

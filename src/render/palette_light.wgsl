@@ -1,5 +1,8 @@
 // Shared native palette conversion: 00556090 -> 007DE200 (active MMX565),
 // row LUT 00420140. Sources and executable oracle are cited in palette_light.rs.
+// Source colours here are encoded: the palette's bytes over 255. Tile, palette
+// row and voxel palette textures are Rgba8Unorm, so they read that way; RGBA
+// pages are sRGB and call srgb_encode once, where they are read.
 fn srgb_encode(c: vec3f) -> vec3f {
     return select(1.055 * pow(max(c, vec3f(0.0)), vec3f(1.0 / 2.4)) - 0.055,
                   c * 12.92, c <= vec3f(0.0031308));
@@ -8,8 +11,8 @@ fn srgb_decode(c: vec3f) -> vec3f {
     return select(pow((c + 0.055) / 1.055, vec3f(2.4)), c / 12.92,
                   c <= vec3f(0.04045));
 }
-fn palette_light(rgb_linear: vec3f, tint: vec3f) -> vec3f {
-    return srgb_decode(clamp(srgb_encode(rgb_linear) * tint, vec3f(0.0), vec3f(1.0)));
+fn palette_light(encoded: vec3f, tint: vec3f) -> vec3f {
+    return srgb_decode(clamp(encoded * tint, vec3f(0.0), vec3f(1.0)));
 }
 fn native_palette_word(rgb: vec3u, index: u32, light: vec4u, a: u32) -> u32 {
     if index == 0u { return 0u; }
@@ -18,7 +21,9 @@ fn native_palette_word(rgb: vec3u, index: u32, light: vec4u, a: u32) -> u32 {
     let q = min((min(brightness, 2000u) * 261u) >> 11u, 254u);
     let row = min(a * q * (n - 1u) / 32258u, n - 1u);
     var scale = light.xyz & vec3u(0x3ffffu);
-    if n > 1u { scale = scale * (2u * row) / (n - 1u); }
+    // scale * 2 * row / (n - 1), where n is 27 or 53 (`PaletteLight`). A constant
+    // divisor lets shader compilers multiply instead of dividing per channel.
+    if n > 1u { scale = ((scale * row) >> vec3u(n >> 5u)) / 13u; }
     if light.y >> 31u != 0u && index >= 240u && index <= 254u {
         let d = min(max(i32(n * 30u / 200u) - 1, 0), i32((n - 1u) / 2u));
         var neutral = 65536u;
@@ -36,22 +41,30 @@ fn native_colour_word(word: u32, index: u32, light: vec4u) -> u32 {
     return word | (((light.x >> 18u) & 31u) << 11u) | (((light.y >> 18u) & 63u) << 5u)
         | ((light.z >> 18u) & 31u);
 }
-fn resolve_palette(rgb_linear: vec3f, tint: vec3f, light: vec4u, index: u32, a: u32) -> vec3f {
+// The RGB565 word a native palette draw (`light` rows nonzero) stores.
+fn native_light_word(encoded: vec3f, light: vec4u, index: u32, a: u32) -> u32 {
+    let rgb = vec3u(round(clamp(encoded, vec3f(0.0), vec3f(1.0)) * 255.0));
+    // 493E52/494BDD/4991F4 read A only after source-hole/Z admission. A=0
+    // still stores palette row zero; N1 and special indices keep their rules.
+    let word = native_palette_word(rgb, index, light, a);
+    return native_colour_word(word, index, light);
+}
+// The linear colour whose encoding is what the retail surface presents for an
+// RGB565 word. `shader_source` decodes these tables once.
+fn retail_linear(word: u32) -> vec3f {
+    let five = RETAIL_FIVE_LINEAR;
+    return vec3f(five[(word >> 11u) & 31u], RETAIL_SIX_LINEAR[(word >> 5u) & 63u],
+                 five[word & 31u]);
+}
+fn resolve_palette(encoded: vec3f, tint: vec3f, light: vec4u, index: u32, a: u32) -> vec3f {
     if light.x >> 24u == 0u {
         // Precomposed RGBA, alpha and FX lack native palette/packed-composition
         // metadata. Retain their compatibility source shading, now at the
         // source store rather than multiplying previously drawn surface lines.
         // Surface/UI bindings supply neutral A. This is not native alpha parity.
-        return palette_light(rgb_linear, tint) * (f32(a) / 127.0);
+        return palette_light(encoded, tint) * (f32(a) / 127.0);
     }
-    let rgb = vec3u(round(clamp(srgb_encode(rgb_linear), vec3f(0.0), vec3f(1.0)) * 255.0));
-    // 493E52/494BDD/4991F4 read A only after source-hole/Z admission. A=0
-    // still stores palette row zero; N1 and special indices keep their rules.
-    var word = native_palette_word(rgb, index, light, a);
-    word = native_colour_word(word, index, light);
-    let encoded = vec3f(f32(RETAIL_FIVE[(word >> 11u) & 31u]),
-                        f32(RETAIL_SIX[(word >> 5u) & 63u]), f32(RETAIL_FIVE[word & 31u])) / 255.0;
-    return srgb_decode(encoded);
+    return retail_linear(native_light_word(encoded, light, index, a));
 }
 
 // This increment owns opaque, unmodified source pixels. Packed native alpha
