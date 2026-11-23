@@ -169,6 +169,19 @@ pub(crate) enum CampaignOutcomeRoute {
     DefeatPrompt,
 }
 
+/// Whether the match's end shows its score page.
+///
+/// One owner for the decision. `[Basic] SkipScore` is the map's own switch
+/// (`Scenario+0x34AE`, read by `ScenarioClass::Read_INI_Basic` 0x00689E90,
+/// false in a fresh Scenario at `Set_Defaults` 0x0068387B), and
+/// [`crate::map::basic::BasicSection::skips_score`] owns its value and that
+/// default. Native tests the byte in `GameExit::Victory` (0x00685670) for
+/// the campaign victory's dialog `0x103`; the abort path's own page honours
+/// the same map switch, so both ends of a match read it here.
+pub(crate) fn shows_score_page(basic: &crate::map::basic::BasicSection) -> bool {
+    !basic.skips_score()
+}
+
 pub(crate) fn campaign_outcome_route(
     mode: super::session::SessionMode,
     outcome: crate::sim::house_state::HouseOutcomeKind,
@@ -512,6 +525,35 @@ mod tests {
         assert_eq!(
             done.after_cleanup,
             Some(ScenarioExitAudioAction::PlayTheme("MYLOSE".to_owned()))
+        );
+    }
+
+    /// One owner for the decision: the map's own switch decides the score
+    /// page, so the campaign victory's route and the abort path cannot read
+    /// it differently.
+    #[test]
+    fn the_map_switch_decides_the_score_page_for_both_ends() {
+        use crate::app::match_runtime::session::SessionMode;
+        use crate::sim::house_state::HouseOutcomeKind::Victory;
+
+        let skips = crate::map::basic::BasicSection {
+            skip_score: Some(true),
+            ..Default::default()
+        };
+        let shows = crate::map::basic::BasicSection {
+            skip_score: Some(false),
+            ..Default::default()
+        };
+        assert!(!shows_score_page(&skips));
+        assert!(shows_score_page(&shows));
+        // The campaign victory follows the same switch.
+        assert_eq!(
+            campaign_outcome_route(SessionMode::Campaign, Victory, skips.skips_score()),
+            Some(CampaignOutcomeRoute::VictoryContinue)
+        );
+        assert_eq!(
+            campaign_outcome_route(SessionMode::Campaign, Victory, shows.skips_score()),
+            Some(CampaignOutcomeRoute::VictoryScore)
         );
     }
 

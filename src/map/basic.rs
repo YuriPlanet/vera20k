@@ -97,6 +97,9 @@ pub struct BasicSection {
     /// `0x0068A1BD..0x0068A1D5`; a fresh Scenario defaults this byte to false
     /// (`Set_Defaults` `0x0068387B`). Campaign Victory uses it to bypass only
     /// the standalone score dialog `0x103`.
+    ///
+    /// The raw read; [`BasicSection::skips_score`] owns the flag's meaning
+    /// and its default.
     pub skip_score: Option<bool>,
     /// Scenario+0x34AC (`0x0068A11A`): a won mission ends the campaign.
     pub end_of_game: Option<bool>,
@@ -116,6 +119,18 @@ pub struct BasicSection {
 }
 
 impl BasicSection {
+    /// Whether the map skips the score page.
+    ///
+    /// `[Basic] SkipScore` is the map's own switch: `ScenarioClass::
+    /// Read_INI_Basic` (0x00689E90) reads it at 0x0068A1BD..0x0068A1D5
+    /// into `Scenario+0x34AE`, and a fresh Scenario clears that byte
+    /// (`Set_Defaults` 0x0068387B), so a map that does not set the key
+    /// shows the score page. This is the one owner of the flag: the ends of
+    /// a match ask here instead of re-deriving the default.
+    pub fn skips_score(&self) -> bool {
+        self.skip_score.unwrap_or(false)
+    }
+
     /// gamemd.exe ScenarioClass::Read_INI_Basic @0x00689E90,
     /// 689FC0..689FF4 reads Next/Alt with their current buffers as defaults. ClearScene685237 -> SetDefaults
     /// preserves them; only the constructor683407/68340A clears them.
@@ -507,8 +522,12 @@ mod tests {
         assert_eq!(basic.new_ini_format, Some(4));
     }
 
+    /// `[Basic] SkipScore` is the map's own switch. The raw read keeps the
+    /// key's presence; the owner applies the fresh Scenario's default
+    /// (false, `Set_Defaults` 0x0068387B), so the score page shows unless
+    /// the map says otherwise.
     #[test]
-    fn campaign_skip_score_is_optional_basic_reader_input() {
+    fn campaign_skip_score_is_the_map_switch_with_the_fresh_scenario_default() {
         assert_eq!(
             parse_basic_section(&IniFile::from_str("[Basic]\nSkipScore=yes\n")).skip_score,
             Some(true)
@@ -520,6 +539,17 @@ mod tests {
         assert_eq!(
             parse_basic_section(&IniFile::from_str("[Basic]\n")).skip_score,
             None
+        );
+        assert!(
+            parse_basic_section(&IniFile::from_str("[Basic]\nSkipScore=yes\n")).skips_score()
+        );
+        assert!(
+            !parse_basic_section(&IniFile::from_str("[Basic]\nSkipScore=no\n")).skips_score()
+        );
+        assert!(!parse_basic_section(&IniFile::from_str("[Basic]\n")).skips_score());
+        // ReadBool returns its default for a value it cannot read.
+        assert!(
+            !parse_basic_section(&IniFile::from_str("[Basic]\nSkipScore=maybe\n")).skips_score()
         );
     }
 
