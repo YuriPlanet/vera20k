@@ -3045,34 +3045,14 @@ impl LanCapture {
                     before.enabled && !before.checked && !before.partner,
                     "peer Allies box {before:?}"
                 );
-                let point = set_window_pointer_to_rect_center(
-                    state,
-                    layout.control_rect(DiplomacyControl::Allies(1)),
-                );
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                for edge in [
-                    winit::event::ElementState::Pressed,
-                    winit::event::ElementState::Released,
-                ] {
-                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-                }
+                let point = click_in_game(state, layout.control_rect(DiplomacyControl::Allies(1)));
                 ensure!(
                     row(state) == Some(before),
                     "the box changed before the event executed"
                 );
                 // The open dialog runs network-modal frames, which hold the
                 // queued event; Return lets it execute.
-                let back = set_window_pointer_to_rect_center(
-                    state,
-                    layout.control_rect(DiplomacyControl::Return),
-                );
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                for edge in [
-                    winit::event::ElementState::Pressed,
-                    winit::event::ElementState::Released,
-                ] {
-                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-                }
+                let back = click_in_game(state, layout.control_rect(DiplomacyControl::Return));
                 self.route
                     .push(json!({"frame":frame,"action":"Allies box pressed, Return",
                     "point":point,"return":back}));
@@ -3171,17 +3151,6 @@ impl LanCapture {
                 .map(|message| message.text.clone())
                 .collect()
         };
-        let click = |state: &mut AppState, rect: RectPx| {
-            let point = set_window_pointer_to_rect_center(state, rect);
-            crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-            for edge in [
-                winit::event::ElementState::Pressed,
-                winit::event::ElementState::Released,
-            ] {
-                crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-            }
-            point
-        };
         match step {
             0 => {
                 let color = state
@@ -3212,12 +3181,12 @@ impl LanCapture {
                         .map(|chat| chat.checked)
                 };
                 ensure!(checked(state) == Some(true), "peer chat box not checked");
-                let point = click(state, layout.control_rect(DiplomacyControl::Chat(1)));
+                let point = click_in_game(state, layout.control_rect(DiplomacyControl::Chat(1)));
                 ensure!(
                     checked(state) == Some(false),
                     "the chat box click left it checked"
                 );
-                click(state, layout.control_rect(DiplomacyControl::Return));
+                click_in_game(state, layout.control_rect(DiplomacyControl::Return));
                 self.route
                     .push(json!({"frame":frame,"action":"peer chat box cleared","point":point}));
                 self.phase = LanPhase::Chat(2);
@@ -3394,29 +3363,14 @@ impl LanCapture {
                     "TauntsOn is not shown checked"
                 );
                 let layout = diplomacy::layout(state).context("0x73 has no hit geometry")?;
-                let click = |state: &mut AppState, rect: RectPx| {
-                    let point = set_window_pointer_to_rect_center(state, rect);
-                    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                    for edge in [
-                        winit::event::ElementState::Pressed,
-                        winit::event::ElementState::Released,
-                    ] {
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            MouseButton::Left,
-                            edge,
-                        );
-                    }
-                    point
-                };
                 // A press on the caption is outside the 18x18 icon.
                 let rect = layout.control_rect(DiplomacyControl::Taunts);
-                click(state, RectPx::new(rect.x + 40, rect.y, rect.w - 40, rect.h));
+                click_in_game(state, RectPx::new(rect.x + 40, rect.y, rect.w - 40, rect.h));
                 ensure!(
                     diplomacy::view(state).taunts == Some(true),
                     "a caption press toggled TauntsOn"
                 );
-                let point = click(
+                let point = click_in_game(
                     state,
                     crate::ui::skirmish_shell::checkbox_icon_rect(
                         rect,

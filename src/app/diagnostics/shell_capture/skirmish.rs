@@ -1637,24 +1637,6 @@ impl SkirmishCapture {
         Ok(())
     }
 
-    /// A press and release at `rect`'s centre through the in-game window
-    /// handler's pointer path.
-    fn click_in_game(
-        state: &mut AppState,
-        route: &mut Vec<Value>,
-        rect: crate::ui::shell::geom::RectPx,
-        step: &str,
-        frame: u32,
-    ) {
-        use winit::event::{ElementState, MouseButton};
-        let point = super::movies::set_window_pointer_to_rect_center(state, rect);
-        crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-        for edge in [ElementState::Pressed, ElementState::Released] {
-            crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-        }
-        route.push(json!({"frame": frame, "action": step, "dialog": 0xb5, "point": point}));
-    }
-
     /// Once B5 (or B6) has presented, open the target's dialog through its
     /// button, then rest the pointer at the neutral point through an ordinary
     /// move so no control keeps the hover; later frames count the settled
@@ -1692,7 +1674,10 @@ impl SkirmishCapture {
                     .page_column()
                     .first()
                     .context("B5 shows no Options button")?;
-                Self::click_in_game(state, &mut self.route, rect, "Options", frame);
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Options", "dialog": 0xb5, "point": point}),
+                );
                 ensure!(
                     state
                         .match_state
@@ -1708,7 +1693,10 @@ impl SkirmishCapture {
                     .context("Game Controls has no loaded page geometry")?
                     .button_rect(LauncherButton::InGameSound)
                     .context("Game Controls shows no Sound button")?;
-                Self::click_in_game(state, &mut self.route, rect, "Sound", frame);
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Sound", "dialog": 0xb5, "point": point}),
+                );
             }
             InGameMenuTarget::Keyboard => {
                 // The sidebar row under Options, or the page's own button
@@ -1721,7 +1709,10 @@ impl SkirmishCapture {
                         .and_then(|layout| layout.button_rect(LauncherButton::InGameKeyboard))
                         .context("B5 shows no Keyboard button")?,
                 };
-                Self::click_in_game(state, &mut self.route, rect, "Keyboard", frame);
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Keyboard", "dialog": 0xb5, "point": point}),
+                );
             }
         }
         ensure!(

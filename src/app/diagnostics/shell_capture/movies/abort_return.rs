@@ -217,15 +217,7 @@ impl AbortReturnInput {
                                 .page_column()
                                 .get(row)
                                 .with_context(|| format!("FF has no {step} button"))?;
-                            let point = set_window_pointer_to_rect_center(state, rect);
-                            crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                            for button_state in [ElementState::Pressed, ElementState::Released] {
-                                crate::app::input::dispatch::handle_mouse_input(
-                                    state,
-                                    MouseButton::Left,
-                                    button_state,
-                                );
-                            }
+                            let point = click_in_game(state, rect);
                             layout = crate::app::input::pause_menu::current_layout(state)
                                 .context("FF has no loaded hit geometry")?;
                             route.push(json!({"frame": frame, "action": step,
@@ -246,18 +238,7 @@ impl AbortReturnInput {
                             1,
                             1,
                         );
-                        let point = set_window_pointer_to_rect_center(state, target);
-                        crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            MouseButton::Left,
-                            ElementState::Pressed,
-                        );
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            MouseButton::Left,
-                            ElementState::Released,
-                        );
+                        let point = click_in_game(state, target);
                         let pause = state.match_state.match_presentation.internet_pause;
                         ensure!(
                             pause.positions[InternetSlider::Speed as usize] == 6,
@@ -274,13 +255,7 @@ impl AbortReturnInput {
                 let rect = layout
                     .button(press)
                     .with_context(|| format!("the in-game menu has no {press:?}"))?;
-                let point = set_window_pointer_to_rect_center(state, rect);
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    MouseButton::Left,
-                    ElementState::Pressed,
-                );
+                let point = press_in_game(state, rect);
                 ensure!(
                     crate::app::input::pause_menu::button_states(state)[press as usize].pressed,
                     "physical {press:?} press missed its loaded control"
@@ -350,13 +325,7 @@ impl AbortReturnInput {
                 let rect = layout
                     .button(choice)
                     .with_context(|| format!("B6 does not show {choice:?}"))?;
-                let point = set_window_pointer_to_rect_center(state, rect);
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    MouseButton::Left,
-                    ElementState::Pressed,
-                );
+                let point = press_in_game(state, rect);
                 ensure!(
                     crate::app::input::dialog_page::pressed(
                         &state.match_state.match_presentation.dialog_ui,
@@ -385,13 +354,7 @@ impl AbortReturnInput {
                     self.phase = AbortInputPhase::Queued;
                     return Ok(true);
                 }
-                let point = set_window_pointer_to_rect_center(state, layout.button(0));
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    MouseButton::Left,
-                    ElementState::Pressed,
-                );
+                let point = press_in_game(state, layout.button(0));
                 ensure!(
                     crate::app::input::surrender::pressed(
                         state,

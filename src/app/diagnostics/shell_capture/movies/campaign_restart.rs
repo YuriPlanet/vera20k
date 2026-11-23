@@ -693,18 +693,7 @@ impl RestartCapture {
                     let rect = layout
                         .button(crate::ui::shell::pause_menu::PauseMenuButton::Resume)
                         .context("B5 Resume")?;
-                    let point = set_window_pointer_to_rect_center(state, rect);
-                    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                    for edge in [
-                        winit::event::ElementState::Pressed,
-                        winit::event::ElementState::Released,
-                    ] {
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            winit::event::MouseButton::Left,
-                            edge,
-                        );
-                    }
+                    let point = click_in_game(state, rect);
                     ensure!(
                         !state.match_state.match_presentation.in_game_menu.is_open(),
                         "Resume did not close B5"
