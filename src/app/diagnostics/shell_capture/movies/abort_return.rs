@@ -47,7 +47,7 @@ enum AbortInputPhase {
     SurrenderOkPressed,
     Queued,
 }
-pub(super) struct AbortReturnInput {
+pub(in super::super) struct AbortReturnInput {
     phase: AbortInputPhase,
     /// The B6 button to press, or none to stop once B6 has presented.
     choice: Option<AbortButton>,
@@ -78,7 +78,7 @@ impl AbortReturnInput {
     }
 
     /// Open the in-game menu and stop there.
-    pub(super) fn begin_menu(
+    pub(in super::super) fn begin_menu(
         state: &mut AppState,
         route: &mut Vec<Value>,
         frame: u32,
@@ -88,7 +88,7 @@ impl AbortReturnInput {
         Ok(input)
     }
 
-    pub(super) fn begin_choosing(
+    pub(in super::super) fn begin_choosing(
         state: &mut AppState,
         route: &mut Vec<Value>,
         frame: u32,
@@ -165,7 +165,7 @@ impl AbortReturnInput {
             surrender: None,
         })
     }
-    pub(super) fn after_present(
+    pub(in super::super) fn after_present(
         &mut self,
         state: &mut AppState,
         route: &mut Vec<Value>,

@@ -9,7 +9,7 @@ use crate::app::shell_route::ShellRoute;
 use crate::ui::campaign_shell::CampaignSide;
 use serde_json::{Value, json};
 
-mod abort_return;
+pub(super) mod abort_return;
 mod campaign_restart;
 pub(super) use campaign_restart::RestartTarget;
 mod lan;
@@ -403,7 +403,7 @@ impl MoviesCapture {
         Ok(())
     }
 
-    fn restore_neutral_pointer(state: &mut AppState) {
+    pub(super) fn restore_neutral_pointer(state: &mut AppState) {
         let config = &state.renderer.gpu.config;
         // A scaled window (VERA's room's capture) rests it at its centre.
         let (x, y) = match (config.width, config.height) {
@@ -2079,7 +2079,7 @@ fn check_loaded_sidebar_buttons(state: &mut AppState) -> Result<()> {
 
 /// Same physical-window to retained-render coordinates as CursorMoved in the
 /// window handler. The existing hit owner maps them back to its loaded pixels.
-fn set_window_pointer_to_rect_center(
+pub(super) fn set_window_pointer_to_rect_center(
     state: &mut AppState,
     rect: crate::ui::shell::geom::RectPx,
 ) -> [i32; 2] {
