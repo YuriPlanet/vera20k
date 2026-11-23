@@ -50,7 +50,8 @@ its bridge cells convert with no fixed deck. The `6d6caa108` writer's layout
 `0xCADF6067` predates a map House's Ares `Degrades=`; its Houses convert with
 none and keep their country's answer. The `ffe8b25af` writer's layout
 `0xD6C75D57` predates the Firestorm ice chain; its worlds convert with no ice.
-The `93ab2ce86` writer covers direct loading of layout `0xAFC7F643`.
+The `93ab2ce86` writer's layout `0xAFC7F643` predates the pending terrain
+dent; it converts with none pending.
 
 Run the menu and compatibility tests with this command.
 

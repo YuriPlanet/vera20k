@@ -180,6 +180,7 @@ impl Simulation {
                 digest(|h| {
                     self.dynamic_terrain_cells.hash_simulation(h);
                     self.hash_ice_cracks(h);
+                    self.hash_terrain_dent(h);
                 }),
             ),
             (
@@ -409,6 +410,7 @@ impl Simulation {
         b"dynamic-terrain-cells-v2".hash(hasher);
         self.dynamic_terrain_cells.hash_simulation(hasher);
         self.hash_ice_cracks(hasher);
+        self.hash_terrain_dent(hasher);
         if let Some(terrain) = &self.resolved_terrain {
             terrain.hash_burrowing_permissions(hasher);
         }

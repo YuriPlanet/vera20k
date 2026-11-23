@@ -332,6 +332,11 @@ impl Simulation {
                     }
                 }
             }
+            // Firestorm's meteor craters (Firestorm 2.0 0x65E58D), VERA's
+            // terrain deformation.
+            if !above {
+                self.dig_meteor_craters(impact, rules, effects);
+            }
             //74A303..572: ore in the eight neighbours of the impact cell,
             // AdjacentCell89F688 order, never the impact cell itself; each
             // looked up through GetCell5657A0.

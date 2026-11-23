@@ -3696,14 +3696,15 @@ fn continue_area_damage(
             world.spawn_particle_in_system(system, position, position, rules);
         }
     }
-    // VERA terrain deformation: Tiberian Sun rolled its crater after the
-    // Explodes branch.
+    // VERA terrain deformation: Firestorm rolled its dent after the Explodes
+    // branch (Firestorm 2.0 0x46006B).
     world.roll_terrain_deformation(
         rules,
         context.warhead,
         context.impact,
         context.cell,
         context.damage,
+        run.effects(),
     );
     //48A437..48A479 follows both the bridge and Explodes branches. WH.Particle
     //uses the outer sourceHouse and also constructs one immediate child.
