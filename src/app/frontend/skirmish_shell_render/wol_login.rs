@@ -7,22 +7,21 @@
 
 use vera20k_gui::NodeKind;
 
-use super::gui_paint::{self, EditFace, GuiPaint, GuiStyle, HostRows};
+use super::gui_paint::{self, ButtonArt, EditFace, GuiPaint, GuiStyle, HostRows};
 use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
-use super::SHELL_LABEL_TEXT_RGB;
 use crate::app::AppState;
 use crate::render::shell_paint;
-use crate::render::shell_text;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::geom::{ShellAlign, ShellScale};
+use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::modal::{WolAccountFormLayout, WolEntryChoiceLayout};
 use crate::ui::wol_account::{
     FIRST_CAPTION, FORM_CANCEL, FORM_OK, FORM_STATUS, POPUP, WolAccountForm,
 };
 use crate::ui::wol_login::{
-    CAPTIONS_TEXT, COUNTS_TEXT, DIALOG, HEADING_TEXT, LABEL_KEYS, LABELS, LoginPolicy, NICKNAME,
-    NICKNAME_DROP, PLAY_AS_GUEST, SIGN_IN_AND_PLAY, STATUS_TEXT, WolLoginLayout, WolLoginState,
+    CAPTIONS_TEXT, CHOICE_BOX, CHOICE_COUNT, CHOICE_HEADING, COUNTS_TEXT, DIALOG, HEADING_TEXT,
+    LABEL_KEYS, LABELS, LoginPolicy, NICKNAME, NICKNAME_DROP, PLAY_AS_GUEST, SIGN_IN_AND_PLAY,
+    STATUS_TEXT, WolLoginLayout, WolLoginState,
 };
 
 /// `0x10F`'s widgets and the statics whose text the page keeps; gamemd's
@@ -109,10 +108,11 @@ pub(crate) fn paint_wol_login_children(
 
 /// VERA online's entry chooser over the login page: Create Room's Red Alert 2
 /// picture of the Tesla Trooper (the mode-2 box picture without that art),
-/// the welcome and the lobby's player count centred on it in larger shadowed
-/// text, and its two MNBTTN buttons. A button shows MNBTTN's lit frame while
-/// the pointer is over it, else while it holds the keyboard focus; the gui's
-/// nodes own the press, hover and focus.
+/// then its box's widgets: the welcome and the lobby's player count centred
+/// in larger shadowed text, and its two MNBTTN buttons. A button shows
+/// MNBTTN's lit frame while the pointer is over it, else while it holds the
+/// keyboard focus; the gui's nodes own the press, hover and focus. All of it
+/// paints in the popup lanes.
 fn paint_entry_choice(
     state: &AppState,
     ui: &DialogController,
@@ -121,7 +121,6 @@ fn paint_entry_choice(
     scale: ShellScale,
 ) -> GuiPaint {
     let mut paint = GuiPaint::default();
-    let font = &state.renderer.bit_font;
     let label = |key: &str| state.csf_text(key);
     let background = atlas
         .ra2_dialog_background
@@ -142,81 +141,45 @@ fn paint_entry_choice(
             POPUP_DEPTHS.background,
         ),
     }
-    let centre = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
-    let count = state
-        .frontend
-        .login_info
-        .players_online()
-        .map_or_else(|| "—".to_owned(), |count| count.to_string());
-    for (value, rect, size) in [
-        (label("VERA:OnlineWelcome"), choice.heading, 1.4),
-        (
-            crate::i18n::fill(&label("VERA:PlayersOnline"), &[("count", &count)]),
-            choice.players_online,
-            1.25,
-        ),
-    ] {
-        let glyph_scale = scale.factor() * size;
-        let fit = font.fit_line(&value, (rect.w as f32 / glyph_scale).max(1.0) as u32);
-        let shadow = scale.derive_rect(rect, |r| r.translate(1, 1));
-        font.fitted(fit, |font| {
-            for (bounds, rgb, depth) in [
-                (shadow, [0.0; 3], POPUP_DEPTHS.button),
-                (rect, SHELL_LABEL_TEXT_RGB, POPUP_DEPTHS.text),
-            ] {
-                paint.popup_texts.push(shell_text::draw_in_rect_scaled(
-                    font,
-                    &value,
-                    shell_text::TextRect::of(bounds),
-                    rgb,
-                    centre,
-                    [0.0; 2],
-                    depth,
-                    glyph_scale,
-                ));
-            }
-        });
-    }
+    let Some(chooser) = ui.control(DIALOG, CHOICE_BOX) else {
+        return paint;
+    };
     let gui = ui.gui();
-    let root = ui.root_in(DIALOG);
-    let held = root.and_then(|root| crate::ui::shell::page::held_in(gui, root));
     let id_of = |node| gui.id_of(node).and_then(|id| u16::try_from(id).ok());
     let lit = ui
         .hovered_node_in(DIALOG)
         .and_then(id_of)
         .filter(|id| matches!(*id, PLAY_AS_GUEST | SIGN_IN_AND_PLAY))
         .or_else(|| gui.focused_control().and_then(id_of));
-    for (id, key, rect) in [
-        (PLAY_AS_GUEST, "VERA:PlayAsGuest", choice.guest),
-        (SIGN_IN_AND_PLAY, "VERA:SignInAndPlay", choice.account),
-    ] {
-        let pressed = held.is_some() && held == ui.control(DIALOG, id);
-        let mut frames = super::type3_button_frames(atlas);
-        if lit == Some(id) {
-            frames.up = atlas.modal_button_mnbttn_frame2.or(frames.up);
+    let lit_of = |id: i32| lit.is_some_and(|lit| i32::from(lit) == id);
+    let text_of = |id: i32| match u16::try_from(id).ok()? {
+        CHOICE_HEADING => Some(label("VERA:OnlineWelcome")),
+        CHOICE_COUNT => {
+            let count = state
+                .frontend
+                .login_info
+                .players_online()
+                .map_or_else(|| "—".to_owned(), |count| count.to_string());
+            Some(crate::i18n::fill(&label("VERA:PlayersOnline"), &[("count", &count)]))
         }
-        if let Some(face) = frames.select(pressed, true) {
-            super::chrome::push_entry(&mut paint.popup, face, rect, POPUP_DEPTHS.button);
-        }
-        let caption = scale.derive_rect(rect, |r| {
-            crate::app::frontend::shell_pass::owner_draw_button_label_rect(r, pressed)
-        });
-        let value = label(key);
-        let face_width = (scale.base_rect(caption).w - 12).max(1) as u32;
-        let fit = font.fit_line(&value, face_width);
-        paint.popup_texts.push(font.fitted(fit, |font| {
-            shell_text::draw_in_rect_scaled(
-                font,
-                &value,
-                shell_text::TextRect::of(caption),
-                SHELL_LABEL_TEXT_RGB,
-                centre,
-                [0.0; 2],
-                POPUP_DEPTHS.text,
-                scale.factor(),
-            )
-        }));
-    }
+        _ => None,
+    };
+    let glyph_of = |id: i32| match u16::try_from(id).ok()? {
+        CHOICE_HEADING => Some(1.4),
+        CHOICE_COUNT => Some(1.25),
+        _ => None,
+    };
+    let style = GuiStyle {
+        buttons: ButtonArt::ModalLit,
+        text_of: Some(&text_of),
+        lit_of: Some(&lit_of),
+        glyph_of: Some(&glyph_of),
+        shadowed_texts: true,
+        ..Default::default()
+    };
+    let widgets = gui_paint::paint_gui_styled(state, gui, chooser, scale, &[], style);
+    paint.popup.extend(widgets.controls);
+    paint.popup_texts.extend(widgets.texts);
     paint
 }
 

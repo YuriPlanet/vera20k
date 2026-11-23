@@ -152,6 +152,12 @@ pub(crate) enum ButtonArt {
     /// pushed look: a button that keeps a button's presses and events but
     /// shows as a box (Ares' Urban Areas, whose caption is its own static).
     CheckboxFace,
+    /// MNBTTN's face stretched over the rect, pushed under the pointer as
+    /// [`Self::Modal`]'s, its lit frame while [`GuiStyle::lit_of`] says;
+    /// the caption centred in the owner-draw label rect grown with the
+    /// page, squeezed to fit the face less 12 base pixels (VERA online's
+    /// entry chooser).
+    ModalLit,
 }
 
 impl ButtonArt {
@@ -166,7 +172,8 @@ impl ButtonArt {
             | ButtonArt::ModalType2
             | ButtonArt::PanelType2
             | ButtonArt::Side
-            | ButtonArt::Image => held,
+            | ButtonArt::Image
+            | ButtonArt::ModalLit => held,
             _ => captured,
         }
     }
@@ -429,6 +436,15 @@ pub(crate) struct GuiStyle<'a> {
     /// right edge (rows wrapped narrower than the list, such as hanging
     /// lines under a bullet).
     pub(crate) indent_of: Option<&'a dyn Fn(i32, usize) -> Option<i32>>,
+    /// A [`ButtonArt::ModalLit`] button shows MNBTTN's lit frame by its
+    /// `Id` (the host's word: under the pointer, else holding the focus).
+    pub(crate) lit_of: Option<&'a dyn Fn(i32) -> bool>,
+    /// A text's glyph size by its `Id`, a multiple of the page's scale, in
+    /// place of the style's: squeezed to fit its rect's width.
+    pub(crate) glyph_of: Option<&'a dyn Fn(i32) -> Option<f32>>,
+    /// The texts [`Self::glyph_of`] sizes draw over a black copy of
+    /// themselves one base pixel down and right.
+    pub(crate) shadowed_texts: bool,
 }
 
 impl Default for GuiStyle<'_> {
@@ -466,6 +482,9 @@ impl Default for GuiStyle<'_> {
             empty_of: None,
             solid_lists: false,
             indent_of: None,
+            lit_of: None,
+            glyph_of: None,
+            shadowed_texts: false,
         }
     }
 }
@@ -812,6 +831,49 @@ pub(crate) fn paint_gui_into(
                             let out = &mut paint.controls;
                             push_picture(out, atlas, picture, rect, pressed, scale);
                         }
+                        continue;
+                    }
+                    (ButtonArt::ModalLit, Some(atlas)) => {
+                        let lit = style
+                            .lit_of
+                            .zip(id(node))
+                            .is_some_and(|(lit_of, id)| lit_of(id));
+                        let mut frames = super::type3_button_frames(atlas);
+                        if lit {
+                            frames.up = atlas.modal_button_mnbttn_frame2.or(frames.up);
+                        }
+                        if let Some(face) = frames.select(pressed, true) {
+                            super::chrome::push_entry(
+                                &mut paint.controls,
+                                face,
+                                rect,
+                                SHELL_CONTROL_DEPTH,
+                            );
+                        }
+                        let Some(label) = caption(node).filter(|t| !covered && !t.is_empty())
+                        else {
+                            continue;
+                        };
+                        let at = scale.derive_rect(rect, |r| {
+                            crate::app::frontend::shell_pass::owner_draw_button_label_rect(
+                                r, pressed,
+                            )
+                        });
+                        let face_width = (scale.base_rect(at).w - 12).max(1) as u32;
+                        let rgb = text_rgb(gui, node, true, style.rgb, None);
+                        let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+                        paint.texts.push(font.fitted(font.fit_line(&label, face_width), |font| {
+                            shell_text::draw_in_rect_scaled(
+                                font,
+                                &label,
+                                rect_to_text_rect(at),
+                                rgb,
+                                centred,
+                                [0.0; 2],
+                                depth,
+                                scale.factor(),
+                            )
+                        }));
                         continue;
                     }
                     (ButtonArt::CheckboxFace, Some(_)) => {
@@ -1228,6 +1290,34 @@ pub(crate) fn paint_gui_into(
                     scale,
                 );
                 paint.texts.extend(hint);
+            }
+            // A text the host sizes: squeezed to its rect's width at that
+            // size, over its shadow when the style shadows them.
+            NodeKind::Text if style.glyph_of.zip(id(node)).is_some_and(|(f, id)| f(id).is_some()) => {
+                let size = style.glyph_of.zip(id(node)).and_then(|(f, id)| f(id));
+                let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) else {
+                    continue;
+                };
+                let sized = glyph * size.unwrap_or(1.0);
+                let fit = font.fit_line(&label, (rect.w as f32 / sized).max(1.0) as u32);
+                let rgb = text_rgb(gui, node, enabled, style.rgb, None);
+                let shadow = style
+                    .shadowed_texts
+                    .then(|| (scale.derive_rect(rect, |r| r.translate(1, 1)), [0.0; 3]));
+                font.fitted(fit, |font| {
+                    for (at, rgb) in shadow.into_iter().chain([(rect, rgb)]) {
+                        paint.texts.push(shell_text::draw_in_rect_scaled(
+                            font,
+                            &label,
+                            rect_to_text_rect(at),
+                            rgb,
+                            align,
+                            [0.0; 2],
+                            depth,
+                            sized,
+                        ));
+                    }
+                });
             }
             NodeKind::Text => {
                 if let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) {
