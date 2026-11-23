@@ -180,6 +180,7 @@ where
             map.as_deref(),
             mod_switch.as_ref(),
             ares,
+            None,
         )?;
         println!("{}", serde_json::to_string(&report)?);
         Ok(0)

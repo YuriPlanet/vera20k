@@ -240,15 +240,20 @@ pub(crate) fn load_process_sources(
     media_archive_mode: MediaArchiveMode,
     active_mod: Option<crate::app::mods::ActiveMod>,
     ares_setting: crate::util::ares_launch::AresSetting,
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
     load_audio_index: bool,
 ) -> Result<(
     ProcessAssets,
     Option<crate::rules::ruleset::RuleSet>,
     Option<crate::rules::ini_parser::IniFile>,
 )> {
-    let (resources, ares_setting) =
-        crate::app::mods::resources_for(active_mod.as_ref(), &config.ini, ares_setting)
-            .map_err(anyhow::Error::msg)?;
+    let (resources, ares_setting, kratos_setting) = crate::app::mods::resources_for(
+        active_mod.as_ref(),
+        &config.ini,
+        ares_setting,
+        kratos_setting,
+    )
+    .map_err(anyhow::Error::msg)?;
     let mut assets = AssetManager::with_mod_and_ares(
         &config.paths.ra2_dir,
         resources.mod_folder.as_deref(),
@@ -258,11 +263,13 @@ pub(crate) fn load_process_sources(
     )
     .and_then(|assets| assets.with_resource_config(&resources))
     .context("could not load the game archives")?;
+    assets.set_kratos_setting(kratos_setting);
     let mut process = ProcessAssets::new(media_archive_mode, load_audio_index)
         .with_resources(resources)
         .with_mod_name(active_mod.map(|active| active.folder))
         .with_personal_rules(personal_rules)
-        .with_ares_setting(ares_setting);
+        .with_ares_setting(ares_setting)
+        .with_kratos_setting(kratos_setting);
     // Startup reads this game's INIs as its launch does
     // (`rules::ares_switch::ares_way`); a caller that plays the game says so
     // after (`AssetManager::open_for_play`).
@@ -288,6 +295,7 @@ pub(crate) fn probe(
     map: Option<&str>,
     active_mod: Option<crate::app::mods::ActiveMod>,
     ares_setting: crate::util::ares_launch::AresSetting,
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
 ) -> Result<ProbeReport> {
     let root = &config.paths.ra2_dir;
     let (mut process, mut startup_rules, projection) = load_process_sources(
@@ -296,6 +304,7 @@ pub(crate) fn probe(
         media_archive_mode,
         active_mod,
         ares_setting,
+        kratos_setting,
         true,
     )?;
     let assets = process.manager().context("retail sources missing")?;
@@ -601,6 +610,7 @@ pub(crate) fn run_desktop(
     map: Option<&Path>,
     mod_switch: Option<&crate::app::mods::ModSwitch>,
     ares: Option<crate::util::ares_launch::AresSetting>,
+    kratos: Option<crate::util::kratos_launch::KratosSetting>,
 ) -> Result<ProbeReport> {
     let config = crate::util::config::GameConfig::load()?;
     let mut config = match ra2_dir {
@@ -631,6 +641,7 @@ pub(crate) fn run_desktop(
         map.as_deref(),
         crate::app::mods::launch_mod(&config.paths, mod_switch).map_err(anyhow::Error::msg)?,
         ares,
+        kratos.unwrap_or_default(),
     )
 }
 
@@ -765,7 +776,7 @@ mod tests {
         let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
-        let report = run_desktop(Some(&root), None, None, None).unwrap();
+        let report = run_desktop(Some(&root), None, None, None, None).unwrap();
         // The launcher reads this before it runs `--generate-map`.
         assert!(report.generate_map);
         let stock = &report.countries[..10];
@@ -1006,6 +1017,7 @@ mod tests {
             None,
             selected(),
             crate::util::ares_launch::AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
         )
         .unwrap();
         let (process, _, _) = load_process_sources(
@@ -1014,6 +1026,7 @@ mod tests {
             MediaArchiveMode::STOCK_DIGITAL,
             selected(),
             crate::util::ares_launch::AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
             false,
         )
         .unwrap();

@@ -39,6 +39,9 @@ pub(crate) struct ProcessAssets {
     /// The launch's Ares setting (`util::ares_launch::AresSetting`), kept as
     /// the mod folder is.
     ares_setting: crate::util::ares_launch::AresSetting,
+    /// The launch's Kratos setting (`util::kratos_launch::KratosSetting`),
+    /// kept so a rebuilt manager selects the same games.
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
     /// Whether that setting on Auto mounts `ares.mix` for this game
     /// (`AssetManager::auto_mounts_ares`), and whether set to Off it keeps
     /// the startup Rules' own Ares keys from turning Ares on
@@ -202,6 +205,7 @@ impl ProcessAssets {
         Self {
             media_archive_mode,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             auto_mounts_ares: false,
             rules_keep_ares_off: false,
             mod_files: Default::default(),
@@ -258,6 +262,14 @@ impl ProcessAssets {
         setting: crate::util::ares_launch::AresSetting,
     ) -> Self {
         self.ares_setting = setting;
+        self
+    }
+
+    pub(crate) fn with_kratos_setting(
+        mut self,
+        setting: crate::util::kratos_launch::KratosSetting,
+    ) -> Self {
+        self.kratos_setting = setting;
         self
     }
 
@@ -415,7 +427,7 @@ impl ProcessAssets {
         &self,
         root: &std::path::Path,
     ) -> anyhow::Result<AssetManager> {
-        let assets = AssetManager::with_mod_and_ares(
+        let mut assets = AssetManager::with_mod_and_ares(
             root,
             self.resources.mod_folder.as_deref(),
             self.media_archive_mode,
@@ -423,6 +435,7 @@ impl ProcessAssets {
             &self.resources.archives,
         )?
         .with_mod_sources(&self.resources);
+        assets.set_kratos_setting(self.kratos_setting);
         Ok(if let Some(roots) = &self.selected_ini_roots {
             assets.with_selected_ini_roots(roots.clone())
         } else {

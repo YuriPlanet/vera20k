@@ -948,6 +948,12 @@ impl OptionsDialogState {
                 |s| super::ares_label(*s),
                 E::AresSelected,
             ),
+            LauncherComboId::Kratos => LauncherList::new(
+                super::kratos_choices(),
+                &v.kratos,
+                |s| super::kratos_label(*s),
+                E::KratosSelected,
+            ),
             LauncherComboId::GraphicsApi => LauncherList::new(
                 super::GraphicsApi::choices(),
                 &v.graphics_api,

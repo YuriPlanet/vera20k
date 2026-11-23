@@ -215,6 +215,8 @@ Ares=yes
   Without the section, the mod inherits the host's `[ini]` settings.
 - `[Archives]` replaces names in existing startup slots, preserving their order and
   fallback rules. Omitted keys keep stock names. It does not scan for other archives.
+- `[Extensions] Kratos=yes` makes this launch play Kratos, as if the mod shipped it. With the
+  player's Kratos setting Off, VERA20k refuses the mod and says how to turn Kratos back on.
 - `[Extensions] Ares=yes` requires Ares reading from startup. With the player's Ares
   setting on Auto, it enables that reading for this launch without changing the saved
   setting. With Off, VERA20k refuses the mod and tells the player how to enable it.

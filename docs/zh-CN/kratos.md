@@ -27,6 +27,19 @@ VERA20K 正在用 Rust 原生移植 [Kratos PP](https://github.com/ChrisLv-CN/Kr
 `RuleSet::kratos()` 就是 sim 和表现层读取的唯一答案。还没有任何已移植功能读取的 Kratos 键不会
 开启开关，因此只往 INI 里加一个键本身不会改变游戏。
 
+## Kratos 设置
+
+Kratos PP 没有总开关：装上 `Kratos.dll` 就生效，连它的默认值一起。VERA 没有 DLL，所以在
+Options 的扩展页提供一个启动级设置：VERA.INI 的 `[VERA] Kratos=Auto|On|Off`。
+
+- **Auto**（默认）：由游戏数据决定（上面的键）。
+- **On**：每局都启用 Kratos，因此只依赖 Kratos 默认值（比如卧倒时 `Z=20`）的模组，不写键也能拿到。
+- **Off**：一律不启用；Kratos 键不生效，Kratos 模组按原版读。
+
+模组也可以在 `mod.ini` 里写 `[Extensions] Kratos=yes`，让本次启动启用 Kratos，等同于模组自带该扩展；
+玩家设置为 Off 时 VERA 会拒绝该模组，并提示如何重新开启。该设置和 Ares 的一样在启动时读取，
+并随对局加载的规则一起保存，所以存档、回放和联机各方得到同一答案。
+
 ## 卧倒射击点
 
 `InfantryClass::Crawling`（`+0x6DB`）决定步兵射击时枪口从哪里出。Kratos

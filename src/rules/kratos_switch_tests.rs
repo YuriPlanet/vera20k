@@ -70,3 +70,33 @@ fn retail_data_keeps_kratos_off() {
     assert!(!rules.ares(), "{}", mode.override_file);
     assert!(!rules.kratos(), "{}", mode.override_file);
 }
+
+/// The player's setting overrides the key answer: On plays Kratos without a
+/// key (its defaults too), Off keeps a game's own key from turning it on, and
+/// Auto is the key answer.
+#[test]
+fn the_player_setting_overrides_the_key_answer() {
+    use crate::rules::ares_switch::KeyReads;
+    use crate::util::kratos_launch::KratosSetting;
+
+    let ini = IniFile::from_str("[General]\nKratosProbe=yes\n");
+    let (_, reads) = ares_switch::record(|| {
+        kratos_switch::kratos_read(|| {
+            ini.section("General")
+                .unwrap()
+                .read_bool("KratosProbe", false);
+        });
+    });
+    let empty = KeyReads::default();
+    assert!(kratos_switch::KratosInputs::from_passes(&reads, KratosSetting::Auto).decide(&empty));
+    assert!(kratos_switch::KratosInputs::from_passes(&reads, KratosSetting::On).decide(&empty));
+    assert!(!kratos_switch::KratosInputs::from_passes(&reads, KratosSetting::Off).decide(&empty));
+    assert!(kratos_switch::KratosInputs::from_passes(&empty_reads(), KratosSetting::On).decide(&empty));
+    assert!(!kratos_switch::KratosInputs::default().decide(&empty));
+}
+
+/// The reads of a projection that found no key.
+fn empty_reads() -> crate::rules::ares_switch::KeyReads {
+    let (_, reads) = ares_switch::record(|| {});
+    reads
+}

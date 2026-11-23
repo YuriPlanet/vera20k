@@ -276,6 +276,9 @@ pub struct RulesLayerStack {
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
     /// (`AssetManager::ares_setting`).
     ares_keys_off: bool,
+    /// VERA: the player's Kratos setting (`AssetManager::kratos_setting`);
+    /// Auto lets the game's data decide (`rules::kratos_switch`).
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
 }
 
 impl RulesLayerStack {
@@ -291,6 +294,7 @@ impl RulesLayerStack {
             // (`ares_switch::ares_way`), with the Ares setting Auto.
             ships_ares: crate::rules::ares_switch::ares_way(),
             ares_keys_off: false,
+            kratos_setting: crate::util::kratos_launch::KratosSetting::Auto,
         }
     }
 
@@ -310,6 +314,18 @@ impl RulesLayerStack {
     /// saying reads as Auto.
     pub fn with_ares_keys_off(mut self, off: bool) -> Self {
         self.ares_keys_off = off;
+        self
+    }
+
+    /// VERA: the stack of a launch whose player chose a Kratos setting
+    /// (`util::kratos_launch::KratosSetting`). The game's owner sets it from
+    /// the launch (`NativeRulesProcessOwner::startup_layers`); a stack built
+    /// without saying reads as Auto.
+    pub fn with_kratos_setting(
+        mut self,
+        setting: crate::util::kratos_launch::KratosSetting,
+    ) -> Self {
+        self.kratos_setting = setting;
         self
     }
 
@@ -536,8 +552,10 @@ impl RulesLayerStack {
                     self.ships_ares,
                     self.ares_keys_off,
                 );
-                let kratos_inputs =
-                    crate::rules::kratos_switch::KratosInputs::from_passes(&processor.ares_reads);
+                let kratos_inputs = crate::rules::kratos_switch::KratosInputs::from_passes(
+                    &processor.ares_reads,
+                    self.kratos_setting,
+                );
                 let (ini, native_type_construction_trace) = processor.clone().finish();
                 let prefix = ProcessedRulesLayers {
                     ini,
@@ -574,8 +592,10 @@ impl RulesLayerStack {
             self.ships_ares,
             self.ares_keys_off,
         );
-        let kratos_inputs =
-            crate::rules::kratos_switch::KratosInputs::from_passes(&processor.ares_reads);
+        let kratos_inputs = crate::rules::kratos_switch::KratosInputs::from_passes(
+            &processor.ares_reads,
+            self.kratos_setting,
+        );
         let (ini, native_type_construction_trace) = processor.finish();
         Ok((
             ProcessedRulesLayers {

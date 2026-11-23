@@ -216,6 +216,7 @@ pub(crate) fn generate_from_game(
         active_mod,
         // The game's files decide, whatever the player's own setting.
         crate::util::ares_launch::AresSetting::Auto,
+        crate::util::kratos_launch::KratosSetting::Auto,
         false,
     )?;
     let (assets, rules, _) = process.manager_and_rules_with_tile_cache();
@@ -312,6 +313,7 @@ mod tests {
                 .media_archive_mode,
             None,
             crate::util::ares_launch::AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
             false,
         )
         .unwrap();
@@ -408,6 +410,7 @@ mod tests {
                 crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
                 crate::app::mods::launch_mod(&config.paths, None).unwrap(),
                 crate::util::ares_launch::AresSetting::Auto,
+                crate::util::kratos_launch::KratosSetting::Auto,
                 false,
             )
             .unwrap()

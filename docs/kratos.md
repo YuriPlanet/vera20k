@@ -20,6 +20,22 @@ neither on. Retail data holds no Kratos key, so a retail game plays as the origi
 `RuleSet::kratos()` is the one answer sim and presentation read. A Kratos key that no ported
 piece reads yet does not turn the switch on, so adding a key alone never changes a game.
 
+## The Kratos setting
+
+Kratos PP has no master switch: installing `Kratos.dll` plays it, its default values included.
+VERA has no DLL, so the Options screen's Extensions page carries a launch setting,
+`[VERA] Kratos=Auto|On|Off` in VERA.INI:
+
+- **Auto**, the default, lets the game's data decide (the keys above).
+- **On** plays Kratos in every game, so a mod that only relies on Kratos' default values, such
+  as the prone `Z=20`, gets them without writing a key.
+- **Off** plays none: a Kratos key turns nothing on, so a Kratos mod reads as the original game.
+
+A mod can also declare `[Extensions] Kratos=yes` in its `mod.ini`. That makes this launch play
+Kratos, as if it shipped the extension; with the player's setting Off VERA refuses the mod and
+says how to turn Kratos back on. The setting is read at start, like the Ares one, and the rules
+a game loads carry it, so a save, a replay and every peer reach the same answer.
+
 ## Prone firing offset
 
 `InfantryClass::Crawling` (`+0x6DB`) changes where a man's shot starts. Kratos

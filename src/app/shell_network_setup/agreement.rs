@@ -276,6 +276,11 @@ pub(crate) fn start_rules(
     if rules.ares() {
         rules_digest.push_str(" ares");
     }
+    // Kratos' switch follows the same data and the player's setting, so two
+    // peers whose games differ by it must not start together.
+    if rules.kratos() {
+        rules_digest.push_str(" kratos");
+    }
     rules_digest
 }
 
