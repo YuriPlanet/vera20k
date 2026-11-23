@@ -314,7 +314,7 @@ pub(crate) struct MatchInputState {
     /// for the modern-RTS double-click select-same-type-on-screen shortcut.
     /// Wall clock, never sim state; the host's double-click time and rectangle
     /// decide the pair. Only an admitted selection click writes it.
-    pub(crate) last_selection_click: Option<(crate::util::time::Instant, i32, i32)>,
+    pub(crate) last_selection_click: Option<(vera20k_gui::UiMs, i32, i32)>,
     /// Types the local player builds endlessly (Ctrl + left click on a cameo).
     pub(crate) build_repeat: crate::app::input::build_repeat::BuildRepeat,
     /// The object the camera is following, i.e. `DisplayClass +0x11A0` behind
@@ -528,19 +528,20 @@ impl MatchInputState {
     pub(crate) fn note_tactical_selection_click(
         &mut self,
         admitted: bool,
-        now: crate::util::time::Instant,
+        now: vera20k_gui::UiMs,
         point: (i32, i32),
     ) -> bool {
         if !admitted {
             self.last_selection_click = None;
             return false;
         }
+        let (time, width, height) = crate::ui::shell::controller::host_double_click_limits();
         vera20k_gui::shell::list::is_double_click(
             &mut self.last_selection_click,
             now,
             point.0,
             point.1,
-            crate::ui::shell::controller::host_double_click_limits(),
+            (time.as_millis() as u64, width, height),
         )
     }
 
@@ -1111,9 +1112,9 @@ mod double_click_tests {
     #[test]
     fn right_click_orders_double_click_pairs_quick_same_spot_selection_clicks_only() {
         let mut input = MatchInputState::new(Default::default());
-        let start = crate::util::time::Instant::now();
+        let start: vera20k_gui::UiMs = 1_000;
         let point = (120, 80);
-        let shortly = |millis| start + crate::util::time::Duration::from_millis(millis);
+        let shortly = |millis| start + millis;
         assert!(!input.note_tactical_selection_click(false, start, point));
         assert!(!input.note_tactical_selection_click(false, shortly(5), point));
         assert!(!input.note_tactical_selection_click(true, start, point));

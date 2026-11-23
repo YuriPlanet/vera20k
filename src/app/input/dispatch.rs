@@ -715,9 +715,10 @@ fn tactical_left_up(state: &mut AppState) {
             .tactical_zoom()
             .map_or((sx, sy), |zoom| zoom.source_to_window(sx, sy));
         let admitted = ordinary && state.persistence.options_profile.right_click_orders;
+        let now = state.frontend.shell_controller.now();
         let double_click = state.match_state.input.note_tactical_selection_click(
             admitted,
-            crate::util::time::Instant::now(),
+            now,
             (window_point.0.round() as i32, window_point.1.round() as i32),
         );
         if double_click && let Some(mutation) = double_click_type_select(state, sx, sy) {

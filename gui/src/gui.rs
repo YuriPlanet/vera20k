@@ -584,9 +584,13 @@ impl Gui {
     /// a modal keeps.
     pub fn caret_visible_in(&self, dialog: DialogId, node: NodeId, now: UiMs) -> bool {
         self.dialog(dialog).is_some_and(|d| d.pointer.focus == Some(node))
-            && self.tree.node(node).is_ok_and(|n| match &n.state {
-                widget::WidgetState::Edit(s) => s.caret_visible(now),
-                _ => widget::edit::EditState::default().caret_visible(now),
+            && self.tree.node(node).is_ok_and(|n| {
+                let focused_at = match &n.state {
+                    widget::WidgetState::Edit(s) => s.focused_at,
+                    _ => 0,
+                };
+                // NewEdit's caret shows in the first of each two seconds.
+                !crate::time::blink_phase(focused_at, now)
             })
     }
 

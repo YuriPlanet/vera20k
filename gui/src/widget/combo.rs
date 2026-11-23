@@ -12,7 +12,7 @@
 //! `RowCount`, `Selected`, `VisibleRows` (0 = every row). The widget writes
 //! `Open`, `Top` and, on a pick, `Selected`.
 
-use super::{Capture, Ctx, WidgetState, instant, ui_ms};
+use super::{Capture, Ctx, WidgetState};
 use crate::gui::{Key, UiEvent};
 use crate::node::{Node, NodeId, Prop, Tree, Value};
 use crate::shell::combobox::{ComboPopup, combo_arrow_hit_rect, combo_face_rect};
@@ -226,7 +226,6 @@ pub(crate) fn popup_press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
     };
     let before = st.top_index;
     st.pointer = (x, y);
-    let now = instant(now);
     if let Some(part) = popup.scroll_part_at(x, y) {
         st.scroll.press(part, popup.scroll_geometry(), &mut st.top_index, y, now);
         sync_top(ctx, node, before);
@@ -342,8 +341,8 @@ pub(crate) fn poll(ctx: &mut Ctx<'_>, node: NodeId) -> Option<crate::gui::UiMs> 
     let st = state_mut(ctx.tree, node)?;
     let before = st.top_index;
     let (x, y) = st.pointer;
-    st.scroll.poll(popup.scroll_geometry(), &mut st.top_index, x, y, instant(now));
-    let next = st.scroll.repeat_at().map(ui_ms);
+    st.scroll.poll(popup.scroll_geometry(), &mut st.top_index, x, y, now);
+    let next = st.scroll.repeat_at();
     sync_top(ctx, node, before);
     next
 }

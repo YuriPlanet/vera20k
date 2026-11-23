@@ -8,7 +8,7 @@
 //! double-click timing stay in the node's `WidgetState::List`; the limits are
 //! the GUI's ([`crate::Gui::set_double_click`]).
 
-use super::{Capture, Ctx, WidgetState, instant, ui_ms};
+use super::{Capture, Ctx, WidgetState};
 use crate::Rect;
 use crate::gui::{UiEvent, UiMs};
 use crate::node::{Node, NodeId, Prop, Tree, Value};
@@ -16,7 +16,6 @@ use crate::shell::geom::ShellScale;
 use crate::shell::list::{
     ListMetrics, ListScrollInteraction, ListScrollPart, ShellListGeometry, is_double_click, log_top,
 };
-use crate::time::{Duration, Instant};
 
 /// One owner-draw list box (gamemd's movie list `0x129`, for one). Its
 /// row count, top and selection are reloaded from the props before every
@@ -30,7 +29,7 @@ pub struct ListState {
     selected: Option<usize>,
     top: usize,
     /// Previous press for the ListBox class's `CS_DBLCLKS` detection.
-    last_press: Option<(Instant, i32, i32)>,
+    last_press: Option<(UiMs, i32, i32)>,
     /// Scrollbar capture and arrow repeat (`0x0061C690`).
     scroll: ListScrollInteraction,
     /// Rows its owner shows at once, when it lays them out itself
@@ -206,9 +205,7 @@ pub(crate) fn forget_press(tree: &mut Tree, node: NodeId) {
 }
 
 pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture {
-    let now = instant(ctx.now);
-    let (ms, w, h) = ctx.double_click;
-    let limits = (Duration::from_millis(ms), w, h);
+    let (now, limits) = (ctx.now, ctx.double_click);
     let multi = ctx.tree.node(node).is_ok_and(|n| n.bool_prop(Prop::MultiSelect, false));
     let mut toggled = None;
     let capture = with_list(ctx, node, |s, rect, metrics, events| {
@@ -296,14 +293,14 @@ pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) -> bool {
 
 /// Timers (scroll-arrow repeat): the next time the list wants a poll.
 pub(crate) fn poll(ctx: &mut Ctx<'_>, node: NodeId) -> Option<UiMs> {
-    let now = instant(ctx.now);
+    let now = ctx.now;
     with_list(ctx, node, |s, rect, metrics, _| {
         let (x, y) = s.pointer;
         if s.scroll.repeat_at().is_some() {
             let geometry = s.geometry(rect, metrics);
             s.scroll.poll(geometry, &mut s.top, x, y, now);
         }
-        s.scroll.repeat_at().map(ui_ms)
+        s.scroll.repeat_at()
     })
     .flatten()
 }

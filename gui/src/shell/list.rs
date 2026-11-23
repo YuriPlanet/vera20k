@@ -5,7 +5,7 @@
 
 use super::combobox::COMBO_DROPDOWN_ROW_H;
 use super::geom::{RectPx, ShellScale};
-use crate::time::{Duration, Instant};
+use crate::gui::UiMs;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListScrollPart {
@@ -95,7 +95,7 @@ impl ListMetrics {
 pub struct ListScrollInteraction {
     captured: Option<ListScrollPart>,
     hovered: Option<ListScrollPart>,
-    repeat_at: Option<Instant>,
+    repeat_at: Option<UiMs>,
 }
 impl ListScrollInteraction {
     pub fn press(
@@ -104,11 +104,11 @@ impl ListScrollInteraction {
         geometry: ShellListGeometry,
         top: &mut usize,
         y: i32,
-        now: Instant,
+        now: UiMs,
     ) {
         self.captured = Some(part);
         self.hovered = Some(part);
-        self.repeat_at = Some(now + Duration::from_millis(500));
+        self.repeat_at = Some(now + 500);
         match part {
             ListScrollPart::Up | ListScrollPart::Down => Self::step(part, geometry.max_top, top),
             ListScrollPart::Track => *top = geometry.top_at_pointer(y),
@@ -130,7 +130,7 @@ impl ListScrollInteraction {
         top: &mut usize,
         x: i32,
         y: i32,
-        now: Instant,
+        now: UiMs,
     ) -> bool {
         let before = (*top, self.pressed_part());
         self.hovered = geometry.scroll_part_at(x, y);
@@ -138,7 +138,7 @@ impl ListScrollInteraction {
             if let Some(part) = self.hovered {
                 Self::step(part, geometry.max_top, top);
             }
-            self.repeat_at = Some(now + Duration::from_millis(25));
+            self.repeat_at = Some(now + 25);
         }
         before != (*top, self.pressed_part())
     }
@@ -156,7 +156,7 @@ impl ListScrollInteraction {
             _ => None,
         }
     }
-    pub fn repeat_at(&self) -> Option<Instant> {
+    pub fn repeat_at(&self) -> Option<UiMs> {
         self.repeat_at
     }
     /// The part a press holds until the release.
@@ -482,14 +482,14 @@ pub fn grip_tiles(thumb: RectPx, tile_h: i32) -> Vec<(i32, i32)> {
 /// no sound. A double-click ends the sequence, so the next press starts a
 /// new one.
 pub fn is_double_click(
-    last_press: &mut Option<(Instant, i32, i32)>,
-    now: Instant,
+    last_press: &mut Option<(UiMs, i32, i32)>,
+    now: UiMs,
     x: i32,
     y: i32,
-    (time, width, height): (Duration, i32, i32),
+    (time, width, height): (UiMs, i32, i32),
 ) -> bool {
     let double = last_press.is_some_and(|(last, px, py)| {
-        now.duration_since(last) <= time
+        now.saturating_sub(last) <= time
             && (x - px).abs() * 2 <= width
             && (y - py).abs() * 2 <= height
     });
@@ -532,7 +532,7 @@ mod tests {
             ShellListGeometry::new(RectPx::new(10, 20, 400, 255), 60, 10, ListMetrics::RETAIL);
         let bar = geometry.scrollbar.unwrap();
         let (x, y) = (bar.x + 10, bar.y + bar.h - 10);
-        let now = Instant::now();
+        let now: UiMs = 1_000;
         let mut interaction = ListScrollInteraction::default();
         let mut top = 10;
         interaction.press(ListScrollPart::Down, geometry, &mut top, y, now);
@@ -544,13 +544,13 @@ mod tests {
                 &mut top,
                 x,
                 y,
-                now + Duration::from_millis(elapsed),
+                now + elapsed,
             );
             assert_eq!(top, expected, "at {elapsed}ms");
         }
         assert_eq!(
             interaction.repeat_at(),
-            Some(now + Duration::from_millis(925))
+            Some(now + 925)
         );
     }
     #[test]
@@ -559,28 +559,28 @@ mod tests {
             ShellListGeometry::new(RectPx::new(10, 20, 400, 255), 60, 10, ListMetrics::RETAIL);
         let bar = geometry.scrollbar.unwrap();
         let (x, y) = (bar.x + 10, bar.y + bar.h - 10);
-        let now = Instant::now();
+        let now: UiMs = 1_000;
         let mut interaction = ListScrollInteraction::default();
         let mut top = 10;
         interaction.press(ListScrollPart::Down, geometry, &mut top, y, now);
         interaction.pointer_moved(geometry, &mut top, 0, 0);
         assert_eq!(interaction.pressed_part(), None);
-        interaction.poll(geometry, &mut top, 0, 0, now + Duration::from_millis(500));
+        interaction.poll(geometry, &mut top, 0, 0, now + 500);
         assert_eq!(top, 11);
         assert_eq!(
             interaction.repeat_at(),
-            Some(now + Duration::from_millis(525))
+            Some(now + 525)
         );
         interaction.pointer_moved(geometry, &mut top, x, y);
         assert_eq!(interaction.pressed_part(), Some(ListScrollPart::Down));
-        interaction.poll(geometry, &mut top, x, y, now + Duration::from_millis(510));
+        interaction.poll(geometry, &mut top, x, y, now + 510);
         assert_eq!(top, 11);
-        interaction.poll(geometry, &mut top, x, y, now + Duration::from_millis(525));
+        interaction.poll(geometry, &mut top, x, y, now + 525);
         assert_eq!(top, 12);
         // Both button release and shell focus loss call this same cleanup.
         interaction.cancel();
         assert_eq!(interaction.repeat_at(), None);
-        interaction.poll(geometry, &mut top, x, y, now + Duration::from_secs(2));
+        interaction.poll(geometry, &mut top, x, y, now + 2_000);
         assert_eq!(top, 12);
         assert_eq!(interaction.pressed_part(), None);
     }
@@ -590,7 +590,7 @@ mod tests {
             ShellListGeometry::new(RectPx::new(10, 20, 400, 255), 60, 0, ListMetrics::RETAIL);
         let bar = geometry.scrollbar.unwrap();
         let x = bar.x + 10;
-        let now = Instant::now();
+        let now: UiMs = 1_000;
         let mut interaction = ListScrollInteraction::default();
         let mut top = 0;
         interaction.press(ListScrollPart::Up, geometry, &mut top, bar.y + 10, now);
@@ -600,7 +600,7 @@ mod tests {
             &mut top,
             x,
             bar.y + bar.h - 10,
-            now + Duration::from_millis(500),
+            now + 500,
         );
         assert_eq!(top, 1);
         assert_eq!(interaction.pressed_part(), Some(ListScrollPart::Down));
@@ -610,7 +610,7 @@ mod tests {
             &mut top,
             x,
             bar.y + bar.h - 10,
-            now + Duration::from_millis(525),
+            now + 525,
         );
         assert_eq!(top, geometry.max_top);
     }
@@ -619,7 +619,7 @@ mod tests {
         let geometry =
             ShellListGeometry::new(RectPx::new(10, 20, 400, 255), 60, 10, ListMetrics::RETAIL);
         let bar = geometry.scrollbar.unwrap();
-        let now = Instant::now();
+        let now: UiMs = 1_000;
         let mut interaction = ListScrollInteraction::default();
         let mut top = 10;
         interaction.press(
@@ -642,7 +642,7 @@ mod tests {
             &mut top,
             bar.x + 10,
             bar.y + bar.h - 10,
-            now + Duration::from_millis(500),
+            now + 500,
         );
         assert_eq!(top, (track_top + 1).min(geometry.max_top));
     }

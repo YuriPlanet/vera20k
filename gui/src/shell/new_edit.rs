@@ -168,12 +168,6 @@ impl NewEdit {
     }
 }
 
-/// NewEdit's caret: shown in the first of each two seconds of focus (every
-/// screen's `caret_visible`). Milliseconds on the host's UI clock.
-pub fn caret_visible(focused_at_ms: u64, now_ms: u64) -> bool {
-    now_ms.saturating_sub(focused_at_ms) / 1000 % 2 == 0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

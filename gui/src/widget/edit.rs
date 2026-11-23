@@ -18,19 +18,12 @@ use super::{Capture, Ctx, WidgetState};
 use crate::gui::{Key, UiEvent, UiMs};
 use crate::node::{Node, NodeId, Prop, Tree, Value};
 use crate::shell::geom::ShellScale;
-use crate::shell::new_edit::{self, NewEdit};
+use crate::shell::new_edit::NewEdit;
 
 #[derive(Debug, Default)]
 pub struct EditState {
     /// When the edit last took the focus: the caret blink's phase.
     pub focused_at: UiMs,
-}
-
-impl EditState {
-    /// NewEdit's caret blink: shown in the first of each two seconds.
-    pub fn caret_visible(&self, now: UiMs) -> bool {
-        new_edit::caret_visible(self.focused_at, now)
-    }
 }
 
 pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, _x: i32, _y: i32) -> Capture {
