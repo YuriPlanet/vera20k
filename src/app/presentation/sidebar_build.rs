@@ -1323,7 +1323,7 @@ mod tests {
             }];
             let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &supers);
             sidebar::build_sidebar_view_with_spec(
-                SidebarChromeLayoutSpec::default(),
+                SidebarChromeLayoutSpec::stock(),
                 800.0,
                 600.0,
                 SidebarTab::Defense,

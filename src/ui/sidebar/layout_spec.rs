@@ -5,8 +5,9 @@
 //! The previous implicit RON override fitted an unrelated scaled stack and is
 //! absent from the production layout path.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SidebarTheme {
+    #[default]
     Allied,
     Soviet,
     Yuri,
@@ -92,7 +93,8 @@ impl SidebarPart {
 /// place is measured from the part that holds it, as `veraui.ini` writes it
 /// (`ui::match_layout`); [`super::compute_layout_with_spec`] and the view
 /// builder turn them into screen positions.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// [`Default`] is every number zero: [`Self::stock`] is the original.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct SidebarChromeLayoutSpec {
     pub theme: SidebarTheme,
     /// The parts the sidebar has, in draw order: a panel before the parts in
@@ -220,7 +222,7 @@ impl SidebarChromeLayoutSpec {
             cameo_width: 60.0,
             cameo_height: 48.0,
             power_bar_tile_height: 3.0,
-            ..Self::UNSET
+            ..Self::default()
         };
         let layout = ORIGINAL
             .for_side(Some(if gdi_positions { "GDI" } else { "Nod" }))
@@ -230,57 +232,6 @@ impl SidebarChromeLayoutSpec {
         spec.cameo_cell_source_width = spec.cameo_column_pitch;
         spec
     }
-
-    /// Every number zero, for [`Self::for_theme_and_positions`] to fill.
-    const UNSET: Self = Self {
-        theme: SidebarTheme::Allied,
-        parts: [None; 12],
-        places: super::PanelPlaces::ORIGINAL,
-        sidebar_width: 0.0,
-        side_height: 0.0,
-        field: crate::ui::field_layout::FieldLayout::ORIGINAL,
-        side2_height: 0.0,
-        side3_height: 0.0,
-        credits_x: 0.0,
-        credits_y: 0.0,
-        money_x: 0.0,
-        money_y: 0.0,
-        top_x: 0.0,
-        top_y: 0.0,
-        top_buttons: [[0.0; 2]; 2],
-        radar_housing_x: 0.0,
-        radar_housing_y: 0.0,
-        radar_x: 0.0,
-        radar_y: 0.0,
-        radar_width: 0.0,
-        radar_height: 0.0,
-        side1_x: 0.0,
-        side1_y: 0.0,
-        repair_x: 0.0,
-        repair_y: 0.0,
-        sell_x: 0.0,
-        sell_y: 0.0,
-        tab_x: 0.0,
-        tab_y: 0.0,
-        tab_pitch: 0.0,
-        strip_x: 0.0,
-        strip_y: 0.0,
-        cameo_inset_x: 0.0,
-        cameo_inset_y: 0.0,
-        cameo_columns: 0.0,
-        cameo_column_pitch: 0.0,
-        cameo_cell_source_width: 0.0,
-        cameo_width: 0.0,
-        cameo_height: 0.0,
-        cameo_row_height: 0.0,
-        strip_footer: 0.0,
-        scroll_x: 0.0,
-        scroll_y: 0.0,
-        scroll_pitch: 0.0,
-        power_bar_x: 0.0,
-        power_bar_y: 0.0,
-        power_bar_tile_height: 0.0,
-    };
 }
 
 /// The original sidebar's numbers, read once.
@@ -356,12 +307,6 @@ impl SidebarChromeLayoutSpec {
     /// The parts in draw order.
     pub fn parts_in_order(&self) -> impl Iterator<Item = SidebarPart> + '_ {
         self.parts.iter().flatten().copied()
-    }
-}
-
-impl Default for SidebarChromeLayoutSpec {
-    fn default() -> Self {
-        Self::stock()
     }
 }
 
