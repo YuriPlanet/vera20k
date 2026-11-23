@@ -1470,6 +1470,17 @@ pub(crate) fn mission_repair(
             frame_effects,
         ));
     }
+    // The Armory shares MissionRepairAndProduce's dispatch with Hospital and
+    // the depots, but promotes its trainee instead of healing or refuelling.
+    if object.armory() {
+        return Some(super::armory::mission_repair(
+            sim,
+            rules,
+            depot,
+            registry,
+            frame_effects,
+        ));
+    }
     if !object.unit_repair {
         // The ConstructionYard, Hospital and Armory arms come first.
         if object.unit_reload && !object.hospital && !object.armory() {
