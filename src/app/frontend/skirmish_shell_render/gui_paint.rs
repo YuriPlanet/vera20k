@@ -624,13 +624,6 @@ pub(crate) fn paint_gui_with(
                 }
             }
             NodeKind::Combo => {
-                let host_rows = gui
-                    .get(node, Prop::RowCount)
-                    .ok()
-                    .flatten()
-                    .and(style.rows_of)
-                    .zip(id(node))
-                    .and_then(|(rows_of, id)| rows_of(id));
                 if style.combos == ComboArt::Framed {
                     let out = &mut paint.controls;
                     super::chrome::push_ownerdraw_two_pixel_bevel_frame(
@@ -642,7 +635,7 @@ pub(crate) fn paint_gui_with(
                 }
                 let face = (rect, !covered);
                 paint_combo(
-                    &mut paint, state, atlas, gui, node, face, enabled, scale, style, host_rows,
+                    &mut paint, state, atlas, gui, node, face, enabled, scale, style,
                 );
             }
             NodeKind::List => {
@@ -860,7 +853,6 @@ fn paint_combo(
     enabled: bool,
     scale: ShellScale,
     style: GuiStyle<'_>,
-    host_rows: Option<HostRows>,
 ) {
     let drop_down = gui.combo_drop_down(node);
     let selected = usize::try_from(int(gui, node, Prop::Selected, -1)).ok();
@@ -873,12 +865,6 @@ fn paint_combo(
     let face_swatch = selected.and_then(swatch);
     let open = drop_down.is_some();
     let items = items(gui, node, Prop::Items);
-    // A host-counted combo's rows are the host's, each in its own colour
-    // (`u32::MAX` for the style's).
-    let rows: Vec<(&str, u32)> = match &host_rows {
-        Some(rows) => rows.iter().map(|(row, rgb)| (row.as_str(), *rgb)).collect(),
-        None => items.iter().map(|row| (row.as_str(), u32::MAX)).collect(),
-    };
     let font = &state.renderer.bit_font;
     if style.combos != ComboArt::Host {
         paint_control(
@@ -925,6 +911,20 @@ fn paint_combo(
     }
     let Some(drop_down) = drop_down else { return };
     let popup = drop_down.popup;
+    // A host-counted combo's rows are the host's, each in its own colour
+    // (`u32::MAX` for the style's).
+    let host_rows = gui
+        .get(node, Prop::RowCount)
+        .ok()
+        .flatten()
+        .and(style.rows_of)
+        .zip(gui.id_of(node))
+        .and_then(|(rows_of, id)| rows_of(id));
+    let row_at = |index: usize| match &host_rows {
+        Some(rows) => rows.get(index).map(|(row, rgb)| (row.as_str(), *rgb)),
+        None => items.get(index).map(|row| (row.as_str(), u32::MAX)),
+    };
+    let visible_rows = popup.first..popup.first + popup.visible_rows;
     if style.combos == ComboArt::Framed {
         // `0x105`'s list is no `ComboDropWin`: a one-pixel outline, the
         // selection lit wherever the pointer is, its rows uncut.
@@ -954,8 +954,9 @@ fn paint_combo(
         }
         let left = crate::ui::skirmish_shell::COMBO_TEXT_LEFT_INSET as f32;
         let left = (left * scale.factor()).round() as i32;
-        for (index, (item, _)) in rows.iter().enumerate() {
-            let Some(row) = popup.row_rect(index) else {
+        let row_count = host_rows.as_ref().map_or(items.len(), Vec::len);
+        for index in visible_rows.start..visible_rows.end.min(row_count) {
+            let (Some(row), Some((item, _))) = (popup.row_rect(index), row_at(index)) else {
                 continue;
             };
             paint.popup_texts.push(text(
@@ -975,7 +976,7 @@ fn paint_combo(
         atlas,
         popup.rect,
         drop_down.hot_row.and_then(|row| popup.row_rect(row)),
-        (popup.first..popup.first + popup.visible_rows).filter_map(|row| {
+        visible_rows.clone().filter_map(|row| {
             let at = scale.derive_rect(popup.row_rect(row)?, |r| {
                 RectPx::new(r.x + 2, r.y + 2, r.w - 4, r.h - 4)
             });
@@ -992,8 +993,8 @@ fn paint_combo(
     // The rows fit the list in their own glyph size.
     let glyph = style.text_factor.unwrap_or(scale.factor());
     let fit = combo_dropdown_text_fit_width(popup.content(), scale) as f32 * scale.factor() / glyph;
-    for row in popup.first..popup.first + popup.visible_rows {
-        let (Some(at), Some((item, packed))) = (popup.row_rect(row), rows.get(row).copied()) else {
+    for row in visible_rows {
+        let (Some(at), Some((item, packed))) = (popup.row_rect(row), row_at(row)) else {
             continue;
         };
         let rgb = match packed {
