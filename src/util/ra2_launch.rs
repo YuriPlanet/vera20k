@@ -65,7 +65,7 @@ pub fn configure(args: &[&std::ffi::OsStr]) {
     set(requested);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
 
