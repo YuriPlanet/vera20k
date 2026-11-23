@@ -283,27 +283,26 @@ pub(super) fn send_chat(
 /// unverified expanded content.
 pub(super) fn local_agreement(state: &mut AppState, revision: u64) -> Result<Value> {
     let session = &state.match_state.session;
-    if let Some(room) = session.campaign_room() {
-        let (map_digest, effective_map_digest) =
+    let (map_digest, effective_map_digest, staging_digest) =
+        if let Some(room) = session.campaign_room() {
             if campaign_room::local_map_verified(session) == Some(true) {
                 let (map, effective) = campaign_room::online_agreement(room);
-                (map.to_owned(), effective.to_owned())
+                (map.to_owned(), Some(effective.to_owned()), String::new())
             } else {
-                (String::new(), "0".repeat(64))
-            };
-        let agreement = crate::app::shell_network_setup::agreement::local(state)?;
-        return Ok(
-            json!({"revision":revision,"version":agreement.version,"rules_digest":agreement.rules_digest,"map_digest":map_digest,"effective_map_digest":effective_map_digest,"staging_digest":""}),
-        );
-    }
-    let map_digest = session
-        .network_local_map_source()
-        .and_then(|source| source.physical_identity())
-        .map_or_else(String::new, |(_, digest)| digest.to_owned());
-    let effective_map_digest = session
-        .network_local_map_effective_digest()
-        .map_or_else(|| "0".repeat(64), str::to_owned);
-    let staging_digest = crate::app::shell_network_setup::maps::staging_digest(state);
+                (String::new(), None, String::new())
+            }
+        } else {
+            let map = session
+                .network_local_map_source()
+                .and_then(|source| source.physical_identity())
+                .map_or_else(String::new, |(_, digest)| digest.to_owned());
+            let effective = session
+                .network_local_map_effective_digest()
+                .map(str::to_owned);
+            let staging = crate::app::shell_network_setup::maps::staging_digest(state);
+            (map, effective, staging)
+        };
+    let effective_map_digest = effective_map_digest.unwrap_or_else(|| "0".repeat(64));
     let agreement = crate::app::shell_network_setup::agreement::local(state)?;
     Ok(
         json!({"revision":revision,"version":agreement.version,"rules_digest":agreement.rules_digest,"map_digest":map_digest,"effective_map_digest":effective_map_digest,"staging_digest":staging_digest}),
