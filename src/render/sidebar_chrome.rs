@@ -57,17 +57,8 @@ pub(crate) fn packed_command_bar_fixture(
 }
 
 const CHROME_PADDING: u32 = 2;
-/// R-UP.SHP / R-DN.SHP frame count. The strip-scroll art uses a 3-frame
-/// convention (0 = idle, 1 = pressed, 2 = disabled) — NOT the 5-frame tab /
-/// repair / sell convention.
-const SCROLL_FRAME_COUNT: usize = 3;
 // RadarClass::Draw 653100: frame 0 is offline, frame 32 is online.
 const RADAR_DEFAULT_FRAME: usize = 0;
-const TOP_STRIP_LEFT_ID: i32 = 0xD508C1A4u32 as i32;
-const TOP_STRIP_SIDEBAR_ID: i32 = 0xF0F1CE8Du32 as i32;
-const TOP_STRIP_THIN_ID: i32 = 0x7637D6E1u32 as i32;
-const UNKNOWN_TOP_HOUSING_ID: i32 = 0x7AEBAE6Bu32 as i32;
-const UNKNOWN_MID_PANEL_ID: i32 = 0xB0259C24u32 as i32;
 const ALLIED_SIDE_ARCHIVE_ORDER: &[&str] = &["sidec01md.mix", "sidec01.mix", "sidenc01.mix"];
 const SIDE_TWO_ARCHIVE_ORDER: &[&str] = &["sidec02md.mix", "sidec02.mix", "sidenc02.mix"];
 // SidebarClass::LoadSHPs 6A5840 loads SIDE1..3, ADDON, GCLOCK2 and the button
@@ -352,11 +343,6 @@ pub struct SidebarChromeAtlas {
     pub layout_art: LayoutArt<SidebarChromeEntry>,
     /// The observer strip's backgrounds and flags.
     pub observer_art: ObserverArt<SidebarChromeEntry>,
-    pub top_strip_left: Option<SidebarChromeEntry>,
-    pub top_strip_sidebar: Option<SidebarChromeEntry>,
-    pub top_strip_thin: Option<SidebarChromeEntry>,
-    pub unknown_top_housing: Option<SidebarChromeEntry>,
-    pub unknown_mid_panel: Option<SidebarChromeEntry>,
     pub background_large: Option<SidebarChromeEntry>,
     pub background_medium: Option<SidebarChromeEntry>,
     pub background_small: Option<SidebarChromeEntry>,
@@ -369,33 +355,9 @@ pub struct SidebarChromeAtlas {
     /// [left, top, right, bottom] in unscaled pixels. The minimap fills the area
     /// inside these insets. Derived automatically — no manual tuning needed.
     pub radar_content_insets: [u32; 4],
-    pub radar: SidebarChromeEntry,
-    pub side1: SidebarChromeEntry,
-    pub tabs: Option<SidebarChromeEntry>,
-    /// Tab buttons: per-tab × 5-frame SHP state table.
-    /// Outer index: tab number (0..=3). Inner index: SHP frame (0..=4).
-    /// Frame meanings (`ShapeButtonClass::Draw @ 0x0069DEB0`):
-    ///   0 = idle, 1 = active-tab, 2 = disabled, 3 = flash-idle, 4 = flash-active.
-    pub tab_frames: [[Option<SidebarChromeEntry>; 5]; 4],
-    pub side2: SidebarChromeEntry,
-    pub side3: SidebarChromeEntry,
-    /// Repair button — same frame convention as `tab_frames`; it never
-    /// flashes, and retail art has only frames 0 (off) and 1 (on).
-    pub repair_frames: [Option<SidebarChromeEntry>; 5],
-    /// Sell button — same as `repair_frames`.
-    pub sell_frames: [Option<SidebarChromeEntry>; 5],
-    /// Strip scroll-up (R-UP.SHP, −page) — 3-frame convention:
-    /// 0 = idle, 1 = pressed, 2 = disabled. Missing frames fall back to
-    /// frame 0 at draw exactly like repair/sell.
-    /// DIPLOBTN / OPTBTN, ordinary plain-button idle/pressed frames.
-    pub top_button_frames: [[Option<SidebarChromeEntry>; 2]; 2],
-    pub scroll_up_frames: [Option<SidebarChromeEntry>; SCROLL_FRAME_COUNT],
-    /// Strip scroll-down (R-DN.SHP, +page) — same 3-frame convention.
-    pub scroll_down_frames: [Option<SidebarChromeEntry>; SCROLL_FRAME_COUNT],
-    pub power: Option<SidebarChromeEntry>,
-    /// powerp.shp frames: 5 colored strip segments for the power bar meter.
-    /// [0]=dark/bg, [1]=green, [2]=yellow, [3]=red, [4]=dark/off.
-    pub powerp_frames: [Option<SidebarChromeEntry>; 5],
+    /// The pictures `ui::match_layout::sidebar_art` lists, by part and
+    /// picture key, each with its frames; see [`SidebarChromeAtlas::art`].
+    pieces: Vec<(String, &'static str, Vec<Option<SidebarChromeEntry>>)>,
     pub extra_entries: Vec<SidebarChromeExtraEntry>,
     /// GCLOCK2.SHP progress clock overlay — all frames packed into a grid texture.
     /// Each entry maps a frame index to UV coordinates in gclock_texture.
@@ -417,51 +379,10 @@ impl SidebarChromeAtlas {
     /// `ui::match_layout::sidebar_art` lists them. `None` when the part has
     /// no such picture or the file no such frame.
     pub fn art(&self, node: &str, key: &str, frame: usize) -> Option<SidebarChromeEntry> {
-        let is = |name: &str| node.eq_ignore_ascii_case(name);
-        let art = key.eq_ignore_ascii_case("Art");
-        let at = |frames: &[Option<SidebarChromeEntry>]| frames.get(frame).copied().flatten();
-        let only = |entry: Option<SidebarChromeEntry>| entry.filter(|_| frame == 0);
-        if art {
-            if is("Credits") {
-                return only(self.top_strip_thin);
-            } else if is("Top") {
-                return only(self.top_strip_sidebar);
-            } else if is("Diplomacy") {
-                return at(&self.top_button_frames[0]);
-            } else if is("Options") {
-                return at(&self.top_button_frames[1]);
-            } else if is("Radar") {
-                return only(Some(self.radar));
-            } else if is("Middle") {
-                return only(Some(self.side1));
-            } else if is("Repair") {
-                return at(&self.repair_frames);
-            } else if is("Sell") {
-                return at(&self.sell_frames);
-            } else if is("ScrollDown") {
-                return at(&self.scroll_down_frames);
-            } else if is("ScrollUp") {
-                return at(&self.scroll_up_frames);
-            } else if is("Power") {
-                return at(&self.powerp_frames);
-            }
-            let tab = ["Buildings", "Defenses", "Infantry", "Vehicles"]
-                .iter()
-                .position(|tab| is(tab))?;
-            return at(&self.tab_frames[tab]);
-        }
-        if !is("Cameos") {
-            return None;
-        }
-        if key.eq_ignore_ascii_case("RowArt") {
-            only(Some(self.side2))
-        } else if key.eq_ignore_ascii_case("EndArt") {
-            only(Some(self.side3))
-        } else if key.eq_ignore_ascii_case("FootArt") {
-            only(self.unknown_top_housing)
-        } else {
-            None
-        }
+        let (_, _, frames) = self.pieces.iter().find(|(part, picture, _)| {
+            part.eq_ignore_ascii_case(node) && picture.eq_ignore_ascii_case(key)
+        })?;
+        frames.get(frame).copied().flatten()
     }
 
     pub fn source_identity(&self) -> &SidebarChromeAtlasIdentity {
@@ -1021,7 +942,6 @@ fn build_theme_atlas(
 ) -> Option<SidebarChromeAtlas> {
     let palette_name = names.radar_palette;
     let radar_name = names.radar;
-    let background_names = Some(names.backgrounds);
     let mix = asset_manager.archive(mix_name)?;
     let theme_route = SidebarThemeRoute {
         assets: asset_manager,
@@ -1048,126 +968,67 @@ fn build_theme_atlas(
         "{theme:?} generic sidebar palette resolved from {}",
         generic_palette_source
     );
-    // For sidebar inspection/fidelity work, decode every sidebar-side MIX SHP
-    // with the theme's main sidebar palette so unknown pieces are comparable
-    // under one consistent color treatment.
-    let tabs_palette = theme_palette.clone();
-
-    // Required pieces — without these, skip the theme entirely.
-    let (radar_shape, radar_source) = theme_route.shape(radar_name, RADAR_DEFAULT_FRAME)?;
-    let radar = render_shp(&radar_shape, &theme_palette, RADAR_DEFAULT_FRAME)?;
+    // The pictures the built-in veraui.ini gives the sidebar's parts. The
+    // radar is theme art: its own MIX, the theme palette and the file the
+    // Ares filename switch names (`SidebarArtNames`). Every other part is
+    // generic chrome of the side route in SIDEBAR.PAL; 652E90 + 653010 draw
+    // even Yuri's diplomacy and options buttons with it. A frame the file
+    // lacks stays None, and the draw falls back to frame 0 or skips it.
+    let mut radar = None;
+    let mut excluded_extra_ids = std::collections::HashSet::new();
+    let mut rendered_pieces = Vec::new();
+    for art in crate::ui::match_layout::sidebar_art(theme) {
+        let is = |node: &str, key: &str| {
+            art.node.eq_ignore_ascii_case(node) && art.key.eq_ignore_ascii_case(key)
+        };
+        let radar_part = art.node.eq_ignore_ascii_case("Radar");
+        let file = if radar_part { radar_name } else { art.file.as_str() };
+        excluded_extra_ids.insert(mix_hash(file));
+        let frames: Vec<Option<RenderedChromeEntry>> = if radar_part || art.palette.is_some() {
+            let shape = theme_route.shape(file, RADAR_DEFAULT_FRAME);
+            let frames = (0..art.frames)
+                .map(|frame| render_shp(&shape.as_ref()?.0, &theme_palette, frame))
+                .collect();
+            if radar_part {
+                radar = radar.or(shape);
+            }
+            frames
+        } else {
+            (0..art.frames)
+                .map(|frame| render_side_entry(side_route, file, &generic_palette, frame))
+                .collect()
+        };
+        // Without these the theme is skipped. Residual: with no side1 shape
+        // gamemd loads SIDEGDI1..3.SHP in place of all three
+        // (0x006ABD47..0x006ABD7E; a missing side2 or side3 alone has no
+        // fallback). No retail archive holds them, so only a mod that ships
+        // them but not side1.shp would see them; VERA skips the theme.
+        let required =
+            radar_part || is("Middle", "Art") || is("Cameos", "RowArt") || is("Cameos", "EndArt");
+        if required && frames.first().is_none_or(Option::is_none) {
+            return None;
+        }
+        for (frame, entry) in frames.iter().enumerate() {
+            if entry.is_none() {
+                log::warn!("{file} frame {frame} missing in the sidebar's archives");
+            }
+        }
+        rendered_pieces.push((art.node, art.key, frames));
+    }
+    let (radar_shape, radar_source) = radar?;
     let radar_identity = SidebarChromeAssetIdentity {
         logical_name: radar_name.to_owned(),
         source_archive: Some(radar_source.to_owned()),
     };
-
     // Pre-render all radar.shp frames for the opening/closing animation.
     let (radar_frames, radar_frame_size, radar_content_insets) =
         render_all_radar_frames(&radar_shape, &theme_palette);
-    // Residual: with no side1 shape gamemd loads SIDEGDI1..3.SHP in place of
-    // all three (0x006ABD47..0x006ABD7E; a missing side2 or side3 alone has no
-    // fallback). No retail archive holds them, so only a mod that ships them
-    // but not side1.shp would see them; VERA skips the theme.
-    let side1 = render_side_entry(side_route, "side1.shp", &generic_palette, 0)?;
-    let side2 = render_side_entry(side_route, "side2.shp", &generic_palette, 0)?;
-    let side3 = render_side_entry(side_route, "side3.shp", &generic_palette, 0)?;
 
-    // Optional pieces — gracefully degrade if missing.
-    let tabs = theme_route
-        .render("tabs.shp", &tabs_palette, 0)
-        .map(|(art, _)| art);
-
-    // Tab buttons: 4 tabs × 5 frames each. Missing frames in retail fall
-    // back to None; the renderer skips that frame's draw if not present.
-    // Frame 0 = idle, 1 = active-tab, 2 = disabled, 3 = flash-idle,
-    // 4 = flash-active (`ui::sidebar::gadget_flash::shape_button_frame`).
-    let mut tab_frame_entries: [[Option<RenderedChromeEntry>; 5]; 4] = Default::default();
-    for (tab, tab_entries) in tab_frame_entries.iter_mut().enumerate() {
-        for (frame, slot) in tab_entries.iter_mut().enumerate() {
-            let entry = render_side_entry(
-                side_route,
-                &format!("tab0{tab}.shp"),
-                &generic_palette,
-                frame,
-            );
-            if entry.is_none() && frame > 0 {
-                log::warn!(
-                    "tab0{tab}.shp frame {frame} missing in MIX — gadget state {frame} will fall back to idle"
-                );
-            }
-            *slot = entry;
-        }
-    }
-
-    let mut repair_frame_entries: [Option<RenderedChromeEntry>; 5] = Default::default();
-    for (frame, slot) in repair_frame_entries.iter_mut().enumerate() {
-        let entry = render_side_entry(side_route, "repair.shp", &generic_palette, frame);
-        if entry.is_none() && frame > 0 {
-            log::warn!("repair.shp frame {frame} missing in MIX");
-        }
-        *slot = entry;
-    }
-
-    let mut sell_frame_entries: [Option<RenderedChromeEntry>; 5] = Default::default();
-    for (frame, slot) in sell_frame_entries.iter_mut().enumerate() {
-        let entry = render_side_entry(side_route, "sell.shp", &generic_palette, frame);
-        if entry.is_none() && frame > 0 {
-            log::warn!("sell.shp frame {frame} missing in MIX");
-        }
-        *slot = entry;
-    }
-
-    // `RadarClass::FreeButtonShapes @ 0x00652D90` frees both shapes again
-    // before Init_For_House reloads them; dropping this table does the same.
-    // 652E90 + 653010: both top controls use the generic SIDEBAR.PAL
-    // converter (87F6CC), including Yuri. Native mask5, plain toggle kind0.
-    let top_button_entries: [[Option<RenderedChromeEntry>; 2]; 2] = ["diplobtn.shp", "optbtn.shp"]
-        .map(|name| {
-            std::array::from_fn(|frame| {
-                render_side_entry(side_route, name, &generic_palette, frame)
-            })
-        });
-
-    // Strip-scroll pair — 3-frame art (0 idle, 1 pressed, 2 disabled).
-    // render_entry returns None for absent frames and the draw falls back to
-    // frame 0, so a short retail SHP still degrades gracefully.
-    let mut scroll_up_entries: [Option<RenderedChromeEntry>; SCROLL_FRAME_COUNT] =
-        Default::default();
-    let mut scroll_down_entries: [Option<RenderedChromeEntry>; SCROLL_FRAME_COUNT] =
-        Default::default();
-    for frame in 0..SCROLL_FRAME_COUNT {
-        scroll_up_entries[frame] =
-            render_side_entry(side_route, "r-up.shp", &generic_palette, frame);
-        scroll_down_entries[frame] =
-            render_side_entry(side_route, "r-dn.shp", &generic_palette, frame);
-    }
-    if scroll_up_entries[0].is_none() {
-        log::warn!("r-up.shp missing in MIX — strip scroll-up button will not render");
-    }
-    if scroll_down_entries[0].is_none() {
-        log::warn!("r-dn.shp missing in MIX — strip scroll-down button will not render");
-    }
-    let power = theme_route
-        .render("power.shp", &theme_palette, 0)
-        .map(|(art, _)| art);
-    // 63FB20 uses the actual SHP frame/canvas; transparent samples keep
-    // their skipped-store meaning and the renderer advances by 3 pixels.
-    let powerp_rendered: Vec<RenderedChromeEntry> = (0..5)
-        .filter_map(|i| render_side_entry(side_route, "powerp.shp", &generic_palette, i))
-        .collect();
-    let top_strip_left = render_entry_by_id(mix, TOP_STRIP_LEFT_ID, &tabs_palette, 0);
-    let top_strip_sidebar = render_side_entry(side_route, "top.shp", &generic_palette, 0);
-    let top_strip_thin = render_side_entry(side_route, "credits.shp", &generic_palette, 0);
-    let unknown_top_housing = render_side_entry(side_route, "addon.shp", &generic_palette, 0);
-    let unknown_mid_panel = render_entry_by_id(mix, UNKNOWN_MID_PANEL_ID, &theme_palette, 0);
     let (
         [background_large, background_medium, background_small],
         background_identities,
         background_palette,
-    ) = background_names
-        .and_then(|backgrounds| {
-            in_game_shell::load_backgrounds(theme_route, backgrounds, names.background_palette)
-        })
+    ) = in_game_shell::load_backgrounds(theme_route, names.backgrounds, names.background_palette)
         .map(|(entries, identities, palette)| (entries, Some(identities), Some(palette)))
         .unwrap_or(([None, None, None], None, None));
     let source_identity = SidebarChromeAtlasIdentity {
@@ -1185,14 +1046,10 @@ fn build_theme_atlas(
         backgrounds: background_identities,
         background_palette,
     };
-    let excluded_extra_ids = known_loose_piece_ids(radar_name);
-    let extra_rendered = collect_extra_entries(
-        mix,
-        &theme_palette,
-        &tabs_palette,
-        background_names,
-        &excluded_extra_ids,
-    );
+    // For sidebar inspection/fidelity work, decode every other SHP of the
+    // theme's MIX with its main sidebar palette so unknown pieces are
+    // comparable under one consistent color treatment.
+    let extra_rendered = collect_extra_entries(mix, &theme_palette, &excluded_extra_ids);
 
     // GCLOCK2.SHP — production progress clock overlay (separate texture).
     let (gclock_texture, gclock_frames) =
@@ -1207,66 +1064,20 @@ fn build_theme_atlas(
             }
         };
 
-    // Collect all pieces to pack into the atlas.
-    let mut all_entries: Vec<&RenderedChromeEntry> = vec![&radar, &side1, &side2, &side3];
+    // Collect all pieces to pack into the atlas, one below the other.
+    let backgrounds = [&background_large, &background_medium, &background_small];
+    let mut all_entries: Vec<&RenderedChromeEntry> = Vec::new();
     all_entries.extend(command_bar_art.entries());
     all_entries.extend(in_game_shell_art.entries());
     all_entries.extend(layout_art_rendered.entries());
     all_entries.extend(observer_art_rendered.entries());
-    if let Some(ref top) = top_strip_left {
-        all_entries.push(top);
-    }
-    if let Some(ref top) = top_strip_sidebar {
-        all_entries.push(top);
-    }
-    if let Some(ref top) = top_strip_thin {
-        all_entries.push(top);
-    }
-    if let Some(ref unknown) = unknown_top_housing {
-        all_entries.push(unknown);
-    }
-    if let Some(ref unknown) = unknown_mid_panel {
-        all_entries.push(unknown);
-    }
-    if let Some(ref bg) = background_large {
-        all_entries.push(bg);
-    }
-    if let Some(ref bg) = background_medium {
-        all_entries.push(bg);
-    }
-    if let Some(ref bg) = background_small {
-        all_entries.push(bg);
-    }
-    if let Some(ref t) = tabs {
-        all_entries.push(t);
-    }
-    for entry in tab_frame_entries.iter().flatten().flatten() {
-        all_entries.push(entry);
-    }
-    for entry in repair_frame_entries.iter().flatten() {
-        all_entries.push(entry);
-    }
-    for entry in sell_frame_entries.iter().flatten() {
-        all_entries.push(entry);
-    }
-    for entry in top_button_entries.iter().flatten().flatten() {
-        all_entries.push(entry);
-    }
-    for entry in scroll_up_entries.iter().flatten() {
-        all_entries.push(entry);
-    }
-    for entry in scroll_down_entries.iter().flatten() {
-        all_entries.push(entry);
-    }
-    if let Some(ref p) = power {
-        all_entries.push(p);
-    }
-    for pf in &powerp_rendered {
-        all_entries.push(pf);
-    }
-    for extra in &extra_rendered {
-        all_entries.push(&extra.rendered);
-    }
+    all_entries.extend(backgrounds.into_iter().flatten());
+    all_entries.extend(
+        rendered_pieces
+            .iter()
+            .flat_map(|(_, _, frames)| frames.iter().flatten()),
+    );
+    all_entries.extend(extra_rendered.iter().map(|extra| &extra.rendered));
 
     let atlas_width = all_entries.iter().map(|e| e.width).max().unwrap_or(1);
     let atlas_height: u32 = all_entries
@@ -1275,159 +1086,30 @@ fn build_theme_atlas(
         .sum::<u32>();
     let mut rgba = vec![0u8; (atlas_width * atlas_height * 4) as usize];
     let mut y = 0u32;
-    let command_bar = command_bar_art.map(|entry| {
+    let mut pack = |entry: &RenderedChromeEntry| -> SidebarChromeEntry {
         let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
         y += entry.height + CHROME_PADDING;
         uv
-    });
-    let in_game_shell = in_game_shell_art.map(|entry| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-        y += entry.height + CHROME_PADDING;
-        uv
-    });
-    let layout_art = layout_art_rendered.map(|entry| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-        y += entry.height + CHROME_PADDING;
-        uv
-    });
-    let observer_art = observer_art_rendered.map(|entry| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-        y += entry.height + CHROME_PADDING;
-        uv
-    });
-
-    let top_strip_left_uv = top_strip_left.as_ref().map(|entry| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-        y += entry.height + CHROME_PADDING;
-        uv
-    });
-    let top_strip_sidebar_uv = top_strip_sidebar.as_ref().map(|entry| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-        y += entry.height + CHROME_PADDING;
-        uv
-    });
-    let top_strip_thin_uv = top_strip_thin.as_ref().map(|entry| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-        y += entry.height + CHROME_PADDING;
-        uv
-    });
-    let unknown_top_housing_uv = unknown_top_housing.as_ref().map(|entry| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-        y += entry.height + CHROME_PADDING;
-        uv
-    });
-    let unknown_mid_panel_uv = unknown_mid_panel.as_ref().map(|entry| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-        y += entry.height + CHROME_PADDING;
-        uv
-    });
-    let background_large_uv = background_large.as_ref().map(|entry| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-        y += entry.height + CHROME_PADDING;
-        uv
-    });
-    let background_medium_uv = background_medium.as_ref().map(|entry| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-        y += entry.height + CHROME_PADDING;
-        uv
-    });
-    let background_small_uv = background_small.as_ref().map(|entry| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-        y += entry.height + CHROME_PADDING;
-        uv
-    });
-    let radar_uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, &radar);
-    y += radar.height + CHROME_PADDING;
-    let side1_uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, &side1);
-    y += side1.height + CHROME_PADDING;
-
-    let tabs_uv = tabs.as_ref().map(|t| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, t);
-        y += t.height + CHROME_PADDING;
-        uv
-    });
-
-    let mut tab_frames_packed: [[Option<SidebarChromeEntry>; 5]; 4] = Default::default();
-    for tab in 0..4 {
-        for frame in 0..5 {
-            if let Some(ref entry) = tab_frame_entries[tab][frame] {
-                let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-                y += entry.height + CHROME_PADDING;
-                tab_frames_packed[tab][frame] = Some(uv);
-            }
-        }
-    }
-
-    let side2_uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, &side2);
-    y += side2.height + CHROME_PADDING;
-    let side3_uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, &side3);
-    y += side3.height + CHROME_PADDING;
-
-    let mut repair_frames_packed: [Option<SidebarChromeEntry>; 5] = Default::default();
-    for frame in 0..5 {
-        if let Some(ref entry) = repair_frame_entries[frame] {
-            let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-            y += entry.height + CHROME_PADDING;
-            repair_frames_packed[frame] = Some(uv);
-        }
-    }
-    let mut sell_frames_packed: [Option<SidebarChromeEntry>; 5] = Default::default();
-    for frame in 0..5 {
-        if let Some(ref entry) = sell_frame_entries[frame] {
-            let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-            y += entry.height + CHROME_PADDING;
-            sell_frames_packed[frame] = Some(uv);
-        }
-    }
-    let top_button_frames = top_button_entries.each_ref().map(|frames| {
-        frames.each_ref().map(|entry| {
-            entry.as_ref().map(|entry| {
-                let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-                y += entry.height + CHROME_PADDING;
-                uv
-            })
-        })
-    });
-    let mut scroll_up_frames_packed: [Option<SidebarChromeEntry>; SCROLL_FRAME_COUNT] =
-        Default::default();
-    for frame in 0..SCROLL_FRAME_COUNT {
-        if let Some(ref entry) = scroll_up_entries[frame] {
-            let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-            y += entry.height + CHROME_PADDING;
-            scroll_up_frames_packed[frame] = Some(uv);
-        }
-    }
-    let mut scroll_down_frames_packed: [Option<SidebarChromeEntry>; SCROLL_FRAME_COUNT] =
-        Default::default();
-    for frame in 0..SCROLL_FRAME_COUNT {
-        if let Some(ref entry) = scroll_down_entries[frame] {
-            let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, entry);
-            y += entry.height + CHROME_PADDING;
-            scroll_down_frames_packed[frame] = Some(uv);
-        }
-    }
-    let power_uv = power.as_ref().map(|p| {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, p);
-        y += p.height + CHROME_PADDING;
-        uv
-    });
-    let mut powerp_uvs: [Option<SidebarChromeEntry>; 5] = [None; 5];
-    for (i, pf) in powerp_rendered.iter().enumerate() {
-        if i < 5 {
-            let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, pf);
-            y += pf.height + CHROME_PADDING;
-            powerp_uvs[i] = Some(uv);
-        }
+    };
+    let command_bar = command_bar_art.map(&mut pack);
+    let in_game_shell = in_game_shell_art.map(&mut pack);
+    let layout_art = layout_art_rendered.map(&mut pack);
+    let observer_art = observer_art_rendered.map(&mut pack);
+    let [background_large, background_medium, background_small] =
+        backgrounds.map(|entry| entry.as_ref().map(&mut pack));
+    let mut pieces: Vec<(String, &'static str, Vec<Option<SidebarChromeEntry>>)> =
+        Vec::with_capacity(rendered_pieces.len());
+    for (node, key, frames) in &rendered_pieces {
+        let frames = frames.iter().map(|entry| entry.as_ref().map(&mut pack));
+        pieces.push((node.clone(), *key, frames.collect()));
     }
     let mut extra_entries = Vec::with_capacity(extra_rendered.len());
     for extra in &extra_rendered {
-        let uv = blit_entry(&mut rgba, atlas_width, atlas_height, y, &extra.rendered);
-        y += extra.rendered.height + CHROME_PADDING;
         extra_entries.push(SidebarChromeExtraEntry {
             id: extra.id,
             label: extra.label.clone(),
             frame_count: extra.frame_count,
-            entry: uv,
+            entry: pack(&extra.rendered),
         });
     }
 
@@ -1438,25 +1120,6 @@ fn build_theme_atlas(
         atlas_height,
         all_entries.len()
     );
-    log::info!(
-        "  radar={}x{} side1={}x{} tabs={} side2={}x{} side3={}x{}",
-        radar.width,
-        radar.height,
-        side1.width,
-        side1.height,
-        tabs.as_ref()
-            .map(|t| format!("{}x{}", t.width, t.height))
-            .unwrap_or("none".into()),
-        side2.width,
-        side2.height,
-        side3.width,
-        side3.height,
-    );
-    for (tab, tab_entries) in tab_frame_entries.iter().enumerate() {
-        if let Some(ref entry) = tab_entries[0] {
-            log::info!("  tab0{} (5 frames): {}x{}", tab, entry.width, entry.height);
-        }
-    }
 
     let texture = batch.create_texture(gpu, &rgba, atlas_width, atlas_height);
     // VERA's smooth sidebar scales what the column and the command bar draw:
@@ -1464,33 +1127,9 @@ fn build_theme_atlas(
     // the extras nothing draws.
     let sidebar_pieces: Vec<[u32; 4]> = command_bar
         .entries()
-        .copied()
-        .chain(layout_art.entries().copied())
-        .chain(observer_art.entries().copied())
-        .chain(
-            [
-                top_strip_left_uv,
-                top_strip_sidebar_uv,
-                top_strip_thin_uv,
-                unknown_top_housing_uv,
-                unknown_mid_panel_uv,
-                Some(radar_uv),
-                Some(side1_uv),
-                tabs_uv,
-                Some(side2_uv),
-                Some(side3_uv),
-                power_uv,
-            ]
-            .into_iter()
-            .flatten(),
-        )
-        .chain(tab_frames_packed.iter().flatten().flatten().copied())
-        .chain(repair_frames_packed.iter().flatten().copied())
-        .chain(sell_frames_packed.iter().flatten().copied())
-        .chain(top_button_frames.iter().flatten().flatten().copied())
-        .chain(scroll_up_frames_packed.iter().flatten().copied())
-        .chain(scroll_down_frames_packed.iter().flatten().copied())
-        .chain(powerp_uvs.iter().flatten().copied())
+        .chain(layout_art.entries())
+        .chain(observer_art.entries())
+        .chain(pieces.iter().flat_map(|(_, _, frames)| frames.iter().flatten()))
         .map(|entry| {
             [
                 (entry.uv_origin[0] * atlas_width as f32).round() as u32,
@@ -1514,30 +1153,13 @@ fn build_theme_atlas(
         in_game_shell,
         layout_art,
         observer_art,
-        top_strip_left: top_strip_left_uv,
-        top_strip_sidebar: top_strip_sidebar_uv,
-        top_strip_thin: top_strip_thin_uv,
-        unknown_top_housing: unknown_top_housing_uv,
-        unknown_mid_panel: unknown_mid_panel_uv,
-        background_large: background_large_uv,
-        background_medium: background_medium_uv,
-        background_small: background_small_uv,
+        background_large,
+        background_medium,
+        background_small,
         radar_frames,
         radar_frame_size,
         radar_content_insets,
-        radar: radar_uv,
-        side1: side1_uv,
-        tabs: tabs_uv,
-        tab_frames: tab_frames_packed,
-        side2: side2_uv,
-        side3: side3_uv,
-        repair_frames: repair_frames_packed,
-        sell_frames: sell_frames_packed,
-        top_button_frames,
-        scroll_up_frames: scroll_up_frames_packed,
-        scroll_down_frames: scroll_down_frames_packed,
-        power: power_uv,
-        powerp_frames: powerp_uvs,
+        pieces,
         extra_entries,
         gclock_texture,
         gclock_frames,
@@ -1561,32 +1183,9 @@ struct ExtraRenderedEntry {
     rendered: RenderedChromeEntry,
 }
 
-fn known_loose_piece_ids(radar_name: &str) -> std::collections::HashSet<i32> {
-    let mut ids = std::collections::HashSet::new();
-    ids.insert(mix_hash(radar_name));
-    ids.insert(mix_hash("side1.shp"));
-    ids.insert(mix_hash("tabs.shp"));
-    ids.insert(mix_hash("tab00.shp"));
-    ids.insert(mix_hash("tab01.shp"));
-    ids.insert(mix_hash("tab02.shp"));
-    ids.insert(mix_hash("tab03.shp"));
-    ids.insert(mix_hash("side2.shp"));
-    ids.insert(mix_hash("side3.shp"));
-    ids.insert(mix_hash("repair.shp"));
-    ids.insert(mix_hash("sell.shp"));
-    ids.insert(mix_hash("powerp.shp"));
-    ids.insert(TOP_STRIP_SIDEBAR_ID);
-    ids.insert(TOP_STRIP_THIN_ID);
-    ids.insert(UNKNOWN_TOP_HOUSING_ID);
-    ids.insert(UNKNOWN_MID_PANEL_ID);
-    ids
-}
-
 fn collect_extra_entries(
     mix: &MixArchive,
     palette: &Palette,
-    _tabs_palette: &Palette,
-    _background_names: Option<(&str, &str, &str)>,
     excluded_ids: &std::collections::HashSet<i32>,
 ) -> Vec<ExtraRenderedEntry> {
     let mut entries = Vec::new();
@@ -1710,17 +1309,6 @@ fn parse_sidebar_shape(assets: &AssetManager, bytes: &[u8]) -> Option<ShpFile> {
     } else {
         ShpFile::from_bytes(bytes).ok()
     }
-}
-
-fn render_entry_by_id(
-    mix: &MixArchive,
-    id: i32,
-    palette: &Palette,
-    frame_index: usize,
-) -> Option<RenderedChromeEntry> {
-    let shp_bytes = mix.get_by_id(id)?;
-    let shp = ShpFile::from_bytes(shp_bytes).ok()?;
-    render_shp(&shp, palette, frame_index)
 }
 
 fn blit_entry(
