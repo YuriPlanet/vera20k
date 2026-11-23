@@ -93,8 +93,8 @@ impl IceTiles {
             && tile <= i3.wrapping_add(0x10)
     }
 
-    /// Smooth's neighbour test: anything outside the three 0..=0x10 windows
-    /// is open.
+    /// Smooth's neighbour test: anything outside the three 0..0x10 windows
+    /// is open, cracked ice (0x10) included.
     pub(crate) fn smooth_open(self, tile: i32) -> bool {
         let [i1, i2, i3] = self.ice;
         tile < i1

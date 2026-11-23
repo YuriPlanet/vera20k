@@ -7,36 +7,39 @@ water the map marks for ice grows back. Yuri's Revenge still reads the rules key
 no ice code. VERA runs Firestorm's ice on a Snow theater whose theater INI gives the three
 ice sets their 64 tiles each and the ice shore set at least one tile. Retail `SNOWMD.INI`
 names all four sets with no tiles in them, so stock games play as before: no extra random
-draw, timer or save data.
+draw or timer, and saves carry the ice fields empty. Retail `RULESMD.INI` also sets both
+weights to 50.0, which no retail unit reaches.
 
 ```ini
-; SNOWMD.INI (the theater)
+; SNOWMD.INI (the theater), numbered as Tiberian Sun's SNOW.INI
 [General]
-Ice1Set=...       ; three tilesets of 64 ice tiles each, in Firestorm's order:
-Ice2Set=...       ; 0 solid ice, 1-15 smoothed edges, 16 cracked,
-Ice3Set=...       ; 17-62 ice/water edges, 63 open water
-IceShoreSet=...   ; must hold tiles, or ice stays off
-ShorePieces=...   ; ice beside these tiles takes an edge piece
-WaterSet=...      ; open water, which a break may take in
+Ice1Set=31        ; three tilesets of 64 ice tiles each (Ice01, Ice02, Ice03):
+Ice2Set=32        ; 0 solid ice, 1-15 smoothed edges, 16 cracked,
+Ice3Set=33        ; 17-62 ice/water edges, 63 open water
+IceShoreSet=34    ; must hold tiles (Ishore, 48), or ice stays off
+ShorePieces=12    ; ice beside these tiles takes an edge piece
+WaterSet=21       ; open water, which a break may take in
 
-; RULESMD.INI (or a map)
+; RULESMD.INI (or a map), with Tiberian Sun's values
 [General]
 IceCrackingWeight=2.0   ; a unit at least this Weight= cracks the ice it drives onto
-IceBreakingWeight=4.0   ; at least this heavy, it breaks it
+IceBreakingWeight=4.0   ; at least this heavy, it breaks it (retail YR: 50.0 for both)
 
 [AudioVisual]
-IceGrowthRate=1.0           ; minutes between growth passes; 0 turns growth off
-IceSolidifyFrameTime=500    ; frames before a crack freezes over
-IceCrackSounds=IceCrack1,IceCrack2   ; one plays at random per crack
+IceGrowthRate=1.5           ; minutes between growth passes; 0 turns growth off
+IceSolidifyFrameTime=1000   ; frames before a crack freezes over
+IceCrackSounds=ICECRAK1,ICECRAK2,ICECRAK3   ; one plays at random per crack (not in YR)
 
 ; the map
 [Basic]
 IceGrowthEnabled=yes    ; growth and freezing over (default yes)
 ```
 
-- A vehicle that arrives on a cell with `Weight=` at least `IceBreakingWeight=` breaks the
+- A vehicle that arrives on ice with `Weight=` at least `IceBreakingWeight=` breaks the
   ice there; one at least `IceCrackingWeight=` cracks it, and cracks it through if it is
-  already cracked. Infantry and aircraft never crack ice.
+  already cracked. Infantry and aircraft never crack ice. Tiberian Sun's ice TMPs all mark
+  their land Ice; the theater turns tiles 17 to 63 of each family into Water when it loads,
+  so only solid, smoothed and cracked ice carries ground units.
 - A crack takes one of the three families' cracked tile at random, plays one of
   `IceCrackSounds=` at full volume and freezes again `IceSolidifyFrameTime=` frames later.
   Its sides that are also cracked freeze with it.
@@ -48,12 +51,14 @@ IceGrowthEnabled=yes    ; growth and freezing over (default yes)
   `AmphibiousDestroyer`), which stay afloat. The unit that broke the ice sinks whatever its
   movement zone. A sinking unit drifts three leptons a frame along its facing and nine
   down, then is gone once it is more than 400 leptons under the ground, counted as a loss
-  with no attacker. A `Wake` anim marks each one.
+  with no attacker. A `Wake` anim marks each one. A unit killed while it sinks keeps
+  sinking until it is gone.
 - A `Wall=yes` or `Fire=yes` warhead cracks the ice it hits, or breaks cracked ice, unless
   it went off at a bridge deck over that cell.
 - Every `IceGrowthRate=` minutes, with `IceGrowthEnabled=yes`, broken ice and open water of
   the first two families refreezes on the cells the map's IsoMapPack5 marks for ice.
-- Navigation, the radar and the minimap follow each change, and saves keep the ice.
+- Navigation, the radar and the minimap follow each change, and saves keep the ice. The
+  navigation zones are rebuilt once at the end of a frame in which ice broke.
 
 Firestorm 2.0 evidence: Read_Theater `0x4F3950` (the set keys) and its land patch
 `0x4F54A5..0x4F5562` (edge and water tiles are Water); RandomIceSet `0x4F89B0`; Update_Ice
@@ -72,13 +77,26 @@ Residuals: Firestorm runs ice on every Snow map whatever its sets hold; VERA nee
 tiles, so a theater with partial sets has no ice. Firestorm empties the crack sound list
 before each rules layer reads it; VERA keeps the last layer that names the key. A breaker
 counts as on a bridge by its OnBridge state, not Firestorm's height test, and an explosion
-by the cell's bridge head, not its bridge flag. `Weight=` keeps float precision, so a
+by the cell's bridge head, not its bridge flag. Firestorm cracks and breaks from any cell a
+unit reaches, so a heavy enough ship or hovercraft would break open water under itself;
+VERA needs the unit on ice. In Tiberian Sun and Firestorm only the civilian `WINI`
+(`Weight=4.0`, a ground unit) reaches `IceBreakingWeight=`, and every hover or amphibious
+unit weighs the default 1.0 (TechnoType constructor `0x63ADB2`), so no case they reach
+changes.
+Firestorm's Take_Damage reads no sinking flag, so there a unit killed while sinking through
+ice explodes and is gone; VERA keeps gamemd's sinking hull (`0x00738493`, `0x007364A1`),
+which explodes and then finishes its sink. Firestorm rebuilds the zones at each break
+(Recalc_Ice); VERA rebuilds them once at the frame's end, so zone connectivity lags the
+new land within that frame (a sim-scale deviation). Tiberian Sun ships no variant image of
+an ice tile, so the land patch, which VERA applies to the main image as Firestorm does,
+never meets one; a mod's variant keeps its own land. `Weight=` keeps float precision, so a
 weight within that of a threshold may compare differently. Ice hooks into gamemd's own
 arrival and explosion code at the matching point, so an arrival gamemd ends early (docking,
 boarding a transport, being absorbed) or an explosion it ends early cracks nothing. Kept as Firestorm has them: an
 explosion's break takes the hit cell four times; a facing north-west drifts a sinking unit
 straight down; a crack that broke stays in the freeze list for good; Edge_Ice redraws open
 water even when it is unchanged; water counts as breakable, and with no `WaterSet=` tiles
-0 to 12 count as water. VERA's other readers of a sinking unit treat one sinking through
-ice as a sinking ship (no targeting, no orders). Each break rebuilds the navigation zones
-in full.
+0 to 12 count as water; Break_Ice sinks the occupants of a cell's ground list
+(Cell+0x70) and not those on a bridge deck over it (Cell+0x74, `0x454780`). VERA's other
+readers of a sinking unit treat one sinking through ice as a sinking ship (no targeting,
+no orders).
