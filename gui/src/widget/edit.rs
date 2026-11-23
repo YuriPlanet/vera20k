@@ -173,24 +173,23 @@ pub(crate) fn keep_caret_in_view(tree: &mut Tree, node: NodeId, scale: ShellScal
     let _ = tree.set(node, Prop::Top, Value::Int(i32::try_from(edit.first_visible_unit).unwrap_or(i32::MAX)));
 }
 
-/// The node's text and caret as the focused NewEdit typing works on (the
-/// view's first shown unit is the host's).
+/// The node's text, caret and first shown unit as the focused NewEdit
+/// typing works on (typing leaves the first shown unit to
+/// [`keep_caret_in_view`]).
 fn load(ctx: &Ctx<'_>, node: NodeId) -> Option<NewEdit> {
     let n = ctx.tree.node(node).ok()?;
-    Some(NewEdit { focused: true, first_visible_unit: 0, ..read(n) })
+    Some(NewEdit { focused: true, ..read(n) })
 }
 
-/// Writes the edit back; `TextChanged` when the text changed.
+/// Writes the edit back ([`write`]); `TextChanged` when the text changed.
 fn store(ctx: &mut Ctx<'_>, node: NodeId, edit: &NewEdit) {
     let text = edit.display_text();
-    let caret = String::from_utf16_lossy(&edit.units[..edit.caret]).chars().count();
     let changed = ctx
         .tree
         .node(node)
         .is_ok_and(|n| n.text_prop(Prop::Text).unwrap_or("") != text);
-    let _ = ctx.tree.set(node, Prop::Caret, Value::Int(i32::try_from(caret).unwrap_or(i32::MAX)));
+    write(ctx.tree, node, edit);
     if changed {
-        let _ = ctx.tree.set(node, Prop::Text, Value::Text(text.clone()));
         ctx.events.push(UiEvent::TextChanged { node, text });
     }
 }
