@@ -759,18 +759,32 @@ pub fn wol_add_buddy_layout(screen_w: i32, screen_h: i32) -> WolAddBuddyLayout {
 /// ([`crate::ui::wol_verify::BOXES`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WolVerifyLayout {
+    pub scale: geom::ShellScale,
     pub dialog: RectPx,
     pub title: RectPx,
     pub boxes: [RectPx; 8],
 }
 
-pub fn wol_verify_layout(screen_w: i32, screen_h: i32) -> WolVerifyLayout {
-    let dialog = menu_box(screen_w, screen_h);
+pub fn wol_verify_layout(
+    screen_w: i32,
+    screen_h: i32,
+    scale: geom::ShellScale,
+) -> WolVerifyLayout {
+    // Modern rooms carry the fitted room transform. The classic popup retains
+    // its executed native geometry, even in a larger fitted shell.
+    let dialog = if scale.is_unscaled() {
+        menu_box(screen_w, screen_h)
+    } else {
+        menu_box(geom::SHELL_BASE_W, geom::SHELL_BASE_H)
+    };
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
     WolVerifyLayout {
-        dialog,
-        title: child(59, 10, 180, 35),
-        boxes: std::array::from_fn(|node| child(33, 56 + 14 * node as i32, 234, 14)),
+        scale,
+        dialog: scale.scale_rect(dialog),
+        title: scale.scale_rect(child(59, 10, 180, 35)),
+        boxes: std::array::from_fn(|node| {
+            scale.scale_rect(child(33, 56 + 14 * node as i32, 234, 14))
+        }),
     }
 }
 
@@ -1193,6 +1207,33 @@ mod tests {
     }
 
     #[test]
+    fn modern_wol_verify_uses_the_room_transform_without_changing_retail_sizes() {
+        let native = wol_verify_layout(800, 600, geom::RETAIL_SCALE);
+        assert_eq!(native.dialog, RectPx::new(91, 121, 451, 326));
+        assert_eq!(
+            wol_verify_layout(640, 480, geom::RETAIL_SCALE).dialog,
+            RectPx::new(11, 61, 451, 326),
+        );
+
+        for (w, h) in [(320, 240), (1024, 768), (1600, 1200), (2048, 1152)] {
+            let scale = geom::shell_scale_for_window(w, h).anchored_right();
+            let layout = wol_verify_layout(w, h, scale);
+            assert_eq!(layout.scale, scale);
+            assert_eq!(layout.dialog, scale.scale_rect(native.dialog));
+            assert_eq!(layout.title, scale.scale_rect(native.title));
+            assert_eq!(layout.boxes, native.boxes.map(|r| scale.scale_rect(r)));
+            for rect in [layout.dialog, layout.title].into_iter().chain(layout.boxes) {
+                assert!(rect.x >= 0 && rect.y >= 0 && rect.w > 0 && rect.h > 0);
+                assert!(rect.x + rect.w <= w && rect.y + rect.h <= h);
+            }
+        }
+        assert_eq!(
+            wol_verify_layout(1600, 1200, geom::shell_scale(1600, 1200)).dialog,
+            RectPx::new(182, 242, 902, 652),
+        );
+    }
+
+    #[test]
     fn wol_verify_follows_the_executed_0x130_table() {
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/storage_oracle/wol_shell.json",
@@ -1205,7 +1246,8 @@ mod tests {
         let mut checked = 0;
         for (size, case) in corpus["layouts"]["0x130"]["sizes"].as_object().unwrap() {
             let (w, h) = size.split_once('x').unwrap();
-            let layout = wol_verify_layout(w.parse().unwrap(), h.parse().unwrap());
+            let layout =
+                wol_verify_layout(w.parse().unwrap(), h.parse().unwrap(), geom::RETAIL_SCALE);
             let native_dialog = rect(&case["dialog"]);
             assert_eq!(
                 (layout.dialog.w, layout.dialog.h),

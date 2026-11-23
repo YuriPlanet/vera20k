@@ -45,6 +45,16 @@ fn paint_box(
     buttons: &[ModalButton],
     labels: &[PaintLabel],
 ) -> WolLobbyPaint {
+    paint_box_on(state, dialog, buttons, labels, SCALE)
+}
+
+fn paint_box_on(
+    state: &AppState,
+    dialog: RectPx,
+    buttons: &[ModalButton],
+    labels: &[PaintLabel],
+    scale: ShellScale,
+) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
     let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
         return paint;
@@ -56,7 +66,7 @@ fn paint_box(
         dialog,
         buttons,
         labels,
-        SCALE,
+        scale,
         POPUP_DEPTHS,
     );
     paint.controls = draw.sprites;
@@ -172,11 +182,7 @@ pub(crate) fn paint_wol_verify(
         let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
             return paint;
         };
-        let (w, h) = (
-            state.renderer.gpu.config.width,
-            state.renderer.gpu.config.height,
-        );
-        let parts = message.parts(w as i32, h as i32, SCALE);
+        let parts = crate::app::shell_network_setup::verify_mismatch_parts(state, message);
         let pressed = verify.ok_pressed();
         let look = super::BoxLook::new(atlas.mode_two_dialog_background(side(state)), POPUP_DEPTHS);
         let ok = |id| pressed && id == crate::ui::wol_shell::BOX_OK;
@@ -191,7 +197,8 @@ pub(crate) fn paint_wol_verify(
         layout.title,
         ShellAlign::H_CENTER,
     )];
-    let mut paint = paint_box(state, layout.dialog, &[], &labels);
+    let scale = layout.scale;
+    let mut paint = paint_box_on(state, layout.dialog, &[], &labels, scale);
     let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
         return paint;
     };
@@ -205,7 +212,7 @@ pub(crate) fn paint_wol_verify(
             None,
             verify.pressed_scroll_part(),
             false,
-            SCALE,
+            scale,
         );
     }
     let checked = verify.checked();
@@ -219,17 +226,17 @@ pub(crate) fn paint_wol_verify(
                 rect,
                 checked: checked[node],
             },
-            SCALE,
+            scale,
         );
         paint.texts.push(shell_text::draw_in_rect_scaled(
             &state.renderer.bit_font,
             name,
-            rect_to_text_rect(crate::ui::skirmish_shell::checkbox_text_rect(rect, SCALE)),
+            rect_to_text_rect(crate::ui::skirmish_shell::checkbox_text_rect(rect, scale)),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
             [0.0; 2],
             POPUP_DEPTHS.text,
-            SCALE.factor(),
+            scale.factor(),
         ));
     }
     paint
