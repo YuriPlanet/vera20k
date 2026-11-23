@@ -3560,6 +3560,39 @@ fn startup_sets_aside_only_leftovers_of_ended_matches() {
 }
 
 #[test]
+fn a_failed_removal_waits_for_the_timed_retry_and_a_later_room_does_not_retry_it() {
+    let directory = TestDirectory::new();
+    let mut journals =
+        crate::journal::JournalDirectory::open(&directory.0, std::time::SystemTime::now()).unwrap();
+    let first = [5; 16];
+    let journal = journals.create(first, 45, 2).unwrap();
+    let room = directory.0.join("05".repeat(16));
+    // A stray file keeps the directory, so its removal fails.
+    std::fs::write(room.join("stray"), b"").unwrap();
+    journals.cleanup(journal, false);
+    assert!(room.is_dir());
+    let held = journals.reserved(&first).unwrap();
+    assert_eq!(journals.total(), held);
+    // The stray file is gone, so the removal would succeed now.
+    std::fs::remove_file(room.join("stray")).unwrap();
+
+    let second = [6; 16];
+    let journal = journals.create(second, 45, 2).unwrap();
+    journals.cleanup(journal, false);
+    assert!(!directory.0.join("06".repeat(16)).exists());
+    // The other room's removal did not run: it waits for the timed retry.
+    assert!(room.is_dir());
+    assert_eq!(journals.reserved(&first), Some(held));
+    assert_eq!(journals.total(), held);
+    assert_eq!(journals.growth(), 0);
+
+    journals.retry(0);
+    assert!(!room.exists());
+    assert_eq!(journals.reserved(&first), None);
+    assert_eq!(journals.total(), 0);
+}
+
+#[test]
 fn failed_archive_creation_and_removal_release_their_slot() {
     let directory = TestDirectory::new();
     let key = SecretKey::new([73; 32]);
