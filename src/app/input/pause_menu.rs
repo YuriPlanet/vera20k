@@ -558,12 +558,20 @@ fn sync_values(
 /// (a disabled one too, which paints in the side's dark colour) in its
 /// `states`: its renderer's call every drawn frame before it paints from
 /// them. The pointer's own sync hides the disabled buttons, so they neither
-/// hover nor take a press.
+/// hover nor take a press. The open Options page's tree is brought in line
+/// with its layout too, which it returns.
 pub(crate) fn sync(
     state: &mut AppState,
     states: &[PauseMenuButtonState; 8],
-) -> Option<PauseMenuLayout> {
+) -> Option<(PauseMenuLayout, Option<LauncherOptionsLayout>)> {
     let layout = current_layout(state)?;
+    let page_layout = options_page_layout(state);
+    if let (Some(page_layout), Some(page)) = (
+        &page_layout,
+        state.match_state.match_presentation.options_page.as_mut(),
+    ) {
+        page.dialog.shell_sync(page_layout);
+    }
     let template = layout.template;
     let positions = state
         .match_state
@@ -577,7 +585,7 @@ pub(crate) fn sync(
         |id| layout.rect(id),
         |gui, root| sync_values(gui, root, template, states, positions),
     );
-    Some(layout)
+    Some((layout, page_layout))
 }
 
 /// One pointer message on the menu (`down`: `None` moves). The Options page
