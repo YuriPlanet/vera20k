@@ -19,10 +19,10 @@ use crate::app::frontend::shell_pass::{
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
-    ButtonArt, GuiPaint, GuiStyle, paint_gui_styled,
+    ButtonArt, FrameArt, GuiPaint, GuiStyle, paint_gui_ids, paint_gui_styled,
 };
 use crate::app::frontend::skirmish_shell_render::{BoxLook, paint_shell_box};
-use crate::app::frontend::skirmish_shell_render::{WolLobbyPaint, paint_list_frame};
+use crate::app::frontend::skirmish_shell_render::WolLobbyPaint;
 use crate::app::shell_wol::WolPage;
 use crate::render::shell_paint::{
     self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, push_entry_scaled,
@@ -86,7 +86,7 @@ enum Body {
     Login(crate::ui::wol_login::WolLoginLayout),
     Lobby(crate::ui::wol_lobby::WolLobbyLayout),
     /// `0x114`'s group box, under its widgets.
-    MyInfo(RectPx),
+    MyInfo,
     /// `0x116`.
     Buddy(crate::ui::wol_buddy::WolBuddyLayout),
     /// `0x117`.
@@ -238,13 +238,12 @@ fn painted(state: &mut AppState) -> Option<Painted> {
         wol_my_info::DIALOG => {
             my_info::sync(state);
             let layout = my_info::layout(state);
-            let group_box = layout.rect_of(wol_my_info::GROUP_BOX).unwrap_or_default();
             let help = layout.page.status_help;
             painted(
                 layout.page.clone(),
                 help,
                 &wol_my_info::PAGE,
-                Body::MyInfo(group_box),
+                Body::MyInfo,
             )
         }
         wol_buddy::DIALOG => {
@@ -420,40 +419,48 @@ pub(crate) fn render_wol_page(
     let children = page_statics;
     let mut icon_sprites = Vec::new();
     let mut welcome_texts = None;
-    // `BS_GROUPBOX` frames (`0x0061E700`): the list's two rings, the top
-    // edge eight pixels below the window top, on the window's last column
-    // and row.
-    let mut group_boxes = Vec::new();
-    let mut group_box = |window: RectPx| {
-        if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
-            let frame = scale.derive_rect(window, |window| {
-                RectPx::new(window.x + 1, window.y + 9, window.w - 3, window.h - 11)
-            });
-            paint_list_frame(&mut group_boxes, atlas, frame);
-        }
+    // `BS_GROUPBOX` frames (`0x0061E700`) from the page's widgets: the
+    // list's two rings, the top edge eight pixels below the window top, on
+    // the window's last column and row.
+    let welcome_boxes: &'static [u16] = &crate::ui::wol_shell::GROUP_BOXES;
+    let my_info_box = std::slice::from_ref(&crate::ui::wol_my_info::GROUP_BOX);
+    let buddy_box = std::slice::from_ref(&crate::ui::wol_buddy::GROUP_BOX);
+    let frames = match body.filter(|_| children) {
+        Some(Body::Welcome(_)) => Some((WOL_WELCOME_DIALOG, welcome_boxes)),
+        Some(Body::MyInfo) => Some((crate::ui::wol_my_info::DIALOG, my_info_box)),
+        Some(Body::Buddy(_)) => Some((crate::ui::wol_buddy::DIALOG, buddy_box)),
+        _ => None,
     };
-    match body.filter(|_| children) {
-        Some(Body::Welcome(layout)) => {
-            layout.group_boxes().into_iter().for_each(&mut group_box);
-            let icons = art.iter().flat_map(|art| &art.icons);
-            for (file, window) in layout.icons() {
-                let Some((_, entry)) = icons.clone().find(|(name, _)| name == file) else {
-                    continue;
-                };
-                let (w, h) = entry.native_size();
-                let (x, y) = centred_in_window(scale.base_rect(window), w, h);
-                push_entry_scaled(&mut icon_sprites, *entry, x, y, scale, CHILD_DEPTH);
-            }
-            welcome_texts =
-                Some(crate::app::shell_wol::leaf::paint(state, WOL_WELCOME_DIALOG, scale).texts);
+    let controller = &state.frontend.shell_controller;
+    let group_boxes = match frames.and_then(|(dialog, ids)| Some((controller.root_in(dialog)?, ids))) {
+        Some((root, ids)) => {
+            let inset = RectPx::new(1, 9, 2, 2);
+            let frame_of = |id: i32| {
+                ids.iter()
+                    .any(|frame| i32::from(*frame) == id)
+                    .then_some(FrameArt::ListRings { inset })
+            };
+            let style = GuiStyle {
+                frame_of: Some(&frame_of),
+                ..Default::default()
+            };
+            let gui = controller.gui();
+            paint_gui_ids(state, gui, root, ids.iter().copied(), scale, style).controls
         }
-        Some(Body::MyInfo(window)) => group_box(*window),
-        Some(Body::Buddy(layout)) => group_box(
-            layout
-                .rect_of(crate::ui::wol_buddy::GROUP_BOX)
-                .unwrap_or_default(),
-        ),
-        _ => {}
+        None => Vec::new(),
+    };
+    if let Some(Body::Welcome(layout)) = body.filter(|_| children) {
+        let icons = art.iter().flat_map(|art| &art.icons);
+        for (file, window) in layout.icons() {
+            let Some((_, entry)) = icons.clone().find(|(name, _)| name == file) else {
+                continue;
+            };
+            let (w, h) = entry.native_size();
+            let (x, y) = centred_in_window(scale.base_rect(window), w, h);
+            push_entry_scaled(&mut icon_sprites, *entry, x, y, scale, CHILD_DEPTH);
+        }
+        welcome_texts =
+            Some(crate::app::shell_wol::leaf::paint(state, WOL_WELCOME_DIALOG, scale).texts);
     }
     let shown = body.filter(|_| children);
     let buddy_page = crate::app::shell_wol::buddy::page(state);
@@ -482,7 +489,7 @@ pub(crate) fn render_wol_page(
     };
     // The pages drawn by their widgets alone.
     let widget_children = match (&painted, shown) {
-        (Some(painted), Some(Body::MyInfo(_) | Body::Widgets)) => Some(
+        (Some(painted), Some(Body::MyInfo | Body::Widgets)) => Some(
             crate::app::shell_wol::leaf::paint(state, painted.dialog, painted.page.scale),
         ),
         _ => None,

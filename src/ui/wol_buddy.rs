@@ -612,6 +612,8 @@ pub(crate) fn spec() -> NodeSpec {
         .children(
             STATS.map(|id| help(NodeKind::Text, id).with(Prop::Align, align(ShellAlign::NONE))),
         )
+        // The group box's frame, which takes nothing.
+        .child(NodeSpec::new(NodeKind::Text).id(GROUP_BOX.into()))
 }
 
 #[cfg(all(test, tests_ui))]

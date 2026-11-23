@@ -211,6 +211,10 @@ pub(crate) enum FrameArt {
     /// native's extra pixel and the two-pixel border). `outer_light` puts
     /// the light colour on the outer ring (a sunken field).
     Plain { outer_light: bool },
+    /// A list's two frame rings ([`super::list::paint_list_frame`]) on the
+    /// node's rect less `inset` (base pixels, as a `TextInset`), no
+    /// caption: the WOL pages' `BS_GROUPBOX` frames.
+    ListRings { inset: RectPx },
 }
 
 /// How a dialog's combos paint their face.
@@ -1254,6 +1258,17 @@ pub(crate) fn push_frame(
         }
         FrameArt::Plain { outer_light } => {
             push_group_or_plain_frame(controls, white, rect, None, outer_light, scale)
+        }
+        FrameArt::ListRings { inset } => {
+            let window = scale.derive_rect(rect, |r| {
+                RectPx::new(
+                    r.x + inset.x,
+                    r.y + inset.y,
+                    r.w - inset.x - inset.w,
+                    r.h - inset.y - inset.h,
+                )
+            });
+            super::list::paint_list_frame_px(controls, white, window);
         }
     }
 }
