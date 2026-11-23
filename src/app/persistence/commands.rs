@@ -188,13 +188,6 @@ fn prepare_save<'a>(
         .sidebar_projection
         .model.saved_order()
         .map(|order| order.with_active_tab(active_tab));
-    // Phobos keeps `SWSidebar_Enable` in the scenario extension, so it rides
-    // the local presentation envelope rather than the simulation hash.
-    #[cfg(feature = "phobos")]
-    let sidebar_order = sidebar_order.map(|mut order| {
-        order.set_sw_sidebar_expanded(state.match_state.match_presentation.sw_sidebar.expanded);
-        order
-    });
     let tactical_view = crate::app::input::camera::saved_tactical_view(state);
     let rules_owner = rules_owner.ok_or(SaveCommandError::MissingResources("process rules"))?;
     let processed =

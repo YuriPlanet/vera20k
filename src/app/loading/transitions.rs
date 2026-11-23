@@ -260,6 +260,12 @@ pub(crate) fn install_world_presentation(
             .match_presentation
             .sw_sidebar
             .configure(assets.sw_sidebar_ui, significance);
+        state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .model
+            .reset_sw_sidebar();
     }
     state.match_state.match_presentation.outcome_banner_side_art = assets.outcome_banner_side_art;
     // Ares hook 6CC2B0's labels, only when Ares plays in the game

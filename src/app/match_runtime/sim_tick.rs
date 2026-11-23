@@ -2215,8 +2215,6 @@ fn advance_one_simulation_frame(
         let active_tab = crate::app::persistence::commands::saved_active_tab(
             state.match_state.match_presentation.active_sidebar_tab,
         );
-        #[cfg(feature = "phobos")]
-        let sw_sidebar_expanded = state.match_state.match_presentation.sw_sidebar.expanded;
         let mut prepared = initial_save;
         let persistence = &mut state.persistence;
         let mut campaign_save = |sim: &crate::sim::world::Simulation,
@@ -2232,11 +2230,6 @@ fn advance_one_simulation_frame(
                 let order = sidebar
                     .saved_order()
                     .map(|order| order.with_active_tab(active_tab));
-                #[cfg(feature = "phobos")]
-                let order = order.map(|mut order| {
-                    order.set_sw_sidebar_expanded(sw_sidebar_expanded);
-                    order
-                });
                 prepared.refresh_sidebar_order(order);
             }
             crate::app::persistence::commands::initial_campaign_save(

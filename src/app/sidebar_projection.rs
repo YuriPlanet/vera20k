@@ -74,6 +74,11 @@ pub(crate) struct SidebarModel {
     /// These references are independent of Factory completion and the one
     /// current/saved placement transaction. They are not serialized.
     ready_buildings: [Option<u64>; 2],
+    /// Phobos `ScenarioExt::SWSidebar_Enable` off: the superweapon column is
+    /// collapsed (it starts expanded). Saved and restored with the strips,
+    /// in the local presentation envelope rather than the simulation hash.
+    #[cfg(feature = "phobos")]
+    sw_sidebar_collapsed: bool,
 }
 
 /// The sidebar's view, rebuilt from its [`SidebarModel`] and each frame's
@@ -273,14 +278,6 @@ pub(crate) struct PreparedSidebarOrder {
 /// save without strips opens Init_Clear 6A5030's first tab.
 pub(crate) fn loaded_active_tab(order: Option<&PreparedSidebarOrder>) -> SidebarTab {
     order.map_or_else(SidebarTab::default_active_tab, |order| order.active_tab)
-}
-
-#[cfg(feature = "phobos")]
-impl PreparedSidebarOrder {
-    /// Phobos `ScenarioExt::SWSidebar_Enable` carried with the local envelope.
-    pub(crate) fn sw_sidebar_expanded(&self) -> bool {
-        self.sw_sidebar_expanded
-    }
 }
 
 impl SidebarProjectionState {
@@ -532,12 +529,35 @@ impl SidebarModel {
                     })
                     .collect()
             });
-            crate::sim::snapshot::SavedSidebarOrder::new(*owner, identities)
+            #[cfg_attr(not(feature = "phobos"), allow(unused_mut))]
+            let mut order = crate::sim::snapshot::SavedSidebarOrder::new(*owner, identities)
                 .with_flash(deadlines, redraw_until)
                 .with_requests(strips.saved_requests())
                 .with_factory_links(factory_links)
-                .with_prediction_categories(prediction_categories)
+                .with_prediction_categories(prediction_categories);
+            #[cfg(feature = "phobos")]
+            order.set_sw_sidebar_expanded(self.sw_sidebar_expanded());
+            order
         })
+    }
+
+    /// Whether Phobos' superweapon column is expanded
+    /// (`ScenarioExt::SWSidebar_Enable`).
+    #[cfg(feature = "phobos")]
+    pub(crate) fn sw_sidebar_expanded(&self) -> bool {
+        !self.sw_sidebar_collapsed
+    }
+
+    /// `ToggleSWButtonClass::SwitchSidebar`: collapse or expand the column.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn toggle_sw_sidebar(&mut self) {
+        self.sw_sidebar_collapsed = !self.sw_sidebar_collapsed;
+    }
+
+    /// A new scenario's column starts expanded.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn reset_sw_sidebar(&mut self) {
+        self.sw_sidebar_collapsed = false;
     }
 
     pub(crate) fn restore_order(&mut self, saved: Option<PreparedSidebarOrder>) {
@@ -550,6 +570,12 @@ impl SidebarModel {
                 self.cameos = Some((saved.owner, saved.strips));
                 self.factory_links = saved.factory_links;
                 self.prediction_categories = saved.prediction_categories;
+                // `ScenarioExt::SWSidebar_Enable` survives the load like the
+                // strips.
+                #[cfg(feature = "phobos")]
+                {
+                    self.sw_sidebar_collapsed = !saved.sw_sidebar_expanded;
+                }
             }
             None => {
                 self.cameos = None;

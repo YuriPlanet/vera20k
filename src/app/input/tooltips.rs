@@ -808,8 +808,9 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     // weapon name/cost tip as the right cameo.
     #[cfg(feature = "phobos")]
     {
-        let sw = &state.match_state.match_presentation.sw_sidebar;
-        if sw.ui.enabled && sw.expanded {
+        let presentation = &state.match_state.match_presentation;
+        let sw = &presentation.sw_sidebar;
+        if sw.ui.enabled && presentation.sidebar_projection.model.sw_sidebar_expanded() {
             for (index, entry) in sw.entries.iter().enumerate() {
                 let text = dynamic_tip_text(cursor, || {
                     let amount = state
