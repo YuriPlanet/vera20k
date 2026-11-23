@@ -8,7 +8,7 @@ use vera20k_gui::{Gui, InputEvent, Key, NodeId, NodeKind, NodeSpec, Prop, Value}
 
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
@@ -27,6 +27,10 @@ pub(crate) const PLAYERS: u16 = 0x53E;
 pub(crate) const CHAT_LOG: u16 = 0x53F;
 pub(crate) const OBSERVER_IMAGE: u16 = 0x75F;
 pub(crate) const OBSERVER_TOGGLE: u16 = 0x760;
+/// The heading `0x694` and the status line `0x695`: kind-1 statics whose
+/// text and reveal the page gives while they show.
+pub(crate) const TITLE: u16 = 0x694;
+pub(crate) const STATUS: u16 = 0x695;
 
 pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DialogResourceId(0xBB),
@@ -76,7 +80,15 @@ pub(crate) fn spec() -> NodeSpec {
             .with(Prop::TextInset, Value::Rect(RectPx::new(2, 0, 2, 0)))
             .with(Prop::NoSelectionFill, Value::Bool(id == CHAT_LOG))
     };
+    let text = |id: u16, align: ShellAlign| {
+        NodeSpec::new(NodeKind::Text)
+            .id(i32::from(id))
+            .with(Prop::Align, Value::Int(align.0.into()))
+    };
+    // The captions, top-left.
+    let labels = LABELS.map(|(id, key)| text(id, ShellAlign::NONE).label(key));
     NodeSpec::new(NodeKind::Dialog)
+        .children(labels)
         .children(crate::ui::shell::page::menu_buttons(&PAGE))
         .child(
             node(NodeKind::Edit, NAME)
@@ -86,6 +98,8 @@ pub(crate) fn spec() -> NodeSpec {
         .child(node(NodeKind::Edit, CHAT))
         .children([GAMES, PLAYERS, CHAT_LOG].map(list))
         .children([OBSERVER_TOGGLE, OBSERVER_IMAGE].map(|id| node(NodeKind::Checkbox, id)))
+        .child(text(TITLE, ShellAlign::PANEL_TITLE))
+        .child(text(STATUS, ShellAlign::NONE))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -724,6 +738,18 @@ impl LanLobbyLayout {
     /// Control `id`'s window; none for a control BB does not show.
     pub(crate) fn rect(&self, id: u16) -> Option<RectPx> {
         self.rects.get(id).or_else(|| self.page.button_rect(id))
+    }
+
+    /// Where widget `id` of [`spec`] sits: [`Self::rect`], the heading on
+    /// the panel's title and the status line's text in its window.
+    pub(crate) fn widget_rect(&self, id: u16) -> Option<RectPx> {
+        match id {
+            TITLE => Some(self.page.title),
+            STATUS => Some(crate::ui::shell::layout::status_text_rect(
+                self.page.status_help,
+            )),
+            _ => self.rect(id),
+        }
     }
 }
 
