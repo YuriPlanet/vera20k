@@ -204,8 +204,8 @@ pub(super) fn choose(
         .min_by_key(|(_, enemy)| (cell_distance(enemy.cell, anchor), enemy.entity_id))
         .map_or(nearest, |(_, enemy)| *enemy);
     let target = match blocking_structure(&structures, anchor, campaign_target) {
-        Some(blocker) => covering_defense(&structures, blocker).unwrap_or(blocker),
-        None => covering_defense(&structures, campaign_target).unwrap_or(campaign_target),
+        Some(blocker) => covering_defense(&structures, blocker, rules, obs).unwrap_or(blocker),
+        None => covering_defense(&structures, campaign_target, rules, obs).unwrap_or(campaign_target),
     };
     // A neutral building is nobody's, so it is in no census and no target list;
     // it is still closed ground the fist walks into and stops at. Sampling the
@@ -260,13 +260,15 @@ const DEFENSE_CLEAR_CELLS: i32 = 8;
 /// fight on its own.
 fn covering_defense(
     structures: &[(&ObjectType, EnemyEntity)],
-    target: EnemyEntity,
+    target: EnemyEntity, rules: &RuleSet, obs: &Observation<'_>,
 ) -> Option<EnemyEntity> {
     let clear = DEFENSE_CLEAR_CELLS * DEFENSE_CLEAR_CELLS;
     structures
         .iter()
         .filter(|(ty, enemy)| {
-            enemy.entity_id != target.entity_id && (0..8).any(|slot| ty.weapon_at(slot).is_some())
+            enemy.entity_id != target.entity_id
+                && obs.visible_enemy_building_operational(rules, enemy.entity_id)
+                && (0..8).any(|slot| ty.weapon_at(slot).is_some())
         })
         .filter(|(_, enemy)| {
             let dx = i32::from(enemy.cell.0) - i32::from(target.cell.0);

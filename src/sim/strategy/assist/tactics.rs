@@ -70,7 +70,9 @@ pub(super) fn need_siege(
     let (defensive_reach, defense, defender_id) = obs.visible_enemy_entities()
         .filter_map(|enemy| {
             let ty = obs.entity_type(rules,enemy.entity_id)?;
-            if !ty.is_base_defense || distance(enemy.cell,target) > 14
+            if !ty.is_base_defense
+                || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
+                || distance(enemy.cell,target) > 14
                 // Don't park the entire army at home because a gun exists
                 // on the far side of the map. Wait for artillery only when
                 // the main force is actually approaching its defended line.
@@ -129,8 +131,7 @@ pub(super) fn exposed_casualty(
     obs.visible_enemy_entities().any(|enemy| {
         if !obs.can_hurt(rules, enemy.entity_id, unit.entity_id) { return false; }
         let Some(attacker) = obs.entity_type(rules, enemy.entity_id) else { return false; };
-        let reach = super::advance::weapon_range_cells(
-            rules, attacker, obs.is_deployed(enemy.entity_id));
+        let reach = effective_reach_against(rules, obs, enemy.entity_id, unit.entity_id);
         if reach <= 0 || distance(enemy.cell, unit.cell) > reach + 1 { return false; }
         let lethal = super::avoidance::kills_outright(rules, attacker, victim, health);
         // A gun that is firing at somebody else should not empty our entire
@@ -149,6 +150,11 @@ fn effective_reach_against(
 ) -> i32 {
     use crate::rules::object_type::ObjectCategory;
     let Some(gun) = obs.entity_type(rules, attacker) else { return 0; };
+    // An unpowered defense does not have a real weapon envelope; continue
+    // treating its *building* as a hostile strategic target, not live fire.
+    if gun.category == ObjectCategory::Building
+        && !obs.visible_enemy_building_operational(rules, attacker)
+    { return 0; }
     let Some(target) = obs.entity_type(rules, victim) else { return 0; };
     let air = target.category == ObjectCategory::Aircraft
         || (target.jumpjet && !obs.is_deployed(victim));
@@ -288,6 +294,9 @@ fn visible_front_points(
         .filter(|enemy| distance(enemy.cell,at) <= 18)
         .filter_map(|enemy| {
             let ty = obs.entity_type(rules,enemy.entity_id)?;
+            if ty.is_base_defense
+                && !obs.visible_enemy_building_operational(rules, enemy.entity_id)
+            { return None; }
             let health = obs.health(enemy.entity_id)?.max(0);
             let fraction = i64::from(health).saturating_mul(1_000)
                 / i64::from(ty.strength.max(1));

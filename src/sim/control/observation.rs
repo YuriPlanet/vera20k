@@ -278,6 +278,25 @@ impl<'a> Observation<'a> {
         self.power().map_or(0, |(output, _)| output)
     }
 
+    /// Whether a *currently visible* hostile building can operate its powered
+    /// systems. A low-power or spy-blackout tower must not project a phantom
+    /// firing envelope. Use the same native PowerState gate as the simulation,
+    /// rather than inferring electricity from nearby power plants. Never
+    /// reveal an unseen enemy building's house power state.
+    pub fn visible_enemy_building_operational(
+        &self, rules: &RuleSet, entity_id: u64,
+    ) -> bool {
+        let Some(entity) = self.sim.entities().get(entity_id) else { return false; };
+        if entity.category() != EntityCategory::Structure
+            || entity.lifecycle.in_limbo() || entity.health.current() <= 0
+            || !self.is_cell_visible(entity.position.rx(), entity.position.ry())
+            || !self.is_hostile(entity_id)
+        { return false; }
+        crate::sim::power_system::is_building_powered(
+            self.sim.power_states(), rules, entity, self.sim.interner(),
+        )
+    }
+
     /// Whether `entity_id` is deployed: the state the D key toggles
     /// (`TechnoClass::Is_Deployed`; infantry `Doing` 27..30, which covers the
     /// deploy animation and the deployed pose).
@@ -2108,6 +2127,38 @@ mod vision_tests {
             obs.is_cell_in_playfield(0, 0),
             "the origin is ground with or without a playfield"
         );
+    }
+
+    /// Only a visible hostile powered tower is an active gun. Native power
+    /// states, including spy-induced blackouts, own the answer.
+    #[test]
+    fn a_powerless_enemy_coil_has_no_operational_firing_line() {
+        let Some((mut sim, rules)) = arena() else { return; };
+        let americans = sim.intern("Americans");
+        let russians = sim.intern("Russians");
+        let tower = sim.spawn_object("ATESLA", "Russians", 24, 28, 255, &rules)
+            .expect("a power-dependent defensive tower");
+        sim.spawn_object("E1", "Americans", 23, 28, 255, &rules)
+            .expect("a nearby observer");
+        for _ in 0..4 {
+            let _ = sim.take_due_commands();
+            sim.advance_tick(&[], Some(&rules), None, None, 33);
+        }
+        assert!(Observation::new(&sim, americans)
+            .is_cell_visible(24,28), "enemy tower is in actual sight");
+        {
+            let power = sim.power_states_mut_for_test().entry(russians).or_default();
+            power.set_total_output_for_test(0);
+            power.set_total_drain_for_test(200);
+        }
+        assert!(!Observation::new(&sim, americans)
+            .visible_enemy_building_operational(&rules, tower));
+        {
+            let power = sim.power_states_mut_for_test().entry(russians).or_default();
+            power.set_total_output_for_test(400);
+        }
+        assert!(Observation::new(&sim, americans)
+            .visible_enemy_building_operational(&rules, tower));
     }
 
     /// A ground unit that cannot answer air is not told it can hurt an aircraft.

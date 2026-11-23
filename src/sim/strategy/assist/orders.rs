@@ -280,11 +280,20 @@ pub(super) fn captures(
         let chosen = if ty.agent {
             spy_targets
                 .iter()
+                .filter(|(target, _)| obs.can_take_building(
+                    rules, unit.entity_id, target.entity_id))
+                .filter(|(target, _)| !brain.tracked.claimed_by_other(
+                    tick, TrackedKind::Capture, target.entity_id, unit.entity_id))
+                // A safe target cell is not enough if the shortest approach
+                // runs through a dog or a mind-controller. Keep the spy for
+                // another opportunity instead of consuming it for nothing.
+                .filter(|(target, _)| !path_crosses(
+                    &watchers, unit.cell, target.cell, SPY_WATCH_CELLS))
                 .max_by_key(|(target, value)| {
                     let blackout_opportunity = brain.siege_wait.is_some()
                         && obs.object_type(rules, target.type_id)
                             .is_some_and(|ty| ty.power > 0);
-                    (u8::from(blackout_opportunity), *value,
+                    ((*value).saturating_add(u8::from(blackout_opportunity) * 4),
                         -squared_distance(unit.cell, target.cell))
                 })
                 .map(|(target, _)| *target)
@@ -720,21 +729,35 @@ pub(super) fn garrison(
         .iter()
         .filter(|unit| unit.traits.occupier && obs.inside_transport(unit.entity_id).is_some())
         .count();
+    // Ordinary home garrisons must not occupy the entire budget that a
+    // paradrop needs for the houses immediately outside the enemy perimeter.
+    // This is calculated once. Re-scanning every visible enemy for every
+    // soldier × building combination becomes quadratic in large games.
+    let enemy_cells: Vec<_> = obs.visible_enemy_entities().map(|enemy| enemy.cell).collect();
+    let front_ids: BTreeSet<u64> = billets.iter().filter(|billet| {
+        brain.census.base_cell.is_some_and(|home|
+            squared_distance(home, billet.cell) >= 18 * 18)
+            && enemy_cells.iter().any(|enemy|
+                squared_distance(*enemy, billet.cell) <= 15 * 15)
+    }).map(|billet| billet.building_id).collect();
+    let front_available = !front_ids.is_empty();
+    let limit = garrison_budget(front_available);
     let mut issued = 0;
     for unit in &brain.census.units {
-        if issued >= FORCE_ORDERS_PER_FRAME || garrisoned >= GARRISON_MAX {
+        if issued >= FORCE_ORDERS_PER_FRAME || garrisoned >= limit {
             break;
         }
+        let near_front = billets.iter().any(|billet| {
+            front_ids.contains(&billet.building_id)
+                && squared_distance(unit.cell, billet.cell) <= 10 * 10
+        });
         if !unit.traits.occupier
             || !unit.controllable()
             || (holds_or_fights(unit.mission)
-                && !(unit.mission == MissionId::from_known(MissionType::Move)
-                    && billets.iter().any(|billet| {
-                        squared_distance(unit.cell, billet.cell) <= 10 * 10
-                            && obs.visible_enemy_entities().any(|enemy| {
-                                squared_distance(enemy.cell, billet.cell) <= 14 * 14
-                            })
-                    })))
+                && !may_garrison_from_mission(
+                    unit.mission, near_front,
+                    super::micro::firing(obs, unit.mission, unit.entity_id),
+                ))
             || ordered_this_frame(out, unit.entity_id)
         {
             continue;
@@ -744,9 +767,7 @@ pub(super) fn garrison(
             .filter(|billet| squared_distance(unit.cell, billet.cell) <= HOME_REACH_CELLS.pow(2))
             .filter(|billet| obs.can_garrison(rules, unit.entity_id, billet.building_id))
             .min_by_key(|billet| {
-                let at_front = obs.visible_enemy_entities().any(|enemy| {
-                    squared_distance(enemy.cell, billet.cell) <= 14 * 14
-                });
+                let at_front = front_ids.contains(&billet.building_id);
                 (!at_front, squared_distance(unit.cell, billet.cell), billet.building_id)
             })
         else {
@@ -767,6 +788,19 @@ pub(super) fn garrison(
     }
 }
 
+/// A paradropped occupier may still have its initial Attack mission while
+/// running toward a front line. Borrow it for a nearby building only before
+/// it is actually firing; never pull it out of an active exchange.
+fn may_garrison_from_mission(mission: MissionId, near_front: bool, firing: bool) -> bool {
+    near_front && (mission == MissionId::from_known(MissionType::Move)
+        || (mission == MissionId::from_known(MissionType::Attack) && !firing))
+}
+
+/// Keep a home contingent but reserve slots for an enemy-side paradrop.
+fn garrison_budget(front_available: bool) -> usize {
+    GARRISON_MAX + usize::from(front_available) * 4
+}
+
 /// What a spy gets out of a building, in retail's own categories.
 ///
 /// The order follows `AIMD.INI`'s own spy teams — `General Spy vs Soviet
@@ -776,18 +810,21 @@ pub(super) fn garrison(
 /// weight. A power plant blacks the enemy out, a refinery hands over its ore
 /// and a radar its map; a barracks or a war factory makes its army veteran; a
 /// lab is worth the walk and little more.
+/// Match the *native* cash arm in `sim::spy_infiltration`: Radar, positive
+/// Power, BuildTech and SuperWeapon take precedence over Storage. A refinery
+/// icon alone does not prove that spying it will steal anything.
+fn cash_spy_target(rules: &RuleSet, ty: &ObjectType) -> bool {
+    ty.storage > 0 && !ty.radar && ty.power <= 0
+        && !rules.is_build_tech(&ty.id)
+        && ty.super_weapon.is_none() && ty.super_weapon2.is_none()
+}
+
 fn infiltration_value(rules: &RuleSet, ty: &ObjectType, free: i32) -> u8 {
-    // The refinery first, and above everything else. A spy in a bay takes the
-    // enemy's own bank, which is the one infiltration that pays for the walk in
-    // the same minute it lands; a radar or a lab is worth more in kind but only
-    // once the house has an army to use it with. It used to share value 3 with
-    // the radar, and the spy walked to whichever came first.
-    if ty.resource_destination {
-        // The refinery first, and above everything else — until the house is
-        // rich enough that the enemy's bank changes nothing. A spy is a walk
-        // into a base that does not screen for one, and the veteran classes are
-        // a permanent unlock where a theft is a one-off number.
-        if free >= SPY_RICH_CREDITS { 2 } else { 5 }
+    if cash_spy_target(rules, ty) {
+        // A cheating opponent can still have a huge bank when our own wallet
+        // is rich. Never demote its storage based on *our* credits. Lack of
+        // funds makes this even more urgent, but not mandatory.
+        if free < 3_000 { 9 } else { 8 }
     } else if rules.build_power_types.iter().any(|name| *name == ty.id)
         || ty.super_weapon.is_some()
         || ty.super_weapon2.is_some()
@@ -945,7 +982,7 @@ fn engineer_preference(
             // visible guard covers the route or prize, wait until the army or
             // escort clears it. Ordinary hostile captures retain their
             // existing risk ranking (and its measured tactical trade-offs).
-            if guarded != 0 && owned == 0 {
+            if guarded != 0 && (owned == 0 || strategic_public_asset(ty)) {
                 return None;
             }
             // **Clear ground first, then what it is worth, then the walk.**
@@ -973,6 +1010,10 @@ fn engineer_preference(
                     // equally safe, and the walk between two equally good.
                     guarded,
                     std::cmp::Reverse(capture_value(rules, ty, short_of_income)),
+                    // An enemy-occupied oil well, hospital or civilian tech
+                    // asset is still an economic/strategic map objective.
+                    // Ownership must not turn it into a low-value target.
+                    u8::from(!strategic_public_asset(ty)),
                     owned,
                     squared_distance(from, target.cell),
                     target.entity_id,
@@ -982,6 +1023,15 @@ fn engineer_preference(
         })
         .min_by_key(|(key, _)| *key)
         .map(|(_, target)| target)
+}
+
+/// Public infrastructure remains strategically useful after another house
+/// captures it. Use rules data rather than remembered neutral ownership: an
+/// oil derrick still has ProduceCashAmount after the enemy takes it.
+fn strategic_public_asset(ty: &ObjectType) -> bool {
+    ty.capturable && (ty.produce_cash_amount > 0 || ty.hospital
+        || ty.unit_repair || ty.refinery || ty.radar
+        || ty.super_weapon.is_some() || ty.super_weapon2.is_some())
 }
 
 /// What a building is worth to the house that captures it, in the same
@@ -996,6 +1046,7 @@ fn engineer_preference(
 /// but they pay, and an oil derrick nobody is standing next to is the capture
 /// an engineer is most likely to come back from.
 fn capture_value(rules: &RuleSet, ty: &ObjectType, short_of_income: bool) -> u8 {
+    if strategic_public_asset(ty) { return if short_of_income { 8 } else { 7 }; }
     let built = built_capture_value(rules, ty);
     if built > 0 {
         return built;
@@ -1685,12 +1736,6 @@ fn spy_route_blocked(
         .iter()
         .any(|watcher| squared_distance(*watcher, cell) <= SPY_WATCH_CELLS * SPY_WATCH_CELLS)
 }
-
-/// The wallet above which a spy is not sent for the enemy's bank.
-///
-/// A theft is a one-off number; the veteran classes are a permanent unlock.
-/// Past this the house does not need the number.
-const SPY_RICH_CREDITS: i32 = 20_000;
 
 /// How near a spy's target a watcher may stand before the walk is refused, in
 /// cells: the reveal range plus a step, since the spy is seen on approach.
@@ -2912,6 +2957,7 @@ fn siege_battery_cell(
     brain.census.enemies.iter().filter_map(|enemy| {
         let ty = obs.object_type(rules, enemy.type_id)?;
         if !ty.is_base_defense || !obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+            || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
             || super::advance::cell_distance(enemy.cell, center) > 14
         { return None; }
         Some((super::advance::weapon_range_cells(rules, ty,
@@ -2986,5 +3032,48 @@ mod v15_superweapon_tests {
         assert_eq!(aim_of(SuperWeaponKind::IronCurtain), Aim::Curtain);
         assert_eq!(aim_of(SuperWeaponKind::ForceShield), Aim::Shield);
         assert_eq!(aim_of(SuperWeaponKind::AmerParaDrop), Aim::Rally);
+    }
+}
+
+#[cfg(test)]
+mod v16_objective_tests {
+    use super::*;
+
+    #[test]
+    fn money_spies_are_worth_sending_even_when_our_wallet_is_rich() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+            return;
+        };
+        let Some(refinery) = rules.object("GAREFN") else { return; };
+        assert!(refinery.storage > 0, "refinery is a native money-spy target");
+        assert!(cash_spy_target(&rules, refinery));
+        assert_eq!(infiltration_value(&rules, refinery, 25_000), 8);
+        assert_eq!(infiltration_value(&rules, refinery, 2_000), 9);
+        if let Some(power) = rules.object("GAPOWR") {
+            assert!(!cash_spy_target(&rules, power));
+        }
+    }
+
+    #[test]
+    fn occupied_public_infrastructure_remains_a_capture_priority() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+            return;
+        };
+        let Some(oil) = rules.object("CAOILD") else { return; };
+        assert!(strategic_public_asset(oil));
+        assert!(capture_value(&rules, oil, false) >= 7);
+        assert!(capture_value(&rules, oil, true) >= 8);
+    }
+
+    #[test]
+    fn forward_garrison_does_not_exhaust_the_home_garrison_quota() {
+        assert_eq!(garrison_budget(false), GARRISON_MAX);
+        assert_eq!(garrison_budget(true), GARRISON_MAX + 4);
+        let attack = MissionId::from_known(MissionType::Attack);
+        let move_mission = MissionId::from_known(MissionType::Move);
+        assert!(may_garrison_from_mission(attack, true, false));
+        assert!(may_garrison_from_mission(move_mission, true, false));
+        assert!(!may_garrison_from_mission(attack, true, true));
+        assert!(!may_garrison_from_mission(attack, false, false));
     }
 }

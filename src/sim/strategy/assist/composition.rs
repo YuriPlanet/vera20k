@@ -681,16 +681,25 @@ fn early_oil_engineer<'r>(
         return None;
     }
     let safe_oil = obs.capturable_buildings(rules).any(|target| {
-        !obs.is_hostile(target.entity_id)
+        // An enemy engineer taking the derrick does not erase its income or
+        // our right to take it back. Require live sight of an enemy-held one;
+        // a neutral derrick only needs to be explored previously.
+        (!obs.is_hostile(target.entity_id)
+            || obs.is_cell_visible(target.cell.0, target.cell.1))
             && obs.is_cell_revealed(target.cell.0, target.cell.1)
             && obs.object_type(rules, target.type_id)
                 .is_some_and(|ty| ty.produce_cash_amount > 0)
             && !obs.visible_enemy_entities().any(|enemy| {
-                super::squared_distance(enemy.cell, target.cell) <= 12 * 12
+                enemy.entity_id != target.entity_id
+                    && super::squared_distance(enemy.cell, target.cell) <= 12 * 12
             })
             && !brain.census.enemies.iter().any(|enemy| {
-                obs.object_type(rules, enemy.type_id)
-                    .is_some_and(|ty| ty.category == ObjectCategory::Building)
+                // The prize itself is an enemy-owned building now, not the
+                // enemy's main base guarding it; do not block recapture just
+                // because the income building has changed hands.
+                enemy.entity_id != target.entity_id
+                    && obs.object_type(rules, enemy.type_id)
+                        .is_some_and(|ty| ty.category == ObjectCategory::Building)
                     && super::squared_distance(enemy.cell, target.cell) <= 12 * 12
             })
     });

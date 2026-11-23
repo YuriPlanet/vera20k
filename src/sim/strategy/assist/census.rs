@@ -1057,7 +1057,17 @@ impl Census {
                 let dy = i32::from(enemy.cell.1) - i32::from(cell.1);
                 dx * dx + dy * dy <= reach
             })
-            .filter_map(|enemy| obs.object_type(rules, enemy.type_id))
+            .filter(|enemy| obs.is_cell_visible(enemy.cell.0, enemy.cell.1))
+            .filter_map(|enemy| {
+                let ty = obs.object_type(rules, enemy.type_id)?;
+                // A blackout tower is still a building to capture or destroy,
+                // but it is not live defensive fire when deciding whether a
+                // visible engagement is winnable.
+                if ty.is_base_defense
+                    && !obs.visible_enemy_building_operational(rules, enemy.entity_id)
+                { return None; }
+                Some(ty)
+            })
             .fold(0i32, |total, ty| {
                 total.saturating_add(fight_points(ty, 1_000))
             })

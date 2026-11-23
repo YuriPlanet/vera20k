@@ -372,8 +372,7 @@ fn infantry_screen_post(
         .min_by_key(|unit| (cell_distance(unit.cell, target), unit.entity_id))?;
     let armor_distance = cell_distance(armor.cell, target);
     if armor_distance <= 8 || cell_distance(soldier.cell, target) + 3 >= armor_distance
-        || obs.visible_enemy_entities().any(|enemy|
-            cell_distance(enemy.cell, soldier.cell) <= 9)
+        || super::micro::firing(obs, soldier.mission, soldier.entity_id)
     { return None; }
     let (dx,dy) = (
         (i32::from(armor.cell.0) - i32::from(target.0)).signum(),
@@ -387,6 +386,7 @@ fn infantry_screen_post(
         let cell=(x,y);
         if obs.is_ground_walkable(x,y)
             && super::orders::reachable(rules,obs,soldier.entity_id,cell)
+            && !super::tactics::unsafe_post(rules,obs,soldier.entity_id,cell)
         { return Some(cell); }
     }
     None
@@ -403,7 +403,9 @@ fn stage_siege(
 ) -> usize {
     let gunline: Vec<_> = obs.visible_enemy_entities().filter_map(|enemy| {
         let ty = obs.entity_type(rules,enemy.entity_id)?;
-        if !ty.is_base_defense || cell_distance(enemy.cell,target) > 14 { return None; }
+        if !ty.is_base_defense
+            || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
+            || cell_distance(enemy.cell,target) > 14 { return None; }
         let reach = weapon_range_cells(rules,ty,obs.is_deployed(enemy.entity_id));
         (reach >= 4).then_some((enemy.entity_id,enemy.cell,reach))
     }).collect();
@@ -418,10 +420,16 @@ fn stage_siege(
             || super::micro::firing(obs,unit.mission,unit.entity_id)
             || super::orders::ordered_this_frame(out,unit.entity_id)
         { continue; }
-        let Some((_,gun,reach)) = gunline.iter().copied()
+        let Some((id,gun,reach)) = gunline.iter().copied()
             .filter(|(id,_,_)| obs.can_hurt(rules,*id,unit.entity_id))
             .min_by_key(|(id,at,_)| (cell_distance(*at,unit.cell),*id))
         else { continue; };
+        // A prism/V3-style battery already has a winning range trade. Its
+        // assignment is Attack on the tower, never Move to a new staging cell.
+        let own_reach = super::tactics::actual_threat_reach(
+            rules, obs, unit.entity_id, id,
+        );
+        if own_reach > reach + 1 { continue; }
         let Some(post) = super::tactics::siege_post(
             rules,obs,unit.entity_id,unit.cell,gun,reach)
         else { continue; };
@@ -434,6 +442,59 @@ fn stage_siege(
         ) { issued += 1; }
     }
     issued
+}
+
+/// A range trade qualifies as safe battery fire only when the *same*
+/// effective ground weapon can actually hurt the tower.
+fn standoff_can_breach(own: i32, enemy: i32, can_damage: bool) -> bool {
+    can_damage && own >= 6 && own > enemy + 1
+}
+
+/// Direct available standoff artillery at the *visible, powered* battery
+/// covering the assault. An Attack on the object lets the native weapon-range
+/// approach stop in firing position; AttackMove to the base's centre makes a
+/// prism tank oscillate while the forward screen is erased one by one.
+fn assign_breach_battery(
+    tracker: &mut super::tracked::Tracker, trace: Option<u64>,
+    fighters: &[&Unit], rules: &RuleSet, obs: &Observation<'_>,
+    out: &mut Outbox, target: (u16,u16),
+) -> bool {
+    let batteries: Vec<_> = obs.visible_enemy_entities().filter_map(|enemy| {
+        let ty = obs.entity_type(rules, enemy.entity_id)?;
+        (ty.is_base_defense
+            && obs.visible_enemy_building_operational(rules, enemy.entity_id)
+            && cell_distance(enemy.cell, target) <= 14)
+            .then_some(enemy)
+    }).collect();
+    if batteries.is_empty() { return false; }
+    let mut available = false;
+    let mut issued = 0;
+    for unit in fighters {
+        if !unit.controllable() || unit.in_service() || obs.is_deployed(unit.entity_id)
+            || super::orders::ordered_this_frame(out, unit.entity_id)
+        { continue; }
+        let Some((gun, _)) = batteries.iter().filter_map(|battery| {
+            if !obs.can_hurt(rules, unit.entity_id, battery.entity_id) { return None; }
+            let own = super::tactics::actual_threat_reach(
+                rules, obs, unit.entity_id, battery.entity_id,
+            );
+            let enemy = super::tactics::actual_threat_reach(
+                rules, obs, battery.entity_id, unit.entity_id,
+            );
+            standoff_can_breach(own, enemy, true).then_some((battery, own))
+        }).min_by_key(|(battery, _)| (cell_distance(battery.cell, unit.cell), battery.entity_id))
+        else { continue; };
+        available = true;
+        if obs.attack_target(unit.entity_id) == Some(gun.entity_id) { continue; }
+        if issued >= 2 { continue; }
+        if super::orders::issue_tracked(
+            tracker, trace, out, rules, obs, unit.entity_id,
+            super::tracked::TrackedKind::Attack,
+            Some(gun.entity_id), Some(gun.cell),
+            Goal::Attack { target: gun.entity_id },
+        ) { issued += 1; }
+    }
+    available
 }
 
 /// The front is outnumbered *locally* although its rear has enough strength
@@ -644,6 +705,25 @@ pub(super) fn advance(
         super::tactics::need_siege(rules,obs,target_cell,&fighters)
     } else { None };
     brain.siege_reach = siege_reach;
+    // Real standoff batteries must be allowed to fire while the shorter-range
+    // screen holds outside the enemy gun line. This is a bounded *breach*, not
+    // another request to make more artillery when one already exists.
+    if siege_reach.is_none() && !mopping_up && target_id != 0
+        && assign_breach_battery(
+            &mut brain.tracked, brain.trace, &fighters, rules, obs, out, target_cell,
+        )
+    {
+        let start = match brain.siege_wait {
+            Some((id, since)) if id == target_id => since,
+            _ => tick,
+        };
+        brain.siege_wait = Some((target_id, start));
+        if tick.saturating_sub(start) < 750 {
+            brain.push_gate = "battery-breach";
+            stage_siege(&mut brain.tracked, brain.trace, &fighters, rules, obs, out, target_cell);
+            return true;
+        }
+    }
     if let Some(reach) = siege_reach {
         // Keep a bounded artillery preparation window for one enemy target.
         // A missing factory, an unaffordable price, or a refused production
@@ -1740,5 +1820,18 @@ mod tests {
         // one's.
         let chosen = pick_reachable(&nearest_first, |_| false).expect("the nearest");
         assert_eq!(chosen.entity_id, 1);
+    }
+}
+
+#[cfg(test)]
+mod v16_artillery_tests {
+    use super::*;
+
+    #[test]
+    fn a_real_standoff_gun_should_breach_while_short_guns_wait() {
+        assert!(standoff_can_breach(12, 8, true));
+        assert!(!standoff_can_breach(8, 8, true));
+        assert!(!standoff_can_breach(12, 8, false));
+        assert!(!standoff_can_breach(4, 2, true));
     }
 }
