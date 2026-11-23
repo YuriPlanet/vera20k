@@ -891,6 +891,13 @@ impl BitFont {
         Cow::Owned(text[..kept.checked_sub(1).map_or(0, |last| ends[last])].to_owned())
     }
 
+    /// `text`'s longest start that leaves room in `width` for `ellipsis`
+    /// ([`Self::truncate_to_width`]), with `ellipsis` after it.
+    pub fn truncate_with_ellipsis(&self, text: &str, width: u32, ellipsis: &str) -> String {
+        let cut = width.saturating_sub(self.text_width(ellipsis));
+        format!("{}{ellipsis}", self.truncate_to_width(text, cut))
+    }
+
     /// Tint adjustment for missing-glyph fallback rendering -- caller XORs
     /// the input tint to produce the visible "wrong color" effect that
     /// distinguishes missing glyphs at a glance. Faithful 32-bit port of the
