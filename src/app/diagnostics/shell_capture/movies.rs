@@ -2114,6 +2114,15 @@ pub(super) fn press_in_game(
     point
 }
 
+/// A press and release at `rect`'s centre through the multiplayer setup
+/// page's (and the WOL pages') own pointer handlers.
+fn setup_click(state: &mut AppState, rect: crate::ui::shell::geom::RectPx) {
+    set_window_pointer_to_rect_center(state, rect);
+    crate::app::input::multiplayer_setup::cursor_moved(state);
+    crate::app::input::multiplayer_setup::mouse(state, winit::event::MouseButton::Left, true);
+    crate::app::input::multiplayer_setup::mouse(state, winit::event::MouseButton::Left, false);
+}
+
 /// [`press_in_game`] and its release on the same frame.
 pub(super) fn click_in_game(
     state: &mut AppState,

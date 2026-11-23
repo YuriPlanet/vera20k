@@ -567,15 +567,6 @@ impl SkirmishCapture {
                 == crate::ui::pause_menu::InGameMenuState::Keyboard
     }
 
-    /// A press and release at `point` through the chooser's production
-    /// handlers.
-    fn click_chooser(state: &mut AppState, point: (i32, i32)) {
-        state.match_state.input.cursor_x = point.0 as f32;
-        state.match_state.input.cursor_y = point.1 as f32;
-        App::handle_choose_map_modal_mouse_down(state);
-        App::handle_choose_map_modal_mouse_up(state);
-    }
-
     /// Track press above the map list's thumb (scrolls to the top), a press
     /// on the first row, then Use Map; the pointer returns to rest.
     fn press_use_map_on_first_map(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
@@ -595,11 +586,11 @@ impl SkirmishCapture {
         let bar = map_list(state)?
             .scrollbar
             .context("the map list needs a scrollbar")?;
-        Self::click_chooser(state, (bar.x + 10, bar.y + 24));
+        click_chooser(state, (bar.x + 10, bar.y + 24));
         let row = map_list(state)?.row(0);
-        Self::click_chooser(state, (row.x + 4, row.y + 4));
+        click_chooser(state, (row.x + 4, row.y + 4));
         let button = layout.rect(0x6C5);
-        Self::click_chooser(state, (button.x + button.w / 2, button.y + button.h / 2));
+        click_chooser(state, (button.x + button.w / 2, button.y + button.h / 2));
         state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
         state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
         ensure!(
@@ -1312,7 +1303,7 @@ impl SkirmishCapture {
                     }
                     Some(ChooserTarget::RandomMap(_)) if Self::chooser_settled(state) => {
                         // Through the chooser's production press and release.
-                        Self::click_chooser(state, CREATE_RANDOM_MAP_POINT);
+                        click_chooser(state, CREATE_RANDOM_MAP_POINT);
                         Self::set_pointer(state, self.rest_point());
                         ensure!(
                             state.frontend.shell_exit.is_some(),
@@ -2054,6 +2045,15 @@ mod tests {
             assert!(invalid.validate().is_err());
         }
     }
+}
+
+/// A press and release at `point` through the chooser's production
+/// handlers.
+pub(super) fn click_chooser(state: &mut AppState, point: (i32, i32)) {
+    state.match_state.input.cursor_x = point.0 as f32;
+    state.match_state.input.cursor_y = point.1 as f32;
+    App::handle_choose_map_modal_mouse_down(state);
+    App::handle_choose_map_modal_mouse_up(state);
 }
 
 /// Tab through the ordinary key edge: the binding lookup falls back to
