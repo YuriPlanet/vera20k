@@ -119,12 +119,14 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   unless its type sets `NoSelfGuardArea=yes` (10049710;
   `Simulation::infantry_healer_guards_itself`), or unless it is an Engineer
   among several selected objects, which refuses Ctrl's Attack first
-  (0x51E6B4). Not ported, and only mods reach them since no retail
-  infantryman heals: Foot's Guard for a healer whose weapon 0 does not heal,
-  for which VERA has no order, so it orders nothing; Alt and Ctrl+Alt over a
-  Terrain object, which answer their key rungs, where the arm answers
-  AttackSupport; and a campaign's shroud Move over an ally, which VERA
-  selects, where the arm keeps it. The arms follow the game's Ares switch
+  (0x51E6B4). Foot's case 0x3B picks the mission from weapon 0's damage
+  (0x4D7C93): a healer whose weapon 0 does not heal goes on Guard of itself
+  (`attack_support_command`). Over a Terrain object the arm's AttackSupport
+  replaces Alt's Move and Ctrl+Alt's GuardArea, though not Shift's
+  ToggleSelect (`healer_supports_over_terrain`, `healer_terrain_key_order`).
+  In a campaign the tail keeps the Move Foot's shroud rung makes over a
+  shrouded ally (0x51E77F, `heal_arm_keys`). Only mods reach these, since no
+  retail infantryman heals. The arms follow the game's Ares switch
   (`RuleSet::ares`) in every build, and so do their cursors through the
   Ares cursor owner (`app::input::ares_cursor`).
 - Init_1's capture manager and parasite for any weapon slot and the

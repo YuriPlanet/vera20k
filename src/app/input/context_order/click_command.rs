@@ -3,8 +3,8 @@
 
 use super::{
     AttackAction, InfantryAttackAction, OrderModifier, ares_ivan_grinds, attack_action_with,
-    ctrl_forces_attack_rung, healer_guards_itself, infantry_attack_action_with, ivan_cannot_bomb,
-    shrouded_object_action,
+    ctrl_forces_attack_rung, healer_guards_itself, healer_supports_over_terrain,
+    infantry_attack_action_with, ivan_cannot_bomb, shrouded_object_action,
 };
 use crate::app::input::entity_pick::{HoverObject, HoverTargetKindWithId};
 use crate::app::types::{HoverTargetKind, OrderMode};
@@ -72,10 +72,10 @@ pub(super) fn object_guard_command(
 /// infantryman's AttackSupport over an object
 /// ([`crate::sim::world::InfantryHealAction::AttackSupport`]): Area Guard on
 /// the healer itself when the Damage of its GetWeapon(0) (vt+0x3F8) heals,
-/// else Guard on itself. The case asks neither IsActive nor vt+0xA0.
-///
-/// RESIDUAL: VERA sends no Guard order, so a healer whose Secondary heals
-/// and whose Primary does not orders nothing. Only a mod's healers reach it.
+/// else Guard on itself, as when its Secondary heals and its Primary does
+/// not (mission `5 + 6`, `0x004D7C93`). Either is a MEGAMISSION with the
+/// healer as Target (vt+0x378). The case asks neither IsActive nor vt+0xA0.
+/// Only a mod's healers reach it.
 pub(super) fn attack_support_command(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -83,7 +83,7 @@ pub(super) fn attack_support_command(
 ) -> Option<Command> {
     let entity = sim.entities().get(receiver)?;
     let object = sim.interner().object_type(entity.type_ref(), rules)?;
-    crate::sim::combat::combat_weapon::get_weapon(
+    let heals = crate::sim::combat::combat_weapon::get_weapon(
         entity,
         object,
         0,
@@ -91,11 +91,52 @@ pub(super) fn attack_support_command(
         rules,
         sim.interner(),
     )
-    .is_some_and(|weapon| weapon.damage < 0)
-    .then_some(Command::Guard {
-        entity_id: receiver,
-        target: Some(TargetKind::Entity(receiver)),
+    .is_some_and(|weapon| weapon.damage < 0);
+    let target = Some(TargetKind::Entity(receiver));
+    Some(if heals {
+        Command::Guard {
+            entity_id: receiver,
+            target,
+        }
+    } else {
+        Command::MegaMission {
+            entity_id: receiver,
+            mission: crate::sim::mission::MissionType::Guard,
+            target,
+            destination: None,
+        }
     })
+}
+
+/// A receiver's order for an Alt or Ctrl+Alt click on a Terrain object when
+/// it is a healer: its key rungs answer, and the healer arm replaces that
+/// answer with AttackSupport ([`healer_supports_over_terrain`]), which Foot's
+/// case 0x3B sends ([`attack_support_command`]). None leaves the receiver to
+/// its key answer, as does Shift's ToggleSelect, which returns before the arm.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn healer_terrain_key_order(
+    sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    receiver: u64,
+    terrain: u64,
+    modifier: OrderModifier,
+    force_move_key: bool,
+) -> Option<Command> {
+    let key_action = object_key_action_with(
+        sim,
+        control,
+        rules,
+        receiver,
+        terrain,
+        None,
+        modifier,
+        force_move_key,
+    )?;
+    (key_action != ObjectKeyAction::ToggleSelect
+        && healer_supports_over_terrain(sim, control, rules, receiver, terrain))
+    .then(|| attack_support_command(sim, rules, receiver))
+    .flatten()
 }
 
 /// What Techno What_Action_OnObject's key rungs answer
