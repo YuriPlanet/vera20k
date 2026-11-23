@@ -93,6 +93,10 @@ agree.
   or `unknown`; `changed` whether it differs from the retail copy. A changed INI names in
   `sections` the sections that differ from the retail copy (added, removed or changed), sorted, at
   most 20, and counts the rest in `sections_more`.
+  The `ai` part and `rules_digest` name the game folder's AI INI. A network match that seats no
+  computer reads the retail copy instead ([Networking](Networking.md)), so two games that differ
+  only in `ai` would play such a match together, though their digests differ: a launcher that
+  compares `rules_digest` keeps them apart as before.
 - `settings`: the Options switches the game plays (`terrain_deformation`, `superweapon_limit`, and
   `building_production_queue`, which is left out while off and is only ever on in a single-player
   game: a network launch plays it off, as the probe reports it), the Ares setting as the digest

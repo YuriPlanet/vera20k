@@ -114,7 +114,26 @@ start agreement then names those files (`ProcessAssets::match_terrain_digest`): 
 whose terrain files differ are refused at that start, each game naming the terrain files
 it read, and not before. Skirmish and campaign read the game folder's terrain as before.
 A game from before this rule is another version and is refused by the build check first;
-a rollback compares the terrain files as that build did. With a
+a rollback compares the terrain files as that build did.
+The AI INI (`aimd.ini`) is read by a like rule. A network match of the original game
+that seats no computer (`SkirmishLaunchSession::seats_computers`: no computer player and
+not Cooperative; a campaign room always seats one) reads the AI INI a retail install
+ships, whatever the game folder holds (`retail_sources::match_ai_file`): no house in it
+runs the computer's teams, and a team a map's trigger creates is the original game's for
+every player. Its rules agreement compares that copy
+(`ProcessAssets::multiplayer_match_rules_digest`), and so does the join, which is made
+before a room knows whom it seats. So a player whose game folder changes only the AI INI
+joins any room and plays its matches of human players. When the host seats a computer the
+room's settings change, every game sends its agreement again, now with the AI INI its
+folder supplies, and the player whose file differs is named and refused as on any rules
+difference, before the match loads. A match that seats a computer, a selected mod's game,
+a game whose AI root is not YR's, skirmish and campaign read the game folder's AI INI as
+before. A launcher's digest and parts (`--probe`, `ExpectedRulesDigest`) are taken before
+anyone is seated and still compare the folder's; its match reads by the same rule as a
+room's. Quick Match still ends a search for a changed AI INI before it queues. Nothing
+new is exchanged: a game from before this rule is another version and is refused by the
+build check first, and a rollback reads and compares the folder's AI INI as that build
+did. With a
 mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
 folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so players whose copies of a mod differ are
 refused as on any rules difference. The effective declarations from `mod.ini` that
@@ -905,7 +924,9 @@ The two checks also read different files, so they can disagree either way. The d
 (`rules::native_ini_hash`, `0x00679D90`/`0x00679ED0`/`0x00679EC0`, compared on LAN at
 `0x005E1711..0x005E174D` and online at `0x0079BB16..0x0079BBAE`) hashes the rules root,
 every mode's INI, CoopCampMD, AIMD and ARTMD whatever mode the room plays, but no
-LANGRULE, theater INI, theater tile or other file of a mod. The digest
+LANGRULE, theater INI, theater tile or other file of a mod. VERA: the original game's
+door hashes the AIMD a retail install ships, which a match that seats no computer reads
+(above). The digest
 (`ProcessAssets::multiplayer_rules_digest`) covers only the mode played, and adds
 LANGRULE, the theater INIs (a mod's with its changed tiles, else the retail copies), the
 switches and a mod's other files.

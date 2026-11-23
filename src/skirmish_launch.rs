@@ -1250,6 +1250,16 @@ impl SkirmishLaunchSession {
         }
     }
 
+    /// Whether the match seats a house the computer runs: a computer
+    /// player, or Cooperative's, whose declared count can outlast its rows.
+    /// VERA: a network match that seats none reads the original AI INI
+    /// (`retail_sources::match_ai_file`).
+    pub fn seats_computers(&self) -> bool {
+        self.ai_player_count > 0
+            || !self.opponents.is_empty()
+            || self.mode.class == crate::skirmish_modes::MpModeClass::Cooperative
+    }
+
     fn view(&self) -> LaunchSessionView<'_> {
         LaunchSessionView {
             mode: &self.mode,
@@ -1752,6 +1762,21 @@ mod tests {
                 case["name"]
             );
         }
+    }
+
+    /// VERA: a match seats a computer with a computer's row, with a
+    /// declared count that outlasts its rows, and in Cooperative; human
+    /// players alone seat none.
+    #[test]
+    fn a_match_seats_computers_by_its_rows_its_declared_count_or_its_mode() {
+        let mut session = random_test_session();
+        assert!(session.seats_computers());
+        session.opponents.clear();
+        assert!(session.seats_computers());
+        session.ai_player_count = 0;
+        assert!(!session.seats_computers());
+        session.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        assert!(session.seats_computers());
     }
 
     #[test]

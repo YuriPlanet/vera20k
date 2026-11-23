@@ -1587,7 +1587,8 @@ impl PreparedScenarioRules {
 
 /// The shared Rules/AI ordering for ordinary Full_Init and its early .SED arm.
 /// Process state remains in `owner`; this value carries immutable projections
-/// and the constructor receipt, never another live registry.
+/// and the constructor receipt, never another live registry. VERA: `ai_file`
+/// is the AI INI the load reads (`LoadingStartup::ai_file`).
 fn prepare_scenario_rules(
     owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
     assets: &mut AssetManager,
@@ -1595,15 +1596,20 @@ fn prepare_scenario_rules(
     map_ini: &crate::rules::ini_parser::IniFile,
     tmcj4f: Option<&crate::rules::ini_parser::IniFile>,
     rule_policy: RulePolicy,
+    ai_file: crate::rules::retail_sources::AiFile,
 ) -> Result<PreparedScenarioRules> {
+    if ai_file == crate::rules::retail_sources::AiFile::Original {
+        log::info!("Network match AI file: the original game's; it seats no computer");
+    }
     let (native, team_ai_registry, rules_at_ai_read) = if let Some(tmcj4f) = tmcj4f {
         let (loaded, (ai, rules_at_read)) = owner
             .load_scenario_with_post_map(prefix, map_ini, tmcj4f, |rules_at_read| {
                 (
-                    crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+                    crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
                         assets,
                         map_ini,
                         rule_policy,
+                        ai_file,
                     ),
                     rules_at_read,
                 )
@@ -1614,9 +1620,13 @@ fn prepare_scenario_rules(
         let loaded = owner
             .load_scenario(prefix, map_ini)
             .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
-        let ai =
-            crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(assets, map_ini, rule_policy)
-                .map_err(anyhow::Error::msg)?;
+        let ai = crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
+            assets,
+            map_ini,
+            rule_policy,
+            ai_file,
+        )
+        .map_err(anyhow::Error::msg)?;
         (loaded, ai, None)
     };
     Ok(PreparedScenarioRules {
@@ -2679,6 +2689,7 @@ pub(crate) fn load_map_initial_with_assets(
     requested_map: Option<&str>,
     mode_rules_file: Option<&str>,
     full_init_entry_mode: crate::app::match_runtime::session::SessionMode,
+    ai_file: crate::rules::retail_sources::AiFile,
     the_team_enabled: bool,
     launch_seed: Option<u32>,
     progress: &mut dyn crate::app::loading::pump::LoadingProgressSink,
@@ -2790,6 +2801,7 @@ pub(crate) fn load_map_initial_with_assets(
             &synthetic_ini,
             tmcj4f.as_ref(),
             full_init_entry_mode.stock_rule_policy(None),
+            ai_file,
         )?;
         let terrain_rules = &generated_rules.native.rules().terrain_rules;
         let resolved = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
@@ -3216,6 +3228,7 @@ fn load_map_first_step(
         signed_new_ini_format,
     )?;
     let full_init_entry_mode = startup.session_mode();
+    let ai_file = startup.ai_file(services.asset_manager);
     let (materialization, match_seed, match_launch_descriptor, scenario_prefix_plan, campaign) =
         match fresh_scenario_context.into_parts() {
             FreshScenarioParts::StockOffline(parts) => {
@@ -3383,6 +3396,7 @@ fn load_map_first_step(
                     &map_data.ini,
                     tmcj4f_ini.as_ref(),
                     rule_policy,
+                    ai_file,
                 )?
             };
             let (
@@ -4499,6 +4513,7 @@ mod random_map_retail_tests {
                     Some(&seed_name),
                     None,
                     crate::app::match_runtime::session::SessionMode::Skirmish,
+                    crate::rules::retail_sources::AiFile::GameFolder,
                     false,
                     None,
                     &mut SilentProgress,

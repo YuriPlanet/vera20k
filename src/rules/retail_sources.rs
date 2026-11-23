@@ -63,11 +63,16 @@ pub(crate) fn select_game_ini(
     ships_ares: bool,
 ) -> Result<SelectedIni, String> {
     let _ares_way = crate::rules::ares_switch::read_ares_way(ships_ares);
-    if ships_ares || crate::rules::PHOBOS_ENABLED {
+    if expands_directives(ships_ares) {
         select_ini_with_options(assets, name, DirectiveOptions::production())
     } else {
         select_physical_ini(assets, name)
     }
+}
+
+/// Whether a game that ships `ares.mix` or not expands its INIs' directives.
+fn expands_directives(ships_ares: bool) -> bool {
+    ships_ares || crate::rules::PHOBOS_ENABLED
 }
 
 /// Explicit file-composition probe. Tool callers may inspect extension syntax
@@ -591,6 +596,16 @@ impl<'a> ShippedInis<'a> {
         if shipped_source(used.source_archive) {
             return Some(found);
         }
+        let shipped = self.shipped(name);
+        if !shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
+            found.shipped = ShippedCopy::Changed(shipped);
+        }
+        Some(found)
+    }
+
+    /// The copy of `name` a retail install ships: a shipped archive's own
+    /// entry, else the one in `ra2md.mix`'s own `localmd.mix`.
+    fn shipped(&self, name: &str) -> Option<&[u8]> {
         let local = self.local.get_or_init(|| {
             self.assets
                 .archive_with_source(SHIPPED_MASTER)
@@ -601,19 +616,72 @@ impl<'a> ShippedInis<'a> {
                         .flatten()
                 })
         });
-        let shipped = SHIPPED_ARCHIVES
+        SHIPPED_ARCHIVES
             .iter()
             .find_map(|archive| {
                 self.assets
                     .archive_with_source(archive)
                     .and_then(|(_, archive)| archive.get_by_name(name))
             })
-            .or_else(|| local.as_ref().and_then(|archive| archive.get_by_name(name)));
-        if !shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
-            found.shipped = ShippedCopy::Changed(shipped);
-        }
-        Some(found)
+            .or_else(|| local.as_ref().and_then(|archive| archive.get_by_name(name)))
     }
+}
+
+/// VERA: which AI INI (`IniRoots::ai`) a match reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiFile {
+    /// The one the game folder supplies, as every other INI root.
+    GameFolder,
+    /// The copy a retail install ships, whatever the game folder supplies.
+    Original,
+}
+
+/// VERA: the AI INI a match reads. A network match of the original game
+/// that seats no computer reads the original AI INI. No house in it runs
+/// the computer's teams, and the teams a map's triggers create are then the
+/// original game's for every player, so players whose game folders hold
+/// other AI files load one world and their rules agreement compares the
+/// original (the app's `ProcessAssets::multiplayer_match_rules_digest`).
+/// `computers` is whether the match seats a house the computer runs
+/// (`SkirmishLaunchSession::seats_computers`; a campaign always does).
+/// Every other match reads the game folder's: one with a computer, a
+/// selected mod's, whose AI file is its game, one whose AI root is not
+/// YR's, and every match off the network.
+pub fn match_ai_file(assets: &AssetManager, network: bool, computers: bool) -> AiFile {
+    let stock_root = assets
+        .ini_roots()
+        .ai()
+        .eq_ignore_ascii_case(crate::util::ini_roots::IniRoots::default().ai());
+    if network && !computers && !assets.mod_selected() && stock_root {
+        AiFile::Original
+    } else {
+        AiFile::GameFolder
+    }
+}
+
+/// The AI root as `file` names it, read as [`select_ini`] reads it. The game
+/// folder's too where a retail install ships no AI INI.
+pub fn select_ai_ini(assets: &AssetManager, file: AiFile) -> Result<IniFile, String> {
+    let name = assets.ini_roots().ai();
+    let shipped = ShippedInis::new(assets);
+    let from_folder = assets
+        .resolve_ref(name)
+        .is_some_and(|used| !shipped_source(used.source_archive));
+    if file == AiFile::Original
+        && from_folder
+        && let Some(bytes) = shipped.shipped(name)
+    {
+        let ships_ares = assets.ships_ares();
+        let _ares_way = crate::rules::ares_switch::read_ares_way(ships_ares);
+        let ini = IniFile::from_bytes(bytes)
+            .map_err(|error| format!("parse the original {name}: {error}"))?;
+        if !expands_directives(ships_ares) {
+            return Ok(ini);
+        }
+        return expand_ini_with_assets(assets, ini, name, DirectiveOptions::production())
+            .map(|(expanded, _)| expanded.ini);
+    }
+    select_ini(assets, name).map(|selected| selected.ini)
 }
 
 fn same_entries(shipped: &[u8], used: &[u8]) -> bool {
