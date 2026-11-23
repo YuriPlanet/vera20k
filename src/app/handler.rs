@@ -209,8 +209,8 @@ impl App {
     /// offers sidebar sizes for.
     pub(crate) fn match_zoom_geometry(
         state: &AppState,
-    ) -> crate::render::upscale_pass::ZoomGeometry {
-        use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
+    ) -> crate::ui::main_menu_dialogs::options::ZoomGeometry {
+        use crate::ui::main_menu_dialogs::options::{FrameShape, ZoomGeometry};
         let (width, height) = (
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,

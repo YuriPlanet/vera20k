@@ -115,13 +115,18 @@ const OUTSIDE_DATA_FILES: &[&str] = &[
 ];
 
 /// The relay protocol's wire readers, under `services/relay-protocol/src/`:
-/// what the relay and every client parse from a datagram or the journal.
+/// what the relay and every client parse from a datagram or the journal, and
+/// the link and downlink state that applies relay and reader feedback.
 const RELAY_WIRE_FILES: &[&str] = &[
     "envelope.rs",
     "journal.rs",
     "lib.rs",
+    "link.rs",
     "link/codec.rs",
+    "link/measure.rs",
+    "link/uplink.rs",
     "sequenced.rs",
+    "sequenced/downlink.rs",
     "sequenced/federation.rs",
     "sequenced/pack.rs",
     "sequenced/watch.rs",
@@ -524,14 +529,44 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
     (
         "relay-protocol/lib.rs",
         "index",
-        12,
-        "ticket, cookie and tag ranges follow the handshake and envelope length checks",
+        11,
+        "ticket, cookie and tag ranges follow the handshake and envelope length checks, and a peer index is the `position` found in the same room just above it",
+    ),
+    (
+        "relay-protocol/link.rs",
+        "expect",
+        1,
+        "`record_send` reads the range of a PACK only: `server_packet` passes a CONTROL payload that starts with PACK_EVENT, which only this relay's `encode_pack` writes",
+    ),
+    (
+        "relay-protocol/link.rs",
+        "index",
+        6,
+        "the client and reader send logs are made SENDLOG_CLIENT and SENDLOG_READER long and indexed by a sequence modulo that length",
     ),
     (
         "relay-protocol/link/codec.rs",
         "index",
         1,
         "`varint::read` returns a length within the bytes it read",
+    ),
+    (
+        "relay-protocol/link/measure.rs",
+        "expect",
+        2,
+        "`sample` sets `srtt` and the current base window just above both",
+    ),
+    (
+        "relay-protocol/link/measure.rs",
+        "index",
+        4,
+        "the histogram holds SRTT_BUCKETS entries and its index is clamped to SRTT_BUCKETS - 1; the per-state arrays hold 4 entries, indexed by `LinkState::index()`, which is below 4",
+    ),
+    (
+        "relay-protocol/link/uplink.rs",
+        "index",
+        2,
+        "the served copy's index comes from enumerating `schedule.copies` after the function's only removal, the retain above it",
     ),
     (
         "relay-protocol/sequenced.rs",
@@ -542,8 +577,20 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
     (
         "relay-protocol/sequenced.rs",
         "index",
-        24,
-        "source indexes into the MAX_PEERS-sized tables are below MAX_PEERS (`Ticket::parse` and the ordering decoder refuse larger), a certificate is MAC-checked over the length `parse` and `is_ordering_certificate_len` admitted, rate steps index the paced-rate table below its length, and `FRAME_RATES[0]` reads the constant table's fastest rate",
+        25,
+        "source indexes into the MAX_PEERS-sized tables are below MAX_PEERS (`Ticket::parse` and the ordering decoder refuse larger), a certificate is MAC-checked over the length `parse` and `is_ordering_certificate_len` admitted, rate steps index the paced-rate table below its length, and `CONTINUOUS_FLOOR` reads the constant table's slowest rate in a const",
+    ),
+    (
+        "relay-protocol/sequenced/downlink.rs",
+        "expect",
+        1,
+        "`push_repair` returns early unless `peer.push` is set, and nothing in it clears it",
+    ),
+    (
+        "relay-protocol/sequenced/downlink.rs",
+        "index",
+        8,
+        "`count` sums the entries `encode_pack` took from `new`, `skip` runs below `old.len()`, the reader-state counters hold 4 entries indexed by `LinkState::index()`, and the push counters hold 5, indexed by the SEND_* kinds 0 to 4",
     ),
     (
         "relay-protocol/sequenced/federation.rs",
@@ -572,7 +619,7 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
     (
         "relay-protocol/sequenced/watch.rs",
         "index",
-        10,
+        9,
         "a watch ticket is its fixed TICKET_LEN array, and a watcher index is the `position` found in the same room, which nothing removes before its use",
     ),
     (

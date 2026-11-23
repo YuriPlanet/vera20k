@@ -783,10 +783,18 @@ fn relay_renewal_is_timed_from_grant_receipt_at_half_life() {
         (operation, payload),
         ("renew_relay", json!({"match_id":"renew-match"}))
     );
+    // The reconnect notice reads the pass's lapse on the same receipt clock.
+    assert!(!service.relay_pass_lapsed(received));
+    assert!(!service.relay_pass_lapsed(received.wrapping_add(299_999)));
+    assert!(service.relay_pass_lapsed(received.wrapping_add(300_000)));
     // The reply's fresh grant moves the deadline half a lifetime on.
     service.relay_granted(due + 1_000);
     service.poll_renewal(due + 11_000);
     assert!(input.try_recv().is_err());
+    assert!(!service.relay_pass_lapsed(received.wrapping_add(300_000)));
+    // A lobby session that ends mid-match cannot renew the pass any more.
+    service.clear_cleanup();
+    assert!(service.relay_pass_lapsed(due + 301_000));
 }
 
 #[test]
@@ -874,7 +882,8 @@ fn an_expired_start_says_whose_game_could_not_reach_the_relay() {
 }
 
 /// The lobby's reasons for refusing a start show as their own lines; one
-/// this game does not know keeps the general line.
+/// this game does not know keeps the general line. The fixture lists the
+/// reasons the lobby sends.
 #[test]
 fn a_refused_start_shows_the_lobbys_reason() {
     let (mut service, _input, _output) = control_service(None);
@@ -889,6 +898,24 @@ fn a_refused_start_shows_the_lobbys_reason() {
         "no start pending here"
     );
     service.pending = Some(start_waiting_until(Instant::now(), true));
+    let messages =
+        &crate::test_fixture::json("tests/fixtures/lobby/start_rejected.json")["messages"];
+    for message in messages.as_array().unwrap() {
+        let message = message.as_str().unwrap();
+        assert_ne!(
+            service.start_rejected_line(message),
+            "VERA:StartRefusedConnection",
+            "{message}"
+        );
+    }
+    assert_eq!(
+        service.start_rejected_line("A player cancelled the game start."),
+        "VERA:StartPlayerCancelled"
+    );
+    assert_eq!(
+        service.start_rejected_line("A player could not complete the peer latency check."),
+        "VERA:StartLatencyCheckFailed"
+    );
     assert_eq!(
         service.start_rejected_line(relay),
         "VERA:StartRelayNotReached",

@@ -16,9 +16,9 @@ use crate::render::bit_font::BitFont;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::{
     shell_paint,
-    shell_text::{self, ShellAlign, ShellTextDraw},
+    shell_text::{self, ShellTextDraw},
 };
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 use crate::ui::shell::keyboard::{KEYBOARD_PAGE, KeyboardButton, KeyboardControl, KeyboardParent};
 use crate::util::time::Instant;
 use vera20k_gui::shell::list::ListMetrics;

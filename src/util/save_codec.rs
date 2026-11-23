@@ -99,16 +99,15 @@ pub(crate) fn deserialize_with_remainder<'de, T: serde::Deserialize<'de>>(
     Ok((value, decoder.input))
 }
 
-/// An audited predecessor of the target serde types. Its struct lacks the
-/// final (defaulted) field and its enum may lack the final variant.
+/// Booleans introduced as false since a particular player-save writer, and
+/// an enum variant that writer could not emit.
 pub(crate) struct PreviousLayout {
-    pub struct_name: &'static str,
-    pub current_fields: &'static [&'static str],
+    pub absent_bools: &'static [(&'static str, &'static [&'static str])],
     pub absent_variant: Option<(&'static str, &'static str)>,
 }
 
-/// Read the old layout and record byte offsets at which its missing field
-/// belongs. The caller can then preserve every byte the reader normalized.
+/// Read the old layout and record each missing boolean's wire offset. The
+/// caller can then preserve every original byte, including normalized values.
 pub(crate) fn deserialize_previous<'de, T: serde::Deserialize<'de>>(
     bytes: &'de [u8],
     layout: PreviousLayout,
@@ -568,18 +567,16 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de, '_> {
         visitor: V,
     ) -> Result<V::Value, Error> {
         if let Some(previous) = &self.previous
-            && previous.layout.struct_name == name
+            && let Some(&(_, missing)) = previous.layout.absent_bools.iter().find(|p| p.0 == name)
         {
-            if fields != previous.layout.current_fields || fields.is_empty() {
-                return Err(Error::Custom(format!("unexpected fields in {name}")));
+            if let Some(field) = missing.iter().find(|field| !fields.contains(field)) {
+                return Err(Error::Custom(format!("missing {name}.{field} in reader")));
             }
-            let value = (&mut *self).deserialize_tuple(fields.len() - 1, visitor)?;
-            if let Some(previous) = &mut self.previous {
-                previous
-                    .missing_fields
-                    .push(previous.input_len - self.input.len());
-            }
-            return Ok(value);
+            return visitor.visit_seq(HistoricalFields {
+                de: self,
+                fields: fields.iter(),
+                missing,
+            });
         }
         self.deserialize_tuple(fields.len(), visitor)
     }
@@ -608,6 +605,38 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de, '_> {
 
     fn is_human_readable(&self) -> bool {
         false
+    }
+}
+
+/// Supply new booleans to serde at their declared positions without
+/// consuming the following fields' bytes from the historical record.
+struct HistoricalFields<'a, 'de, 'layout> {
+    de: &'a mut Deserializer<'de, 'layout>,
+    fields: std::slice::Iter<'static, &'static str>,
+    missing: &'static [&'static str],
+}
+
+impl<'de> de::SeqAccess<'de> for HistoricalFields<'_, 'de, '_> {
+    type Error = Error;
+
+    fn next_element_seed<T: DeserializeSeed<'de>>(
+        &mut self,
+        seed: T,
+    ) -> Result<Option<T::Value>, Error> {
+        let Some(&field) = self.fields.next() else {
+            return Ok(None);
+        };
+        if self.missing.contains(&field)
+            && let Some(previous) = &mut self.de.previous
+        {
+            previous
+                .missing_fields
+                .push(previous.input_len - self.de.input.len());
+            return seed
+                .deserialize(de::value::BoolDeserializer::new(false))
+                .map(Some);
+        }
+        seed.deserialize(&mut *self.de).map(Some)
     }
 }
 

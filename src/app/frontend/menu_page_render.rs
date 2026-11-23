@@ -27,9 +27,9 @@ use crate::app::frontend::skirmish_shell_render::gui_paint::{
     ButtonArt, GuiPaint, GuiStyle, paint_gui_ids,
 };
 use crate::render::shell_paint::{self, CURSOR_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED};
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::menu_page::{self, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
 

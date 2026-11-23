@@ -17,6 +17,8 @@ and executes the saved command before it accepts the fixture.
 | `v0.4.0-alpha.sav` | `fee2773ca` | `alpha` |
 | `v0.4.0-sequence.sav` | `fee2773ca` | `sequence` |
 | `main-eb05f451e.sav` | `eb05f451e` (pre-release) | `skirmish` |
+| `main-eb05f451e-images.sav` | `eb05f451e` (pre-release) | `image-states` |
+| `main-41f140f93.sav` | `41f140f93` (pre-release) | `skirmish` |
 
 The ordinary worlds use `compat.map`, a flat 3×3 terrain and an authored
 APC type. At tick 91 the Americans player has 1,000 credits. The pending
@@ -34,6 +36,11 @@ a real entry to the rules animation catalog. v0.4.0 hashed that catalog before
 the SHP firing layout became part of each entry. The desktop test loads the
 historical digest, executes the queued command, saves with the current digest
 and reloads the result.
+
+The image-states scenario registers the authored `COMPATGLOW` animation and
+a `POST` overlay using the same picture. The writer at `eb05f451e` included
+both types' image state in the rules digest before the alternate-theater ART
+flag existed. Its save checks both registries during loading.
 
 To reproduce a fixture, create a detached worktree at its writer commit. Run
 the following from that worktree with your current checkout available at

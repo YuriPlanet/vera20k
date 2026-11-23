@@ -9,8 +9,10 @@ use crate::util::native_x87::NativeF64Bits;
 
 use super::{RuleSet, default_fog_rate, default_shroud_rate};
 
+#[derive(Clone, Copy)]
 enum ConfigHashFormat {
     Current,
+    BeforeAlternateTheaterArt,
     V040,
 }
 
@@ -35,6 +37,8 @@ impl RuleSet {
         if saved == current
             || (!self.animation_sequences.is_empty()
                 && saved == self.config_hash(ConfigHashFormat::V040))
+            || ((!self.anim_type_images.is_empty() || !self.overlay_registry.is_empty())
+                && saved == self.config_hash(ConfigHashFormat::BeforeAlternateTheaterArt))
         {
             Ok(())
         } else {
@@ -43,6 +47,7 @@ impl RuleSet {
     }
 
     fn config_hash(&self, format: ConfigHashFormat) -> u64 {
+        let legacy_images = !matches!(format, ConfigHashFormat::Current);
         let mut hasher = crate::util::state_hasher::StateHasher::new();
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
@@ -156,7 +161,8 @@ impl RuleSet {
         }
         // OverlayRead5FE8BE / InitTheater5FE620 retain typed history that a
         // flattened Image key cannot recover; saved resource plans matter too.
-        self.overlay_registry.hash_configuration(&mut hasher);
+        self.overlay_registry
+            .hash_configuration(&mut hasher, legacy_images);
         // ObjectTypeRead5F93D5 can retain a different Voc ID for identical
         // current text. Keep concrete type identities distinct in the hash.
         b"object-crush-sounds-v1".hash(&mut hasher);
@@ -1534,7 +1540,9 @@ impl RuleSet {
         self.general.weather_con_bolts.hash(&mut hasher);
         self.bridge_rules.explosions.hash(&mut hasher);
         match format {
-            ConfigHashFormat::Current => self.animation_sequences.hash(&mut hasher),
+            ConfigHashFormat::Current | ConfigHashFormat::BeforeAlternateTheaterArt => {
+                self.animation_sequences.hash(&mut hasher)
+            }
             ConfigHashFormat::V040 => self
                 .animation_sequences
                 .iter()
@@ -1748,17 +1756,25 @@ impl RuleSet {
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
         self.hash_building_body_config(&mut hasher);
-        self.hash_building_slot_config(&mut hasher);
+        self.hash_building_slot_config(&mut hasher, legacy_images);
         hasher.finish()
     }
 
     /// Slot constructors consume selected names, offsets and the common runtime
     /// metadata. Canonical ordering makes ART section insertion order irrelevant.
-    fn hash_building_slot_config(&self, hasher: &mut impl Hasher) {
+    fn hash_building_slot_config(&self, hasher: &mut impl Hasher, legacy_images: bool) {
         b"building-slot-config-v1".hash(hasher);
         self.anim_type_names.hash(hasher);
         self.anim_type_art_read_states.hash(hasher);
-        self.anim_type_images.hash(hasher);
+        if legacy_images {
+            self.anim_type_images
+                .iter()
+                .map(|(name, image)| (name, image.hash_fields_before_alternate_theater_art()))
+                .collect::<Vec<_>>()
+                .hash(hasher);
+        } else {
+            self.anim_type_images.hash(hasher);
+        }
         self.art_registry.scheduler_anim_types().hash(hasher);
         let mut types = self.anim_type_names.clone();
         types.extend(self.art_registry.scheduler_anim_types().iter().cloned());
@@ -1827,6 +1843,27 @@ impl RuleSet {
             .collect::<BTreeMap<_, _>>()
             .hash(hasher);
     }
+}
+
+#[cfg(all(test, tests_rules_o_z))]
+#[test]
+fn a_historical_digest_validates_anim_images_without_any_sequences() {
+    use crate::rules::{ini_parser::IniFile, object_image::ObjectImageState};
+
+    let mut rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    assert!(rules.animation_sequences.is_empty());
+    assert!(rules.overlay_registry.is_empty());
+    rules.anim_type_images = vec![("FIRE".into(), ObjectImageState::new("FLAME"))];
+    let saved = rules.config_hash(ConfigHashFormat::BeforeAlternateTheaterArt);
+    assert_eq!(rules.config_hash(ConfigHashFormat::V040), saved);
+    assert_ne!(rules.simulation_config_hash(), saved);
+    assert_eq!(rules.check_player_save_config_hash(saved), Ok(()));
+
+    rules.anim_type_images[0].1 = ObjectImageState::new("ASH");
+    assert_eq!(
+        rules.check_player_save_config_hash(saved),
+        Err(rules.simulation_config_hash())
+    );
 }
 
 #[cfg(all(test, tests_rules_o_z))]

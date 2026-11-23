@@ -8,9 +8,9 @@ use super::controls::{ControlPaint, paint_control};
 use crate::app::AppState;
 use crate::app::input::dialog_page::pressed;
 use crate::app::input::diplomacy::DIALOG;
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::checkbox::CheckboxFace;
 use crate::ui::shell::diplomacy::{DiplomacyControl, DiplomacyHeader, diplomacy_layout};
+use crate::ui::shell::geom::ShellAlign;
 
 fn face(checked: bool) -> CheckboxFace {
     if checked {

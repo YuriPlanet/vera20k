@@ -42,8 +42,10 @@ with its cell membership restored. The v0.4.0 glow case keeps one live and
 one expired AlphaShape. Conversion sets their animation-listener flags to
 false, preserves their positions and ownership, and allows the next tick to
 remove only the expired glow. The ordinary v0.4.0 save covers the empty
-collection. The pre-release writer at `eb05f451e` covers direct loading of
-layout `0xFD54FFFF`.
+collection. The pre-release writer at `eb05f451e` uses layout
+`0xFD54FFFF`. Its saved object images predate the alternate-theater ART
+flag and convert with that flag off. The `41f140f93` writer covers direct
+loading of layout `0xCB545137`.
 
 Run the menu and compatibility tests locally with the pull request workflow's command.
 

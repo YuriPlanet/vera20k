@@ -13,8 +13,8 @@ use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH};
 use crate::app::AppState;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint;
-use crate::render::shell_text::{self, ShellAlign};
-use crate::ui::shell::geom::RectPx;
+use crate::render::shell_text;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 use crate::ui::wol_buddy::*;
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 

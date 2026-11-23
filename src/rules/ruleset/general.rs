@@ -132,6 +132,13 @@ pub struct GeneralRules {
     /// With yes, Factory_AI C2F07C reserves by produced class, splitting
     /// vehicles alone on Naval. HouseAiProduction owns the reservation and
     /// its class-specific exit/abandon release phases. Default no keeps cloning.
+    /// NPatch Extended (ext173) names the same global switch
+    /// `[General] DisableAIParallelProduction=`: its `ReadGeneral` hook reaches
+    /// the reader at `0xC2BDDA..0xC2BDE7`, which writes `Rules+0x640`,
+    /// immediately before `EnableAIBuildLimitation` at `Rules+0x641`, and
+    /// `0xC2D482` gates the same five counters. The 2022-era revision that
+    /// PR #2877 discusses sets the name per type; only `[General]` is consulted
+    /// here, so a type-section key stays unread instead of driving this field.
     pub disable_parallel_ai_queues: bool,
     /// `[General] RepairRate=` in minutes — `RulesClass+0x16E0`.
     ///
@@ -2738,11 +2745,16 @@ impl GeneralRules {
                     defaults.enable_ai_build_limitation,
                 ),
             // NPSE reads it with the current field as default into Rules+0x2D
-            // (C30303..C3031A); the constructor's 66569B store leaves 0.
+            // (C30303..C3031A); the constructor's 66569B store leaves 0. NPExt
+            // ext173 reads its name of the same global switch into Rules+0x640
+            // (reader C2BDDA..C2BDE7, gate C2D482), so an absent or unparsable
+            // NPSE value falls through to that name.
             disable_parallel_ai_queues: crate::rules::NPATCH_ENABLED
                 && general.read_bool(
                     "DisableParallelAIQueues",
-                    defaults.disable_parallel_ai_queues,
+                    general
+                        .read_bool_value("DisableAIParallelProduction")
+                        .unwrap_or(defaults.disable_parallel_ai_queues),
                 ),
             repair_rate_minutes: general.read_double("RepairRate", defaults.repair_rate_minutes),
             // `RulesClass+0x30/+0x34/+0x38/+0x3C`, read by the General reader at

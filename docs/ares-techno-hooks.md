@@ -112,8 +112,7 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   not ported); the Occupier+VehicleThief expiry
   (0x4D9A83).
 - Dormant in retail: flying carriers (0x414338, 0x6B783B).
-- Presentation and audio: the radial indicators of non-buildings
-  (0x41BE80; the building GetSensorRange override 0x4566B0 is ported), damage
+- Presentation and audio: damage
   spark and smoke particle-system lists (0x6FAD49, 0x702894), move sounds
   (0x4DAA68, 0x7101CF). The airstrike voices (0x41D5AE, 0x41D940) are
   ported in `sim/airstrike.rs`.
@@ -176,10 +175,6 @@ InfantryElectrocuted=         ; Find only; unset: ELECTRO, else AnimTypes[1]
 - `UnitsUnsellable`: the unit sale on a depot
   ([ares-reverse-engineering.md](ares-reverse-engineering.md)).
 - The `HunterSeeker*` defaults: [ares-hunter-seeker.md](ares-hunter-seeker.md).
-- `StartInMultiplayerUnitCost` unset: Ares' own average also takes the
-  HouseType `StartInMultiplayer.Types`, which VERA does not read; HouseType
-  `StartInMultiplayer.WithConst` (`1001F0B0`, hook `0x5D7048`, a starting
-  construction yard) is read and not consumed.
 
 ## Hook table
 
@@ -206,12 +201,12 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `417DD2` | AircraftClass_GetActionOnObject_NoManualUnload | `10048A90` | ported earlier |
 | `41946B` | AircraftClass_ReceivedRadioCommand_QueryEnterAsPassenger_KillDriver | `10048CF0` | ported: [ares-transports.md](ares-transports.md) |
 | `41949F` | AircraftClass_ReceivedRadioCommand_SpecificPassengers | `10048D10` | ported: [ares-transports.md](ares-transports.md) |
-| `41BE80` | ObjectClass_DrawRadialIndicator | `10049A70` | residual: radial indicators for all technos (presentation) |
+| `41BE80` | ObjectClass_DrawRadialIndicator | `10049A70` | ported: `app::presentation::radial_indicators` with `ObjectType::ares_techno_radial_radius`, for the selected non-Buildings |
 | `41D5AE` | AirstrikeClass_PointerGotInvalid_AirstrikeAbortSound | `10048DE0` | ported: `sim::airstrike` |
 | `41D940` | AirstrikeClass_Fire_AirstrikeAttackVoice | `10048D60` | ported: `sim::airstrike` |
 | `446EE2` | BuildingClass_Place_InitialPayload | `10048EB0` | ported: [ares-transports.md](ares-transports.md) |
 | `44A03C` | BuildingClass_Mi_Selling_Transfer | `10048E90` | ported earlier |
-| `4566B0` | BuildingClass_GetRangeOfRadial_Radius | `10048E60` | ported: the building radius (`rules::object_type`); other technos' indicators are 0x41BE80 |
+| `4566B0` | BuildingClass_GetRangeOfRadial_Radius | `10048E60` | ported: the building radius (`rules::object_type`); other technos' indicators are 0x41BE80, ported |
 | `471C96` | CaptureManagerClass_CanCapture | `10048ED0` | ported earlier |
 | `4D718C` | FootClass_Put_InitialPayload | `100491B0` | ported: [ares-transports.md](ares-transports.md) |
 | `4D85E4` | FootClass_UpdatePosition_TiberiumDamage | `10049280` | ported earlier |
@@ -399,7 +394,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `5F8277` | ObjectTypeClass_Load3DArt_NoSpawnAlt1 | `10041280` | ported: a unit's NoSpawnAlt `<Image>WO` pair is required, whatever its `Turret=` (`rules::voxel_model_plan`) |
 | `5F848C` | ObjectTypeClass_Load3DArt_NoSpawnAlt2 | `100413A0` | ported: skips the stock WO load into the turret slot (`rules::voxel_model_plan`) |
 | `73B6E3` | UnitClass_DrawVXL_NoSpawnAlt | `10041460` | equivalent: the unit draw reads the `{type}WO` pair by name in every build (`voxel_frame_catalog::unit_atlas_variants`); residual: a `Turret=yes` NoSpawnAlt unit draws that body without its turret, where Ares draws the turret over it (retail and Brute Force have no such type) |
-| `5F9634` | ObjectTypeClass_LoadFromINI | `100413B0` | residual: reads `AlternateTheaterArt` (unread), whose only consumer is Load2DArt (`10041040`, hook `0x5F9070`, not ported: VERA runs the stock SHP image load); retail and Brute Force never set it |
+| `5F9634` | ObjectTypeClass_LoadFromINI | `100413B0` | ported: a TechnoType read the Ares way reads `AlternateTheaterArt` (`ObjectImageState::read_ares_alternate_theater_art`); its consumer Load2DArt (`10041040`, hook `0x5F9070`) is ported in `ObjectImageState::load_unowned_shp`: Image plus the theater letter, once, when the art INI has that section, in place of AlternateArcticArt |
 | `5F865F` | ObjectTypeClass_Load3DArt_Turrets | `10042220` | equivalent: turret voxel enumeration has no 18 bound |
 | `5F887B` | ObjectTypeClass_Load3DArt_Barrels | `10042090` | equivalent: barrel voxel enumeration has no 18 bound |
 | `70DC70` | TechnoClass_SwitchGunner | `10042480` | ported earlier |

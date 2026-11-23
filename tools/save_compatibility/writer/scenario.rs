@@ -51,6 +51,20 @@ pub const SEQUENCES: Scenario = Scenario {
     ..STANDARD
 };
 
+pub const IMAGE_STATES: Scenario = Scenario {
+    ini: "[Map]\nTheater=TEMPERATE\n[Basic]\nName=Compatibility\n\
+          [Animations]\n0=COMPATGLOW\n[OverlayTypes]\n0=POST\n[POST]\nImage=COMPATGLOW\n",
+    populate: |_, rules, _| {
+        assert_eq!(rules.anim_type_name_by_index(0), Some("COMPATGLOW"));
+        assert_eq!(rules.overlay_registry().name(0), Some("POST"));
+        println!(
+            "historical rules hash {:016x}",
+            rules.simulation_config_hash()
+        );
+    },
+    ..STANDARD
+};
+
 pub fn write_world(
     mut sim: Simulation,
     template: ResolvedTerrainGrid,

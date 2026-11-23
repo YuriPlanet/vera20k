@@ -28,11 +28,13 @@ released_saves! {
     v0_3_9: "v0.3.9", 0xFD30_A463, Campaign;
     v0_4_0: "v0.4.0", 0x9BB2_0D64, Skirmish;
     main_eb05f451e: "main-eb05f451e", 0xFD54_FFFF, Skirmish;
+    main_41f140f93: "main-41f140f93", 0xCB54_5137, Skirmish;
 }
 
 const TUNNEL_FIXTURE: &str = "v0.3.9-tunnel";
 const ALPHA_FIXTURE: &str = "v0.4.0-alpha";
 const SEQUENCE_FIXTURE: &str = "v0.4.0-sequence";
+const IMAGE_FIXTURE: &str = "main-eb05f451e-images";
 
 #[test]
 fn every_frozen_save_has_a_load_case() {
@@ -47,7 +49,12 @@ fn every_frozen_save_has_a_load_case() {
     let cases: BTreeSet<_> = RELEASES
         .iter()
         .copied()
-        .chain([TUNNEL_FIXTURE, ALPHA_FIXTURE, SEQUENCE_FIXTURE])
+        .chain([
+            TUNNEL_FIXTURE,
+            ALPHA_FIXTURE,
+            SEQUENCE_FIXTURE,
+            IMAGE_FIXTURE,
+        ])
         .map(str::to_owned)
         .collect();
     assert_eq!(
@@ -193,6 +200,7 @@ fn resume_and_save_again(release: &str, layout: u32, mode: ScenarioGameMode) {
         layout,
         |runtime| {
             check_world(&runtime.simulation);
+            assert_eq!(runtime.resources.rules.object("APC").unwrap().image, "APC");
             assert_eq!(runtime.simulation.session().tick(), 91, "{release}");
             assert_eq!(
                 runtime.simulation.session().game_options().game_speed,
@@ -218,26 +226,42 @@ fn resume_and_save_again(release: &str, layout: u32, mode: ScenarioGameMode) {
 #[test]
 fn released_animation_sequence_rules_resume_and_save_with_the_current_hash() {
     crate::test_fixture::on_game_stack(|| {
-        let saved_hash = GameSnapshot::read_metadata(&fixture(SEQUENCE_FIXTURE))
-            .unwrap()
-            .rules_hash;
-        exercise(
-            SEQUENCE_FIXTURE,
-            0x9BB2_0D64,
-            |runtime| {
-                let rules = &runtime.resources.rules;
-                assert!(rules.animation_sequence("POST").is_some());
-                assert_ne!(saved_hash, rules.simulation_config_hash());
-                let commands = runtime.simulation.take_due_commands();
-                assert_eq!(commands.len(), 1);
-                runtime.advance_frame_for_tooling(&commands, 67).unwrap();
-            },
-            |sim| {
-                assert_eq!(sim.session().tick(), 92);
-                assert_eq!(sim.session().game_options().game_speed, 4);
-            },
-        );
+        resume_changed_digest(SEQUENCE_FIXTURE, 0x9BB2_0D64, |rules| {
+            assert!(rules.animation_sequence("POST").is_some());
+        });
     });
+}
+
+#[test]
+fn historical_anim_and_overlay_image_rules_resume_and_save_with_the_current_hash() {
+    crate::test_fixture::on_game_stack(|| {
+        resume_changed_digest(IMAGE_FIXTURE, 0xFD54_FFFF, |rules| {
+            assert_eq!(rules.anim_type_name_by_index(0), Some("COMPATGLOW"));
+            assert_eq!(rules.overlay_registry().name(0), Some("POST"));
+        });
+    });
+}
+
+fn resume_changed_digest(name: &str, layout: u32, check: impl Fn(&crate::rules::ruleset::RuleSet)) {
+    let saved_hash = GameSnapshot::read_metadata(&fixture(name))
+        .unwrap()
+        .rules_hash;
+    exercise(
+        name,
+        layout,
+        |runtime| {
+            let rules = &runtime.resources.rules;
+            check(rules);
+            assert_ne!(saved_hash, rules.simulation_config_hash());
+            let commands = runtime.simulation.take_due_commands();
+            assert_eq!(commands.len(), 1);
+            runtime.advance_frame_for_tooling(&commands, 67).unwrap();
+        },
+        |sim| {
+            assert_eq!(sim.session().tick(), 92);
+            assert_eq!(sim.session().game_options().game_speed, 4);
+        },
+    );
 }
 
 #[test]
@@ -366,20 +390,23 @@ pub(super) fn resume_player_file(
         let converted = repository.read(&path).unwrap();
         let converted_header = GameSnapshot::read_header(&converted).unwrap();
         assert_eq!(converted_header.description, name);
-        if matches!(header.layout, 0xFD30_A463 | 0x9BB2_0D64)
-            && converted_header.layout == 0xFD54_FFFF
-        {
-            // The new byte is per shape. When the collection is empty the
-            // original world must be byte-exact, even when the name changes.
+        if matches!(header.layout, 0xFD30_A463 | 0x9BB2_0D64 | 0xFD54_FFFF) {
+            // Both newly saved flags default to false in historical worlds.
+            // Every original body byte survives in order, including any
+            // animation-listener flag already present in the eb05f451e layout.
             let original_body =
                 &original[crate::util::save_codec::serialize(&header).unwrap().len()..];
             let converted_body =
                 &converted[crate::util::save_codec::serialize(&converted_header)
                     .unwrap()
                     .len()..];
-            if original_body.len() == converted_body.len() {
-                assert!(original_body == converted_body);
+            let mut source = original_body.iter().copied().peekable();
+            for byte in converted_body {
+                if source.next_if_eq(byte).is_none() {
+                    assert_eq!(*byte, 0, "conversion changed the historical world");
+                }
             }
+            assert!(source.next().is_none(), "conversion truncated the world");
         }
         assert!(
             repository

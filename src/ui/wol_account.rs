@@ -9,10 +9,10 @@
 use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, Value};
 
 use crate::i18n::tr_fill;
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::shell::page;
 use crate::ui::wol_login::{DIALOG, typed};
@@ -32,7 +32,7 @@ pub(crate) const FORM_STATUS: u16 = 0x7FDC;
 /// names it on the shell's dialog stack.
 pub(crate) const POPUP: DialogResourceId = DialogResourceId(0x7FE8);
 
-/// A lobby name's and an account password's longest.
+/// A lobby player name's longest, in bytes.
 pub(crate) const NAME_LIMIT: usize = 24;
 const EMAIL_LIMIT: usize = 254;
 const PASSWORD_MIN: usize = 8;
@@ -1003,8 +1003,6 @@ mod tests {
 
     #[test]
     fn delete_accepts_a_long_registration_email_and_keeps_it_out_of_debug_output() {
-        assert!(!valid_email("x@-invalid.example"));
-        assert!(!valid_email(&format!("{}@example.com", "x".repeat(65))));
         let email = format!("{}+alias@example.com", "a".repeat(50));
         let mut ui = ui();
         let mut form = WolAccountForm::delete(&mut ui, "");
@@ -1148,11 +1146,20 @@ mod tests {
         assert!(!form.remembered && form.field_text(&ui, 1).is_empty());
     }
 
+    /// The lobby checks names, passwords and emails with its own copy of
+    /// these rules and gives each case the same answer.
     #[test]
-    fn emails_need_a_dotted_domain() {
-        assert!(valid_email("a@b.c"));
-        for email in ["a@b", "@b.c", "a@.c", "a@b.", "a@b@c.d", "a b@c.d"] {
-            assert!(!valid_email(email), "{email}");
+    fn account_fields_give_the_shared_cases_their_answers() {
+        let cases = &crate::test_fixture::json("tests/fixtures/lobby/accounts.json")["cases"];
+        for case in cases.as_array().unwrap() {
+            let value = case["value"].as_str().unwrap();
+            let valid = match case["field"].as_str().unwrap() {
+                "name" => valid_name(value),
+                "password" => valid_password(value),
+                "email" => valid_email(value),
+                field => panic!("no account field {field}"),
+            };
+            assert_eq!(Some(valid), case["valid"].as_bool(), "{}", case["case"]);
         }
     }
 }

@@ -1668,6 +1668,22 @@ fn selector_free_map_cells(map: &MapFile, lookup: Option<&TilesetLookup>) -> Vec
         .collect()
 }
 
+/// VERA: whether every tile `map`'s cells name, translated as a load
+/// translates them, has a file that `exists`. A map whose tiles all exist
+/// among the original game's plays on them (`map::theater::TerrainFiles`).
+pub fn map_tiles_exist(
+    map: &MapFile,
+    lookup: &TilesetLookup,
+    mut exists: impl FnMut(&str) -> bool,
+) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    selector_free_map_cells(map, Some(lookup))
+        .iter()
+        .map(|cell| cell.tile_index)
+        .filter(|&tile| tile != crate::map::theater::NO_TILE && tile != i32::from(u16::MAX))
+        .all(|tile| !seen.insert(tile) || lookup.filename(tile).is_some_and(&mut exists))
+}
+
 pub(super) fn materialize_map_load_cells(
     map: &MapFile,
     lookup: Option<&TilesetLookup>,

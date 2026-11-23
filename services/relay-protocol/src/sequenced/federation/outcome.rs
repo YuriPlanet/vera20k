@@ -1,7 +1,8 @@
 //! A marked federation reports its own terminal ordering verdict to the lobby.
 //! Ordinary player departures, including removal of a silent player by their
 //! healthy home relay, stay in the command stream. Only an absent relay link
-//! in a started VF2L match, or a peer that already proved that failure, voids it.
+//! in a started marked match, or a peer that already proved that failure, voids
+//! it.
 
 use super::*;
 use crate::link::array_at;

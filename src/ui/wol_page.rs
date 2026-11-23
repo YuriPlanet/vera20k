@@ -15,13 +15,13 @@
 
 use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, UiEvent, Value};
 
-use crate::render::shell_text::ShellAlign;
 use crate::ui::lan_shell::{LanChatLine, apply_chat_length_limit};
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::page;
-use vera20k_gui::shell::new_edit::NewEdit;
 use crate::ui::wol_chat::trim_line_end;
+use vera20k_gui::shell::new_edit::NewEdit;
 
 pub(crate) const PAGE_DIALOG: DialogResourceId = DialogResourceId(0x00CF);
 pub(crate) const RECEIVED_DIALOG: DialogResourceId = DialogResourceId(0x011E);

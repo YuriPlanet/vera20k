@@ -1776,6 +1776,51 @@ fn construction_trace_after_fill(
 }
 
 #[cfg(all(test, tests_app))]
+mod match_theater_tests {
+    use super::*;
+
+    /// VERA: a network match of the original game reads the original terrain
+    /// when its map names only tiles the original game has, and the game
+    /// folder's when it names another, here one the original table names and
+    /// only a tile pack holds; a skirmish reads the folder's.
+    #[test]
+    fn a_network_match_reads_the_original_terrain_unless_its_map_names_another_tile() {
+        use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+        let dir = theater::terrain_test_install("match-theater");
+        let mut assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        let map_naming = |tiles: &[i32]| {
+            let mut map = crate::map::rmg::emit::empty_map_file(&Default::default(), 16, 16);
+            map.header.theater = "SNOW".to_owned();
+            map.cells = tiles
+                .iter()
+                .map(|&tile_index| crate::map::map_file::MapCell {
+                    rx: 1,
+                    ry: 1,
+                    tile_index,
+                    sub_tile: 0,
+                    z: 0,
+                    legacy_ice_byte: 0,
+                })
+                .collect();
+            map
+        };
+        // A cell without a tile names none.
+        let original_tiles = [0, theater::NO_TILE, i32::from(u16::MAX)];
+        let original = load_match_theater(&mut assets, &map_naming(&original_tiles), true).unwrap();
+        assert!(assets.names_pinned());
+        assert!(!original.lookup.is_morphable(0));
+
+        let skirmish = load_match_theater(&mut assets, &map_naming(&[0]), false).unwrap();
+        assert!(!assets.names_pinned());
+        assert!(skirmish.lookup.is_morphable(0));
+
+        let folder = load_match_theater(&mut assets, &map_naming(&[0, 1]), true).unwrap();
+        assert!(!assets.names_pinned());
+        assert!(folder.lookup.is_morphable(0));
+    }
+}
+
+#[cfg(all(test, tests_app))]
 mod fresh_transport_tests {
     use super::*;
 
@@ -2630,8 +2675,14 @@ pub(crate) fn load_map_initial_with_assets(
         options.normalize();
 
         let theater_name = crate::map::rmg::emit::theater_name(options.theater);
-        let theater = crate::map::theater::load_theater(asset_manager, theater_name)
-            .ok_or_else(|| anyhow::anyhow!("random map: theater {theater_name} unavailable"))?;
+        // VERA: a network room's players make one map from the original
+        // terrain files (`theater::network_terrain_files`).
+        let theater = crate::map::theater::load_theater_for_play(
+            asset_manager,
+            theater_name,
+            full_init_entry_mode.is_network(),
+        )
+        .ok_or_else(|| anyhow::anyhow!("random map: theater {theater_name} unavailable"))?;
 
         // Generate598A74 -> InitMap599A56 completes Full_Init before terrain
         // generation. Offline loads transfer outgoing writes; network loads
@@ -3038,6 +3089,35 @@ pub(crate) fn load_map_from_initial(
     }
 }
 
+/// VERA: the theater a fresh map load reads. A network match of the original
+/// game reads the original theater INI and tiles
+/// (`theater::network_terrain_files`) whenever every tile the map names
+/// exists among them. Every player, and a replay, decides alike from the map
+/// and the retail files. A map naming a tile the original game lacks reads
+/// the game folder's terrain, as a selected mod's game and every other load
+/// do; its start then agrees on those files
+/// (`ProcessAssets::match_terrain_digest`).
+fn load_match_theater(
+    asset_manager: &mut crate::assets::asset_manager::AssetManager,
+    map: &crate::map::map_file::MapFile,
+    network: bool,
+) -> Option<theater::TheaterData> {
+    let loaded = theater::load_theater_for_play(asset_manager, &map.header.theater, network)?;
+    if !asset_manager.names_pinned() {
+        return Some(loaded);
+    }
+    if crate::map::resolved_terrain::map_tiles_exist(map, &loaded.lookup, |name| {
+        asset_manager.get_ref(name).is_some()
+    }) {
+        log::info!("Network match terrain: the original game's files");
+        return Some(loaded);
+    }
+    log::info!(
+        "Network match terrain: the game folder's files; the map names a tile the original game lacks"
+    );
+    theater::load_theater(asset_manager, &map.header.theater)
+}
+
 fn load_map_first_step(
     services: FreshMapLoadServices<'_>,
     initial: MapLoadInitial,
@@ -3129,8 +3209,11 @@ fn load_map_first_step(
     };
     // Load theater INI for tileset lookup, palette, and LAT configuration.
     // Also loads theater-specific MIX archives (e.g., isotemmd.mix) at highest priority.
-    let theater_result: Option<theater::TheaterData> =
-        theater::load_theater(services.asset_manager, &map_data.header.theater);
+    let theater_result: Option<theater::TheaterData> = load_match_theater(
+        services.asset_manager,
+        &map_data,
+        startup.session_mode().is_network(),
+    );
     if theater_cache_mismatch {
         services.progress.milestone(12)?;
         // Native advances while rebuilding each color scheme. Rust's theater

@@ -240,6 +240,7 @@ impl WolCapture {
                                 WolServiceEvent::Login(Ok(WolLoginAccepted {
                                     motd: "Controlled message of the day".into(),
                                     lobby_visits: true,
+                                    campaign_rooms: false,
                                 })),
                             );
                             self.event(frame, "controlled login accepted");
@@ -459,6 +460,7 @@ impl WolCapture {
                         WolServiceEvent::Login(Ok(WolLoginAccepted {
                             motd: "Controlled message of the day".into(),
                             lobby_visits: true,
+                            campaign_rooms: false,
                         })),
                     );
                     self.event(frame, "controlled login accepted");

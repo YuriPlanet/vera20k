@@ -6,7 +6,7 @@
 //! each sync shows them. A row slot's combos show the player row
 //! [`SkirmishShellState::slot_row`] maps it to.
 
-use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
+use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
 
 use super::layout::{
     DropdownMetrics, RectPx, SEAT_MENU, SKIRMISH_LONG_ROW_COUNT, SKIRMISH_ROW_COUNT,
@@ -22,6 +22,7 @@ use crate::map::scenario_menu::MapMenuEntry;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::game_speed::SpeedContext;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 
 /// The page's dialog in the shell controller.
@@ -76,6 +77,14 @@ const PLAYER_NAME: u16 = 0x6A0;
 pub const OPPONENT_SCROLL: u16 = 0x7104;
 /// The row slots' flag pictures (gamemd's `0x6DA..0x6E1`, then VERA's).
 const FLAG: u16 = 0x7300;
+/// VERA: the row slots' left-margin numbers, `ROW_NUMBER + slot`. Past the
+/// flags (`0x7300..0x730C`) and clear of the combos and headings.
+const ROW_NUMBER: u16 = 0x7310;
+/// VERA: a row number takes the same yellow as the player columns' text when
+/// the seat is taken, and the disabled red an empty ("None") row's captions
+/// take when it is not — the two colours the row's own combo face uses.
+const NUMBER_TAKEN: Value = Value::Rgba(Rgba(0xFF, 0xFF, 0, 0xFF));
+const NUMBER_EMPTY: Value = Value::Rgba(Rgba(0x9F, 0, 0, 0xFF));
 /// The row slots' combos: `COMBO + kind * 0x20 + slot`, kind 0 the computer
 /// type, then Side, Color, Start and Team.
 const COMBO: u16 = 0x7200;
@@ -134,6 +143,13 @@ fn combo_of(state: &SkirmishShellState, id: u16) -> Option<(SkirmishComboId, usi
 
 fn flag_slot(id: u16) -> Option<usize> {
     id.checked_sub(FLAG)
+        .map(usize::from)
+        .filter(|slot| *slot < SKIRMISH_LONG_ROW_COUNT)
+}
+
+/// The row slot `ROW_NUMBER + slot` numbers.
+fn row_number_slot(id: u16) -> Option<usize> {
+    id.checked_sub(ROW_NUMBER)
         .map(usize::from)
         .filter(|slot| *slot < SKIRMISH_LONG_ROW_COUNT)
 }
@@ -202,6 +218,14 @@ fn spec() -> NodeSpec {
             .tooltip(status_help_key_for_hover(target).unwrap_or_default())
     });
     let headings = (0..8).map(|index| NodeSpec::new(NodeKind::Text).id((HEADINGS + index).into()));
+    // VERA: a number for each visible player row, centred in the margin to
+    // the name box's left. They carry no hover help and take no press.
+    let centre = Value::Int((ShellAlign::H_CENTER | ShellAlign::V_CENTER).0.into());
+    let row_numbers = (0..SKIRMISH_LONG_ROW_COUNT).map(|slot| {
+        NodeSpec::new(NodeKind::Text)
+            .id((ROW_NUMBER + slot as u16).into())
+            .with(Prop::Align, centre.clone())
+    });
     // The scrollbar takes a press first, as it did over the page's controls.
     let scroll = NodeSpec::new(NodeKind::List)
         .id(OPPONENT_SCROLL.into())
@@ -217,6 +241,7 @@ fn spec() -> NodeSpec {
         .children(combos)
         .children(menus)
         .children(controls)
+        .children(row_numbers)
         .children(headings)
 }
 
@@ -238,6 +263,13 @@ fn rect(
     }
     if let Some(slot) = flag_slot(id) {
         return layout.flags.get(slot).copied().filter(|_| slot_shows(slot));
+    }
+    if let Some(slot) = row_number_slot(id) {
+        return layout
+            .row_numbers
+            .get(slot)
+            .copied()
+            .filter(|_| slot_shows(slot));
     }
     if id == OPPONENT_SCROLL {
         return super::state::opponent_scroll_geometry(layout, state, maps).map(|g| g.outer);
@@ -373,6 +405,37 @@ pub fn sync_page(
     page::set(gui, root, PLAYER_NAME, Prop::Text, name);
     for (index, heading) in (HEADINGS..).zip(&labels.headings) {
         page::set(gui, root, index, Prop::Text, Value::Text(heading.clone()));
+    }
+    // VERA: number the visible rows by their player position, so a roster
+    // scrolled past the eighth still reads 9, 10, 11... not 1, 2, 3... An
+    // empty ("None") row's number takes the same disabled colour as the rest
+    // of that row's captions; a taken seat stays yellow.
+    for slot in 0..SKIRMISH_LONG_ROW_COUNT {
+        let row = state.slot_row(slot);
+        let taken = row == 0
+            || state
+                .opponents
+                .get(row - 1)
+                .is_some_and(super::state::SkirmishShellOpponent::is_active);
+        let node = ROW_NUMBER + slot as u16;
+        page::set(
+            gui,
+            root,
+            node,
+            Prop::Text,
+            Value::Text((row + 1).to_string()),
+        );
+        page::set(
+            gui,
+            root,
+            node,
+            Prop::Color,
+            if taken {
+                NUMBER_TAKEN.clone()
+            } else {
+                NUMBER_EMPTY.clone()
+            },
+        );
     }
     let mut captions = labels.checkboxes.iter().chain(&labels.buttons);
     for (id, target) in CONTROLS {
@@ -808,4 +871,101 @@ pub fn open_combo(
         top_index,
         hot_row,
     })
+}
+
+#[cfg(all(test, tests_ui))]
+mod tests {
+    use super::*;
+    use crate::ui::shell::controller::DialogController;
+
+    /// A property of row slot `slot`'s number after the list scrolls by
+    /// `first_opponent` on a page showing `rows` player rows, with `edit`
+    /// setting the opponent rows before the page is synced.
+    fn number_prop(
+        slot: usize,
+        first_opponent: usize,
+        rows: usize,
+        edit: impl FnOnce(&mut SkirmishShellState),
+        prop: Prop,
+    ) -> Option<Value> {
+        let mut state = SkirmishShellState::default();
+        state.first_opponent = first_opponent;
+        edit(&mut state);
+        let layout = crate::ui::skirmish_shell::layout::compute_layout_for_rows(800, 600, rows);
+        let mut controller = DialogController::default();
+        let root = sync_page(
+            &mut controller,
+            &state,
+            &layout,
+            &[],
+            &SkirmishLabels::default(),
+        )?;
+        page::get(controller.gui(), root, ROW_NUMBER + slot as u16, prop).cloned()
+    }
+
+    fn number_text(slot: usize, first_opponent: usize, rows: usize) -> Option<String> {
+        match number_prop(slot, first_opponent, rows, |_| {}, Prop::Text)? {
+            Value::Text(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn row_numbers_start_at_one_on_the_players_row() {
+        assert_eq!(number_text(0, 0, 8).as_deref(), Some("1"));
+        assert_eq!(number_text(1, 0, 8).as_deref(), Some("2"));
+        assert_eq!(number_text(7, 0, 8).as_deref(), Some("8"));
+    }
+
+    #[test]
+    fn row_numbers_follow_scrolled_player_positions() {
+        // Past the eighth: slot 1 shows the ninth opponent, player 10, not 2.
+        assert_eq!(number_text(1, 8, 13).as_deref(), Some("10"));
+        assert_eq!(number_text(12, 8, 13).as_deref(), Some("21"));
+    }
+
+    #[test]
+    fn row_numbers_take_the_empty_seat_color() {
+        // Default: the local row and opponent 0 (Easy) are taken; the rest
+        // are None. A taken seat's number stays yellow; an empty one's takes
+        // the same disabled red as its "None" captions.
+        assert_eq!(
+            number_prop(0, 0, 8, |_| {}, Prop::Color),
+            Some(NUMBER_TAKEN.clone())
+        );
+        assert_eq!(
+            number_prop(1, 0, 8, |_| {}, Prop::Color),
+            Some(NUMBER_TAKEN.clone())
+        );
+        assert_eq!(
+            number_prop(2, 0, 8, |_| {}, Prop::Color),
+            Some(NUMBER_EMPTY.clone())
+        );
+        assert_eq!(
+            number_prop(7, 0, 8, |_| {}, Prop::Color),
+            Some(NUMBER_EMPTY.clone())
+        );
+    }
+
+    #[test]
+    fn filling_an_empty_seat_turns_its_number_yellow() {
+        let fill_second = |state: &mut SkirmishShellState| {
+            state.opponents[1].row_type = crate::ui::skirmish_shell::state::SkirmishAiRowType::Hard;
+        };
+        assert_eq!(
+            number_prop(2, 0, 8, fill_second, Prop::Color),
+            Some(NUMBER_TAKEN.clone())
+        );
+    }
+
+    #[test]
+    fn row_numbers_sit_left_of_the_name_box() {
+        let layout = crate::ui::skirmish_shell::layout::compute_layout(800, 600);
+        assert!(
+            layout
+                .row_numbers
+                .iter()
+                .all(|number| number.x + number.w <= layout.player_name.x)
+        );
+    }
 }

@@ -25,9 +25,9 @@
 
 use crate::util::time::{Duration, Instant};
 
-use crate::render::shell_text::ShellAlign;
 use crate::ui::score_shell::{ScoreRow, ScoreStatic, ScoreStatics};
 use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::geom::{self, RectPx, fit_window};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;

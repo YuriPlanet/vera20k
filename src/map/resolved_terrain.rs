@@ -75,6 +75,7 @@ pub(crate) use allocated_order::{AllocatedCellOrder, ROW_NEIGHBORS};
 pub(crate) use bridge_flags::RealCellBridgeFlags0x1180;
 pub use build::OverlayLoadSource;
 pub(crate) use build::cliff_back_normal_reclass_applies;
+pub use build::map_tiles_exist;
 pub use build::{AuthoredTerrainFill, RadarColorMetadata, current_tile_permissions};
 use build::{presentation_tile_parts, wheel_speed_at_or_below_one_percent};
 pub(crate) use cell_recalc::{

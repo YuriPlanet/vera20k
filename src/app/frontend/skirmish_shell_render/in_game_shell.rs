@@ -9,10 +9,10 @@ use crate::app::AppState;
 use crate::app::input::dialog_page::InGameDialog;
 use crate::render::batch::SpriteInstance;
 use crate::render::scaled_copy::ScaledSurface;
-use crate::render::shell_text::ShellAlign;
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::in_game_shell::{
     InGameShellLayout, InGameShellSizes, right_panel_title_rect, status_line_rect,
 };

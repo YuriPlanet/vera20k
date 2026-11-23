@@ -15,14 +15,13 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   gameplay key among them. The keys still unread are UI and front-end keys (uimd.ini
   `[UISettings]`, campaign `HoverSound`, the movie list,
   `DebugKeysEnabled`, `DirectX.Force`) and the
-  presentation keys `DamageSmokeParticleSystems` / `DamageSparksParticleSystems` and
-  `AlternateTheaterArt` (read by `pType->ID`, which the key scan misses). Ares
+  presentation keys `DamageSmokeParticleSystems` / `DamageSparksParticleSystems`. Ares
   3.0 itself never loads `[RadiationTypes]` or `AttachEffect.Damage`/`.DamageDelay`
   (no reader in the DLL; see [ares-radiation.md](ares-radiation.md) and
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1040; the chain docs give 361 more a disposition
+  removed). The engine source cites 1044; the chain docs give 357 more a disposition
   (ported elsewhere, equivalent, not applicable, skipped or residual); 47 are
   untouched, listed at the end. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
@@ -57,12 +56,11 @@ only that house.
 | Mechanism | What is missing | Where |
 |---|---|---|
 | `CanMakeStuffUp` | The Rules draws and the 90-frame infantry panic are ported and the written values are saved in `AresMadeUpRules`, but nothing reads them yet: 28 Rules fields with about 110 read sites, many in free functions without a Simulation | [ares-warhead-residuals.md](ares-warhead-residuals.md) |
-| EMP | Tunnel movers; a landed Aircraft's Fly Power_Off spin (0x4CFD20); a LaserFencePost's fence recalc (0x4533A0, VERA builds no fence sections) | [ares-emp.md](ares-emp.md) |
+| EMP | A landed Aircraft's Fly Power_Off spin (0x4CFD20); a LaserFencePost's fence recalc (0x4533A0, VERA builds no fence sections) | [ares-emp.md](ares-emp.md) |
 | Refinery storage | The Weeder store, Removed_From_Game's keepTiberium arm, a fifth tiberium slot, the storage pips (0x44D755, 0x709B4E) and the `Message.SilosNeeded` text (needs a sim-to-client message event) | [ares-tiberium.md](ares-tiberium.md) |
 | Trench traversal | Only a buildings-only selection gets the cursor and click; Ctrl+Alt over a friendly trench keeps its stock answer; `GarrisonedIn` is not kept | [ares-building-hooks.md](ares-building-hooks.md) |
 | Deactivated objects | The deactivated What_Action over an object gates only the hover cursor of the object that owns it; the click paths keep their stock rungs below the ClickedAction refusal | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Firestorm zones | Recalc writers other than the toggle (an overlay change, trigger action 40) and placing a section during a firestorm keep the old zone class | [ares-firestorm.md](ares-firestorm.md) |
-| `StartInMultiplayer.WithConst` | By the ported chain a human's starting yard is never Grand_Opened (no lights or active anims), and its House's primary centre falls back to the start cell (4FD150 republishes none, 1001ED60 restores the saved cell); compare with the game in a mod that sets it | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
 | DropPod | A negative count (native loops about 2^32 tries), SetDestination's prologue and Teleporter arm, the Foot's own locomotor answering while the pod flies, a landing past the end of `DropPod=` | [ares-superweapon-types.md](ares-superweapon-types.md) |
 | HunterSeeker | The tube coordinate of a target in a tunnel; the facing conversion may differ by one binary-angle unit | [ares-hunter-seeker.md](ares-hunter-seeker.md) |
 | Terrain fire | Finish_Fire_Death's crumble of a zero-health tree (a lethal hit removes the tree first), the spread runs after the animation step | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
@@ -108,45 +106,32 @@ receiver and Main draws ([ares-rmg.md](ares-rmg.md)), the country picks and flag
 ([ares-country-presentation.md](ares-country-presentation.md)), and the side theme and
 dialog caching ([ares-side-defaults.md](ares-side-defaults.md)).
 
-## WaterImage voxel path
+## WaterImage indexed guns
 
-`[VehicleType] WaterImage=OtherVehicleType` retains a registered VehicleType
-through the Rules owner and saved scenario. The exact-case key alone selects the
-runtime Ares switch. The reader is Ares `TechnoTypeClass_LoadFromINI_EarlyReader`
-(`715320`, body `10041DC0`, resume `715326`), with an empty default and a 2048-byte
-Find-only read. Missing, empty and unknown values retain the pointer. The values
-`none` and `<none>` clear it.
+`WaterImage=` is ported: the read (`715320`, body `10041DC0`) in
+`rules::native_processing::pass_techno`, the VXL draw (`73B4A0`, body `100481E0`) in
+`app::presentation::instances::units`, and the SHP draw (`73C5FC`, `73C655`, `73C69D`,
+`73C702`) in `app::presentation::instances::shp`.
 
-The VXL draw uses `GetUnitType10045340` through
-`UnitClass_DrawVXL_WaterType` (`73B4A0`, body `100481E0`, resume `73B4DA`). A water
-cell with OnBridge clear selects the alternate before deployed and disguise art.
-The ordinary type has already selected SHP/VXL dispatch. The shared atlas admits
-the alternate model, including an unloading harvester's alternate, before that
-model has its own unit. The current bounded chain is ordinary base-gun VXL art.
-RNG draws 0, simulation timer writes 0, detach calls 0.
-
-The SHP draw takes the same alternate (`UnitClass_DrawSHP_WaterType` `73C5FC`,
-`UnitClass_DrawSHP_ChangeType1`, in `app::presentation::instances::shp`). Mixed
-actual/alternate indexed-gun modes remain open. Native uses actual TurretCount/IsGattling to choose the selected model's base or
-indexed slots, while the current atlas keys derive this from the selected model.
-Custom combinations can show a different gun or omit it. These
-require separate physical slot identities through the existing voxel catalog and
-atlas. The ordinary ROBO/MTNK path has zero TurretCount on both types.
+Open: a pair whose two types differ in TurretCount or IsGattling. Native uses the
+actual type's TurretCount/IsGattling to choose the drawn model's base or indexed gun
+slots, while the atlas keys derive them from the drawn model, so such a pair can show
+a different gun or none. Fixing it needs separate physical slot identities through
+the voxel catalog and atlas. The mods scanned so far (Red
+Resurrection's nine pairs) have no such pair.
 
 [Ares WaterImage specification](https://ares-developers.github.io/Ares-docs/restored/amphibiousimagechanges.html)
 
 ## Presentation and UI not ported
 
 - Unit art still needs the mixed indexed-gun draws above and the ore-gather anim
-  under EMP. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) and
-  `AlternateTheaterArt` (`0x5F9634`, read for Load2DArt `0x5F9070`) are residuals in
-  [ares-techno-hooks.md](ares-techno-hooks.md). PCX cameos are ported
+  under EMP. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) is a
+  residual in [ares-techno-hooks.md](ares-techno-hooks.md). PCX cameos are ported
   ([ares-pcx-cameos.md](ares-pcx-cameos.md)), but that doc cites neither of their hooks
   (`0x6A9A43`, `0x712045`), so both stay in the list.
-- Technos: the radial indicators of non-buildings (`0x41BE80`), the damage spark and smoke
+- Technos: the damage spark and smoke
   particle-system lists (`DamageSparksParticleSystems`, `DamageSmokeParticleSystems`;
-  `0x6FAD49`, `0x702894`) and the `Pip=`/`OccupyPip=` colours (`0x4748A0`). See
-  [ares-techno-hooks.md](ares-techno-hooks.md) and [ares-bugfixes.md](ares-bugfixes.md).
+  `0x6FAD49`, `0x702894`). See [ares-techno-hooks.md](ares-techno-hooks.md).
 - Sidebar and screens: the observer strip art (`0x6AA0CA`, `0x6AA164`;
   [ares-country-presentation.md](ares-country-presentation.md)), the Money superweapon
   tooltip (`0x6A932B`).

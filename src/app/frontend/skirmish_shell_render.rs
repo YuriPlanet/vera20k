@@ -65,12 +65,12 @@ use crate::app::loading::init::MapMenuEntry;
 use crate::map::preview::PreviewSourceBounds;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-#[cfg(test)]
-use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text::ShellTextDraw;
 use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::skirmish_launch::LaunchCountry;
+#[cfg(test)]
+use crate::ui::shell::geom::ShellAlign;
 #[cfg(test)]
 use crate::ui::skirmish_shell::COMBO_DROPDOWN_ROW_H;
 use crate::ui::skirmish_shell::{

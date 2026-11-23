@@ -36,10 +36,22 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         state.match_state.lan_service.is_some(),
         "LAN transport was not opened"
     );
+    // VERA: the rules digest leaves the original game's terrain files out. A
+    // match whose map names a tile the original game lacks read this game
+    // folder's, so its start names them (`ProcessAssets::match_terrain_digest`).
+    // Asked before the agreement, which loads a theater for a seed's map.
+    let terrain = state
+        .process_assets
+        .match_terrain_digest()
+        .map_err(anyhow::Error::msg)?;
     // VERA: the start every player's game certifies names its build and
     // rules too, so a launcher's relay match, which no lobby compared,
     // refuses games that would desync.
-    let multiplayer = super::shell_network_setup::agreement::local(state)?;
+    let mut multiplayer = super::shell_network_setup::agreement::local(state)?;
+    if let Some(terrain) = terrain {
+        multiplayer.rules_digest.push_str(" terrain ");
+        multiplayer.rules_digest.push_str(&terrain);
+    }
     super::shell_network_setup::agreement::log_rules_parts(state);
     let sim = &state
         .match_state

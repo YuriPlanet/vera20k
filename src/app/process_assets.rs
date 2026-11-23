@@ -58,8 +58,9 @@ pub(crate) struct ProcessAssets {
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
     /// The player's own rule switches, read at startup with VERA.INI and
     /// changed by the skirmish Game Options ([`Self::set_terrain_deformation`],
-    /// [`Self::set_superweapon_limit`]). A network room plays its host's
-    /// instead ([`Self::use_personal_rules`]).
+    /// [`Self::set_superweapon_limit`]) and the Options page
+    /// ([`Self::set_building_production_queue`]). A network match plays its
+    /// room's instead ([`Self::use_personal_rules`]).
     personal_rules: crate::rules::personal_rules::PersonalRules,
     manager: Option<AssetManager>,
     leased: bool,
@@ -91,6 +92,12 @@ pub(crate) struct ProcessAssets {
     /// Game-folder files that change those sources or the theater tiles from
     /// the retail copies, found with the hashes.
     changed_game_files: Vec<String>,
+    /// VERA: game-folder files that change a theater INI or the theater
+    /// tiles of the original game (no mod selected), found with the hashes.
+    /// They are no part of `changed_game_files`: a network match reads them
+    /// only when its map names a tile the original game lacks
+    /// (`map::theater::TerrainFiles`).
+    terrain_files: Vec<String>,
     /// VERA: the theater tiles the game folder changes, found once from the
     /// process sources by whichever needs them first: the startup hashes, or
     /// the rules digest of a process that never starts (the launch probe).
@@ -206,6 +213,7 @@ impl ProcessAssets {
             tile_variant_selector_cache: Default::default(),
             native_ini_hashes: None,
             changed_game_files: Vec::new(),
+            terrain_files: Vec::new(),
             changed_tiles: Default::default(),
         }
     }
@@ -290,22 +298,7 @@ impl ProcessAssets {
         };
         self.map_additions
             .get_or_init(|| {
-                let roots = assets.ini_roots();
-                let mut names: Vec<String> = [
-                    roots.rules(),
-                    roots.art(),
-                    roots.ai(),
-                    roots.sound(),
-                    roots.eva(),
-                    roots.theme(),
-                    roots.battle(),
-                    roots.mission(),
-                    roots.mapsel(),
-                    roots.modes(),
-                    roots.map_catalog(),
-                ]
-                .map(str::to_owned)
-                .to_vec();
+                let mut names = Vec::from(assets.ini_roots().files().map(str::to_owned));
                 names.extend(crate::map::theater::theater_ini_names(assets));
                 crate::app::mod_additions::MapAdditions::read(dir, &names)
                     .map(|additions| additions.map(std::sync::Arc::new))
@@ -346,10 +339,10 @@ impl ProcessAssets {
         &self.personal_rules
     }
 
-    /// Play `rules` from the next scenario on, and agree on them in a network
-    /// room: the room's host's, or none in Quick Match
-    /// (`NativeRulesProcessOwner::use_personal_rules`). Before the rules load
-    /// the player's own apply when the sources select.
+    /// Play `rules` from the next scenario on, and digest them for a network
+    /// start (`NativeRulesProcessOwner::use_personal_rules`); a network match
+    /// plays the ones `MatchSession::network_personal_rules` picks. Before the
+    /// rules load the player's own apply when the sources select.
     pub(crate) fn use_personal_rules(
         &mut self,
         rules: crate::rules::personal_rules::PersonalRules,
@@ -364,30 +357,28 @@ impl ProcessAssets {
         self.use_personal_rules(self.personal_rules.clone());
     }
 
-    /// Whether the gameplay roots, theater suffix and skirmish catalogs use
-    /// stock YR names. Host configuration or a selected mod can choose others;
-    /// even a suffix aliasing a shipped theater INI counts as a custom choice.
+    /// Whether every INI root the rules agreement compares and the theater
+    /// suffix use stock YR names (`IniRoots::is_stock`). Host configuration
+    /// or a selected mod can choose others; even a suffix aliasing a shipped
+    /// theater INI counts as a custom choice.
     pub(crate) fn stock_ini_roots(&self) -> bool {
-        let stock = crate::util::ini_roots::IniRoots::default();
-        self.selected_ini_roots.as_ref().is_none_or(|roots| {
-            [
-                (roots.rules(), stock.rules()),
-                (roots.art(), stock.art()),
-                (roots.ai(), stock.ai()),
-                (roots.theater_suffix(), stock.theater_suffix()),
-                (roots.modes(), stock.modes()),
-                (roots.map_catalog(), stock.map_catalog()),
-            ]
-            .iter()
-            .all(|(used, stock)| used.eq_ignore_ascii_case(stock))
-        })
+        self.selected_ini_roots
+            .as_ref()
+            .is_none_or(crate::util::ini_roots::IniRoots::is_stock)
     }
 
     /// Loose files or archives in the game folder that change the rules the
-    /// network compares or a theater's tiles from the retail copies, e.g.
-    /// `rulesmd.ini`, `clear01.sno` or `expandmd99.mix`; found at startup.
+    /// network compares from the retail copies, e.g. `rulesmd.ini` or
+    /// `expandmd99.mix`, and with a mod selected a theater's INI or tiles;
+    /// found at startup.
     pub(crate) fn changed_game_files(&self) -> &[String] {
         &self.changed_game_files
+    }
+
+    /// VERA: the original game's files that change a theater INI or tiles,
+    /// e.g. `clear01.sno` or `expandmd06.mix`; found at startup.
+    pub(crate) fn terrain_files(&self) -> &[String] {
+        &self.terrain_files
     }
 
     fn changed_tiles(&self, assets: &AssetManager) -> &crate::map::theater::ChangedTiles {
@@ -591,10 +582,11 @@ impl ProcessAssets {
         self.native_ini_hashes
     }
 
-    /// The VERA protocol compares the exact process-selected Rules/LANGRULE/ART
-    /// plus the selected mode and AIMD snapshots used by scenario loading,
-    /// each theater's INI as `map::theater::load_theater` reads it, and the
-    /// theater tiles the game folder changes.
+    /// The rules digest network players compare for `mode`; its components
+    /// are [`Self::multiplayer_rules_parts`] (docs/spawn.md "Rules parts").
+    /// VERA: the original game compares the theater INIs a retail install
+    /// ships and no tiles, and leaves its folder's terrain files to each
+    /// match (`Self::agreed_inis`, `Self::match_terrain_digest`).
     /// The legacy advertisement CRC remains a separate native UI value.
     pub(crate) fn multiplayer_rules_digest(&self, mode: &str) -> Result<String, String> {
         let (rules, assets) = self.rules_and_sources()?;
@@ -604,9 +596,14 @@ impl ProcessAssets {
             .flatten()
             .map(|ini| ini.digest)
             .collect();
-        // VERA: and the tiles the game folder changes; none add an absent
-        // digest.
-        digests.push(self.changed_tiles(assets).digest.clone());
+        // VERA: and, with a mod selected, the tiles the game folder changes;
+        // none add an absent digest, as the original game does.
+        digests.push(
+            assets
+                .mod_selected()
+                .then(|| self.changed_tiles(assets).digest.clone())
+                .flatten(),
+        );
         let mut bytes = b"VERA20k rules agreement v1\0".to_vec();
         // VERA: the Options switches played, which the digested sources
         // leave out; none adds nothing.
@@ -713,20 +710,6 @@ impl ProcessAssets {
         assets: &AssetManager,
     ) -> Option<crate::app::rules_parts::ResourceSelection> {
         let roots = assets.ini_roots();
-        let stock = crate::util::ini_roots::IniRoots::default();
-        let root_names = [
-            (roots.rules(), stock.rules()),
-            (roots.art(), stock.art()),
-            (roots.ai(), stock.ai()),
-            (roots.sound(), stock.sound()),
-            (roots.eva(), stock.eva()),
-            (roots.theme(), stock.theme()),
-            (roots.battle(), stock.battle()),
-            (roots.mission(), stock.mission()),
-            (roots.mapsel(), stock.mapsel()),
-            (roots.modes(), stock.modes()),
-            (roots.map_catalog(), stock.map_catalog()),
-        ];
         let archives = &self.resources.archives;
         let stock_archives = crate::util::archive_names::ArchiveNames::default();
         let archive_names = [
@@ -749,27 +732,25 @@ impl ProcessAssets {
             ),
         ];
         let chosen = self.resources.requires_ares
-            || root_names
+            || !roots.files_are_stock()
+            || archive_names
                 .iter()
-                .chain(&archive_names)
                 .any(|(name, stock)| !name.eq_ignore_ascii_case(stock));
-        let lowercase = |names: &[(&str, &str)]| -> Vec<String> {
-            names
-                .iter()
-                .map(|(name, _)| name.to_ascii_lowercase())
-                .collect()
-        };
         chosen.then(|| crate::app::rules_parts::ResourceSelection {
             requires_ares: self.resources.requires_ares,
-            roots: lowercase(&root_names),
-            archives: lowercase(&archive_names),
+            roots: roots.files().map(str::to_ascii_lowercase).into(),
+            archives: archive_names
+                .iter()
+                .map(|(name, _)| name.to_ascii_lowercase())
+                .collect(),
         })
     }
 
     /// The INI sources the rules agreement digests, in its order: the
     /// process Rules root (as scenarios read it, with the Options switches,
     /// when `switches`; else as selected), LANGRULE, ART, AIMD, the mode's
-    /// INI, then each theater's INI as `map::theater::load_theater` reads it.
+    /// INI, then each theater's INI: as `map::theater::load_theater` reads it
+    /// with a mod selected, else the copy a retail install ships.
     /// One list per mode in `modes`; what no mode changes is read once.
     fn agreed_inis(
         &self,
@@ -802,10 +783,23 @@ impl ProcessAssets {
         ];
         // VERA: a theater INI's tilesets decide every cell's land and height.
         // One that is absent or does not parse fails that theater's load.
+        // A mod's game agrees on the INIs it reads. The original game (no
+        // mod selected) agrees on the copies a retail install ships, whatever
+        // its folder supplies: a network match reads those and the original
+        // tiles when its map names no other tile
+        // (`loading::init::load_match_theater`), and one whose map does
+        // agrees on the folder's terrain at its start
+        // (`Self::match_terrain_digest`).
+        let shipped = (!assets.mod_selected())
+            .then(|| crate::rules::retail_sources::ShippedInis::new(assets));
         let theaters: Vec<AgreedIni> = crate::map::theater::theater_ini_names(assets)
             .into_iter()
             .map(|name| {
-                let digest = assets.get_with_source_ref(&name).and_then(|(bytes, _)| {
+                let bytes = match &shipped {
+                    Some(shipped) => shipped.used(&name).and_then(|used| used.shipped_bytes()),
+                    None => assets.get_with_source_ref(&name).map(|(bytes, _)| bytes),
+                };
+                let digest = bytes.and_then(|bytes| {
                     IniFile::from_bytes(bytes)
                         .ok()
                         .map(|ini| ini.multiplayer_digest())
@@ -892,6 +886,9 @@ impl ProcessAssets {
         });
         // Where each component comes from, read once for every mode.
         let shipped = ShippedInis::new(assets);
+        // The original game's theater parts are the retail copies and it has
+        // no tiles part (`agreed_inis`, `multiplayer_rules_digest`).
+        let original = !assets.mod_selected();
         let mut read: std::collections::HashMap<String, RulesFile> = Default::default();
         let mut ini_part = |ini: AgreedIni| {
             let mut part = read
@@ -906,7 +903,9 @@ impl ProcessAssets {
                         sections: None,
                         sections_more: None,
                     };
-                    if let Some(used) = shipped.used(&ini.name) {
+                    if original && ini.id.starts_with("theater:") {
+                        part.source = "retail".to_owned();
+                    } else if let Some(used) = shipped.used(&ini.name) {
                         part.source = source_label(assets, used.source);
                         if let ShippedCopy::Changed(retail) = used.shipped {
                             part.changed = true;
@@ -925,7 +924,8 @@ impl ProcessAssets {
             part.digest = short_digest(ini.digest.as_deref());
             part
         };
-        let tiles = self.changed_tiles(assets);
+        let tiles = (!original).then(|| self.changed_tiles(assets));
+        let tiles_digest = tiles.and_then(|tiles| tiles.digest.as_deref());
         let additions = self.map_additions(assets)?;
         self.agreed_inis(rules, assets, modes, false)?
             .into_iter()
@@ -938,12 +938,11 @@ impl ProcessAssets {
                 files.push(RulesFile {
                     id: "tiles".to_owned(),
                     name: "theater tiles".to_owned(),
-                    digest: short_digest(tiles.digest.as_deref()),
+                    digest: short_digest(tiles_digest),
                     source: tiles
-                        .files
-                        .first()
+                        .and_then(|tiles| tiles.files.first())
                         .map_or_else(|| "retail".to_owned(), |file| file_label(assets, file)),
-                    changed: tiles.digest.is_some(),
+                    changed: tiles_digest.is_some(),
                     sections: None,
                     sections_more: None,
                 });
@@ -978,6 +977,65 @@ impl ProcessAssets {
             .collect()
     }
 
+    /// VERA: whether the loaded network match of the original game reads the
+    /// game folder's terrain files: its map names a tile the original game
+    /// lacks (`loading::init::load_match_theater`).
+    pub(crate) fn match_reads_folder_terrain(&self) -> bool {
+        self.manager
+            .as_ref()
+            .is_some_and(|assets| !assets.mod_selected() && !assets.names_pinned())
+    }
+
+    /// VERA: [`Self::terrain_files`] when the loaded match reads them, else
+    /// none.
+    pub(crate) fn match_terrain_files(&self) -> &[String] {
+        if self.match_reads_folder_terrain() {
+            &self.terrain_files
+        } else {
+            &[]
+        }
+    }
+
+    /// VERA: the terrain files a loaded network match of the original game
+    /// adds to its start agreement. `None` when the match reads the original
+    /// terrain (`AssetManager::names_pinned`, every player the same files),
+    /// when the game folder changes no theater INI or tile, and with a mod
+    /// selected, whose rules digest covers them. Otherwise the match's map
+    /// names a tile the original game lacks, and it reads the folder's
+    /// theater INIs and tiles: these and the changed tiles, as the rules
+    /// digest covered them before the original game left them out.
+    pub(crate) fn match_terrain_digest(&self) -> Result<Option<String>, String> {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::retail_sources::{ShippedCopy, ShippedInis};
+        let (_, assets) = self.rules_and_sources()?;
+        if assets.mod_selected() || assets.names_pinned() {
+            return Ok(None);
+        }
+        let shipped = ShippedInis::new(assets);
+        let tiles = self.changed_tiles(assets).digest.as_deref();
+        let mut changed = tiles.is_some();
+        let mut hash = crate::util::sha256::Sha256::new();
+        hash.update(b"VERA20k game folder terrain v1\0");
+        for name in crate::map::theater::theater_ini_names(assets) {
+            let used = shipped.used(&name);
+            changed |= used
+                .as_ref()
+                .is_some_and(|used| used.shipped != ShippedCopy::Same);
+            let digest = used
+                .and_then(|used| IniFile::from_bytes(used.bytes).ok())
+                .map(|ini| ini.multiplayer_digest());
+            hash.update(&[u8::from(digest.is_some())]);
+            if let Some(digest) = digest {
+                hash.update(digest.as_bytes());
+            }
+        }
+        hash.update(&[u8::from(tiles.is_some())]);
+        if let Some(tiles) = tiles {
+            hash.update(tiles.as_bytes());
+        }
+        Ok(changed.then(|| crate::util::sha256::digest_hex(hash.finalize())))
+    }
+
     /// A seed regenerates its map after Start, so its rules agreement also
     /// covers the inputs selected by the ordinary generation preparation.
     pub(crate) fn multiplayer_generated_rules_digest(
@@ -988,6 +1046,11 @@ impl ProcessAssets {
         let rules = self.multiplayer_rules_digest(mode)?;
         let assets = self.manager.as_mut().ok_or("retail sources are loading")?;
         let mode_rules = crate::rules::retail_sources::select_mode_ini(assets, Some(mode))?;
+        // VERA: the preparation loads a theater, which pins the terrain files
+        // it reads (`map::theater::load_theater_with`). A match that is
+        // loaded keeps the ones it read: its start agreement asks for them
+        // after this (`Self::match_terrain_digest`).
+        let pinned = assets.pin_names(None);
         let prepared = crate::app::shell_random_map::prepare_random_map_generation(
             assets,
             options,
@@ -995,8 +1058,9 @@ impl ProcessAssets {
                 self.native_rules.as_ref(),
             ),
             mode_rules.as_ref(),
-        )
-        .ok_or("generated map theater is unavailable")?;
+        );
+        assets.pin_names(pinned);
+        let prepared = prepared.ok_or("generated map theater is unavailable")?;
         let mut bytes = b"VERA20k generated rules agreement v1\0".to_vec();
         bytes.extend_from_slice(rules.as_bytes());
         bytes.extend_from_slice(prepared.multiplayer_digest().as_bytes());
@@ -1006,10 +1070,11 @@ impl ProcessAssets {
     /// Hash the process sources once (`crate::rules::native_ini_hash`):
     /// the selected rules root and ART, AIMD, each mode's INI by id
     /// `1..=count` and CoopCampMD.
-    /// VERA: also finds the game-folder files that change those sources,
-    /// a selected mod's LANGRULE.INI, a theater INI or a theater's tiles
-    /// (VERA's own agreement compares these) from the retail copies
-    /// ([`Self::changed_game_files`]).
+    /// VERA: also finds the game-folder files that change those sources or
+    /// a selected mod's LANGRULE.INI from the retail copies
+    /// ([`Self::changed_game_files`]), and the ones that change a theater INI
+    /// or a theater's tiles: among those files with a mod selected, whose
+    /// agreement compares them, else kept apart ([`Self::terrain_files`]).
     pub(crate) fn install_native_ini_hashes(
         &mut self,
         assets: &AssetManager,
@@ -1035,7 +1100,20 @@ impl ProcessAssets {
         compared.extend(modes.iter().map(|mode| mode.override_file.as_str()));
         compared
             .push(crate::app::frontend::skirmish_session::cooperative::COOPERATIVE_CAMPAIGN_INI);
-        compared.extend(theater_inis.iter().map(String::as_str));
+        // VERA: a mod's theater INIs and tiles are its game. The original
+        // game's are kept apart (`terrain_files`): they change no match whose
+        // map names only tiles the original game has.
+        let theater_inis: Vec<&str> = theater_inis.iter().map(String::as_str).collect();
+        let mut terrain_files =
+            crate::rules::retail_sources::files_changing_shipped_inis(assets, &theater_inis);
+        for file in &self.changed_tiles(assets).files {
+            if !terrain_files.contains(file) {
+                terrain_files.push(file.clone());
+            }
+        }
+        if assets.mod_selected() {
+            compared.extend(&theater_inis);
+        }
         self.changed_game_files =
             crate::rules::retail_sources::files_changing_shipped_inis(assets, &compared);
         // A mounted `ares.mix` (a selected mod's, or the installation's with
@@ -1047,10 +1125,20 @@ impl ProcessAssets {
         if assets.ares_mix_mounted() {
             self.changed_game_files.push("ares.mix".to_owned());
         }
-        for file in self.changed_tiles(assets).files.clone() {
-            if !self.changed_game_files.contains(&file) {
-                self.changed_game_files.push(file);
+        if assets.mod_selected() {
+            for file in self.changed_tiles(assets).files.clone() {
+                if !self.changed_game_files.contains(&file) {
+                    self.changed_game_files.push(file);
+                }
             }
+        } else {
+            if !terrain_files.is_empty() {
+                log::info!(
+                    "Game files that change terrain, read only by a map that needs them: {}",
+                    terrain_files.join(", ")
+                );
+            }
+            self.terrain_files = terrain_files;
         }
         log::info!(
             "Game files that change the original game: {}",
@@ -1418,6 +1506,38 @@ mod tests {
         assert_ne!(original, digest(), "resolved theater inputs must agree");
     }
 
+    /// VERA: a seed room's agreement loads a theater for its inputs, which
+    /// pins the terrain files it reads. A loaded match that read the game
+    /// folder's keeps them, and with them its start's terrain digest.
+    #[test]
+    fn a_seed_rooms_agreement_keeps_the_loaded_matchs_terrain_files() {
+        let dir = crate::map::theater::terrain_test_install("seed-agreement-terrain");
+        for (name, bytes) in [
+            ("rulesmd.ini", "[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+            ("rmgmd.ini", "[General]\nMaxTrees=500\n"),
+        ] {
+            std::fs::write(dir.path().join(name), bytes).unwrap();
+        }
+        std::fs::write(dir.path().join("snow.pal"), [0_u8; 768]).unwrap();
+        let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+        let mut assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        process.initialize_sources_if_needed(&assets).unwrap();
+        crate::map::theater::load_theater(&mut assets, "SNOW").unwrap();
+        process.return_from_loading(assets);
+        let terrain = process.match_terrain_digest().unwrap();
+        assert!(terrain.is_some());
+        let snow = crate::map::rmg::RmgOptions {
+            theater: 1,
+            ..Default::default()
+        };
+        process
+            .multiplayer_generated_rules_digest("", &snow)
+            .unwrap();
+        assert_eq!(process.match_terrain_digest().unwrap(), terrain);
+    }
+
     #[test]
     fn multiplayer_agreement_covers_frozen_langrule_and_the_selected_mode() {
         let dir =
@@ -1549,74 +1669,124 @@ mod tests {
         );
     }
 
-    /// VERA: a theater INI's tilesets decide each cell's land and height, so
-    /// players whose theater INIs differ never agree, and Quick Match, which
-    /// pairs without the agreement, names the changed file. The agreement reads
-    /// the file a theater suffix selects, else the stock one, as the loader does.
+    /// VERA: a theater INI's tilesets decide each cell's land and height. The
+    /// original game agrees on the copy a retail install ships: a game-folder
+    /// theater INI changes neither the agreement nor Quick Match's files, is
+    /// kept as a terrain file, and joins the start of a match that reads it.
+    /// A mod's game agrees on the INI it reads. The agreement reads the file
+    /// a theater suffix selects, else the stock one, as the loader does.
+    /// Every INI root the agreement compares, an EVA root too, counts against
+    /// the original game, so Quick Match refuses it before it queues.
     #[test]
-    fn theater_inis_take_part_in_the_agreement() {
+    fn ini_roots_and_shipped_theater_inis_take_part_in_the_agreement() {
+        use crate::map::source::test_support::make_new_format_mix_bytes;
         use crate::util::ini_roots::IniRootConfig;
         let dir =
             crate::assets::asset_manager::test_support::audio_test_install("theater-agreement");
-        for (name, bytes) in [
-            ("rulesmd.ini", "[General]\nBuildSpeed=.7\n"),
-            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
-            ("aimd.ini", "[AI]\nValue=1\n"),
-        ] {
-            std::fs::write(dir.path().join(name), bytes).unwrap();
-        }
-        let started = |theater_suffix: Option<&str>| {
-            let roots = IniRootConfig {
-                theater_suffix: theater_suffix.map(str::to_owned),
-                ..IniRootConfig::default()
-            };
+        let local = make_new_format_mix_bytes(&[
+            ("rulesmd.ini", b"[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", b"[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", b"[AI]\nValue=1\n"),
+            (
+                "snowmd.ini",
+                b"[TileSet0000]\nFileName=clear\nTilesInSet=1\n",
+            ),
+        ]);
+        std::fs::remove_file(dir.path().join("localmd.mix")).unwrap();
+        std::fs::write(
+            dir.path().join("ra2md.mix"),
+            make_new_format_mix_bytes(&[("localmd.mix", &local)]),
+        )
+        .unwrap();
+        let mod_dir = dir.path().join("mods-under-test").join("Snow");
+        std::fs::create_dir_all(&mod_dir).unwrap();
+        std::fs::write(mod_dir.join("notes.txt"), "a mod").unwrap();
+        let with_roots = |roots: IniRootConfig, mod_dir: Option<&std::path::Path>| {
             let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
-            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL)
-                .unwrap()
-                .with_ini_roots(&roots)
-                .unwrap();
+            if let Some(mod_dir) = mod_dir {
+                process = process.with_resources(crate::util::mod_definition::ResourceConfig {
+                    mod_folder: Some(crate::util::mod_package::ModFolder::loose(
+                        mod_dir.to_owned(),
+                    )),
+                    ..Default::default()
+                });
+            }
+            let assets =
+                AssetManager::with_mod(dir.path(), mod_dir, MediaArchiveMode::STOCK_DIGITAL)
+                    .unwrap()
+                    .with_ini_roots(&roots)
+                    .unwrap();
             process.initialize_sources_if_needed(&assets).unwrap();
             process.install_native_ini_hashes(&assets, &[]);
             process.return_from_loading(assets);
             process
         };
-        let digest = |theater_suffix| started(theater_suffix).multiplayer_rules_digest("");
+        let started = |theater_suffix: Option<&str>, mod_dir: Option<&std::path::Path>| {
+            with_roots(
+                IniRootConfig {
+                    theater_suffix: theater_suffix.map(str::to_owned),
+                    ..IniRootConfig::default()
+                },
+                mod_dir,
+            )
+        };
+        let digest = |theater_suffix| started(theater_suffix, None).multiplayer_rules_digest("");
         let original = digest(None).unwrap();
+        let eva = with_roots(
+            IniRootConfig {
+                eva: Some("my-eva.ini".to_owned()),
+                ..IniRootConfig::default()
+            },
+            None,
+        );
+        assert_ne!(eva.multiplayer_rules_digest("").unwrap(), original);
+        assert!(!eva.stock_ini_roots());
+        assert_eq!(started(None, None).match_terrain_digest().unwrap(), None);
+        let modded = started(None, Some(&mod_dir))
+            .multiplayer_rules_digest("")
+            .unwrap();
         std::fs::write(
             dir.path().join("snowmd.ini"),
-            "[TileSet0000]\nFileName=clear\nTilesInSet=1\n",
+            "[TileSet0000]\nFileName=clear\nTilesInSet=2\n",
         )
         .unwrap();
-        let changed = started(None);
-        let snow = changed.multiplayer_rules_digest("").unwrap();
-        assert_ne!(original, snow);
+        let changed = started(None, None);
+        assert_eq!(changed.multiplayer_rules_digest("").unwrap(), original);
+        assert!(changed.changed_game_files().is_empty());
+        assert_eq!(changed.terrain_files(), ["snowmd.ini"]);
+        assert!(changed.match_terrain_digest().unwrap().is_some());
+        let with_mod = started(None, Some(&mod_dir));
+        assert_ne!(with_mod.multiplayer_rules_digest("").unwrap(), modded);
         assert!(
-            changed
+            with_mod
                 .changed_game_files()
                 .iter()
                 .any(|file| file == "snowmd.ini")
         );
+        assert_eq!(with_mod.match_terrain_digest().unwrap(), None);
         assert_eq!(
             digest(Some("mo")).unwrap(),
-            snow,
+            original,
             "no snowmo.ini: snowmd.ini"
         );
         std::fs::write(dir.path().join("snowmo.ini"), "[General]\n").unwrap();
-        assert_ne!(digest(Some("mo")).unwrap(), snow);
+        assert_ne!(digest(Some("mo")).unwrap(), original);
         // Quick Match refuses any other suffix, even one that picks a shipped
         // file, as `nmd` picks New Urban's `urbannmd.ini` for Urban.
         assert!(changed.stock_ini_roots());
-        assert!(!started(Some("nmd")).stock_ini_roots());
+        assert!(!started(Some("nmd"), None).stock_ini_roots());
     }
 
     /// VERA: a theater's tiles decide its cells' land and height, and map
-    /// loading picks each cell's variant by how many files its tile has. A
-    /// game-folder tile that adds a variant, or a theater MIX that lacks one or
-    /// does not open, changes the agreement and is named for Quick Match; the
-    /// retail bytes change nothing. The launch probe, which never runs the
-    /// startup hashes, reports the same digest.
+    /// loading picks each cell's variant by how many files its tile has. The
+    /// original game leaves a game-folder tile that adds a variant, and a
+    /// theater MIX that lacks one or does not open, out of the agreement and
+    /// of Quick Match's files: it keeps them as terrain files, which join the
+    /// start of a match that reads them. The retail bytes change nothing. The
+    /// launch probe, which never runs the startup hashes, reports the same
+    /// digest.
     #[test]
-    fn changed_theater_tiles_take_part_in_the_agreement() {
+    fn the_original_game_keeps_changed_theater_tiles_for_the_match_that_reads_them() {
         use crate::map::source::test_support::make_new_format_mix_bytes;
         let dir = crate::assets::asset_manager::test_support::audio_test_install("theater-tiles");
         let local = make_new_format_mix_bytes(&[
@@ -1648,19 +1818,25 @@ mod tests {
         };
         let started = || started_with(true);
         let retail = started();
-        assert!(retail.changed_game_files().is_empty());
+        assert!(retail.changed_game_files().is_empty() && retail.terrain_files().is_empty());
+        assert_eq!(retail.match_terrain_digest().unwrap(), None);
         let digest = retail.multiplayer_rules_digest("").unwrap();
         std::fs::write(dir.path().join("clear01.sno"), b"tile").unwrap();
-        assert_eq!(started().multiplayer_rules_digest("").unwrap(), digest);
+        assert!(started().terrain_files().is_empty(), "the retail bytes");
         std::fs::write(dir.path().join("clear01b.sno"), b"next").unwrap();
         let added = started();
-        assert_eq!(added.changed_game_files(), ["clear01b.sno"]);
-        let changed = added.multiplayer_rules_digest("").unwrap();
-        assert_ne!(changed, digest);
+        assert!(added.changed_game_files().is_empty());
+        assert_eq!(added.terrain_files(), ["clear01b.sno"]);
+        assert_eq!(added.multiplayer_rules_digest("").unwrap(), digest);
+        let terrain = added.match_terrain_digest().unwrap();
+        assert!(terrain.is_some());
+        assert_eq!(started().match_terrain_digest().unwrap(), terrain);
+        std::fs::write(dir.path().join("clear01b.sno"), b"other").unwrap();
+        assert_ne!(started().match_terrain_digest().unwrap(), terrain);
         // `spawn_probe::probe` digests without the startup hashes.
         assert_eq!(
             started_with(false).multiplayer_rules_digest("").unwrap(),
-            changed
+            digest
         );
         std::fs::remove_file(dir.path().join("clear01b.sno")).unwrap();
         std::fs::write(
@@ -1668,9 +1844,9 @@ mod tests {
             make_new_format_mix_bytes(&[("clear01.sno", b"tile")]),
         )
         .unwrap();
-        assert_eq!(started().changed_game_files(), ["isosnomd.mix"]);
+        assert_eq!(started().terrain_files(), ["isosnomd.mix"]);
         std::fs::write(dir.path().join("isosnomd.mix"), b"not a MIX").unwrap();
-        assert_eq!(started().changed_game_files(), ["isosnomd.mix"]);
+        assert_eq!(started().terrain_files(), ["isosnomd.mix"]);
     }
 
     /// VERA: the parts name the changed file, where it comes from and its

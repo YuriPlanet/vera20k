@@ -31,6 +31,12 @@ pub fn shown_player_rows(rows: usize) -> usize {
 /// rows VERA adds past the eighth keep the pitch.
 const ROW_TOP_DLU: i32 = 36;
 const ROW_PITCH_DLU: i32 = 16;
+/// VERA: the row-number column sits in the page's blank left margin, before
+/// the name box (38 DLU, the `0x6A0` template) and the Players heading
+/// (39 DLU, `0x7500`), so it never covers retail art.
+const ROW_NUMBER_X_DLU: i32 = 4;
+const ROW_NUMBER_W_DLU: i32 = 30;
+const ROW_NUMBER_H_DLU: i32 = 13;
 
 /// One control column of the player rows from row `first` on: the template
 /// rect of row `first + index` for each index.
@@ -175,6 +181,11 @@ pub struct SkirmishShellLayout {
     pub rows: SkirmishRowRects,
     pub color_combos: [RectPx; SKIRMISH_LONG_ROW_COUNT],
     pub flags: [RectPx; SKIRMISH_LONG_ROW_COUNT],
+    /// VERA: the row numbers down the list's left margin, one per visible
+    /// slot, so a long roster (up to [`crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT`]
+    /// players) still reads as an ordered list. They sit left of the name
+    /// box and the heading, in the margin the retail page leaves blank.
+    pub row_numbers: [RectPx; SKIRMISH_LONG_ROW_COUNT],
     /// The player rows this page shows: the retail eight, or VERA's longer
     /// list for a map with more than eight starts ([`shown_player_rows`]).
     pub shown_rows: usize,
@@ -542,6 +553,7 @@ pub fn compute_layout_for_rows(
         rows,
         color_combos: row_column(0, 282, 29, 73),
         flags: row_column(0, 150, 32, 12),
+        row_numbers: row_column(0, ROW_NUMBER_X_DLU, ROW_NUMBER_W_DLU, ROW_NUMBER_H_DLU),
         shown_rows: SKIRMISH_ROW_COUNT,
         statics,
     }
@@ -832,7 +844,7 @@ scaled_rects!(SkirmishRowRects {
 });
 scaled_rects!(SkirmishShellLayout {
     [scale, screen]
-    right_panel, statics, map_preview, player_name, rows, color_combos, flags,
+    right_panel, statics, map_preview, player_name, rows, color_combos, flags, row_numbers,
     opponent_scrollbar, status_help;
     keep: shown_rows
 });

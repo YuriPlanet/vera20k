@@ -11,6 +11,8 @@ const V0_3_8_AND_0_3_9: u32 = 0xFD30_A463;
 const V0_4_0: u32 = 0x9BB2_0D64;
 // The next desktop writer stores an AlphaShape's Anim expiry listener.
 const ALPHA_SHAPE_LISTENER: u32 = 0xFD54_FFFF;
+// d00f8183c added the Ares alternate-theater flag to each retained object image.
+const ALTERNATE_THEATER_ART: u32 = 0xCB54_5137;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
@@ -35,46 +37,49 @@ pub enum MigrationError {
 pub fn supports(header: &GameSnapshotHeader) -> bool {
     header.product_magic == SNAPSHOT_PRODUCT_MAGIC
         && header.envelope_version == MIGRATION_ENVELOPE_VERSION
-        && matches!(header.layout, V0_3_8_AND_0_3_9 | V0_4_0)
+        && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == ALPHA_SHAPE_LISTENER
+        && snapshot_layout() == ALTERNATE_THEATER_ART
 }
 
-fn previous_layout(source: u32) -> save_codec::PreviousLayout {
-    save_codec::PreviousLayout {
-        struct_name: "AlphaShape",
-        current_fields: &["object", "origin", "image", "disabled", "anim_listener"],
+fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
+    const IMAGE_FLAGS: (&str, &[&str]) = ("ObjectImageState", &["alternate_theater_art"]);
+    let absent_bools: &'static [_] = match source {
+        V0_3_8_AND_0_3_9 | V0_4_0 => &[IMAGE_FLAGS, ("AlphaShape", &["anim_listener"])],
+        ALPHA_SHAPE_LISTENER => &[IMAGE_FLAGS],
+        _ => return None,
+    };
+    Some(save_codec::PreviousLayout {
+        absent_bools,
         // v0.4.0 appended Mech without changing the earlier discriminants.
         absent_variant: (source == V0_3_8_AND_0_3_9).then_some(("LocomotorKind", "Mech")),
-    }
+    })
 }
 
 /// Decode the entire historical world, then publish only the audited wire
 /// changes. Older AlphaShapes belonged to Technos and never listened for
-/// Anim expiry. The game still checks the rules and assets at restore.
+/// Anim expiry. Before alternate-theater art support, each retained image had
+/// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != ALPHA_SHAPE_LISTENER {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != ALTERNATE_THEATER_ART {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
     let preamble = GameSnapshot::read_preamble(bytes)?;
     GameSnapshot::validate_version(preamble.envelope_version)?;
-    match preamble.layout {
-        ALPHA_SHAPE_LISTENER => return Err(MigrationError::AlreadyCurrent),
-        V0_3_8_AND_0_3_9 | V0_4_0 => {}
-        layout => return Err(MigrationError::UnsupportedSource(layout)),
+    if preamble.layout == target {
+        return Err(MigrationError::AlreadyCurrent);
     }
+    let previous = previous_layout(preamble.layout)
+        .ok_or(MigrationError::UnsupportedSource(preamble.layout))?;
     GameSnapshot::read_compatible_header(bytes)?;
 
-    let mut listeners = Vec::new();
+    let mut missing_bools = Vec::new();
     {
-        let (mut snapshot, remainder): (GameSnapshot, _) = save_codec::deserialize_previous(
-            bytes,
-            previous_layout(preamble.layout),
-            &mut listeners,
-        )?;
+        let (mut snapshot, remainder): (GameSnapshot, _) =
+            save_codec::deserialize_previous(bytes, previous, &mut missing_bools)?;
         if !remainder.is_empty() {
             return Err(MigrationError::TrailingBytes);
         }
@@ -99,10 +104,10 @@ pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     // in a single pass so each original byte moves at most once.
     let mut end = bytes.len();
     bytes
-        .try_reserve_exact(listeners.len())
+        .try_reserve_exact(missing_bools.len())
         .map_err(|error| save_codec::Error::Custom(error.to_string()))?;
-    bytes.resize(end + listeners.len(), 0);
-    for (index, &offset) in listeners.iter().enumerate().rev() {
+    bytes.resize(end + missing_bools.len(), 0);
+    for (index, &offset) in missing_bools.iter().enumerate().rev() {
         bytes.copy_within(offset..end, offset + index + 1);
         bytes[offset + index] = 0;
         end = offset;
@@ -186,7 +191,7 @@ mod tests {
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
         if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != ALPHA_SHAPE_LISTENER
+            || snapshot_layout() != ALTERNATE_THEATER_ART
         {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;
@@ -223,13 +228,46 @@ mod tests {
     }
 
     #[test]
+    fn old_image_keeps_the_arctic_setting_and_applied_latch() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::object_image::{ImageTheater, ObjectImageKind, ObjectImageState};
+
+        let ini = IniFile::from_str("[TREE]\nAlternateArcticArt=yes\n");
+        let mut image = ObjectImageState::new("TREE");
+        image.read_ini(
+            ini.section("TREE").unwrap(),
+            &ini,
+            ObjectImageKind::Ordinary,
+            ImageTheater::Snow,
+        );
+        assert_eq!(image.image(), "TREEA");
+
+        // The eb05f451e writer put two true bytes immediately after ImageFile:
+        // AlternateArcticArt and the latch that had applied its 'A' suffix.
+        let mut bytes = save_codec::serialize(&image).unwrap();
+        let after_image = 8 + image.image().len();
+        assert_eq!(&bytes[after_image..after_image + 3], &[1, 0, 1]);
+        bytes.remove(after_image + 1);
+        let mut offsets = Vec::new();
+        let (restored, rest) = save_codec::deserialize_previous::<ObjectImageState>(
+            &bytes,
+            previous_layout(ALPHA_SHAPE_LISTENER).unwrap(),
+            &mut offsets,
+        )
+        .unwrap();
+        assert_eq!(restored, image);
+        assert!(rest.is_empty());
+        assert_eq!(offsets, [after_image + 1]);
+    }
+
+    #[test]
     fn mech_tag_is_valid_only_from_v0_4_0() {
         use crate::rules::locomotor_type::LocomotorKind;
         let bytes = save_codec::serialize(&LocomotorKind::Mech).unwrap();
         let decode = |layout| {
             save_codec::deserialize_previous::<LocomotorKind>(
                 &bytes,
-                previous_layout(layout),
+                previous_layout(layout).unwrap(),
                 &mut Vec::new(),
             )
         };
