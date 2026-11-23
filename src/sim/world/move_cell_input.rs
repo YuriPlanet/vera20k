@@ -1577,18 +1577,11 @@ fn clicked_coordinate(
 /// Foot What_Action's object coordinate (`0x004DDEE7..0x004DDF41`).
 fn grounded_coordinate(cells: &NativeCellQuery<'_>, x: i32, y: i32) -> Result<DriveCoord, String> {
     let mut point = DriveCoord { x, y, z: 0 };
-<<<<<<< HEAD
     point.z = query_ground(cells, point)?;
     // 4DE242/4DE38C are separate Map calls after the height query.
     let cell = cells.lookup_world(point.x, point.y);
     if cells.flags(cell) & 0x100 != 0 {
         point.z = ground_pose::deck_surface_z(cells, cell, point.z);
-=======
-    point.z = query_ground(cells, point);
-    //4DE242/4DE38C are separate Map calls after the height query.
-    if cells.flags(cells.lookup_world(point.x, point.y)) & 0x100 != 0 {
-        point.z = point.z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
->>>>>>> feature/ground-height-policy
     }
     Ok(point)
 }

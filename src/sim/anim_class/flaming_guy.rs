@@ -252,9 +252,7 @@ impl Simulation {
             if moved && let Some(terrain) = self.resolved_terrain.as_ref() {
                 let cells = NativeCellQuery::canonical(terrain);
                 let old_z = coord.z;
-<<<<<<< HEAD
-                let ground =
-                    query_ground_height(&cells, point(coord)).expect("native runner ground slope");
+                let ground = query_ground_height(&cells, point(coord));
                 let cell = cells.lookup_world(coord.x, coord.y);
                 let fixed_deck = corrected_deck_z(terrain, cell);
                 let on_deck = if fixed_deck.is_some() {
@@ -268,23 +266,8 @@ impl Simulation {
                     ground
                 };
                 if !state.fall.falling() {
-                    let ground = query_ground_height(&cells, point(coord))
-                        .expect("native runner ground slope");
-                    if coord.z >= deck_surface_z(&cells, cell, ground) {
-=======
-                let ground = query_ground_height(&cells, point(coord));
-                coord.z = ground.wrapping_add(
-                    if old_z > ground.wrapping_add(2 * GROUND_LEVEL_HEIGHT_LEPTONS) {
-                        BRIDGE_DECK_HEIGHT_LEPTONS
-                    } else {
-                        0
-                    },
-                );
-                if !state.fall.falling() {
                     let ground = query_ground_height(&cells, point(coord));
-                    if coord.z >= ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS) {
-                        let cell = cells.lookup_world(coord.x, coord.y);
->>>>>>> feature/ground-height-policy
+                    if coord.z >= deck_surface_z(&cells, cell, ground) {
                         let position = cells.coord(cell);
                         if cells.flags(cell) & 0x100 == 0
                             && cells.flags(cells.lookup(neighbor(position, 6))) & 0x100 == 0

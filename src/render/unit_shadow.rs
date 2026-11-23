@@ -89,14 +89,7 @@ pub(crate) fn pose(
     lookup: impl FnOnce([i16; 2]) -> DepthCell,
 ) -> UnitShadowPose {
     let [x, y, z] = context.xyz;
-<<<<<<< HEAD
     let (height, cell) = height_over_cell(context.xyz, context.on_bridge, lookup)?;
-=======
-    let cell = lookup([(x / 256) as i16, (y / 256) as i16]);
-    let floor =
-        crate::util::lepton::ground_height_leptons_clamped(cell.level as u8, cell.ramp, x, y);
-    let height = crate::sim::movement::ground_pose::height_at_z(z, floor, context.on_bridge);
->>>>>>> feature/ground-height-policy
     // The inherited Shadow_Point55A8C0 is added by Foot4DB0D0. Preserve
     // the body's projection and the point's separate integer conversion.
     let (sx, sy) = absolute_leptons_to_screen(x, y, z);

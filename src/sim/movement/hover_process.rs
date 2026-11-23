@@ -124,17 +124,10 @@ pub(crate) fn hover_move_to(
     //514DE5..514E26: ground height, plus the deck on a structural cell.
     let z = terrain.map_or(coord.z, |terrain| {
         let cells = NativeCellQuery::canonical(terrain);
-<<<<<<< HEAD
-        let ground = ground_pose::query_ground_height(&cells, coord).unwrap_or(coord.z);
+        let ground = ground_pose::query_ground_height(&cells, coord);
         let cell = cells.lookup_world(coord.x, coord.y);
         if cells.flags(cell) & 0x100 != 0 {
             ground_pose::deck_surface_z(&cells, cell, ground)
-=======
-        let ground = ground_pose::query_ground_height(&cells, coord);
-        let structural = cells.flags(cells.lookup_world(coord.x, coord.y)) & 0x100 != 0;
-        ground.wrapping_add(if structural {
-            BRIDGE_DECK_HEIGHT_LEPTONS
->>>>>>> feature/ground-height-policy
         } else {
             ground
         }

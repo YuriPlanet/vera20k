@@ -171,19 +171,14 @@ impl Position {
         path_grid: Option<&PathGrid>,
     ) {
         let world_xy = position_world_xy(self);
-<<<<<<< HEAD
         if on_bridge && let Some(deck) = corrected_deck_z_at_xy(world_xy, terrain) {
             self.put_z(deck.wrapping_add(height));
             return;
         }
-        let ground = ground_at(world_xy, terrain, path_grid).unwrap_or(Ok(0));
-        if let Some(ground) = supported_ground(ground, world_xy) {
-            self.put_z(z_at_height(ground, height, on_bridge));
-        }
-=======
-        let ground = ground_at(world_xy, terrain, path_grid).unwrap_or(0);
+        let Some(ground) = ground_at(world_xy, terrain, path_grid) else {
+            return;
+        };
         self.put_z(z_at_height(ground, height, on_bridge));
->>>>>>> feature/ground-height-policy
     }
 
     /// Store the level of the cell the object has entered, of terrain level
@@ -961,14 +956,10 @@ pub(crate) fn ground_surface_z_at(
     terrain: Option<&ResolvedTerrainGrid>,
     path_grid: Option<&PathGrid>,
 ) -> Option<i32> {
-<<<<<<< HEAD
     if on_bridge && let Some(deck) = corrected_deck_z_at_xy(world_xy, terrain) {
         return Some(deck);
     }
-    let ground = supported_ground(ground_at(world_xy, terrain, path_grid)?, world_xy)?;
-=======
     let ground = ground_at(world_xy, terrain, path_grid)?;
->>>>>>> feature/ground-height-policy
     Some(z_at_height(ground, 0, on_bridge))
 }
 

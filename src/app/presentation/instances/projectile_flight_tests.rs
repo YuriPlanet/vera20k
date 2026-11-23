@@ -270,13 +270,8 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
         terrain.shared_cell_dummy().stamp_coord(123, -44);
         let state_before = sim.state_hash();
         let dummy_before = terrain.shared_cell_dummy().snapshot();
-<<<<<<< HEAD
         let (ground, deck) =
             floor_probe(terrain, projectile.position().x, projectile.position().y).unwrap();
-=======
-        let (ground, structural) =
-            floor_probe(terrain, projectile.position().x, projectile.position().y);
->>>>>>> feature/ground-height-policy
         assert_eq!(
             deck.is_some(),
             flags & 0x100 != 0,

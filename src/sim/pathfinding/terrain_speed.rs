@@ -215,18 +215,10 @@ fn combine_speed_stages(
 /// 0x00578080` ([`query_ground_height`](crate::sim::movement::ground_pose::query_ground_height)).
 /// The low bytes of the world coordinates carry the sub-cell offset, which is
 /// the whole point: on a ramp, two positions in one cell have different ground
-<<<<<<< HEAD
 /// heights. A slope past the native 21-record table reads 0.
 fn ground_height_at_world(world: (i32, i32), cells: &NativeCellQuery<'_>) -> i32 {
     ground_pose::query_ground_height(
         cells,
-=======
-/// heights. A slope byte past the native 21-record table reads as flat ground
-/// at the cell's level.
-fn ground_height_at_world(world: (i32, i32), terrain: &ResolvedTerrainGrid) -> i32 {
-    crate::sim::movement::ground_pose::query_ground_height(
-        &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
->>>>>>> feature/ground-height-policy
         crate::sim::components::DriveCoord {
             x: world.0,
             y: world.1,

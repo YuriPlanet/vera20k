@@ -42,30 +42,14 @@ pub(super) fn apply(
         // Use its existing world lookup, including signed/Dummy restamping;
         // the selected Cell's own ground fields are not a substitute.
         let [x, y] = crate::sim::cell_kernel::native_cell_own_xy(selected, &cells);
-<<<<<<< HEAD
         let z = if let Some(level) = collapse.corrected_deck_level {
             i32::from(level) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
         } else {
             let point = DriveCoord { x, y, z: 0 };
-            let Ok(ground) = crate::sim::movement::ground_pose::query_ground_height(&cells, point)
-            else {
-                return; // Unsupported raw slope, not an invented fallback height.
-            };
+            let ground = crate::sim::movement::ground_pose::query_ground_height(&cells, point);
             ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
         };
         (selected, DriveCoord { x, y, z })
-=======
-        let point = DriveCoord { x, y, z: 0 };
-        let z = crate::sim::movement::ground_pose::query_ground_height(&cells, point);
-        (
-            selected,
-            DriveCoord {
-                x,
-                y,
-                z: z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
-            },
-        )
->>>>>>> feature/ground-height-policy
     };
     for dx in -2i16..=2 {
         for dy in -2i16..=2 {
