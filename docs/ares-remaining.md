@@ -95,10 +95,6 @@ Input rungs
 - a healer infantryman whose weapon 0 does not heal over a non-allied object (Foot's
   Guard on itself, `0x4D74E0`; VERA orders nothing), and any healer's Alt or Ctrl+Alt
   over a Terrain object (`0x51E797`; VERA answers the key rungs);
-- Shift over an object when the cursor owner is Deactivated, or an EMP'd deployer over
-  itself: the click answers Shift's ToggleSelect (`0x700107`) first, where the class
-  What_Action hooks (`0x51E3B0`, `0x51E440`, `0x73FD5A`, `0x417CCB`, `0x447218`) answer
-  before it, so it toggles the target; the cursor asks them in native order;
 - the structure and defense tab hotkeys, the cameo click and the ready-building strip
   asking for a usable factory (`0x535DB6`, `0x535E76`, `0x6AB312`, `0x6A9822`);
 - `SuperGapRadiusInCells` multiples of 256: the stock What_Action (`0x004472AA`)

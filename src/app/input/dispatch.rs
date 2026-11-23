@@ -15,7 +15,7 @@ use winit::event::{ElementState, MouseButton};
 
 use crate::app::AppState;
 use crate::app::input::commands::{place_ready_building_at_cell, preferred_local_owner_name};
-use crate::app::input::context_order::{ContextOrderTarget, try_queue_context_order};
+use crate::app::input::context_order::{ContextClick, ContextOrderTarget, try_queue_context_order};
 use crate::app::input::entity_pick::{
     SelectionMutation, compute_box_selection_snapshot_with_playfield,
     compute_click_selection_snapshot_with_playfield,
@@ -680,21 +680,24 @@ fn tactical_left_up(state: &mut AppState) {
     // selection/toggle. Ground move, attack, and every other
     // context action keep their ordinary priority while T is held.
     let type_select_held = state.match_state.input.type_select.held();
-    if matches!(
-        route_click_action_before_type_select(
-            action,
-            left_click_can_issue_orders(state),
-            |sx, sy| {
-                // A resolved context dispatch consumes the click
-                // even when its receiver admits no command.
-                try_queue_context_order(state, ContextOrderTarget::ScreenPoint(sx, sy), true)
-                    .then_some(())
-            },
-        ),
-        ClickActionRoute::ContextOrder(())
+    // A resolved context dispatch consumes the click even when its receiver
+    // admits no command. A release that answered Select or 0 takes the pick
+    // without Shift's toggle.
+    let pick_toggles = match route_click_action_before_type_select(
+        action,
+        left_click_can_issue_orders(state),
+        |sx, sy| {
+            Some(try_queue_context_order(
+                state,
+                ContextOrderTarget::ScreenPoint(sx, sy),
+                true,
+            ))
+        },
     ) {
-        return;
-    }
+        ClickActionRoute::ContextOrder(ContextClick::Consumed) => return,
+        ClickActionRoute::ContextOrder(ContextClick::Select) => false,
+        ClickActionRoute::ContextOrder(ContextClick::Pick) | ClickActionRoute::Selection => shift,
+    };
     // VERA right-click orders: a second quick click on the same battlefield
     // point selects every on-screen object of the clicked object's type, the
     // modern-RTS shortcut for the T key's screen pass. It rides on the option
@@ -787,7 +790,7 @@ fn tactical_left_up(state: &mut AppState) {
                             scope_order,
                             &current_selection,
                             clicked_id,
-                            shift,
+                            pick_toggles,
                             preferred_local_owner_name(state).as_deref(),
                             state.rules(),
                             Some(sim.interner()),
@@ -802,7 +805,7 @@ fn tactical_left_up(state: &mut AppState) {
                             preferred_local_owner_name(state).as_deref(),
                             world_x,
                             world_y,
-                            shift,
+                            pick_toggles,
                             state.rules(),
                             Some(sim.interner()),
                             sim.playfield_bounds().is_some(),
@@ -819,7 +822,7 @@ fn tactical_left_up(state: &mut AppState) {
                         preferred_local_owner_name(state).as_deref(),
                         world_x,
                         world_y,
-                        shift,
+                        pick_toggles,
                         state.rules(),
                         Some(sim.interner()),
                         sim.playfield_bounds().is_some(),

@@ -376,6 +376,87 @@ fn ares_emped_deployer_answers_no_deploy_over_himself() {
     assert_eq!(release(&sim, &[gi, other]), Some(Ok(LeftRelease::Dispatch)));
 }
 
+/// Under Shift too, the Ares hooks at the head of the cursor owner's class
+/// What_Action answer before Techno's ToggleSelect (`0x00700107`): a
+/// Deactivated robot's Select over an own tank, and an EMP'd deployer's
+/// NoDeploy over himself, which dispatches. Another receiver's own Shift
+/// rung then answers ToggleSelect, which orders nothing (`0x004D7CC0`).
+#[test]
+fn ares_head_hooks_answer_before_shift_toggle_select() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some((retail, registry)) = retail() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = arena(rules);
+    // The Russians keep a building, so the skirmish has no winner.
+    sim.spawn_object("NAPOWR", "Russians", 3, 3, 0, rules)
+        .expect("russian power plant");
+    let robot = sim
+        .spawn_object("ROBO", "Americans", 16, 16, 0, rules)
+        .expect("robot tank");
+    let own = sim
+        .spawn_object("MTNK", "Americans", 16, 17, 0, rules)
+        .expect("own tank");
+    let gi = sim
+        .spawn_object("E1", "Americans", 17, 16, 0, rules)
+        .expect("GI");
+    let head = |sim: &Simulation, actor, object| {
+        let shift = object_key_action(
+            sim,
+            rules,
+            actor,
+            object,
+            Some(object),
+            OrderModifier::Shift,
+            false,
+        );
+        let hover = HoverTargetKindWithId {
+            kind: crate::app::types::HoverTargetKind::FriendlyUnit,
+            stable_id: object,
+        };
+        head_release(sim, rules, &[actor], Some(&hover), (16, 16), shift)
+    };
+    assert_eq!(head(&sim, robot, own), Some(HeadRelease::ToggleSelect));
+    sim.entity_mut_for_test(robot)
+        .unwrap()
+        .deactivated
+        .set_for_test(true);
+    assert_eq!(
+        head(&sim, robot, own),
+        Some(HeadRelease::Hook(Ok(LeftRelease::Select)))
+    );
+    sim.entity_mut_for_test(gi)
+        .unwrap()
+        .set_emp_remaining_for_test(150);
+    assert_eq!(
+        head(&sim, gi, gi),
+        Some(HeadRelease::Hook(Ok(LeftRelease::Dispatch)))
+    );
+    // He is in the selection, so the tank's attack rung would answer 0,
+    // which a Unit makes NoMove (`0x007403EB`).
+    sim.entity_mut_for_test(gi)
+        .unwrap()
+        .seldom
+        .selection
+        .set_selected_for_test(true);
+    let owner = sim.interner().get("Americans").unwrap();
+    assert_eq!(
+        object_attack_click_command(
+            &sim,
+            rules,
+            &registry,
+            owner,
+            crate::app::types::OrderMode::Move,
+            OrderModifier::Shift,
+            false,
+            own,
+            gi,
+        ),
+        None
+    );
+}
+
 /// A tank being warped out (Temporal, vt+0x1D4) answers 0 over an enemy
 /// (`0x006FFF03..0x006FFF8A`: armed, and another House's object) and on the ground with
 /// Ctrl (`0x00700731`), and Select over an own unselected tank: no attack and

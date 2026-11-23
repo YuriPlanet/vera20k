@@ -203,8 +203,10 @@ use queue::LeftRelease;
 use queue::ReleaseAction;
 #[cfg(test)]
 use queue::berserk_selection_click;
+#[cfg(test)]
+use queue::{HeadRelease, head_release};
 use queue::left_release;
-pub(crate) use queue::try_queue_context_order;
+pub(crate) use queue::{ContextClick, try_queue_context_order};
 pub(super) use self_click::AresDeactivatedAction;
 pub(super) use self_click::ares_deactivated_action;
 pub(super) use self_click::ares_emp_deployer_refuses_itself;
