@@ -656,6 +656,94 @@ impl ObjectActionRecord {
     }
 }
 
+/// Native `EventClass` opcode 0x14 (EventClass::Execute type-20 branch
+/// `0x004C6FDE`): ANIMATION spawns a one-shot animation at a cell. The branch
+/// reads the animation/theme id at Event+7 (payload[0..4]); `-1` selects the
+/// `0x8871E0` table path, otherwise the `0x8B4154` path. It then reads two
+/// 32-bit cell coordinates at Event+0xF / Event+0x13 (payload[8..12] /
+/// payload[12..16]), resolves a spawn context and calls `0x421EA0`, finally
+/// writing `Anim->+0x19D = 1`. VERA does not yet model the spawn itself, so
+/// this record is the typed view only; `decode_native_command_record` holds
+/// the raw record as `Command::SynchronizedRecord` for network determinism.
+pub const ANIMATION_OPCODE: u8 = 0x14;
+pub const ANIMATION_PAYLOAD_LEN: usize = 16;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnimationRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    /// Animation/theme id at Event+7 (payload[0..4]); `-1` selects the
+    /// `0x8871E0` table path, else the `0x8B4154` path.
+    pub what_id: i32,
+    /// Event+0xB (payload[4..8]); carried into the spawn context.
+    pub unknown_b: i32,
+    /// Cell coordinate A (Event+0xF / payload[8..12]).
+    pub cell_a: i32,
+    /// Cell coordinate B (Event+0x13 / payload[12..16]).
+    pub cell_b: i32,
+}
+
+impl AnimationRecord {
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        let mut payload = [0u8; ANIMATION_PAYLOAD_LEN];
+        payload[..4].copy_from_slice(&self.what_id.to_le_bytes());
+        payload[4..8].copy_from_slice(&self.unknown_b.to_le_bytes());
+        payload[8..12].copy_from_slice(&self.cell_a.to_le_bytes());
+        payload[12..16].copy_from_slice(&self.cell_b.to_le_bytes());
+        CommandRecord::encode(ANIMATION_OPCODE, i32::from(self.house_id), self.frame, &payload)
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != ANIMATION_OPCODE {
+            return None;
+        }
+        if record.payload().len() < ANIMATION_PAYLOAD_LEN {
+            return None;
+        }
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            what_id: i32::from_le_bytes(record.payload_field::<0, 4>()),
+            unknown_b: i32::from_le_bytes(record.payload_field::<4, 4>()),
+            cell_a: i32::from_le_bytes(record.payload_field::<8, 4>()),
+            cell_b: i32::from_le_bytes(record.payload_field::<12, 4>()),
+        })
+    }
+}
+
+#[cfg(test)]
+mod animation_record_tests {
+    use super::*;
+
+    #[test]
+    fn animation_record_round_trips() {
+        let rec = AnimationRecord {
+            house_id: 3,
+            frame: 12345,
+            what_id: -1,
+            unknown_b: 7,
+            cell_a: 0x01020304,
+            cell_b: -2,
+        };
+        let encoded = rec.encode().unwrap();
+        assert_eq!(encoded.opcode(), ANIMATION_OPCODE);
+        let decoded = AnimationRecord::decode(&encoded).unwrap();
+        assert_eq!(decoded, rec);
+    }
+
+    #[test]
+    fn animation_record_rejects_wrong_opcode() {
+        let other = CommandRecord::encode(0x11, 0, 1, &[]).unwrap();
+        assert!(AnimationRecord::decode(&other).is_none());
+    }
+
+    #[test]
+    fn animation_record_rejects_short_payload() {
+        let short = CommandRecord::encode(ANIMATION_OPCODE, 0, 1, &[0u8; 4]).unwrap();
+        assert!(AnimationRecord::decode(&short).is_none());
+    }
+}
+
 /// SPECIAL_PLACE constructor4C6B60 stores the SuperWeaponTypes index at+7,
 /// then CellStruct at+B/+D. Execute4C78D6 passes both to House::Fire_SW4FAE50.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1013,6 +1013,13 @@ impl Simulation {
                 },
             });
         }
+        // Native opcode 0x14 (EventClass::Execute branch 0x004C6FDE): ANIMATION
+        // spawns a one-shot animation at a cell. VERA does not yet model the
+        // spawn, so hold the raw record for network determinism; the semantic
+        // spawn pass is a future change.
+        if crate::sim::command::AnimationRecord::decode(record).is_some() {
+            return raw();
+        }
         if let Some(event) = CycleProducerRecord::decode(record) {
             return envelope(Command::CycleProducerFocus {
                 category: event.category,
