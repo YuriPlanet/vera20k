@@ -17,8 +17,8 @@ use std::sync::LazyLock;
 use vera20k_gui::Rect;
 use vera20k_gui::hud::Origin;
 use vera20k_gui::hud::world::{
-    Amount, ArtId, Condition, Element, ObjectView, SourceId, StatusTemplate, World, WorldCmd,
-    WorldOp,
+    Amount, ArtId, Condition, Element, MAX_SLOT_ARTS, ObjectView, Slot, SourceId, StatusTemplate,
+    World, WorldCmd, WorldOp,
 };
 
 /// Which bar an object has.
@@ -115,6 +115,8 @@ const fn class_bit(class: HealthClass) -> u32 {
 
 /// State bit: the background is asked for.
 const BACKGROUND: u32 = 1;
+/// State bit: the scale pips are asked for.
+const SCALE: u32 = 2;
 
 /// PIPBRD frames are told apart from PIPS frames by this bit of the art id.
 const BORDER_ART: u32 = 1 << 16;
@@ -180,6 +182,32 @@ fn templates() -> Vec<StatusTemplate> {
             ..Default::default()
         });
     }
+    // The scale pips (`709A90`): each slot four pixels on, a building's
+    // walking up its roof two pixels a slot; the codes are the strip's own
+    // frames. A unit's row is ten pixels below its anchor.
+    let frames: Vec<ArtId> = (0..MAX_SLOT_ARTS as u32).map(pips).collect();
+    all.push(StatusTemplate {
+        name: "scale.unit".into(),
+        category: class_bit(HealthClass::Vehicle) | class_bit(HealthClass::Infantry),
+        state: SCALE,
+        elements: vec![Element::Slots {
+            at: at(0, 10),
+            step: (4, 0),
+            arts: frames.clone(),
+        }],
+        ..Default::default()
+    });
+    all.push(StatusTemplate {
+        name: "scale.building".into(),
+        category: class_bit(HealthClass::Building),
+        state: SCALE,
+        elements: vec![Element::Slots {
+            at: at(0, 0),
+            step: (4, 2),
+            arts: frames,
+        }],
+        ..Default::default()
+    });
     all
 }
 
@@ -236,7 +264,10 @@ pub(crate) fn paint(
         relation: 0,
         state: if background { BACKGROUND } else { 0 },
         values: &values,
+        slots: &[],
     };
+    // The bars' templates ask for health or the background, never for the
+    // scale (its own state bit), so they take only their own commands.
     cmds.clear();
     BUILT_IN.paint_status(std::slice::from_ref(&object), cmds);
     let (start, step) = row(class);
@@ -314,6 +345,56 @@ pub(crate) fn draw(
             point,
         });
     });
+}
+
+/// The scale pips of an object of `class`, as the built-in scale templates
+/// lay them out: each pip's frame and its offset from the row's anchor,
+/// which for the stock templates is the pip's own `offset_pixels`.
+/// `pips` are the frames and offsets the record captured
+/// (`ui_overlays::ScalePipDraw`): slot `offset_pixels[0] / 4`, lifted by
+/// what its offset differs from the stock row.
+pub(crate) fn scale_pips(
+    class: HealthClass,
+    pips: impl IntoIterator<Item = (usize, [i32; 2])>,
+    slots: &mut Vec<Slot>,
+    cmds: &mut Vec<WorldCmd<'static>>,
+    mut out: impl FnMut(usize, [i32; 2]),
+) {
+    slots.clear();
+    // The stock row puts slot n at (4n, 10) under a unit and (4n, 2n) on a
+    // building; an arm on another line (the ammo pips, three pixels up)
+    // keeps the difference as the slot's lift.
+    let building = class == HealthClass::Building;
+    slots.extend(pips.into_iter().map(|(frame, offset)| {
+        let index = offset[0] / 4;
+        let line = if building { index * 2 } else { 10 };
+        Slot {
+            index: u16::try_from(index).unwrap_or(u16::MAX),
+            code: u16::try_from(frame).unwrap_or(u16::MAX),
+            lift: i16::try_from(offset[1] - line).unwrap_or(i16::MAX),
+        }
+    }));
+    if slots.is_empty() {
+        return;
+    }
+    let object = ObjectView {
+        id: 0,
+        x: 0,
+        y: 0,
+        type_id: 0,
+        category: class_bit(class),
+        relation: 0,
+        state: SCALE,
+        values: &[],
+        slots,
+    };
+    cmds.clear();
+    BUILT_IN.paint_status(std::slice::from_ref(&object), cmds);
+    for cmd in cmds.iter() {
+        if let WorldOp::Image { rect, art } = cmd.op {
+            out(art.0 as usize, [rect.x, rect.y]);
+        }
+    }
 }
 
 #[cfg(all(test, tests_app_presentation))]

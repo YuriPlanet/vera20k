@@ -2352,17 +2352,26 @@ pub(crate) fn techno_extras_for_parent(
         //6F659E projects the foundation edge at Z=0;6F682C passes it to
         //the shared709A90 owner. Building rows use PIPS, (+6,-1), step(4,2).
         //Garrison and passenger arms restart at that origin independently.
-        for pip in scale_pip_draws(sim, entity, hovered_id, local_owner_id, rules) {
-            strip.fills.extend(instance(
-                shape,
-                pip.frame,
-                (
-                    sx + ax as f32 + 6.0 + pip.offset_pixels[0] as f32,
-                    sy + ay as f32 - 1.0 + pip.offset_pixels[1] as f32,
-                ),
-                0.0006,
-            ));
-        }
+        // The built-in scale template lays the row out (`health_templates`).
+        health_templates::scale_pips(
+            HealthClass::Building,
+            scale_pip_draws(sim, entity, hovered_id, local_owner_id, rules)
+                .iter()
+                .map(|pip| (pip.frame, pip.offset_pixels)),
+            &mut Vec::new(),
+            &mut Vec::new(),
+            |frame, offset| {
+                strip.fills.extend(instance(
+                    shape,
+                    frame,
+                    (
+                        sx + ax as f32 + 6.0 + offset[0] as f32,
+                        sy + ay as f32 - 1.0 + offset[1] as f32,
+                    ),
+                    0.0006,
+                ));
+            },
+        );
         strip.cull_health_to_viewport(viewport);
         return strip;
     }
@@ -2446,15 +2455,18 @@ pub(crate) fn techno_extras_for_parent(
     // `0x006F6A8E..0x006F6AB0` passes the draw point itself, without the
     // Type+3E0 PixelSelectionBracketDelta that moves the health bar.
     if let Some(art) = overlay.scale_pips() {
-        for pip in scale_pip_draws(sim, entity, hovered_id, local_owner_id, rules) {
-            let x = sx - 15.0 + if infantry { 11.0 } else { 0.0 } + pip.offset_pixels[0] as f32;
-            strip.scale.extend(instance(
-                art,
-                pip.frame,
-                (x, sy + pip.offset_pixels[1] as f32),
-                0.0004,
-            ));
-        }
+        health_templates::scale_pips(
+            class,
+            scale_pip_draws(sim, entity, hovered_id, local_owner_id, rules)
+                .iter()
+                .map(|pip| (pip.frame, pip.offset_pixels)),
+            &mut Vec::new(),
+            &mut cmds,
+            |frame, offset| {
+                let x = sx - 15.0 + if infantry { 11.0 } else { 0.0 } + offset[0] as f32;
+                strip.scale.extend(instance(art, frame, (x, sy + offset[1] as f32), 0.0004));
+            },
+        );
     }
     //70A50C..6BB: House admission precedes signed frame division, even for
     //a healthy object. Damaged remainder<=5 uses601 destination-halving;
