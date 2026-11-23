@@ -887,9 +887,7 @@ impl Simulation {
         {
             let target_obj = self.object_type(target.type_ref(), rules)?;
             Some(
-                if target_obj.grinding
-                    || (crate::util::ra2_launch::enabled() && target_obj.cloning)
-                {
+                if target_obj.grinding || (rules.ra2() && target_obj.cloning) {
                     EntryClickAction::Grind
                 } else {
                     EntryClickAction::Enter
@@ -995,8 +993,7 @@ impl Simulation {
                 let target_obj = self.object_type(target.type_ref(), rules)?;
                 (select
                     && target.category() == EntityCategory::Structure
-                    && (target_obj.grinding
-                        || (crate::util::ra2_launch::enabled() && target_obj.cloning))
+                    && (target_obj.grinding || (rules.ra2() && target_obj.cloning))
                     && control.can_order(actor.owner())
                     && !target_obj.is_1x1_with_undeploy())
                 .then(|| {
@@ -1111,7 +1108,7 @@ impl Simulation {
         // Original RA2 (0x51E8A1) offers a normal infantryman an Enter action
         // on a Hospital even though it has Passengers=0; VERA's shared
         // Passengers gate rejects it. Add the RA2-only hospital exception.
-        let hospital_entry = crate::util::ra2_launch::enabled()
+        let hospital_entry = rules.ra2()
             && infantry
             && target.category() == EntityCategory::Structure
             && target_obj.hospital;
@@ -1675,9 +1672,7 @@ impl Simulation {
             );
             return Some(if !full {
                 EngineerBuildingAction::Repair(true)
-            } else if object.grinding
-                || (crate::util::ra2_launch::enabled() && object.cloning)
-            {
+            } else if object.grinding || (rules.ra2() && object.cloning) {
                 EngineerBuildingAction::EnterGrinder
             } else {
                 EngineerBuildingAction::Repair(false)

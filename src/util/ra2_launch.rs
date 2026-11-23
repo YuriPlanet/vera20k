@@ -9,6 +9,9 @@
 //! headless tools' — resolves the same non-md INI roots without threading a
 //! parameter through each call site.
 //!
+//! A game's rules record it once at load (`RuleSet::ra2`), and the simulation
+//! reads that answer; app, asset and INI-root code read it here.
+//!
 //! The default is off: a launch with neither keeps its YR roots.
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,7 +25,7 @@ pub fn set(requested: bool) {
     RA2_REQUESTED.store(requested, Ordering::Relaxed);
 }
 
-/// Whether this process launched with `-ra2`.
+/// Whether this launch plays RA2 Mode.
 ///
 /// Under `cfg(test)`, a thread-local override takes precedence when set. This
 /// lets a unit test exercise the RA2 branch without flipping the process-wide

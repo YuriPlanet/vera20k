@@ -953,6 +953,8 @@ impl ObjectType {
             crate_beneath_is_money: category == ObjectCategory::Building
                 && section.read_bool("CrateBeneathIsMoney", false),
             can_occupy_fire: section.read_bool("CanOccupyFire", false),
+            // Decided by the RuleSet at load.
+            ra2_occupy_fire: false,
             show_occupant_pips: section.read_bool("ShowOccupantPips", true),
             bridge_repair_hut: section.read_bool("BridgeRepairHut", false),
             laser_fence: section.read_bool("LaserFence", false),

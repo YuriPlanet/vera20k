@@ -355,9 +355,7 @@ pub(crate) fn can_load(
     // anyone the gates above admit. Original RA2 has no Grinding= field: the
     // refund-on-entry behavior is hardcoded on the Cloning vats, so on the
     // RA2 profile a `Cloning=` building also takes any admitted foot here.
-    if building_type.grinding
-        || (crate::util::ra2_launch::enabled() && building_type.cloning)
-    {
+    if building_type.grinding || (rules.ra2() && building_type.cloning) {
         return CanLoad::Answer(RadioResponse::Roger);
     }
     // 0x0043C506..0x0043C541, a `Bunker=` building (+0x16AB): CanEnterBunker
@@ -391,8 +389,7 @@ pub(crate) fn can_load(
             .as_ref()
             .is_some_and(|manager| manager.has_any())
             || unit.seldom.mind_control.is_mind_controlled()
-            || (!crate::util::ra2_launch::enabled()
-                && building.ammo().map_or(0, |ammo| ammo.current()) == 0);
+            || (!rules.ra2() && building.ammo().map_or(0, |ammo| ammo.current()) == 0);
         return CanLoad::Answer(if refused {
             RadioResponse::Negatory
         } else {

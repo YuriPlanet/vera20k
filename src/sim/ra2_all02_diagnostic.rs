@@ -1,11 +1,11 @@
 //! Running-game diagnostic for the ALL02S "Chapel captured == destroyed" report.
 //!
 //! This is deliberately a runtime trace, not a unit test: the question is what
-//! the real campaign scenario resolves under `-ra2` while the player captures
+//! the real campaign scenario resolves in RA2 Mode while the player captures
 //! the Air Force Academy. All output goes through the engine's own file logger,
 //! so it lands in `logs/ra2.log` beside the game.
 //!
-//! It is inert unless the process was launched with `-ra2`, and it only writes
+//! It is inert unless the game plays RA2 Mode, and it only writes
 //! about BuildingTypes[186] (the index used by ALL02S' Chapel triggers), so an
 //! ordinary skirmish session produces no lines. Nothing here changes gameplay:
 //! every hook is a read-only observation of state that already exists.
@@ -24,8 +24,8 @@ const CHAPEL_BUILDING_INDEX: usize = 186;
 static BOOT_WRITTEN: AtomicBool = AtomicBool::new(false);
 static LAST_EVENT: Mutex<Option<(i32, String, i32, bool)>> = Mutex::new(None);
 
-fn active() -> bool {
-    crate::util::ra2_launch::enabled()
+fn active(rules: &RuleSet) -> bool {
+    rules.ra2()
 }
 
 fn chapel_type(sim: &Simulation, rules: &RuleSet) -> Option<(String, InternedId)> {
@@ -66,7 +66,7 @@ fn all_house_counts(sim: &Simulation, type_id: InternedId) -> String {
 }
 
 fn ensure_boot(sim: &Simulation, rules: &RuleSet) {
-    if !active() || BOOT_WRITTEN.swap(true, Ordering::SeqCst) {
+    if !active(rules) || BOOT_WRITTEN.swap(true, Ordering::SeqCst) {
         return;
     }
     let frame = sim.session.binary_frame();
@@ -113,7 +113,7 @@ pub(crate) fn on_building_count_event(
     count: i32,
     result: bool,
 ) {
-    if !active() || value != CHAPEL_BUILDING_INDEX as i32 {
+    if !active(rules) || value != CHAPEL_BUILDING_INDEX as i32 {
         return;
     }
     ensure_boot(sim, rules);
@@ -148,7 +148,7 @@ pub(crate) fn on_owner_change(
     rules: &RuleSet,
     phase: &str,
 ) {
-    if !active() {
+    if !active(rules) {
         return;
     }
     let Some((name, type_id)) = chapel_type(sim, rules) else {

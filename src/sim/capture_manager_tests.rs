@@ -3071,15 +3071,15 @@ fn a_captured_selected_unit_of_the_local_player_is_deselected() {
 }
 
 /// Original RA2 stores MindControl.Damage=10 only as an "offensive" flag; link
-/// capacity is always 1 (YR reuses Damage as the link count). The RA2 launch
-/// profile must build a single-link manager even though the weapon says 10,
+/// capacity is always 1 (YR reuses Damage as the link count). RA2 Mode
+/// must build a single-link manager even though the weapon says 10,
 /// and must never honor InfiniteMindControl. YR keeps the weapon-derived value.
 #[test]
 fn ra2_mind_control_capacity_is_one_regardless_of_damage() {
 
-    let rules = rules_from(&RULES.replace("Damage=1\nROF=200", "Damage=10\nROF=200"));
+    let mut rules = rules_from(&RULES.replace("Damage=1\nROF=200", "Damage=10\nROF=200"));
 
-    crate::util::ra2_launch::set_override(true);
+    rules.set_ra2_for_test(true);
     // YURI (Damage=10, single), MIND (Damage=3, Infinite) and YAPSYT (Damage=3):
     // all are one finite link on the RA2 profile.
     for kind in ["YURI", "MIND", "YAPSYT"] {
@@ -3088,12 +3088,10 @@ fn ra2_mind_control_capacity_is_one_regardless_of_damage() {
         assert!(!manager.infinite, "{kind}: RA2 never infinite");
     }
 
-    crate::util::ra2_launch::set_override(false);
+    rules.set_ra2_for_test(false);
     let mind = init_capture_manager(rules.object("MIND").unwrap(), &rules).unwrap();
     assert_eq!(mind.max_control, 3, "YR keeps weapon Damage as capacity");
     assert!(mind.infinite, "YR keeps InfiniteMindControl");
     let yuri = init_capture_manager(rules.object("YURI").unwrap(), &rules).unwrap();
     assert_eq!(yuri.max_control, 10, "YR reads the edited Damage=10");
-
-    crate::util::ra2_launch::clear_override();
 }

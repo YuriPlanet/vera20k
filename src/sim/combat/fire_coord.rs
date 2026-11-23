@@ -1020,9 +1020,10 @@ pub(crate) fn muzzle_anim_name(
     occupied_fire: bool,
     in_open_transport: bool,
     ares: bool,
+    ra2: bool,
 ) -> Option<&str> {
     use crate::util::direction_tables::{ares_facing_bucket, muzzle_anim_index_8way};
-    let picked = if occupied_fire && !crate::util::ra2_launch::enabled() {
+    let picked = if occupied_fire && !ra2 {
         weapon.occupant_anim.as_deref()
     } else {
         let count = weapon.anim.len();
@@ -1593,48 +1594,51 @@ mod tests {
         // `(dir8 + 1) & 7`: facing north picks entry 1, and the last octant
         // wraps to entry 0.
         assert_eq!(
-            muzzle_anim_name(eight, 0x0000, false, false, false),
+            muzzle_anim_name(eight, 0x0000, false, false, false, false),
             Some("F1")
         );
         assert_eq!(
-            muzzle_anim_name(eight, 0x4000, false, false, false),
+            muzzle_anim_name(eight, 0x4000, false, false, false, false),
             Some("F3")
         );
         assert_eq!(
-            muzzle_anim_name(eight, 0xE000, false, false, false),
+            muzzle_anim_name(eight, 0xE000, false, false, false, false),
             Some("F0")
         );
         // An occupied building's shot takes `OccupantAnim=` instead.
         assert_eq!(
-            muzzle_anim_name(eight, 0x4000, true, false, false),
+            muzzle_anim_name(eight, 0x4000, true, false, false, false),
             Some("UCFLASH")
         );
         // Any other list length: the first entry, whatever the facing.
         let one = rules.weapon("ONE").unwrap();
         assert_eq!(
-            muzzle_anim_name(one, 0x4000, false, false, false),
+            muzzle_anim_name(one, 0x4000, false, false, false, false),
             Some("GUNFIRE")
         );
         // `OccupantAnim=` replaces the pick even when it is absent.
-        assert_eq!(muzzle_anim_name(one, 0x4000, true, false, false), None);
         assert_eq!(
-            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, false, false),
+            muzzle_anim_name(one, 0x4000, true, false, false, false),
+            None
+        );
+        assert_eq!(
+            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, false, false, false),
             None
         );
         // From an open-topped transport, `OpenToppedAnim=` fills only an
         // empty pick.
         let jab = rules.weapon("JAB").unwrap();
         assert_eq!(
-            muzzle_anim_name(jab, 0, false, true, false),
+            muzzle_anim_name(jab, 0, false, true, false, false),
             Some("GUNFIRE")
         );
-        assert_eq!(muzzle_anim_name(jab, 0, false, false, false), None);
+        assert_eq!(muzzle_anim_name(jab, 0, false, false, false, false), None);
         assert_eq!(
-            muzzle_anim_name(eight, 0x4000, false, true, false),
+            muzzle_anim_name(eight, 0x4000, false, true, false, false),
             Some("F3")
         );
         assert_eq!(
-            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, true, false),
+            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, true, false, false),
             None
         );
     }
@@ -1650,24 +1654,25 @@ mod tests {
         let m60 = rules.weapon("M60").unwrap();
 
         // Baseline: YR still honours the (possibly null) OccupantAnim override.
-        assert_eq!(muzzle_anim_name(one, 0x4000, true, false, false), None);
         assert_eq!(
-            muzzle_anim_name(m60, 0x4000, true, false, false),
+            muzzle_anim_name(one, 0x4000, true, false, false, false),
+            None
+        );
+        assert_eq!(
+            muzzle_anim_name(m60, 0x4000, true, false, false, false),
             Some("UCFLASH")
         );
 
-        crate::util::ra2_launch::set_override(true);
         assert_eq!(
-            muzzle_anim_name(one, 0x4000, true, false, false),
+            muzzle_anim_name(one, 0x4000, true, false, false, true),
             Some("GUNFIRE"),
             "RA2 has no OccupantAnim, so the weapon's Anim must play"
         );
         assert_eq!(
-            muzzle_anim_name(m60, 0x4000, true, false, false),
+            muzzle_anim_name(m60, 0x4000, true, false, false, true),
             Some("F3"),
             "RA2 keeps the ordinary facing-picked Anim ladder"
         );
-        crate::util::ra2_launch::clear_override();
     }
 
     #[test]
@@ -1682,7 +1687,7 @@ mod tests {
             facing: u16,
             ares: bool,
         ) -> Option<&str> {
-            muzzle_anim_name(weapon, facing, false, false, ares)
+            muzzle_anim_name(weapon, facing, false, false, ares, false)
         }
         assert_eq!(pick(&weapon, 0x0000, true), Some("A2"));
         assert_eq!(pick(&weapon, 0xF000, true), Some("A1"));

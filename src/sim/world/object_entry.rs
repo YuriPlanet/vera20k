@@ -1350,8 +1350,7 @@ fn full_foot_entry<'a>(
                 // Original RA2 has no Grinding= field; the refund-on-entry
                 // behavior lives on Cloning vats. On the RA2 profile treat a
                 // Cloning building as the grinder/eater for these gates.
-                let refund_eater =
-                    bt.grinding || (crate::util::ra2_launch::enabled() && bt.cloning);
+                let refund_eater = bt.grinding || (live.rules.ra2() && bt.cloning);
                 if object_target_is(e, blocker_id)
                     && ((mission == Some(MissionType::Enter) && absorber)
                         || (mission == Some(MissionType::Eaten) && refund_eater))

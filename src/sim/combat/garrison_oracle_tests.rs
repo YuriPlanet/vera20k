@@ -330,13 +330,11 @@ fn occupied_weapon_and_foundation_queries_match_original_instructions() {
 
 /// Original RA2 keeps the garrison gun on the building's own Primary slot
 /// ([CARUS03] Primary=AlliedOccupyW) and has no CanOccupyFire / OccupyWeapon /
-/// OccupyWeaponRange fields. Verify the RA2 launch profile: IsOccupied ignores
+/// OccupyWeaponRange fields. Verify RA2 Mode: IsOccupied ignores
 /// CanOccupyFire, GetWeapon resolves the building gun (not the occupant's own
 /// Primary), and occupied reach is the gun's Range in cells.
 #[test]
 fn ra2_garrison_fires_building_gun_without_yr_fields() {
-    crate::util::ra2_launch::set_override(true);
-
     let ini = IniFile::from_str(
         "[BuildingTypes]\n0=HOUSE\n[InfantryTypes]\n0=E1\n\
          [HOUSE]\nStrength=800\nCanBeOccupied=yes\nPrimary=AlliedOccupyW\n\
@@ -344,10 +342,15 @@ fn ra2_garrison_fires_building_gun_without_yr_fields() {
          [AlliedOccupyW]\nRange=7\nDamage=30\nWarhead=WH\n\
          [E1Rifle]\nRange=3\nDamage=15\nWarhead=WH\n[WH]\n",
     );
-    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut rules = RuleSet::from_ini(&ini).unwrap();
+    rules.set_ra2_for_test(true);
     let object = rules.object("HOUSE").unwrap();
     // RA2 building has no CanOccupyFire -> field default false, yet occupied.
     assert!(!object.can_occupy_fire);
+    assert!(
+        object.occupants_fire(),
+        "GetFireError's B1 reads the same answer"
+    );
     let mut building = GameEntity::test_default_of_category(
         1, "HOUSE", "Test", 10, 10, EntityCategory::Structure,
     );
@@ -366,6 +369,4 @@ fn ra2_garrison_fires_building_gun_without_yr_fields() {
     assert_eq!(selected.id, "AlliedOccupyW", "RA2 fires the building gun");
     let reach = super::combat_weapon::occupied_reach_cells(object, &rules);
     assert_eq!(reach, 7, "RA2 uses the gun Range (Range=7) cells");
-
-    crate::util::ra2_launch::clear_override();
 }
