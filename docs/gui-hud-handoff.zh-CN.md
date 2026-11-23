@@ -1,126 +1,127 @@
 # 通用 HUD 库交接文档
 
-日期：2026-11-22。设计与接口语义见 [技术方案](gui-hud-design.zh-CN.md)。
+日期：2026-11-23。设计与接口语义见 [技术方案](gui-hud-design.zh-CN.md)，计划见 `/Users/libi/Documents/phase2-plan.zh-CN.md`。
 
 ## 1. 现状
 
-库已通过独立审查并修复，引擎里有两个只用于绘制的使用者：性能面板、mod 在 `veraui.ini` 中自定义的按钮和文字。
-两者的旧绘制已删除，输出与被删的代码一致。
+库已审查修复；引擎里迁到 gui 的有：性能面板、mod 在 `veraui.ini` 中加的按钮和文字、命令栏、侧边栏面板、单位与建筑血条、
+超武计时器、聊天与系统消息。每项都与它替换的旧代码逐位对比过，旧绘制已删。侧边栏的模型已从视图中拆出（SidebarModel）。
 
 | 项 | 值 |
 |---|---|
 | 分支 | `feature/gui-hud-foundation` |
 | 工作树 | `/Volumes/扩展盘/vera20k-build/worktrees/gui-hud` |
-| 基点 | 上游 main `257abddce`（写本文时上游为 `79edebfa2`，未合入） |
-| 最后一个代码提交 | `ec76fe362` |
-| 推送、PR | 都没有；英文草稿在 `/Volumes/扩展盘/vera20k-build/tmp/gui-hud-pr.md` |
+| 基点 | 上游 main `257abddce`，未合入新的 main |
+| 最后一个代码提交 | `e3d97c0fe` |
+| 推送、PR | 都没有；英文草稿 `/Volumes/扩展盘/vera20k-build/tmp/gui-hud-pr.md`（只写到 11-22 的内容） |
 
-## 2. 按阶段 2 计划逐期对照
+素材：原创机械金属风的界面素材在 `/Volumes/扩展盘/vera20k-build/tmp/gui-art/dist/final/expandmd97.mix`，与原版文件尺寸、帧数、编号一致，
+放进游戏目录即替换，删掉即还原；引擎读取逻辑未改。
+
+## 2. 按计划逐期对照（估计整体约 35%）
 
 | 期 | 已做 | 未做 |
 |---|---|---|
-| 0 基线 | 5000 对象合成 CPU 基准、wasm32 编译检查、被迁部分的新旧对比 | 对局截图和输入回放基线、GPU 基准 |
-| 1 底座 | 库修复、渲染适配器、两处绘制挂载 | 输入挂载、重绘闸门接 revision、SidebarModel、绘制副作用移出 |
-| 2 试点 | 性能面板代替原计划的试点 | 命令栏、血条；状态模板没有使用者 |
-| 3A | 无 | 全部 |
-| 3B | mod 自定义按钮和文字的绘制 | 侧边栏、小地图框、编辑器、其他原版部件 |
-| 3C | 无 | 全部 |
-| 4 收尾 | 两个使用者的旧绘制已删、文档已更新 | 全量点击回归、其他旧路径 |
+| 0 基线 | 5000 对象 CPU 基准、wasm32 检查、逐项新旧对比；地图观察截图做端到端对照 | 固定的截图与输入回放基线、GPU 基准 |
+| 1 底座 | 库修复、渲染适配器、SidebarModel、消息与计时器的绘制副作用移到 update | 重绘闸门接 revision |
+| 2 试点 | 命令栏走节点树，血条走状态模板（5000 单位 p95 0.19 ms） | 只用公开接口建面板、模板并收到点击的验收测试 |
+| 3A | 计时器、消息 | 提示框、结算横幅、局内对话框剩余手绘控件、布局编辑覆盖层 |
+| 3B | 侧边栏面板（2-5 列、veraui.ini 布局）、mod 部件 | 小地图框、veraui.ini 解析结果输出为节点树、编辑器 |
+| 3C | 血条（底框与血量格） | 等级、护盾、弹药/载员/驻军点、编队号、自愈、数字显示、标签、飘字 |
+| 4 | 每项已删旧绘制 | 接口文档、全量点击回归 |
 
-未做的原因：
-
-- 原版部件（SidebarModel、命令栏、血条、3A-3C）：本次执行开发的 AI 助手判断这属于复刻现有游戏的界面，所以没有做。
-  用户不同意这个判断，计划本身也包含这些项；这不是项目或用户的决定。
-- 输入挂载：mod 按钮沿用原 gadget 链，保证点击顺序不变；库的输入目前只有测试在用。
-- 重绘闸门：两个使用者在绘制时按原有状态更新，原闸门条件仍然成立。第一个自己持有状态或输入的 HUD 必须接 revision。
-- 原创 HUD：等确认设计。
+用户 2026-11-23 的决定：
+- 原版部件的迁移照做（默认素材已是原创，界面不再还原原版外观）。
+- 输入挂载（计划第 2 步，CameoGrid 接管点击）跳过：`ui::gadget` 是原版输入的逐条仿真，搬进 gui 会把原版细节带进与游戏无关的库；
+  几何已只有一份。将来外部 ui.wasm 的按钮按 mod 按钮的方式登记成 gadget 即可（那时加通用的“HUD 节点 → gadget”桥）。
+- 建造栏的图标、进度遮罩、变暗遮罩、文字底条不再包一层节点树：只是原样转交实例，没有结构收益，反而每帧多开销。
+- 性能取舍（例如只给屏幕附近的对象抓状态条数据）先找用户权衡，不擅自改。
 
 ## 3. 代码位置
 
 | 文件 | 内容 |
 |---|---|
-| `gui/src/hud/` | 库：核心、布局、输入、绘制、世界 |
-| `src/render/hud_paint.rs` | 适配器：填充、图片、文字，有序输出、CPU 裁剪、缓冲复用 |
-| `src/app/diagnostics/performance_overlay/view.rs` | 性能面板的节点树 |
-| `src/app/presentation/layout_parts.rs` | mod 自定义部件的节点树；几何仍只由 `placed` 计算 |
+| `gui/src/hud/` | 库；本轮新增 `world.rs` 的 `Element::Pips`（格数由数值的 max 决定） |
+| `src/render/hud_paint.rs` | 适配器；`NodeDraw` 可带深度、宿主算好的整条实例、逐字显示的标签 |
+| `src/app/presentation/picture_hud.rs` | 图片节点树：命令栏、侧边栏面板 |
+| `src/app/presentation/text_hud.rs` | 底框加文字的节点树：计时器、消息 |
+| `src/app/presentation/health_templates.rs` | 内置血条模板与按原版浮点步骤定位 |
+| `src/app/sidebar_projection.rs` | `SidebarModel`（模拟与存档读的部分）与视图 `SidebarProjectionState` |
+| `src/app/presentation/super_timers.rs`、`src/app/input/messages.rs` | update 与只读绘制分开 |
 
-适配器没有实现 `External` 和五种世界命令，等第一个使用者再加。
+线程：模拟线程只跑 tick；快照抓取（含 `HudFacts`）在主线程加线程池；生成实例、上传、绘制都在主线程，没有单独的渲染线程。
 
-## 4. 已验证（最终代码 `ec76fe362`）
+## 4. 已验证
 
 | 项目 | 结果 |
 |---|---|
-| 性能面板新旧对比，release | 12,636 个场景、1,045,126 个四边形逐位相同，顺序和分段相同 |
-| mod 部件新旧对比，release | 6 组全过：全部实例字段及各通道内顺序 |
-| gui 测试 | 208 通过；被忽略的计时测试单独通过 |
-| 客户端测试，不带零售数据 | 1306 通过、105 忽略（`app::presentation`、`app::diagnostics`、`app::input::gadget_input`、`render::hud_paint`、`ui::`） |
-| 引擎检查，普通与 `--features wasm` | 通过 |
-| gui 的 wasm32 检查 | 通过 |
-| 5000 对象，1 / 4 份模板，p95 | 0.046 / 0.184 ms |
-| 性能面板每帧 CPU，新 / 旧 | 两轮 p95：12.54 / 12.63、23.17 / 24.71 µs；p50 慢 0.13-0.21 µs（不到 2%） |
+| 命令栏新旧对比 | 4,368,000 种情形、253,746,880 个四边形逐字节一致 |
+| 血条新旧对比 | 178,704 种情形、6,462,000 个图元逐位一致；5000 单位 p95 0.190 ms（旧 0.183） |
+| 侧边栏面板新旧对比 | 80,000 组随机输入（一半为打乱、隐藏、改坐标的 veraui.ini 式布局）、20,037,053 个四边形逐字节一致 |
+| 计时器新旧对比 | 60,000 组、2,977,629 个四边形逐字节一致（两种字体、中文） |
+| 消息新旧对比 | 60,000 组、1,223,836 个四边形逐字节一致（逐字显示进度、Tab、中文） |
+| 带零售素材与 GPU 的测试 | 命令栏截图对照、侧边栏 8 项、血条与缩放等状态条 15 项通过；两项文字标签测试因本机是中文版 `ra2md.csf` 而失败，与改动无关 |
+| 地图观察截图 | 盟军/苏军建造放置局、铁幕与核弹计时器局：与改动前逐像素一致，只有两个矿石闪光像素在任意两次运行间都会变 |
+| 客户端全部库测试 | 只有 `architecture_guards::production_dependency_edges` 失败，报的是本分支没改的 `ui/*` 文件 |
 
 ## 5. 没有验证
 
-- **没有运行游戏，没有看过实际画面**，也没有 GPU 回读。一致性来自实例数据对比。
-- mod 部件的对比不覆盖 `placed` 和两个调用点；调用点里观战条与平滑侧边栏的处理顺序有挪动，只读代码确认过。
-- mod 部件的每帧耗时。
-- 带零售数据的测试、命令流与回放、浏览器运行、低端机、Clippy。
-- 2 万单位：本阶段口径是 5000。
+- 浏览器、低端机、Clippy；2 万单位（本阶段口径 5000）。
+- 地图观察的 `compare` 拒绝比较两个不同程序，所以截图对照只比画面。
+- 3C 未迁部分、提示框等仍是旧代码，不在对比范围内。
 
 ## 6. 复现
 
 ```sh
-export CARGO_TARGET_DIR='/Volumes/扩展盘/vera20k-build/cargo-target/vera20k-gui-hud'
-export TMPDIR='/Volumes/扩展盘/vera20k-build/tmp'
+export CARGO_TARGET_DIR=/Volumes/扩展盘/vera20k-build/cargo-target/vera20k
+export TMPDIR=/Volumes/扩展盘/vera20k-build/tmp/
 run() { python3 -m tools.cargo_run --cache-gib 200 --incremental-gib 64 -- "$@"; }
-
 run test -p vera20k-gui --lib
-run test -p vera20k --lib -- app::presentation:: app::diagnostics:: app::input::gadget_input:: render::hud_paint:: ui::
-run check -p vera20k --lib --bins
-run check -p vera20k --lib --bins --features wasm
-run check -p vera20k-gui --lib --target wasm32-unknown-unknown
+run test -p vera20k --lib -- app::presentation:: app::input:: app::sidebar_projection render::hud_paint
 ```
 
-新旧对比含有旧绘制的副本，故意不入库。跑之前各追加一行，跑完删掉：
+新旧对比测试含旧代码副本，故意不入库，都在 `/Volumes/扩展盘/vera20k-build/tmp/`。跑之前在对应文件末尾追加挂钩，跑完删掉：
 
-```rust
-// src/app/diagnostics/performance_overlay.rs
-#[cfg(test)] #[path = "/Volumes/扩展盘/vera20k-build/tmp/gui-hud-panel-parity.rs"] mod parity;
-// src/app/presentation/mod.rs
-#[cfg(all(test, tests_app_presentation))] #[path = "/Volumes/扩展盘/vera20k-build/tmp/gui-hud-mod-parts-parity.rs"] mod gui_hud_mod_parts_parity;
-```
+| 测试文件 | 挂在 | 测试组 |
+|---|---|---|
+| `gui-hud-command-bar-parity.rs`（模块名 `parity`） | `src/app/presentation/sidebar_command_bar.rs` | `tests_app_presentation` |
+| `gui-hud-sidebar-chrome-parity.rs`（`chrome_parity`） | `src/app/presentation/sidebar_build.rs` | `tests_app_presentation` |
+| `gui-hud-health-parity.rs`（`parity`） | `src/app/presentation/health_templates.rs` | `tests_app_presentation` |
+| `gui-hud-timer-parity.rs`（`timer_parity`） | `src/app/presentation/super_timers.rs` | `tests_app_presentation` |
+| `gui-hud-message-parity.rs`（`message_parity`） | `src/app/input/messages.rs` | `tests_app_input_d_z` |
 
-```sh
-run test -p vera20k --lib --release -- gui_hud_mod_parts_parity performance_overlay::parity --include-ignored --nocapture --test-threads=1
-```
+挂钩写法：`#[cfg(all(test, tests_app_presentation))] #[path = "/Volumes/扩展盘/vera20k-build/tmp/<文件>"] mod <模块名>;`，
+用 `run test -p vera20k --release --lib -- <模块路径> --nocapture` 跑。
+
+带零售素材的测试要设 `RA2_DIR="$HOME/Desktop/Command & Conquer Red Alert II"` 并加 `--ignored`。
+地图观察截图：`env -u RA2_DIR python3 -m tools.map_observation --build-profile fast --profile <配置> --contract $PWD/src/app/diagnostics/tactical_capture/contract.v2.json --cwd <目录> --output <新目录>`；
+截图用的工作目录在 `/Volumes/扩展盘/vera20k-build/tmp/gui-art/capture/`（`cwd-retail` 原版，`cwd2` 新素材，`cwd3` 带示例地图），
+`config.toml` 里 `input_delay_ticks = 2`；截图模式不读 `mod =`，地图按 `ra2_dir` 查找。
 
 测试运行期间不要改源码。`docs/*` 被 gitignore，新文档要 `git add -f`。
 
 ## 7. 使用时必须知道的
 
-- 帧流程：布局、输入、处理事件、改节点、再布局、绘制。`layout` 也可能产生悬停事件、增加 revision。
-- 库不是安全边界：`set`、`remove` 和模板修改不检查调用者。
-- `remove_origin` 会连同别人挂在它节点下的子节点一起删除。
-- 文字不参与自动尺寸；空矩形和负尺寸不绘制，需要时由宿主经 `NodeDraw` 给出精确位置和尺寸。
-- 缩放下要与浮点旧代码一致，不能先取整再乘缩放：性能面板第一次对比因此差了 1 像素。
-- 绘制命令借用库内数据，跨帧复用缓冲要经过 `recycle`。
-- `Checkbox`、`Combo`、`List`、`Trackbar`、`Edit`、`ScrollBar` 在 HUD 中只画背景。
+- 节点树负责部件的有无、顺序、矩形和属性；精确的浮点位置由宿主按旧算式给出（`NodeDraw`），否则缩放和小数镜头下会差 1 像素。
+- `build_text` 与 `build_text_label` 都只在开头加一次镜头偏移：宿主给“位置 + 偏移”、适配器传零偏移，结果逐位相同。
+- 新调色板的界面素材要把 1 号色固定为近黑（全局的 DARKEN.SHP 用当前阵营调色板画）。
+- 帧流程：布局、输入、处理事件、改节点、再布局、绘制。绘制函数只读状态，推进与音效放在它前面的 update。
 
 ## 8. 已知问题
 
-| 问题 | 影响 | 建议 |
-|---|---|---|
-| **main 已有 bug**：`text_engine` 的 `shape_tabbed` 对空段排版会 panic（`src/render/text_engine/mod.rs:561`） | 文字以 Tab 开头、结尾或有连续 Tab，且不走 GAME.FNT 原生路径时崩溃；标签来自 mod，可能被外部数据触发，未在对局中复现 | 单开 PR 修；mod 部件的矢量字体对比避开了这种输入 |
-| 上层来源的阻挡面板仍会遮住 `Panels` 中宿主浮层的点外关闭 | Escape 仍可关闭 | 接入外部来源前再定 |
-| 每个对象只给宿主保底 128 条命令 | 更大的宿主模板可能被省略 | 接入时加诊断 |
-| 透明度为 0 的文字仍输出命令 | 只多一点开销 | 需要时再改 |
-| `Hud::remove` 对节点总数线性 | 大量逐个删除时变慢 | 用 `remove_origin` 或复用节点 |
+| 问题 | 建议 |
+|---|---|
+| **main 已有 bug**：`text_engine` 的 `shape_tabbed` 对空段排版会 panic（`src/render/text_engine/mod.rs:561`），不走 GAME.FNT 原生路径、文字以 Tab 开头或结尾时 | 单开 PR 修 |
+| `architecture_guards::production_dependency_edges` 在本分支基点就失败 | 与本分支无关，合入 main 后再看 |
+| 建筑血条超过 512 格（地基深约 34 格以上）会被截断 | 原版与常见 mod 远不到 |
+| 上层来源的阻挡面板会遮住 `Panels` 中宿主浮层的点外关闭 | 接外部来源前再定 |
 
 ## 9. 后续任务
 
-1. 实际运行一次：开性能面板，并加载带 Side、Field 自定义部件的布局，各看一遍。
-2. 单独修 Tab 崩溃。
-3. 合入最新 main，带零售数据跑相关测试，然后提 PR。
-4. 原创 HUD：先确认设计，再接输入和重绘闸门。
+1. 3A：提示框（颜色是任意浮点的阵营色，填充与边框分两条通道，需要适配器支持宿主给定色调）、结算横幅、局内对话框剩余手绘控件。
+2. 3B：小地图框、veraui.ini 输出为节点树、编辑器。
+3. 3C：等级、护盾、各类点、编队号、标签、飘字。
+4. 重绘闸门接 revision；公开接口验收测试；接口文档；全量点击回归。
+5. 单独修 Tab 崩溃；合入最新 main；提 PR（须用户同意）。
 
 推送和开 PR 之前须得到用户同意。提交信息和 PR 描述不加任何 AI 署名。
