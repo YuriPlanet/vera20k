@@ -63,12 +63,7 @@ pub(crate) fn open(state: &mut AppState) {
         .filter(|(index, _)| state.audio.theme.is_allowed(*index as i32))
         .enumerate()
         .map(|(row, (index, entry))| {
-            let text = state
-                .process_assets
-                .csf
-                .as_ref()
-                .map(|csf| csf.text(&entry.name_key).into_owned())
-                .unwrap_or_else(|| entry.name_key.clone());
+            let text = state.csf_text(&entry.name_key);
             // Native720480's localized Name buffer holds63 UTF16 units.
             let name = String::from_utf16_lossy(&text.encode_utf16().take(63).collect::<Vec<_>>());
             SoundTrackRow {

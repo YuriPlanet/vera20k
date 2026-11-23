@@ -62,12 +62,7 @@ impl Action {
             Self::Abort => ("GUI:AbortMission", "Abort Mission"),
             Self::Leave => ("GUI:Leave", "Quit"),
         };
-        state
-            .process_assets
-            .csf
-            .as_ref()
-            .and_then(|csf| csf.get(key))
-            .map_or(Cow::Borrowed(fallback), Cow::Borrowed)
+        state.csf_label(key, fallback).into()
     }
 
     /// Escape's button: the one that backs out of the card.

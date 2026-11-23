@@ -896,14 +896,7 @@ pub(super) fn emote(state: &mut AppState) {
 }
 
 fn csf_units(state: &AppState, key: &str) -> Vec<u16> {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .and_then(|csf| csf.get(key))
-        .unwrap_or_default()
-        .encode_utf16()
-        .collect()
+    state.csf_label(key, "").encode_utf16().collect()
 }
 
 /// `00B73E40` is the login nickname, which the login made the MultiPlayer

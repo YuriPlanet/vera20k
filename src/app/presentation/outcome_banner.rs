@@ -511,11 +511,7 @@ fn banner_quad(state: &AppState, outcome_kind: HouseOutcomeKind) -> BannerQuad {
     {
         return BannerQuad::Picture(quad, camera);
     }
-    let text = state
-        .process_assets
-        .csf
-        .as_ref()
-        .map_or_else(String::new, |csf| csf.text(label).into_owned());
+    let text = state.csf_text(label);
     let font = &state.renderer.bit_font;
     let origin = centered_origin(
         view,

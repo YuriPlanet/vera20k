@@ -192,15 +192,6 @@ fn tip_rect(frame: crate::ui::sidebar::SidebarFrame, r: crate::ui::sidebar::Rect
     )
 }
 
-fn csf_text(state: &AppState, key: &str) -> String {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| csf.text(key).into_owned())
-        .unwrap_or_default()
-}
-
 /// Display4AE580..4AE5FD: CursorCheat formats the signed plane XYZ /256;
 /// otherwise that same ProcessClickCoords output goes through Map565730,
 /// then direct Cell12C&8, before any object/picker text.
@@ -586,7 +577,7 @@ fn with_disabled_suffix(state: &AppState, tip: String, disabled: bool) -> String
     if !disabled || tip.is_empty() {
         return tip;
     }
-    let suffix = csf_text(state, TIP_LABEL_DISABLED);
+    let suffix = state.csf_text(TIP_LABEL_DISABLED);
     format_csf(
         TIP_DISABLED_FORMAT,
         &[CsfArg::Str(&tip), CsfArg::Str(&suffix)],
@@ -616,7 +607,7 @@ fn sidebar_button_tip_text(
 ) -> String {
     dynamic_tip_text(cursor, || {
         sidebar_button_tip(view, id)
-            .map(|(label, disabled)| with_disabled_suffix(state, csf_text(state, label), disabled))
+            .map(|(label, disabled)| with_disabled_suffix(state, state.csf_text(label), disabled))
             .unwrap_or_default()
     })
 }
@@ -740,12 +731,12 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     regions.push(region(
         crate::app::input::gadget_input::ID_REPAIR as u32,
         tip_rect(frame, view.repair_button.rect),
-        &|| csf_text(state, "TXT_REPAIR_MODE"),
+        &|| state.csf_text("TXT_REPAIR_MODE"),
     ));
     regions.push(region(
         crate::app::input::gadget_input::ID_SELL as u32,
         tip_rect(frame, view.sell_button.rect),
-        &|| csf_text(state, "TXT_SELL_MODE"),
+        &|| state.csf_text("TXT_SELL_MODE"),
     ));
     for (id, button) in [
         (ID_SCROLL_DOWN, &view.scroll_down_button),
@@ -761,7 +752,7 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
         .zip(&view.top_buttons)
     {
         regions.push(region(u32::from(id), tip_rect(frame, button.rect), &|| {
-            csf_text(state, label)
+            state.csf_text(label)
         }));
     }
     for (slot, item) in view.items.iter().enumerate() {
@@ -815,7 +806,7 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
         regions.push(region(
             u32::from(id),
             TipRect::new(rect.x, rect.y, rect.w, rect.h),
-            &|| csf_text(state, label),
+            &|| state.csf_text(label),
         ));
     }
     // Phobos left superweapon sidebar: `SWButtonClass` shows the same super
