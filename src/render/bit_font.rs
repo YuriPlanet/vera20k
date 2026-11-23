@@ -1294,6 +1294,46 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn path_a_heading_reveal_colours_each_glyph_by_its_unit() {
+        // The reveal before Path A shared `native_glyph_pens`: the n-th drawn
+        // glyph took the n-th unit that is no tab, space or line break, and
+        // a cut unit stopped the text.
+        let font = make_test_font(
+            &[(b'M' as u16, 9), (b'o' as u16, 6), (b'd' as u16, 6), (b's' as u16, 5)],
+            4,
+        );
+        let tints = |instances: Vec<SpriteInstance>| {
+            instances.iter().map(|glyph| glyph.tint).collect::<Vec<_>>()
+        };
+        for text in ["Mods", " Mods", "M o\td\r\ns"] {
+            for count in 0..=text.encode_utf16().count() as u32 + 10 {
+                let reveal = PathAReveal {
+                    count,
+                    range: 8,
+                    base_rgb: [255, 255, 0],
+                    highlight_rgb: [255, 255, 255],
+                };
+                let mut old = Vec::new();
+                let drawn = text.encode_utf16().enumerate().filter(|&(_, unit)| {
+                    ![TAB_UNIT, CR_UNIT, LF_UNIT, SPACE_UNIT].contains(&unit)
+                });
+                for (unit, _) in drawn {
+                    let Some(rgb) = encoded_unit_rgb(unit as u32 + 1, reveal) else {
+                        break;
+                    };
+                    old.push(rgb.map(|c| f32::from(c) / 255.0));
+                }
+                let (instances, consumed) =
+                    font.build_text_path_a(text, 0.0, 0.0, 1.0, 0.5, [0.0; 2], 0, reveal);
+                assert_eq!(tints(instances), old, "{text:?} at count {count}");
+                let units = text.encode_utf16().count() as u32;
+                let shown = if count == 0 { units } else { units.min(count - 1) };
+                assert_eq!(consumed, shown, "{text:?} at count {count}");
+            }
+        }
+    }
+
+    #[test]
     fn text_label_glyph_count_and_colors_match_the_original_paired_paths() {
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/storage_oracle/shell_text_label.json",
