@@ -1,51 +1,15 @@
 //! Native in-game menu B5/BBA/FF, sharing72F540 composition with Game
 //! Controls.
 
-use super::SHELL_LABEL_TEXT_RGB;
 use super::gui_paint::{ButtonArt, FrameArt, GuiStyle};
 use super::in_game_shell::{self, InGamePaint};
 use super::launcher_options;
 use crate::app::AppState;
-use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::pause_menu::{
     FOOTER, INTERNET_CAPTIONS, INTERNET_GROUP, INTERNET_GROUP_LABEL, INTERNET_VALUES,
     InternetSlider, KEYBOARD_LABEL, PAUSE_MENU_FOOTER, PauseMenuButton, PauseMenuButtonState,
     PauseMenuTemplate, TITLE,
 };
-use crate::ui::sidebar::SidebarTheme;
-
-/// Type2 chooses released0 / pressed1 / timer-highlight2 (612EE8..612F5B).
-/// Disabled buttons retain their SHP frame;612F5F changes their text color only.
-pub(super) fn button_frame(state: PauseMenuButtonState) -> usize {
-    vera20k_gui::shell::button::owner_button_frame(state.pressed, state.highlighted)
-}
-
-pub(super) fn button_text_rgb(theme: SidebarTheme, enabled: bool) -> [f32; 3] {
-    if enabled {
-        return SHELL_LABEL_TEXT_RGB;
-    }
-    // Original612F5F..613136 uses active scenario side and the initialized colors
-    // 72A8E0/72A900/72A920 (registered815454/58/5C). Its RGB565 encode/decode
-    // truncates [0,82,117] to[0,80,112] for Allied and [72,0,0] for Soviet/Yuri.
-    let rgb = match theme {
-        SidebarTheme::Allied => [0, 80, 112],
-        SidebarTheme::Soviet | SidebarTheme::Yuri => [72, 0, 0],
-    };
-    rgb.map(|value| value as f32 / 255.0)
-}
-
-pub(super) fn button_text_rect(rect: RectPx, pressed: bool) -> RectPx {
-    // Common native type2 text tail61358D..6135EE: fixed right/bottom, and
-    // the pressed state moves left/top by2/4 within that same rectangle.
-    let dx = if pressed { 2 } else { 0 };
-    let dy = if pressed { 4 } else { 0 };
-    RectPx::new(
-        rect.x + dx,
-        rect.y + 1 + dy,
-        rect.w - 2 - dx,
-        rect.h - 1 - dy,
-    )
-}
 
 /// The app supplies every button state, including Load/Delete eligibility.
 /// This renderer owns no button actions and cannot silently substitute a
@@ -179,62 +143,4 @@ pub(crate) fn render_pause_menu_shell(
         overlay,
         in_game_shell::ShellFrameCursor::Visible,
     )
-}
-
-#[cfg(all(test, tests_app_frontend))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn disabled_type2_changes_side_specific_text_without_dimming_art() {
-        for theme in [
-            SidebarTheme::Allied,
-            SidebarTheme::Soviet,
-            SidebarTheme::Yuri,
-        ] {
-            assert_eq!(button_text_rgb(theme, true), SHELL_LABEL_TEXT_RGB);
-        }
-        assert_eq!(
-            button_text_rgb(SidebarTheme::Allied, false),
-            [0.0, 80.0 / 255.0, 112.0 / 255.0]
-        );
-        assert_eq!(
-            button_text_rgb(SidebarTheme::Soviet, false),
-            [72.0 / 255.0, 0.0, 0.0]
-        );
-        assert_eq!(
-            button_text_rgb(SidebarTheme::Yuri, false),
-            button_text_rgb(SidebarTheme::Soviet, false)
-        );
-        let released = PauseMenuButtonState {
-            enabled: false,
-            ..Default::default()
-        };
-        assert_eq!(button_frame(released), 0);
-        assert_eq!(
-            button_frame(PauseMenuButtonState {
-                highlighted: true,
-                ..released
-            }),
-            2
-        );
-        assert_eq!(
-            button_frame(PauseMenuButtonState {
-                pressed: true,
-                highlighted: true,
-                ..released
-            }),
-            1
-        );
-    }
-
-    #[test]
-    fn pressed_caption_preserves_native_right_and_bottom_clip_edges() {
-        let rect = RectPx::new(653, 227, 125, 25);
-        assert_eq!(
-            button_text_rect(rect, false),
-            RectPx::new(653, 228, 123, 24)
-        );
-        assert_eq!(button_text_rect(rect, true), RectPx::new(655, 232, 121, 20));
-    }
 }

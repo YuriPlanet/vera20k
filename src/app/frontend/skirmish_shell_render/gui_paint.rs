@@ -124,12 +124,12 @@ pub(crate) enum ButtonArt {
     /// [`GuiStyle::side`]'s SIDEBTTN frame on [`GuiPaint::side`], pushed
     /// only while the press is held with the pointer still on it, lit while
     /// `Toggled`; the caption centred in the type-2 rect
-    /// (`pause_menu::button_text_rect`, pressed +2/+4) in
-    /// `pause_menu::button_text_rgb`: the side's dark colour while disabled
+    /// ([`button_text_rect`], pressed +2/+4) in
+    /// [`button_text_rgb`]: the side's dark colour while disabled
     /// or lit. `Color` is not read. Nothing paints without `side`.
     Side,
     /// [`Self::Modal`]'s MNBTTN art with the type-2 caption of the in-game
-    /// dialogs' MNBTTN buttons: centred in `pause_menu::button_text_rect`
+    /// dialogs' MNBTTN buttons: centred in [`button_text_rect`]
     /// (pressed +2/+4, not owner-draw's +2/+5).
     ModalType2,
 }
@@ -167,7 +167,7 @@ impl ButtonArt {
             ),
             (ButtonArt::ModalCentred | ButtonArt::PanelCentred, _) => (rect, centred),
             (ButtonArt::ModalType2 | ButtonArt::PanelType2 | ButtonArt::Side, _) => {
-                (super::pause_menu::button_text_rect(rect, pressed), centred)
+                (button_text_rect(rect, pressed), centred)
             }
             (_, Some(align)) => (rect, align),
             (ButtonArt::Column, None) => (
@@ -1074,6 +1074,39 @@ pub(crate) fn checkbox_face(gui: &Gui, node: NodeId) -> CheckboxFace {
     }
 }
 
+/// Type2 chooses released0 / pressed1 / timer-highlight2 (612EE8..612F5B).
+/// Disabled buttons retain their SHP frame;612F5F changes their text color only.
+pub(crate) fn button_frame(state: PauseMenuButtonState) -> usize {
+    vera20k_gui::shell::button::owner_button_frame(state.pressed, state.highlighted)
+}
+
+pub(crate) fn button_text_rgb(theme: SidebarTheme, enabled: bool) -> [f32; 3] {
+    if enabled {
+        return SHELL_LABEL_TEXT_RGB;
+    }
+    // Original612F5F..613136 uses active scenario side and the initialized colors
+    // 72A8E0/72A900/72A920 (registered815454/58/5C). Its RGB565 encode/decode
+    // truncates [0,82,117] to[0,80,112] for Allied and [72,0,0] for Soviet/Yuri.
+    let rgb = match theme {
+        SidebarTheme::Allied => [0, 80, 112],
+        SidebarTheme::Soviet | SidebarTheme::Yuri => [72, 0, 0],
+    };
+    rgb.map(|value| value as f32 / 255.0)
+}
+
+pub(crate) fn button_text_rect(rect: RectPx, pressed: bool) -> RectPx {
+    // Common native type2 text tail61358D..6135EE: fixed right/bottom, and
+    // the pressed state moves left/top by2/4 within that same rectangle.
+    let dx = if pressed { 2 } else { 0 };
+    let dy = if pressed { 4 } else { 0 };
+    RectPx::new(
+        rect.x + dx,
+        rect.y + 1 + dy,
+        rect.w - 2 - dx,
+        rect.h - 1 - dy,
+    )
+}
+
 /// [`ButtonArt::Side`]: `look`'s SIDEBTTN frame (frame 0 when the art lacks
 /// it) at its canvas size on `rect`, cut to the clip, then the caption, if
 /// any, centred in the type-2 rect in the type-2 colour.
@@ -1089,13 +1122,13 @@ pub(crate) fn push_side_button(
     glyph: f32,
 ) {
     let frames = side.frames;
-    if let Some(entry) = frames[super::pause_menu::button_frame(look)].or(frames[0]) {
+    if let Some(entry) = frames[button_frame(look)].or(frames[0]) {
         super::in_game_shell::push_art(art, entry, rect, side.clip);
     }
     let Some(caption) = caption else { return };
     // A lit face takes the art's dark label colour, as a disabled one
     // does: yellow is hard to read on it.
-    let rgb = super::pause_menu::button_text_rgb(side.theme, look.enabled && !look.highlighted);
+    let rgb = button_text_rgb(side.theme, look.enabled && !look.highlighted);
     let scale = crate::ui::shell::geom::RETAIL_SCALE;
     let (at, align) = ButtonArt::Side.caption_rect(rect, look.pressed, None, scale);
     texts.push(shell_text::draw_in_rect_scaled(
@@ -1496,14 +1529,14 @@ mod tests {
     ) -> (Vec<SpriteInstance>, Vec<ShellTextDraw>) {
         let (mut art, mut texts) = (Vec::new(), Vec::new());
         let buttons = side.frames;
-        if let Some(entry) = buttons[super::super::pause_menu::button_frame(look)].or(buttons[0]) {
+        if let Some(entry) = buttons[super::button_frame(look)].or(buttons[0]) {
             super::super::in_game_shell::push_art(&mut art, entry, rect, side.clip);
         }
-        let rgb = super::super::pause_menu::button_text_rgb(
+        let rgb = super::button_text_rgb(
             side.theme,
             look.enabled && !look.highlighted,
         );
-        let at = super::super::pause_menu::button_text_rect(rect, look.pressed);
+        let at = super::button_text_rect(rect, look.pressed);
         texts.push(shell_text::draw_in_rect_scaled(
             font,
             caption,
@@ -1600,7 +1633,7 @@ mod tests {
         for pressed in [false, true] {
             let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
             let hand = (
-                super::super::pause_menu::button_text_rect(rect, pressed),
+                super::button_text_rect(rect, pressed),
                 centred,
             );
             for art in [ButtonArt::ModalType2, ButtonArt::Side] {
@@ -1854,5 +1887,58 @@ mod tests {
                 scale.scale_rect(expected),
             );
         }
+    }
+
+    #[test]
+    fn disabled_type2_changes_side_specific_text_without_dimming_art() {
+        for theme in [
+            SidebarTheme::Allied,
+            SidebarTheme::Soviet,
+            SidebarTheme::Yuri,
+        ] {
+            assert_eq!(button_text_rgb(theme, true), SHELL_LABEL_TEXT_RGB);
+        }
+        assert_eq!(
+            button_text_rgb(SidebarTheme::Allied, false),
+            [0.0, 80.0 / 255.0, 112.0 / 255.0]
+        );
+        assert_eq!(
+            button_text_rgb(SidebarTheme::Soviet, false),
+            [72.0 / 255.0, 0.0, 0.0]
+        );
+        assert_eq!(
+            button_text_rgb(SidebarTheme::Yuri, false),
+            button_text_rgb(SidebarTheme::Soviet, false)
+        );
+        let released = PauseMenuButtonState {
+            enabled: false,
+            ..Default::default()
+        };
+        assert_eq!(button_frame(released), 0);
+        assert_eq!(
+            button_frame(PauseMenuButtonState {
+                highlighted: true,
+                ..released
+            }),
+            2
+        );
+        assert_eq!(
+            button_frame(PauseMenuButtonState {
+                pressed: true,
+                highlighted: true,
+                ..released
+            }),
+            1
+        );
+    }
+
+    #[test]
+    fn pressed_caption_preserves_native_right_and_bottom_clip_edges() {
+        let rect = RectPx::new(653, 227, 125, 25);
+        assert_eq!(
+            button_text_rect(rect, false),
+            RectPx::new(653, 228, 123, 24)
+        );
+        assert_eq!(button_text_rect(rect, true), RectPx::new(655, 232, 121, 20));
     }
 }
