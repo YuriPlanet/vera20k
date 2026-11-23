@@ -139,6 +139,7 @@ fn wrapper_rejection_precedes_the_marker_transaction() {
             MoverSearchFacts {
                 foot_entry: &MarkerBoundary,
                 urgency: 2,
+                field: None,
             },
             Some(&counts),
             None,
@@ -293,6 +294,7 @@ fn caller_count_bridge_detour(
         MoverSearchFacts {
             urgency: 0,
             foot_entry: &super::super::WalkableEntry::new(&path),
+            field: None,
         },
     );
     assert_eq!(
@@ -900,6 +902,7 @@ fn water_rows_reject_split_labels_before_the_cell_astar() {
             MoverSearchFacts {
                 urgency: 0,
                 foot_entry: &super::super::WalkableEntry::new(&grid),
+                field: None,
             },
             true,
             None,

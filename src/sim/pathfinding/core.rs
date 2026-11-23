@@ -13,6 +13,7 @@
 //! - Part of sim/ — depends on map/ (resolved terrain for walkability).
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
+use super::goal_field::GoalField;
 use super::search_table::SearchTable;
 use super::zone_hierarchy::{MarkedZones, ZoneLevelGraph};
 use super::zone_map::ZoneId;
@@ -648,6 +649,7 @@ fn search_cell_allocated(terrain: Option<&ResolvedTerrainGrid>, coord: (u16, u16
 /// cell never gets a node or ends the route here (the retry below only
 /// re-asks gamemd's class and edge cost, a recorded residual), and every
 /// test gamemd makes before its closed test only passes a candidate over.
+///
 #[inline(always)]
 fn neighbour_test(
     grid: &PathGrid,
@@ -735,11 +737,17 @@ pub struct AStarOptions<'a> {
     pub(crate) hierarchy_gate: Option<HierarchyGate<'a>>,
     /// The map's cells, for the allocated-Cell test and Tube edges.
     pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
+    /// The shared goal field of this search's goal cell, when one is given.
+    /// VERA-only: gamemd has no such structure, and its search expands every
+    /// cell its own tests admit. With a field, the search walks the field's
+    /// gradient instead of searching, when the mover may take every cell of
+    /// the walk; a cell it refuses sends the search on to the stock one.
+    pub field: Option<&'a GoalField>,
 }
 
 impl<'a> AStarOptions<'a> {
     /// A search asking `foot_entry`, with no hierarchy gate, markers,
-    /// urgency, train flag or map cells.
+    /// urgency, train flag, map cells or goal field.
     pub fn new(foot_entry: &'a dyn SearchFootEntry) -> Self {
         Self {
             mover_is_train: false,
@@ -748,6 +756,7 @@ impl<'a> AStarOptions<'a> {
             urgency: 0,
             hierarchy_gate: None,
             resolved_terrain: None,
+            field: None,
         }
     }
 }
@@ -832,6 +841,9 @@ pub trait SearchFootEntry {
 pub struct MoverSearchFacts<'a> {
     pub urgency: u8,
     pub foot_entry: &'a dyn SearchFootEntry,
+    /// The shared goal field of the search's goal cell, when one is given;
+    /// see [`AStarOptions::field`].
+    pub field: Option<&'a GoalField>,
 }
 
 /// Reconstruct a layered path from dual came_from arrays.
@@ -890,6 +902,106 @@ fn reconstruct_path_dual(
 
     path.reverse();
     path
+}
+
+/// The route the shared goal field's gradient gives from `start` to `goal`,
+/// as the path's cells, when the mover may take every cell of the walk.
+///
+/// The field's plane is the path grid's ground walkability, so the walk is
+/// on the ground layer; the mover's own admission (`Foot+1AC`,
+/// `0x00429F54`) decides every cell of it, as it decides every cell of the
+/// search. A cell the mover refuses sends the search back to the stock one
+/// (`None`), so the field is a guide and never a route of its own.
+///
+/// The goal's own refusal is the native's blocked-goal tail
+/// (`0x0042A3F8`): the route then ends at the cell before it, so the mover
+/// walks as close to the refused target as it can. A passive Unit and a
+/// start adjacent to the goal take no such tail (`0x0042A183`), and the
+/// walk gives none either: the stock search decides those.
+///
+/// The hierarchy's corridor does not bound the walk. The corridor is the
+/// native search's own filter over the cells it expands (`0x00429E7F..`),
+/// and the native abandons it when its precheck fails: it clears the flag
+/// and runs the plain search over the whole map (`0x0042CB8B..0x0042CBA1`
+/// and the fallback at `0x0042CB22..0x0042CB3F`). The corridor is one
+/// search's own route from its own start, so a field shared by the movers
+/// of a mass order cannot hold to all of them. The walk's route is therefore
+/// the plain search's kind of route, not the corridor search's, and the
+/// mode says so.
+fn gradient_route(
+    grid: &PathGrid,
+    field: &GoalField,
+    start: (u16, u16),
+    goal: (u16, u16),
+    start_height: i16,
+    goal_height: i16,
+    resolved_terrain: Option<&ResolvedTerrainGrid>,
+    entry: &dyn SearchFootEntry,
+    passive_unit: bool,
+) -> Option<Vec<LayeredPathStep>> {
+    let route = field.route_cells_from(start)?;
+    let mut steps: Vec<LayeredPathStep> = Vec::with_capacity(route.len());
+    let mut height = start_height;
+    for pair in route.windows(2) {
+        let (from, to) = (pair[0], pair[1]);
+        if !search_cell_allocated(resolved_terrain, to) {
+            return None;
+        }
+        let parent_cell = grid.cell(from.0, from.1)?;
+        let child_cell = grid.cell(to.0, to.1)?;
+        let child_height = compute_node_height(height, Some(parent_cell), child_cell);
+        if is_at_bridge_level(child_height, child_cell) {
+            // The field's plane is the ground one, so a deck cell is not on
+            // the walk: the stock search routes over it.
+            return None;
+        }
+        let direction =
+            crate::sim::components::direction_from_step((from.0 as i16, from.1 as i16), to);
+        let class = entry
+            .classify(SearchEntryQuery {
+                from: Some(from),
+                candidate: SearchEntryCandidate::CopiedCoord(to),
+                direction: i32::from(direction),
+                path_height: i32::from(height),
+            })
+            .ok()?;
+        if class >= 7 {
+            // The goal refuses the mover (`0x0042A17D`): the tail ends the
+            // route at the cell before it.
+            if to == goal
+                && !passive_unit
+                && !steps.is_empty()
+                && blocked_goal_height_matches(height, goal_height)
+            {
+                break;
+            }
+            return None;
+        }
+        steps.push(LayeredPathStep {
+            rx: to.0,
+            ry: to.1,
+            layer: MovementLayer::Ground,
+            path_height: child_height,
+        });
+        height = child_height;
+    }
+    if let Some(last) = steps.last()
+        // The walk has to reach the goal's own height, as the search's goal
+        // test (`0x00429D7F`) requires.
+        && (last.rx, last.ry) == goal
+        && last.path_height != goal_height
+    {
+        return None;
+    }
+    let mut path = Vec::with_capacity(steps.len() + 1);
+    path.push(LayeredPathStep {
+        rx: start.0,
+        ry: start.1,
+        layer: MovementLayer::Ground,
+        path_height: start_height,
+    });
+    path.extend(steps);
+    Some(path)
 }
 
 /// Unified A* search with height-based bridge routing.
@@ -962,6 +1074,27 @@ fn astar_search_along_route(
     // keep the plain level at both ends, are not ported; no Aircraft reaches
     // FootClass::Find_Path, this search's one production caller.
     let (start_height, goal_height) = initial_search_heights(start_cell, start_layer, goal_cell);
+    // The shared goal field's gradient: a walk down the field's steps
+    // instead of a search, when the mover may take every cell of the walk.
+    // The field's plane is the ground one, so a mover on a deck, or one
+    // heading for a deck, keeps the stock search.
+    if let Some(field) = options.field
+        && !is_at_bridge_level(start_height, start_cell)
+        && !is_at_bridge_level(goal_height, goal_cell)
+        && let Some(route) = gradient_route(
+            grid,
+            field,
+            start,
+            goal,
+            start_height,
+            goal_height,
+            options.resolved_terrain,
+            options.foot_entry,
+            options.foot_entry.is_passive_unit(),
+        )
+    {
+        return Ok(route);
+    }
     if options.hierarchy_gate.is_some()
         && let Some(progress) = progress.as_deref_mut()
     {
@@ -978,7 +1111,7 @@ fn astar_search_along_route(
     }
 
     // 0x00429C1A prepares the markers after endpoint admission. The Foot
-    // retains the transaction for corridor retries and path finishing.
+    // retains the transaction for path finishing.
     let prepared = options
         .foot_entry
         .prepare_search_markers()
@@ -1097,7 +1230,7 @@ fn astar_search_along_route(
                         (cx, cy),
                         dir_index,
                         current.height,
-                        goal
+                        goal,
                     ),
                     (true, bridge_lists >> dir_index & 1 != 0),
                     "an earlier neighbour changed the test of direction {dir_index}"
@@ -1479,13 +1612,23 @@ const DEFAULT_BLOCKED_CELL: PathCell = PathCell {
     low_bridge_tube_cell: false,
 };
 
+/// The next state number of a ground walkability plane.
+///
+/// Every grid takes one, and every change to a plane takes another, so a
+/// derived cache over the plane can name the state it read and tell a
+/// changed plane from an unchanged one.
+fn next_plane_revision() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Unified walkability grid for pathfinding.
 ///
 /// Each cell stores ground walkability, bridge walkability, transition flags,
 /// and height levels. A* reads only the heights and bridge flags, for its node
 /// heights and closed lists; whether a cell may be entered is the Foot's
 /// `+0x1AC` answer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct PathGrid {
     cells: Vec<PathCell>,
     width: u16,
@@ -1509,7 +1652,31 @@ pub struct PathGrid {
     /// fastest caches, reading the level only for a structural cell
     /// ([`Self::selects_bridge_list_at`]).
     bridge_structural: Vec<u64>,
+    /// The state of the ground walkability plane, as a number. A derived
+    /// cache over that plane (the shared goal field,
+    /// [`crate::sim::pathfinding::GoalField`]) holds the revision it read
+    /// and rebuilds when the plane changes. Every change takes a fresh
+    /// number, so two grids with the same number hold the same plane.
+    revision: u64,
 }
+
+impl PartialEq for PathGrid {
+    /// Two grids are equal when they hold the same plane. The revision names
+    /// the plane's state for a derived cache over it; it is not part of the
+    /// plane, so a grid rebuilt to the same cells equals the one it replaces.
+    fn eq(&self, other: &Self) -> bool {
+        self.cells == other.cells
+            && self.width == other.width
+            && self.height == other.height
+            && self.terrain_object_cell_bits == other.terrain_object_cell_bits
+            && self.ground_walkable_without_terrain_object
+                == other.ground_walkable_without_terrain_object
+            && self.ground_levels == other.ground_levels
+            && self.bridge_structural == other.bridge_structural
+    }
+}
+
+impl Eq for PathGrid {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LayeredPathStep {
@@ -1668,11 +1835,15 @@ impl PathGrid {
             ground_walkable_without_terrain_object,
             ground_levels,
             bridge_structural,
+            revision: next_plane_revision(),
         }
     }
 
     /// Write the cell at `index` and the planes kept from it.
     fn store_cell(&mut self, index: usize, cell: PathCell) {
+        if self.cells[index].ground_walkable != cell.ground_walkable {
+            self.revision = next_plane_revision();
+        }
         self.ground_levels[index] = cell.ground_level;
         let bit = 1u64 << (index % 64);
         if cell.bridge_structural {
@@ -1773,6 +1944,9 @@ impl PathGrid {
     pub fn set_blocked(&mut self, x: u16, y: u16, blocked: bool) {
         if x < self.width && y < self.height {
             let idx = y as usize * self.width as usize + x as usize;
+            if self.cells[idx].ground_walkable == blocked {
+                self.revision = next_plane_revision();
+            }
             self.cells[idx].ground_walkable = !blocked;
         }
     }
@@ -1784,6 +1958,16 @@ impl PathGrid {
         }
         let idx = y as usize * self.width as usize + x as usize;
         self.cells[idx].ground_walkable
+    }
+
+    /// The state of the ground walkability plane, as a number that changes
+    /// when and only when the plane changes.
+    ///
+    /// A derived cache over the plane ([`crate::sim::pathfinding::GoalField`])
+    /// names the state it read, so it can tell a plane that still holds from
+    /// one that moved.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// Check if a cell is walkable on a specific movement layer.
@@ -1928,6 +2112,9 @@ impl PathGrid {
             return;
         }
         let index = usize::from(y) * usize::from(self.width) + usize::from(x);
+        if self.cells[index].ground_walkable {
+            self.revision = next_plane_revision();
+        }
         self.cells[index].ground_walkable = false;
         if let Some(slot) = self.ground_walkable_without_terrain_object.get_mut(index) {
             *slot = false;
@@ -2217,6 +2404,7 @@ pub(crate) fn find_layered_path_marker(
             hierarchy_gate,
             marker_overlay,
             urgency: facts.urgency,
+            field: facts.field,
             ..AStarOptions::new(facts.foot_entry)
         },
         progress,

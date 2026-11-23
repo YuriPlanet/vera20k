@@ -976,6 +976,9 @@ pub struct RuleSet {
     /// Whether its Rules were read the Ares way (`ares_switch::ares_way`).
     /// Read through [`Self::reads_ares_way`].
     reads_ares_way: bool,
+    /// VERA's own switches, read from the `[VERA]` section of the rules.
+    /// Read through [`Self::vera_features`].
+    vera_features: crate::rules::vera_features::VeraFeatures,
     ares_global_controls: crate::rules::native_processing::AresGlobalControls,
     /// Presentation projection of the retained Ares `[MouseCursors]` list.
     ares_mouse_cursors: crate::rules::ares_mouse_cursor::MouseCursors,

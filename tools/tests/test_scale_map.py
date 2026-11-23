@@ -30,6 +30,14 @@ class ScaleMapTests(unittest.TestCase):
         self.assertNotIn('Terrain', ini)
         self.assertEqual(set(decode_overlay_section(ini['OverlayPack'])), {0xFF})
 
+    def test_shared_goal_map_differs_only_by_its_opt_in_rules_key(self):
+        stock = parse_ini(build_map(16))
+        enabled = parse_ini(build_map(16, vera_shared_goal_field=True))
+        self.assertNotIn('VERA', stock)
+        self.assertEqual(dict(enabled['VERA']), {'SharedGoalField': '1'})
+        del enabled['VERA']
+        self.assertEqual(enabled, stock)
+
     def test_size_is_bounded_by_the_playfield_and_the_cell_array(self):
         for size in (15, 501):
             with self.assertRaises(ValueError):

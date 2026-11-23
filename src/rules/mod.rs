@@ -200,6 +200,7 @@ pub(crate) mod ares_tiberium;
 pub mod armor;
 pub mod alpha_image_assets;
 pub mod country_loading;
+pub mod vera_features;
 #[cfg(all(test, tests_rules_a_n))]
 mod ares_manual_control_tests;
 #[cfg(all(test, tests_rules_a_n))]

@@ -411,6 +411,7 @@ pub(crate) fn find_layered_path_zoned_marker(
         MoverSearchFacts {
             urgency: 0,
             foot_entry: &super::WalkableEntry::new(grid),
+            field: None,
         },
         allow_zone_hierarchy,
         playfield_bounds,
@@ -478,6 +479,7 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
 /// each update (`0x0042CC80`) gives the next precheck and cell search fresh
 /// marks, as each run here builds its own. The debug logs at `0x0042CBDE`
 /// and `0x0042CC65` are not ported.
+///
 fn find_layered_path_after_entry(
     grid: &PathGrid,
     start: (u16, u16),

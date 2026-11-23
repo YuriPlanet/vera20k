@@ -133,7 +133,7 @@ remaining lever is the shape of the search itself, and every algorithm that
 changes the shape changes the route with it, so it belongs behind an opt-in of
 its own rather than in the stock path.
 
-## The mass order, and what a shared field would change
+## The mass order and the shared goal field
 
 A click gives every selected unit the same destination cell: the client commits
 one `Command::AttackMove` per selected object, each with the clicked cell
@@ -143,28 +143,50 @@ tanks ordered onto one cell ask for six hundred paths to that cell.
 The batch answers them as six hundred searches. Over the benchmark's 300 ticks
 the registrations are three quarters of all the search work: 236,000 of the
 323,000 expansions a tick are the registrations, the rest are the jam re-paths,
-and the batch answers about 106 of them a tick under its cap of 256. One shared
-reverse search per goal cell would replace a hundred of those searches with one,
-and each unit's path with a walk down its gradient.
+and the batch answers about 106 of them a tick under its cap of 256.
+
+That is the mass order the survey's first row answers, and the mode is landed:
+`[VERA] SharedGoalField=1` in the rules or the map turns it on
+([`rules::vera_features`](../../rules/vera_features.rs)). The registrations that
+head for the same goal cell share one reverse search over the map's ground
+plane. The field gives every cell the step that shortens its way to the goal,
+and each mover's path is a walk down that gradient instead of a search of its
+own.
+
+What the mode does, and where it stops:
+
+- The field's plane is the path grid's ground walkability, which is VERA's own
+  ([`PathGrid`](core.rs) has no native counterpart): it knows rock, water,
+  overlays and terrain objects, but not the mover's SpeedType row and not the
+  units standing in the cells. The field's route is therefore the shortest one
+  in steps over that plane, and not always the route the mover would have
+  searched for.
+- The mover's own admission still decides every cell of the walk
+  (`Foot+1AC`, `0x00429F54`), as it decides every cell of the search. A cell
+  the mover refuses sends that search back to the stock one, so the field is a
+  guide and never a route of its own.
+- A mover on a deck, or one heading for a deck, keeps the stock search: the
+  field's plane is the ground one, and a bridge is not on it.
+- An infantryman keeps the stock search: he walks where a terrain object
+  stands, so his field would be another plane. The field serves vehicles.
+- The field is kept between passes, so a mass order that names its goal every
+  frame pays for the build once. The ground walkability plane's revision names
+  its state, and a cell that opens or closes (a bridge lost, a wall built)
+  drops the fields the batch holds.
+- A group whose own paths would not repay the build keeps the stock search.
+  The build visits every cell of the plane once, and the searches it replaces
+  ask the Foot about the eight neighbours of every cell they expand, so the
+  build pays for itself when the group's paths cover the map sixty-four times
+  over ([`FIELD_BUILD_WORTH`](../movement/path_batch.rs)).
+
+Because the routes change, a game that turns this on plays differently from a
+game that does not, and its frame hashes do not hold.
 
 The benchmark's march gives every unit its own formation-offset destination, so
 its registrations share nothing; the reuse comes from the order a player gives,
-not from the benchmark's.
-
-That is the flow field of the survey's first row, and it is not a small change:
-a field is a different graph, so it gives different routes, and the game has to
-ask for it. What it would need:
-
-- A switch of its own, read from the rules or the map, off with retail data.
-- One field per (goal cell, movement profile), because the edge cost is the
-  mover's own, and the fields keyed by the map's topology revision, so a bridge
-  lost or a wall built empties them.
-- The unit's own admission kept: the field is a guide over the terrain, and a
-  unit the field sends into a wall it cannot enter asks for its own path again,
-  which is what the jam machinery already does.
-- Its own measurement: the frame hashes are not expected to hold, because the
-  routes change. The arrival order, the queue delays and the expansions per
-  answered request are what to measure.
+not from the benchmark's. `sim-bench --shared-goal` gives the march the player's
+order instead, so that the registrations of a house share a goal and the mode
+has something to answer.
 
 To compare release builds from the same machine and retail install:
 
