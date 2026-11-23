@@ -942,9 +942,15 @@ impl Simulation {
             {
                 // The terminal point skips the bridge predicate but still
                 // enters a new cell.
-                entity
-                    .position
-                    .store_cell_level(entered.ground_level, entity.on_bridge());
+                let deck = self
+                    .resolved_terrain
+                    .as_ref()
+                    .and_then(|terrain| terrain.corrected_high_bridge_deck_level(selected_cell));
+                entity.position.store_cell_level_on_deck(
+                    entered.ground_level,
+                    entity.on_bridge(),
+                    deck,
+                );
             }
         }
         if crossing && paid.is_some() {

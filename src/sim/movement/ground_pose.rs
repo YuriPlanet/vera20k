@@ -189,6 +189,23 @@ impl Position {
         self.z = super::movement_bridge::stored_level(cell_level, on_bridge);
     }
 
+    /// [`Self::store_cell_level`] for a cell that may carry a fixed
+    /// high-bridge deck (`deck`, in whole levels): an OnBridge object stands
+    /// at that deck, not at the cell's own ground plus four. Every mover that
+    /// enters a cell stores its level through this, so the level agrees with
+    /// the Z [`Self::set_height`] gives.
+    pub(crate) fn store_cell_level_on_deck(
+        &mut self,
+        cell_level: u8,
+        on_bridge: bool,
+        deck: Option<i16>,
+    ) {
+        match deck.filter(|_| on_bridge) {
+            Some(deck) => self.store_cell_level(deck as u8, false),
+            None => self.store_cell_level(cell_level, on_bridge),
+        }
+    }
+
     /// SetLocation of `coord` ([`Self::put_location`]) with the level its Z
     /// gives in whole levels: the constructor's zero Location and a reveal
     /// at a coordinate.

@@ -250,11 +250,7 @@ pub(super) fn resolve_cell_transition_bridge_state(
     // and therefore no value that can be absent, so this must not consult the A*
     // layer or any cell-side walkability permission — both are VERA inventions
     // that silently substituted ground level for the deck.
-    if let Some(deck) = corrected_deck.filter(|_| on_bridge_after) {
-        position.store_cell_level(deck as u8, false);
-    } else {
-        position.store_cell_level(dst_cell.ground_level, on_bridge_after);
-    }
+    position.store_cell_level_on_deck(dst_cell.ground_level, on_bridge_after, corrected_deck);
     // Raw Object Z has a separate setter cadence. Paid Drive/Ship points and
     // Walk commits refresh it; a residual crossing retains it (0x4B253F).
     update

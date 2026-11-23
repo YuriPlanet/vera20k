@@ -590,9 +590,12 @@ impl Simulation {
                 .map_or(height >= BRIDGE_DECK_HEIGHT_LEPTONS, |deck| next.z >= deck);
             let on_bridge = structural && (entity.on_bridge() || reaches_deck);
             let level = cells.ground_fields(entered).0;
+            let deck = terrain.corrected_high_bridge_deck_at(entered);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.on_bridge.store(on_bridge);
-                entity.position.store_cell_level(level, on_bridge);
+                entity
+                    .position
+                    .store_cell_level_on_deck(level, on_bridge, deck);
             }
         }
         self.foot_mark_put(id, rules, registry, effects);

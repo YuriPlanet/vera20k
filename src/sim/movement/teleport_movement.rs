@@ -1429,9 +1429,10 @@ impl crate::sim::world::Simulation {
                     entity
                         .on_bridge
                         .store(terrain.native_cell_flags(cell) & 0x100 != 0);
-                    entity.position.store_cell_level(
+                    entity.position.store_cell_level_on_deck(
                         terrain.native_cell_ground_fields(cell).0,
                         entity.on_bridge(),
+                        terrain.corrected_high_bridge_deck_at(cell),
                     );
                 }
                 let on_bridge = entity.on_bridge();
