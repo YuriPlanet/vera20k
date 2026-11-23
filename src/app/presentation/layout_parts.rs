@@ -196,14 +196,7 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
         return Vec::new();
     }
     let font = &state.renderer.bit_font;
-    let frame = state.sidebar_frame();
-    let (side_width, side_height) = frame.surface_size();
-    let side = [
-        frame.layout_left() as i32,
-        0,
-        side_width as i32,
-        side_height as i32,
-    ];
+    let side = state.sidebar_frame().side_area();
     let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
     let field = [x as i32, y as i32, width as i32, height as i32];
     let art = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)

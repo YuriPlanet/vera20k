@@ -317,6 +317,15 @@ impl SidebarChromeLayoutSpec {
         [x - 3.0, y - 1.0]
     }
 
+    /// The size of a grid of `columns` by `rows` cameo places: its
+    /// pictures' pitches.
+    pub fn grid_size(&self, columns: usize, rows: usize) -> [f32; 2] {
+        [
+            columns as f32 * self.cameo_column_pitch,
+            rows as f32 * self.cameo_row_height,
+        ]
+    }
+
     /// The cameos in one strip row, at least one.
     pub fn columns(&self) -> usize {
         (self.cameo_columns as usize).max(1)

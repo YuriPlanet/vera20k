@@ -270,6 +270,11 @@ impl SidebarLayout {
         .shown(spec.shows(SidebarPart::Radar))
     }
 
+    /// The height of the cameo strip's rows.
+    pub fn cameo_grid_height(&self) -> f32 {
+        self.cameo_grid_bottom - self.cameo_grid_top
+    }
+
     /// The top-left corner of the cameo grid's first picture: the strip's
     /// corner and the cameo inset.
     pub fn grid_origin(&self, spec: &SidebarChromeLayoutSpec) -> [f32; 2] {
@@ -455,7 +460,7 @@ pub fn power_bar_rect(layout: &SidebarLayout, spec: SidebarChromeLayoutSpec) -> 
         x,
         y,
         w: 8.0,
-        h: layout.cameo_grid_bottom - layout.cameo_grid_top,
+        h: layout.cameo_grid_height(),
     }
     .shown(spec.shows(SidebarPart::Power))
 }

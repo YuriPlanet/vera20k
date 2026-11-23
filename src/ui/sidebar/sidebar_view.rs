@@ -425,6 +425,7 @@ pub(crate) fn append_added_grids(
             layout_spec,
             cameo_order,
         );
+        let [w, h] = layout_spec.grid_size(columns, rows);
         view.added_grids.push(super::AddedGridView {
             part: grid.part,
             first: view.items.len(),
@@ -432,8 +433,8 @@ pub(crate) fn append_added_grids(
             rect: Rect {
                 x: grid.origin[0].round(),
                 y: grid.origin[1].round(),
-                w: columns as f32 * layout_spec.cameo_column_pitch,
-                h: rows as f32 * layout_spec.cameo_row_height,
+                w,
+                h,
             },
             scroll_rows,
             max_scroll_rows,

@@ -347,6 +347,13 @@ impl SidebarFrame {
         }
     }
 
+    /// The sidebar's area in layout space, as whole `x, y, width, height`:
+    /// what the parts a layout adds to it are placed in.
+    pub fn side_area(self) -> [i32; 4] {
+        let (width, height) = self.surface_size();
+        [self.layout_left() as i32, 0, width as i32, height as i32]
+    }
+
     /// The bar's surface in its own pixels: the layout's width beside a
     /// column (all of it beside a band or when the sidebar floats), and the
     /// strip's native height.

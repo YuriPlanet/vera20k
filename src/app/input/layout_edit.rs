@@ -219,10 +219,8 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
                 let map = layout.minimap_rect(&spec);
                 Some([map.x, map.y, map.w, map.h])
             }
-            PartKind::CameoGrid => size(part, ArtKey::RowArt).map(|[w, _]| {
-                let h = layout.cameo_grid_bottom - layout.cameo_grid_top;
-                [x, layout.cameo_grid_top, w, h]
-            }),
+            PartKind::CameoGrid => size(part, ArtKey::RowArt)
+                .map(|[w, _]| [x, layout.cameo_grid_top, w, layout.cameo_grid_height()]),
             // The bar is thin; its handle is wide enough to grab.
             PartKind::PowerBar => {
                 let power = crate::ui::sidebar::power_bar_rect(&layout, spec);

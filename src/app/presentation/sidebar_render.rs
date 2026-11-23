@@ -236,14 +236,7 @@ fn added_grids(state: &AppState) -> Vec<sidebar::AddedGrid> {
     use crate::ui::added_parts::{AddedKind, Holder};
     let presentation = &state.match_state.match_presentation;
     let spec = presentation.sidebar_layout_spec;
-    let frame = state.sidebar_frame();
-    let (side_width, side_height) = frame.surface_size();
-    let side = [
-        frame.layout_left() as i32,
-        0,
-        side_width as i32,
-        side_height as i32,
-    ];
+    let side = state.sidebar_frame().side_area();
     presentation
         .added_parts
         .iter()
@@ -257,10 +250,7 @@ fn added_grids(state: &AppState) -> Vec<sidebar::AddedGrid> {
             }
             let columns = columns.unwrap_or(spec.columns());
             // The grid is as big as its pictures' places.
-            let natural = [
-                (columns as f32 * spec.cameo_column_pitch) as i32,
-                (rows as f32 * spec.cameo_row_height) as i32,
-            ];
+            let natural = spec.grid_size(columns, rows).map(|v| v as i32);
             let [x, y, _, _] = added.rect_in(side, natural);
             Some(sidebar::AddedGrid {
                 part,

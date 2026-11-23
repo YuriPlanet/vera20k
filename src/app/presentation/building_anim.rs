@@ -425,7 +425,7 @@ pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64, visits: 
 pub(crate) fn power_bar_budget_px(state: &AppState) -> i32 {
     let layout = crate::app::presentation::sidebar_render::current_sidebar_layout(state);
     // 63FB20: segment budget is (native strip height + 3) / 3.
-    (layout.cameo_grid_bottom - layout.cameo_grid_top) as i32 + 3
+    layout.cameo_grid_height() as i32 + 3
 }
 
 /// House508DF0 -> Radar656BE0 -> Voc750920: centred, volume 1, NULL
