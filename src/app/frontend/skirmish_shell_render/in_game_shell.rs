@@ -33,13 +33,13 @@ pub(super) fn shell_layout(
             background_small: size(atlas.background_small?),
             background_medium: size(atlas.background_medium?),
             background_large: size(atlas.background_large?),
-            credits: size(atlas.top_strip_thin?),
-            top: size(atlas.top_strip_sidebar?),
-            radar: size(atlas.radar),
-            side1: size(atlas.side1),
-            side2: size(atlas.side2),
-            side3: size(atlas.side3),
-            addon: size(atlas.unknown_top_housing?),
+            credits: size(atlas.art("Credits", "Art", 0)?),
+            top: size(atlas.art("Top", "Art", 0)?),
+            radar: size(atlas.art("Radar", "Art", 0)?),
+            side1: size(atlas.art("Middle", "Art", 0)?),
+            side2: size(atlas.art("Cameos", "RowArt", 0)?),
+            side3: size(atlas.art("Cameos", "EndArt", 0)?),
+            addon: size(atlas.art("Cameos", "FootArt", 0)?),
             bottom_spacer: size(atlas.command_bar.spacer?),
             left_cap: size(atlas.command_bar.left_cap[2]?),
             button_background: size(atlas.command_bar.background?),
@@ -372,13 +372,13 @@ pub(super) fn background_instances(
     if let Some(entry) = background {
         push_art_scaled(&mut out, entry, layout.background, screen);
     }
-    for (entry, rect) in [
-        (atlas.top_strip_thin, layout.credits),
-        (atlas.top_strip_sidebar, layout.top),
-        (Some(atlas.radar), layout.radar),
-        (Some(atlas.side1), layout.side1),
+    for (node, rect) in [
+        ("Credits", layout.credits),
+        ("Top", layout.top),
+        ("Radar", layout.radar),
+        ("Middle", layout.side1),
     ] {
-        if let Some(entry) = entry {
+        if let Some(entry) = atlas.art(node, "Art", 0) {
             push_art(&mut out, entry, rect, screen);
         }
     }
@@ -392,9 +392,10 @@ pub(super) fn background_instances(
             );
         }
     }
-    push_art(&mut out, atlas.side3, layout.side3, screen);
-    if let Some(entry) = atlas.unknown_top_housing {
-        push_art(&mut out, entry, layout.addon, screen);
+    for (key, rect) in [("EndArt", layout.side3), ("FootArt", layout.addon)] {
+        if let Some(entry) = atlas.art("Cameos", key, 0) {
+            push_art(&mut out, entry, rect, screen);
+        }
     }
     // LSPACER reaches the closed left cap as the match's bar lays it out
     // (`spacer_pieces`).

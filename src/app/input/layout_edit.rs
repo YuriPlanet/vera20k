@@ -204,16 +204,16 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
     let (screen_w, screen_h) = frame.layout_screen();
     let layout = crate::ui::sidebar::compute_layout_with_spec(spec, screen_w, screen_h, 0);
     let atlas = sidebar_render::current_sidebar_chrome(state);
-    let size = |entry: Option<crate::render::sidebar_chrome::SidebarChromeEntry>,
-                fallback: [f32; 2]| entry.map_or(fallback, |entry| entry.pixel_size);
-    let credits = size(atlas.and_then(|atlas| atlas.top_strip_thin), [168.0, 16.0]);
-    let top = size(
-        atlas.and_then(|atlas| atlas.top_strip_sidebar),
-        [168.0, 32.0],
-    );
-    let radar = size(atlas.map(|atlas| atlas.radar), [168.0, 110.0]);
-    let middle = size(atlas.map(|atlas| atlas.side1), [168.0, 69.0]);
-    let strip = size(atlas.map(|atlas| atlas.side2), [168.0, 50.0]);
+    let size = |node: &str, key: &str, fallback: [f32; 2]| {
+        atlas
+            .and_then(|atlas| atlas.art(node, key, 0))
+            .map_or(fallback, |entry| entry.pixel_size)
+    };
+    let credits = size("Credits", "Art", [168.0, 16.0]);
+    let top = size("Top", "Art", [168.0, 32.0]);
+    let radar = size("Radar", "Art", [168.0, 110.0]);
+    let middle = size("Middle", "Art", [168.0, 69.0]);
+    let strip = size("Cameos", "RowArt", [168.0, 50.0]);
     let power = crate::ui::sidebar::power_bar_rect(&layout, spec);
     let panels = [
         (

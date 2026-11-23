@@ -167,8 +167,9 @@ pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::Sideb
         gdi_positions(state),
     );
     if let Some(atlas) = current_sidebar_chrome(state) {
-        spec.side2_height = atlas.side2.pixel_size[1];
-        spec.side3_height = atlas.side3.pixel_size[1];
+        let height = |key: &str| atlas.art("Cameos", key, 0).map(|art| art.pixel_size[1]);
+        spec.side2_height = height("RowArt").unwrap_or(spec.side2_height);
+        spec.side3_height = height("EndArt").unwrap_or(spec.side3_height);
     }
     // A mod's `veraui.ini` layout for this side changes the original's numbers.
     if let Some(layout) = side_layout(state).filter(|_| !map_picture) {
@@ -461,19 +462,19 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         scroll_up_btn_size,
         top_btn_sizes,
     ) = {
-        let size = |entry: Option<&crate::render::sidebar_chrome::SidebarChromeEntry>| {
-            entry.map(|entry| entry.pixel_size)
-        };
         let atlas = current_sidebar_chrome(state);
+        let size = |node: &str| {
+            atlas
+                .and_then(|atlas| atlas.art(node, "Art", 0))
+                .map(|entry| entry.pixel_size)
+        };
         (
-            size(atlas.and_then(|atlas| atlas.tab_frames[0][0].as_ref())),
-            size(atlas.and_then(|atlas| atlas.repair_frames[0].as_ref())),
-            size(atlas.and_then(|atlas| atlas.sell_frames[0].as_ref())),
-            size(atlas.and_then(|atlas| atlas.scroll_down_frames[0].as_ref())),
-            size(atlas.and_then(|atlas| atlas.scroll_up_frames[0].as_ref())),
-            std::array::from_fn::<_, 2, _>(|i| {
-                size(atlas.and_then(|atlas| atlas.top_button_frames[i][0].as_ref()))
-            }),
+            size("Buildings"),
+            size("Repair"),
+            size("Sell"),
+            size("ScrollDown"),
+            size("ScrollUp"),
+            ["Diplomacy", "Options"].map(size),
         )
     };
     // Placement lifetime is driven by the input owner's ordered native
