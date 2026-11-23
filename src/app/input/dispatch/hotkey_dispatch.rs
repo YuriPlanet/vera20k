@@ -437,6 +437,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             }
         }
         HotkeyCommand::AutoLoad => crate::app::input::smart_command::hotkey_pressed(state),
+        HotkeyCommand::TogglePower => crate::app::input::power_mode::execute_command(state),
         // A chord runs in the window owner before this dispatch; a binding on
         // a typing key reaches here, after the chat edit.
         HotkeyCommand::PerformanceStats

@@ -94,7 +94,7 @@ as Ares in every game); **residual** (gameplay, but its host is unported);
 | `0x62C2ED`, `0x62CDE8` | `1005CFE0`, `1005CFA0` | Gas and fire particles name their Techno owner and its house as attacker | ported: `particles::gas`, `particles::fire` (no test: attribution only) |
 | `0x65D8FB`, `0x65EC4A` | `1005D170` | Reinforcements (actions 7, 80, 107) need an existing house, not a defeated `Player@X` one in multiplayer | ported: `team_script_vm::reinforcements` (no test) |
 | `0x671152` | `1005D040` | PrismSupportModifier | ported earlier (`ruleset`) |
-| `0x69281E` | `1005C790` | Power-toggle cursor action | presentation: power-toggle mode is unreachable in VERA |
+| `0x69281E` | `1005C790` | Power-toggle cursor action | ported: `app::input::power_mode::admits` ([ares-commands.md](ares-commands.md)) |
 | `0x699C1C` | `1005CA80` | Clears the PKT INI between files | n/a: loader plumbing |
 | `0x6B7D50` | `1005D0A0` | CountDockedSpawns counts dead nodes with a finished stopped timer | presentation: only pips, NoSpawnAlt and the digital display read it |
 | `0x6E20D8` | `1005D150` | DestroyAttached passes over a receiver that survives instead of looping | ported: `trigger_runtime` action 32 (covered by `destroy_attached_*` tests) |

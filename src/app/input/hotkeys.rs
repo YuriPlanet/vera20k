@@ -149,6 +149,9 @@ pub(crate) enum HotkeyCommand {
     /// selection (transport loading, garrison, engineer, sabotage, etc.).
     /// Registered in the `vera20k` keyboard category with the Ctrl+D default.
     AutoLoad,
+    /// Ares 3.0 `TogglePower`: arms power mode (`app::input::power_mode`)
+    /// when `[General] TogglePowerAllowed=` is set. Listed while Ares plays.
+    TogglePower,
     /// Phobos: `FireTacticalSW1..10`, positional on the first left-sidebar column.
     #[cfg(feature = "phobos")]
     FireTacticalSw(usize),
@@ -1251,6 +1254,29 @@ mod tests {
 
     fn character(value: &str) -> Key {
         Key::Character(value.into())
+    }
+
+    /// Ares' CommandClassCallback_Register (hook `0x533058`) registers
+    /// TogglePower where gamemd allocates UnitTab, with no default key.
+    #[test]
+    fn ares_toggle_power_registers_before_unit_tab_without_a_key() {
+        let catalog = catalog::registered_commands();
+        let at = catalog
+            .iter()
+            .position(|row| row.ini_name == "TogglePower")
+            .expect("TogglePower is registered");
+        assert_eq!(catalog[at + 1].command, HotkeyCommand::UnitTab);
+        assert_eq!(catalog[at].name_key, "TXT_TOGGLE_POWER");
+        assert_eq!(catalog[at].category_key, "TXT_INTERFACE");
+        assert_eq!(
+            HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nTogglePower=80\n"))
+                .first_key(HotkeyCommand::TogglePower),
+            Some(80)
+        );
+        assert_eq!(
+            HotkeyBindings::from_ini_bytes(None).first_key(HotkeyCommand::TogglePower),
+            None
+        );
     }
 
     #[test]

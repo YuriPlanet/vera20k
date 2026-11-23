@@ -87,7 +87,6 @@ use selection::{
     reconcile_selection_order_for_sim, resolve_selection_mutation, selection_membership_committed,
     selection_voice_recipients,
 };
-#[cfg(test)]
 pub(super) use sidebar::local_has_manageable_building;
 #[cfg(test)]
 pub(crate) use sidebar::wheel_action;
@@ -353,6 +352,13 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                         .match_presentation
                         .sidebar_gadget_state
                         .sell_mode_on
+                    // LeftDown 0x004AC310 also refuses the band in power mode
+                    // (+0x11B2, 0x004AC31A).
+                    || state
+                        .match_state
+                        .match_presentation
+                        .sidebar_gadget_state
+                        .power_mode_on
                     // The held-drag 4AC380 never starts a band in beacon
                     // mode (4AC3A3). RESIDUAL (kept by the maintainer): past
                     // 4 px it raises the band flag (0x004AC496..0x004AC4B7), so
@@ -363,7 +369,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                     // VERA ferry: the armed click names the drop spot.
                     || state.match_state.input.ferry.armed()
                 {
-                    return; // suppress selection drag while a targeting / repair / sell / beacon mode is active
+                    return; // suppress selection drag while a targeting / repair / sell / power / beacon mode is active
                 }
                 // VERA formation line: with its key held and a group
                 // selected, the drag draws a line and no band box.
@@ -576,6 +582,10 @@ fn tactical_left_up(state: &mut AppState) {
         }
         super::state::TacticalPointerMode::RepairSell => {
             crate::app::input::commands::try_repair_sell_mode_click(state);
+            return;
+        }
+        super::state::TacticalPointerMode::Power => {
+            crate::app::input::power_mode::click(state);
             return;
         }
         super::state::TacticalPointerMode::Ordinary => {}

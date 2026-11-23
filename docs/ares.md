@@ -268,6 +268,8 @@ Supported extensions:
 - [Mouse cursors](ares-cursors.md): the `[MouseCursors]` list with the nine Ares
   cursors, every `Cursor.*` key of techno, weapon, building and superweapon types,
   and the action overrides on the tactical map and the radar.
+- [Keyboard commands](ares-commands.md): the TogglePower command and the power
+  mode it arms, and the debug commands VERA has no counterpart for.
 - [Gameplay bugfixes](ares-bugfixes.md): the Misc/Bugfixes hooks, each listed as
   ported, presentation, equivalent or not applicable, including the Find-only
   type-list readers (a list name no registry holds is dropped).

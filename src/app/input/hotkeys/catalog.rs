@@ -33,6 +33,13 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
     static ALL: OnceLock<Vec<CommandMetadata>> = OnceLock::new();
     ALL.get_or_init(|| {
         let mut all = RETAIL_COMMANDS.to_vec();
+        // Ares' CommandClassCallback_Register (hook 0x533058, Ares.dll
+        // 10002A80) registers its commands where gamemd allocates UnitTab's.
+        let unit_tab = all
+            .iter()
+            .position(|row| row.command == HotkeyCommand::UnitTab)
+            .unwrap_or(all.len());
+        all.splice(unit_tab..unit_tab, ARES_COMMANDS);
         all.extend_from_slice(&CAMERA_COMMANDS);
         all.extend_from_slice(&SHORTCUT_COMMANDS);
         all.extend_from_slice(&VERA_COMMANDS);
@@ -919,6 +926,23 @@ const VERA_COMMANDS: [CommandMetadata; 1] = [command!(
     "VERA:AutoLoadDesc",
     None
 )];
+
+/// Ares 3.0's player commands, in `Ares::RegisterCommands` order
+/// (`src/Ares.Commands.cpp`). The keyboard page lists them while Ares plays
+/// (`app::input::keyboard::open`).
+const ARES_COMMANDS: [CommandMetadata; 1] = [command!(
+    HotkeyCommand::TogglePower,
+    "TogglePower",
+    "TXT_TOGGLE_POWER",
+    "TXT_INTERFACE",
+    "TXT_TOGGLE_POWER_DESC",
+    None
+)];
+
+/// Whether `command` is one of Ares' (`ARES_COMMANDS`).
+pub(crate) fn is_ares_command(command: HotkeyCommand) -> bool {
+    ARES_COMMANDS.iter().any(|row| row.command == command)
+}
 
 /// Phobos `FireTacticalSW1..10` and `Toggle Super Weapon Sidebar`.
 /// `FireTacticalSW.ini` reads the CSF keys `TXT_FIRE_TACTICAL_SW_XX[_DESC]`.

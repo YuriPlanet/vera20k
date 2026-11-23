@@ -356,6 +356,9 @@ pub(crate) enum CursorFeedbackKind {
     /// A bomb carrier's own Detonate (action 0x37, cursor row 52, the
     /// Demolish frames; `0x004AB5CD`).
     Detonate,
+    /// Power mode (Ares' TogglePower command): `true` = an own building the
+    /// click switches off or on (action 0x21), `false` = NoTogglePower (0x22).
+    TogglePower(bool),
     /// Repair cursor mode active (sidebar wrench). `true` = an own building is
     /// under the cursor (wrench), `false` = no eligible target (no-repair).
     RepairMode(bool),
