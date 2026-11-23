@@ -24,7 +24,7 @@ use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::ui::added_parts::{AddedKind, AddedPart, Holder, TextValue};
 use crate::ui::field_layout::{FieldLayout, FieldPart, Hold, PartBox, TooltipPlace};
 use crate::ui::match_layout_tree::{TABLES, Tree, TreeProblem, exists, part_of};
-use crate::ui::sidebar::{Edge, PanelPlaces, SidebarChromeLayoutSpec, SidebarPart};
+use crate::ui::sidebar::{Edge, PanelPlaces, SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
 
 /// The file's name in the game folder or a mod MIX.
 pub const FILE_NAME: &str = "VERAUI.INI";
@@ -297,12 +297,41 @@ pub struct MatchLayout {
     /// The buttons and texts the layout adds, in the order their holders
     /// list them.
     added: Arc<[AddedPart]>,
+    /// The layout's tree, its bases written in, for the keys of the built-in
+    /// parts that their own code reads once the file is loaded.
+    tree: Arc<Tree>,
+    /// `[Colors]`: the built-in file's, then each file's over it, the later
+    /// over the earlier. Each line's name, the side it holds for and its text.
+    colors: Arc<[(String, Option<usize>, String)]>,
 }
 
 impl MatchLayout {
     /// The buttons and texts this layout adds.
     pub fn added(&self) -> &Arc<[AddedPart]> {
         &self.added
+    }
+
+    /// The text `key` of built-in part `part` holds for the side whose
+    /// pictures are `theme`: `Key@Side`, else `Key`. For what the parts'
+    /// own code reads once a file is loaded (`STOCK_KEYS`), not every frame.
+    pub fn text(&self, part: SidebarPart, key: &str, theme: SidebarTheme) -> Option<&str> {
+        self.tree.node(part.name())?.text_for(key, theme as usize)
+    }
+
+    /// The colour a `Color=` value names for the side whose pictures are
+    /// `theme`: a `[Colors]` name (`Name@Side`, else `Name`), or `r,g,b` /
+    /// `r,g,b,a` itself.
+    pub fn color(&self, value: &str, theme: SidebarTheme) -> Option<[u8; 4]> {
+        let named = |side: Option<usize>| {
+            self.colors
+                .iter()
+                .rev()
+                .find(|(name, of, _)| *of == side && name.eq_ignore_ascii_case(value))
+        };
+        match named(Some(theme as usize)).or_else(|| named(None)) {
+            Some((.., text)) => channels(text),
+            None => channels(value),
+        }
     }
 
     /// A position table as it is built in: the allied one (`GDI`) or the
@@ -348,14 +377,6 @@ impl MatchLayoutFile {
 
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut file = Self::default();
-        // The colours are the built-in file's until a layout's own read.
-        if let Some(colors) = ini
-            .section_names()
-            .into_iter()
-            .find(|section| section.eq_ignore_ascii_case("Colors"))
-        {
-            file.problem(colors, "", LayoutProblemKind::NotYet);
-        }
         let Some(layouts) = find_section(ini, LAYOUTS_SECTION) else {
             return file;
         };
@@ -645,25 +666,7 @@ pub fn sidebar_art(theme: crate::ui::sidebar::SidebarTheme) -> Vec<SidebarArt> {
 /// pictures are `theme`: `Name@Side` for that side, else `Name`. `r,g,b` or
 /// `r,g,b,a`; `None` when the table has no such colour.
 pub fn built_in_color(name: &str, theme: crate::ui::sidebar::SidebarTheme) -> Option<[u8; 4]> {
-    use crate::ui::sidebar::SidebarTheme;
-    let side = match theme {
-        SidebarTheme::Allied => "Allied",
-        SidebarTheme::Soviet => "Soviet",
-        SidebarTheme::Yuri => "Yuri",
-    };
-    let colors = find_section(&BUILT_IN, "Colors")?;
-    let text = colors
-        .read_name(&format!("{name}@{side}"), NAME_CAPACITY)
-        .or_else(|| colors.read_name(name, NAME_CAPACITY))?;
-    let channels: Vec<u8> = text
-        .split(',')
-        .map(|channel| channel.trim().parse().ok())
-        .collect::<Option<_>>()?;
-    match channels[..] {
-        [r, g, b] => Some([r, g, b, 255]),
-        [r, g, b, a] => Some([r, g, b, a]),
-        _ => None,
-    }
+    MatchLayout::original(true).color(name, theme)
 }
 
 /// What reading one value gives: the value, with a problem to report when it
@@ -867,7 +870,10 @@ fn read_layout(files: &[&IniFile], layout: &str, table: &str) -> (MatchLayout, V
     read_parts(&mut reader, &mut read, &mut listed);
     read.added = read_added(&mut reader, listed).into();
     read_leftovers(&mut reader);
-    (read, reader.problems)
+    read.colors = read_colors(files, &mut reader).into();
+    let problems = reader.problems;
+    read.tree = Arc::new(tree);
+    (read, problems)
 }
 
 /// Where the sidebar and the bar sit: `[Side] Hold=` (any edge) and
@@ -1223,6 +1229,78 @@ fn read_added_part(
     })
 }
 
+/// The keys of a built-in sidebar part that its own code reads from the layout once
+/// the file is loaded ([`MatchLayout::text`]), rather than this reader.
+const STOCK_KEYS: [&str; 12] = [
+    "Art",
+    "RowArt",
+    "EmptyRowArt",
+    "EndArt",
+    "FootArt",
+    "Palette",
+    "Frames",
+    "Command",
+    "Value",
+    "Align",
+    "Color",
+    "LabelColor",
+];
+
+/// `[Colors]` of `files`, the bottom layer first: each line's name, the side
+/// it holds for (`Name@Side`) and its colour. A line that is no colour is a
+/// problem and keeps the one under it.
+fn read_colors(files: &[&IniFile], reader: &mut Reader) -> Vec<(String, Option<usize>, String)> {
+    const SIDES: [&str; 3] = ["Allied", "Soviet", "Yuri"];
+    let mut colors = Vec::new();
+    for (layer, ini) in files.iter().enumerate() {
+        let Some(section) = find_section(ini, "Colors") else {
+            continue;
+        };
+        for key in section.keys() {
+            let text = section
+                .read_name(key, NAME_CAPACITY)
+                .unwrap_or_default()
+                .trim();
+            let (name, side) = match key.split_once('@') {
+                None => (key, None),
+                Some((name, side)) => {
+                    match SIDES
+                        .iter()
+                        .position(|known| known.eq_ignore_ascii_case(side))
+                    {
+                        Some(side) => (name, Some(side)),
+                        None => {
+                            reader.problem("Colors", key, LayoutProblemKind::UnknownKey);
+                            continue;
+                        }
+                    }
+                }
+            };
+            if channels(text).is_none() {
+                if layer > 0 {
+                    reader.problem("Colors", key, LayoutProblemKind::NotANumber);
+                }
+                continue;
+            }
+            colors.push((name.trim().to_owned(), side, text.to_owned()));
+        }
+    }
+    colors
+}
+
+/// `r,g,b` or `r,g,b,a`, each a whole number to 255.
+fn channels(text: &str) -> Option<[u8; 4]> {
+    let channels: Vec<u8> = text
+        .split(',')
+        .map(|channel| channel.trim().parse().ok())
+        .collect::<Option<_>>()?;
+    match channels[..] {
+        [r, g, b] => Some([r, g, b, 255]),
+        [r, g, b, a] => Some([r, g, b, a]),
+        _ => None,
+    }
+}
+
 /// Every value a file wrote that nothing read: a key the part's type does
 /// not have is unknown; one it has, that this version cannot change yet,
 /// unless it says what the built-in file says.
@@ -1250,7 +1328,14 @@ fn read_leftovers(reader: &mut Reader) {
                 .iter()
                 .any(|&(read, name)| read == index && name.eq_ignore_ascii_case(key));
             for (at, value) in values.iter().enumerate().filter(|(_, value)| value.own) {
-                if key.eq_ignore_ascii_case("Base") || (read && value.theme.is_none()) {
+                let stock = node.built_in()
+                    && SidebarPart::STOCK_ORDER
+                        .iter()
+                        .any(|part| part.name().eq_ignore_ascii_case(&node.name))
+                    && STOCK_KEYS
+                        .iter()
+                        .any(|stock| stock.eq_ignore_ascii_case(key));
+                if key.eq_ignore_ascii_case("Base") || stock || (read && value.theme.is_none()) {
                     continue;
                 }
                 if !known {
@@ -2068,8 +2153,8 @@ mod tests {
     }
 
     /// The built-in file is a layout file like any other: read as a mod's,
-    /// every line of it but its colours is one this version reads, and it
-    /// gives the original interface.
+    /// every line of it is one this version reads, and it gives the
+    /// original interface.
     #[test]
     fn the_built_in_file_reads_cleanly_as_a_mods() {
         let text = format!(
@@ -2077,10 +2162,7 @@ mod tests {
             String::from_utf8_lossy(include_bytes!("veraui_default.ini"))
         );
         let file = MatchLayoutFile::from_bytes(text.as_bytes());
-        assert_eq!(
-            problems(&file),
-            expect(&[("[Colors]", LayoutProblemKind::NotYet)])
-        );
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
         for (side, gdi, theme) in [
             ("GDI", true, SidebarTheme::Allied),
             ("Nod", false, SidebarTheme::Soviet),
