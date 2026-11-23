@@ -238,14 +238,28 @@ pub fn weapon_launch_speed(
 /// `TechnoClass::FireAt @ 0x006FE4F6..0x006FE537`: the distance FireAt hands
 /// [`weapon_launch_speed`]. The squared X and Y deltas between the target
 /// coordinate and the launch source add as signed 32-bit integers (IMUL, ADD),
-/// then FILD, `Sqrt_Approx` and ftol; Z takes no part.
+/// then FILD, `Sqrt_Approx` and ftol; Z takes no part. A VERA-only map past the
+/// original's `[Map] Size` limit uses the true 64-bit square instead, where the
+/// wrap would otherwise give `Sqrt_Approx` an unrelated magnitude.
 ///
 /// Native execution: `tools/projectile_oracle/fireat_speed.py` (`distance`).
-pub fn fireat_launch_distance(source: ProjectileCoord, target: ProjectileCoord) -> i32 {
-    let dx = target.x.wrapping_sub(source.x);
-    let dy = target.y.wrapping_sub(source.y);
-    let squared = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
-    int(sqrt(X::load_i32(squared)))
+pub fn fireat_launch_distance(
+    source: ProjectileCoord,
+    target: ProjectileCoord,
+    vera_only_map: bool,
+) -> i32 {
+    let squared = crate::util::native_coord::squared_xy_leptons_for_map(
+        [source.x, source.y],
+        [target.x, target.y],
+        vera_only_map,
+    );
+    let squared = if vera_only_map {
+        X::load_f64(NativeF64Bits::from_bits((squared as f64).to_bits()))
+            .expect("a VERA-only squared distance is finite")
+    } else {
+        X::load_i32(squared as i32)
+    };
+    int(sqrt(squared))
 }
 
 /// The lead of FireAt's aim point `0x0070BCB0` (`0x0070BD84..0x0070BE20`) for
@@ -1153,11 +1167,27 @@ mod tests {
                 )
             };
             assert_eq!(
-                fireat_launch_distance(point("source"), point("target")),
+                fireat_launch_distance(point("source"), point("target"), false),
                 row["distance"].as_i64().unwrap() as i32,
                 "row {index}: {input}"
             );
         }
+    }
+
+    /// A VERA-only map must not hand `Sqrt_Approx` the sign-masked wrapped
+    /// sum: a 250-cell offset on both axes is the true diagonal, not
+    /// `sqrt(397_934_592)`.
+    #[test]
+    fn vera_only_fireat_distance_uses_the_true_square() {
+        let source = ProjectileCoord::new(0, 0, 0);
+        let target = ProjectileCoord::new(64_000, 64_000, 0);
+        let native = fireat_launch_distance(source, target, false);
+        let vera_only = fireat_launch_distance(source, target, true);
+        assert!(native < 30_000, "native wrapped distance {native}");
+        assert!(
+            (90_500..90_520).contains(&vera_only),
+            "VERA-only distance {vera_only}"
+        );
     }
 
     /// The same corpus's aim rows (`0x0070BCB0`): every moving-Unit row's lead,

@@ -21,10 +21,8 @@ use crate::render::draw_state::DrawState;
 use crate::render::gpu::GpuContext;
 use crate::render::loading_screen_chrome::{LoadingScreenAtlas, LoadingScreenEntry};
 use crate::render::shell_surface_present::ShellSurfacePresenter;
-use crate::render::shell_text::{
-    ScissorRect, ShellAlign, ShellTextDraw, TextRect, draw_in_rect_scaled,
-};
-use crate::ui::shell::geom::ShellScale;
+use crate::render::shell_text::{ScissorRect, ShellTextDraw, TextRect, draw_in_rect_scaled};
+use crate::ui::shell::geom::{ShellAlign, ShellScale};
 
 const BACKGROUND_DEPTH: f32 = 0.90;
 const PREVIEW_DEPTH: f32 = 0.80;

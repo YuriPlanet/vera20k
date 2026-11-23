@@ -13,9 +13,9 @@ use super::layout::{
 };
 use super::page::{Pointer, slider_held};
 use super::state::{RandomMapSetupModalState, SetupCombo, status_help_key_for_random_map_setup};
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 
 /// The dialog in the shell controller.

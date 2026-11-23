@@ -163,10 +163,19 @@ impl LoadingArtVariant {
         };
         let row = crate::rules::country_loading::stock_country_loading(index)
             .expect("stock loading variant has a literal row");
-        {
-            let (token, palette) = row.art();
-            LoadingArtManifest::new(token, palette)
-        }
+        let (token, palette) = row.art();
+        // Original RA2's `game.exe` literals at 0x3F8B68 are a single
+        // `MPLS.PAL` for every country (`MPLSOBS.PAL` only for the observer).
+        // The per-country `MPLSU.PAL` / `MPLSR.PAL` / ... table lives in YR's
+        // `gamemd.exe` and does not exist in an RA2 install; using it makes
+        // the loading atlas fail and fall back to YR artwork. Keep the SHP
+        // token, swap only the palette on the RA2 branch.
+        let palette = if crate::util::ra2_launch::enabled() {
+            "MPLS.PAL"
+        } else {
+            palette
+        };
+        LoadingArtManifest::new(token, palette)
     }
 }
 
@@ -498,6 +507,30 @@ pub fn build_campaign_loading_screen_atlas(
     })
 }
 
+/// Map an original-RA2 loading background SHP to its palette. The authored
+/// name is `LS800S01.SHP` / `LS640A07.SHP` / `LS800B01.SHP`: position 5
+/// (0-based) is the faction letter. `load.mix` carries `LDSCRNS.PAL`,
+/// `LDSCRNA.PAL` and the neutral `LDSCRN.PAL`, but the neutral one is **not**
+/// what the Boot Camp screens use: LS800B01/B02 share the Allied palette
+/// (verified by rendering both SHPs against every LDSCRN* palette — only
+/// LDSCRNA.PAL produces the olive-drab hat, blue dossier and grey vehicles).
+/// Returns `None` for any name that does not follow the pattern.
+fn ra2_loading_background_palette(background_name: &str) -> Option<&'static str> {
+    let bytes = background_name.as_bytes();
+    if bytes.len() < 6 {
+        return None;
+    }
+    let prefix = &bytes[..5];
+    if !prefix.eq_ignore_ascii_case(b"LS800") && !prefix.eq_ignore_ascii_case(b"LS640") {
+        return None;
+    }
+    match bytes[5].to_ascii_uppercase() {
+        b'S' => Some("LDSCRNS.PAL"),
+        b'A' | b'B' => Some("LDSCRNA.PAL"),
+        _ => None,
+    }
+}
+
 fn render_campaign_entries(
     assets: &AssetManager,
     width: LoadingScreenWidth,
@@ -507,15 +540,34 @@ fn render_campaign_entries(
     if background_name.is_empty() {
         return None;
     }
-    let background_palette = load_palette(assets, background_palette_name)?;
-    let title_palette = load_palette(assets, "LDSCRN.PAL")?;
-    let bar_palette = load_palette(assets, "SPLDBR.PAL")?;
+    // Original RA2 picks the loading palette from the background SHP's faction
+    // letter (`ra2.mix -> load.mix`):
+    //   LS800Sxx / LS640Sxx (Soviet)   -> LDSCRNS.PAL
+    //   LS800Axx / LS640Axx (Allied)   -> LDSCRNA.PAL
+    //   LS800Bxx / LS640Bxx (Bootcamp) -> LDSCRNA.PAL (not the neutral LDSCRN)
+    // Retail MISSION.INI has no palette keys; the loose compatibility patch
+    // used to add one LDSCRNS.PAL for every section, which is why the Boot
+    // Camp (and Allied) screens were tinted with the Soviet palette. In RA2
+    // mode the SHP letter is authoritative even when a stale authored name is
+    // present. YR keeps the authored name and is untouched.
+    let resolved_background_palette = if crate::util::ra2_launch::enabled() {
+        match ra2_loading_background_palette(background_name) {
+            Some(name) => name,
+            None if background_palette_name.is_empty() => "LDSCRN.PAL",
+            None => background_palette_name,
+        }
+    } else {
+        background_palette_name
+    };
+    let background_palette = load_named_ui_palette(assets, resolved_background_palette)?;
+    let title_palette = load_named_ui_palette(assets, "LDSCRN.PAL")?;
+    let bar_palette = load_named_ui_palette(assets, "SPLDBR.PAL")?;
     let mut background = mandatory_shp(
         assets,
         background_name,
         &background_palette,
         0,
-        background_palette_name,
+        resolved_background_palette,
     )?;
     background.label = CAMPAIGN_BACKGROUND_LABEL.to_owned();
     let mut progress = mandatory_shp(assets, "SPLDBR.SHP", &bar_palette, 0, "SPLDBR.PAL")?;
@@ -669,7 +721,8 @@ mod tests {
         CAMPAIGN_BACKGROUND_LABEL, CAMPAIGN_BAR_BACKGROUND_LABEL, CAMPAIGN_PROGRESS_LABEL,
         CAMPAIGN_TITLE_LABEL, LOADING_PREVIEW_LABEL, LoadingArtVariant, LoadingScreenWidth,
         MmpbRegionRect, PreparedLoadingPreviewRgba, mmpb_region_rect, prepared_preview_entry,
-        progress_palette_with_player_ramp, render_campaign_entries,
+        progress_palette_with_player_ramp, ra2_loading_background_palette,
+        render_campaign_entries,
     };
     use crate::assets::pal_file::{Color, Palette};
 
@@ -687,6 +740,28 @@ mod tests {
         file: &str,
     ) -> Option<crate::render::chrome_atlas::ChromePiece> {
         crate::render::chrome_atlas::pcx_piece(assets, file, true)
+    }
+
+    #[test]
+    fn ra2_loading_background_palette_follows_faction_letter() {
+        assert_eq!(
+            ra2_loading_background_palette("LS800S01.SHP"),
+            Some("LDSCRNS.PAL")
+        );
+        assert_eq!(
+            ra2_loading_background_palette("LS640S12.SHP"),
+            Some("LDSCRNS.PAL")
+        );
+        assert_eq!(
+            ra2_loading_background_palette("LS800A07.SHP"),
+            Some("LDSCRNA.PAL")
+        );
+        assert_eq!(
+            ra2_loading_background_palette("LS640B01.SHP"),
+            Some("LDSCRNA.PAL")
+        );
+        assert_eq!(ra2_loading_background_palette("TTLBR800.SHP"), None);
+        assert_eq!(ra2_loading_background_palette("LS800.SHP"), None);
     }
 
     #[test]
@@ -1069,6 +1144,16 @@ mod tests {
                 manifest.background_asset(LoadingScreenWidth::W800),
                 expected_800
             );
+            // `-ra2` binds the single MPLS.PAL for every Country; Yuri, which
+            // does not exist in RA2, is the only other observer-style case in
+            // this table. Observer keeps MPLSOBS.PAL in both profiles.
+            let expected_palette = if crate::util::ra2_launch::enabled()
+                && variant != LoadingArtVariant::Observer
+            {
+                "MPLS.PAL"
+            } else {
+                expected_palette
+            };
             assert_eq!(manifest.palette_name, expected_palette);
         }
     }

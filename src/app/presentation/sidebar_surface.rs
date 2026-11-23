@@ -34,7 +34,7 @@ use crate::render::scaled_copy::{MaskSource, MaskedCopy, ScaledSurface, WindowMa
 use crate::render::terrain_draw::{
     PackedCompositePiece, PackedSpriteKind, PackedSurface, TerrainDrawRenderer,
 };
-use crate::render::upscale_pass::ZoomGeometry;
+use crate::ui::main_menu_dialogs::options::ZoomGeometry;
 use crate::ui::sidebar::SidebarFrame;
 
 /// A part of the sidebar with a surface of its own.
@@ -889,7 +889,7 @@ mod tests {
     #[test]
     #[ignore = "requires a wgpu adapter; executes the production sidebar copies"]
     fn zoomed_window_copy_shows_every_surface_pixel_except_under_later_ui() {
-        use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
+        use crate::ui::main_menu_dialogs::options::{FrameShape, ZoomGeometry};
         const SRGB: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
         let gpu = gpu();
         let zoom = ZoomGeometry::new(1200, 900, 300, FrameShape::Window);
@@ -1068,7 +1068,7 @@ mod tests {
 
     #[test]
     fn window_copies_leave_the_zoom_its_shared_edge_pixels() {
-        use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
+        use crate::ui::main_menu_dialogs::options::{FrameShape, ZoomGeometry};
         // At 250% an odd frame edge falls mid-pixel: that pixel keeps the
         // zoom's blend of both sides.
         let zoom = ZoomGeometry::new(1001, 751, 250, FrameShape::Window);

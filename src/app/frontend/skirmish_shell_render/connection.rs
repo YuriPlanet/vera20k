@@ -10,11 +10,11 @@ use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH};
 use crate::app::AppState;
 use crate::app::input::connection::DIALOG;
 use crate::app::input::dialog_page::pressed;
-use crate::render::{shell_paint, shell_text::ShellAlign};
+use crate::render::shell_paint;
 use crate::ui::shell::connection::{
     BAR_OUTLINE_RGB, CONNECTION_ROWS, ConnectionControl, bar_paint, connection_layout,
 };
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 fn rgb(unit: [u8; 3]) -> [f32; 3] {

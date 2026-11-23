@@ -215,6 +215,9 @@ pub(crate) trait RocketHost {
     /// `[0x00A8ED84]`, the frame the timers count from.
     fn binary_frame(&self) -> u32;
     fn trig(&self) -> &TrigTable;
+    /// `[Map] Size` width plus height past the original's 512 limit: the pitch
+    /// takes the true 64-bit square on a VERA-only map.
+    fn vera_only_map(&self) -> bool;
     /// Owner `+0x2D4` SpawnOwner is set and `VeterancyStruct::IsElite @
     /// 0x00750010` holds for its `+0x150`.
     fn spawn_owner_is_elite(&self) -> bool;
@@ -480,7 +483,7 @@ fn cruise(
             coords[0].wrapping_sub(destination.x),
         ]);
         let share = M::div(M::load_i32(left), M::load_i32(rocket.cruise_start_distance));
-        let angle = target_angle(destination, host.location());
+        let angle = target_angle(destination, host.location(), host.vera_only_map());
         let rest = M::sub(f64_value(NativeF64Bits::ONE), share);
         let toward_final = M::mul(
             M::mul(f32_value(block.pitch_final), share),
@@ -498,7 +501,7 @@ fn cruise(
 /// State 5 (`0x00662CBF..0x0066300A`) after the impact prediction: turn the
 /// pitch toward the target angle by at most TurnRate.
 fn dive(rocket: &mut RocketRuntime, block: &MissileSpawnParams, host: &mut impl RocketHost) {
-    let angle = target_angle(rocket.destination, host.location());
+    let angle = target_angle(rocket.destination, host.location(), host.vera_only_map());
     let zero = M::load_i32(0);
     let pitch = rocket.pitch_value();
     let turn = f32_value(block.turn_rate);
@@ -703,15 +706,22 @@ fn along_nose(rocket: &RocketRuntime, host: &impl RocketHost, length: MaskedX87V
 /// 0x00662B2E`) and the dive (`0x00662CBF..0x00662D2E`): the horizontal
 /// distance squares and sums in int32, and nothing left to cover is straight
 /// down.
-fn target_angle(destination: DriveCoord, here: [i32; 3]) -> MaskedX87Value {
-    let dx = destination.x.wrapping_sub(here[0]);
-    let dy = destination.y.wrapping_sub(here[1]);
+fn target_angle(destination: DriveCoord, here: [i32; 3], vera_only_map: bool) -> MaskedX87Value {
     let dz = destination.z.wrapping_sub(here[2]);
-    let squared = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
-    let distance = X87Chop53::load_f32(
-        sqrt_approx_f32(X87Chop53::load_i32(squared)).expect("a finite int32 has a finite root"),
-    )
-    .expect("Sqrt_Approx returns a finite value");
+    let squared = crate::util::native_coord::squared_xy_leptons_for_map(
+        [destination.x, destination.y],
+        [here[0], here[1]],
+        vera_only_map,
+    );
+    let squared = if vera_only_map {
+        X87Chop53::load_f64(NativeF64Bits::from_bits((squared as f64).to_bits()))
+            .expect("a VERA-only squared distance is finite")
+    } else {
+        X87Chop53::load_i32(squared as i32)
+    };
+    let distance =
+        X87Chop53::load_f32(sqrt_approx_f32(squared).expect("a finite int32 has a finite root"))
+            .expect("Sqrt_Approx returns a finite value");
     if X87Chop53::compare(distance, X87Chop53::load_i32(0)) != X87Ordering::Greater {
         return f64_value(NEG_HALF_PI);
     }
@@ -787,6 +797,10 @@ mod tests {
         }
         fn trig(&self) -> &TrigTable {
             self.trig
+        }
+        fn vera_only_map(&self) -> bool {
+            // The oracle rows are original-executable samples.
+            false
         }
         fn spawn_owner_is_elite(&self) -> bool {
             // VeterancyStruct::IsElite: Veterancy >= [0x007E37B4] (2.0f).
@@ -1156,5 +1170,31 @@ mod tests {
         move_to(&mut rocket, block, DriveCoord { x: 1, y: 1, z: 0 }, 0);
         assert_eq!(rocket.current_pitch, f32::INFINITY.to_bits());
         assert_eq!(rocket.draw_key_bits(block), Some(0x20));
+    }
+
+    /// `0x00662AA2`/`0x00662CBF`: `(46_341, 46_341)` wraps the native
+    /// horizontal square to 9,266 (96 leptons); the true square is 65,536.
+    /// With a 1,000-lepton drop the native angle is steep and the VERA-only
+    /// one shallow.
+    #[test]
+    fn vera_only_target_angle_uses_the_true_square() {
+        let destination = DriveCoord {
+            x: 46_341,
+            y: 46_341,
+            z: 1_000,
+        };
+        let here = [0, 0, 0];
+        let native = f64::from_bits(super::store_f64(super::target_angle(
+            destination,
+            here,
+            false,
+        )));
+        let vera_only = f64::from_bits(super::store_f64(super::target_angle(
+            destination,
+            here,
+            true,
+        )));
+        assert!(native > 1.0, "native steep angle {native}");
+        assert!(vera_only < 0.1, "true shallow angle {vera_only}");
     }
 }

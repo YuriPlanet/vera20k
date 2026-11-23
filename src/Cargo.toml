@@ -88,6 +88,8 @@ phobos = []
 npatch = []
 # VERA20K's own first-party extension capability.
 verax = []
+# Original Red Alert 2 compatibility; see the client package's feature note.
+ra2 = []
 # VERA20K's opt-in bug-fix extension adopting the NPExt changelog corrections;
 # builds without it keep every native path.
 npbug = []

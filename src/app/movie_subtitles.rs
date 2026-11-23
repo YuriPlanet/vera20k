@@ -30,8 +30,10 @@ use crate::util::native_string::{
 };
 
 /// The file `Subtitle_LookupByKey` `0x006C9B70` opens through the loose-file
-/// and MIX search.
+/// and MIX search. YR ships `subtitlemd.txt`; an original-RA2 launch reads the
+/// base `subtitle.txt` and falls back to the MD file when it has no cues.
 const SUBTITLE_FILE: &str = "subtitlemd.txt";
+const SUBTITLE_FILE_RA2: &str = "subtitle.txt";
 
 /// The subtitle surface `0x006C99D0` allocates (`BSurface(640, 255, 2)`).
 pub(crate) const BAND_WIDTH: i32 = 640;
@@ -132,11 +134,18 @@ impl Lines<'_> {
 /// `movie`'s cues for the interface language: its own subtitles, then the
 /// game's `subtitlemd.txt` (`0x006C99D0`).
 pub(crate) fn cues_for_movie(assets: Option<&AssetManager>, movie: &str) -> Option<Vec<Subtitle>> {
-    cues_from(
-        crate::i18n::subtitle_file().as_deref(),
-        assets.and_then(|assets| assets.get_ref(SUBTITLE_FILE)),
-        movie,
-    )
+    // `-ra2` reads `subtitle.txt` first; the MD table remains a fallback so
+    // movies absent from the base table still get their cues.
+    let game_file = assets.and_then(|assets| {
+        if crate::util::ra2_launch::enabled() {
+            assets
+                .get_ref(SUBTITLE_FILE_RA2)
+                .or_else(|| assets.get_ref(SUBTITLE_FILE))
+        } else {
+            assets.get_ref(SUBTITLE_FILE)
+        }
+    });
+    cues_from(crate::i18n::subtitle_file().as_deref(), game_file, movie)
 }
 
 fn cues_from(language: Option<&[u8]>, game: Option<&[u8]>, movie: &str) -> Option<Vec<Subtitle>> {

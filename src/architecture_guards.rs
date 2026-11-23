@@ -716,6 +716,11 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/combat/greatest_threat.rs", 1),
                 ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
+                // Whether the local player sees a Techno's glow: Ares'
+                // ShouldDraw hooks (100477D0, 10047470) ask VisualCharacter,
+                // which reads +0x41A. Only the A-plane draw list
+                // (`alpha_shape_draws`) asks.
+                ("sim/world/alpha_shape.rs", 1),
                 ("sim/world/camera_home.rs", 1),
                 ("sim/world/lifecycle.rs", 7),
                 ("sim/world/lifecycle/discovery.rs", 2),

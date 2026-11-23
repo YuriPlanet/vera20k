@@ -51,8 +51,10 @@ With On, the original game plays unlike gamemd wherever Ares itself does, such a
 [gameplay bugfixes](ares-bugfixes.md). A `-SPAWN` launch file's `[Settings] Ares=Auto|On|Off`
 replaces the setting for that launch, and `vera20k --probe --ares <setting>` reports
 the digest such a launch is checked against. The effective launch policy is part of
-the network agreement ([Networking](Networking.md#room-rules)); a save keeps the
-answer it was started with.
+the network agreement where it decides the game ([Networking](Networking.md#room-rules)):
+a player set to Off plays the original game with players set to Auto, and is refused
+only where an Ares key would turn Ares on for them. A save keeps the answer it was
+started with.
 
 A save records no Ares capability; a save from an older build with the retired `ares`
 feature does not load.
@@ -86,7 +88,7 @@ complete mission loading or all downstream campaign extensions.
 
 Supported extensions:
 
-- [Ground, airborne and building EMP](ares-emp.md) (every Foot mover but Tunnel, human or AI,
+- [Ground, airborne and building EMP](ares-emp.md) (every Foot mover, Tunnel included, human or AI,
   miners, falling and mind-controlled victims, every EMP-prone building with its factory, gap,
   superweapon, PowersUnit, clone, Prism and undeploy effects, the Tank Bunker exemption,
   and the player's miner and base warnings; team members and spawners in

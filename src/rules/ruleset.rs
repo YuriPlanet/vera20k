@@ -944,6 +944,13 @@ pub struct RuleSet {
     pub allied_base_defense_counts: Vec<i32>,
     pub soviet_base_defense_counts: Vec<i32>,
     pub third_base_defense_counts: Vec<i32>,
+    /// Original-RA2 `[AI] TiberiumNearScan=` (cell radius to scan for ore in a
+    /// single patch, game.exe RulesClass+0x13E0). Absent in YR; default 0
+    /// matches the native constructor. Consumed when the RA2 profile is active.
+    pub tiberium_near_scan: i32,
+    /// Original-RA2 `[AI] TiberiumFarScan=` (cell radius to find a new ore
+    /// patch, game.exe RulesClass+0x13E4). Absent in YR; default 0.
+    pub tiberium_far_scan: i32,
     /// Signed `[General] AINavalYardAdjacency=` in cells. Native constructor
     /// default is 20 and the consumer shifts it left by eight without clamping.
     pub ai_naval_yard_adjacency: i32,
@@ -970,6 +977,9 @@ pub struct RuleSet {
     /// Whether Ares plays in this game, decided once from its Rules layers
     /// and `ares.mix` by `rules::ares_switch`. Read through [`Self::ares`].
     ares: bool,
+    /// VERA: the player's Ares setting Off is what keeps Ares from playing in
+    /// this game. Read through [`Self::ares_kept_off`].
+    ares_kept_off: bool,
     /// Whether Phobos plays in this game, decided once from its Rules
     /// projection by `rules::phobos_switch`. Read through [`Self::phobos`].
     phobos: bool,

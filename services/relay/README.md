@@ -349,10 +349,13 @@ every other when it last heard its players (link kind 4, Silence below). Link pa
 address on the relay's existing UDP port and are authenticated by their MAC,
 whatever address they arrive from. Deploy and roll back every relay at once,
 so all run one version: relays of different versions can end the same startup
-differently. The digit in `VF1L` is the link version, bumped whenever the
-layout or meaning of an existing link kind changes (the FRAME header and its
-entries, a coordinator control batch, DATA, pace, checksum or silence reports),
-since a relay refuses a packet it cannot read: one refused FRAME stalls the
+differently. The digit in the link magic carries the link version and the
+marking together: this version sends `VF1L` unmarked and `VF2L` marked. The
+version is bumped whenever the layout or meaning of an existing link kind
+changes (the FRAME header and its entries, a coordinator control batch, DATA,
+pace, checksum or silence reports), and a bump moves both magics to digits no
+build has used (`VF3L` and `VF4L` next), so no two versions share a digit. A
+relay refuses a packet it cannot read: one refused FRAME stalls the
 merged stream, and refused reports leave desyncs and slow players unnoticed.
 Only a new kind whose loss changes no result needs none, as kind 4 did: an
 older relay only leaves that silence untold. The 32-byte link header and the

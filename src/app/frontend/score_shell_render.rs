@@ -25,11 +25,11 @@ use crate::render::shell_paint::{
     PARENT_BACKGROUND_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED, STATIC_IMAGE_DEPTH,
     push_entry_crop, push_entry_native, push_entry_scaled, push_entry_window_crop,
 };
-use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::score_shell::{
     BAND_IDS, CONTINUE_BUTTON, NEXT_PAGE, PREVIOUS_PAGE, SCORE_PAGE, ScoreStatics,
 };
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::geom::{RectPx, centred_in_window, dialog_origin};
 use crate::ui::shell::menu_page;
 use crate::util::time::Instant;

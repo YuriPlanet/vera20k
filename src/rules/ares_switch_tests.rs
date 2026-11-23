@@ -159,7 +159,10 @@ fn a_maps_ares_key_turns_ares_on() {
 }
 
 /// VERA's Ares setting Off: the same map's Ares key turns nothing on, and the
-/// processed Rules keep that answer for their projections.
+/// processed Rules keep that answer for their projections. The rules say
+/// that the setting is what keeps Ares off there, as a player set to Auto
+/// plays another game from the same files; on a map without an Ares key the
+/// setting keeps nothing off, and both play the same game.
 #[test]
 fn the_ares_setting_off_keeps_a_maps_ares_key_off() {
     let Some((_, assets)) = retail_assets() else {
@@ -167,7 +170,17 @@ fn the_ares_setting_off_keeps_a_maps_ares_key_off() {
     };
     let map = IniFile::from_str("[HTNK]\nImmuneToAbduction=yes\n");
     let mut owner = installed(&assets).with_ares_keys_off(true);
-    assert!(!skirmish(&mut owner, None, &map).ares());
+    let kept = skirmish(&mut owner, None, &map);
+    assert!(!kept.ares() && kept.ares_kept_off());
+    let plain = skirmish(&mut owner, None, &IniFile::empty());
+    assert!(!plain.ares() && !plain.ares_kept_off());
+    let auto = skirmish(&mut installed(&assets), None, &map);
+    assert!(auto.ares() && !auto.ares_kept_off());
+    // A key only a Rules pass reads, not the projection.
+    let pass_key = IniFile::from_str("[ROBO]\nWaterImage=mtnk\n");
+    assert!(skirmish(&mut installed(&assets), None, &pass_key).ares());
+    let kept = skirmish(&mut owner, None, &pass_key);
+    assert!(!kept.ares() && kept.ares_kept_off());
 }
 
 /// `ares.mix` mounted at startup (Load_Bootstrap_AresMIX, hook 0x0053029E)

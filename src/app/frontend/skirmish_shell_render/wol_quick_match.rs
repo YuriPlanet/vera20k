@@ -8,8 +8,8 @@ use super::text::rect_to_text_rect;
 use super::wol_lobby::{WolLobbyPaint, row_rgb};
 use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
-use crate::render::shell_text::{self, ShellAlign};
-use crate::ui::shell::geom::RectPx;
+use crate::render::shell_text;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 use crate::ui::wol_quick_match::{
     CAPTION, DIALOG, MATCH_STATUS_KEY, TRANSCRIPT, WolQuickMatchLayout, WolQuickMatchPage,
 };

@@ -254,6 +254,9 @@ pub struct CampaignShellArt {
     pub background_dark: Option<MainMenuShellChromeEntry>,
     pub allied: Vec<MainMenuShellChromeEntry>,
     pub soviet: Vec<MainMenuShellChromeEntry>,
+    /// Boot Camp emblem frames. Empty under YR (no boot camp); populated
+    /// under `-ra2` from FSBCLG.SHP / FSBCSM.SHP.
+    pub bootcamp: Vec<MainMenuShellChromeEntry>,
     /// TRAKGRIP.PCX, the 12x22 trackbar thumb.
     pub slider_thumb: Option<MainMenuShellChromeEntry>,
     /// The trackbar's two bevel boxes (`0x006208F0`) on a canvas two pixels
@@ -283,13 +286,37 @@ pub fn build_campaign_shell_art(
     small: bool,
     slider: (u32, u32),
 ) -> Option<CampaignShellArt> {
-    let [allied_pal, soviet_pal, background_pal] =
-        CAMPAIGN_ART_PALETTES.map(|name| load_palette(assets, name));
+    let [allied_pal, soviet_pal, background_pal] = if crate::util::ra2_launch::enabled() {
+        // Original RA2 ships the campaign emblems and background in ra2.mix ->
+        // neutral.mix, coloured by the single shared FSSCRN.PAL beside them.
+        // YR instead has three per-art palettes in ra2md.mix -> ntrlmd.mix.
+        // Using the YR palettes recolours the RA2 shapes into a YR-looking
+        // image, so RA2 mode uses its own campaign palette throughout.
+        let campaign = load_palette(assets, "FSSCRN.PAL");
+        log::debug!(
+            "RA2 campaign art: FSSCRN.PAL available={}",
+            campaign.is_some()
+        );
+        [campaign.clone(), campaign.clone(), campaign]
+    } else {
+        CAMPAIGN_ART_PALETTES.map(|name| load_palette(assets, name))
+    };
     let [allied, soviet, background] = campaign_art_names(small);
+    let allied_pal = allied_pal?;
+    let soviet_pal = soviet_pal?;
+    let background_pal = background_pal?;
     let mut art = ChromeArt::new(assets, "campaign shell");
-    art.shp_run(allied, &allied_pal?, "allied", usize::MAX);
-    art.shp_run(soviet, &soviet_pal?, "soviet", usize::MAX);
-    if let Some(piece) = shp_file_piece(assets, background, "background", &background_pal?, 0) {
+    art.shp_run(allied, &allied_pal, "allied", usize::MAX);
+    art.shp_run(soviet, &soviet_pal, "soviet", usize::MAX);
+    // Original RA2 has a third Boot Camp emblem (control 0x6EB) between Allied
+    // and Soviet. YR has no boot camp, so leave it empty there. FSBCLG/FSBCSM
+    // are the large/small shapes in ra2.mix -> neutral.mix, coloured by the
+    // same campaign palette as the other emblems.
+    if crate::util::ra2_launch::enabled() {
+        let bootcamp_shape = if small { "FSBCSM.SHP" } else { "FSBCLG.SHP" };
+        art.shp_run(bootcamp_shape, &allied_pal, "bootcamp", usize::MAX);
+    }
+    if let Some(piece) = shp_file_piece(assets, background, "background", &background_pal, 0) {
         art.push(blended_black(&piece, "background:dark".into(), 0));
         art.push(piece);
     }
@@ -307,6 +334,7 @@ pub fn build_campaign_shell_art(
         texture,
         allied: labels.run("allied"),
         soviet: labels.run("soviet"),
+        bootcamp: labels.run("bootcamp"),
         background: labels.get("background"),
         background_dark: labels.get("background:dark"),
         slider_thumb: labels.get("trakgrip.pcx"),

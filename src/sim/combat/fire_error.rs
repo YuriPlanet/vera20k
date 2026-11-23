@@ -850,8 +850,11 @@ fn infantry(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) ->
 fn building(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> FireError {
     let firer = &facts.firer;
     let firer_type = &facts.firer_type;
-    // B1 `0x00447F15`.
-    if firer_type.can_be_occupied && (!firer_type.can_occupy_fire || query.occupants() == 0) {
+    // B1 `0x00447F15`. Original RA2 has no CanOccupyFire field at all: a
+    // CanBeOccupied building with occupants fires its own Primary gun. The
+    // YR two-flag gate would otherwise answer ILLEGAL forever in -ra2.
+    let can_occupy_fire = firer_type.can_occupy_fire || crate::util::ra2_launch::enabled();
+    if firer_type.can_be_occupied && (!can_occupy_fire || query.occupants() == 0) {
         return FireError::Illegal;
     }
     // B2 `0x00447F45`: a Floating Disc drains it.

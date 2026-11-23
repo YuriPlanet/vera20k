@@ -511,10 +511,14 @@ impl LoadingRequest {
         {
             loaded = loaded.with_mod_additions(&additions)?;
         }
-        match map_additions {
-            Some(additions) => loaded.with_mod_additions(additions),
-            None => Ok(loaded),
+        let mut loaded = match map_additions {
+            Some(additions) => loaded.with_mod_additions(additions)?,
+            None => loaded,
+        };
+        if !matches!(self.startup(), LoadingStartup::Network(_)) {
+            loaded = loaded.with_ra2_campaign_fixups(map_file)?;
         }
+        Ok(loaded)
     }
 
     fn skirmish_launch_session(&self) -> Option<&SkirmishLaunchSession> {
@@ -1147,7 +1151,15 @@ fn bind_early_country_loading(
             index.0
         )
     })?;
-    let palette_name = country.files().1.to_owned();
+    // `-ra2`: original game.exe binds one MPLS.PAL for every Country (only
+    // the observer uses MPLSOBS.PAL). The YR per-country MPLSU/MPLSR/... PALs
+    // in the Country table are absent from an RA2 install, so keep them out
+    // of the frozen early observation and let the SHP render with MPLS.PAL.
+    let palette_name = if crate::util::ra2_launch::enabled() {
+        "MPLS.PAL".to_owned()
+    } else {
+        country.files().1.to_owned()
+    };
     let palette = if palette_name.is_empty() {
         None
     } else {

@@ -68,6 +68,9 @@ impl RocketHost for RocketProcessHost<'_> {
     fn trig(&self) -> &TrigTable {
         self.trig
     }
+    fn vera_only_map(&self) -> bool {
+        self.sim.session.map_exceeds_original_size()
+    }
     fn spawn_owner_is_elite(&self) -> bool {
         self.owner()
             .seldom

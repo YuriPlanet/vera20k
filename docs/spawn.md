@@ -84,7 +84,9 @@ agree.
   without the Options switches, which `settings` names), `langrule` (only when read), `art`, `ai`,
   `mode` (the mode's INI; none for a mode without one), `theater:<ini name>` for each theater's INI,
   `tiles` (the theater tiles the game folder changes), and with a mod `mod_files` (its folder) and
-  `map_additions` (when it has any). `name` is the file name, never a path; `digest` the first 16
+  `map_additions` (when it has any). Without a mod the theater parts are the copies a retail
+  install ships (`source` `retail`, unchanged) and `tiles` is `absent`: the original game leaves
+  its folder's terrain files to each match ([Networking](Networking.md)), so they are in no part. `name` is the file name, never a path; `digest` the first 16
   hex digits of the part's digest, or `absent`; `source` `retail` (the original archives), `loose`
   (a file in the game folder), `mix:<archive>` (another archive by its lowercased name, such as `expandmd99.mix`), `mod`
   or `unknown`; `changed` whether it differs from the retail copy. A changed INI names in
@@ -92,14 +94,17 @@ agree.
   most 20, and counts the rest in `sections_more`.
 - `settings`: the Options switches the game plays (`terrain_deformation`, `superweapon_limit`, and
   `building_production_queue`, which is left out while off and is only ever on in a single-player
-  game: a network launch plays it off, as the probe reports it), the Ares setting (`auto`, `on`, `off`), whether
+  game: a network launch plays it off, as the probe reports it), the Ares setting as the digest
+  counts it (`on` or `off` where the setting decides which game opens; `auto` for Auto and for a
+  setting that opens the game Auto opens, such as Off without a mod), whether
   `ares.mix` is mounted, whether the INI roots listed under `resources` and the theater suffix are
   all YR's (`ini_roots_stock`), and the mod (`title` and `version`, from its `mod.ini`, else its folder's
-  name; `version` is empty without one). When a mod requires Ares or the game reads any INI root
-  or archive name other than YR's, `resources` names them as the digest compares them, lowercased:
-  `requires_ares`, `roots` (Rules, Art, AI, sound, EVA, theme, campaign, mission, map selection,
-  mode and map catalog) and `archives` (expansion and map prefixes, multiplayer and theme
-  archives, movie prefix); otherwise it is left out.
+  name; `version` is empty without one). When a mod requires Ares or the game reads one of these INI roots
+  or archives under another name than YR's, `resources` names them as the digest compares them, lowercased:
+  `requires_ares`, `roots` (Rules, Art, AI, mode and map catalog) and `archives` (expansion and
+  map prefixes, multiplayer and theme archives, movie prefix); otherwise it is left out. The
+  sound, EVA, theme, campaign, mission and map-selection roots are in no part: the digest does
+  not compare their names.
 - `mod_check`: with a mod that carries a `mod-files.txt`, where its files part from that list
   (`changed`, `missing`, `extra`, at most 20 paths each); otherwise null.
 

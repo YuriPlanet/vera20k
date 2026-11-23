@@ -6,7 +6,7 @@
 //! replay each case's script; the damage walk runs on real cell lists, and
 //! its ReceiveDamage calls are recorded as the native stubs record theirs.
 
-use super::fire::{FireHit, FireWorld, OwnerFacts, OwnerSweep};
+use super::fire::{FireHit, FireWorld, OwnerFacts, OwnerSweep, wobble_target};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::native_identity::NativeUniqueIdCursor;
@@ -230,4 +230,21 @@ fn fire_system_matches_native_sweep_spawns_particles_and_damage_to_retirement() 
             "{name}: Scenario draws"
         );
     }
+}
+
+/// `0x0062FC14..0x0062FD34` on a VERA-only map: `(46_341, 46_341)` squares to
+/// `2^32 + 9_266`, which the native arm reads as 96 leptons (near); the true
+/// square is 65,536 (far). The arm changes the wave step, so at least one of
+/// the 500 frames must differ.
+#[test]
+fn vera_only_wobble_keeps_the_far_arm() {
+    let location = IVec3::new(46_341, 46_341, 0);
+    let target = IVec3::ZERO;
+    assert!(
+        (0..500).any(|frame| {
+            wobble_target(frame, location, target, false)
+                != wobble_target(frame, location, target, true)
+        }),
+        "a VERA-only map must not keep the wrapped near arm"
+    );
 }

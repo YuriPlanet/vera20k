@@ -145,7 +145,7 @@ ini-expand
                        --all-mixes widens tooling lookup only, not game mounting.
 
 GLOBAL OPTIONS
-  --ini-profile <yr|auto|custom>  ini-roots/get/type: overrides [ini] as a unit.
+  --ini-profile <yr|auto|ra2|custom>  ini-roots/get/type: overrides [ini] as a unit.
   --rules-ini <NAME> --art-ini <NAME> --ai-ini <NAME>
                        Custom profile requires all three plain INI basenames.
   --ra2-dir <PATH>     Retail install root. Overrides $RA2_DIR and config.toml.
@@ -450,7 +450,14 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
                 let config = cli.ini_roots.get_or_insert_with(Default::default);
                 let text = value(&mut args, &flag)?;
                 match flag.as_str() {
-                    "--ini-profile" => config.profile = text.parse()?,
+                    "--ini-profile" => {
+                        let profile: crate::util::ini_roots::IniProfile = text.parse()?;
+                        // An explicit ra2 profile is a whole-stack RA2 request in
+                        // headless tools too: mirror the game's `-ra2` so archive
+                        // mounts and CSF selection follow the non-md family.
+                        crate::util::ra2_launch::set(profile == crate::util::ini_roots::IniProfile::Ra2);
+                        config.profile = profile;
+                    }
                     "--rules-ini" => config.rules = Some(text),
                     "--art-ini" => config.art = Some(text),
                     "--ai-ini" => config.ai = Some(text),

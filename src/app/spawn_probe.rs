@@ -1021,7 +1021,7 @@ mod tests {
         // by its folder in `Mods`.
         let parts = serde_json::to_value(&report.rules_parts).unwrap();
         assert_eq!(
-            parts["settings"]["resources"]["roots"][9],
+            parts["settings"]["resources"]["roots"][3],
             "custom-modes.ini"
         );
         assert_eq!(parts["settings"]["mod"]["title"], "Catalog");

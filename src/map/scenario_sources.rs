@@ -140,7 +140,13 @@ pub fn list_skirmish_scenario_records_with_assets(
     }
 
     append_loose_pkt_records(&mut records, ra2_dir, assets, csf)?;
-    append_loose_yro_records(&mut records, ra2_dir, assets, csf)?;
+    // `.yro` (official YR skirmish maps) is a Yuri's Revenge format. An
+    // original-RA2 launch must not surface it in the Skirmish chooser — RA2
+    // maps come from MAPS01/02 and missions.pkt. Loose-map scanning also reads
+    // RA2's own `.mpr` maps, so it stays available in both modes.
+    if !crate::util::ra2_launch::enabled() {
+        append_loose_yro_records(&mut records, ra2_dir, assets, csf)?;
+    }
     append_loose_map_records(
         &mut records,
         &game_folders_in(ra2_dir, assets.mod_dir()),

@@ -19,10 +19,10 @@ use super::{
     SHELL_PARENT_BACKGROUND_DEPTH,
 };
 use crate::app::AppState;
-use crate::render::shell_text::{self, ShellAlign};
+use crate::render::shell_text;
 use crate::ui::campaign_score_shell::campaign_score_background_rect;
 use crate::ui::coop_score_shell::*;
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 
 pub(crate) fn render_coop_score(
     state: &mut AppState,

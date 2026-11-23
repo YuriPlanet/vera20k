@@ -88,7 +88,7 @@ fn original_cannon_launch_motion_and_live_bridge_draw_form_one_production_chain(
             gravity: kind.gravity(),
         }),
         rules.general.gravity,
-        launch::fireat_launch_distance(origin, target),
+        launch::fireat_launch_distance(origin, target, false),
     );
     assert_eq!(
         i64::from(launch_speed),

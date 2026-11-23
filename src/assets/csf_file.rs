@@ -166,15 +166,54 @@ impl CsfFile {
     /// appends its fixed candidates, for a game whose files take Ares' forms
     /// (`ares`, `AssetManager::ships_ares`); native controls:
     /// tools/rules_oracle/ares_csf.
+    /// The base CSF this process uses. YR reads `ra2md.csf`; `-ra2` reads the
+    /// original RA2 `ra2.csf` shipped inside `language.mix`.
+    pub fn active_csf_name() -> &'static str {
+        if crate::util::ra2_launch::enabled() {
+            "ra2.csf"
+        } else {
+            "ra2md.csf"
+        }
+    }
+
     pub fn load_active<'a>(
         ares: bool,
         mut lookup: impl FnMut(&str) -> Option<&'a [u8]>,
     ) -> Result<(Self, Vec<String>), AssetError> {
-        let bytes = lookup("ra2md.csf").ok_or_else(|| AssetError::AssetNotFound {
-            name: "ra2md.csf".to_string(),
+        let csf_name = Self::active_csf_name();
+        let bytes = lookup(csf_name).ok_or_else(|| AssetError::AssetNotFound {
+            name: csf_name.to_string(),
         })?;
         let mut table = Self::from_bytes(bytes)?;
         let mut admitted = Vec::new();
+        // `-ra2` reads the original ra2.csf. The YR table is installed beside
+        // it and carries labels the base table does not (e.g. UI strings added
+        // for the expansion). Adopt those as fallbacks: a label ra2.csf has
+        // keeps its original value, missing ones answer from ra2md.csf.
+        if crate::util::ra2_launch::enabled()
+            && let Some(md_bytes) = lookup("ra2md.csf")
+            && let Ok(md_table) = Self::from_bytes(md_bytes)
+        {
+            // Absorb missing labels into the base table itself, not into the
+            // localization fallbacks: `i18n::apply` clears those right after
+            // this load, while entries survive. A label ra2.csf already has
+            // keeps its original value.
+            let mut added = 0usize;
+            if let (CsfEntries::Raw(base), CsfEntries::Raw(md)) =
+                (&mut table.entries, md_table.entries)
+            {
+                for (key, value) in md {
+                    if !base.contains_key(&key) {
+                        base.insert(key, value);
+                        added += 1;
+                    }
+                }
+            }
+            if added > 0 {
+                log::info!("RA2 CSF fallback: adopted {added} labels from ra2md.csf");
+                admitted.push("ra2md.csf".to_string());
+            }
+        }
         if !ares {
             return Ok((table, admitted));
         }

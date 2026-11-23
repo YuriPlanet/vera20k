@@ -452,16 +452,20 @@ If you write a map editor or tool, the [map format](map-format.md) has the detai
 ## Playing with others
 
 A match starts only if everyone has the same VERA20k version and build, the same map, and
-the same selected Rules, Art and AI, theater INIs (such as `snowmd.ini`) and
-terrain tiles. **Terrain Deformation**, the **Superweapon Limit** and the **Building
+the same selected Rules, Art and AI. **Terrain Deformation**, the **Superweapon Limit** and the **Building
 Production Queue** don't need to match: a room plays its host's, and a match a launcher
 starts plays without the queue. With a mod in use,
-everyone also needs the same files in the mod's folder: every file there is compared by
+everyone also needs the same theater INIs (such as `snowmd.ini`) and terrain tiles, and the same
+files in the mod's folder: every file there is compared by
 its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what
-the file holds. Terrain tiles you put in the game folder itself, such as `clear01.sno` or
-an `isosnomd.mix`, are compared with the original game's, because they decide how high the
-ground is and where units can go. Other pictures and sounds there aren't compared.
+the file holds. Terrain tiles decide how high the ground is and where units can go, so a
+mod's are compared with the original game's. Without a mod, terrain files you put in the game
+folder itself, such as `clear01.sno`, an `isosnomd.mix` or a tile pack in `expandmd06.mix`,
+are left out of an online match on a map that uses only the original game's tiles: every
+player's game reads the original terrain there. A map that uses other tiles needs everyone
+to have the same terrain files, and the match says so when it starts. Other pictures and
+sounds there aren't compared.
 Players who don't have your map are asked whether to download it when they join your
 online room. When a match can't start because the files differ, each player's game says
 what it changes from the original game (its mod, or files such as a loose `rulesmd.ini`),
@@ -470,8 +474,9 @@ or that it plays the original, so the difference is in another player's game.
 Quick Match pairs you with anyone on the same VERA20k version, so it plays the original
 game, without anyone's Terrain Deformation, Superweapon Limit or Building Production Queue. With a mod in use it tells
 you to pick **No mod** in the Mods menu first. It also names
-any files in the game folder that change the original rules or terrain tiles, such as a
-loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left there.
+any files in the game folder that change the original rules, such as a
+loose `rulesmd.ini`, or an `expandmd99.mix` an old mod left there. Terrain files there
+don't matter: its matches read the original terrain.
 
 ## Sharing your mod
 
