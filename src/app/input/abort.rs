@@ -80,6 +80,16 @@ pub(crate) fn current_abort_layout(state: &AppState) -> Option<AbortLayout> {
     })
 }
 
+/// Makes B6's nodes current without input (rects, the hidden 712): its
+/// renderer's call every drawn frame before it paints from them.
+pub(crate) fn sync(state: &mut AppState) -> Option<AbortLayout> {
+    let layout = current_abort_layout(state)?;
+    let nodes = || abort::spec(layout.secondary_kind);
+    let rect_of = |id| layout.rect(id);
+    DIALOG.sync(state, nodes, rect_of, super::dialog_page::no_sync);
+    Some(layout)
+}
+
 /// One pointer message on B6 (`down`: `None` moves).
 pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     let Some(layout) = current_abort_layout(state) else {

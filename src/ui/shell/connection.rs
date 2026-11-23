@@ -198,6 +198,8 @@ pub struct BarPaint {
     pub outline: RectPx,
     pub fill: RectPx,
     pub fill_rgb: [u8; 3],
+    /// The fill's share of the width, 0..=100 ([`bar_fill_rect`]).
+    pub percent: i32,
 }
 
 /// 0x0064A7B0 for one row. `lag` is the record's age in 16 ms buckets
@@ -222,13 +224,21 @@ pub fn bar_paint(rect: RectPx, lag: u32, age_ticks: u32) -> BarPaint {
     }
     // Unsigned arithmetic, then the signed `< 1` clamp to zero.
     let percent = 100u32.wrapping_sub(lag.wrapping_mul(100) / 1200) as i32;
-    let width = rect.w * percent.max(0) / 100;
-    let width = if width > 5 { width } else { 6 };
+    let percent = percent.max(0);
     BarPaint {
         outline: rect,
-        fill: RectPx::new(rect.x + 2, rect.y + 2, width - 4, rect.h - 4),
+        fill: bar_fill_rect(rect, percent),
         fill_rgb: rgb,
+        percent,
     }
+}
+
+/// 0x0064A7B0's fill in the bar `rect` for `percent` (0..=100) of its
+/// width, at least 6 pixels, inset by 2.
+pub fn bar_fill_rect(rect: RectPx, percent: i32) -> RectPx {
+    let width = rect.w * percent.max(0) / 100;
+    let width = if width > 5 { width } else { 6 };
+    RectPx::new(rect.x + 2, rect.y + 2, width - 4, rect.h - 4)
 }
 
 /// A named node bound at dialog creation. VERA keeps its stable source index

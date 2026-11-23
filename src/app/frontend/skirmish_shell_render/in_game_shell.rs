@@ -219,20 +219,63 @@ impl<'a> InGamePaint<'a> {
     /// ([`super::pause_menu::button_frame`]) and centred caption, in the
     /// side's colour while disabled or lit.
     pub(super) fn owner_button(&mut self, rect: RectPx, caption: &str, look: PauseMenuButtonState) {
-        let (buttons, screen) = (&self.atlas.in_game_shell.buttons, self.screen());
-        if let Some(entry) = buttons[super::pause_menu::button_frame(look)].or(buttons[0]) {
-            push_art(&mut self.art, entry, rect, screen);
+        let (font, side) = (&self.state.renderer.bit_font, self.side_buttons());
+        let (art, texts) = (&mut self.art, &mut self.texts);
+        super::gui_paint::push_side_button(art, texts, font, side, rect, Some(caption), look, 1.0);
+    }
+
+    /// This shell's type-2 button art for [`super::gui_paint::ButtonArt::Side`].
+    pub(super) fn side_buttons(&self) -> super::gui_paint::SideButtons {
+        super::gui_paint::SideButtons {
+            frames: self.atlas.in_game_shell.buttons,
+            theme: self.theme,
+            clip: self.screen(),
         }
-        // A lit face takes the art's dark label colour, as a disabled one
-        // does: yellow is hard to read on it.
-        let rgb = super::pause_menu::button_text_rgb(self.theme, look.enabled && !look.highlighted);
-        let at = super::pause_menu::button_text_rect(rect, look.pressed);
-        self.text_rgb(
-            caption,
-            at,
-            rgb,
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        );
+    }
+
+    /// The controls `ids` of `ui`'s top dialog, each with its subtree, in
+    /// that order, painted by [`super::gui_paint`] in `style` straight onto
+    /// these lanes: [`super::gui_paint::ButtonArt::Side`] art on `art`, the
+    /// rest on `controls` and `texts`. A missing id paints nothing. The
+    /// nodes must be current this frame
+    /// ([`crate::app::input::dialog_page::InGameDialog::sync`]).
+    pub(super) fn nodes(
+        &mut self,
+        ui: &DialogController,
+        ids: &[u16],
+        style: super::gui_paint::GuiStyle<'_>,
+    ) {
+        let Some(root) = ui.top_id().and_then(|dialog| ui.root_in(dialog)) else {
+            return;
+        };
+        let (state, gui) = (self.state, ui.gui());
+        let atlas = state.frontend.skirmish_shell_chrome.as_ref();
+        // The lanes move in and back out: no new buffers.
+        let mut paint = super::gui_paint::GuiPaint {
+            side: std::mem::take(&mut self.art),
+            controls: std::mem::take(&mut self.controls),
+            texts: std::mem::take(&mut self.texts),
+            ..Default::default()
+        };
+        let scale = crate::ui::shell::geom::RETAIL_SCALE;
+        for node in ids
+            .iter()
+            .filter_map(|id| gui.find_id(root, i32::from(*id)))
+        {
+            super::gui_paint::paint_gui_into(
+                &mut paint,
+                state,
+                atlas,
+                gui,
+                node,
+                scale,
+                &[],
+                style,
+            );
+        }
+        self.art = paint.side;
+        self.controls = paint.controls;
+        self.texts = paint.texts;
     }
 
     /// A static's text in the label colour.
@@ -290,22 +333,58 @@ pub(super) fn paint_dialog(
     dialog: &InGameDialog,
     extras: impl FnOnce(&mut InGamePaint<'_>, &DialogController),
 ) -> anyhow::Result<()> {
+    paint_dialog_as(state, encoder, destination, dialog, false, extras)
+}
+
+/// [`paint_dialog`] for a dialog whose nodes are current
+/// ([`InGameDialog::sync`]): the lower button paints from its node
+/// (its spec's control `dialog.lower.0` on the layout's lower rect), a
+/// [`super::gui_paint::ButtonArt::Side`] button captioned `dialog.lower.1`.
+pub(super) fn paint_dialog_nodes(
+    state: &mut AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+    dialog: &InGameDialog,
+    extras: impl FnOnce(&mut InGamePaint<'_>, &DialogController),
+) -> anyhow::Result<()> {
+    paint_dialog_as(state, encoder, destination, dialog, true, extras)
+}
+
+fn paint_dialog_as(
+    state: &mut AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+    dialog: &InGameDialog,
+    lower_node: bool,
+    extras: impl FnOnce(&mut InGamePaint<'_>, &DialogController),
+) -> anyhow::Result<()> {
     let frame = {
         let state: &AppState = state;
         let ui = (dialog.ui)(state).expect("the open dialog's controls");
         let mut paint = InGamePaint::new(state);
         paint.help = crate::app::input::dialog_page::help(ui).map(|key| state.csf_label(key, ""));
         let shell = paint.shell;
-        let (id, caption) = dialog.lower;
-        let rect = shell
-            .layout
-            .lower_button_rect(shell.width, shell.button_size);
-        let caption = paint.label(caption);
-        paint.button(
-            rect,
-            &caption,
-            crate::app::input::dialog_page::pressed(ui, id),
-        );
+        let (id, (key, fallback)) = dialog.lower;
+        if lower_node {
+            let text_of = |_: i32| Some(state.csf_label(key, fallback));
+            let style = super::gui_paint::GuiStyle {
+                buttons: super::gui_paint::ButtonArt::Side,
+                side: Some(paint.side_buttons()),
+                text_of: Some(&text_of),
+                ..Default::default()
+            };
+            paint.nodes(ui, &[id], style);
+        } else {
+            let rect = shell
+                .layout
+                .lower_button_rect(shell.width, shell.button_size);
+            let caption = state.csf_label(key, fallback);
+            paint.button(
+                rect,
+                &caption,
+                crate::app::input::dialog_page::pressed(ui, id),
+            );
+        }
         if let Some(title) = dialog.title {
             let title = paint.label(title);
             paint.text(
@@ -393,7 +472,10 @@ pub(super) fn background_instances(
             );
         }
     }
-    for (key, rect) in [(ArtKey::EndArt, layout.side3), (ArtKey::FootArt, layout.addon)] {
+    for (key, rect) in [
+        (ArtKey::EndArt, layout.side3),
+        (ArtKey::FootArt, layout.addon),
+    ] {
         if let Some(entry) = atlas.art(SidebarPart::Cameos, key, 0) {
             push_art(&mut out, entry, rect, screen);
         }

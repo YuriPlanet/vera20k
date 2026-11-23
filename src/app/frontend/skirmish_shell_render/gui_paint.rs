@@ -9,6 +9,13 @@
 //! own props choose its text: `Color` and `DisabledColor`, `Align`,
 //! `TextInset`; the host's [`GuiStyle`] the buttons' art and the texts and
 //! rows it keeps itself.
+//!
+//! The in-game shell dialogs paint here too ([`super::in_game_shell::InGamePaint::nodes`]):
+//! their right-panel buttons ([`ButtonArt::Side`]), MNBTTN buttons with the
+//! type-2 caption ([`ButtonArt::ModalType2`]), group boxes and sunken frames
+//! ([`GuiStyle::frame_of`]), dual-state and disabled checkboxes
+//! ([`checkbox_face`], [`GuiStyle::dim_disabled_checkboxes`]), flag
+//! pictures (`Image` nodes) and host-coloured bars (`Bar` nodes).
 
 use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
 
@@ -24,11 +31,16 @@ use super::{
 };
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
+use crate::render::bit_font::BitFont;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalButton, ModalDepths};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
-use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
+use crate::render::sidebar_chrome::SidebarChromeEntry;
+use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
+use crate::ui::shell::checkbox::CheckboxFace;
 use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::pause_menu::PauseMenuButtonState;
+use crate::ui::sidebar::SidebarTheme;
 use vera20k_gui::shell::trackbar::{TrackbarRange, value_text_rect};
 
 /// Sprites (skirmish atlas), page-art pictures and texts of a dialog's
@@ -36,6 +48,9 @@ use vera20k_gui::shell::trackbar::{TrackbarRange, value_text_rect};
 #[derive(Default)]
 pub(crate) struct GuiPaint {
     pub(crate) controls: Vec<SpriteInstance>,
+    /// [`ButtonArt::Side`] buttons, on the sidebar atlas, under `controls`
+    /// (an in-game dialog's `art` lane).
+    pub(crate) side: Vec<SpriteInstance>,
     /// [`ButtonArt::Column`] buttons, on the main-menu chrome.
     pub(crate) column: Vec<SpriteInstance>,
     /// [`CellRow`] pictures, on the style's page art.
@@ -99,6 +114,93 @@ pub(crate) enum ButtonArt {
     /// The caption alone, in its `Align` (`0x113`'s text sort buttons, whose
     /// owner-draw face is not traced).
     Caption,
+    /// The active-game shell's right-panel type-2 buttons (`0x00612B70`):
+    /// [`GuiStyle::side`]'s SIDEBTTN frame on [`GuiPaint::side`], pushed
+    /// only while the press is held with the pointer still on it, lit while
+    /// `Toggled`; the caption centred in the type-2 rect
+    /// (`pause_menu::button_text_rect`, pressed +2/+4) in
+    /// `pause_menu::button_text_rgb`: the side's dark colour while disabled
+    /// or lit. `Color` is not read. Nothing paints without `side`.
+    Side,
+    /// [`Self::Modal`]'s MNBTTN art with the type-2 caption of the in-game
+    /// dialogs' MNBTTN buttons: centred in `pause_menu::button_text_rect`
+    /// (pressed +2/+4, not owner-draw's +2/+5).
+    ModalType2,
+}
+
+impl ButtonArt {
+    /// The button that shows pushed: the Modal and Side buttons' only while
+    /// the pointer is still on it (`held`, 612B70), the others' while their
+    /// press holds them (`captured`).
+    fn pushed(self, held: Option<NodeId>, captured: Option<NodeId>) -> Option<NodeId> {
+        match self {
+            ButtonArt::Modal
+            | ButtonArt::ModalCentred
+            | ButtonArt::ModalSqueezed
+            | ButtonArt::ModalType2
+            | ButtonArt::Side => held,
+            _ => captured,
+        }
+    }
+
+    /// Where and how a button's caption draws: `own_align` is the node's
+    /// `Align`, when it has one.
+    fn caption_rect(
+        self,
+        rect: RectPx,
+        pressed: bool,
+        own_align: Option<ShellAlign>,
+        scale: ShellScale,
+    ) -> (RectPx, ShellAlign) {
+        let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+        match (self, own_align) {
+            (ButtonArt::Modal, _) => (
+                crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
+                centred,
+            ),
+            (ButtonArt::ModalCentred | ButtonArt::PanelCentred, _) => (rect, centred),
+            (ButtonArt::ModalType2 | ButtonArt::Side, _) => {
+                (super::pause_menu::button_text_rect(rect, pressed), centred)
+            }
+            (_, Some(align)) => (rect, align),
+            (ButtonArt::Column, None) => (
+                crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
+                ShellAlign::BUTTON_CAPTION,
+            ),
+            (_, None) => (
+                button_label_rect_px(rect, pressed, scale),
+                ShellAlign::BUTTON_CAPTION,
+            ),
+        }
+    }
+}
+
+/// The type-2 buttons' art for [`ButtonArt::Side`]: an in-game dialog's
+/// ([`super::in_game_shell::InGamePaint::side_buttons`]).
+#[derive(Clone, Copy)]
+pub(crate) struct SideButtons {
+    /// SIDEBTTN released, pressed and lit (`InGameShellArt::buttons`).
+    pub(crate) frames: [Option<SidebarChromeEntry>; 3],
+    /// The side whose colour a disabled or lit caption takes.
+    pub(crate) theme: SidebarTheme,
+    /// The art is cut to it: the shell's screen.
+    pub(crate) clip: RectPx,
+}
+
+/// What a node paints as, by its `Id`, in place of its kind
+/// ([`GuiStyle::frame_of`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FrameArt {
+    /// A group box (`0x0061E700`): the bevel from half a font cell below the
+    /// node's top, its caption (`Label`, `Text` or `text_of`) 10 px in and
+    /// one cell tall, cut out of the top edge; the caption in its `Align`
+    /// (else none) and `Color`.
+    Group,
+    /// The plain bevel (`0x006208F0`) on the node's rect, no caption: the
+    /// host gives the rect the frame covers (a hotkey field's grown by
+    /// native's extra pixel and the two-pixel border). `outer_light` puts
+    /// the light colour on the outer ring (a sunken field).
+    Plain { outer_light: bool },
 }
 
 /// How a dialog's combos paint their face.
@@ -161,6 +263,13 @@ pub(crate) struct GuiStyle<'a> {
     pub(crate) face_factor: Option<f32>,
     /// The colour of a text with no `Color` (VERA's room's green).
     pub(crate) rgb: [f32; 3],
+    /// [`ButtonArt::Side`]'s art.
+    pub(crate) side: Option<SideButtons>,
+    /// A node that paints as a frame by its `Id` ([`FrameArt`]).
+    pub(crate) frame_of: Option<&'a dyn Fn(i32) -> Option<FrameArt>>,
+    /// A disabled checkbox shows its face dimmed (`0x006163A0`); off, a
+    /// checkbox's `Enabled` greys only its caption.
+    pub(crate) dim_disabled_checkboxes: bool,
 }
 
 impl Default for GuiStyle<'_> {
@@ -182,6 +291,9 @@ impl Default for GuiStyle<'_> {
             text_factor: None,
             face_factor: None,
             rgb: SHELL_LABEL_TEXT_RGB,
+            side: None,
+            frame_of: None,
+            dim_disabled_checkboxes: false,
         }
     }
 }
@@ -361,6 +473,7 @@ impl GuiPaint {
     /// Appends `other`'s draws after this one's.
     pub(crate) fn extend(&mut self, other: GuiPaint) {
         self.controls.extend(other.controls);
+        self.side.extend(other.side);
         self.column.extend(other.column);
         self.icons.extend(other.icons);
         self.texts.extend(other.texts);
@@ -381,7 +494,40 @@ pub(crate) fn paint_gui_with(
     style: GuiStyle<'_>,
 ) -> GuiPaint {
     let mut paint = GuiPaint::default();
-    let chrome = atlas.control_chrome();
+    paint_gui_into(
+        &mut paint,
+        state,
+        Some(atlas),
+        gui,
+        root,
+        scale,
+        overlays,
+        style,
+    );
+    paint
+}
+
+/// [`paint_gui_with`] appended to `paint`'s lanes, for a host that keeps
+/// its own (an in-game dialog's, [`super::in_game_shell::InGamePaint::nodes`]).
+/// Without `atlas` (the shell control art not loaded) only what needs none
+/// paints: [`ButtonArt::Side`] and [`ButtonArt::Column`] buttons, captions
+/// and texts.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn paint_gui_into(
+    paint: &mut GuiPaint,
+    state: &AppState,
+    atlas: Option<&SkirmishShellChromeAtlas>,
+    gui: &Gui,
+    root: NodeId,
+    scale: ShellScale,
+    overlays: &[RectPx],
+    style: GuiStyle<'_>,
+) {
+    let chrome = atlas
+        .map(SkirmishShellChromeAtlas::control_chrome)
+        .unwrap_or_default();
+    let white = atlas.and_then(|atlas| atlas.white_pixel);
+    let font = &state.renderer.bit_font;
     // Shell passes draw in queue order (no depth test).
     let depth = SHELL_CONTROL_TEXT_DEPTH;
     let glyph = style.text_factor.unwrap_or(scale.factor());
@@ -425,6 +571,27 @@ pub(crate) fn paint_gui_with(
             None => flag(gui, node, Prop::Enabled, true),
         };
         let align = ShellAlign(int(gui, node, Prop::Align, ShellAlign::V_CENTER.0 as i32) as u8);
+        if let Some(frame) = style
+            .frame_of
+            .zip(id(node))
+            .and_then(|(frame_of, id)| frame_of(id))
+        {
+            let label = caption(node);
+            let look = TextLook {
+                align: match gui.get(node, Prop::Align).ok().flatten() {
+                    Some(_) => align,
+                    None => ShellAlign::NONE,
+                },
+                glyph,
+                rgb: text_rgb(gui, node, enabled, style.rgb, None),
+            };
+            let (controls, texts) = (&mut paint.controls, &mut paint.texts);
+            let caption = label.as_deref().map(|label| (label, !covered));
+            push_frame(
+                controls, texts, font, white, rect, frame, caption, look, scale,
+            );
+            continue;
+        }
         match kind {
             NodeKind::Button => {
                 let art = style
@@ -432,25 +599,23 @@ pub(crate) fn paint_gui_with(
                     .zip(id(node))
                     .and_then(|(art_of, id)| art_of(id))
                     .unwrap_or(style.buttons);
-                let pressed = match art {
-                    ButtonArt::Modal | ButtonArt::ModalCentred | ButtonArt::ModalSqueezed => held,
-                    _ => captured,
-                } == Some(node);
-                match art {
-                    ButtonArt::Host => continue,
-                    ButtonArt::Caption => {}
-                    ButtonArt::Panel | ButtonArt::PanelCentred => super::chrome::push_right_panel_button_shp(
-                        &mut paint.controls,
-                        atlas,
-                        rect,
-                        vera20k_gui::shell::button::ButtonVisual {
-                            pressed,
-                            highlighted: flag(gui, node, Prop::Toggled, false),
-                        },
-                        !enabled,
-                        SHELL_CONTROL_DEPTH,
-                    ),
-                    ButtonArt::Column => {
+                let pressed = art.pushed(held, captured) == Some(node);
+                if art == ButtonArt::Side {
+                    let Some(side) = style.side else { continue };
+                    let look = PauseMenuButtonState {
+                        pressed,
+                        highlighted: flag(gui, node, Prop::Toggled, false),
+                        enabled,
+                    };
+                    let label = caption(node).filter(|_| !covered);
+                    let (art, texts) = (&mut paint.side, &mut paint.texts);
+                    push_side_button(art, texts, font, side, rect, label.as_deref(), look, glyph);
+                    continue;
+                }
+                match (art, atlas) {
+                    (ButtonArt::Host | ButtonArt::Side, _) => continue,
+                    (ButtonArt::Caption, _) => {}
+                    (ButtonArt::Column, _) => {
                         let visual = vera20k_gui::shell::button::ButtonVisual {
                             pressed,
                             highlighted: flag(gui, node, Prop::Toggled, false),
@@ -463,7 +628,28 @@ pub(crate) fn paint_gui_with(
                             shell_paint::column_button(chrome, rect, frame, SHELL_CONTROL_DEPTH)
                         }));
                     }
-                    ButtonArt::Modal | ButtonArt::ModalCentred | ButtonArt::ModalSqueezed => {
+                    // The rest are the shell control art's.
+                    (_, None) => continue,
+                    (ButtonArt::Panel | ButtonArt::PanelCentred, Some(atlas)) => {
+                        super::chrome::push_right_panel_button_shp(
+                            &mut paint.controls,
+                            atlas,
+                            rect,
+                            vera20k_gui::shell::button::ButtonVisual {
+                                pressed,
+                                highlighted: flag(gui, node, Prop::Toggled, false),
+                            },
+                            !enabled,
+                            SHELL_CONTROL_DEPTH,
+                        )
+                    }
+                    (
+                        ButtonArt::Modal
+                        | ButtonArt::ModalCentred
+                        | ButtonArt::ModalSqueezed
+                        | ButtonArt::ModalType2,
+                        Some(atlas),
+                    ) => {
                         let button = ModalButton {
                             rect,
                             pressed,
@@ -483,7 +669,7 @@ pub(crate) fn paint_gui_with(
                             depths,
                         ));
                     }
-                    ButtonArt::Plate => {
+                    (ButtonArt::Plate, Some(atlas)) => {
                         let out = &mut paint.controls;
                         super::chrome::push_solid_rect(
                             out,
@@ -510,40 +696,20 @@ pub(crate) fn paint_gui_with(
                     style.rgb,
                     Some(shell_paint::SHELL_TEXT_RGB_DISABLED),
                 );
-                let (at, align) = match (art, gui.get(node, Prop::Align).ok().flatten()) {
-                    (ButtonArt::Modal, _) => (
-                        crate::app::frontend::shell_pass::owner_draw_button_label_rect(
-                            rect, pressed,
-                        ),
-                        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                    ),
-                    (ButtonArt::ModalCentred | ButtonArt::PanelCentred, _) => {
-                        (rect, ShellAlign::H_CENTER | ShellAlign::V_CENTER)
-                    }
-                    (_, Some(_)) => (rect, align),
-                    (ButtonArt::Column, None) => (
-                        crate::app::frontend::shell_pass::owner_draw_button_label_rect(
-                            rect, pressed,
-                        ),
-                        ShellAlign::BUTTON_CAPTION,
-                    ),
-                    (_, None) => (
-                        button_label_rect_px(rect, pressed, scale),
-                        ShellAlign::BUTTON_CAPTION,
-                    ),
-                };
+                let own_align = gui.get(node, Prop::Align).ok().flatten().map(|_| align);
+                let (at, align) = art.caption_rect(rect, pressed, own_align, scale);
                 paint
                     .texts
                     .push(text(state, &label, at, align, glyph, rgb, depth));
             }
             NodeKind::Checkbox => {
-                let checked = flag(gui, node, Prop::Checked, false);
-                paint_control(
-                    &mut paint.controls,
-                    &chrome,
-                    ControlPaint::Checkbox { rect, checked },
-                    scale,
-                );
+                // `Checkbox { checked }` is this face, never dimmed.
+                let control = ControlPaint::StatefulCheckbox {
+                    face: checkbox_face(gui, node),
+                    disabled: style.dim_disabled_checkboxes && !enabled,
+                    rect,
+                };
+                paint_control(&mut paint.controls, &chrome, control, scale);
                 if let Some(label) = caption(node).filter(|_| !covered) {
                     let at = crate::ui::skirmish_shell::checkbox_text_rect(rect, scale);
                     let rgb = text_rgb(gui, node, enabled, style.rgb, None);
@@ -609,6 +775,7 @@ pub(crate) fn paint_gui_with(
                 }
             }
             NodeKind::Combo => {
+                let Some(atlas) = atlas else { continue };
                 let host_rows = gui
                     .get(node, Prop::RowCount)
                     .ok()
@@ -627,10 +794,11 @@ pub(crate) fn paint_gui_with(
                 }
                 let face = (rect, !covered);
                 paint_combo(
-                    &mut paint, state, atlas, gui, node, face, enabled, scale, style, host_rows,
+                    paint, state, atlas, gui, node, face, enabled, scale, style, host_rows,
                 );
             }
             NodeKind::List => {
+                let Some(atlas) = atlas else { continue };
                 // A host-counted list's rows are the host's, or it paints it.
                 let cells = style
                     .cells_of
@@ -681,7 +849,7 @@ pub(crate) fn paint_gui_with(
                     let rows = cells.into_iter().skip(view.top).take(geometry.visible_rows);
                     for (visible, row) in rows.enumerate() {
                         let r = geometry.row(visible);
-                        paint_cells(&mut paint, state, atlas, style, row, r, scale, covered);
+                        paint_cells(paint, state, atlas, style, row, r, scale, covered);
                     }
                     continue;
                 }
@@ -720,6 +888,7 @@ pub(crate) fn paint_gui_with(
             // host paints itself) draws nothing.
             NodeKind::Edit if rect.w <= 0 || rect.h <= 0 => {}
             NodeKind::Edit => {
+                let Some(atlas) = atlas else { continue };
                 let mut edit = gui.edit_state(node).unwrap_or_default();
                 let composition = state
                     .platform
@@ -731,7 +900,6 @@ pub(crate) fn paint_gui_with(
                     None => state.frontend.shell_controller.caret_visible(node),
                 };
                 edit.focused |= style.caret_of.is_some() && caret;
-                let font = &state.renderer.bit_font;
                 let rgb = text_rgb(gui, node, true, style.rgb, None);
                 let Some(field) = inset(gui, node, rect, scale) else {
                     let (out, texts) = (&mut paint.controls, &mut paint.texts);
@@ -787,10 +955,157 @@ pub(crate) fn paint_gui_with(
                         .push(text(state, &label, at, align, glyph, rgb, depth));
                 }
             }
+            // A flag or insignia PCX (`Art`) from the shell art's flags,
+            // clipped to the node and centred in it.
+            NodeKind::Image => {
+                let (Some(atlas), Ok(Some(Value::Text(name)))) = (atlas, gui.get(node, Prop::Art))
+                else {
+                    continue;
+                };
+                if let Some(entry) = atlas.lan_player_side(name) {
+                    let out = &mut paint.controls;
+                    super::chrome::push_flag_entry_clipped_centered(
+                        out,
+                        entry,
+                        rect,
+                        scale,
+                        SHELL_CONTROL_DEPTH,
+                    );
+                }
+            }
+            // 0x0064A7B0's bar: the outline in `Background`, the fill
+            // `Fill` percent wide in `Color`.
+            NodeKind::Bar => {
+                let bar = BarLook {
+                    percent: int(gui, node, Prop::Fill, 100),
+                    outline: color(gui, node, Prop::Background).unwrap_or_else(|| {
+                        crate::ui::shell::connection::BAR_OUTLINE_RGB.map(|c| f32::from(c) / 255.0)
+                    }),
+                    fill: color(gui, node, Prop::Color).unwrap_or(style.rgb),
+                };
+                push_bar(&mut paint.controls, white, rect, bar);
+            }
             _ => {}
         }
     }
-    paint
+}
+
+/// A text's alignment, glyph scale and colour.
+#[derive(Clone, Copy)]
+pub(crate) struct TextLook {
+    pub(crate) align: ShellAlign,
+    pub(crate) glyph: f32,
+    pub(crate) rgb: [f32; 3],
+}
+
+/// A checkbox node's face: dual-state (message 0x4E5) when it carries its
+/// partner flag (0x4E6) in `Selected`, 0 or 1 ([`CheckboxFace::dual_state`]),
+/// else checked or not by `Checked`.
+pub(crate) fn checkbox_face(gui: &Gui, node: NodeId) -> CheckboxFace {
+    let checked = flag(gui, node, Prop::Checked, false);
+    match gui.get(node, Prop::Selected).ok().flatten() {
+        Some(Value::Int(partner)) => CheckboxFace::dual_state(checked, *partner != 0),
+        _ if checked => CheckboxFace::Checked,
+        _ => CheckboxFace::Unchecked,
+    }
+}
+
+/// [`ButtonArt::Side`]: `look`'s SIDEBTTN frame (frame 0 when the art lacks
+/// it) at its canvas size on `rect`, cut to the clip, then the caption, if
+/// any, centred in the type-2 rect in the type-2 colour.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn push_side_button(
+    art: &mut Vec<SpriteInstance>,
+    texts: &mut Vec<ShellTextDraw>,
+    font: &BitFont,
+    side: SideButtons,
+    rect: RectPx,
+    caption: Option<&str>,
+    look: PauseMenuButtonState,
+    glyph: f32,
+) {
+    let frames = side.frames;
+    if let Some(entry) = frames[super::pause_menu::button_frame(look)].or(frames[0]) {
+        super::in_game_shell::push_art(art, entry, rect, side.clip);
+    }
+    let Some(caption) = caption else { return };
+    // A lit face takes the art's dark label colour, as a disabled one
+    // does: yellow is hard to read on it.
+    let rgb = super::pause_menu::button_text_rgb(side.theme, look.enabled && !look.highlighted);
+    let scale = crate::ui::shell::geom::RETAIL_SCALE;
+    let (at, align) = ButtonArt::Side.caption_rect(rect, look.pressed, None, scale);
+    texts.push(shell_text::draw_in_rect_scaled(
+        font,
+        caption,
+        rect_to_text_rect(at),
+        rgb,
+        align,
+        [0.0; 2],
+        SHELL_CONTROL_TEXT_DEPTH,
+        glyph,
+    ));
+}
+
+/// A [`FrameArt`] on `rect`, and a group's caption when it has one and it
+/// shows (`caption.1`); the caption's width cuts the frame either way.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn push_frame(
+    controls: &mut Vec<SpriteInstance>,
+    texts: &mut Vec<ShellTextDraw>,
+    font: &BitFont,
+    white: Option<SkirmishShellChromeEntry>,
+    rect: RectPx,
+    frame: FrameArt,
+    caption: Option<(&str, bool)>,
+    look: TextLook,
+    scale: ShellScale,
+) {
+    use super::controls::{group_box_geometry, push_group_or_plain_frame};
+    match frame {
+        FrameArt::Group => {
+            let cell = font.cell_height() as i32;
+            let (frame, caption_rect) = group_box_geometry(rect, cell, scale);
+            let width = caption.map(|(caption, _)| font.text_width(caption) as i32);
+            push_group_or_plain_frame(controls, white, frame, width, false, scale);
+            if let Some((caption, true)) = caption {
+                texts.push(shell_text::draw_in_rect_scaled(
+                    font,
+                    caption,
+                    rect_to_text_rect(caption_rect),
+                    look.rgb,
+                    look.align,
+                    [0.0; 2],
+                    SHELL_CONTROL_TEXT_DEPTH,
+                    look.glyph,
+                ));
+            }
+        }
+        FrameArt::Plain { outer_light } => {
+            push_group_or_plain_frame(controls, white, rect, None, outer_light, scale)
+        }
+    }
+}
+
+/// A `Bar` node's fill share (0..=100) and colours.
+#[derive(Clone, Copy)]
+pub(crate) struct BarLook {
+    pub(crate) percent: i32,
+    pub(crate) outline: [f32; 3],
+    pub(crate) fill: [f32; 3],
+}
+
+/// 0x0064A7B0's bar on `rect`: the one-pixel outline, then the fill
+/// ([`crate::ui::shell::connection::bar_fill_rect`]) just over it.
+pub(crate) fn push_bar(
+    out: &mut Vec<SpriteInstance>,
+    white: Option<SkirmishShellChromeEntry>,
+    rect: RectPx,
+    bar: BarLook,
+) {
+    super::chrome::push_rect_outline_px(out, white, rect, bar.outline, SHELL_CONTROL_DEPTH);
+    let fill = crate::ui::shell::connection::bar_fill_rect(rect, bar.percent);
+    let depth = SHELL_CONTROL_DEPTH - 0.00001;
+    super::chrome::push_solid_rect_px(out, white, fill, bar.fill, depth);
 }
 
 /// A multi-cell row on `row`: its fill, then its cells' texts and pictures.
@@ -1005,5 +1320,406 @@ fn paint_combo(
         } else {
             draw(item);
         }
+    }
+}
+
+#[cfg(all(test, tests_app_frontend))]
+mod tests {
+    use super::*;
+    use crate::render::shell_text::ScissorRect;
+    use crate::ui::shell::geom::RETAIL_SCALE;
+    use vera20k_gui::{DialogKind, InputEvent, MouseButton, NodeKind, NodeSpec};
+
+    fn font() -> BitFont {
+        crate::render::bit_font::tests::make_test_font(&[(u16::from(b'A'), 6)], 4)
+    }
+
+    fn entry(w: f32, h: f32, u: f32) -> SkirmishShellChromeEntry {
+        SkirmishShellChromeEntry {
+            uv_origin: [u, 0.0],
+            uv_size: [0.1, 0.1],
+            pixel_size: [w, h],
+        }
+    }
+
+    fn side_entry(w: f32, h: f32, u: f32) -> SidebarChromeEntry {
+        SidebarChromeEntry {
+            uv_origin: [u, 0.0],
+            uv_size: [0.1, 0.1],
+            pixel_size: [w, h],
+        }
+    }
+
+    fn same_sprites(a: &[SpriteInstance], b: &[SpriteInstance]) {
+        assert_eq!(a.len(), b.len());
+        assert_eq!(
+            bytemuck::cast_slice::<SpriteInstance, u8>(a),
+            bytemuck::cast_slice::<SpriteInstance, u8>(b)
+        );
+    }
+
+    fn scissor(s: ScissorRect) -> [u32; 4] {
+        [s.x, s.y, s.w, s.h]
+    }
+
+    fn same_texts(a: &[ShellTextDraw], b: &[ShellTextDraw]) {
+        assert_eq!(a.len(), b.len());
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(scissor(a.scissor), scissor(b.scissor));
+            same_sprites(&a.instances, &b.instances);
+        }
+    }
+
+    /// `InGamePaint::owner_button` as it was before it called
+    /// [`push_side_button`].
+    fn hand_owner_button(
+        font: &BitFont,
+        side: SideButtons,
+        rect: RectPx,
+        caption: &str,
+        look: PauseMenuButtonState,
+    ) -> (Vec<SpriteInstance>, Vec<ShellTextDraw>) {
+        let (mut art, mut texts) = (Vec::new(), Vec::new());
+        let buttons = side.frames;
+        if let Some(entry) = buttons[super::super::pause_menu::button_frame(look)].or(buttons[0]) {
+            super::super::in_game_shell::push_art(&mut art, entry, rect, side.clip);
+        }
+        let rgb = super::super::pause_menu::button_text_rgb(
+            side.theme,
+            look.enabled && !look.highlighted,
+        );
+        let at = super::super::pause_menu::button_text_rect(rect, look.pressed);
+        texts.push(shell_text::draw_in_rect_scaled(
+            font,
+            caption,
+            rect_to_text_rect(at),
+            rgb,
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            [0.0; 2],
+            SHELL_CONTROL_TEXT_DEPTH,
+            1.0,
+        ));
+        (art, texts)
+    }
+
+    #[test]
+    fn a_side_button_paints_as_the_hand_owner_button() {
+        let font = font();
+        for theme in [SidebarTheme::Allied, SidebarTheme::Soviet] {
+            for frames in [
+                [
+                    Some(side_entry(125.0, 25.0, 0.0)),
+                    Some(side_entry(125.0, 25.0, 0.2)),
+                    Some(side_entry(125.0, 25.0, 0.4)),
+                ],
+                // A missing frame falls back to the released one.
+                [Some(side_entry(125.0, 25.0, 0.0)), None, None],
+            ] {
+                let side = SideButtons {
+                    frames,
+                    theme,
+                    clip: RectPx::new(0, 0, 800, 600),
+                };
+                let rect = RectPx::new(653, 227, 125, 25);
+                for bits in 0..8 {
+                    let look = PauseMenuButtonState {
+                        pressed: bits & 1 != 0,
+                        highlighted: bits & 2 != 0,
+                        enabled: bits & 4 != 0,
+                    };
+                    let (mut art, mut texts) = (Vec::new(), Vec::new());
+                    push_side_button(
+                        &mut art,
+                        &mut texts,
+                        &font,
+                        side,
+                        rect,
+                        Some("AAA"),
+                        look,
+                        1.0,
+                    );
+                    let (hand_art, hand_texts) = hand_owner_button(&font, side, rect, "AAA", look);
+                    same_sprites(&art, &hand_art);
+                    same_texts(&texts, &hand_texts);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn side_and_type2_modal_buttons_push_only_while_held_and_caption_by_2_4() {
+        let mut gui = Gui::new(16);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        gui.push_dialog(root, DialogKind::Page).unwrap();
+        let button = gui
+            .create_tree(&NodeSpec::new(NodeKind::Button).id(1), Some(root))
+            .unwrap();
+        gui.set(button, Prop::Rect, Value::Rect(RectPx::new(0, 0, 50, 20)))
+            .unwrap();
+        let left = MouseButton::Left;
+        gui.input(InputEvent::PointerMove { x: 5, y: 5 }, 0);
+        gui.input(
+            InputEvent::PointerDown {
+                x: 5,
+                y: 5,
+                button: left,
+            },
+            0,
+        );
+        let held = crate::ui::shell::page::held_in(&gui, root);
+        let captured = crate::ui::shell::page::captured_in(&gui, root);
+        for art in [ButtonArt::Side, ButtonArt::ModalType2, ButtonArt::Panel] {
+            assert_eq!(art.pushed(held, captured), Some(button));
+        }
+        // Off the button the press still holds it, but only the Panel
+        // buttons keep their pushed look.
+        gui.input(InputEvent::PointerMove { x: 90, y: 90 }, 0);
+        let held = crate::ui::shell::page::held_in(&gui, root);
+        let captured = crate::ui::shell::page::captured_in(&gui, root);
+        assert_eq!(ButtonArt::Side.pushed(held, captured), None);
+        assert_eq!(ButtonArt::ModalType2.pushed(held, captured), None);
+        assert_eq!(ButtonArt::Panel.pushed(held, captured), Some(button));
+
+        // Sound's Play/Stop and the connection rows: `button_text_rect`.
+        let rect = RectPx::new(100, 200, 108, 23);
+        for pressed in [false, true] {
+            let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+            let hand = (
+                super::super::pause_menu::button_text_rect(rect, pressed),
+                centred,
+            );
+            for art in [ButtonArt::ModalType2, ButtonArt::Side] {
+                assert_eq!(art.caption_rect(rect, pressed, None, RETAIL_SCALE), hand);
+                let aligned = Some(ShellAlign::NONE);
+                assert_eq!(art.caption_rect(rect, pressed, aligned, RETAIL_SCALE), hand);
+            }
+        }
+        let (pressed_at, _) = ButtonArt::ModalType2.caption_rect(rect, true, None, RETAIL_SCALE);
+        assert_eq!(pressed_at, RectPx::new(102, 205, 104, 18));
+    }
+
+    #[test]
+    fn a_group_box_and_a_plain_frame_paint_as_the_hand_frames() {
+        use super::super::controls::{group_box_geometry, push_group_or_plain_frame};
+        let font = font();
+        let white = Some(entry(1.0, 1.0, 0.9));
+        let group = RectPx::new(100, 300, 400, 120);
+        let look = TextLook {
+            align: ShellAlign::NONE,
+            glyph: 1.0,
+            rgb: SHELL_LABEL_TEXT_RGB,
+        };
+        // FF's Internet Game Controls box (pause_menu.rs).
+        let (frame, caption_rect) =
+            group_box_geometry(group, font.cell_height() as i32, RETAIL_SCALE);
+        let mut hand = Vec::new();
+        let width = Some(font.text_width("AAA") as i32);
+        push_group_or_plain_frame(&mut hand, white, frame, width, false, RETAIL_SCALE);
+        let hand_text = vec![shell_text::draw_in_rect_scaled(
+            &font,
+            "AAA",
+            rect_to_text_rect(caption_rect),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::NONE,
+            [0.0; 2],
+            SHELL_CONTROL_TEXT_DEPTH,
+            1.0,
+        )];
+        let (mut sprites, mut texts) = (Vec::new(), Vec::new());
+        let caption = Some(("AAA", true));
+        let at = RETAIL_SCALE;
+        push_frame(
+            &mut sprites,
+            &mut texts,
+            &font,
+            white,
+            group,
+            FrameArt::Group,
+            caption,
+            look,
+            at,
+        );
+        same_sprites(&sprites, &hand);
+        same_texts(&texts, &hand_text);
+        // Under an overlay the caption goes, its gap stays.
+        let (mut covered, mut none) = (Vec::new(), Vec::new());
+        let caption = Some(("AAA", false));
+        push_frame(
+            &mut covered,
+            &mut none,
+            &font,
+            white,
+            group,
+            FrameArt::Group,
+            caption,
+            look,
+            at,
+        );
+        same_sprites(&covered, &hand);
+        assert!(none.is_empty());
+
+        // A3's hotkey field (keyboard.rs): the grown rect, light outside.
+        let field = RectPx::new(92, 394, 191, 28);
+        let mut hand = Vec::new();
+        push_group_or_plain_frame(&mut hand, white, field, None, true, RETAIL_SCALE);
+        let (mut sprites, mut texts) = (Vec::new(), Vec::new());
+        let plain = FrameArt::Plain { outer_light: true };
+        push_frame(
+            &mut sprites,
+            &mut texts,
+            &font,
+            white,
+            field,
+            plain,
+            None,
+            look,
+            at,
+        );
+        same_sprites(&sprites, &hand);
+        assert!(texts.is_empty());
+    }
+
+    #[test]
+    fn checkbox_faces_follow_checked_and_the_partner_flag() {
+        use crate::ui::shell::diplomacy::DiplomacyAlliesBox;
+        let mut gui = Gui::new(16);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        let [single, dual] = [1, 2].map(|id| {
+            gui.create_tree(&NodeSpec::new(NodeKind::Checkbox).id(id), Some(root))
+                .unwrap()
+        });
+        for checked in [false, true] {
+            for node in [single, dual] {
+                gui.set(node, Prop::Checked, Value::Bool(checked)).unwrap();
+            }
+            let face = match checked {
+                true => CheckboxFace::Checked,
+                false => CheckboxFace::Unchecked,
+            };
+            assert_eq!(checkbox_face(&gui, single), face);
+            for partner in [false, true] {
+                gui.set(dual, Prop::Selected, Value::Int(i32::from(partner)))
+                    .unwrap();
+                let allies = DiplomacyAlliesBox {
+                    checked,
+                    partner,
+                    enabled: true,
+                };
+                assert_eq!(checkbox_face(&gui, dual), allies.face());
+            }
+        }
+
+        // The single-state face is the plain checkbox's paint; disabled,
+        // it is diplomacy's dimmed one.
+        let chrome = crate::render::skirmish_shell_chrome::ControlChrome {
+            checkbox_unchecked_cue_i: Some(entry(18.0, 18.0, 0.0)),
+            checkbox_checked_cce_i: Some(entry(18.0, 18.0, 0.2)),
+            checkbox_dual_left_cce_il: Some(entry(18.0, 18.0, 0.4)),
+            checkbox_dual_right_cce_ir: Some(entry(18.0, 18.0, 0.6)),
+            ..Default::default()
+        };
+        let rect = RectPx::new(40, 50, 120, 18);
+        for checked in [false, true] {
+            let (mut plain, mut face) = (Vec::new(), Vec::new());
+            paint_control(
+                &mut plain,
+                &chrome,
+                ControlPaint::Checkbox { rect, checked },
+                RETAIL_SCALE,
+            );
+            let face_of = match checked {
+                true => CheckboxFace::Checked,
+                false => CheckboxFace::Unchecked,
+            };
+            let control = ControlPaint::StatefulCheckbox {
+                face: face_of,
+                disabled: false,
+                rect,
+            };
+            paint_control(&mut face, &chrome, control, RETAIL_SCALE);
+            same_sprites(&face, &plain);
+        }
+    }
+
+    #[test]
+    fn a_bar_paints_as_the_hand_connection_bar() {
+        use crate::ui::shell::connection::{BAR_OUTLINE_RGB, bar_paint};
+        let white = Some(entry(1.0, 1.0, 0.9));
+        let rgb = |unit: [u8; 3]| unit.map(|c| f32::from(c) / 255.0);
+        let rect = RectPx::new(500, 120, 96, 14);
+        for (lag, age) in [
+            (0, 0),
+            (100, 0),
+            (300, 0),
+            (600, 100),
+            (600, 900),
+            (2000, 9000),
+        ] {
+            let bar = bar_paint(rect, lag, age);
+            // connection.rs before the node: outline, then the fill.
+            let mut hand = Vec::new();
+            super::super::chrome::push_rect_outline_px(
+                &mut hand,
+                white,
+                bar.outline,
+                rgb(BAR_OUTLINE_RGB),
+                SHELL_CONTROL_DEPTH,
+            );
+            super::super::chrome::push_solid_rect_px(
+                &mut hand,
+                white,
+                bar.fill,
+                rgb(bar.fill_rgb),
+                SHELL_CONTROL_DEPTH - 0.00001,
+            );
+            let look = BarLook {
+                percent: bar.percent,
+                outline: rgb(BAR_OUTLINE_RGB),
+                fill: rgb(bar.fill_rgb),
+            };
+            let mut sprites = Vec::new();
+            push_bar(&mut sprites, white, rect, look);
+            same_sprites(&sprites, &hand);
+        }
+        // The host puts them on a Bar node.
+        let mut gui = Gui::new(16);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        let node = gui
+            .create_tree(&NodeSpec::new(NodeKind::Bar).id(1), Some(root))
+            .unwrap();
+        gui.set(node, Prop::Fill, Value::Int(42)).unwrap();
+        gui.set(
+            node,
+            Prop::Color,
+            Value::Rgba(vera20k_gui::Rgba(0, 200, 0, 255)),
+        )
+        .unwrap();
+        assert_eq!(int(&gui, node, Prop::Fill, 100), 42);
+        assert_eq!(color(&gui, node, Prop::Color), Some(rgb([0, 200, 0])));
+    }
+
+    #[test]
+    fn an_image_node_keeps_its_picture_name_without_reallocating() {
+        let mut gui = Gui::new(16);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        let node = gui
+            .create_tree(&NodeSpec::new(NodeKind::Image).id(7), Some(root))
+            .unwrap();
+        crate::ui::shell::page::set_text(&mut gui, root, 7, Prop::Art, "usai.pcx");
+        let before = match gui.get(node, Prop::Art) {
+            Ok(Some(Value::Text(name))) => name.as_ptr(),
+            _ => panic!("no picture"),
+        };
+        // The same name again is no new string.
+        crate::ui::shell::page::set_text(&mut gui, root, 7, Prop::Art, "usai.pcx");
+        let Ok(Some(Value::Text(name))) = gui.get(node, Prop::Art) else {
+            panic!("no picture");
+        };
+        assert_eq!(name.as_ptr(), before);
+        crate::ui::shell::page::set_text(&mut gui, root, 7, Prop::Art, "rusi.pcx");
+        assert_eq!(
+            gui.get(node, Prop::Art).unwrap(),
+            Some(&Value::Text("rusi.pcx".into()))
+        );
     }
 }
