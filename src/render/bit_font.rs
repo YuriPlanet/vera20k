@@ -102,6 +102,15 @@ pub struct WrapLayout {
     pub split_word: bool,
 }
 
+impl WrapLayout {
+    /// Each line's text in `text`, the text this layout was made from.
+    pub fn line_texts<'a>(&'a self, text: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+        self.lines
+            .iter()
+            .map(move |line| &text[line.start_byte..line.end_byte])
+    }
+}
+
 /// Immutable atlas observation; `source_identity == None` identifies the
 /// built-in fallback (or a GPU-free synthetic test font).
 pub(crate) struct BitFontCaptureObservation<'a> {

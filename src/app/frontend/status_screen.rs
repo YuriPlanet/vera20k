@@ -557,11 +557,9 @@ impl CardType {
 
     /// `text` broken into lines no wider than `max_width` pixels.
     fn wrap(self, font: &BitFont, text: &str, max_width: f32) -> Vec<String> {
-        let layout = font.wrap_layout(text, (max_width / self.scale).max(1.0) as u32);
-        layout
-            .lines
-            .iter()
-            .map(|line| text[line.start_byte..line.end_byte].trim_end().to_owned())
+        font.wrap_layout(text, (max_width / self.scale).max(1.0) as u32)
+            .line_texts(text)
+            .map(|line| line.trim_end().to_owned())
             .collect()
     }
 

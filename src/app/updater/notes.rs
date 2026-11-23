@@ -51,8 +51,7 @@ impl ReleaseNotes {
         for note in notes {
             // GAME.FNT has no arrow; release pages write "Internet → Custom Match".
             let note = note.replace('\u{2192}', "->");
-            for (index, line) in font.wrap_layout(&note, width).lines.iter().enumerate() {
-                let text = &note[line.start_byte..line.end_byte];
+            for (index, text) in font.wrap_layout(&note, width).line_texts(&note).enumerate() {
                 rows.push(match index {
                     0 => Row {
                         text: format!("{BULLET}{text}"),
