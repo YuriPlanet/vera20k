@@ -101,6 +101,7 @@ impl LiveService {
             revision: 0,
             room: RoomAgreement::default(),
             start_preparation: None,
+            refused_options: None,
             locally_refused_start: false,
             player_id: String::new(),
             member_ids: BTreeMap::new(),

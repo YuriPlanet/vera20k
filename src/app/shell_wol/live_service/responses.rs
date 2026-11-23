@@ -3,10 +3,10 @@
 
 use super::{
     CANT_CONNECT_TEXT, LOBBY_LOST_TEXT, LiveService, WolLoginAccepted, WolServiceEvent,
-    apply_event, cancel_pending, end_room, fail_start, forget_deleted_account, forget_sign_in,
-    http, lobby_says_outdated, maps, notice, options, remember_online_name, remember_sign_in,
-    restore_accepted_options, service_event, settings_dir, spawned_visit_mut, update_required_text,
-    wire,
+    apply_event, cancel_pending, end_room, events::RoomNotAdmitted, fail_start,
+    forget_deleted_account, forget_sign_in, http, lobby_says_outdated, maps, notice, options,
+    remember_online_name, remember_sign_in, restore_accepted_options, service_event, settings_dir,
+    spawned_visit_mut, update_required_text, wire,
 };
 use crate::app::AppState;
 use crate::app::shell_network_setup::NetworkSetupEvent;
@@ -218,7 +218,17 @@ pub(super) fn apply_response(
                     "Online lobby update rejected: kind={}: {error:#}",
                     event.kind
                 );
-                notice(state, &tr("VERA:InvalidLobbyUpdate"));
+                // A room this game cannot admit is its own case: the room's
+                // settings did not apply, and the player has to leave it or
+                // ask the host for another.
+                notice(
+                    state,
+                    &tr(if error.is::<RoomNotAdmitted>() {
+                        "VERA:RoomNotAdmitted"
+                    } else {
+                        "VERA:InvalidLobbyUpdate"
+                    }),
+                );
             }
         }
         http::Response::CommandCompleted { id, operation } => match operation {

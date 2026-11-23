@@ -323,6 +323,9 @@ pub(super) struct LiveService {
     revision: u64,
     room: RoomAgreement,
     start_preparation: Option<StartPreparation>,
+    /// The revision whose refusal this game already told the room about.
+    /// The lobby may repeat an options event, and the room is told once.
+    refused_options: Option<u64>,
     /// The local reason was already shown. The ordered lobby stream will echo
     /// the cancellation before announcing another match.
     locally_refused_start: bool,
@@ -525,6 +528,55 @@ impl RoomAgreement {
         self.pending_choices
             .take_if(|choices| now >= choices.deadline)
             .is_some()
+    }
+}
+
+/// What the room derived from the host's options: the agreement it
+/// publishes for that revision, the map status it reports with it, and
+/// whether this game is the room's host.
+pub(super) struct OptionsAdmission {
+    pub(super) agreement: Value,
+    pub(super) status: u8,
+    pub(super) host: bool,
+}
+
+impl LiveService {
+    /// The room admits the host's options at `revision`. `admit` takes
+    /// them: it computes the room's derived values and fails when the
+    /// room cannot take them. The room commits to the revision only when
+    /// the admission held, so a refused admission leaves the room at the
+    /// revision it had and publishes nothing: a later options event is
+    /// admitted again instead of taken for an echo of the one that failed.
+    pub(super) fn admit_options(
+        &mut self,
+        revision: u64,
+        canonical: &Value,
+        admit: impl FnOnce(&mut LiveService) -> Result<OptionsAdmission>,
+    ) -> Result<()> {
+        let admission = admit(self)?;
+        let changed = self.options_changed(revision);
+        let answered = self
+            .room
+            .pending_choices
+            .as_ref()
+            .is_some_and(|choices| choices.answered_by(canonical));
+        self.revision = revision;
+        self.room.accepted_options = Some(canonical.clone());
+        if changed {
+            // The ready request answered the revision the room left.
+            self.room.last_ready_request = None;
+        }
+        if answered {
+            self.room.pending_choices = None;
+        }
+        self.publish_options_agreement(admission.agreement, admission.status, admission.host);
+        Ok(())
+    }
+
+    /// Is this revision a change for the room: another one, or the first
+    /// options it accepted?
+    pub(super) fn options_changed(&self, revision: u64) -> bool {
+        revision != self.revision || self.room.accepted_options.is_none()
     }
 }
 
