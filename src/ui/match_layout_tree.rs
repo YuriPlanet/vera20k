@@ -68,6 +68,18 @@ impl Node {
             .map(|value| value.text.as_str())
     }
 
+    /// The text that holds for `key` on the side whose pictures are theme
+    /// `theme` (an index of [`THEMES`]): its own, else every side's.
+    pub fn text_for(&self, key: &str, theme: usize) -> Option<&str> {
+        let values = self.values(key);
+        values
+            .iter()
+            .rev()
+            .find(|value| value.theme == Some(theme))
+            .or_else(|| values.iter().rev().find(|value| value.theme.is_none()))
+            .map(|value| value.text.as_str())
+    }
+
     /// Whether a built-in node: the original interface has it.
     pub fn built_in(&self) -> bool {
         self.keys

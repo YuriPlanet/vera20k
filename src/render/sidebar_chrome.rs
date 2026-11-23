@@ -412,6 +412,58 @@ pub struct SidebarChromeAtlas {
 }
 
 impl SidebarChromeAtlas {
+    /// Frame `frame` of picture `key` (`Art`, `RowArt`, `EndArt`,
+    /// `FootArt`, ...) of the `veraui.ini` part `node`, as
+    /// `ui::match_layout::sidebar_art` lists them. `None` when the part has
+    /// no such picture or the file no such frame.
+    pub fn art(&self, node: &str, key: &str, frame: usize) -> Option<SidebarChromeEntry> {
+        let is = |name: &str| node.eq_ignore_ascii_case(name);
+        let art = key.eq_ignore_ascii_case("Art");
+        let at = |frames: &[Option<SidebarChromeEntry>]| frames.get(frame).copied().flatten();
+        let only = |entry: Option<SidebarChromeEntry>| entry.filter(|_| frame == 0);
+        if art {
+            if is("Credits") {
+                return only(self.top_strip_thin);
+            } else if is("Top") {
+                return only(self.top_strip_sidebar);
+            } else if is("Diplomacy") {
+                return at(&self.top_button_frames[0]);
+            } else if is("Options") {
+                return at(&self.top_button_frames[1]);
+            } else if is("Radar") {
+                return only(Some(self.radar));
+            } else if is("Middle") {
+                return only(Some(self.side1));
+            } else if is("Repair") {
+                return at(&self.repair_frames);
+            } else if is("Sell") {
+                return at(&self.sell_frames);
+            } else if is("ScrollDown") {
+                return at(&self.scroll_down_frames);
+            } else if is("ScrollUp") {
+                return at(&self.scroll_up_frames);
+            } else if is("Power") {
+                return at(&self.powerp_frames);
+            }
+            let tab = ["Buildings", "Defenses", "Infantry", "Vehicles"]
+                .iter()
+                .position(|tab| is(tab))?;
+            return at(&self.tab_frames[tab]);
+        }
+        if !is("Cameos") {
+            return None;
+        }
+        if key.eq_ignore_ascii_case("RowArt") {
+            only(Some(self.side2))
+        } else if key.eq_ignore_ascii_case("EndArt") {
+            only(Some(self.side3))
+        } else if key.eq_ignore_ascii_case("FootArt") {
+            only(self.unknown_top_housing)
+        } else {
+            None
+        }
+    }
+
     pub fn source_identity(&self) -> &SidebarChromeAtlasIdentity {
         &self.source_identity
     }

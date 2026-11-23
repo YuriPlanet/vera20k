@@ -620,6 +620,53 @@ fn find_section<'a>(ini: &'a IniFile, name: &str) -> Option<&'a IniSection> {
         .and_then(|section| ini.section(section))
 }
 
+/// The picture keys of a part, each one file the part draws: `Art` and a
+/// cameo grid's pieces. The grid's clock and darken masks load apart.
+const ART_KEYS: [&str; 5] = ["Art", "RowArt", "EmptyRowArt", "EndArt", "FootArt"];
+
+/// One picture the original interface's sidebar draws: the part and its
+/// picture key, the file, the palette it is drawn with when not the
+/// sidebar's own, and how many frames the part uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SidebarArt {
+    pub node: String,
+    pub key: &'static str,
+    pub file: String,
+    pub palette: Option<String>,
+    pub frames: usize,
+}
+
+/// The pictures of the built-in sidebar for the side whose pictures are
+/// `theme`, in the file's order. The command bar's load apart.
+pub fn sidebar_art(theme: crate::ui::sidebar::SidebarTheme) -> Vec<SidebarArt> {
+    use crate::ui::sidebar::SidebarTheme;
+    let theme = match theme {
+        SidebarTheme::Allied => 0,
+        SidebarTheme::Soviet => 1,
+        SidebarTheme::Yuri => 2,
+    };
+    let tree = Tree::read(&[&BUILT_IN], TABLES[0], TABLES[0], &mut Vec::new());
+    let mut art = Vec::new();
+    for node in &tree.nodes {
+        if node.text("Type").is_some_and(|kind| kind.eq_ignore_ascii_case("CommandBar")) {
+            continue;
+        }
+        for key in ART_KEYS {
+            let Some(file) = node.text_for(key, theme) else {
+                continue;
+            };
+            art.push(SidebarArt {
+                node: node.name.clone(),
+                key,
+                file: file.to_owned(),
+                palette: node.text_for("Palette", theme).map(str::to_owned),
+                frames: node.text("Frames").map_or(1, |frames| names(frames).len().max(1)),
+            });
+        }
+    }
+    art
+}
+
 /// What reading one value gives: the value, with a problem to report when it
 /// had to be changed; or the problem that keeps the value under it, `None`
 /// for a value that silently keeps it.
@@ -2111,5 +2158,45 @@ mod tests {
                 (AddedKind::Text { value: TextValue::Kills }, 4, 20),
             ]
         );
+    }
+
+    /// The sidebar's pictures come from the built-in file: each part's
+    /// file, Yuri's own radar and palette, and the frames each part uses.
+    #[test]
+    fn the_built_in_sidebar_names_its_pictures() {
+        let art = |theme| {
+            sidebar_art(theme)
+                .into_iter()
+                .map(|art| (art.node, art.key, art.file, art.palette, art.frames))
+                .collect::<Vec<_>>()
+        };
+        let piece = |node: &str, key: &'static str, file: &str, palette: Option<&str>, frames| {
+            (node.to_owned(), key, file.to_owned(), palette.map(str::to_owned), frames)
+        };
+        let allied = art(SidebarTheme::Allied);
+        for expected in [
+            piece("Credits", "Art", "credits.shp", None, 1),
+            piece("Diplomacy", "Art", "diplobtn.shp", None, 2),
+            piece("Options", "Art", "optbtn.shp", None, 2),
+            piece("Radar", "Art", "radar.shp", None, 1),
+            piece("Repair", "Art", "repair.shp", None, 5),
+            piece("Sell", "Art", "sell.shp", None, 5),
+            piece("Vehicles", "Art", "tab03.shp", None, 5),
+            piece("Cameos", "RowArt", "side2.shp", None, 1),
+            piece("Cameos", "FootArt", "addon.shp", None, 1),
+            piece("ScrollUp", "Art", "r-up.shp", None, 3),
+            piece("Power", "Art", "powerp.shp", None, 5),
+        ] {
+            assert!(allied.contains(&expected), "{expected:?} in {allied:?}");
+        }
+        assert!(art(SidebarTheme::Yuri).contains(&piece(
+            "Radar",
+            "Art",
+            "radary.shp",
+            Some("radaryuri.pal"),
+            1
+        )));
+        // The command bar's pictures load apart.
+        assert!(!allied.iter().any(|(node, ..)| node == "Bar"));
     }
 }
