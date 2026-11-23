@@ -77,6 +77,17 @@ pub struct RubbleAssetCatalog {
 }
 
 impl RubbleAssetCatalog {
+    /// VERA: which types leave rubble and the body frame each takes, without
+    /// the name of the SHP that supplied it or its shadow frame: what
+    /// `RuleSet::file_inputs_hash` folds of this catalog.
+    pub(crate) fn fold_admissions(&self, state: &mut impl Hasher) {
+        self.art.len().hash(state);
+        for (id, art) in &self.art {
+            id.hash(state);
+            art.body_frame.hash(state);
+        }
+    }
+
     pub fn bind(
         rules: &RuleSet,
         asset_manager: &AssetManager,

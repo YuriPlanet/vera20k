@@ -1170,8 +1170,9 @@ pub struct RuleSet {
     /// Presentation keeps its separate body-frame projection.
     terrain_assets: crate::rules::terrain_asset_catalog::TerrainAssetCatalog,
     /// Every loaded ObjectType `AlphaImage=` SHP (`bind_alpha_images`). Not
-    /// in the fingerprint: it places and draws light glows, which no
-    /// gameplay reads.
+    /// in `simulation_config_hash`: it places and draws light glows. An Ares
+    /// particle system also picks its simulation by whether its held type's
+    /// loaded (`particles::ares_system`), which `file_inputs_hash` folds.
     alpha_images: crate::rules::alpha_image_assets::AlphaImageCatalog,
     /// Complete immutable per-object animation timing catalog. Gameplay reads
     /// this rules-owned resource directly; presentation cannot replace timing

@@ -295,8 +295,9 @@ relay orders a one-source match only with that mark.
 Online matches with two or more human sources, or one the lobby marked, use a
 lobby-certified relay clock
 and one immutable relay command stream. Every originally admitted client that
-finishes loading must agree to the initial world, its build and its rules
-(`agreement::local`) before it starts. A player who
+finishes loading must agree to the initial world, its build, its rules
+(`agreement::local`) and what its simulation reads from its picture and model files
+(`RuleSet::file_inputs_hash`) before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
@@ -337,6 +338,31 @@ facing this one included. Its box (`VERA:MatchStartMismatch`) names the version 
 files and, for a launcher's match, Terrain Deformation and the Superweapon Limit.
 Players of one build agree as before, also after a rollback, and nothing new is
 exchanged.
+The same identity carries what each game's simulation took from the contents of its
+picture and model files (`RuleSet::file_inputs_hash`), reported as the `asset_files`
+start part. No room compares those files: the rules digest covers INI text, and SHP
+and VXL files only inside a mod's folder. Yet the simulation reads them. A Buildup
+SHP's frame count times a building's unfolding and its sale, the frame count of an
+animation that affects play its end, that of a deployment's, the Psychic Dominator's
+or the Lightning Storm's what waits for it, a resource spawner's its growth, a main voxel model's load and
+first limb's size a shot's origin, a LeaveRubble image's length its rubble, a
+scorching or cratering animation's large or small frame its smudge, the first weather bolt's
+height the storm's clouds, and in an Ares game a particle's loaded AlphaImage its
+simulation. Two games whose files differed in one of these used to start and leave
+step in mid-match; now they are refused at the start, by LAN's startup handshake and
+by the relay alike, with the start-mismatch box. The number folds nothing that only
+draws: other pixels, another palette, a model's other parts, which file supplied an
+image, the frames of an effect animation that changes nothing but its picture, or a
+smudging animation's frame size on the same side of the size test the smudge pick
+makes. A graphics pack that keeps the folded values plays with games without it. Of
+the picture-only animations something in the simulation waits on, only a unit's
+`DeployingAnim=`, the Psychic Dominator's two and the Lightning Storm's clouds are
+folded yet. A refused game is not told which part differed, and no game names its
+picture or model files yet: the box says to compare game files, and a game with
+such a pack still says it plays the original game, since it tracks only the INI and
+terrain files it changes. Nothing new is exchanged and the identity stays 32 bytes.
+A game from before this is another build, which the build check refuses first; a
+rollback starts such games together again.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Each relay seals at most 32 batches of its own players into a frame
@@ -832,7 +858,8 @@ in a release), which the hash already covers; they are refused as any other buil
   build is told it is not the release ([current production path](#current-production-path)).
 - Start: every network start folds it into the start identity the relay and LAN's startup
   compare (`StartupAgreement`), so a launcher's match of two builds, which no lobby
-  compares, is refused at its start.
+  compares, is refused at its start. That identity also names the world, the rules and
+  what the simulation reads from picture and model files ([above](#current-production-path)).
 - External launches: `[Settings] ExpectedVersion` is compared with it, as `--probe`
   reports it ([external launches](spawn.md#probe)).
 

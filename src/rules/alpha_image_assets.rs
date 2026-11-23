@@ -169,6 +169,11 @@ impl AlphaImageCatalog {
         self.images.get(name)
     }
 
+    /// Whether the SHP of `name` loaded.
+    pub(crate) fn loaded(&self, name: &str) -> bool {
+        self.images.contains_key(name)
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn insert_for_test(&mut self, name: &str, image: AlphaImage) {
         self.images.insert(name.to_string(), Arc::new(image));

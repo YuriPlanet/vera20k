@@ -1950,6 +1950,7 @@ fn live_for_campaign_delivery(
         30,
         rate,
         0,
+        0,
         "",
         "",
     )

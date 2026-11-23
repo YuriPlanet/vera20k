@@ -374,6 +374,7 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
                 45,
                 std::num::NonZeroU32::new(u32::from(send_rate)).unwrap(),
                 sim.state_hash(),
+                0,
                 "",
                 "",
             )
@@ -381,6 +382,12 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
         );
     }
     assert_eq!(warm.sim().state_hash(), cold.sim().state_hash());
+    // And one reading of the picture and model files, which each start
+    // certifies with its world (`RuleSet::file_inputs_hash`).
+    assert_eq!(
+        warm.runtime.resources.rules.file_inputs_hash(),
+        cold.runtime.resources.rules.file_inputs_hash()
+    );
     assert_eq!(checkpoint, Some(0));
     assert_eq!(warm.sim().native_identity_prefix_checkpoint(), Some(0));
     assert_eq!(

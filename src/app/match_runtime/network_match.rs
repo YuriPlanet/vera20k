@@ -1585,6 +1585,7 @@ mod tests {
                 30,
                 std::num::NonZeroU32::new(2).unwrap(),
                 sim.state_hash(),
+                0,
                 "",
                 "",
             )
@@ -1685,6 +1686,7 @@ mod tests {
                         30,
                         NonZeroU32::new(5).unwrap(),
                         sim.state_hash(),
+                        0,
                         "",
                         "",
                     )
@@ -1850,6 +1852,7 @@ mod tests {
                 30,
                 NonZeroU32::new(1).unwrap(),
                 sim.state_hash(),
+                0,
                 "",
                 "",
             )
@@ -2010,6 +2013,7 @@ mod tests {
             30,
             rate,
             original_hash,
+            0,
             "",
             "",
         )

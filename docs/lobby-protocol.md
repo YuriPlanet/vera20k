@@ -571,7 +571,9 @@ error that ended the match on this game: `agreement_mismatch`, `start_cancelled`
 `local_error`. `start_hash` is null once the
 relay's clock started; before that it maps each part of the start this game offered the
 relay, at most 64, to 16 hex digits, so two games' reports of one match differ in the part
-that differs.
+that differs: the `setup_*` parts, `world` with the world's own parts, `build`, `rules`
+and, from games that certify it, `asset_files` (what the simulation reads from picture
+and model files).
 Games before these fields send none of them.
 `fps_p50` and `fps_p5` read the presents of a moving picture: one that stands between
 frames is not drawn again, and the present after it starts a new interval.
