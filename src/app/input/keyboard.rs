@@ -196,6 +196,80 @@ fn layout_and_pointer(state: &AppState) -> Option<(KeyboardLayout, (i32, i32))> 
         pointer,
     ))
 }
+/// Makes A3's nodes current without input (rects, the category's popup
+/// rows, the texts its statics show): its renderer's call every drawn frame
+/// before it paints from them. Texts allocate only when they change.
+pub(crate) fn sync(state: &mut AppState) -> Option<KeyboardLayout> {
+    let layout = layout(state)?;
+    let dialog = state.frontend.keyboard_dialog.as_ref()?;
+    let catalog = registered_commands();
+    let bindings = &state.match_state.input.hotkey_bindings;
+    let selected = dialog
+        .selected()
+        .and_then(|row| dialog.rows.get(row).copied());
+    let shortcut = selected
+        .and_then(|row| catalog.get(dialog.commands[row].command_index))
+        .map(|metadata| {
+            bindings
+                .first_key(metadata.command)
+                .map(key_name)
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    let owner = bindings
+        .command_at(dialog.captured)
+        .filter(|_| dialog.current_owner_visible)
+        .and_then(|owner| {
+            dialog.commands.iter().position(|row| {
+                catalog
+                    .get(row.command_index)
+                    .is_some_and(|metadata| metadata.command == owner)
+            })
+        });
+    let capture = key_name(dialog.captured);
+    let error = dialog.error.map(|key| state.csf_label(key, key));
+    let dialog = state.frontend.keyboard_dialog.as_mut()?;
+    let rows = Value::Rect(layout.category_rows(dialog.categories.len()));
+    dialog.ui.set_scale(layout.scale);
+    let KeyboardState {
+        ui,
+        commands,
+        categories,
+        category,
+        ..
+    } = dialog;
+    super::dialog_page::sync_dialog(
+        ui,
+        KEYBOARD_PAGE.dialog,
+        // KeyboardState::new built A3's controls.
+        || vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Dialog),
+        |id| layout.rect(id),
+        |gui, root| {
+            use crate::ui::shell::page::{set, set_text};
+            let face = KeyboardControl::Category.id();
+            set(gui, root, face, Prop::PopupRect, rows);
+            let name = categories.get(*category).map_or("", String::as_str);
+            set_text(gui, root, face, Prop::Text, name);
+            let description = selected.map_or("", |row| commands[row].description.as_str());
+            set_text(gui, root, DESCRIPTION_TEXT, Prop::Text, description);
+            let id = KeyboardControl::CurrentShortcut.id();
+            set_text(gui, root, id, Prop::Text, &shortcut);
+            let name = owner.map_or("", |row| commands[row].name.as_str());
+            set_text(
+                gui,
+                root,
+                KeyboardControl::CurrentOwner.id(),
+                Prop::Text,
+                name,
+            );
+            set_text(gui, root, CAPTURE_TEXT, Prop::Text, &capture);
+            let error = error.as_deref().unwrap_or("");
+            set_text(gui, root, KeyboardControl::Error.id(), Prop::Text, error);
+        },
+    );
+    Some(layout)
+}
+
 /// A command's name, category or description. VERA's own (`VERA:`) come from
 /// its language files; the game's from the CSF, else the key itself.
 fn localized(state: &AppState, key: &str, parameter: Option<u8>) -> String {

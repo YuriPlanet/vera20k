@@ -1,8 +1,13 @@
 //! Keyboard A3: shared launcher/active frame and native control composition.
+//!
+//! Its controls and statics paint from its `vera20k-gui` nodes
+//! ([`super::gui_paint`]), made current first every frame
+//! ([`crate::app::input::keyboard::sync`]); the frame, the heading, the
+//! front end's Back, the open category list and the status texts stay here.
 use super::chrome::*;
 #[cfg(test)]
-use super::controls::frame_segments;
-use super::controls::{ControlPaint, group_box_geometry, paint_control, push_group_or_plain_frame};
+use super::controls::{frame_segments, group_box_geometry, push_group_or_plain_frame};
+use super::gui_paint::{ButtonArt, FrameArt, GuiPaint, GuiStyle, SideButtons};
 use super::in_game_shell::{self, InGameShellFrame, ShellFrameArt, ShellFrameOverlay};
 use super::text::rect_to_text_rect;
 use super::{
@@ -11,18 +16,18 @@ use super::{
     SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
 };
 use crate::app::AppState;
-use crate::app::input::{hotkeys::catalog::registered_commands, keyboard::key_name};
 use crate::render::bit_font::BitFont;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::{
     shell_paint,
     shell_text::{self, ShellAlign, ShellTextDraw},
 };
-use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::keyboard::{KEYBOARD_PAGE, KeyboardButton, KeyboardControl, KeyboardParent};
+use crate::ui::shell::geom::{RETAIL_SCALE, RectPx, ShellScale};
+use crate::ui::shell::keyboard::{
+    CAPTURE_FRAME, CAPTURE_TEXT, DESCRIPTION_TEXT, KEYBOARD_PAGE, KeyboardButton, KeyboardControl,
+    KeyboardParent, LABELS,
+};
 use crate::util::time::Instant;
-use vera20k_gui::shell::list::ListMetrics;
-use vera20k_gui::shell::list::ShellListGeometry;
 
 pub(crate) fn render_keyboard_shell(
     state: &mut AppState,
@@ -97,12 +102,7 @@ pub(crate) fn render_keyboard_shell(
             crate::app::frontend::shell_layout::keyboard_layout(state, width, height, None).footer;
         crate::app::frontend::menu_page_render::paint_shell_status_line(state, help, window)
     };
-    let layout = crate::app::frontend::shell_layout::keyboard_layout(
-        state,
-        width,
-        height,
-        shell.map(|shell| (shell.layout, shell.button_size)),
-    );
+    let layout = crate::app::input::keyboard::sync(state).expect("active A3 geometry");
     let dialog = state
         .frontend
         .keyboard_dialog
@@ -111,29 +111,23 @@ pub(crate) fn render_keyboard_shell(
     let is_pressed = |button: KeyboardButton| {
         crate::app::input::dialog_page::pressed(&dialog.ui, KeyboardControl::Button(button).id())
     };
-    let list = dialog.list();
     let atlas = state
         .frontend
         .skirmish_shell_chrome
         .as_ref()
         .expect("A3 control art");
-    let mut art = if let Some(shell) = shell {
+    // In game Back is a node on the right panel's type-2 art.
+    let mut side = None;
+    let mut art = if active {
         let sidebar = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
             .expect("active A3 side art");
-        let mut art = in_game_shell::background_instances(sidebar, shell.layout, width, height);
-        let frame =
-            vera20k_gui::shell::button::owner_button_frame(is_pressed(KeyboardButton::Back), false);
-        if let Some(entry) =
-            sidebar.in_game_shell.buttons[frame].or(sidebar.in_game_shell.buttons[0])
-        {
-            in_game_shell::push_art(
-                &mut art,
-                entry,
-                layout.back,
-                RectPx::new(0, 0, width, height),
-            );
-        }
-        art
+        let shell = shell.expect("active A3 frame");
+        side = Some(SideButtons {
+            frames: sidebar.in_game_shell.buttons,
+            theme: crate::app::presentation::sidebar_render::current_sidebar_theme(state),
+            clip: RectPx::new(0, 0, width, height),
+        });
+        in_game_shell::background_instances(sidebar, shell.layout, width, height)
     } else {
         super::launcher_options::launcher_background_instances(
             atlas,
@@ -182,34 +176,6 @@ pub(crate) fn render_keyboard_shell(
         state.platform.window.request_redraw();
         return Ok(());
     }
-    let mut controls = Vec::new();
-    paint_control(
-        &mut controls,
-        &atlas.control_chrome(),
-        ControlPaint::Combo {
-            rect: layout.category,
-            swatch: None,
-            open: dialog.category_open(),
-            disabled: false,
-        },
-        layout.scale,
-    );
-    let geometry = ShellListGeometry::new(
-        layout.commands,
-        dialog.rows.len(),
-        list.top,
-        ListMetrics::scaled(layout.scale),
-    );
-    super::list::paint_list(
-        &mut controls,
-        atlas,
-        geometry,
-        list.top,
-        list.selected,
-        list.pressed,
-        false,
-        layout.scale,
-    );
     let font = &state.renderer.bit_font;
     let glyph_scale = layout.scale.factor();
     let text = |font: &BitFont,
@@ -229,52 +195,12 @@ pub(crate) fn render_keyboard_shell(
             glyph_scale,
         )
     };
-    let group_caption = state.csf_label("GUI:Description", "Description");
-    let cell = font.cell_height() as i32;
-    let (group_frame, group_caption_rect) = group_box_geometry(layout.group, cell, layout.scale);
-    push_group_or_plain_frame(
-        &mut controls,
-        atlas.white_pixel,
-        group_frame,
-        Some(font.text_width(&group_caption) as i32),
-        false,
-        layout.scale,
-    );
-    //61ED86..88 adds one to the window extents before6208F0 expands border2.
-    push_group_or_plain_frame(
-        &mut controls,
-        atlas.white_pixel,
-        RectPx::new(
-            layout.capture.x - 2,
-            layout.capture.y - 2,
-            layout.capture.w + 5,
-            layout.capture.h + 5,
-        ),
-        None,
-        true,
-        crate::ui::shell::geom::RETAIL_SCALE,
-    );
-    let buttons =
-        [KeyboardButton::Assign, KeyboardButton::ResetAll].map(|id| shell_paint::ModalButton {
-            rect: layout.button(id),
-            pressed: is_pressed(id),
-            enabled: true,
-        });
-    controls.extend(shell_paint::paint_modal_sprites(
-        None,
-        type3_button_frames(atlas),
-        RectPx::new(0, 0, width, height),
-        &buttons,
-        layout.scale,
-        shell_paint::ModalDepths {
-            background: SHELL_CONTROL_DEPTH,
-            button: SHELL_CONTROL_DEPTH,
-            text: SHELL_CONTROL_TEXT_DEPTH,
-        },
-    ));
-    let mut texts = Vec::new();
+    let mut paint = GuiPaint {
+        side: art,
+        ..Default::default()
+    };
     if let Some(window) = title {
-        texts.push(shell_text::draw_in_rect_path_a_scaled(
+        paint.texts.push(shell_text::draw_in_rect_path_a_scaled(
             font,
             &title_text,
             rect_to_text_rect(layout.title),
@@ -290,136 +216,113 @@ pub(crate) fn render_keyboard_shell(
             glyph_scale,
         ));
     }
-    for (key, rect, centered) in layout.labels {
-        texts.push(text(
+    // The front end's Back is its family's SDBTNANM art above, captioned
+    // here; the entry slide's column stands in for it.
+    if !active && !sliding {
+        let rect =
+            super::pause_menu::button_text_rect(layout.back, is_pressed(KeyboardButton::Back));
+        paint.texts.push(text(
             font,
-            &state.csf_label(key, key),
-            rect,
-            if centered {
-                ShellAlign::H_CENTER
-            } else {
-                ShellAlign::NONE
-            },
-            SHELL_CONTROL_TEXT_DEPTH,
-        ));
-    }
-    let captions: &[_] = if sliding {
-        &[
-            (KeyboardButton::Assign, "GUI:Assign", "Assign"),
-            (KeyboardButton::ResetAll, "GUI:ResetAll", "Reset All"),
-        ]
-    } else {
-        &[
-            (KeyboardButton::Back, "GUI:Back", "Back"),
-            (KeyboardButton::Assign, "GUI:Assign", "Assign"),
-            (KeyboardButton::ResetAll, "GUI:ResetAll", "Reset All"),
-        ]
-    };
-    for &(id, key, fallback) in captions {
-        let rect = super::pause_menu::button_text_rect(layout.button(id), is_pressed(id));
-        texts.push(text(
-            font,
-            &state.csf_label(key, fallback),
+            &state.csf_label("GUI:Back", "Back"),
             rect,
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             SHELL_CONTROL_TEXT_DEPTH,
         ));
     }
-    texts.push(text(
-        font,
-        &group_caption,
-        group_caption_rect,
-        ShellAlign::NONE,
-        SHELL_CONTROL_TEXT_DEPTH,
-    ));
-    if let Some(category) = dialog.categories.get(dialog.category) {
-        texts.push(text(
-            font,
-            category,
-            crate::ui::skirmish_shell::combo_text_rect(layout.category, layout.scale),
-            ShellAlign::V_CENTER,
-            SHELL_CONTROL_TEXT_DEPTH,
-        ));
-    }
-    for (visible, row) in dialog
-        .rows
-        .iter()
-        .skip(list.top)
-        .take(geometry.visible_rows)
-        .enumerate()
-    {
-        let rect = geometry.row(visible);
-        texts.push(text(
-            font,
-            &dialog.commands[*row].name,
-            RectPx::new(rect.x + 2, rect.y, rect.w - 2, rect.h),
-            ShellAlign::NONE,
-            SHELL_CONTROL_TEXT_DEPTH,
-        ));
-    }
-    let catalog = registered_commands();
-    let bindings = &state.match_state.input.hotkey_bindings;
-    if let Some(selected) = dialog.selected_command() {
-        texts.push(text(
-            font,
-            &selected.description,
-            layout.description,
-            ShellAlign::NONE,
-            SHELL_CONTROL_TEXT_DEPTH,
-        ));
-        if let Some(metadata) = catalog.get(selected.command_index) {
-            let current = bindings
-                .first_key(metadata.command)
-                .map(key_name)
-                .unwrap_or_default();
-            texts.push(text(
-                font,
-                &current,
-                layout.current_shortcut,
-                ShellAlign::NONE,
-                SHELL_CONTROL_TEXT_DEPTH,
-            ));
-        }
-    }
-    if let Some(owner) = bindings
-        .command_at(dialog.captured)
-        .filter(|_| dialog.current_owner_visible)
-        && let Some(row) = dialog.commands.iter().find(|row| {
-            catalog
-                .get(row.command_index)
-                .is_some_and(|metadata| metadata.command == owner)
+    // The painter's closures read the state while the frame is built.
+    let shared: &AppState = state;
+    let text_of = |id: i32| -> Option<String> {
+        let (key, fallback) = match KeyboardControl::from_id(u16::try_from(id).ok()?)? {
+            KeyboardControl::Button(KeyboardButton::Back) => ("GUI:Back", "Back"),
+            KeyboardControl::Button(KeyboardButton::Assign) => ("GUI:Assign", "Assign"),
+            KeyboardControl::Button(KeyboardButton::ResetAll) => ("GUI:ResetAll", "Reset All"),
+            KeyboardControl::Description => ("GUI:Description", "Description"),
+            _ => return None,
+        };
+        Some(shared.csf_label(key, fallback))
+    };
+    let back = i32::from(KeyboardControl::Button(KeyboardButton::Back).id());
+    let art_of = |id: i32| {
+        (id == back).then_some(if active {
+            ButtonArt::Side
+        } else {
+            ButtonArt::Host
         })
-    {
-        texts.push(text(
-            font,
-            &row.name,
-            layout.current_owner,
-            ShellAlign::NONE,
-            SHELL_CONTROL_TEXT_DEPTH,
-        ));
-    }
-    //620F60 ignores the supplied0x24 flags; it paints at the inset origin.
-    texts.push(text(
-        font,
-        &key_name(dialog.captured),
-        RectPx::new(
-            layout.capture.x + 4,
-            layout.capture.y + 4,
-            layout.capture.w - 8,
-            layout.capture.h - 8,
-        ),
-        ShellAlign::NONE,
-        SHELL_CONTROL_TEXT_DEPTH,
-    ));
-    if let Some(key) = dialog.error {
-        texts.push(text(
-            font,
-            &state.csf_label(key, key),
-            layout.error,
-            ShellAlign::NONE,
-            SHELL_CONTROL_TEXT_DEPTH,
-        ));
-    }
+    };
+    let description = i32::from(KeyboardControl::Description.id());
+    let frame_of = |id: i32| match id {
+        id if id == description => Some(FrameArt::Group),
+        id if id == i32::from(CAPTURE_FRAME) => Some(FrameArt::Plain { outer_light: true }),
+        _ => None,
+    };
+    let style = GuiStyle {
+        buttons: ButtonArt::ModalType2,
+        art_of: Some(&art_of),
+        text_of: Some(&text_of),
+        frame_of: Some(&frame_of),
+        side,
+        ..Default::default()
+    };
+    let root = dialog.ui.root_in(KEYBOARD_PAGE.dialog);
+    let gui = dialog.ui.gui();
+    let mut paint_ids = |ids: &[u16], scale: ShellScale| {
+        let nodes = ids
+            .iter()
+            .filter_map(|id| gui.find_id(root?, i32::from(*id)));
+        for node in nodes {
+            super::gui_paint::paint_gui_into(
+                &mut paint,
+                shared,
+                Some(atlas),
+                gui,
+                node,
+                scale,
+                &[],
+                style,
+            );
+        }
+    };
+    let control = |control: KeyboardControl| control.id();
+    let button = |button: KeyboardButton| control(KeyboardControl::Button(button));
+    // The draw order of the hand-made frame: the combo face, the list, the
+    // group box, the capture field's frame (never grown with the page), the
+    // MNBTTN buttons, then the statics.
+    paint_ids(
+        &[
+            control(KeyboardControl::Category),
+            control(KeyboardControl::Commands),
+            control(KeyboardControl::Description),
+        ],
+        layout.scale,
+    );
+    paint_ids(&[CAPTURE_FRAME], RETAIL_SCALE);
+    paint_ids(
+        &[
+            button(KeyboardButton::Back),
+            button(KeyboardButton::Assign),
+            button(KeyboardButton::ResetAll),
+        ],
+        layout.scale,
+    );
+    paint_ids(&LABELS.map(|label| label.0), layout.scale);
+    paint_ids(
+        &[
+            DESCRIPTION_TEXT,
+            control(KeyboardControl::CurrentShortcut),
+            control(KeyboardControl::CurrentOwner),
+            CAPTURE_TEXT,
+            control(KeyboardControl::Error),
+        ],
+        layout.scale,
+    );
+    // The open category list is this page's own (below); the painter's
+    // lanes for it are dropped.
+    let GuiPaint {
+        side: art,
+        controls,
+        mut texts,
+        ..
+    } = paint;
     if let Some(key) = crate::app::input::dialog_page::help(&dialog.ui).filter(|_| active) {
         texts.push(text(
             font,
