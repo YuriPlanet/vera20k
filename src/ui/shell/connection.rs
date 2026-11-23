@@ -106,8 +106,8 @@ impl ConnectionControl {
     pub fn id(self) -> u16 {
         match self {
             Self::Quit => 0x2,
-            Self::PreviousPage => 0xF201,
-            Self::NextPage => 0xF202,
+            Self::PreviousPage => super::paging::PREVIOUS,
+            Self::NextPage => super::paging::NEXT,
             Self::Player(row) => PLAYER_IDS[row],
             Self::Bar(row) => BAR_IDS[row],
             Self::Countdown => COUNTDOWN_ID,
@@ -137,7 +137,8 @@ impl ConnectionControl {
 
 /// Every child, each with its status help: the buttons, the list (rows the
 /// wait counts, each 2 px in from both ends; presses pass through it), the
-/// statics (the countdown unaligned); then the painted bars.
+/// statics (the countdown unaligned); then the painted bars and VERA's page
+/// counter.
 pub fn spec() -> NodeSpec {
     let align = crate::ui::shell::geom::ShellAlign::NONE;
     NodeSpec::new(NodeKind::Dialog)
@@ -161,10 +162,13 @@ pub fn spec() -> NodeSpec {
                 ConnectionControl::Countdown => {
                     node.with(Prop::Align, Value::Int(i32::from(align.0)))
                 }
+                ConnectionControl::PreviousPage => node.label(super::paging::PREVIOUS_LABEL),
+                ConnectionControl::NextPage => node.label(super::paging::NEXT_LABEL),
                 _ => node,
             }
         }))
         .children(BAR_FILL_IDS.map(|id| NodeSpec::new(NodeKind::Bar).id(id.into())))
+        .child(super::paging::counter_node())
 }
 
 /// Puts the wait's values on 0xEA's nodes: each shown row's bar as
@@ -354,6 +358,9 @@ impl ConnectionPage {
     /// Control `id`'s rect; `None` while it is hidden (an absent row, the
     /// paging buttons of a single page).
     pub fn rect(&self, layout: &ConnectionLayout, id: u16) -> Option<RectPx> {
+        if id == super::paging::COUNTER {
+            return (self.page_count() > 1).then(|| super::paging::counter_rect(layout.paging));
+        }
         if let Some(row) = BAR_FILL_IDS.iter().position(|fill| *fill == id) {
             return self.rect(layout, BAR_IDS[row]);
         }

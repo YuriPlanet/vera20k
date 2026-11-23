@@ -202,19 +202,6 @@ impl<'a> InGamePaint<'a> {
         self.state.csf_label(key, fallback)
     }
 
-    /// A right-panel owner-draw button (`0x00612B70`), pushed in while
-    /// `pressed`.
-    pub(super) fn button(&mut self, rect: RectPx, caption: &str, pressed: bool) {
-        self.owner_button(
-            rect,
-            caption,
-            PauseMenuButtonState {
-                pressed,
-                ..Default::default()
-            },
-        );
-    }
-
     /// A right-panel owner-draw button in `look`: its SIDEBTTN frame
     /// ([`super::pause_menu::button_frame`]) and centred caption, in the
     /// side's colour while disabled or lit.
@@ -295,30 +282,6 @@ impl<'a> InGamePaint<'a> {
             align,
             depth,
             1.0,
-        );
-    }
-
-    /// VERA's Previous/Next page buttons and "page n of m" over the first.
-    pub(super) fn paging(
-        &mut self,
-        rects: [RectPx; 2],
-        pressed: [bool; 2],
-        page: usize,
-        pages: usize,
-    ) {
-        for ((rect, pressed), label) in rects
-            .into_iter()
-            .zip(pressed)
-            .zip(["VERA:Previous", "VERA:Next"])
-        {
-            self.button(rect, &crate::i18n::tr(label), pressed);
-        }
-        let first = rects[0];
-        let shown = crate::i18n::tr_fill("VERA:PageOf", &[("page", &page), ("pages", &pages)]);
-        self.text(
-            &shown,
-            RectPx::new(first.x, first.y - 24, first.w, 20),
-            ShellAlign::H_CENTER,
         );
     }
 }
