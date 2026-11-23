@@ -363,6 +363,13 @@ pub(crate) struct GuiStyle<'a> {
     /// The edits show this input-method target's composition, focused or
     /// not, in place of the open one in the focused edit.
     pub(crate) ime_target: Option<crate::app::input::ime::ImeTarget>,
+    /// Combo faces show their caption whole in the arrow-reserved text
+    /// rect, clipped there, rather than squeezed and cut (BC6's).
+    pub(crate) clipped_faces: bool,
+    /// A NewEdit paints this many base pixels inside its node's rect (in
+    /// its one-pixel resource frame, BC6's chat); the node keeps the whole
+    /// rect for its hits and its caret's scrolling.
+    pub(crate) edit_inset: Option<i32>,
 }
 
 impl Default for GuiStyle<'_> {
@@ -393,6 +400,8 @@ impl Default for GuiStyle<'_> {
             picture_of: None,
             focus_of: None,
             ime_target: None,
+            clipped_faces: false,
+            edit_inset: None,
         }
     }
 }
@@ -1015,6 +1024,12 @@ pub(crate) fn paint_gui_into(
                 let rgb = text_rgb(gui, node, true, style.rgb, None);
                 let Some(field) = inset(gui, node, rect, scale) else {
                     let (out, texts) = (&mut paint.controls, &mut paint.texts);
+                    let painted = match style.edit_inset {
+                        Some(px) => scale.derive_rect(rect, |r| {
+                            RectPx::new(r.x + px, r.y + px, r.w - 2 * px, r.h - 2 * px)
+                        }),
+                        None => rect,
+                    };
                     super::controls::push_new_edit(
                         out,
                         texts,
@@ -1022,7 +1037,7 @@ pub(crate) fn paint_gui_into(
                         font,
                         &edit,
                         composition,
-                        rect,
+                        painted,
                         caret,
                         rgb,
                         depth,
@@ -1503,7 +1518,16 @@ fn paint_combo(
             SHELL_LABEL_TEXT_RGB,
             Some(combo_face_text_color(true)),
         );
-        if let Some(face) = face.filter(|_| caption) {
+        if let Some(face) = face.filter(|_| caption && style.clipped_faces) {
+            // Whole, clipped at the arrow reserve.
+            let at = crate::ui::skirmish_shell::combo_text_rect(rect, scale);
+            let glyph = style.face_factor.unwrap_or(scale.factor());
+            let depth = SHELL_CONTROL_TEXT_DEPTH;
+            let align = ShellAlign::V_CENTER;
+            paint
+                .texts
+                .push(text(state, face, at, align, glyph, rgb, depth));
+        } else if let Some(face) = face.filter(|_| caption) {
             // Cut to gamemd's arrow reserve (`0x00617250`), squeezed first;
             // drawn in the face less its `TextInset` when it has one.
             let at = inset(gui, node, rect, scale)
