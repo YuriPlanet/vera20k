@@ -255,7 +255,7 @@ pub(super) fn run(
         // against, and what stands inside the yard, where it blocks the
         // factories' own lanes; a village the army walks past is not a
         // demolition order.
-        if let Some((blocker, _)) = neutral_in_the_way(brain, rules, obs, item.cell) {
+        if let Some((blocker, _)) = neutral_in_the_way(brain, rules, obs, item.entity_id, item.cell) {
             if super::orders::admits(
                 rules,
                 obs,
@@ -484,6 +484,13 @@ fn issue(
     super::orders::issue(brain, out, rules, obs, entity_id, goal)
 }
 
+/// Keep a lawful hostile engagement unless there is a *reachable*, visible
+/// attacker threatening this unit. An attack on neutral scenery has no such
+/// ownership, so the next micro cycle may switch targets immediately.
+fn preserve_existing_attack(fighting: bool, hostile_target: bool, under_fire: bool) -> bool {
+    fighting && hostile_target && !under_fire
+}
+
 /// Every team member that may be told anything, with what the cycle needs to
 /// know about it.
 fn collect(
@@ -515,9 +522,25 @@ fn collect(
             // engine kept, and every pass that reads the mission as "busy"
             // leaves it standing there for the rest of the match — the army
             // the play test reports as "a lot of units doing nothing".
+            let current_target = obs.attack_target(unit.entity_id);
             let fighting = unit.mission == MissionId::from_known(MissionType::Attack)
-                && obs.attack_target(unit.entity_id).is_some();
-            if fighting || unit.in_service() {
+                && current_target.is_some();
+            let deployed = obs.is_deployed(unit.entity_id);
+            let reach = obs.object_type(rules, unit.type_id)
+                .map_or(0, |ty| super::advance::weapon_range_cells(rules, ty, deployed));
+            let under_fire = brain.census.enemies.iter().any(|enemy| {
+                obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+                    && obs.attack_target(enemy.entity_id) == Some(unit.entity_id)
+                    && squared_distance(enemy.cell, unit.cell)
+                        <= (reach + ENGAGE_MARGIN_CELLS).pow(2)
+            });
+            // Preserve an ongoing attack unless the unit is *being hit* by a
+            // reachable hostile. An attack on a neutral wall is not such a
+            // commitment: the hostile taking shots at us must come first.
+            if preserve_existing_attack(fighting,
+                current_target.is_some_and(|id| obs.is_hostile(id)), under_fire)
+                || unit.in_service()
+            {
                 continue;
             }
             // A unit a routine has taken is that routine's: the retreat owns
@@ -626,53 +649,26 @@ fn prefer(
 /// which is where a foundation's near edge is.
 const NEUTRAL_BLOCK_CELLS: i32 = 2;
 
-/// How far from the base's centre a neutral building still counts as standing
-/// in the yard, in cells: the outline the wall plan encloses
-/// ([`super::walls::BASE_WALL_RADIUS`]).
-const NEUTRAL_YARD_CELLS: i32 = 12;
-
-/// How near a unit has to be to a neutral building inside the yard to be the
-/// one that answers it, in cells. Everything in the base does not converge on
-/// one civilian block: the closest units clear it, the rest keep their posts.
-const NEUTRAL_YARD_REACH: i32 = 10;
-
-/// The neutral building `unit` should clear out of its way: the one it is
-/// standing against, or one standing in the yard that it is near enough to
-/// answer.
-///
-/// One owner for the question, because the two cases are the same rule seen
-/// from two sides: nobody's building where the house's own units have to walk.
+/// Only a physical wall *on the current march* may be demolished, and
+/// only when a weapon-bearing unit is already blocked at that wall. A neutral
+/// building near the home base is not automatically a military objective.
+/// This distinction protects civilian structures that engineers can occupy
+/// and prevents a low-value fence from diverting the main army for minutes.
 fn neutral_in_the_way(
     brain: &AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
-    unit: (u16, u16),
+    actor: u64,
+    cell: (u16, u16),
 ) -> Option<(u64, (u16, u16))> {
-    // Only what no click can use is cleared. A `CanBeOccupied=` house is a post
-    // the house's own riflemen can hold, and a `Capturable=` derrick is the
-    // income the engineer was sent for; both are worth more standing than the
-    // walk around them costs, and shelling either is the capture undone. A
-    // fence, a wreck or a decoration answers no click, and that is what stands
-    // in the way. The one thing this does *not* decide is a strongpoint that
-    // truly seals the road: that is the walk's question and
-    // [`super::avoidance`] answers it at the cell the unit cannot enter.
-    let clears = |building: &EnemyEntity| {
-        obs.object_type(rules, building.type_id)
-            .is_some_and(|ty| !ty.can_be_occupied && !ty.capturable)
-    };
-    if let Some(against) = brain
-        .census
-        .neutral_within(unit, NEUTRAL_BLOCK_CELLS, clears)
-    {
-        return Some(against);
-    }
-    let base = brain.census.base_cell?;
-    brain
-        .census
-        .neutral_within(base, NEUTRAL_YARD_CELLS, clears)
-        .filter(|(_, cell)| {
-            squared_distance(*cell, unit) <= NEUTRAL_YARD_REACH * NEUTRAL_YARD_REACH
+    let destination = obs.destination(actor)?;
+    brain.census.neutral_within(cell, NEUTRAL_BLOCK_CELLS, |building| {
+        obs.object_type(rules, building.type_id).is_some_and(|ty| {
+            ty.wall && !ty.can_be_occupied && !ty.capturable
         })
+    }).filter(|(_, barrier)| {
+        super::orders::path_crosses(&[*barrier], cell, destination, 1)
+    })
 }
 
 /// How coarse a look the scout takes at the map, in cells.
@@ -1068,5 +1064,18 @@ mod tests {
             dug_in > 0,
             "the dug-in one has the missile to fire: {dug_in}"
         );
+    }
+}
+
+#[cfg(test)]
+mod priority_regression_tests {
+    use super::*;
+
+    #[test]
+    fn neutral_wall_attack_does_not_lock_out_enemy_response() {
+        assert!(!preserve_existing_attack(true,false,false));
+        assert!(!preserve_existing_attack(true,true,true));
+        assert!(preserve_existing_attack(true,true,false));
+        assert!(!preserve_existing_attack(false,true,false));
     }
 }

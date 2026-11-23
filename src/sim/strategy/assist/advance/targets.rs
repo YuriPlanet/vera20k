@@ -319,11 +319,20 @@ pub(super) fn neutral_blocker(
     if i32::try_from(span).unwrap_or(i32::MAX) < 2 {
         return None;
     }
+    // Never replace the enemy objective with a civilian prize or a distant
+    // wall. The caller only needs help with a *nearby* physical blockage;
+    // local enemy fire is handled by the per-unit combat micro first.
+    if census.enemies.iter().any(|enemy| {
+        obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+            && cell_distance(enemy.cell, from) <= 8
+    }) {
+        return None;
+    }
     census
         .neutrals
         .iter()
         .filter(|building| {
-            cell_distance(building.cell, from) <= NEUTRAL_SCAN_CELLS
+            cell_distance(building.cell, from) <= 4
                 && super::super::orders::path_crosses(&[building.cell], from, to, BLOCKING_CELLS)
         })
         // A bunker is a fight, not a door. `can_be_occupied` alone is not
@@ -331,8 +340,11 @@ pub(super) fn neutral_blocker(
         // army. The pair that matters is the one that lets the enemy shoot
         // out of it.
         .filter(|building| {
-            !obs.object_type(rules, building.type_id).is_some_and(|ty| {
-                ty.can_be_occupied && ty.can_occupy_fire && ty.max_number_occupants > 0
+            obs.object_type(rules, building.type_id).is_some_and(|ty| {
+                // Oil derricks, hospitals and capturable tech structures are
+                // objectives for engineers, NOT doors for tanks to destroy.
+                // Non-wall decorations are navigated around by the pathfinder.
+                ty.wall && !ty.capturable && !ty.can_be_occupied
             })
         })
         .min_by_key(|building| (cell_distance(building.cell, from), building.entity_id))

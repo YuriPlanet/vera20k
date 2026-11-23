@@ -219,11 +219,32 @@ pub(super) fn fill_lines(
             a_soldier_would_reset_the_saving,
         );
     }
+    let airport_count = obs.own_entities().filter(|entity| {
+        obs.object_type(rules, entity.type_id).is_some_and(|ty| {
+            ty.factory_type() == Some(crate::rules::object_type::FactoryType::AircraftType)
+        })
+    }).count();
+    let aircraft_count: usize = brain.census.tiers[Slot::Aircraft.index()].iter().sum();
+    let establish_air_cover = airport_count > 0
+        && aircraft_count < airport_count.saturating_mul(2)
+        && !brain.director.recovering_income()
+        && brain.census.refineries > 0
+        && brain.census.harvesters > 0;
     let order = if last_miner_needed {
         [
             ProductionCategory::Vehicle,
             ProductionCategory::Infantry,
             ProductionCategory::Aircraft,
+            ProductionCategory::Ship,
+        ]
+    } else if establish_air_cover && budget.free >= COMBAT_MIN_CREDITS {
+        // Fill at most two aircraft per airfield before resuming the usual
+        // tank-first spending. This is a one-time investment in air coverage,
+        // not a permanent rule that starves the ground army.
+        [
+            ProductionCategory::Aircraft,
+            ProductionCategory::Vehicle,
+            ProductionCategory::Infantry,
             ProductionCategory::Ship,
         ]
     } else if infantry_short {
@@ -563,11 +584,11 @@ fn product_for<'r>(
             infantry_short,
         ),
         ProductionCategory::Aircraft => {
-            // An aircraft line is worth running at the same floor as the
-            // vehicles: it is the dearest unit the house can buy.
-            if budget.free < COMBAT_MIN_CREDITS {
-                return None;
-            }
+            // The aircraft line uses actual rules prices, not the tank's
+            // 2,000-credit threshold. Harriers often cost more than the
+            // ordinary 1,000-credit unit band but less than 2,000; the old
+            // floor + fighter's generic ceiling made an airfield idle even
+            // with enough cash to buy its plane.
             fighter(
                 brain,
                 rules,
@@ -647,7 +668,11 @@ fn fighter<'r>(
     naval: Option<bool>,
     infantry_short: bool,
 ) -> Option<(&'r ObjectType, InternedId)> {
-    let ceiling = unit_ceiling(budget.free);
+    let ceiling = if category == ObjectCategory::Aircraft {
+        budget.free
+    } else {
+        unit_ceiling(budget.free)
+    };
     let affordable: Vec<(&ObjectType, InternedId, i32)> = build::class_types(rules, obs, category)
         .filter(|(ty, _)| naval.is_none_or(|wanted| ty.naval == wanted))
         .filter(|(ty, _)| super::orders::is_combat_unit(rules, ty))

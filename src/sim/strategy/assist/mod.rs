@@ -139,6 +139,7 @@ pub(super) mod strategy;
 pub(super) mod terrain;
 pub(super) mod threats;
 pub(super) mod tracked;
+pub(super) mod unstuck;
 pub(super) mod walls;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -154,11 +155,24 @@ use crate::sim::rng::SimRng;
 use census::Census;
 use tracked::Tracker;
 
-/// How long a unit may hold a walk without changing cell before the brain
-/// decides the walk is not going anywhere, in frames. Twelve seconds: long
-/// enough that a unit waiting at a corner or a bay is not re-tasked, short
-/// enough that a loop is broken before it is visible.
-const STUCK_FRAMES: u64 = 180;
+/// Squared cell distance: comparisons only, so the square root is not needed.
+///
+/// One owner for the three identical copies `orders`, `micro` and `squads`
+/// used to carry. It orders candidates by how far away they are; it is not a
+/// reach test. Reach is Chebyshev, the metric the game's own adjacency uses
+/// (a unit neighbours all eight cells around it), so an "is it in range"
+/// question measures with that instead — see `advance`'s own helper.
+pub(super) fn squared_distance(a: (u16, u16), b: (u16, u16)) -> i32 {
+    let dx = i32::from(a.0) - i32::from(b.0);
+    let dy = i32::from(a.1) - i32::from(b.1);
+    dx * dx + dy * dy
+}
+
+/// How long an order on a unit stands before the brain looks again is
+/// [`tracked::TrackedKind::term`]'s answer now, and it differs per kind: a pose
+/// takes its animation, a walk across the map takes the walk. Fifteen seconds
+/// for the standing orders — long enough that a unit is not re-tasked every
+/// frame, short enough that one which finished its attack and idled is sent on.
 
 /// The name the status line shows for a type, or `?` when the rules do not
 /// have it.
@@ -192,81 +206,6 @@ fn top_groups(units: Vec<(String, crate::sim::mission::MissionId)>) -> Vec<Strin
         .map(|(count, name)| format!("{name}:{count}"))
         .collect()
 }
-
-/// Drop a walk that is not moving, once; release it if the retry does not
-/// move either.
-///
-/// Only units on the `Move` mission are offered here. A guard, a capture, a
-/// repair or a deployed unit is deliberately stationary and is not this
-/// check's business — treating them as stuck is what releases an army that
-/// was holding its ground. A cell that changes resets the term, so a unit
-/// walking a long way is never touched.
-fn sweep_stuck(
-    now: u64,
-    units: &[(u64, (u16, u16))],
-    tracked: &mut Tracker,
-    progress: &mut BTreeMap<u64, (u64, (u16, u16))>,
-    stuck_retried: &mut BTreeSet<u64>,
-) {
-    const KINDS: &[tracked::TrackedKind] = &[
-        tracked::TrackedKind::Move,
-        tracked::TrackedKind::AttackMove,
-        tracked::TrackedKind::Avoid,
-        tracked::TrackedKind::Breach,
-    ];
-    let live: BTreeSet<u64> = units.iter().map(|(id, _)| *id).collect();
-    progress.retain(|id, _| live.contains(id));
-    stuck_retried.retain(|id| live.contains(id));
-    for &(id, cell) in units {
-        let Some(&(since, was)) = progress.get(&id) else {
-            progress.insert(id, (now, cell));
-            continue;
-        };
-        if was != cell {
-            progress.insert(id, (now, cell));
-            stuck_retried.remove(&id);
-            continue;
-        }
-        if !tracked.stands(now, id, KINDS) {
-            continue;
-        }
-        if now.saturating_sub(since) < STUCK_FRAMES {
-            continue;
-        }
-        for kind in KINDS {
-            tracked.void(id, *kind);
-        }
-        if stuck_retried.contains(&id) {
-            for kind in KINDS {
-                tracked.refuse(now, id, *kind);
-            }
-            stuck_retried.remove(&id);
-            log::info!("auto play: unit {id} made no progress at {cell:?}; released");
-        } else {
-            stuck_retried.insert(id);
-        }
-        progress.insert(id, (now, cell));
-    }
-}
-
-/// Squared cell distance: comparisons only, so the square root is not needed.
-///
-/// One owner for the three identical copies `orders`, `micro` and `squads`
-/// used to carry. It orders candidates by how far away they are; it is not a
-/// reach test. Reach is Chebyshev, the metric the game's own adjacency uses
-/// (a unit neighbours all eight cells around it), so an "is it in range"
-/// question measures with that instead — see `advance`'s own helper.
-pub(super) fn squared_distance(a: (u16, u16), b: (u16, u16)) -> i32 {
-    let dx = i32::from(a.0) - i32::from(b.0);
-    let dy = i32::from(a.1) - i32::from(b.1);
-    dx * dx + dy * dy
-}
-
-/// How long an order on a unit stands before the brain looks again is
-/// [`tracked::TrackedKind::term`]'s answer now, and it differs per kind: a pose
-/// takes its animation, a walk across the map takes the walk. Fifteen seconds
-/// for the standing orders — long enough that a unit is not re-tasked every
-/// frame, short enough that one which finished its attack and idled is sent on.
 
 /// Plays one house the way a player would, through commands only.
 pub struct AssistBrain {
@@ -444,10 +383,10 @@ pub struct AssistBrain {
     /// alone for its own cool-off instead of the layer re-asking it every
     /// frame.
     last_tick: u64,
-    /// Where each eligible unit was last seen, for the no-progress check.
-    progress: BTreeMap<u64, (u64, (u16, u16))>,
-    /// Units already re-tasked once for standing still.
-    stuck_retried: BTreeSet<u64>,
+    /// Detect blocked nav and reversible two-cell loops; intervene sparingly.
+    pub(super) unstuck: unstuck::Recovery,
+    /// Short-lived evasions for economically valuable harvesters.
+    pub(super) miner_avoid_until: BTreeMap<u64, u64>,
     /// Cells an unarmed unit found closed, and the frame each request stands
     /// until, in `(cell, until)` order.
     ///
@@ -542,8 +481,8 @@ impl AssistBrain {
             push_target: None,
             issued: [0; 5],
             last_tick: 0,
-            progress: BTreeMap::new(),
-            stuck_retried: BTreeSet::new(),
+            unstuck: unstuck::Recovery::default(),
+            miner_avoid_until: BTreeMap::new(),
             breaches: Vec::new(),
             blocked_goals: BTreeMap::new(),
             push_progress: (0, usize::MAX),
@@ -962,6 +901,12 @@ impl Brain for AssistBrain {
             // A capture can borrow one spare defender, without overruling
             // emergency micro or the player's fifth-key scope.
             escort::run(self, rules, obs, out);
+            // A miner in immediate danger may run home, but only through a
+            // temporary command that cannot turn into a permanent mining loop.
+            orders::harvester_safety(self, rules, obs, out);
+            // Native navigation can remain blocked after a legal Move. Detect
+            // actual lack of progress before borrowing a unit for a side step.
+            unstuck::run(self, rules, obs, out);
             // Tactical passes have first refusal. Restore a suspended primary
             // only when the native mission has settled and no fresher tactical
             // or specialist order already owns this unit's frame.

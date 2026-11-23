@@ -307,6 +307,55 @@ fn able_for(
     })
 }
 
+/// Only regroup *ground vehicles* and only when dispersed far behind a
+/// leading vehicle that is still outside the battle. The caller keeps its
+/// original single enemy target; this waypoint is solely a marching aid for
+/// the tail, never a new target-priority algorithm.
+fn needs_tank_cohesion(unit: &Unit, post: (u16,u16)) -> bool {
+    unit.slot == super::census::Slot::Vehicle
+        && unit.traits.combat && unit.controllable() && !unit.in_service()
+        && cell_distance(unit.cell, post) > STAGGER_BEHIND + 4
+}
+
+fn tank_cohesion_post(
+    fighters: &[&Unit], target: (u16,u16),
+    obs: &Observation<'_>, census: &Census,
+) -> Option<(u16,u16)> {
+    let mut tanks: Vec<&Unit> = fighters.iter().copied().filter(|u| {
+        u.slot == super::census::Slot::Vehicle
+            && u.traits.combat && u.controllable() && !u.in_service()
+    }).collect();
+    if tanks.len() < 6 {
+        return None;
+    }
+    tanks.sort_by_key(|u| (cell_distance(u.cell, target), u.entity_id));
+    let lead = tanks[0].cell;
+    let tail = tanks.last()?.cell;
+    if cell_distance(lead, target) < 20
+        || cell_distance(lead, tail) < STAGGER_BEHIND * 2
+        || census.enemies.iter().any(|enemy| {
+            obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+                && cell_distance(enemy.cell, lead) <= 12
+        })
+    {
+        return None;
+    }
+    // Move the destination four cells from the leader toward the tail. A
+    // cell *on* the tank is normally occupied, so take a walkable nearby cell.
+    let dx = (i32::from(tail.0) - i32::from(lead.0)).signum();
+    let dy = (i32::from(tail.1) - i32::from(lead.1)).signum();
+    for distance in [4i32,3,5,2] {
+        let (Ok(x),Ok(y)) = (
+            u16::try_from(i32::from(lead.0) + distance * dx),
+            u16::try_from(i32::from(lead.1) + distance * dy),
+        ) else { continue; };
+        if obs.is_ground_walkable(x,y) {
+            return Some((x,y));
+        }
+    }
+    None
+}
+
 pub(super) fn advance(
     brain: &mut AssistBrain,
     rules: &RuleSet,
@@ -569,6 +618,21 @@ pub(super) fn advance(
         .min_by_key(|at| cell_distance(*at, target_cell))
         .unwrap_or(target_cell);
     let left_behind = |unit: &Unit| cell_distance(unit.cell, tip) > STAGGER_BEHIND;
+    // A common target alone does not form a tank column: the fast tip can be
+    // half a map ahead of its heavy support while the tail still has the old
+    // waypoint. In safe territory, name a *temporary* march waypoint beside
+    // the leading tanks for those that are far behind. Do not stop fighters
+    // in contact or redirect the leading vehicles away from a won objective.
+    let tank_rally = tank_cohesion_post(&fighters, target_cell, obs, &brain.census);
+    if let Some(anchor) = tank_rally {
+        // Use the scarce order budget on the lagging tanks first. Once their
+        // new waypoint stands in Tracker they stop consuming this quota.
+        fighters.sort_by_key(|unit| (
+            !needs_tank_cohesion(unit, anchor),
+            cell_distance(unit.cell, anchor),
+            unit.entity_id,
+        ));
+    }
 
         if super::trace_enabled("AUTOPLAY_TRACE_SKIP") && tick % 600 == 0 {
             let mut deployed = 0;
@@ -615,10 +679,19 @@ pub(super) fn advance(
         // mission with nothing behind it is not: a unit left on Attack after
         // its target died was skipped here, in `micro` and in the guard step,
         // and stood in the yard for the rest of the match.
+        let cohesion = tank_rally.filter(|anchor| needs_tank_cohesion(unit, *anchor))
+            .filter(|anchor| super::orders::reachable(rules, obs, unit.entity_id, *anchor));
+        let march_cell = cohesion.unwrap_or(target_cell);
         let attacking = unit.mission == MissionId::from_known(MissionType::Attack)
             && obs.attack_target(unit.entity_id).is_some();
+        // A destination from an old push is not proof that this unit is
+        // advancing toward the *current* target. This used to leave entire
+        // columns standing outside an enemy base after a target switch.
         let walking = unit.mission == MissionId::from_known(MissionType::Move)
-            && (obs.destination(unit.entity_id).is_some() || !left_behind(unit));
+            && match obs.destination(unit.entity_id) {
+                Some(destination) => cell_distance(destination, march_cell) <= 4,
+                None => !left_behind(unit),
+            };
         if attacking || walking {
             continue;
         }
@@ -631,7 +704,11 @@ pub(super) fn advance(
         // The step that owns a specialist order already spent this unit's frame:
         // a spy walking into a building and a rifleman boarding a carrier both
         // outrank the push.
-        if out.orders.iter().any(|order| order.actor == unit.entity_id) {
+        if out.orders.iter().any(|order| order.actor == unit.entity_id)
+            || brain.tracked.pending_resume(tick, unit.entity_id).is_some()
+        {
+            // A tactical detour can still be moving in native after its
+            // short Tracker term ends. Mission Resume owns that hand-off.
             continue;
         }
         // Who owns the unit is the tracker's ladder: a fight in reach, a step
@@ -657,14 +734,14 @@ pub(super) fn advance(
             let kind = super::tracked::TrackedKind::AttackMove;
             if !brain
                 .tracked
-                .admits(tick, unit.entity_id, kind, None, Some(target_cell))
+                .admits(tick, unit.entity_id, kind, None, Some(march_cell))
             {
                 continue;
             }
             if !super::orders::issue_tracked(
                 &mut brain.tracked, brain.trace, out, rules, obs, unit.entity_id,
-                kind, None, Some(target_cell),
-                Goal::AttackMove { cell: target_cell },
+                kind, None, Some(march_cell),
+                Goal::AttackMove { cell: march_cell },
             ) {
                 continue;
             }
@@ -717,7 +794,7 @@ pub(super) fn advance(
         } else {
             (
                 super::tracked::TrackedKind::AttackMove,
-                Goal::AttackMove { cell: target_cell },
+                Goal::AttackMove { cell: march_cell },
             )
         };
         // L4: it has been sent at this target, the target has not walked away,
@@ -727,7 +804,7 @@ pub(super) fn advance(
             unit.entity_id,
             kind,
             Some(target.entity_id),
-            Some(target.cell),
+            Some(march_cell),
         ) {
             continue;
         }
@@ -736,7 +813,7 @@ pub(super) fn advance(
         // `issue_tracked` both arbitrates and remembers the accepted goal.
         if !super::orders::issue_tracked(
             &mut brain.tracked, brain.trace, out, rules, obs, unit.entity_id,
-            kind, Some(target.entity_id), Some(target.cell), goal,
+            kind, Some(target.entity_id), Some(march_cell), goal,
         ) {
             refused += 1;
             if super::trace_enabled("AUTOPLAY_TRACE_REFUSE") && tick % 600 == 0 {
@@ -1107,11 +1184,10 @@ mod tests {
         );
     }
 
-    /// A nobody's building on the walk is a target: it is closed ground, it is
-    /// in no enemy list, and the ledger's own neutral collection is what names
-    /// it.
+    /// A neutral refinery is worth taking whole. It must not hijack the whole
+    /// attack group simply because it lies on the straight route.
     #[test]
-    fn a_neutral_structure_on_the_walk_is_named_as_the_blocker() {
+    fn a_neutral_economic_structure_is_not_a_demolition_target() {
         let Some((mut sim, rules)) = arena(0xA17) else {
             return;
         };
@@ -1141,13 +1217,13 @@ mod tests {
                 &census,
                 &Observation::new(&sim, owner),
                 &rules,
-                (10, 20),
+                (18, 20),
                 (30, 20)
-            )
-            .map(|(id, _)| id),
-            Some(blocker),
-            "the structure on the line is the one to shoot"
+            ),
+            None,
+            "a neutral refinery is an asset to capture, never a push target"
         );
+        let _ = blocker;
         assert_eq!(
             neutral_blocker(
                 &census,

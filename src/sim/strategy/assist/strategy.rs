@@ -95,6 +95,16 @@ impl Signals {
     }
 }
 
+/// A rich, already-explored central mineral field is an independent strategic
+/// opportunity. Even a ready attack force can invest in it if the treasury can
+/// fund the new yard *without* sacrificing the next tank wave. Smaller fields
+/// retain v9's proven "attack first" behaviour.
+fn should_expand_while_fighting(signals: Signals) -> bool {
+    signals.can_expand()
+        && (signals.attack_members < squads::ARMY_TO_ATTACK
+            || (signals.far_ore_stock >= FAR_FIELD_STOCK * 2 && signals.credits >= 7_000))
+}
+
 /// The known, unserved ore, not the omniscient native overlay grid. This is
 /// deliberately evaluated against each refinery and yard, not just the first
 /// base anchor: ore beside a captured/new refinery does not justify another.
@@ -254,7 +264,7 @@ impl Director {
             Objective::HoldBase
         } else if now < self.replenish_until {
             Objective::Muster
-        } else if signals.can_expand() && signals.attack_members < squads::ARMY_TO_ATTACK {
+        } else if should_expand_while_fighting(signals) {
             Objective::ExpandOre
         } else if signals.attack_members >= squads::ARMY_TO_ATTACK {
             Objective::PressAttack
@@ -435,5 +445,23 @@ mod tests {
         assert_eq!(distant_ore_stock(&ore, &[(80, 80)], &[(12, 10)]), 0);
         assert_eq!(distant_ore_stock(&ore, &[(10, 10)], &[(79, 80)]), 0);
         assert_eq!(distant_ore_stock(&BTreeMap::new(), &[(10, 10)], &[]), 0);
+    }
+}
+
+#[cfg(test)]
+mod rich_frontier_tests {
+    use super::*;
+    #[test]
+    fn a_rich_middle_field_can_be_funded_with_a_ready_attack_army() {
+        let signals = Signals {
+            yards: 1, refineries: 2, harvesters: 4,
+            fighters: 20, attack_members: squads::ARMY_TO_ATTACK + 2,
+            credits: 9000, income_per_minute: Some(1000),
+            far_ore_stock: FAR_FIELD_STOCK * 3,
+            ..Signals::default()
+        };
+        assert!(should_expand_while_fighting(signals));
+        assert!(!should_expand_while_fighting(Signals { credits: 4000, ..signals }),
+            "expansion must not steal the current tank wave's money");
     }
 }

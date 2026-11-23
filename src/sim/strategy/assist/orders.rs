@@ -921,6 +921,13 @@ fn engineer_preference(
                     // its buildings as much as the units standing among them.
                     || path_crosses(structures, from, target.cell, BASE_SKIRT_CELLS),
             );
+            // Civilian economic objectives are not a suicide mission. If a
+            // visible guard covers the route or prize, wait until the army or
+            // escort clears it. Ordinary hostile captures retain their
+            // existing risk ranking (and its measured tactical trade-offs).
+            if guarded != 0 && owned == 0 {
+                return None;
+            }
             // **Clear ground first, then what it is worth, then the walk.**
             //
             // The risk is the first key because an engineer that walks into a
@@ -1257,6 +1264,108 @@ fn holds_or_fights(mission: MissionId) -> bool {
         .any(|kind| mission == MissionId::from_known(kind))
 }
 
+/// A harvester is part of the economy, not a disposable scout. Only a real,
+/// *currently visible* enemy able to damage the miner permits interrupting
+/// the native Harvest/Return/Unload cycle. This reads the same fog-filtered
+/// enemy census as every other tactical decision.
+const MINER_DANGER_CELLS: i32 = 8;
+const MINER_FIELD_SAFETY_CELLS: i32 = 10;
+const MINER_ESCAPE_FRAMES: u64 = 210;
+const MINER_ESCAPE_PER_FRAME: usize = 2;
+
+fn miner_in_danger(
+    rules: &RuleSet, obs: &Observation<'_>,
+    enemy_id: u64, enemy_cell: (u16,u16), miner_id: u64,
+    miner_cell: (u16,u16),
+) -> bool {
+    obs.is_cell_visible(enemy_cell.0, enemy_cell.1)
+        && squared_distance(enemy_cell, miner_cell) <= MINER_DANGER_CELLS * MINER_DANGER_CELLS
+        && obs.can_hurt(rules, enemy_id, miner_id)
+}
+
+/// Find a safe *walkable* staging cell beside a refinery. The refinery's
+/// footprint itself is an invalid Move destination; clicking it to evade an
+/// enemy causes a miner to collide with its own bay forever.
+fn safe_miner_post(
+    obs: &Observation<'_>, zone: MovementZone,
+    miner: (u16,u16), home: &[(u16,u16)],
+    visible_threats: &[(u16,u16)],
+) -> Option<(u16,u16)> {
+    let mut posts = Vec::new();
+    for &anchor in home {
+        for ring in 3i32..=6 {
+            for dy in -ring..=ring {
+                for dx in -ring..=ring {
+                    if dx.abs().max(dy.abs()) != ring { continue; }
+                    let (Ok(x),Ok(y)) = (
+                        u16::try_from(i32::from(anchor.0)+dx),
+                        u16::try_from(i32::from(anchor.1)+dy),
+                    ) else { continue; };
+                    let cell = (x,y);
+                    if obs.is_ground_walkable(x,y)
+                        && obs.can_reach(zone, miner, cell)
+                        && visible_threats.iter().all(|&enemy| {
+                            squared_distance(enemy,cell) > MINER_DANGER_CELLS * MINER_DANGER_CELLS
+                        })
+                    {
+                        posts.push(cell);
+                    }
+                }
+            }
+        }
+    }
+    posts.into_iter().min_by_key(|&cell| (squared_distance(cell,miner), cell))
+}
+
+/// Interrupt only threatened miners, at most two per frame. The temporary
+/// Avoid command uses the normal order gate; deliberately forget the old
+/// Harvest primary so Mission Resume does not send it straight back to the
+/// dangerous ore. Harvest is selected anew after the safety cooldown.
+pub(super) fn harvester_safety(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+) {
+    let now = obs.tick();
+    brain.miner_avoid_until.retain(|_,until| *until > now);
+    if brain.census.refinery_cells.is_empty() {
+        return;
+    }
+    let visible: Vec<_> = brain.census.enemies.iter()
+        .filter(|enemy| obs.is_cell_visible(enemy.cell.0, enemy.cell.1))
+        .map(|enemy| (enemy.entity_id,enemy.cell))
+        .collect();
+    if visible.is_empty() { return; }
+    let mut issued = 0;
+    for unit in &brain.census.units {
+        if issued >= MINER_ESCAPE_PER_FRAME { break; }
+        let id = unit.entity_id;
+        if !unit.traits.harvester || !unit.controllable() || unit.in_service()
+            || obs.is_deployed(id) || brain.miner_avoid_until.contains_key(&id)
+            || out.ordered_this_frame(id)
+        {
+            continue;
+        }
+        if !visible.iter().any(|(enemy_id,enemy_cell)| {
+            miner_in_danger(rules, obs, *enemy_id, *enemy_cell, id, unit.cell)
+        }) { continue; }
+        let Some(ty) = obs.object_type(rules,unit.type_id) else { continue; };
+        let enemy_cells: Vec<_> = visible.iter().map(|(_,cell)| *cell).collect();
+        let Some(post) = safe_miner_post(
+            obs, ty.movement_zone, unit.cell,
+            &brain.census.refinery_cells, &enemy_cells,
+        ) else { continue; };
+        if issue_tracked(
+            &mut brain.tracked, brain.trace, out, rules, obs,
+            id, TrackedKind::Avoid, None, Some(post), Goal::Move { cell: post },
+        ) {
+            brain.tracked.forget_primary(id);
+            brain.miner_avoid_until.insert(id, now.saturating_add(MINER_ESCAPE_FRAMES));
+            issued += 1;
+            log::debug!("auto play: harvester {id} flees visible threat toward {post:?}");
+        }
+    }
+}
+
 /// Put an idle harvester back on the ore.
 ///
 /// The miner's state machine (`SearchOre → Harvest → ReturnToRefinery → Dock`)
@@ -1299,7 +1408,9 @@ pub(super) fn harvesters(
     // real and the trip is a donation.
     let space = super::terrain::Space::read(obs, rules, &brain.census.home_cells, anchor);
     for (id, cell, type_id) in idle {
-        if ordered_this_frame(out, id) {
+        if ordered_this_frame(out, id)
+            || brain.miner_avoid_until.get(&id).is_some_and(|until| *until > tick)
+        {
             continue;
         }
         let zone = obs.object_type(rules, type_id).map(|ty| ty.movement_zone);
@@ -1315,7 +1426,12 @@ pub(super) fn harvesters(
                     .iter()
                     .copied()
                     .filter(|field| space.ground_at(*field).buildable()
-                        && zone.is_none_or(|zone| obs.can_reach(zone, cell, *field)))
+                        && zone.is_none_or(|zone| obs.can_reach(zone, cell, *field))
+                        && !brain.census.enemies.iter().any(|enemy| {
+                            obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+                                && squared_distance(enemy.cell, *field)
+                                    <= MINER_FIELD_SAFETY_CELLS * MINER_FIELD_SAFETY_CELLS
+                        }))
                     .collect::<Vec<_>>(),
             )
         };
@@ -2203,9 +2319,6 @@ pub(super) fn supers(
     obs: &Observation<'_>,
     out: &mut Outbox,
 ) {
-    if !obs.super_weapons() {
-        return;
-    }
     let ready = obs.ready_super_weapons(rules);
     if ready.is_empty() {
         return;
@@ -2228,7 +2341,12 @@ pub(super) fn supers(
         let Some(super_weapon) = rules.super_weapon(name) else {
             continue;
         };
-        if !auto_power_supported(super_weapon.kind) {
+        // The lobby's SuperWeapons checkbox only disables powers explicitly
+        // marked disableable by the rules. American paradrops and some other
+        // support powers remain legal even when offensive supers are off.
+        if !auto_power_supported(super_weapon.kind)
+            || !allowed_by_shell(obs.super_weapons(), super_weapon.disableable_from_shell)
+        {
             continue;
         }
         // Where it lands is the power's own answer, not one cell for all of
@@ -2247,6 +2365,10 @@ pub(super) fn supers(
         });
         fired += 1;
     }
+}
+
+fn allowed_by_shell(super_weapons_enabled: bool, disableable_from_shell: bool) -> bool {
+    super_weapons_enabled || !disableable_from_shell
 }
 
 /// How many powers one frame fires.
@@ -2297,13 +2419,7 @@ fn landing_cell(
         // Dropped where the army is, so they arrive as a squad rather than as
         // eight soldiers walking out of the enemy's own base one at a time.
         // With no army yet, the base: they are defenders until there is one.
-        Aim::Rally => brain
-            .census
-            .units
-            .iter()
-            .find(|unit| unit.traits.combat)
-            .map(|unit| unit.cell)
-            .or(brain.census.base_cell),
+        Aim::Rally => safe_paradrop_cell(brain, obs),
         // Enemy structures are already known; reveal a *new* part of the map
         // first. The fog is this player's own information, not all entities.
         Aim::Recon => recon_cell(obs, brain.census.base_cell)
@@ -2311,6 +2427,36 @@ fn landing_cell(
         Aim::Shield => threatened_building(obs, rules),
         Aim::Curtain => engaged_vehicle(brain, rules, obs),
     }
+}
+
+/// Place airborne reinforcements on passable *friendly staging ground*, not
+/// on the coordinate of the first fighter (which may be an aircraft, in
+/// limbo, or fighting inside the enemy base). Prefer the attack squad's
+/// rearward safe ground, then the base's established muster cell.
+fn safe_paradrop_cell(brain: &AssistBrain, obs: &Observation<'_>) -> Option<(u16,u16)> {
+    let safe = |cell: (u16,u16)| {
+        obs.is_cell_in_playfield(cell.0,cell.1)
+            && (!obs.has_ground_grid() || obs.is_ground_walkable(cell.0,cell.1))
+            && !brain.census.enemies.iter().any(|enemy| {
+                obs.is_cell_visible(enemy.cell.0,enemy.cell.1)
+                    && squared_distance(enemy.cell,cell) <= 10 * 10
+            })
+    };
+    let attack = brain.squads.squad(super::squads::Role::Attack);
+    let on_front = brain.census.units.iter()
+        .filter(|unit| unit.slot != super::census::Slot::Aircraft
+            && unit.traits.combat && unit.controllable())
+        .filter(|unit| attack.is_some_and(|squad| squad.members.contains(&unit.entity_id)))
+        .filter_map(|unit| {
+            super::census::rally_near(obs,unit.cell,&brain.census.home_cells)
+        })
+        .find(|cell| safe(*cell));
+    on_front
+        .or_else(|| brain.census.rally.filter(|cell| safe(*cell)))
+        .or_else(|| brain.census.base_cell.and_then(|home| {
+            super::census::rally_near(obs,home,&brain.census.home_cells)
+                .filter(|cell| safe(*cell))
+        }))
 }
 
 /// Only single-click powers with a safe, currently meaningful target are

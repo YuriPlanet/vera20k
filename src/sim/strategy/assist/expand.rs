@@ -853,12 +853,20 @@ fn search_expansion_site(
     space: &super::terrain::Space,
 ) -> Option<(u16, u16)> {
     let aim = expansion_aim(known_ore, home, home_cells);
-    if let Some(ore) = aim
-        && let Some(cell) = search_rings_from(obs, home_cells, ore, EXPAND_ORE_RING, admits, space)
-    {
-        return Some(cell);
+    if let Some(ore) = aim {
+        // A refinery should be close to its field. Starting this search at
+        // EXPAND_MIN_CELLS used to skip every good cell right next to the ore
+        // and could return a site over a dozen cells away. Distance from the
+        // *existing base* is checked separately in search_rings_from.
+        return search_rings_from(obs, home_cells, ore, 0, EXPAND_ORE_RING, admits, space);
     }
-    search_rings_from(obs, home_cells, home, EXPAND_SCAN_CELLS, admits, space)
+    // A few isolated visible ore tiles are not evidence for paying for an
+    // entire new base. A fallback yard beside the original home consumes the
+    // maker but never reaches the rich centre of the map.
+    if !known_ore.is_empty() {
+        return None;
+    }
+    search_rings_from(obs, home_cells, home, EXPAND_MIN_CELLS, EXPAND_SCAN_CELLS, admits, space)
 }
 
 /// The ore cell a new base should be built beside: the nearest one the house
@@ -875,10 +883,22 @@ fn expansion_aim(
 ) -> Option<(u16, u16)> {
     // The overlay grid knows hidden deposits. An honest player only knows
     // cells seen while visible; use the same last-seen survey as miner buying.
-    known_ore.keys()
-        .copied()
+    // Prefer a substantial local seam over the first isolated ore tile on
+    // the path. Each tile's cached stage estimates its remaining stock; live
+    // hidden overlay data must never enter this estimate.
+    known_ore.keys().copied()
         .filter(|cell| is_a_second_base_cell(home_cells, *cell))
-        .min_by_key(|cell| (cell_distance(*cell, home), *cell))
+        .filter_map(|cell| {
+            let local_stock = known_ore.iter()
+                .filter(|(near,_)| cell_distance(**near,cell) <= 6)
+                .map(|(_,stage)| u32::from(*stage)+1)
+                .sum::<u32>();
+            (local_stock >= 8).then_some((cell,local_stock))
+        })
+        .max_by_key(|(cell,stock)| (*stock,
+            std::cmp::Reverse(cell_distance(*cell,home)),
+            std::cmp::Reverse(*cell)))
+        .map(|(cell,_)| cell)
 }
 
 /// The first admissible cell in rings out from `origin`, up to `max_ring`.
@@ -889,6 +909,7 @@ fn search_rings_from(
     obs: &Observation<'_>,
     home_cells: &[(u16, u16)],
     origin: (u16, u16),
+    min_ring: i32,
     max_ring: i32,
     admits: &dyn Fn((u16, u16)) -> bool,
     space: &super::terrain::Space,
@@ -899,7 +920,7 @@ fn search_rings_from(
     if width == 0 || height == 0 {
         return None;
     }
-    for ring in EXPAND_MIN_CELLS..=max_ring {
+    for ring in min_ring..=max_ring {
         for dy in -ring..=ring {
             for dx in -ring..=ring {
                 if dx.abs().max(dy.abs()) != ring {
@@ -1475,5 +1496,31 @@ mod tests {
         assert_eq!(expansion_aim(&seen, (10, 10), &[(10, 10)]), Some(hidden_field));
         assert_eq!(expansion_aim(&seen, (10, 10), &[hidden_field]), None,
             "the next base must not target its own existing field");
+    }
+}
+
+#[cfg(test)]
+mod rich_ore_tests {
+    use super::*;
+
+    #[test]
+    fn an_isolated_nearby_ore_tile_does_not_outvote_a_rich_central_field() {
+        let mut known = std::collections::BTreeMap::new();
+        known.insert((24,24),0_u8);
+        for x in 60..64 {
+            for y in 60..64 {
+                known.insert((x,y),1_u8);
+            }
+        }
+        let chosen = expansion_aim(&known, (12,12), &[(12,12)]).unwrap();
+        assert!(cell_distance(chosen, (60,60)) < 6,
+            "prefer a real resource field over the first isolated tile: {chosen:?}");
+    }
+
+    #[test]
+    fn a_spurious_ore_tile_is_not_a_reason_to_buy_a_yard() {
+        let mut known = std::collections::BTreeMap::new();
+        known.insert((24,24),0_u8);
+        assert_eq!(expansion_aim(&known,(12,12),&[(12,12)]),None);
     }
 }

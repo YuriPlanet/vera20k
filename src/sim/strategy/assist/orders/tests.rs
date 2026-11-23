@@ -1842,3 +1842,12 @@ fn a_captured_yard_stays_open_until_it_truly_needs_evacuation() {
     assert!(!should_pack_captured_yard(350, 1));
     assert!(should_pack_captured_yard(450, 3));
 }
+
+#[test]
+fn support_powers_respect_their_individual_lobby_switch() {
+    assert!(allowed_by_shell(false, false),
+        "non-disableable American paradrops are not removed with superweapons");
+    assert!(!allowed_by_shell(false, true),
+        "the lobby may disable an explicitly disableable missile");
+    assert!(allowed_by_shell(true, true));
+}
