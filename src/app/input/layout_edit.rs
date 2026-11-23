@@ -18,6 +18,7 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::presentation::text_hud::{self, TextHud};
 use crate::app::presentation::{field_parts, layout_parts, sidebar_render};
 use crate::render::batch::SpriteInstance;
 use crate::ui::added_parts::{AddedKind, Holder};
@@ -485,35 +486,45 @@ fn placed_in_text(
 /// black in its corner, then the Save and Reset buttons, framed the same
 /// with their labels in the middle. The grabbed part's and the held
 /// button's are white.
+/// The edit mode's overlay drawn through `hud`: the name boxes, the
+/// outlines and the texts, each lane in drawing order.
 pub(crate) fn instances(
     state: &AppState,
+    hud: &mut TextHud,
 ) -> (
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
 ) {
-    let Some(edit) = &state.match_state.match_presentation.layout_edit else {
-        return Default::default();
-    };
     let camera = [
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
     ];
+    let pieces = pieces(state);
+    draw_pieces(&state.renderer.bit_font, &pieces, camera, hud)
+}
+
+/// One piece of the overlay in the frame's pixels: a box filled black, an
+/// outline's side, or a text, in the order they draw.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum EditPiece {
+    Box([f32; 4]),
+    Side([f32; 4], [f32; 3]),
+    Text(String, [f32; 2], [f32; 3]),
+}
+
+/// The overlay's pieces: each target's outline, name box and name, then
+/// each button's box, outline and label. A name moves down past names
+/// already standing at its corner.
+fn pieces(state: &AppState) -> Vec<EditPiece> {
+    let Some(edit) = &state.match_state.match_presentation.layout_edit else {
+        return Vec::new();
+    };
     let tint = crate::render::sidebar_text::native_radar_outline_color(
         sidebar_render::current_sidebar_theme(state),
     );
     let font = &state.renderer.bit_font;
     let grabbed = edit.grab.as_ref().map(|grab| grab.name.as_str());
-    let quad = |x: f32, y: f32, w: f32, h: f32, tint: [f32; 3], depth: f32| SpriteInstance {
-        position: [x + camera[0], y + camera[1]],
-        size: [w, h],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        depth,
-        tint,
-        alpha: 1.0,
-        ..Default::default()
-    };
     let outline = |[x, y, w, h]: [f32; 4], colour: [f32; 3]| {
         [
             (x, y, w, 1.0),
@@ -521,9 +532,9 @@ pub(crate) fn instances(
             (x, y, 1.0, h),
             (x + w - 1.0, y, 1.0, h),
         ]
-        .map(|(x, y, w, h)| quad(x, y, w, h, colour, 0.000205))
+        .map(|(x, y, w, h)| EditPiece::Side([x, y, w, h], colour))
     };
-    let (mut fills, mut borders, mut texts) = (Vec::new(), Vec::new(), Vec::new());
+    let mut out = Vec::new();
     // Where names already stand: two parts that start at one corner get
     // their names one under the other.
     let mut named: Vec<[f32; 2]> = Vec::new();
@@ -535,7 +546,7 @@ pub(crate) fn instances(
         } else {
             tint
         };
-        borders.extend(outline(rect, colour));
+        out.extend(outline(rect, colour));
         let mut at = [rect[0] + 1.0, rect[1] + 1.0];
         while named
             .iter()
@@ -544,22 +555,16 @@ pub(crate) fn instances(
             at[1] += line;
         }
         named.push(at);
-        fills.push(quad(
+        out.push(EditPiece::Box([
             at[0],
             at[1],
             font.text_width(&target.name) as f32 + 4.0,
             line,
-            [0.0; 3],
-            0.00021,
-        ));
-        texts.extend(font.build_text(
-            &target.name,
-            at[0] + 2.0,
-            at[1] + 1.0,
-            1.0,
-            0.00020,
+        ]));
+        out.push(EditPiece::Text(
+            target.name.clone(),
+            [at[0] + 2.0, at[1] + 1.0],
             colour,
-            camera,
         ));
     }
     for (button, label, rect) in buttons(state) {
@@ -569,20 +574,75 @@ pub(crate) fn instances(
         } else {
             tint
         };
-        fills.push(quad(x, y, w, h, [0.0; 3], 0.00021));
-        borders.extend(outline([x, y, w, h], colour));
-        texts.extend(font.build_text(
-            &label,
-            x + ((w - font.text_width(&label) as f32) / 2.0).round(),
-            y + ((h - font.cell_height()) / 2.0).round(),
-            1.0,
-            0.00020,
+        out.push(EditPiece::Box([x, y, w, h]));
+        out.extend(outline([x, y, w, h], colour));
+        out.push(EditPiece::Text(
+            label.to_string(),
+            [
+                x + ((w - font.text_width(&label) as f32) / 2.0).round(),
+                y + ((h - font.cell_height()) / 2.0).round(),
+            ],
             colour,
-            camera,
         ));
     }
-    (fills, borders, texts)
+    out
 }
+
+/// Name boxes black behind the outlines (0.00021, 0.000205) behind the
+/// texts (0.00020); the outlines and texts in their exact colours.
+const BOX_DEPTH: f32 = 0.00021;
+const SIDE_DEPTH: f32 = 0.000205;
+const TEXT_DEPTH: f32 = 0.00020;
+
+/// The pieces as nodes of `hud`, returned as the name boxes, the outlines
+/// and the glyphs, each in drawing order.
+fn draw_pieces(
+    font: &crate::render::bit_font::BitFont,
+    pieces: &[EditPiece],
+    camera: [f32; 2],
+    hud: &mut TextHud,
+) -> (
+    Vec<SpriteInstance>,
+    Vec<SpriteInstance>,
+    Vec<SpriteInstance>,
+) {
+    let whole = |[x, y, w, h]: [f32; 4]| {
+        vera20k_gui::Rect::new(x as i32, y as i32, w.ceil() as i32, h.ceil() as i32)
+    };
+    hud.begin();
+    for piece in pieces {
+        match piece {
+            EditPiece::Box(rect) => hud.fill(
+                whole(*rect),
+                [rect[0] + camera[0], rect[1] + camera[1]],
+                [rect[2], rect[3]],
+                text_hud::rgb([0; 3]),
+                BOX_DEPTH,
+            ),
+            EditPiece::Side(rect, colour) => hud.fill_tinted(
+                whole(*rect),
+                [rect[0] + camera[0], rect[1] + camera[1]],
+                [rect[2], rect[3]],
+                text_hud::rounded(*colour),
+                SIDE_DEPTH,
+                Some(*colour),
+            ),
+            EditPiece::Text(text, at, colour) => hud.text_tinted(
+                whole([at[0], at[1], font.text_width(text) as f32, font.cell_height()]),
+                text,
+                [at[0] + camera[0], at[1] + camera[1]],
+                text_hud::rounded(*colour),
+                TEXT_DEPTH,
+                None,
+                Some(*colour),
+            ),
+        }
+    }
+    hud.finish(font);
+    let (boxes, sides) = hud.boxes().copied().partition(|quad| quad.depth == BOX_DEPTH);
+    (boxes, sides, hud.glyphs().copied().collect())
+}
+
 
 #[cfg(all(test, tests_app_input_d_z))]
 mod tests {

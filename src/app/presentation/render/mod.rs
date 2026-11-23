@@ -1124,7 +1124,11 @@ fn upload_to_gpu(
     // The layout edit mode's outlines and names share the tooltip's lanes:
     // over the whole frame, sidebar included.
     {
-        let (fills, borders, texts) = crate::app::input::layout_edit::instances(state);
+        let mut edit_hud =
+            std::mem::take(&mut state.match_state.match_presentation.layout_edit_hud);
+        let (fills, borders, texts) =
+            crate::app::input::layout_edit::instances(state, &mut edit_hud);
+        state.match_state.match_presentation.layout_edit_hud = edit_hud;
         tooltip_fill.extend(fills);
         tooltip_border.extend(borders);
         tooltip_text.extend(texts);
