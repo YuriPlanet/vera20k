@@ -136,6 +136,20 @@ const MAX_HEIGHT: u32 = 4800;
 const MAX_FRAMES: u32 = 1_000_000;
 const MAX_AUDIO_TRACKS: u32 = 256;
 
+pub(super) fn validate_dimensions(width: u32, height: u32) -> Result<(), AssetError> {
+    if width == 0 || width > MAX_WIDTH {
+        return Err(AssetError::BinkError {
+            reason: format!("invalid width {width}"),
+        });
+    }
+    if height == 0 || height > MAX_HEIGHT {
+        return Err(AssetError::BinkError {
+            reason: format!("invalid height {height}"),
+        });
+    }
+    Ok(())
+}
+
 /// Parse the fixed header prefix (no frame index yet).
 ///
 /// Returns the parsed header and the offset in `data` where the audio-track
@@ -170,16 +184,7 @@ pub(crate) fn parse_fixed_header(data: &[u8]) -> Result<(BinkHeader, usize), Ass
             reason: format!("invalid num_frames {}", num_frames),
         });
     }
-    if width == 0 || width > MAX_WIDTH {
-        return Err(AssetError::BinkError {
-            reason: format!("invalid width {}", width),
-        });
-    }
-    if height == 0 || height > MAX_HEIGHT {
-        return Err(AssetError::BinkError {
-            reason: format!("invalid height {}", height),
-        });
-    }
+    validate_dimensions(width, height)?;
     if fps_num == 0 || fps_den == 0 {
         return Err(AssetError::BinkError {
             reason: format!("invalid fps {}/{}", fps_num, fps_den),

@@ -220,7 +220,7 @@ use crate::assets::bink_data::{
     BINK_INTER_QUANT, BINK_INTRA_QUANT, BINK_PATTERNS, BINK_RLELENS, BINK_SCAN, BINK_TREE_BITS,
     BINK_TREE_LENS, DC_START_BITS,
 };
-use crate::assets::bink_file::{BinkHeader, BinkVersion};
+use crate::assets::bink_file::{BinkHeader, BinkVersion, validate_dimensions};
 use crate::assets::error::AssetError;
 
 /// Bundle IDs for modern Bink (BIKi/BIKk).
@@ -260,8 +260,16 @@ pub enum ColorRange {
     Jpeg,
 }
 
+fn zeroed_buffer(bytes: usize, buffer: &'static str) -> Result<Vec<u8>, AssetError> {
+    let mut data = Vec::new();
+    data.try_reserve_exact(bytes)
+        .map_err(|_| AssetError::BinkAllocationFailed { buffer, bytes })?;
+    data.resize(bytes, 0);
+    Ok(data)
+}
+
 impl BinkFrame {
-    fn alloc(width: u32, height: u32, color_range: ColorRange) -> Self {
+    fn alloc(width: u32, height: u32, color_range: ColorRange) -> Result<Self, AssetError> {
         // A scaled block writes 16x16 at an even block position
         // (`scale_block_8x8_to_16x16`, `fill_block` with 16), so each plane
         // holds whole 16-pixel blocks, as FFmpeg's padded frame buffers do. A
@@ -273,16 +281,16 @@ impl BinkFrame {
         let stride_uv = (((width + 31) & !31) / 2) as usize;
         let y_size = stride_y * ((height + 15) & !15) as usize;
         let uv_size = stride_uv * (((height + 31) & !31) / 2) as usize;
-        Self {
+        Ok(Self {
             width,
             height,
             color_range,
-            y: vec![0u8; y_size].into_boxed_slice(),
+            y: zeroed_buffer(y_size, "luma plane")?.into_boxed_slice(),
             stride_y,
-            u: vec![0u8; uv_size].into_boxed_slice(),
+            u: zeroed_buffer(uv_size, "U chroma plane")?.into_boxed_slice(),
             stride_uv,
-            v: vec![0u8; uv_size].into_boxed_slice(),
-        }
+            v: zeroed_buffer(uv_size, "V chroma plane")?.into_boxed_slice(),
+        })
     }
 }
 
@@ -332,18 +340,19 @@ impl BinkDecoder {
             });
         }
 
+        validate_dimensions(header.width, header.height)?;
+
         let color_range = match header.version {
             BinkVersion::BikK => ColorRange::Jpeg,
             _ => ColorRange::Mpeg,
         };
 
+        // At the parser's dimensions, scratch and padded plane sizes fit usize
+        // even on 32-bit targets.
         let bw = ((header.width + 7) >> 3) as usize;
         let bh = ((header.height + 7) >> 3) as usize;
-        let blocks = bw * bh;
-        let total_bytes = blocks.saturating_mul(64 * NB_SRC);
-        let bundle_data = vec![0u8; total_bytes];
-
-        let block_per_bundle = blocks * 64;
+        let block_per_bundle = bw * bh * 64;
+        let bundle_data = zeroed_buffer(block_per_bundle * NB_SRC, "block scratch")?;
         let bundles: [Bundle; NB_SRC] = std::array::from_fn(|i| Bundle {
             len_bits: 0,
             tree: HuffmanTree::default(),
@@ -370,8 +379,8 @@ impl BinkDecoder {
             bundles,
             bundle_data,
             frame_num: 0,
-            cur: BinkFrame::alloc(header.width, header.height, color_range),
-            prev: BinkFrame::alloc(header.width, header.height, color_range),
+            cur: BinkFrame::alloc(header.width, header.height, color_range)?,
+            prev: BinkFrame::alloc(header.width, header.height, color_range)?,
             has_prev: false,
         })
     }
@@ -1707,22 +1716,59 @@ mod tests {
         assert_eq!(recovered.y[32..40], next);
     }
 
-    #[test]
-    fn init_bundle_lengths_matches_ffmpeg_formula() {
-        let h = crate::assets::bink_file::BinkHeader {
+    fn video_header(width: u32, height: u32) -> BinkHeader {
+        BinkHeader {
             version: BinkVersion::BikI,
             file_size: 1000,
             num_frames: 1,
-            width: 320,
-            height: 240,
+            width,
+            height,
             fps_num: 30,
             fps_den: 1,
             video_flags: 0,
             num_audio_tracks: 0,
             audio_tracks: vec![],
             frame_index_offset: 0,
-        };
-        let mut d = BinkDecoder::new(&h).unwrap();
+        }
+    }
+
+    #[test]
+    fn decoder_allocates_zeroed_scratch_and_padded_frames() {
+        let decoder = BinkDecoder::new(&video_header(320, 200)).unwrap();
+        assert_eq!(decoder.bundle_data.len(), 576_000);
+        assert!(decoder.bundle_data.iter().all(|&byte| byte == 0));
+        for frame in [&decoder.cur, &decoder.prev] {
+            assert_eq!((frame.width, frame.height), (320, 200));
+            assert_eq!((frame.stride_y, frame.stride_uv), (320, 160));
+            assert_eq!(frame.y.len(), 320 * 208);
+            assert_eq!(frame.u.len(), 160 * 112);
+            assert_eq!(frame.v.len(), 160 * 112);
+            for plane in [&frame.y, &frame.u, &frame.v] {
+                assert!(plane.iter().all(|&byte| byte == 0));
+            }
+        }
+    }
+
+    #[test]
+    fn decoder_rejects_dimensions_outside_parser_bounds() {
+        for (width, height, expected) in [
+            (0, 1, "invalid width 0"),
+            (7681, 1, "invalid width 7681"),
+            (1, 0, "invalid height 0"),
+            (1, 4801, "invalid height 4801"),
+        ] {
+            let Err(AssetError::BinkError { reason }) =
+                BinkDecoder::new(&video_header(width, height))
+            else {
+                panic!("expected a dimension error for {width}x{height}");
+            };
+            assert_eq!(reason, expected);
+        }
+    }
+
+    #[test]
+    fn init_bundle_lengths_matches_ffmpeg_formula() {
+        let mut d = BinkDecoder::new(&video_header(320, 240)).unwrap();
         let bw = (320u32 + 7) >> 3;
         d.init_bundle_lengths(320, bw);
         assert_eq!(d.bundles[Src::BlockTypes as usize].len_bits, 10);
@@ -1733,7 +1779,7 @@ mod tests {
     /// 13 chroma block rows, both odd) must fit the planes.
     #[test]
     fn planes_hold_a_scaled_block_on_an_odd_last_block_row() {
-        let mut frame = BinkFrame::alloc(320, 200, ColorRange::Mpeg);
+        let mut frame = BinkFrame::alloc(320, 200, ColorRange::Mpeg).unwrap();
         let luma_rows = (200u32 + 7) >> 3;
         assert_eq!(luma_rows % 2, 1);
         let base = ((luma_rows - 1) as usize) * 8 * frame.stride_y;
