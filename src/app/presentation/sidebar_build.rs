@@ -239,6 +239,14 @@ pub(crate) fn draw_sidebar_chrome(
                 let up = button_art("ScrollUp", view.scroll_up_button.frame_index as usize);
                 button(inst, up, view.scroll_up_button.rect);
             }
+            // Drawn with the part that holds them.
+            SidebarPart::Minimap
+            | SidebarPart::Buildings
+            | SidebarPart::Defenses
+            | SidebarPart::Infantry
+            | SidebarPart::Vehicles
+            | SidebarPart::ScrollDown
+            | SidebarPart::ScrollUp => {}
             // powerp.shp strips stacked from the top.
             SidebarPart::Power => render_power_bar(
                 inst,

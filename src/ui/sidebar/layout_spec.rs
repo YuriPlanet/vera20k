@@ -25,37 +25,80 @@ pub enum SidebarPart {
     /// DIPLOBTN and OPTBTN, in [`Self::Top`].
     Diplomacy,
     Options,
-    /// The radar housing and its minimap.
+    /// The radar housing.
     Radar,
+    /// The map picture, in [`Self::Radar`].
+    Minimap,
     /// SIDE1.
     Middle,
     /// Repair, Sell and the four tabs, in [`Self::Middle`].
     Repair,
     Sell,
     Tabs,
-    /// The cameo strip: its SIDE2 rows, cameos, SIDE3, ADDON and scroll
-    /// buttons.
+    /// The four tab buttons, in [`Self::Tabs`].
+    Buildings,
+    Defenses,
+    Infantry,
+    Vehicles,
+    /// The cameo strip: its SIDE2 rows, cameos, SIDE3 and ADDON.
     Cameos,
+    /// The strip's scroll buttons, in [`Self::Cameos`] and placed from the
+    /// bottom of its last row.
+    ScrollDown,
+    ScrollUp,
     Power,
+}
+
+/// What kind of part a [`SidebarPart`] is: its `veraui.ini` `Type=`, which
+/// decides how it is drawn and what it does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PartKind {
+    /// A picture's first frame.
+    Image,
+    /// A line of text.
+    Text,
+    /// A picture whose frame shows the button's state.
+    Button,
+    /// A tab button: a [`Self::Button`] that picks a strip.
+    Tab,
+    /// The radar's housing and its opening and closing.
+    Radar,
+    /// The map picture.
+    Minimap,
+    /// Draws nothing; holds parts.
+    Panel,
+    /// The build pictures and the rows behind them.
+    CameoGrid,
+    PowerBar,
 }
 
 impl SidebarPart {
     /// Every part, in the original's draw order: a panel, then the parts in
     /// it.
-    pub const STOCK_ORDER: [Self; 12] = [
+    pub const STOCK_ORDER: [Self; 19] = [
         Self::Credits,
         Self::Money,
         Self::Top,
         Self::Diplomacy,
         Self::Options,
         Self::Radar,
+        Self::Minimap,
         Self::Middle,
         Self::Repair,
         Self::Sell,
         Self::Tabs,
+        Self::Buildings,
+        Self::Defenses,
+        Self::Infantry,
+        Self::Vehicles,
         Self::Cameos,
+        Self::ScrollDown,
+        Self::ScrollUp,
         Self::Power,
     ];
+
+    /// The four tab buttons, in the tabs' order.
+    pub const TABS: [Self; 4] = [Self::Buildings, Self::Defenses, Self::Infantry, Self::Vehicles];
 
     /// The panel a part sits in; `None` for a part held by the sidebar
     /// itself.
@@ -63,10 +106,33 @@ impl SidebarPart {
         match self {
             Self::Money => Some(Self::Credits),
             Self::Diplomacy | Self::Options => Some(Self::Top),
+            Self::Minimap => Some(Self::Radar),
             Self::Repair | Self::Sell | Self::Tabs => Some(Self::Middle),
+            Self::Buildings | Self::Defenses | Self::Infantry | Self::Vehicles => Some(Self::Tabs),
+            Self::ScrollDown | Self::ScrollUp => Some(Self::Cameos),
             Self::Credits | Self::Top | Self::Radar | Self::Middle | Self::Cameos | Self::Power => {
                 None
             }
+        }
+    }
+
+    /// The part's kind, as the built-in `veraui_default.ini` gives it.
+    pub const fn kind(self) -> PartKind {
+        match self {
+            Self::Credits | Self::Top | Self::Middle => PartKind::Image,
+            Self::Money => PartKind::Text,
+            Self::Diplomacy
+            | Self::Options
+            | Self::Repair
+            | Self::Sell
+            | Self::ScrollDown
+            | Self::ScrollUp => PartKind::Button,
+            Self::Buildings | Self::Defenses | Self::Infantry | Self::Vehicles => PartKind::Tab,
+            Self::Radar => PartKind::Radar,
+            Self::Minimap => PartKind::Minimap,
+            Self::Tabs => PartKind::Panel,
+            Self::Cameos => PartKind::CameoGrid,
+            Self::Power => PartKind::PowerBar,
         }
     }
 
@@ -79,11 +145,18 @@ impl SidebarPart {
             Self::Diplomacy => "Diplomacy",
             Self::Options => "Options",
             Self::Radar => "Radar",
+            Self::Minimap => "Minimap",
             Self::Middle => "Middle",
             Self::Repair => "Repair",
             Self::Sell => "Sell",
             Self::Tabs => "Tabs",
+            Self::Buildings => "Buildings",
+            Self::Defenses => "Defenses",
+            Self::Infantry => "Infantry",
+            Self::Vehicles => "Vehicles",
             Self::Cameos => "Cameos",
+            Self::ScrollDown => "ScrollDown",
+            Self::ScrollUp => "ScrollUp",
             Self::Power => "Power",
         }
     }
@@ -100,7 +173,7 @@ pub struct SidebarChromeLayoutSpec {
     /// The parts the sidebar has, in draw order: a panel before the parts in
     /// it, a later part over an earlier one. A part that is not listed is not
     /// drawn and takes no clicks.
-    pub parts: [Option<SidebarPart>; 12],
+    pub parts: [Option<SidebarPart>; 19],
     /// The edges the sidebar and the command bar sit on, whether the sidebar
     /// floats over the battlefield, and whether the layout has the bar.
     pub places: super::PanelPlaces,
@@ -227,6 +300,34 @@ impl SidebarChromeLayoutSpec {
 }
 
 impl SidebarChromeLayoutSpec {
+    /// Where `part` sits in the part that holds it (the sidebar itself for a
+    /// part with no panel; the bottom of the last row for the scroll
+    /// buttons), as its `veraui.ini` `X` and `Y` say.
+    pub fn place(&self, part: SidebarPart) -> [f32; 2] {
+        let tab = |index: f32| [index * self.tab_pitch, 0.0];
+        match part {
+            SidebarPart::Credits => [self.credits_x, self.credits_y],
+            SidebarPart::Money => [self.money_x, self.money_y],
+            SidebarPart::Top => [self.top_x, self.top_y],
+            SidebarPart::Diplomacy => self.top_buttons[0],
+            SidebarPart::Options => self.top_buttons[1],
+            SidebarPart::Radar => [self.radar_housing_x, self.radar_housing_y],
+            SidebarPart::Minimap => [self.radar_x, self.radar_y],
+            SidebarPart::Middle => [self.side1_x, self.side1_y],
+            SidebarPart::Repair => [self.repair_x, self.repair_y],
+            SidebarPart::Sell => [self.sell_x, self.sell_y],
+            SidebarPart::Tabs => [self.tab_x, self.tab_y],
+            SidebarPart::Buildings => tab(0.0),
+            SidebarPart::Defenses => tab(1.0),
+            SidebarPart::Infantry => tab(2.0),
+            SidebarPart::Vehicles => tab(3.0),
+            SidebarPart::Cameos => [self.strip_x, self.strip_y],
+            SidebarPart::ScrollDown => [self.scroll_x, self.scroll_y],
+            SidebarPart::ScrollUp => [self.scroll_x + self.scroll_pitch, self.scroll_y],
+            SidebarPart::Power => [self.power_bar_x, self.power_bar_y],
+        }
+    }
+
     /// Where a radar movie's top-left corner sits in the radar housing:
     /// the enqueue `0x005BF390` places the clip at (MapAreaX - 3,
     /// MapAreaY - 1) on the sidebar (`0x005BF3D0..0x005BF3E5`), the housing's

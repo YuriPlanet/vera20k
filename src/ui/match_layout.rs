@@ -322,7 +322,7 @@ pub struct MatchLayout {
     /// next one; the step between the two scroll buttons.
     tabs: Option<[f32; 3]>,
     scroll_step: Option<f32>,
-    parts: [Option<SidebarPart>; 12],
+    parts: [Option<SidebarPart>; 19],
     places: PanelPlaces,
     field: FieldLayout,
     /// The buttons and texts the layout adds, in the order their holders
@@ -1058,15 +1058,13 @@ fn read_parts(
                 if order.contains(&part) {
                     continue;
                 }
-                order.push(part);
-                if let Some((_, parts)) = held.iter().find(|(panel, _)| *panel == part) {
-                    order.extend(
-                        parts
-                            .iter()
-                            .copied()
-                            .filter(|child| !order.contains(child))
-                            .collect::<Vec<_>>(),
-                    );
+                // The panel, then the parts it holds, each followed by its own.
+                let mut next = vec![part];
+                while let Some(part) = next.pop() {
+                    order.push(part);
+                    if let Some((_, parts)) = held.iter().find(|(panel, _)| *panel == part) {
+                        next.extend(parts.iter().rev().filter(|child| !order.contains(child)));
+                    }
                 }
             }
             Some(_) => elsewhere = true,
@@ -1561,7 +1559,10 @@ mod tests {
         // The strip's part Top is not in Side's list, so its Options goes too.
         assert_eq!(
             spec.parts_in_order().collect::<Vec<_>>(),
-            [Radar, Cameos, Middle, Tabs]
+            [
+                Radar, Minimap, Cameos, ScrollDown, ScrollUp, Middle, Tabs, Buildings, Defenses,
+                Infantry, Vehicles
+            ]
         );
         // A part that stays keeps its place; one left out takes no click.
         assert_eq!(view.tabs, stock.tabs);

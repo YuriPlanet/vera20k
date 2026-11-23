@@ -19,7 +19,7 @@ mod sidebar_view;
 use crate::sim::production::ProductionCategory;
 
 pub use frame::{BOTTOM_STRIP_HEIGHT_PX, Edge, PanelPlaces, SIDEBAR_WIDTH_PX, SidebarFrame};
-pub use layout_spec::{SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
+pub use layout_spec::{PartKind, SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
 pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
 #[cfg(test)]
@@ -250,6 +250,49 @@ pub struct SidebarScrollButton {
     pub disabled: bool,
     /// SHP frame index (0..=2) for the button's per-theme atlas.
     pub frame_index: u8,
+}
+
+impl SidebarLayout {
+    /// The top-left corner of `part` on the layout screen: its place in its
+    /// panel's corner, the sidebar's for a part with no panel, and for the
+    /// scroll buttons the cameo strip's left edge at the bottom of its last
+    /// row.
+    pub fn origin(&self, spec: &SidebarChromeLayoutSpec, part: SidebarPart) -> [f32; 2] {
+        let [x, y] = spec.place(part);
+        match part.panel() {
+            None => [self.sidebar_x + x, y],
+            Some(SidebarPart::Cameos) => [self.strip_x + x, self.cameo_grid_bottom + y],
+            Some(panel) => {
+                let [panel_x, panel_y] = self.origin(spec, panel);
+                [panel_x + x, panel_y + y]
+            }
+        }
+    }
+}
+
+impl SidebarView {
+    /// A button part's rect and the frame its picture shows: the top
+    /// buttons, Repair and Sell, the tabs and the scroll buttons. `None` for
+    /// any other part, or a tab the view has no button for.
+    pub fn button(&self, part: SidebarPart) -> Option<(Rect, u8)> {
+        let scroll = |button: &SidebarScrollButton| (button.rect, button.frame_index);
+        let toggle = |button: &SidebarToggleButton| (button.rect, button.frame_index);
+        match part {
+            SidebarPart::Diplomacy => Some(scroll(&self.top_buttons[0])),
+            SidebarPart::Options => Some(scroll(&self.top_buttons[1])),
+            SidebarPart::Repair => Some(toggle(&self.repair_button)),
+            SidebarPart::Sell => Some(toggle(&self.sell_button)),
+            SidebarPart::ScrollDown => Some(scroll(&self.scroll_down_button)),
+            SidebarPart::ScrollUp => Some(scroll(&self.scroll_up_button)),
+            _ => {
+                let index = SidebarPart::TABS.iter().position(|&tab| tab == part)?;
+                self.tabs
+                    .iter()
+                    .find(|button| button.tab.tab_index() == index)
+                    .map(|button| (button.rect, button.frame_index))
+            }
+        }
+    }
 }
 
 /// Where each chrome section sits on the layout screen, computed from the
