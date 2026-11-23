@@ -381,6 +381,7 @@ pub(crate) fn post_connection_changes(state: &mut AppState) {
 /// relay's frames, which a returning game does as it rejoins.
 /// `messages::show_status_notices` shows it as a message row.
 pub(crate) fn recovery_notice(state: &AppState) -> Option<&'static str> {
+    use crate::app::shell_wol::relay_pass_lapsed;
     use crate::net::live_commands::NetworkRecoveryStatus;
     let live = state.match_state.live_network.as_ref()?;
     let frame = state
@@ -392,20 +393,13 @@ pub(crate) fn recovery_notice(state: &AppState) -> Option<&'static str> {
         .binary_frame();
     let now = super::frame_pacer::wall_clock_ms() as u32;
     Some(match live.recovery_status(now, frame)? {
-        NetworkRecoveryStatus::Reconnecting => {
-            // The relay drops a lapsed pass, which only the lobby can renew:
-            // then waiting cannot help.
-            let lapsed = live.relay_expires().is_some_and(|expires| {
-                crate::util::time::SystemTime::now()
-                    .duration_since(crate::util::time::UNIX_EPOCH)
-                    .is_ok_and(|now| now.as_secs() >= expires)
-            });
-            if lapsed {
-                "VERA:ReconnectPassLapsed"
-            } else {
-                "VERA:Reconnecting"
-            }
+        // The relay drops a lapsed pass, which only the lobby can renew: then
+        // waiting cannot help. The ticket's expiry is lobby time, so the pass's
+        // life is timed from its receipt, as its renewal is.
+        NetworkRecoveryStatus::Reconnecting if relay_pass_lapsed(state, now) => {
+            "VERA:ReconnectPassLapsed"
         }
+        NetworkRecoveryStatus::Reconnecting => "VERA:Reconnecting",
         NetworkRecoveryStatus::CatchingUp { .. } if live.restoring_match() => "VERA:Rejoining",
         NetworkRecoveryStatus::CatchingUp { .. } => "VERA:CatchingUp",
     })
@@ -639,6 +633,38 @@ pub(crate) fn participant_name(session: &MatchSession, source_index: usize) -> S
         .and_then(|launch| launch.humans.get(source_index))
         .map(|human| human.name.clone())
         .unwrap_or_default()
+}
+
+/// The colour participant `source_index`'s chat and taunt packets carry, as
+/// shell item data; -2 without one.
+pub(crate) fn participant_color(session: &MatchSession, source_index: usize) -> i32 {
+    session
+        .network_setup()
+        .and_then(|launch| launch.humans.get(source_index))
+        .map_or(-2, |human| human.slot.color_shell_value())
+}
+
+/// The name and colour a received in-match chat packet `0x0C` shows. Native
+/// `0x0048D8DD` shows the packet's own. VERA shows the admitted participant
+/// at the sending endpoint under its roster name and colour, so an online
+/// name longer than the packet's 19 bytes arrives whole. Any other sender
+/// keeps the packet's. A relay match authenticates every source, so there no
+/// player speaks as another; on LAN or a direct spawn a sender at an unbound
+/// endpoint still can.
+pub(crate) fn chat_sender(
+    session: &MatchSession,
+    endpoint: std::net::SocketAddrV4,
+    packet_name: String,
+    packet_color: i32,
+) -> (String, i32) {
+    session
+        .network_endpoint_source(endpoint)
+        .map_or((packet_name, packet_color), |source| {
+            (
+                participant_name(session, source),
+                participant_color(session, source),
+            )
+        })
 }
 
 /// Participant `source`'s network "house" id: its constructed House's
@@ -1559,6 +1585,7 @@ mod tests {
                 30,
                 std::num::NonZeroU32::new(2).unwrap(),
                 sim.state_hash(),
+                0,
                 "",
                 "",
             )
@@ -1659,6 +1686,7 @@ mod tests {
                         30,
                         NonZeroU32::new(5).unwrap(),
                         sim.state_hash(),
+                        0,
                         "",
                         "",
                     )
@@ -1824,6 +1852,7 @@ mod tests {
                 30,
                 NonZeroU32::new(1).unwrap(),
                 sim.state_hash(),
+                0,
                 "",
                 "",
             )
@@ -1984,6 +2013,7 @@ mod tests {
             30,
             rate,
             original_hash,
+            0,
             "",
             "",
         )

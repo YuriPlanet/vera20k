@@ -1,7 +1,7 @@
 //! VERA's Mods page, opened by the Mods button of Options; gamemd has none.
 //! A family page shaped like the movie list `0x129`: the mods in the `Mods`
 //! folder with the original game first, what the selected one says of itself,
-//! and Use This Mod, Add Mod, Open Mods Folder, Check Files, New Mod and Back
+//! and Use This Mod, Check Files, New Mod, Add Mod, Open Mods Folder and Back
 //! (docs/modding.md).
 //!
 //! The rows and the choice belong to `app::mods`; this is the page's shape.
@@ -33,16 +33,16 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     title_key: TITLE_KEY,
     stacked: &[
         MenuPageButtonSpec::new(USE, 122, "VERA:ModUse", "VERA:ModUseHelp"),
+        MenuPageButtonSpec::new(CHECK, 149, "VERA:ModCheck", "VERA:ModCheckHelp"),
+        MenuPageButtonSpec::new(NEW, 176, "VERA:ModNew", "VERA:ModNewHelp"),
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        MenuPageButtonSpec::new(ADD, 203, "VERA:ModAdd", "VERA:ModAddHelp"),
         MenuPageButtonSpec::new(
             OPEN_FOLDER,
-            149,
+            230,
             "VERA:ModsOpenFolder",
             "VERA:ModsOpenFolderHelp",
         ),
-        MenuPageButtonSpec::new(CHECK, 176, "VERA:ModCheck", "VERA:ModCheckHelp"),
-        MenuPageButtonSpec::new(NEW, 203, "VERA:ModNew", "VERA:ModNewHelp"),
-        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-        MenuPageButtonSpec::new(ADD, 230, "VERA:ModAdd", "VERA:ModAddHelp"),
     ],
     back: MenuPageButtonSpec::new(BACK, 346, "GUI:Back", "STT:MsnDltButtonBack").returning(-1),
 };
@@ -177,7 +177,7 @@ mod tests {
         }
         assert_eq!(
             compute_layout(800, 600).page.button_rect(OPEN_FOLDER),
-            Some(RectPx::new(644, 241, 156, 42))
+            Some(RectPx::new(644, 367, 156, 42))
         );
     }
 

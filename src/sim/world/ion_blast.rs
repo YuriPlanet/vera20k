@@ -264,32 +264,31 @@ impl Simulation {
         }
         //53CD67 re-queries after both Anim.Start callbacks. Only raw100
         //adds the separate AA013C deck (416), not the broader flags500 gate.
-        let flags = if let Some(terrain) = self.resolved_terrain.as_ref() {
+        let deck_z = if let Some(terrain) = self.resolved_terrain.as_ref() {
             let query = NativeCellQuery::canonical(terrain);
-            query.flags(query.lookup_world(coord[0], coord[1]))
+            let cell = query.lookup_world(coord[0], coord[1]);
+            (query.flags(cell) & 0x100 != 0)
+                .then(|| crate::sim::movement::ground_pose::deck_surface_z(&query, cell, coord[2]))
         } else {
             let dummy = self.effective_shared_cell_dummy();
             dummy.stamp_coord(
                 (coord[0] / 256) as i16 as i32,
                 (coord[1] / 256) as i16 as i32,
             );
-            dummy.raw_flags()
+            (dummy.raw_flags() & 0x100 != 0)
+                .then(|| coord[2].wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS))
         };
         let Some(warhead) = warhead_name.and_then(|name| rules.warhead(name)) else {
             return (false, rock);
         };
         let wh = self.interner.intern(&warhead.id);
         let mut bridge_changed = false;
-        if flags & 0x100 != 0 {
+        if let Some(deck_z) = deck_z {
             bridge_changed |= world_receiver::apply_area_damage(
                 self,
                 rules,
                 overlays,
-                ProjectileCoord::new(
-                    coord[0],
-                    coord[1],
-                    coord[2].wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
-                ),
+                ProjectileCoord::new(coord[0], coord[1], deck_z),
                 damage,
                 warhead,
                 true,

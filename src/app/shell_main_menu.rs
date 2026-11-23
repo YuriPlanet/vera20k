@@ -790,9 +790,13 @@ impl App {
             return;
         }
         let mut dialog = Self::launcher_options_from_state(state);
-        if let Some(category) = state.frontend.options_reopen_at.take() {
-            dialog.select_category(category);
-        }
+        dialog.select_category(
+            state
+                .frontend
+                .options_reopen_at
+                .take()
+                .unwrap_or(crate::ui::main_menu_dialogs::options::Category::LauncherMain),
+        );
         state.frontend.options_dialog = Some(dialog);
     }
 
@@ -1012,6 +1016,22 @@ impl App {
             Some(true) => dialog.shell_mouse_down(x, y, &layout),
             Some(false) => dialog.shell_mouse_up(x, y, &layout),
             None => dialog.shell_mouse_move(x, y, &layout),
+        }
+        let next = dialog.category();
+        if next != layout.category
+            && crate::ui::main_menu_dialogs::options::shell::launcher_slide_column(next).is_some()
+        {
+            dialog.select_category(layout.category);
+            Self::dispatch_launcher_options_output(state, dialog);
+            Self::leave_shell_dialog(state, ShellSlideKind::Options, move |state| {
+                if let Some(dialog) = state.frontend.options_dialog.as_mut() {
+                    dialog.select_category(next);
+                    crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(
+                        state,
+                    );
+                }
+            });
+            return;
         }
         Self::dispatch_launcher_options_output(state, dialog);
     }

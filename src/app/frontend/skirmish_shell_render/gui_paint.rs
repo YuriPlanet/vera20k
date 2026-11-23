@@ -34,11 +34,11 @@ use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalButton, ModalDepths};
-use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
+use crate::render::shell_text::{self, ShellTextDraw};
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::shell::checkbox::CheckboxFace;
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::{FAMILY_CAPTION_W, RectPx, ShellAlign, ShellScale};
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::sidebar::SidebarTheme;
 use vera20k_gui::shell::trackbar::{TrackbarRange, value_text_rect};
@@ -164,8 +164,8 @@ impl ButtonArt {
             }
             (_, Some(align)) => (rect, align),
             (ButtonArt::Column, None) => (
-                crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
-                ShellAlign::BUTTON_CAPTION,
+                column_caption_rect(rect, pressed, scale),
+                ShellAlign::ART_CAPTION | ShellAlign::V_CENTER,
             ),
             (_, None) => (
                 button_label_rect_px(rect, pressed, scale),
@@ -214,6 +214,23 @@ pub(crate) enum ComboArt {
     /// No face: the host paints it (VERA's roster cells); only an open
     /// list paints.
     Host,
+}
+
+/// Share the right-panel heading's text width while keeping the retail
+/// type-1 button label's center and pressed offset (0x00612B70). The
+/// button's painted rect and hit target are still the original cell.
+fn column_caption_rect(rect: RectPx, pressed: bool, scale: ShellScale) -> RectPx {
+    scale.derive_rect(rect, |rect| {
+        let label =
+            crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed);
+        let width = label.w.min(FAMILY_CAPTION_W);
+        RectPx::new(
+            label.x + (label.w - width) / 2,
+            label.y,
+            width,
+            label.h,
+        )
+    })
 }
 
 /// What a dialog's widgets take from their host rather than their props.
@@ -1721,5 +1738,23 @@ mod tests {
             gui.get(node, Prop::Art).unwrap(),
             Some(&Value::Text("rusi.pcx".into()))
         );
+    }
+
+    #[test]
+    fn column_caption_shares_width_and_keeps_the_pressed_anchor_at_scale() {
+        use crate::ui::shell::geom::{RETAIL_SCALE, shell_scale};
+
+        let button = RectPx::new(644, 199, 156, 42);
+        for (pressed, expected) in [
+            (false, RectPx::new(664, 200, 114, 41)),
+            (true, RectPx::new(665, 204, 114, 37)),
+        ] {
+            assert_eq!(column_caption_rect(button, pressed, RETAIL_SCALE), expected);
+            let scale = shell_scale(1600, 1200);
+            assert_eq!(
+                column_caption_rect(scale.scale_rect(button), pressed, scale),
+                scale.scale_rect(expected),
+            );
+        }
     }
 }

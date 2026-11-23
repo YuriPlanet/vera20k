@@ -603,6 +603,27 @@ impl StormCell {
         }
     }
 
+    fn surface_z(
+        &self,
+        terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+        ground: i32,
+    ) -> i32 {
+        if !self.bridge {
+            return ground;
+        }
+        let deck = self
+            .real
+            .then(|| {
+                terrain?
+                    .corrected_high_bridge_deck_level((self.coords.0 as u16, self.coords.1 as u16))
+            })
+            .flatten();
+        deck.map_or_else(
+            || ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS),
+            |level| i32::from(level) * GROUND_LEVEL_HEIGHT_LEPTONS,
+        )
+    }
+
     /// The cell's centre at `z` (`(coord << 8) + 0x80` on both axes).
     fn centre(&self, z: i32) -> [i32; 3] {
         [
@@ -641,17 +662,12 @@ pub(crate) fn create_cloud_bolt(sim: &mut Simulation, rules: &RuleSet, cell: (i1
         .and_then(|bolt| rules.art().anim_runtime_config(bolt))
         .and_then(|config| config.raw_shp_height)
         .unwrap_or(0);
+    let ground = target.level.wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS);
     let z = target
-        .level
-        .wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS)
+        .surface_z(sim.resolved_terrain.as_ref(), ground)
         .wrapping_add(crate::util::lepton::native_pixel_height_leptons(
             image_height / 2,
-        ))
-        .wrapping_add(if target.bridge {
-            BRIDGE_DECK_HEIGHT_LEPTONS
-        } else {
-            0
-        });
+        ));
     let coords = [
         i32::from(cell.0) * 256 + 128,
         i32::from(cell.1) * 256 + 128,
@@ -728,16 +744,8 @@ pub(super) fn ground_strike(
         );
     }
 
-    let strike = target.centre(
-        target
-            .level
-            .wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS)
-            .wrapping_add(if target.bridge {
-                BRIDGE_DECK_HEIGHT_LEPTONS
-            } else {
-                0
-            }),
-    );
+    let ground = target.level.wrapping_mul(GROUND_LEVEL_HEIGHT_LEPTONS);
+    let strike = target.centre(target.surface_z(sim.resolved_terrain.as_ref(), ground));
     let sounds = &general.lightning_sounds;
     if !sounds.is_empty() {
         let pick = sim.superweapon_rng().next_u32() % sounds.len() as u32;

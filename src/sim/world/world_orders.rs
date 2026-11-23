@@ -217,20 +217,32 @@ pub enum UnitRepairAction {
 
 /// What DetermineAction holds besides the target when it asks a healer's
 /// object action: the ForceMove binding (`InputManagerClass::IsKeyPressed`
-/// on `0x00A8EBF8`/`0x00A8EBFC`) and a GuardArea base action (0x1A, Ctrl+Alt).
-/// Only Ares' heal arms read them (Ares.dll `1004E5A0`, `1004E2E0`).
+/// on `0x00A8EBF8`/`0x00A8EBFC`), which only Ares' heal arms read (Ares.dll
+/// `1004E5A0`, `1004E2E0`), and the base action's GuardArea (0x1A, Ctrl+Alt)
+/// or Move (1, Alt), which the arms' tails keep.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct HealArmKeys {
     pub force_move: bool,
     pub guard_area: bool,
+    pub moves: bool,
 }
 
-/// Ares' `InfantryClass_GetActionOnObject_Heal @ 1004E2E0` (hook
-/// `0x0051E710`) answer: Heal (0x1B) with the InfantryHeal (0x5A) cursor
-/// over an Organic or Infantry target, else UnitRepair (0x5B).
+/// `InfantryClass::What_Action_OnObject`'s healer arm over another object
+/// ([`Simulation::infantry_heal_action`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AresHeal {
-    pub organic: bool,
+pub enum InfantryHealAction {
+    /// AttackSupport (0x3B, `0x0051E797`) over an object of a house the
+    /// healer is not allied with. Infantry ClickedAction (`0x0051F190`) hands
+    /// it to Foot's case 0x3B (`0x004D74E0`), which guards the healer itself;
+    /// SetCursorFromAction (`0x004AAE90`) has no case for it, so the cursor is
+    /// the arrow.
+    AttackSupport,
+    /// Heal (0x1B), which Infantry ClickedAction turns into Attack. With Ares
+    /// the cursor is InfantryHeal (0x5A) over an Organic or Infantry target
+    /// (`organic`), else UnitRepair (0x5B).
+    Heal { organic: bool },
+    /// Select (7, `0x0051E78B`).
+    Select,
 }
 
 /// What a class's `What_Action_OnObject` entry rows make of an object the
@@ -772,25 +784,34 @@ impl Simulation {
         Some(UnitRepairAction::Repair)
     }
 
-    /// Ares `InfantryClass_GetActionOnObject_Heal @ 1004E2E0` (hook
-    /// `0x0051E710`), reached when a human player's Infantry whose
-    /// `GetWeaponDamageValue(-1)` is negative points at an object of an
-    /// allied house (`InfantryClass::What_Action_OnObject` before
-    /// `0x0051E710`): Heal (0x1B) over a damaged Techno, unless a ForceMove
-    /// key is held, when the Verses of the weapon it would pick is above 0
-    /// for the target's armor (`0x0051E739`). Infantry ClickedAction
-    /// (`0x0051F190`) turns Heal into Attack. None goes on with the stock
-    /// rows; the infantryman itself takes the stock self arm at `0x0051E748`,
-    /// which VERA does not port.
-    pub fn ares_infantry_heal_action(
+    /// `InfantryClass::What_Action_OnObject`'s healer arm
+    /// (`0x0051E6D8..0x0051E78B`) for a human player's Infantryman whose
+    /// `GetWeaponDamageValue(-1)` (`0x006F3970`) is negative, over an object
+    /// other than itself, a Techno or a Terrain object. The class's earlier
+    /// rows answer first (`context_order::healer_object_action`).
+    ///
+    /// An object of a house it is not allied with (`0x004F9A90`, which
+    /// refuses a Terrain object's null House) answers AttackSupport
+    /// (`0x0051E797`). Over an ally the stock arm heals a damaged
+    /// Infantryman (`GetHealthPercentage` below Rules+16F8, the fixed 1.0;
+    /// `0x0051E710..0x0051E73C`); with Ares, `1004E2E0` (hook `0x0051E710`)
+    /// heals any damaged Techno, unless a ForceMove key is held, whose
+    /// selected weapon's Verses is above 0 for its armor (`0x0051E739`), and
+    /// sends a `Grinding=` building to the later rows (`0x0051E7A6`). The
+    /// tail (`0x0051E757..0x0051E78B`) sends a Techno whose type has
+    /// `Passengers=` to the later rows too, keeps a GuardArea or Move base
+    /// action (`0x0051F17E`) and answers Select otherwise. None is the later
+    /// rows or the kept base action. The infantryman itself takes the self
+    /// arm at `0x0051E748` ([`Self::infantry_healer_guards_itself`]).
+    pub fn infantry_heal_action(
         &self,
         actor_id: u64,
         target_id: u64,
         issuing_house: InternedId,
         keys: HealArmKeys,
         rules: &RuleSet,
-    ) -> Option<AresHeal> {
-        self.ares_infantry_heal_action_with(
+    ) -> Option<InfantryHealAction> {
+        self.infantry_heal_action_with(
             &self.control_projection(),
             actor_id,
             target_id,
@@ -800,7 +821,7 @@ impl Simulation {
         )
     }
 
-    pub fn ares_infantry_heal_action_with(
+    pub fn infantry_heal_action_with(
         &self,
         control: &ControlProjection<'_>,
         actor_id: u64,
@@ -808,11 +829,9 @@ impl Simulation {
         issuing_house: InternedId,
         keys: HealArmKeys,
         rules: &RuleSet,
-    ) -> Option<AresHeal> {
+    ) -> Option<InfantryHealAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let actor_type = self.object_type(actor.type_ref(), rules)?;
-        let target = self.substrate.entities.get(target_id)?;
-        let target_type = self.object_type(target.type_ref(), rules)?;
         if actor.category() != EntityCategory::Infantry
             || target_id == actor_id
             || !control.can_order_as_native_owner(actor.owner(), issuing_house)
@@ -823,18 +842,78 @@ impl Simulation {
                 rules,
                 &self.interner,
             ) >= 0
-            || !self
-                .house_alliances
-                .is_allied(&self.interner, actor.owner(), target.owner())
-            || keys.force_move
-            || target.health.is_full(target_type.strength)
-            || !self.ares_heal_verses_positive(actor_id, target_id, rules)
         {
             return None;
         }
-        Some(AresHeal {
-            organic: target_type.organic || target.category() == EntityCategory::Infantry,
-        })
+        let Some(target) = self.substrate.entities.get(target_id) else {
+            return self
+                .terrain_objects()
+                .get(target_id)
+                .map(|_| InfantryHealAction::AttackSupport);
+        };
+        let target_type = self.object_type(target.type_ref(), rules)?;
+        if !self
+            .house_alliances
+            .is_allied(&self.interner, actor.owner(), target.owner())
+        {
+            return Some(InfantryHealAction::AttackSupport);
+        }
+        let damaged = !target.health.is_full(target_type.strength);
+        let infantry = target.category() == EntityCategory::Infantry;
+        if rules.ares() {
+            if damaged
+                && !keys.force_move
+                && self.ares_heal_verses_positive(actor_id, target_id, rules)
+            {
+                return Some(InfantryHealAction::Heal {
+                    organic: target_type.organic || infantry,
+                });
+            }
+            if target.category() == EntityCategory::Structure && target_type.grinding {
+                return None;
+            }
+        } else if infantry && damaged {
+            return Some(InfantryHealAction::Heal { organic: true });
+        }
+        if target_type.passengers != 0 || keys.guard_area || keys.moves {
+            return None;
+        }
+        Some(InfantryHealAction::Select)
+    }
+
+    /// `InfantryClass::What_Action_OnObject`'s healer self arm: a human
+    /// player's Infantryman whose `GetWeaponDamageValue(-1)` is negative
+    /// (`0x0051E6D8..0x0051E6F6`) answers GuardArea (0x1A, `0x0051E748`) over
+    /// itself, which its own house's ally test (`0x004F9A90`) admits. Foot's
+    /// What_Action has answered before it, so the arm replaces a self,
+    /// Detonate or key answer; only Shift's ToggleSelect (`0x0051E453`) and
+    /// the Engineer prefixes return first. Ares' heal hook
+    /// (`0x0051E710`, Ares.dll `1004E2E0`) jumps to the same return for the
+    /// infantryman itself, and `NoSelfGuardArea=yes` (hook `0x0051E748`,
+    /// `10049710`) skips it to the rows after the heal arm (`0x0051E7A6`).
+    /// No retail infantryman heals, so only a mod's healers reach it.
+    pub fn infantry_healer_guards_itself(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(actor) = self.substrate.entities.get(actor_id) else {
+            return false;
+        };
+        let Some(actor_type) = self.object_type(actor.type_ref(), rules) else {
+            return false;
+        };
+        actor.category() == EntityCategory::Infantry
+            && control.can_order(actor.owner())
+            && combat::combat_weapon::weapon_damage_value(
+                actor,
+                actor_type,
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+            ) < 0
+            && !(rules.ares() && actor_type.techno_combat().no_self_guard_area())
     }
 
     /// `UnitClass::What_Action_OnObject`'s building arm
@@ -884,11 +963,16 @@ impl Simulation {
         {
             return Some(EntryClickAction::NoEnter);
         }
-        Some(if self.object_type(target.type_ref(), rules)?.grinding {
-            EntryClickAction::Grind
-        } else {
-            EntryClickAction::Enter
-        })
+        {
+            let target_obj = self.object_type(target.type_ref(), rules)?;
+            Some(
+                if target_obj.grinding || (rules.ra2() && target_obj.cloning) {
+                    EntryClickAction::Grind
+                } else {
+                    EntryClickAction::Enter
+                },
+            )
+        }
     }
 
     /// What a human player's object's class row makes of `target_id`, an
@@ -988,7 +1072,7 @@ impl Simulation {
                 let target_obj = self.object_type(target.type_ref(), rules)?;
                 (select
                     && target.category() == EntityCategory::Structure
-                    && target_obj.grinding
+                    && (target_obj.grinding || (rules.ra2() && target_obj.cloning))
                     && control.can_order(actor.owner())
                     && !target_obj.is_1x1_with_undeploy())
                 .then(|| {
@@ -1099,6 +1183,18 @@ impl Simulation {
         // Ares 3.0 Infantry 100176E0 (hook 0x51ED8E) also lets him enter a
         // `Tunnel=` building, whatever its Passengers= (`sim::ares_tunnel`).
         let tunnel = rules.ares() && infantry && self.ares_tunnel_type(target_id, rules).is_some();
+        let target_obj = self.object_type(target.type_ref(), rules)?;
+        // Original RA2 (0x51E8A1) offers a normal infantryman an Enter action
+        // on a Hospital even though it has Passengers=0; VERA's shared
+        // Passengers gate rejects it. Add the RA2-only hospital exception.
+        let hospital_entry = rules.ra2()
+            && infantry
+            && target.category() == EntityCategory::Structure
+            && target_obj.hospital;
+        // An Armory also service-admits infantry even when its Passengers=
+        // is 0; the shared Passengers gate would otherwise hide Enter.
+        let armory_entry =
+            infantry && target.category() == EntityCategory::Structure && target_obj.armory();
         if !combat::combat_weapon::is_ally_by_object(
             Some(&self.house_alliances),
             &self.interner,
@@ -1108,7 +1204,7 @@ impl Simulation {
             || target.is_warped_out()
             || target.is_warping_in()
             || (!infantry && actor_id == target_id)
-            || (self.object_type(target.type_ref(), rules)?.passengers <= 0 && !tunnel)
+            || (target_obj.passengers <= 0 && !tunnel && !hospital_entry && !armory_entry)
         {
             return None;
         }
@@ -1654,7 +1750,7 @@ impl Simulation {
             );
             return Some(if !full {
                 EngineerBuildingAction::Repair(true)
-            } else if object.grinding {
+            } else if object.grinding || (rules.ra2() && object.cloning) {
                 EngineerBuildingAction::EnterGrinder
             } else {
                 EngineerBuildingAction::Repair(false)

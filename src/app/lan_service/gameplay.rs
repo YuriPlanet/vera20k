@@ -36,10 +36,45 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         state.match_state.lan_service.is_some(),
         "LAN transport was not opened"
     );
+    // VERA: the rules digest leaves the original game's terrain files out. A
+    // match whose map names a tile the original game lacks read this game
+    // folder's, so its start names them (`ProcessAssets::match_terrain_digest`).
+    // Asked before the agreement, which loads a theater for a seed's map.
+    let terrain = state
+        .process_assets
+        .match_terrain_digest()
+        .map_err(anyhow::Error::msg)?;
     // VERA: the start every player's game certifies names its build and
     // rules too, so a launcher's relay match, which no lobby compared,
     // refuses games that would desync.
-    let multiplayer = super::shell_network_setup::agreement::local(state)?;
+    let mut multiplayer = super::shell_network_setup::agreement::local(state)?;
+    // VERA: and whether Ares plays in the match as it loaded, which the
+    // room's digest leaves to the start (`agreement::start_rules`).
+    let rules = &state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .ok_or_else(|| anyhow::anyhow!("LAN startup has no constructed world"))?
+        .resources
+        .rules;
+    multiplayer.rules_digest = super::shell_network_setup::agreement::start_rules(
+        multiplayer.rules_digest,
+        terrain.as_deref(),
+        rules,
+    );
+    // VERA: and what the simulation took from this game's picture and model
+    // files, which no room compares (`RuleSet::file_inputs_hash`): a
+    // building's unfolding or an animation's length that differs between two
+    // games would take their battles apart in mid-match.
+    let file_inputs = rules.file_inputs_hash();
+    // The refusal's box names three files; the log names them all.
+    let picture_files = super::shell_network_setup::agreement::match_picture_files(state);
+    if !picture_files.is_empty() {
+        log::info!(
+            "Game files that change what this start certifies of pictures and models: {}",
+            picture_files.join(", ")
+        );
+    }
     super::shell_network_setup::agreement::log_rules_parts(state);
     let sim = &state
         .match_state
@@ -217,6 +252,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
             .frames_per_second(),
         rate,
         sim.state_hash(),
+        file_inputs,
         &multiplayer.version,
         &multiplayer.rules_digest,
     )?;

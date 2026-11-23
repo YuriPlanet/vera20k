@@ -6,9 +6,9 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use vera20k_relay_protocol::{
-    CHECKSUM_INTERVAL, CertificatePacing, ClientLinkStats, MAX_FEDERATED_RELAYS,
-    MAX_FRAME_BATCHES, MAX_PEERS, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent,
-    OrderPace, OrderingCertificate, OrderingGap, PACE_INTERVAL_MS, READY_REQUEST_INTERVAL_MS,
+    CHECKSUM_INTERVAL, CertificatePacing, ClientLinkStats, MAX_FEDERATED_RELAYS, MAX_FRAME_BATCHES,
+    MAX_PEERS, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace,
+    OrderingCertificate, OrderingGap, PACE_INTERVAL_MS, PaceLag, READY_REQUEST_INTERVAL_MS,
     REORDER_WINDOW, RESTORE_PULL_INTERVAL_MS, WATCH_MARK_MS, admits_rate,
 };
 
@@ -41,8 +41,6 @@ const COMMAND_TRACE_HISTORY: usize = 256;
 // repeating it. Silence alone never ends a match.
 const UNREADABLE_LIMIT_MS: u32 = 5_000;
 const UNREADABLE_REPEAT_MS: u32 = 1_000;
-// Frames must wait here this long before this PC counts as lagging.
-const PACE_BACKLOG_MS: u32 = 2_000;
 // Ticks kept for one pace report's tick-cost percentile.
 const MAX_TICK_COSTS: usize = 256;
 // VERA watching (relay README "Watchers"): the relay never pushes to a
@@ -191,16 +189,12 @@ pub struct MatchConnectionChange {
 }
 
 /// This PC's progress against the relay's clock, reported about once a
-/// second. Lagging means frames waited here for `PACE_BACKLOG_MS`; behind
-/// also means two report windows in a row with frames waiting ran fewer
-/// than the clock sealed, but some: a world that ran none was held by
-/// something other than speed.
+/// second as [`PaceLag`] judges it.
 #[derive(Debug, Default)]
 struct PaceMeter {
-    backlog_since: Option<u32>,
+    lag: PaceLag,
     last_report: Option<u32>,
     dispatched: u32,
-    slow_windows: u8,
     // Simulation tick costs, in microseconds, since the last report.
     tick_costs: Vec<u32>,
     // A minimised or covered window may be throttled by its system.
@@ -238,11 +232,14 @@ impl PaceMeter {
         pace_fps: u16,
         measured: bool,
     ) -> Option<(OrderPace, u16, Option<u32>)> {
-        if measured && !self.hidden && buffered >= usize::from(pace_fps / 8).max(4) {
-            self.backlog_since.get_or_insert(now);
+        // Frames waiting in an unmeasured or hidden window say nothing of
+        // this PC's speed.
+        let waiting = if measured && !self.hidden {
+            buffered
         } else {
-            self.backlog_since = None;
-        }
+            0
+        };
+        self.lag.observe(now, waiting, pace_fps);
         if !service_due(self.last_report, now, PACE_INTERVAL_MS as i32) {
             return None;
         }
@@ -250,22 +247,10 @@ impl PaceMeter {
             (u64::from(self.dispatched) * 1000 / u64::from(now.wrapping_sub(last).max(1)))
                 .min(u64::from(u16::MAX)) as u16
         });
-        self.slow_windows = if ran > 0 && ran < pace_fps && self.backlog_since.is_some() {
-            self.slow_windows.saturating_add(1)
-        } else {
-            0
-        };
         self.last_report = Some(now);
         self.dispatched = 0;
-        let lagging = self
-            .backlog_since
-            .is_some_and(|since| now.wrapping_sub(since) >= PACE_BACKLOG_MS);
         Some((
-            match (lagging, self.slow_windows >= 2) {
-                (false, _) => OrderPace::KeepingUp,
-                (true, true) => OrderPace::Behind,
-                (true, false) => OrderPace::CatchingUp,
-            },
+            self.lag.classify(now, ran, pace_fps),
             ran,
             self.tick_cost_p90(),
         ))
@@ -895,8 +880,7 @@ impl SequencedSession {
                 self.late_narrative_pause_epoch = Some(epoch);
             }
             self.last_narrative_pause_attempt = None;
-            self.pace_meter.backlog_since = None;
-            self.pace_meter.slow_windows = 0;
+            self.pace_meter.lag.reset();
             self.pause_found_behind = false;
         }
     }
@@ -2674,8 +2658,16 @@ mod pace_tests {
     fn narrative_media_wait_does_not_report_slow_simulation_to_the_relay() {
         let mut session = session_for(&[0, 1]);
         session.frames.resize_with(20, CommittedFrame::default);
-        session.pace_meter.backlog_since = Some(1000);
-        session.pace_meter.slow_windows = 2;
+        let mut pace = None;
+        for now in [0, 1000, 2000] {
+            session.pace_meter.dispatched = 20;
+            pace = session.pace_report(now).map(|(pace, ..)| pace);
+        }
+        assert_eq!(
+            pace,
+            Some(OrderPace::Behind),
+            "frames waited while too few ran"
+        );
         session.set_narrative_hold(Some(NarrativeHold::Player));
         assert!(!session.pause.paused);
         assert!(session.pause_refused || !session.pause_status().available);

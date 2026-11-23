@@ -330,6 +330,9 @@ pub(crate) enum CursorFeedbackKind {
     NoEnter,
     /// Tote cursor (action 0x11): a Carryall over a Unit it may lift.
     Tote,
+    /// Heal (action 0x1B): a healer infantryman over a damaged ally without
+    /// Ares, whose arm sets its own cursor.
+    Heal,
     /// Engineer action28 damage cursor. Its uncommon authored-threshold
     /// display route remains outside the ordinary repair cursor proof.
     EngineerDamage,

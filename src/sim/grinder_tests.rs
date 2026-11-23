@@ -898,3 +898,38 @@ fn a_retail_grinder_answers_roger_without_offering_transport_entry() {
         &sim, rules, gi, reactor
     ));
 }
+
+/// Original RA2 has no Grinding= field: refund-on-entry is hardcoded on the
+/// Cloning vats. In RA2 Mode a Cloning building must accept a
+/// foot via CAN_LOAD (ROGER); the YR profile keeps Cloning as clone-only and
+/// refuses (no Passengers, no Grinding).
+#[test]
+fn ra2_cloning_vat_accepts_foot_via_can_load() {
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(
+            "[InfantryTypes]\n0=E1\n[BuildingTypes]\n0=VAT\n\
+             [E1]\nStrength=100\nCost=100\n\
+             [VAT]\nStrength=1000\nCloning=yes\n",
+        ),
+        &IniFile::from_str("[VAT]\nFoundation=1x1\n"),
+    )
+    .unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 60);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let vat = sim.spawn_object("VAT", "Americans", 20, 10, 0, &rules).unwrap();
+    let gi = sim.spawn_object("E1", "Americans", 12, 10, 0, &rules).unwrap();
+
+    rules.set_ra2_for_test(true);
+    assert_eq!(
+        crate::sim::radio::receive::can_load_query(&sim, vat, gi, &rules),
+        crate::sim::radio::RadioResponse::Roger,
+        "RA2 Cloning vat accepts a foot"
+    );
+    rules.set_ra2_for_test(false);
+    assert_ne!(
+        crate::sim::radio::receive::can_load_query(&sim, vat, gi, &rules),
+        crate::sim::radio::RadioResponse::Roger,
+        "YR Cloning vat does not accept a foot"
+    );
+}

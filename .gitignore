@@ -112,12 +112,14 @@ Thumbs.db
 !/docs/ini-commander-personalities.md
 !/docs/ini-end-game-screens.md
 !/docs/health-bars.md
+!/docs/ra2-mode.md
 !/docs/jumpjet-smooth-facing.md
 !/docs/ai-nearest-enemy.md
 !/docs/jumpjet-land-nearby.md
 !/docs/formation-line.md
 !/docs/ferry.md
 !/docs/auto-repair.md
+!/docs/level-bridge-decks.md
 !/docs/minimap-beacons.md
 !/docs/primary-rotation.md
 !/docs/relation-colours.md
@@ -162,6 +164,7 @@ tools/vendor-eval/
 !/README.sv.md
 !/README.de.md
 !/README.zh-CN.md
+!/README.zh-TW.md
 !/README.ar.md
 !/README.es.md
 !/README.ja.md

@@ -34,6 +34,7 @@ impl App {
                 last_write_time: saved,
                 visible: true,
                 loadable: true,
+                migratable: false,
             })
             .collect();
         let maps = state.frontend.scenario_catalog.shell_maps();
@@ -111,6 +112,7 @@ impl App {
 
     fn apply_skirmish_setups_outcome(state: &mut AppState, outcome: SetupOutcome) {
         match outcome {
+            SavedSeedOutcome::Convert(_) => {}
             SetupOutcome::Close => Self::close_skirmish_setups(state),
             SetupOutcome::Save { description, .. } => {
                 let name = String::from_utf16_lossy(description.units());

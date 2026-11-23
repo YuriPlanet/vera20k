@@ -197,6 +197,28 @@ where
     slot.get_or_init(load).clone()
 }
 
+/// The stack of the threads the game loads and plays on: its main thread has
+/// 8 MiB on every platform (`build.rs` links `/STACK` on Windows), as the
+/// simulation thread has (`SimWorker::spawn`).
+pub const GAME_STACK_BYTES: usize = 8 << 20;
+
+/// Run a test's body on a thread with the game's stack instead of libtest's
+/// 2 MiB one, under the test's name, and pass its panic on. Unoptimized, the
+/// frames of a map or save load hold whole copies of the rules, the snapshot
+/// and the simulation, more than 2 MiB together; the game runs them on
+/// [`GAME_STACK_BYTES`].
+pub fn on_game_stack(body: impl FnOnce() + Send + 'static) {
+    let name = std::thread::current().name().unwrap_or("test").to_owned();
+    let thread = std::thread::Builder::new()
+        .name(name)
+        .stack_size(GAME_STACK_BYTES)
+        .spawn(body)
+        .expect("start the test's thread");
+    if let Err(panic) = thread.join() {
+        std::panic::resume_unwind(panic);
+    }
+}
+
 #[cfg(all(test, tests_scenario))]
 mod tests {
     #[test]

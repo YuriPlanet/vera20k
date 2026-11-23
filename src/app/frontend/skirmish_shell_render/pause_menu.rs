@@ -8,6 +8,7 @@ use super::launcher_options;
 use crate::app::AppState;
 use crate::assets::csf_file::CsfFile;
 use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::pause_menu::{
     FOOTER, INTERNET_CAPTIONS, INTERNET_GROUP, INTERNET_VALUES, InternetSlider, PAUSE_MENU_FOOTER,
     PauseMenuButton, PauseMenuButtonState, PauseMenuTemplate, TITLE,

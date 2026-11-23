@@ -209,8 +209,8 @@ impl App {
     /// offers sidebar sizes for.
     pub(crate) fn match_zoom_geometry(
         state: &AppState,
-    ) -> crate::render::upscale_pass::ZoomGeometry {
-        use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
+    ) -> crate::ui::main_menu_dialogs::options::ZoomGeometry {
+        use crate::ui::main_menu_dialogs::options::{FrameShape, ZoomGeometry};
         let (width, height) = (
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
@@ -1229,7 +1229,12 @@ impl ApplicationHandler for App {
             self.mod_switch.as_ref(),
             self.spawn_request
                 .as_ref()
-                .and_then(|request| request.ares_setting),
+                .and_then(|request| request.ares_setting)
+                .or_else(|| {
+                    self.hidden_run
+                        .as_ref()
+                        .and_then(super::hidden_run::HiddenRun::ares_setting)
+                }),
         );
         let result = if capture_dimensions.is_some() {
             result.and_then(super::initialize::InitializationStep::finish_synchronously)

@@ -90,4 +90,4 @@ Focused regressions are in `sim::superweapon::building_requirements_tests`.
 They require no retail assets and exercise production rules processing, House
 grant/revoke, ownership/limbo, command dispatch, AI preflight and save/load.
 They do not establish native executable parity, a full-suite pass, or a live
-Mental Omega/VERA playtest.
+playtest in an Ares mod.

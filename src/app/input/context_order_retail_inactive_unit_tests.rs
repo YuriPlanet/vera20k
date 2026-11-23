@@ -312,7 +312,7 @@ fn ares_deactivated_cursor_owner_decides_the_release_for_the_selection() {
         stable_id: own,
     };
     let release = |sim: &Simulation, hover: Option<&HoverTargetKindWithId>| {
-        ares_deactivated_selection_click(sim, rules, &selection, hover, (18, 18))
+        ares_head_hook_selection_click(sim, rules, &selection, hover, (18, 18))
     };
     assert_eq!(release(&sim, None), None, "an active robot");
     sim.entity_mut_for_test(robot)
@@ -328,6 +328,133 @@ fn ares_deactivated_cursor_owner_decides_the_release_for_the_selection() {
         .unwrap()
         .set_emp_remaining_for_test(30);
     assert_eq!(release(&sim, None), None, "the engineer owns the cursor");
+}
+
+/// Ares' InfantryClass_GetActionOnObject_EMP (`10053DB0`, hook `0x0051E3B0`)
+/// answers NoDeploy for an EMP'd `Deployer=` GI over himself, online or not.
+/// Still online (Ares defers deactivation in Unload), the cursor is NoDeploy
+/// and the release dispatches, so the self click does not deploy him.
+/// Offline, it
+/// precedes the Deactivated hook's Select (`0x0051E440`): the click
+/// dispatches, which keeps the selection where Select would narrow it to
+/// him.
+#[test]
+fn ares_emped_deployer_answers_no_deploy_over_himself() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some((retail, registry)) = retail() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = arena(rules);
+    let gi = sim
+        .spawn_object("E1", "Americans", 16, 16, 0, rules)
+        .expect("GI");
+    let other = sim
+        .spawn_object("E1", "Americans", 17, 16, 0, rules)
+        .expect("second GI");
+    let kind = crate::app::types::HoverTargetKind::FriendlyUnit;
+    let over_gi = HoverTargetKindWithId {
+        kind,
+        stable_id: gi,
+    };
+    let release = |sim: &Simulation, selection: &[u64]| {
+        ares_head_hook_selection_click(sim, rules, selection, Some(&over_gi), (16, 16))
+    };
+    sim.entity_mut_for_test(gi)
+        .unwrap()
+        .set_emp_remaining_for_test(150);
+    assert_eq!(
+        hover_cursor(&sim, rules, &registry, gi, gi, kind, OrderModifier::Normal),
+        Some(CursorId::NoDeploy)
+    );
+    assert_eq!(release(&sim, &[gi]), Some(Ok(LeftRelease::Dispatch)));
+    for id in [gi, other] {
+        let entity = sim.entity_mut_for_test(id).unwrap();
+        entity.deactivated.set_for_test(true);
+        entity.set_emp_remaining_for_test(150);
+    }
+    assert_eq!(release(&sim, &[gi, other]), Some(Ok(LeftRelease::Dispatch)));
+}
+
+/// Under Shift too, the Ares hooks at the head of the cursor owner's class
+/// What_Action answer before Techno's ToggleSelect (`0x00700107`): a
+/// Deactivated robot's Select over an own tank, and an EMP'd deployer's
+/// NoDeploy over himself, which dispatches. Another receiver's own Shift
+/// rung then answers ToggleSelect, which orders nothing (`0x004D7CC0`).
+#[test]
+fn ares_head_hooks_answer_before_shift_toggle_select() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some((retail, registry)) = retail() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = arena(rules);
+    // The Russians keep a building, so the skirmish has no winner.
+    sim.spawn_object("NAPOWR", "Russians", 3, 3, 0, rules)
+        .expect("russian power plant");
+    let robot = sim
+        .spawn_object("ROBO", "Americans", 16, 16, 0, rules)
+        .expect("robot tank");
+    let own = sim
+        .spawn_object("MTNK", "Americans", 16, 17, 0, rules)
+        .expect("own tank");
+    let gi = sim
+        .spawn_object("E1", "Americans", 17, 16, 0, rules)
+        .expect("GI");
+    let head = |sim: &Simulation, actor, object| {
+        let shift = object_key_action(
+            sim,
+            rules,
+            actor,
+            object,
+            Some(object),
+            OrderModifier::Shift,
+            false,
+        );
+        let hover = HoverTargetKindWithId {
+            kind: crate::app::types::HoverTargetKind::FriendlyUnit,
+            stable_id: object,
+        };
+        head_release(sim, rules, &[actor], Some(&hover), (16, 16), shift)
+    };
+    assert_eq!(head(&sim, robot, own), Some(HeadRelease::ToggleSelect));
+    sim.entity_mut_for_test(robot)
+        .unwrap()
+        .deactivated
+        .set_for_test(true);
+    assert_eq!(
+        head(&sim, robot, own),
+        Some(HeadRelease::Hook(Ok(LeftRelease::Select)))
+    );
+    sim.entity_mut_for_test(gi)
+        .unwrap()
+        .set_emp_remaining_for_test(150);
+    assert_eq!(
+        head(&sim, gi, gi),
+        Some(HeadRelease::Hook(Ok(LeftRelease::Dispatch)))
+    );
+    // He is in the selection, so the tank's attack rung would answer 0,
+    // which a Unit makes NoMove (`0x007403EB`).
+    sim.entity_mut_for_test(gi)
+        .unwrap()
+        .seldom
+        .selection
+        .set_selected_for_test(true);
+    let owner = sim.interner().get("Americans").unwrap();
+    assert_eq!(
+        object_attack_click_command(
+            &sim,
+            rules,
+            &registry,
+            owner,
+            crate::app::types::OrderMode::Move,
+            OrderModifier::Shift,
+            false,
+            own,
+            gi,
+        ),
+        None
+    );
 }
 
 /// A tank being warped out (Temporal, vt+0x1D4) answers 0 over an enemy

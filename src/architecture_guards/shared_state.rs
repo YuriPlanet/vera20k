@@ -331,6 +331,12 @@ const SHARED_STATE_PINS: &[(&str, usize, &str)] = &[
          order fills it, and this thread's precheck scratch",
     ),
     (
+        "sim/ra2_all02_diagnostic.rs",
+        6,
+        "the RA2 Mode ALL02S trace's written-once flag and its last line, so it logs a \
+         change once; log output only, which no simulation state reads",
+    ),
+    (
         "sim/rng.rs",
         4,
         "`MainRng`, the app's process cell of the unsynced stream outside the hash \

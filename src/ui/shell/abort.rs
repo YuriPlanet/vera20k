@@ -155,7 +155,7 @@ pub fn spec(secondary: AbortSecondary) -> NodeSpec {
             .id(button.id().into())
             .tooltip(button.help(secondary).0)
     });
-    let align = crate::render::shell_text::ShellAlign::H_CENTER;
+    let align = crate::ui::shell::geom::ShellAlign::H_CENTER;
     let question = NodeSpec::new(NodeKind::Text)
         .id(QUESTION.into())
         .with(Prop::Align, Value::Int(i32::from(align.0)));

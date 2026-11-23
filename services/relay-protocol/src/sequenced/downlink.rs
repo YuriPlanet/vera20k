@@ -6,14 +6,10 @@ use std::collections::VecDeque;
 
 use super::*;
 use crate::link::{
-    LinkState, SEND_FRESH, SEND_OTHER, SEND_PROBE, SEND_REPEAT, SEND_RETRANSMIT, SendRecord, pto,
+    LinkState, SEND_FRESH, SEND_OTHER, SEND_PROBE, SEND_REPEAT, SEND_RETRANSMIT, SendRecord,
+    ack_interval, pto, reader_rtt,
 };
 
-/// The acknowledgement interval of a congested reader (spec §6.3 row 3).
-const CONGESTED_ACK_DELAY_MS: u64 = 200;
-const GOOD_ACK_DELAY_MS: u64 = 100;
-/// `srtt_c` until a reader reports one (spec §4.6, §7.3).
-const DEFAULT_SRTT_MS: u64 = 100;
 /// Records the retransmission queue may owe a reader at most; the rest is
 /// left to the fallback PULL (spec §7.3, §7.7).
 const RETRANSMIT_QUEUE_RECORDS: u64 = PUSH_WINDOW + ORDERING_PULL_LIMIT as u64;
@@ -125,13 +121,13 @@ impl PushSubscription {
 
     /// Queues what a lost send still owes (spec §7.3 steps 1-4): its range,
     /// less the acknowledged records, what later sends not judged lost
-    /// cover, and what went as a retransmission within `srtt_c`. Returns
-    /// the records queued.
+    /// cover, and what went as a retransmission within the reader's `srtt`
+    /// ms (`reader_rtt`). Returns the records queued.
     pub(super) fn enqueue_lost<'a>(
         &mut self,
         lost: &SendRecord,
         later: impl Iterator<Item = &'a SendRecord>,
-        srtt_c: u16,
+        srtt: u64,
         now_ms: u64,
     ) -> u64 {
         let end = lost.first + u64::from(lost.count);
@@ -139,11 +135,6 @@ impl PushSubscription {
         for send in later.filter(|send| send.count > 0 && !send.lost) {
             owed = subtract(&owed, (send.first, send.first + u64::from(send.count)));
         }
-        let srtt = if srtt_c == 0 {
-            DEFAULT_SRTT_MS
-        } else {
-            u64::from(srtt_c)
-        };
         self.retransmitted
             .retain(|&(_, _, at)| now_ms.saturating_sub(at) < srtt);
         for &(from, to, _) in &self.retransmitted {
@@ -181,7 +172,7 @@ impl Peer {
                 push.enqueue_lost(
                     send,
                     self.link.sent_after(send.sequence),
-                    self.link.srtt_c,
+                    reader_rtt(self.link.srtt_c, self.link.rttvar_c).0,
                     now_ms,
                 );
             }
@@ -230,7 +221,7 @@ impl RelayServer {
     /// repeats and a tail probe from the repeat budget; an offline reader
     /// gets nothing.
     pub fn drain_ordering_push(&mut self, now_ms: u64, now: u64) -> Vec<ForwardDatagram> {
-        self.prune(now);
+        self.prune(now, now_ms);
         let mut recipients = Vec::new();
         for (id, room) in &mut self.rooms {
             for peer in &mut room.peers {
@@ -605,11 +596,7 @@ impl RelayServer {
         // Item 5: a tail probe of the newest new pack (§7.6).
         let mut probes = Vec::new();
         if repeats.len() < capacity && acked < push.sent_next {
-            let ack_delay = match state {
-                LinkState::Lossy => u64::from(turn_ms(ordering.pace.rate)),
-                LinkState::Congested => CONGESTED_ACK_DELAY_MS,
-                _ => GOOD_ACK_DELAY_MS,
-            };
+            let ack_delay = ack_interval(state, turn_ms(ordering.pace.rate));
             let timeout = pto(
                 peer.link.srtt_c,
                 peer.link.rttvar_c,
@@ -716,7 +703,7 @@ mod tests {
         // Overlapping losses merge.
         push.enqueue_lost(&lost_send(13, 7, 4), [].iter(), 40, 100);
         assert_eq!(push.retransmit, [(5, 12)]);
-        // Retransmitted at 100: within srtt_c 40 it is not queued again.
+        // Retransmitted at 100: within srtt 40 it is not queued again.
         push.retransmit.clear();
         push.retransmitted.push_back((5, 12, 100));
         assert_eq!(

@@ -142,7 +142,10 @@ impl BridgePublicationHost for Host {
     fn clear_overlay(&mut self, cell: usize) {
         self.cells[cell].overlay = -1;
     }
-    fn fallout(&mut self, cell: usize) {
+    fn corrected_deck_at(&self, _: CellCoord) -> Option<i16> {
+        None
+    }
+    fn fallout(&mut self, cell: usize, _: Option<i16>) {
         self.events
             .push(json!({"kind":"fallout_sink", "cell":self.snapshot(cell)}));
         if self.injected {

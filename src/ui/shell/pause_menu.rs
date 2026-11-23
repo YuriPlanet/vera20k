@@ -21,7 +21,7 @@ use super::descriptor::DialogResourceId;
 use super::geom::RectPx;
 use super::in_game_shell::{self, InGameShellLayout};
 use super::layout_data;
-use crate::render::shell_text::ShellAlign;
+use crate::ui::shell::geom::ShellAlign;
 use vera20k_gui::shell::trackbar::TrackbarRange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

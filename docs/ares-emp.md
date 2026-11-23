@@ -2,15 +2,15 @@
 
 Every build runs this chain when the game plays Ares ([Ares](ares.md)). Other
 games do not use the extension keys or run its Bullet/AI producers. It covers every Foot
-victim but a Tunnel mover: Drive, Walk, Hover, Ship, Teleport, Fly, Jumpjet and
-Rocket, human or AI, in or out of a Team, with Spawn, Slave or Capture managers,
+victim: Drive, Walk, Hover, Ship, Teleport, Fly, Jumpjet, Rocket and Tunnel
+movers, human or AI, in or out of a Team, with Spawn, Slave or Capture managers,
 a held Magnetron victim or a Temporal warp, harvesters, falling and
 mind-controlled victims, and the EMP.Threshold deaths. It admits every
 EMP-prone building: powered ones, Radar and SpySat providers, factories and
 construction yards, Gap generators, superweapon, PowersUnit, Sensors, cloning,
 LaserFence, Tesla-charged, garrisonable, undeploying and Prism-linked ones. It
 spares a tank in a Tank Bunker and announces a hit on the player's miners and
-base (announceAttack). A Tunnel mover is the one victim still refused.
+base (announceAttack).
 
 ## Building kinds
 
@@ -179,17 +179,23 @@ the same queued EMPAIRecoverMission/Hunt as AI Drive.
 
 ## Every mover, miners, falling and controlled victims
 
-Delivery10062320 tests no mover, so neither does the Rust admission, except a
-Tunnel mover, whose dig and underground states are not traced under Deactivate.
+Delivery10062320 tests no mover, so neither does the Rust admission.
 Each admitted mover reaches only shared owners: Deactivate's Power_Off (Hover's
-override516BF0 spins it down and settles it), the Ares deactivated-Unit stop of
+override516BF0 spins it down and settles it; Fly's4CFD20 spins a moving
+landed Aircraft), the Ares deactivated-Unit stop of
 TechnoClass_Update1004B320, Teleport's deactivated MoveTo refusal1005D3E0, and
 for a flying Aircraft, a V3 or Dreadnought rocket included, the crash of
 enableEMPEffect10062B40. A falling object keeps falling, since ObjectAI5F3F11
 tests no deactivation, and lands offline; its canopy spares it from the
 Threshold in-air arm. A mind-controlled victim keeps its controller; its owner
 is the controller's House, so a computer controller's victim recovers with
-Hunt.
+Hunt. A Tunnel mover keeps the base Power_Off and a Process (0x728E30) that
+tests no power. Deactivate's ResetOrdersToGuard (0x70F850) clears its
+destination (vt+0x480 with null, the Unit setter 0x741970), which reaches its
+Stop_Moving (0x728C00): a dig-in becomes DugOut and a sinking one PreDigOut,
+so it ends the dig on the surface. One below
+the cells is on no cell list (Mark UP) and below height 0, so neither gather
+pass reaches it.
 
 DisableEMPEffect100627F0's Foot tail (100628B2..10062972) is one owner,
 `recover_ares_emp_foot_mission`, which PoweredBy's DisableEMPEffect2 10062650
@@ -345,6 +351,14 @@ their existing constructor-zero path; active-retail EMP producer reachability
 is not inferred from this shared native consumer. The separate DeathFrame virtual
 override remains outside the ordinary live-ground chain.
 
+An EMP'd `Deployer=` infantryman over itself answers NoDeploy at the head of its
+What_Action (InfantryClass_GetActionOnObject_EMP 10053DB0, hook `0x51E3B0`), online
+or not and before the Deactivated hook (`0x51E440`):
+`ares_emp_deployer_refuses_itself` gives the cursor, the stock one since no Ares
+`Cursor.*` hook is reached, and the click dispatches it
+(`ares_head_hook_selection_click`), so the click orders him nothing and keeps the
+selection. The deploy key asks CanDeploySlashUnload, not What_Action.
+
 ## Reproducible evidence and bounds
 
 The installed DLL SHA256 is pinned by the producer and corpus. The exact
@@ -438,7 +452,9 @@ can draw for authored RandomRate/bounce settings. Counter writes
 are delivery/cap and one decrement per actual AI visit; Deactivate/Reactivate keep
 their existing mission/destination timer writes. Anim expiry writes loop_remaining=0.
 The building kinds add no draws or DetachAll of their own; their owners keep
-theirs: a Hover Robot Tank's Deactivate draws twice (Power_Off), and a factory
+theirs: a Hover Robot Tank's Deactivate draws twice (Power_Off), as does a
+moving landed Aircraft's (Fly's Power_Off, whose Stop_Moving may draw again in
+Find_Attack_Cell), and a factory
 queue's suspend/resume and a Super's hold/release pause and resume their
 timers. The undeploy copy writes the unit's counter only.
 
@@ -459,12 +475,12 @@ Delivery's bunker test (10062357..10062376) spares a victim whose
 BunkerLinkedItem is a Building, a tank in a Tank Bunker, unless the Warhead
 PenetratesBunker; the bunker itself is an ordinary building victim.
 
-Still open: a Tunnel mover, which the delivery reports as unsupported and
-leaves unaffected (trigger: an EMP hit on a Tunnel unit in a mod; effect: no
-EMP there). A landed Aircraft's Deactivate reaches Fly's Power_Off
-override4CFD20, whose Random(20, 30) spin and stop are not ported
-(`locomotor_power_off`); the base flag write runs instead, without those two
-scenario draws. A LaserFencePost's fence sections are neither dropped by
+A landed Aircraft's Deactivate reaches Fly's Power_Off override4CFD20: a
+moving one spins at Random(20, 30) either way (two Scenario draws) and stops,
+and Fly Process turns it while it stays offline (spin step4CE5A0;
+`Simulation::fly_power_off`, `fly_spin_step`).
+
+Still open: a LaserFencePost's fence sections are neither dropped by
 DisableStuff nor rebuilt by EnableStuff (4533A0), since VERA builds none
 (trigger: an EMP hit on a mod's post; effect: no fence to drop; frequency:
 mods with LaserFencePost types). The Super pass still reads only a provider's

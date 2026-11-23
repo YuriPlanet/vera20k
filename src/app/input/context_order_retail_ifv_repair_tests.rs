@@ -1022,11 +1022,13 @@ fn ares_repair_ifv_selects_a_sound_ally_and_under_alt() {
     let alt = HealArmKeys {
         force_move: true,
         guard_area: false,
+        moves: true,
     };
     assert_eq!(action(&sim, alt), Some(UnitRepairAction::Select));
     let guard = HealArmKeys {
         force_move: true,
         guard_area: true,
+        moves: false,
     };
     assert_eq!(action(&sim, guard), None);
     let strength = rules.object("MTNK").unwrap().strength;
@@ -1047,7 +1049,7 @@ fn ares_repair_ifv_selects_a_sound_ally_and_under_alt() {
 /// before the map pass, so the patch restates it) and `RepairBullet`.
 #[test]
 fn ares_healer_infantry_heal_what_their_warhead_reaches() {
-    use crate::sim::world::{AresHeal, HealArmKeys};
+    use crate::sim::world::{HealArmKeys, InfantryHealAction};
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
         "XMP03T4.MAP",
@@ -1071,25 +1073,26 @@ fn ares_healer_infantry_heal_what_their_warhead_reaches() {
         .set_for_test(50);
     let owner = sim.interner().get(OWNER).unwrap();
     let heal = |sim: &Simulation, actor, target, keys| {
-        sim.ares_infantry_heal_action(actor, target, owner, keys, rules)
+        sim.infantry_heal_action(actor, target, owner, keys, rules)
     };
     let keys = HealArmKeys::default();
     assert_eq!(
         heal(&sim, medic, hurt, keys),
-        Some(AresHeal { organic: true })
+        Some(InfantryHealAction::Heal { organic: true })
     );
     assert_eq!(
         heal(&sim, medic, tank, keys),
-        None,
+        Some(InfantryHealAction::Select),
         "Organic is 0% on heavy"
     );
     assert_eq!(
         heal(&sim, mechanic, tank, keys),
-        Some(AresHeal { organic: false })
+        Some(InfantryHealAction::Heal { organic: false })
     );
     let alt = HealArmKeys {
         force_move: true,
         guard_area: false,
+        moves: true,
     };
     assert_eq!(heal(&sim, mechanic, tank, alt), None);
     let hover = HoverTargetKindWithId {
@@ -1110,5 +1113,420 @@ fn ares_healer_infantry_heal_what_their_warhead_reaches() {
             &mut Default::default(),
         ),
         CursorFeedbackKind::AresAction(0x5B)
+    );
+}
+
+/// What a lone selected healer clicked on itself shows and sends
+/// (`InfantryClass::What_Action_OnObject` 0x51E748): the cursor, the click
+/// its ClickedAction makes of the answer, and the lone selection's release.
+fn healer_self_click(
+    rules: &RuleSet,
+    healer_type: &str,
+) -> (
+    CursorFeedbackKind,
+    Option<Command>,
+    Option<Option<Command>>,
+    u64,
+) {
+    use crate::app::input::cursor::{ActionDistanceTarget, select_best_for_action};
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x0051_E748);
+    let owner = sim.interner().get(OWNER).unwrap();
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
+    let healer = sim
+        .spawn_object(healer_type, OWNER, 9, 9, 0, rules)
+        .unwrap();
+    sim.entity_mut_for_test(healer)
+        .unwrap()
+        .seldom
+        .selection
+        .set_selected_for_test(true);
+    let best = select_best_for_action(
+        &sim,
+        &[healer],
+        ActionDistanceTarget::Object(healer),
+        Some(rules),
+    );
+    let hover = HoverTargetKindWithId {
+        kind: HoverTargetKind::FriendlyUnit,
+        stable_id: healer,
+    };
+    let cursor = capability_cursor_for_hover(
+        &sim,
+        &[healer],
+        best,
+        &hover,
+        Some(rules),
+        None,
+        OrderModifier::Normal,
+        false,
+        false,
+        &mut Default::default(),
+    );
+    let click = object_attack_click_command(
+        &sim,
+        rules,
+        &crate::rules::overlay_types::OverlayTypeRegistry::empty(),
+        owner,
+        OrderMode::Move,
+        OrderModifier::Normal,
+        false,
+        healer,
+        healer,
+    );
+    let release = lone_self_healer_guard(&sim, &sim.control_projection(), rules, &[healer], healer);
+    (cursor, click, release, healer)
+}
+
+const HEALER_PATCH: &str = "[CIV1]\nPrimary=Heal\nElitePrimary=Heal\n\
+     [Heal]\nDamage=-50\nProjectile=Invisible\nWarhead=Organic\nRange=2\n";
+
+/// A healer infantryman clicked on itself answers GuardArea (0x51E748) and
+/// guards its own area through Foot's AreaGuard case (0x4D7543). No retail
+/// infantryman heals, so a civilian carries `Heal` here.
+#[test]
+fn a_healer_infantryman_clicked_on_itself_guards_its_area() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(HEALER_PATCH),
+    ) else {
+        return;
+    };
+    assert!(!retail.rules.ares());
+    let (cursor, click, release, healer) = healer_self_click(&retail.rules, "CIV1");
+    let guard = Command::Guard {
+        entity_id: healer,
+        target: Some(crate::sim::combat::TargetKind::Entity(healer)),
+    };
+    assert_eq!(cursor, CursorFeedbackKind::GuardArea);
+    assert_eq!(click, Some(guard.clone()));
+    assert_eq!(release, Some(Some(guard)));
+}
+
+/// Ares' heal hook (0x51E710, 1004E2E0) reaches the same GuardArea for the
+/// healer itself; `NoSelfGuardArea=yes` (hook 0x51E748, 10049710) skips it,
+/// so that healer answers NoMove over itself as an unarmed infantryman does.
+#[test]
+fn ares_no_self_guard_area_keeps_a_healer_off_its_own_guard() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(&format!(
+            "{HEALER_PATCH}[CIV2]\nPrimary=Heal\nElitePrimary=Heal\nNoSelfGuardArea=yes\n"
+        )),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    assert!(rules.ares());
+    let (cursor, click, release, _) = healer_self_click(rules, "CIV1");
+    assert_eq!(cursor, CursorFeedbackKind::GuardArea);
+    assert!(matches!(click, Some(Command::Guard { .. })), "{click:?}");
+    assert!(
+        matches!(release, Some(Some(Command::Guard { .. }))),
+        "{release:?}"
+    );
+    let (cursor, click, release, _) = healer_self_click(rules, "CIV2");
+    assert_eq!(cursor, CursorFeedbackKind::Invalid);
+    assert!(
+        matches!(
+            click,
+            Some(Command::Move { .. } | Command::MoveToObject { .. })
+        ),
+        "{click:?}"
+    );
+    assert_eq!(release, None);
+}
+
+/// The player's and a rival house on open skirmish ground, with what a healer
+/// infantryman shows and sends over a target (InfantryClass What_Action's
+/// healer arm).
+struct HealerArena {
+    sim: Simulation,
+    owner: crate::sim::intern::InternedId,
+}
+
+impl HealerArena {
+    fn new(rules: &RuleSet) -> Self {
+        let mut sim = Simulation::new();
+        for (name, side) in [(OWNER, 0), ("Russians", 1)] {
+            let house = sim.intern(name);
+            sim.houses_mut_for_test()
+                .register(HouseState::new(house, side, None, true, 0, 10));
+        }
+        let owner = sim.interner().get(OWNER).unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        // Outside a campaign Foot's shroud rung leaves the base action alone.
+        sim.session_mut_for_test()
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        crate::sim::arena_fixture::flat_arena(&mut sim, rules);
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        Self { sim, owner }
+    }
+
+    fn cursor(
+        &self,
+        rules: &RuleSet,
+        selected: &[u64],
+        target: u64,
+        kind: HoverTargetKind,
+        modifier: OrderModifier,
+    ) -> CursorFeedbackKind {
+        capability_cursor_for_hover(
+            &self.sim,
+            selected,
+            Some(selected[0]),
+            &HoverTargetKindWithId {
+                kind,
+                stable_id: target,
+            },
+            Some(rules),
+            None,
+            modifier,
+            false,
+            false,
+            &mut Default::default(),
+        )
+    }
+
+    fn click(
+        &self,
+        rules: &RuleSet,
+        healer: u64,
+        target: u64,
+        kind: HoverTargetKind,
+        modifier: OrderModifier,
+    ) -> AttackDispatch {
+        unit_repair_branch_orders(
+            &self.sim,
+            rules,
+            &[healer],
+            &[healer],
+            &HoverTargetKindWithId {
+                kind,
+                stable_id: target,
+            },
+            self.owner,
+            modifier,
+            OrderMode::Move,
+            false,
+        )
+    }
+}
+
+/// Without Ares a healer infantryman heals a damaged Infantryman
+/// (`0x0051E73C`): Heal shows SetCursorFromAction's row 0x3C, and Infantry
+/// ClickedAction (`0x0051F190`) sends it as Attack. Over any other ally, Ctrl
+/// included, the arm answers Select (`0x0051E78B`), and the release selects.
+#[test]
+fn a_stock_healer_infantryman_heals_a_hurt_infantryman_and_selects_the_rest() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(HEALER_PATCH),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    assert!(!rules.ares());
+    let mut arena = HealerArena::new(rules);
+    let medic = arena
+        .sim
+        .spawn_object("CIV1", OWNER, 9, 9, 0, rules)
+        .unwrap();
+    let hurt = arena
+        .sim
+        .spawn_object("E1", OWNER, 10, 9, 0, rules)
+        .unwrap();
+    let tank = arena
+        .sim
+        .spawn_object("MTNK", OWNER, 11, 11, 0, rules)
+        .unwrap();
+    arena
+        .sim
+        .entity_mut_for_test(hurt)
+        .unwrap()
+        .health
+        .set_for_test(50);
+    let friendly = HoverTargetKind::FriendlyUnit;
+    assert_eq!(
+        arena.cursor(rules, &[medic], hurt, friendly, OrderModifier::Normal),
+        CursorFeedbackKind::Heal
+    );
+    assert_eq!(
+        cursor_id_for_feedback(CursorFeedbackKind::Heal),
+        Some(CursorId::NoTogglePower)
+    );
+    let heal = arena.click(rules, medic, hurt, friendly, OrderModifier::Normal);
+    assert!(
+        matches!(heal.commands.as_slice(), [Command::Attack { attacker_id, target_id }]
+            if *attacker_id == medic && *target_id == hurt),
+        "{:?}",
+        heal.commands
+    );
+    assert_eq!(
+        arena.cursor(rules, &[medic], tank, friendly, OrderModifier::ForceFire),
+        CursorFeedbackKind::FriendlyUnit
+    );
+    let select = arena.click(rules, medic, tank, friendly, OrderModifier::ForceFire);
+    assert!(select.selects && select.commands.is_empty());
+    // Its Select ends the rows before the Grinder's (`0x0051F0AF`).
+    let grinder = arena
+        .sim
+        .spawn_object("YAGRND", OWNER, 14, 14, 0, rules)
+        .unwrap();
+    let structure = HoverTargetKind::FriendlyStructure;
+    assert_eq!(
+        arena.cursor(rules, &[medic], grinder, structure, OrderModifier::Normal),
+        CursorFeedbackKind::FriendlyUnit
+    );
+    assert!(
+        arena
+            .click(rules, medic, grinder, structure, OrderModifier::Normal)
+            .selects
+    );
+    // A berserk healer's arm still runs over its base action 0.
+    arena
+        .sim
+        .entity_mut_for_test(medic)
+        .unwrap()
+        .berserk
+        .set_active_for_test(true);
+    let over_tank = HoverTargetKindWithId {
+        kind: friendly,
+        stable_id: tank,
+    };
+    assert_eq!(
+        berserk_selection_click(
+            &arena.sim,
+            rules,
+            &[medic],
+            Some(&over_tank),
+            (11, 11),
+            arena.owner
+        ),
+        LeftRelease::Select
+    );
+}
+
+/// Over an object of a house it is not allied with, a tree's null House
+/// included, a healer infantryman answers AttackSupport (`0x0051E797`): the
+/// arrow, and Foot's case 0x3B (`0x004D74E0`) puts the healer on Area Guard
+/// of itself, as its Primary heals.
+#[test]
+fn a_healer_infantryman_guards_itself_over_an_enemy_or_a_tree() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(HEALER_PATCH),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut arena = HealerArena::new(rules);
+    let medic = arena
+        .sim
+        .spawn_object("CIV1", OWNER, 9, 9, 0, rules)
+        .unwrap();
+    let enemy = arena
+        .sim
+        .spawn_object("E1", "Russians", 11, 9, 0, rules)
+        .unwrap();
+    assert_eq!(
+        crate::sim::terrain_spawn::construct_terrain_objects(
+            &mut arena.sim,
+            &[crate::map::overlay::TerrainObject {
+                rx: 9,
+                ry: 12,
+                name: "TREE01".into(),
+            }],
+            rules,
+            false,
+        ),
+        1
+    );
+    let tree = arena.sim.terrain_objects().id_at((9, 12)).unwrap();
+    let guard = Command::Guard {
+        entity_id: medic,
+        target: Some(crate::sim::combat::TargetKind::Entity(medic)),
+    };
+    let enemy_kind = HoverTargetKind::EnemyUnit;
+    assert_eq!(
+        arena.cursor(rules, &[medic], enemy, enemy_kind, OrderModifier::Normal),
+        CursorFeedbackKind::Default
+    );
+    let click = arena.click(rules, medic, enemy, enemy_kind, OrderModifier::Normal);
+    assert!(click.consumed);
+    assert_eq!(click.commands, [guard.clone()]);
+    let tree = crate::sim::combat::TargetKind::Entity(tree);
+    assert_eq!(
+        attack_action(&arena.sim, rules, medic, &tree, true, None),
+        AttackAction::AttackSupport
+    );
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::empty();
+    let click = attack_branch_orders(
+        &arena.sim,
+        rules,
+        &[medic],
+        tree,
+        true,
+        OrderMode::Move,
+        &registry,
+    );
+    assert_eq!(click.commands, [guard]);
+}
+
+/// A healing Engineer among several selected objects answers NoMove under
+/// Ctrl over itself: Ctrl forces Techno's attack rung, which the Engineer
+/// refuses (`0x0051E6B4..0x0051E6D5`) before the healer's self arm. Alone it
+/// answers Self over itself first (`0x007000B9`), so the arm guards.
+#[test]
+fn a_healing_engineer_in_a_group_refuses_ctrl_over_itself() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(&format!(
+            "{HEALER_PATCH}[ENGINEER]\nPrimary=Heal\nElitePrimary=Heal\n"
+        )),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut arena = HealerArena::new(rules);
+    let engineer = arena
+        .sim
+        .spawn_object("ENGINEER", OWNER, 9, 9, 0, rules)
+        .unwrap();
+    let gi = arena
+        .sim
+        .spawn_object("E1", OWNER, 10, 9, 0, rules)
+        .unwrap();
+    let own = HoverTargetKind::FriendlyUnit;
+    let ctrl = OrderModifier::ForceFire;
+    assert_eq!(
+        arena.cursor(rules, &[engineer, gi], engineer, own, ctrl),
+        CursorFeedbackKind::Invalid
+    );
+    let click = object_attack_click_command(
+        &arena.sim,
+        rules,
+        &crate::rules::overlay_types::OverlayTypeRegistry::empty(),
+        arena.owner,
+        OrderMode::Move,
+        ctrl,
+        false,
+        engineer,
+        engineer,
+    );
+    assert!(
+        matches!(
+            click,
+            Some(Command::Move { entity_id, .. } | Command::MoveToObject { entity_id, .. })
+                if entity_id == engineer
+        ),
+        "{click:?}"
+    );
+    assert_eq!(
+        arena.cursor(rules, &[engineer], engineer, own, ctrl),
+        CursorFeedbackKind::GuardArea
     );
 }

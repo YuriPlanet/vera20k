@@ -9,7 +9,7 @@ use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 
-use crate::render::shell_text::ShellAlign;
+use crate::ui::shell::geom::ShellAlign;
 
 /// Active B8 (resource `0xBEFE4C`).
 pub const DIALOG: DialogResourceId = DialogResourceId(0xB8);
@@ -215,8 +215,14 @@ fn slider_label(index: usize) -> NodeSpec {
         .with(Prop::Align, Value::Int(align))
 }
 
+/// The horizontal volume row shared by the launcher and online options.
+pub(crate) fn launcher_volume_rects(slider: SoundSlider) -> (RectPx, RectPx) {
+    let x = 124 + slider as i32 * 154;
+    (RectPx::new(x, 482, 129, 17), RectPx::new(x, 503, 129, 22))
+}
+
 /// Slider `slider` at `positions`, range 0..10 with its value plaque.
-fn trackbar(slider: SoundSlider, positions: [u8; 3], enabled: bool) -> NodeSpec {
+pub(crate) fn trackbar(slider: SoundSlider, positions: [u8; 3], enabled: bool) -> NodeSpec {
     let index = slider as usize;
     NodeSpec::new(NodeKind::Trackbar)
         .id(SHELL_SOUND_SLIDERS[index].into())
@@ -252,7 +258,7 @@ pub const SHELL_SOUND_LABEL_KEYS: [&str; 3] =
 pub const SHELL_SOUND_SLIDERS: [u16; 3] = [0x052F, 0x0532, 0x0536];
 /// The captions are statics with no control id (`0xFFFF`); these stand for
 /// them in the page's tree.
-const SHELL_SOUND_LABELS: [u16; 3] = [0x7E50, 0x7E51, 0x7E52];
+pub(crate) const SHELL_SOUND_LABELS: [u16; 3] = [0x7E50, 0x7E51, 0x7E52];
 
 /// The open `0xD6`'s widgets: Back, then each slider (range 0..10, the plaque
 /// on) at `positions` under its right-aligned caption. `0x6B6300`'s init

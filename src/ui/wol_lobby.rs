@@ -22,11 +22,11 @@ use vera20k_gui::{
     DialogId as GuiDialog, DialogKind, Gui, InputEvent, NodeId, NodeKind, NodeSpec, Prop, Value,
 };
 
-use crate::render::shell_text::ShellAlign;
 use crate::ui::lan_shell::{
     LanChatState, PlayerNameMatch, apply_chat_length_limit, saved_player_name_matches,
 };
 use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;

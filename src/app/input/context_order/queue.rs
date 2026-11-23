@@ -3,16 +3,16 @@
 
 use super::{
     AttackAction, AttackDispatch, BuildingClick, InfantryC4Action, ObjectKeyAction, OrderModifier,
-    ares_deactivated_selection_click, armed_action_with, attack_branch_orders,
+    ares_head_hook_selection_click, ares_trench_enter, armed_action_with, attack_branch_orders,
     building_click_orders, building_selection_click, cell_guard_area_action_with,
     cell_harvest_order, cursor_owner, disarm_bomb_engineers, engineer_capture_orders, entry_orders,
     finish_order, friendly_bomb_ivans, garrison_entry_orders, infantry_arm_attacks_with,
     infantry_c4_action_with, infiltrator_capture_orders, locked_move_cells, lone_self_foot_release,
-    move_click_command, object_action_answers_friendly, object_attack_click_command_with,
-    object_click_release, object_key_action_with, object_key_target, projected_order_selection,
-    push_move_flash, resolve_order_modifiers, selection_can_attack_move, self_answers_no_deploy,
-    self_click_command, self_detonates, terrain_forced, unit_repair_branch_orders,
-    vehicle_capture_action,
+    lone_self_healer_guard, move_click_command, object_action_answers_friendly,
+    object_attack_click_command_with, object_click_release, object_key_action_with,
+    object_key_target, projected_order_selection, push_move_flash, resolve_order_modifiers,
+    selection_can_attack_move, self_answers_no_deploy, self_click_command, self_detonates,
+    terrain_forced, unit_repair_branch_orders, vehicle_capture_action,
 };
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner;
@@ -94,12 +94,50 @@ pub(super) fn left_release(
     }
 }
 
+/// What a click answers before its orders, in What_Action's order: an Ares
+/// hook at the head of the cursor owner's class What_Action
+/// ([`ares_head_hook_selection_click`]) precedes Techno's Shift rung
+/// (`shift`, [`super::object_key_action`]), whose ToggleSelect
+/// (`0x00700107`) leaves the click to the selection's pick. So does a
+/// building's trench Enter (Ares 3.0 `100171B0`, hook `0x0044725F`, before
+/// Building What_Action calls Techno's at `0x00447267`), which the building
+/// click sends ([`building_selection_click`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum HeadRelease {
+    /// The hook's release, or the bombed object a Detonate sets off.
+    Hook(Result<LeftRelease, u64>),
+    ToggleSelect,
+}
+
+pub(super) fn head_release(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    current_objects: &[u64],
+    hover: Option<&HoverTargetKindWithId>,
+    cell: (u16, u16),
+    shift: Option<ObjectKeyAction>,
+) -> Option<HeadRelease> {
+    if let Some(release) = ares_head_hook_selection_click(sim, rules, current_objects, hover, cell)
+    {
+        return Some(HeadRelease::Hook(release));
+    }
+    let trench = || {
+        hover.is_some_and(|target| {
+            cursor_owner(sim, rules, current_objects, target.stable_id)
+                .is_some_and(|best| ares_trench_enter(sim, rules, best, target.stable_id))
+        })
+    };
+    (shift == Some(ObjectKeyAction::ToggleSelect) && !trench()).then_some(HeadRelease::ToggleSelect)
+}
+
 /// The left release for a selection whose every object is berserk.
 /// DetermineAction's best object is then berserk too (rank 0, `0x00535435`),
 /// and its What_Action base answers 0 whatever the modifiers (`0x006FFEC9`,
 /// cell `0x00700609`). The class rungs decide the rest:
 /// - Infantry: NoMove for a human owner (`0x0051F05E`), on the ground too
-///   unless `JumpJet=` (`0x0051FAAB`).
+///   unless `JumpJet=` (`0x0051FAAB`). A healer's heal arm comes first
+///   (`0x0051E6D8`), so a berserk healer infantryman may answer Select over
+///   an ally.
 /// - Unit: NoMove over an object (`0x007403EB`), 0 on the ground
 ///   (`0x007404B0`). A healer's repair arm still runs (`0x0073FD7C`), so a
 ///   berserk repair IFV may answer Select or Repair.
@@ -142,13 +180,23 @@ pub(super) fn berserk_selection_click(
     let action = if action_zero {
         ReleaseAction::Zero
     } else if hover.is_some_and(|target| {
-        sim.unit_repair_action(
-            best_id,
-            target.stable_id,
-            issuing_house,
-            crate::sim::world::HealArmKeys::default(),
-            rules,
-        ) == Some(crate::sim::world::UnitRepairAction::Select)
+        use super::HealerAction;
+        use crate::sim::world::{InfantryHealAction, UnitRepairAction};
+        matches!(
+            super::healer_object_action(
+                sim,
+                rules,
+                best_id,
+                target.stable_id,
+                issuing_house,
+                OrderModifier::Normal,
+                false,
+            ),
+            Some(
+                HealerAction::Unit(UnitRepairAction::Select)
+                    | HealerAction::Infantry(InfantryHealAction::Select)
+            )
+        )
     }) {
         ReleaseAction::Select
     } else {
@@ -163,17 +211,48 @@ pub(crate) enum ContextOrderTarget {
     Radar(crate::render::radar::NativeRadarInputTarget),
 }
 
+/// What a click that reached the context order leaves to the selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ContextClick {
+    /// The context dispatch consumed the click, including a refused event.
+    Consumed,
+    /// The selection's click pick takes the click as the held keys make it:
+    /// under Shift, the toggle (action 8, `0x004ABD24`).
+    Pick,
+    /// DetermineAction answered Select or 0, whose arm of
+    /// `DisplayClass::BandBox_LeftUp` clears the selection before it selects
+    /// (`0x004ABDD3`, `0x004ABDE1` → `0x004ABE4A`), so Shift toggles nothing.
+    Select,
+}
+
 /// Attempt to issue a context-sensitive order at the given input target.
 ///
-/// Returns `true` when context dispatch consumed the click, including a refused
-/// event, and `false` when the click should fall through to selection handling.
-///
 /// When `select_friendly_clicks` is true, clicks on friendly units/structures
-/// return `false` so the caller can treat them as selection clicks instead.
+/// fall through to the selection so the caller can treat them as selection
+/// clicks instead.
 pub(crate) fn try_queue_context_order(
     state: &mut AppState,
     target: ContextOrderTarget,
     select_friendly_clicks: bool,
+) -> ContextClick {
+    let mut selects = false;
+    if queue_context_order(state, target, select_friendly_clicks, &mut selects) {
+        ContextClick::Consumed
+    } else if selects {
+        ContextClick::Select
+    } else {
+        ContextClick::Pick
+    }
+}
+
+/// [`try_queue_context_order`]: `true` when the dispatch consumed the click,
+/// `false` when the selection takes it, with `selects` set when DetermineAction
+/// answered Select or 0 ([`LeftRelease::Select`]).
+fn queue_context_order(
+    state: &mut AppState,
+    target: ContextOrderTarget,
+    select_friendly_clicks: bool,
+    selects: &mut bool,
 ) -> bool {
     if !state.match_state.sim_runtime.is_installed() {
         return false;
@@ -291,8 +370,10 @@ pub(crate) fn try_queue_context_order(
                 selected_units.push(sid);
             }
         }
-        // Techno700082 -> Action8 precedes Infantry/Unit class actions.
-        // Let the selection consumer handle Shift over a visible object;
+        // Techno's Shift rung (`0x00700082` -> action 8) precedes the
+        // Infantry and Unit class rows, but not the Ares hooks at their heads
+        // ([`head_release`]). Let the selection consumer handle Shift over a
+        // visible object;
         // bare ground still reaches its immediate Move. Berserk-only groups
         // keep their native base-action-zero route below.
         let shift_key_action = hover_object
@@ -311,14 +392,22 @@ pub(crate) fn try_queue_context_order(
                     force_move_key,
                 )
             });
-        if shift_key_action == Some(ObjectKeyAction::ToggleSelect) {
-            return false;
-        }
         // Selection__DispatchMultiUnitOrder clamps the shared Cell first
         // (`0x004AE77E`, `Clamp_To_Playfield @ 0x00586E50`); every later
         // receiver's What_Action and ClickedAction see it. Object hit-testing
         // above keeps the raw screen-derived world point.
         let (target_rx, target_ry) = sim.clamped_click_cell((target_rx, target_ry));
+        let head = head_release(
+            sim,
+            &resources.rules,
+            &current_objects,
+            hover.as_ref(),
+            (target_rx, target_ry),
+            shift_key_action,
+        );
+        if head == Some(HeadRelease::ToggleSelect) {
+            return false;
+        }
         // Foot's Cell wrapper (`0x004DDDE0`): over the clicked Cell's centre,
         // raised to a bridge deck, that the player's map shrouds, a Foot's
         // Attack becomes Move or NoMove, which the Move rungs below answer; a
@@ -386,13 +475,7 @@ pub(crate) fn try_queue_context_order(
             _ => order_mode,
         };
 
-        if let Some(release) = ares_deactivated_selection_click(
-            sim,
-            &resources.rules,
-            &current_objects,
-            hover.as_ref(),
-            (target_rx, target_ry),
-        ) {
+        if let Some(HeadRelease::Hook(release)) = head {
             return match release {
                 // Detonate passes the ClickedAction refusal (0x4D74EC).
                 Err(bombed) => {
@@ -405,11 +488,40 @@ pub(crate) fn try_queue_context_order(
                     }
                     finish_order(state, queued, None, rally_announce, None)
                 }
+                // An EMP'd deployer's NoDeploy over himself: each other
+                // receiver's ClickedAction asks its own What_Action over
+                // him, as over any selected object; his own is NoDeploy
+                // again, which orders nothing.
                 Ok(LeftRelease::Dispatch) => {
+                    if let Some(target) = hover.as_ref() {
+                        queued.extend(
+                            selected_units
+                                .iter()
+                                .filter(|&&id| id != target.stable_id)
+                                .filter_map(|&id| {
+                                    object_attack_click_command_with(
+                                        sim,
+                                        &control,
+                                        &resources.rules,
+                                        overlay_registry,
+                                        owner_id,
+                                        order_mode,
+                                        modifier,
+                                        force_move_key,
+                                        id,
+                                        target.stable_id,
+                                    )
+                                })
+                                .map(|order| CommandEnvelope::new(owner_id, execute_tick, order)),
+                        );
+                    }
                     finish_order(state, queued, speaker_id, rally_announce, None)
                 }
                 Ok(LeftRelease::Nothing) => true,
-                Ok(LeftRelease::Select) => false,
+                Ok(LeftRelease::Select) => {
+                    *selects = true;
+                    false
+                }
             };
         }
         if selected_ids.is_empty() {
@@ -425,7 +537,10 @@ pub(crate) fn try_queue_context_order(
                     finish_order(state, queued, speaker_id, rally_announce, None)
                 }
                 LeftRelease::Nothing => true,
-                LeftRelease::Select => false,
+                LeftRelease::Select => {
+                    *selects = true;
+                    false
+                }
             };
         }
 
@@ -444,6 +559,10 @@ pub(crate) fn try_queue_context_order(
             )
         });
         if let Some(repair_dispatch) = repair_dispatch {
+            if repair_dispatch.selects {
+                *selects = true;
+                return false;
+            }
             consumed_attack_action |= repair_dispatch.consumed;
             queued.extend(
                 repair_dispatch
@@ -699,6 +818,7 @@ pub(crate) fn try_queue_context_order(
                 commands: Vec::new(),
                 consumed: false,
                 select_fallback: false,
+                selects: false,
             }
         };
         consumed_attack_action |= attack_dispatch.consumed;
@@ -721,7 +841,10 @@ pub(crate) fn try_queue_context_order(
                 overlay_registry,
                 object_forced,
             ) {
-                LeftRelease::Select => return false,
+                LeftRelease::Select => {
+                    *selects = true;
+                    return false;
+                }
                 LeftRelease::Nothing => return true,
                 LeftRelease::Dispatch => {}
             }
@@ -783,7 +906,10 @@ pub(crate) fn try_queue_context_order(
                 modifier,
                 force_move_key,
             ) {
-                BuildingClick::Select => return false,
+                BuildingClick::Select => {
+                    *selects = true;
+                    return false;
+                }
                 BuildingClick::Nothing => return true,
                 BuildingClick::Orders(orders, announce) => {
                     queued.extend(
@@ -924,6 +1050,22 @@ pub(crate) fn try_queue_context_order(
                     HoverTargetKind::FriendlyUnit | HoverTargetKind::FriendlyStructure
                 )
             });
+            // Infantry's healer self arm (`0x0051E748`) replaces the lone
+            // object's Detonate and self answers; the release dispatches.
+            if context_actions_enabled
+                && let Some(target) = hover.as_ref()
+                && let Some(order) = lone_self_healer_guard(
+                    sim,
+                    &control,
+                    &resources.rules,
+                    &current_objects,
+                    target.stable_id,
+                )
+            {
+                queued
+                    .extend(order.map(|order| CommandEnvelope::new(owner_id, execute_tick, order)));
+                return finish_order(state, queued, speaker_id, rally_announce, None);
+            }
             if let Some(target) = hover.as_ref()
                 && self_detonates(sim, &resources.rules, &current_objects, target.stable_id)
                 && let Some(record) = sim.encode_detonate_record(target.stable_id)
@@ -1018,9 +1160,12 @@ pub(crate) fn try_queue_context_order(
                 }
             }
             // The cursor owner's What_Action distinguishes a different allied
-            // House from an own object. Preserve Shift's earlier toggle-select
-            // answer and the capability routes above. The shared release
-            // below, not display friendliness, decides Select versus dispatch.
+            // House from an own object. Preserve the capability routes above.
+            // The shared release below, not display friendliness, decides
+            // Select versus dispatch. Where the owner's action is the friendly
+            // selection route it answers Select. RESIDUAL: Shift reaches here
+            // only when the owner's Shift rung refused (a mission-only owner,
+            // `+0x3D4`); its own action should decide, but the pick toggles.
             let friendly_unit_action = clicked_friendly
                 && hover.as_ref().is_some_and(|target| {
                     cursor_owner(sim, &resources.rules, &current_objects, target.stable_id)
@@ -1044,6 +1189,7 @@ pub(crate) fn try_queue_context_order(
                 return if consumed_building_action || consumed_attack_action {
                     finish_order(state, queued, speaker_id, rally_announce, None)
                 } else {
+                    *selects = !friendly_unit_action;
                     false
                 };
             }
@@ -1161,7 +1307,10 @@ pub(crate) fn try_queue_context_order(
                         overlay_registry,
                         forced,
                     ) {
-                        LeftRelease::Select => return false,
+                        LeftRelease::Select => {
+                            *selects = true;
+                            return false;
+                        }
                         LeftRelease::Nothing => return true,
                         LeftRelease::Dispatch => {}
                     }

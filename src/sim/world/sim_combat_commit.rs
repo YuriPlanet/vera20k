@@ -414,7 +414,7 @@ impl Simulation {
         rules: &RuleSet,
     ) {
         let stable_id = self.substrate.allocate_stable_id();
-        if !wave.constructor_distance_is_live() {
+        if !wave.constructor_distance_is_live(self.session.map_exceeds_original_size()) {
             // Constructor UnInit precedes registration and unique identity,
             // but FireAt stores the returned dead pointer. The stable id only
             // represents that same-frame deferred cleanup window.

@@ -222,7 +222,9 @@ impl AppState {
 
     /// The zoom between the window and the match frame, whose cursor, layout
     /// and drawing all use source pixels.
-    pub(crate) fn tactical_zoom(&self) -> Option<crate::render::upscale_pass::ZoomGeometry> {
+    pub(crate) fn tactical_zoom(
+        &self,
+    ) -> Option<crate::ui::main_menu_dialogs::options::ZoomGeometry> {
         self.match_zoom_pass().map(|pass| pass.geometry())
     }
 

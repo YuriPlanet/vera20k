@@ -55,6 +55,31 @@ struct InverseCase {
     expected_cell: [u16; 2],
 }
 
+/// A retail load: each high bridge cell's retained deck is gamemd's own, its
+/// ground + 4 (`ResolvedTerrainGrid::corrected_high_bridge_base_level`
+/// answers the cell's level), so it must pick as gamemd does.
+#[derive(Debug)]
+struct RetailDecks<'a>(crate::map::terrain::TacticalCellFixture<'a>);
+
+impl TacticalCellLookup for RetailDecks<'_> {
+    fn cell_level(&self, rx: u16, ry: u16) -> Option<u8> {
+        self.0.cell_level(rx, ry)
+    }
+    fn bridge_cell(&self, rx: u16, ry: u16) -> Option<TacticalBridgeCell> {
+        self.0.bridge_cell(rx, ry)
+    }
+    fn corrected_bridge_base_level(&self, rx: u16, ry: u16) -> Option<u8> {
+        self.0.bridge_cell(rx, ry).filter(|cell| cell.structural)?;
+        self.0.cell_level(rx, ry)
+    }
+    fn max_cell_level(&self) -> i8 {
+        self.0.max_cell_level()
+    }
+    fn min_cell_level(&self) -> i8 {
+        self.0.min_cell_level()
+    }
+}
+
 fn vectors() -> Vectors {
     let vectors: Vectors = serde_json::from_str(crate::test_fixture::text(
         "tools/bridge_click_oracle/vectors.json",
@@ -93,42 +118,53 @@ fn bridge_candidate_decisions_match_original_executable() {
                 )
             })
             .collect::<BTreeMap<_, _>>();
+        let fixture = || crate::map::terrain::TacticalCellFixture {
+            levels: &heights,
+            bridges: Some(&bridges),
+        };
+        let (plain, retail) = (fixture(), RetailDecks(fixture()));
+        let lookups: [(&str, &dyn TacticalCellLookup); 2] =
+            [("plain", &plain), ("retail decks", &retail)];
         for case in scenario.cases {
-            let mut adjusted = case.scan_y - f32::from(scenario.base_height as i8) * HEIGHT_STEP;
-            let actual = apply_tactical_bridge_inverse(
-                case.world_input[0],
-                case.world_input[1],
-                case.scan_y,
-                cx,
-                cy,
-                scenario.base_height,
-                TacticalInverseContext {
-                    cells: Some(&crate::map::terrain::TacticalCellFixture {
-                        levels: &heights,
-                        bridges: Some(&bridges),
-                    }),
-                    viewport_offset_x: 0.0,
-                    viewport_offset_y: 0.0,
-                },
-                &mut adjusted,
-            );
-            let expected = match case.expected.kind.as_str() {
-                "scan" => None,
-                "direct" => {
-                    let [x, y] = case.expected.cell.unwrap();
-                    Some(TacticalInverseResult::Cell {
-                        rx: x as f32,
-                        ry: y as f32,
-                    })
-                }
-                other => panic!("unknown native outcome {other}"),
-            };
-            assert_eq!(actual, expected, "{} {:?}", scenario.name, case.world_input);
-            assert_eq!(
-                adjusted, case.expected.adjusted_scan_y,
-                "{} {:?}",
-                scenario.name, case.world_input
-            );
+            for (lookup, cells) in lookups {
+                let mut adjusted =
+                    case.scan_y - f32::from(scenario.base_height as i8) * HEIGHT_STEP;
+                let actual = apply_tactical_bridge_inverse(
+                    case.world_input[0],
+                    case.world_input[1],
+                    case.scan_y,
+                    cx,
+                    cy,
+                    scenario.base_height,
+                    TacticalInverseContext {
+                        cells: Some(cells),
+                        viewport_offset_x: 0.0,
+                        viewport_offset_y: 0.0,
+                    },
+                    &mut adjusted,
+                );
+                let expected = match case.expected.kind.as_str() {
+                    "scan" => None,
+                    "direct" => {
+                        let [x, y] = case.expected.cell.unwrap();
+                        Some(TacticalInverseResult::Cell {
+                            rx: x as f32,
+                            ry: y as f32,
+                        })
+                    }
+                    other => panic!("unknown native outcome {other}"),
+                };
+                assert_eq!(
+                    actual, expected,
+                    "{lookup} {} {:?}",
+                    scenario.name, case.world_input
+                );
+                assert_eq!(
+                    adjusted, case.expected.adjusted_scan_y,
+                    "{lookup} {} {:?}",
+                    scenario.name, case.world_input
+                );
+            }
             count += 1;
         }
     }
@@ -164,41 +200,81 @@ fn complete_bridge_inverse_matches_original_executable() {
                 )
             })
             .collect::<BTreeMap<_, _>>();
+        let fixture = || crate::map::terrain::TacticalCellFixture {
+            levels: &heights,
+            bridges: Some(&bridges),
+        };
+        let (plain, retail) = (fixture(), RetailDecks(fixture()));
+        let lookups: [(&str, &dyn TacticalCellLookup); 2] =
+            [("plain", &plain), ("retail decks", &retail)];
         for case in scenario.cases {
             // Native camera offsets have already been removed in world_input.
             // Exercise the viewport subtraction as well as the zero-offset API.
             for viewport in [[0.0, 0.0], case.viewport] {
-                let result = screen_to_cell_tactical_inverse(
-                    case.world_input[0] + viewport[0],
-                    case.world_input[1] + viewport[1],
-                    TacticalInverseContext {
-                        cells: Some(&crate::map::terrain::TacticalCellFixture {
-                            levels: &heights,
-                            bridges: Some(&bridges),
-                        }),
-                        viewport_offset_x: viewport[0],
-                        viewport_offset_y: viewport[1],
-                    },
-                );
-                let (rx, ry) = match result {
-                    TacticalInverseResult::Cell { rx, ry } => (rx, ry),
-                    TacticalInverseResult::Fallback { .. } => {
-                        panic!("unexpected fallback {} {}", scenario.name, case.name)
-                    }
-                };
-                assert_eq!(
-                    [rx.round() as u16, ry.round() as u16],
-                    case.expected_cell,
-                    "{} {} {:?}",
-                    scenario.name,
-                    case.name,
-                    viewport
-                );
+                for (lookup, cells) in lookups {
+                    let result = screen_to_cell_tactical_inverse(
+                        case.world_input[0] + viewport[0],
+                        case.world_input[1] + viewport[1],
+                        TacticalInverseContext {
+                            cells: Some(cells),
+                            viewport_offset_x: viewport[0],
+                            viewport_offset_y: viewport[1],
+                        },
+                    );
+                    let (rx, ry) = match result {
+                        TacticalInverseResult::Cell { rx, ry } => (rx, ry),
+                        TacticalInverseResult::Fallback { .. } => {
+                            panic!(
+                                "unexpected fallback {lookup} {} {}",
+                                scenario.name, case.name
+                            )
+                        }
+                    };
+                    assert_eq!(
+                        [rx.round() as u16, ry.round() as u16],
+                        case.expected_cell,
+                        "{lookup} {} {} {:?}",
+                        scenario.name,
+                        case.name,
+                        viewport
+                    );
+                }
             }
             count += 1;
         }
     }
     assert_eq!(count, 572);
+}
+
+#[test]
+fn shifted_bridge_deck_wins_over_its_approach_at_the_deck_center() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+    let mut terrain = test_grid(24, 24, |x, y| {
+        let mut cell = test_flat_cell(x, y);
+        cell.level = match (x, y) {
+            (10, 10) => 9,
+            (11, 10) => 10,
+            _ => 0,
+        };
+        cell
+    });
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new((10, 10), 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    let anchor = terrain.native_cell_identity((10, 10));
+    terrain.set_authored_high_bridge_deck(anchor, 10);
+    let result = screen_to_cell_tactical_inverse(
+        0.0,
+        180.0,
+        TacticalInverseContext {
+            cells: Some(&terrain),
+            viewport_offset_x: 0.0,
+            viewport_offset_y: 0.0,
+        },
+    );
+    assert_eq!(result, TacticalInverseResult::Cell { rx: 10.0, ry: 10.0 });
 }
 
 #[test]

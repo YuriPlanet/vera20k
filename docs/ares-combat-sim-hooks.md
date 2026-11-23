@@ -50,6 +50,7 @@ it: ported (the Rust cites both addresses next to the code), equivalent
 | `0x686D7F` | `1002F680` | INIClass_ReadScenario_CacheSP | `CampaignLoadingMetadata::load_text_color` (MISSIONMD `LoadScreenText.Color`, default by the file name's `SOV`/`YUR`/`TUT` prefix); without a MISSIONMD the static keeps an earlier scenario's colour in Ares, the stock one in VERA |
 | `0x642B36` | `1002F870` | ProgressScreenClass_GetLoadTextColor | `app::loading::pump`: the campaign title and briefing take that scheme when it exists |
 | `0x642B91` | `1002F870` | ProgressScreenClass_GetSideColor | `NativeLoadingScreenState::resolve_player_colors`: the Country's `LoadScreenText.Color` (early `0x6847B7` read) after the observer LightGrey test |
+| `0x715320` | `10041DC0` | TechnoTypeClass_LoadFromINI_EarlyReader | `WaterImage=`, read in `rules::native_processing::pass_techno`; its VXL and SHP draws are in `app::presentation::instances` (`0x73B4A0`, `0x73C5FC`) |
 
 - Area damage walks Ares' `CellSpreadEnumerator` over the stock band
   `ftol(CellSpread + 0.99)`, capped at 0x100. For bands 1..10 the cells are
@@ -158,7 +159,6 @@ it: ported (the Rust cites both addresses next to the code), equivalent
 | Hook | Ares.dll | Name | Reason |
 |---|---|---|---|
 | `0x5227A3` | `1002F9C0` | Sides_Disguise | the PermaDisguise arm of `InfantryClass::ClearDisguise` (`0x522780`) has no Rust caller (the damage reveal admits only non-PermaDisguise types); the construction arm `0x6F422F` of the same function is ported |
-| `0x715320` | `10041DC0` | TechnoTypeClass_LoadFromINI_EarlyReader | reads `WaterImage` (unread), whose only consumer swaps a vehicle's draw image on water (presentation) |
 | `0x4016F0` | `1005AF20` | IDXContainer_LoadSample | Ares loose-WAV samples and extra audio bags (`Misc/Audio.cpp`); the client audio has neither |
 
 Notes on the mechanisms ported in the 2026-11-08 follow-up pass:
@@ -171,19 +171,19 @@ Notes on the mechanisms ported in the 2026-11-08 follow-up pass:
   base cell. The stock placement then puts the yard at that cell, else near
   it. BaseCenter then QueueMission(Construction, 1)s and, in the placement
   scope, Enter_Idle_Mode(0, 1)s every ConYard of the house, Bases on or
-  off. Traced build-up: a building's discovery (`0x00440D61`, owner
-  `0x00440E5C`) follows the Unlimbo's own Enter_Idle_Mode(1, 1), which
-  queued Construction. A human's yard is refused Grand_Opening while
-  Construction is queued, so its ready byte (`+0x6DD`) stays clear,
-  BaseCenter's QueueMission does not commence, Enter_Idle_Mode replaces the
-  queue with Guard and the Idle body, and the yard stands in the forced
-  Guard with no build-up and no Grand_Opening. A computer's yard is admitted
-  (its current mission is the forced Guard), opens and sets the ready byte;
-  BaseCenter's QueueMission commences Construction, the first Update's
-  Mission_Construction restarts the build-up, and the leftover ready byte
-  lets that Update's second ready check (`0x0043FF91`) commence the queued
-  Guard, so Mission_Construction's completion state never runs.
-  Worth a side-by-side look once a mod sets the key.
+  off. Traced build-up: the yard opens during its Unlimbo, before that
+  Unlimbo's own Enter_Idle_Mode(1, 1) queues Construction. A human's opens
+  at its cell put: Mark (`0x0043F180`) reaches CellClass::AddContent, whose
+  DiscoveredBy(PlayerPtr) (`0x0047E9DC`) runs outside a campaign, and
+  Building DiscoveredBy (`0x0044D5D0`) admits a human's building with the
+  forced Guard current and nothing queued. A computer's opens at its owner
+  discovery (`0x00440E76`), its current mission the forced Guard. Opening
+  sets the ready byte (`+0x6DD`); BaseCenter's QueueMission commences
+  Construction, the first Update's Mission_Construction restarts the
+  build-up, and the leftover ready byte lets that Update's second ready
+  check (`0x0043FF91`) commence the queued Guard, so Mission_Construction's
+  completion state never runs. An earlier reading left a human's yard shut;
+  its test ran with campaign discovery rules.
 - Terrain fire: IsOnFire (`+0xCC`) on `TerrainObjectState`, saved and
   hashed when set. The tree owns its fire anims (`AnimObject::owner_terrain`,
   stored absolute since a tree never moves); SetOwnerObject's last-detach

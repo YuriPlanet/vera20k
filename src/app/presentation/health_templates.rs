@@ -76,12 +76,17 @@ const BUILDING_PIP_STEP: (i32, i32) = (-4, 2);
 /// A building's empty pip.
 const BUILDING_EMPTY_FRAME: u32 = 0;
 
-const fn unit_frame(band: HealthBand) -> u32 {
-    match band {
-        HealthBand::Green => 16,
-        HealthBand::Yellow => 17,
-        HealthBand::Red => 18,
-    }
+/// PIPS.SHP's unit health pips. Original RA2's copy (ra2.mix -> conquer.mix)
+/// has them at 15/16/17; YR's (conqmd) inserts an insignia at 15 and shifts
+/// them to 16/17/18. The `-ra2` launch flag says which strip is loaded.
+fn unit_frame(band: HealthBand) -> u32 {
+    let first = if crate::util::ra2_launch::enabled() { 15 } else { 16 };
+    first
+        + match band {
+            HealthBand::Green => 0,
+            HealthBand::Yellow => 1,
+            HealthBand::Red => 2,
+        }
 }
 
 const fn building_frame(band: HealthBand) -> u32 {

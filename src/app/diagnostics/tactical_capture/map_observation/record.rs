@@ -422,7 +422,10 @@ impl TacticalCaptureSession {
                 "level": cell.map(|cell| cell.level), "slope": cell.map(|cell| cell.slope_type),
                 "raw_bridge_flags": cell.map(|cell| cell.bridge_facts.raw_flags),
                 "bridge_state": cell.and(overlay).map(|overlay| overlay.overlay_data),
-                "has_deck": cell.map(|cell| cell.has_bridge_deck), "deck_level": cell.map(|cell| cell.bridge_deck_level),
+                "has_deck": cell.map(|cell| cell.has_bridge_deck),
+                "deck_level": cell.map(|cell| grid
+                    .and_then(|grid| grid.corrected_high_bridge_deck_level(at))
+                    .map_or(cell.bridge_deck_level, |deck| deck as u8)),
                 "walkable": cell.map(|cell| cell.bridge_walkable), "transition": cell.map(|cell| cell.bridge_transition),
                 "render": null})
         }).collect();

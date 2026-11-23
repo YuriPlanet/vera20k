@@ -123,7 +123,7 @@ pub const CANCEL: u16 = 2;
 /// sunken frame. The texts sit at their rects' top left, like the rows; the
 /// combo face's caption is cut at its arrow reserve.
 fn spec() -> NodeSpec {
-    use crate::render::shell_text::ShellAlign;
+    use crate::ui::shell::geom::ShellAlign;
     let focus = |node: NodeSpec| node.with(Prop::FocusOnPress, Value::Bool(true));
     let align =
         |node: NodeSpec, align: ShellAlign| node.with(Prop::Align, Value::Int(i32::from(align.0)));

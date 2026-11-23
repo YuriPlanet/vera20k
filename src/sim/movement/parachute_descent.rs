@@ -329,7 +329,7 @@ fn parachute_anim_name<'r>(
     if let Some(override_) = rules.side_parachute_override(side) {
         return Some(override_.unwrap_or("PARACH"));
     }
-    if !crate::rules::NPATCH_ENABLED
+    let canopy = if !crate::rules::NPATCH_ENABLED
         || entity.category() == crate::map::entities::EntityCategory::Infantry
     {
         rules.general.parachute_shp.as_deref()
@@ -339,7 +339,14 @@ fn parachute_anim_name<'r>(
             .vehicle_parachute
             .as_deref()
             .or(rules.general.parachute_shp.as_deref())
+    };
+    // Under Ares a house with no side (`0x1001BBD7`), or no canopy from its
+    // side and `[General] Parachute=` (`0x1002E0FA`), gets `Find("PARACH")`
+    // (`0x1001BC09`) rather than none.
+    if rules.ares() && (side < 0 || canopy.is_none()) {
+        return Some("PARACH");
     }
+    canopy
 }
 
 impl crate::sim::world::Simulation {
@@ -606,6 +613,22 @@ mod canopy_tests {
         let entity = GameEntity::test_default(1, "E1", "Americans", 10, 11);
         assert_eq!(
             parachute_anim_name(&rules, &entity, None, 3, None),
+            Some("PARACH")
+        );
+        // A house with no side skips `[General] Parachute=`, and an unset
+        // side with no `[General] Parachute=` also gets `PARACH`.
+        assert_eq!(
+            parachute_anim_name(&rules, &entity, None, -1, None),
+            Some("PARACH")
+        );
+        assert_eq!(
+            parachute_anim_name(&rules, &entity, None, 0, None),
+            Some("OTHER")
+        );
+        let mut empty = rules.clone();
+        empty.general.parachute_shp = None;
+        assert_eq!(
+            parachute_anim_name(&empty, &entity, None, 0, None),
             Some("PARACH")
         );
     }

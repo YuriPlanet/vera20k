@@ -3,11 +3,12 @@
 //! read at each native receiver boundary; collision does not own a second map.
 
 use super::*;
-use crate::sim::cell_rect::{CellRef, get_cellclass_fallback, get_cellclass_fallback_leptons};
+use crate::sim::cell_rect::{CellRef, get_cellclass_fallback};
 use crate::sim::projectile::{
     ImpactLadderTarget, ImpactLadderWorld, ProjectileCollisionMotion, ProjectileCollisionPhase,
     ProjectileTarget, ProjectileTargetQuery, ProjectileTrajectory, ProjectileVelocity,
-    coord_distance, projectile_ground_z,
+    coord_distance, fixed_deck_z_for_cell_ref, is_structural_bridge_cell, projectile_cell_at,
+    projectile_ground_z, projectile_surface_z,
 };
 
 pub(super) struct ProjectileCollisionWorld<'a> {
@@ -28,14 +29,7 @@ pub(super) struct ProjectileCollisionWorld<'a> {
 
 impl ProjectileCollisionWorld<'_> {
     fn cell(&self, coord: ProjectileCoord) -> CellRef<'_> {
-        if self.terrain.is_some() {
-            get_cellclass_fallback_leptons(self.terrain, coord.x, coord.y)
-        } else {
-            self.dummy.stamp_coord(coord.x / 256, coord.y / 256);
-            CellRef::Dummy {
-                cell: self.dummy.clone(),
-            }
-        }
+        projectile_cell_at(self.terrain, self.dummy, coord)
     }
 
     fn packed_cell(&self, coord: ProjectileCoord) -> CellRef<'_> {
@@ -309,10 +303,28 @@ impl ProjectileCollisionWorld<'_> {
         let mut impact = false;
         if !vertical {
             let floor = self.ground(candidate);
-            let deck = floor.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+            // 0x00467494..0x00467778 tests the candidate Cell first. At the
+            // bridge exit the old Cell can still supply the crossing plane.
             let cell = self.cell(candidate);
-            let structural = cell.bridge_flags_0x1180() & 0x100 != 0
-                || self.cell(projectile.position()).bridge_flags_0x1180() & 0x100 != 0;
+            let previous_cell =
+                (!is_structural_bridge_cell(&cell)).then(|| self.cell(projectile.position()));
+            let structural_cell = previous_cell.as_ref().unwrap_or(&cell);
+            let structural = is_structural_bridge_cell(structural_cell);
+            let fixed_deck =
+                fixed_deck_z_for_cell_ref(self.terrain, structural_cell).filter(|&deck| {
+                    // At a stock bridge exit the candidate floor owns the
+                    // crossing threshold. Use the old cell only when its
+                    // retained deck really replaces its local ground + 4.
+                    previous_cell.is_none()
+                        || deck
+                            != crate::sim::movement::ground_pose::z_at_height(
+                                self.ground(projectile.position()),
+                                0,
+                                true,
+                            )
+                });
+            let deck = fixed_deck
+                .unwrap_or_else(|| crate::sim::movement::ground_pose::z_at_height(floor, 0, true));
             let crossing = if structural {
                 projectile_bridge_crossing(projectile.position().z, candidate.z, deck)
             } else {
@@ -367,10 +379,16 @@ impl ProjectileCollisionWorld<'_> {
                         }
                         ProjectileBridgeCrossing::None => {}
                     }
-                    let slope = match self.cell(candidate) {
+                    let ground_slope = match self.cell(candidate) {
                         CellRef::Real(c) => c.slope_type,
                         CellRef::Dummy { cell } => cell.snapshot().slope_type,
                     };
+                    let slope =
+                        if fixed_deck.is_some() && crossing != ProjectileBridgeCrossing::None {
+                            0
+                        } else {
+                            ground_slope
+                        };
                     // The reflection refuses a result its f32 store cannot
                     // hold (an `Elasticity=` near 1e36 or not finite, which
                     // only a mod sets; native `0x00467666..0x00467778` just
@@ -426,11 +444,13 @@ impl ProjectileCollisionWorld<'_> {
         // `ObjectClass::GetHeight @ 0x005F5F40` on the pre-move coordinate,
         // from the bridge deck for an OnBridge bullet.
         let old_height = || {
-            crate::sim::movement::ground_pose::height_at_z(
-                projectile.position().z,
-                self.ground(projectile.position()),
+            let position = projectile.position();
+            position.z.wrapping_sub(projectile_surface_z(
+                self.terrain,
+                self.dummy,
+                position,
                 projectile.on_bridge(),
-            )
+            ))
         };
         if !vertical && same_cell && old_height() < 208 {
             impact = true;
@@ -517,23 +537,32 @@ impl ProjectileCollisionWorld<'_> {
         // 468C8A/468CF2 dispatch Object.GetHeight5F5F40 with the Bullet's
         // retained OnBridge byte. Keep these ground queries at their original
         // boundaries, including Flak's target-height prerequisite below.
-        let height = crate::sim::movement::ground_pose::height_at_z(
-            candidate.z,
-            self.ground(candidate),
-            projectile.on_bridge(),
-        );
-        if height <= -crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS {
+        let floor = self.ground(candidate);
+        let fixed_deck =
+            projectile.on_bridge() && fixed_deck_z_for_cell_ref(self.terrain, &cell).is_some();
+        // Native's OnBridge height <= -416 is a ground penetration check.
+        // With variable clearance, test the actual ground for that arm.
+        if if fixed_deck {
+            candidate.z.wrapping_sub(floor) <= 0
+        } else {
+            crate::sim::movement::ground_pose::height_at_z(
+                candidate.z,
+                floor,
+                projectile.on_bridge(),
+            ) <= -crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+        } {
             return true;
         }
         if projectile.collision().flak_scatter
             && self
                 .target_coordinate(projectile.target(), ProjectileTargetQuery::TargetAim)
                 .is_some_and(|target| candidate.z < target.z)
-            && crate::sim::movement::ground_pose::height_at_z(
-                candidate.z,
-                self.ground(candidate),
+            && candidate.z.wrapping_sub(projectile_surface_z(
+                self.terrain,
+                self.dummy,
+                candidate,
                 projectile.on_bridge(),
-            ) < 0
+            )) < 0
         {
             return true;
         }
@@ -653,6 +682,7 @@ impl ProjectileCollisionWorld<'_> {
             self.interner,
             self.rules,
             &los,
+            self.terrain,
             |(x, y)| {
                 self.packed_cell(ProjectileCoord::new(
                     i32::from(x) * 256,
@@ -2403,6 +2433,51 @@ mod tests {
                 expected_bits.as_slice()
             );
         }
+    }
+
+    #[test]
+    fn ordinary_projectile_crosses_fixed_deck_when_leaving_the_span() {
+        use crate::map::bridge_facts::{BRIDGE_FLAG_ANCHOR_SELF, BRIDGE_FLAG_STRUCTURAL};
+        use crate::util::native_x87::NativeF64Bits;
+
+        let mut sim = Simulation::new();
+        install_common_raw_terrain(&mut sim, 8, 8, 0, None);
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        let anchor = terrain.native_cell_identity((2, 2));
+        terrain.write_native_cell_flags(anchor, BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL);
+        terrain.set_authored_high_bridge_deck(anchor, 8);
+
+        place(
+            &mut sim,
+            1,
+            ProjectileCoord::new(384, 640, 0),
+            EntityCategory::Unit,
+        );
+        let mut shot = gsi_05_02_projectile(1, None);
+        shot.origin = ProjectileCoord::new(765, 640, 840);
+        sim.projectiles.spawn(100, shot);
+        let motion = ProjectileCollisionMotion {
+            candidate: [770.0f64, 640.0, 820.0].map(|v| NativeF64Bits::from_bits(v.to_bits())),
+            velocity: [5.0f64, 0.0, -20.0].map(|v| NativeF64Bits::from_bits(v.to_bits())),
+        };
+        let (resolved, impact) =
+            world(&sim).ordinary_geometry(sim.projectiles.get(100).unwrap(), motion);
+        assert!(impact);
+        assert_eq!(
+            resolved.candidate_coord(),
+            ProjectileCoord::new(770, 640, 832)
+        );
+
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        terrain.set_authored_high_bridge_deck(anchor, 4);
+        terrain.cell_mut_for_test(3, 2).unwrap().level = 4;
+        let (resolved, impact) =
+            world(&sim).ordinary_geometry(sim.projectiles.get(100).unwrap(), motion);
+        assert!(impact);
+        assert_eq!(
+            resolved.candidate_coord(),
+            ProjectileCoord::new(770, 640, 832)
+        );
     }
 
     #[test]

@@ -56,7 +56,8 @@ SizeLimit=15              ; the largest Size= that may enter
   room, of the same trench kind, and whose Location lies within 256
   leptons (a straight neighbour) shows Enter before any stock action
   (`100171B0`, hook `0x44725F`, canTraverseTo `10011690`); Ares tests no
-  owner. The click raises the TrenchRedirectClick event (0x60, ten bytes:
+  owner, and Shift's ToggleSelect comes after it. The click raises the
+  TrenchRedirectClick event (0x60, ten bytes:
   the target building's Cell and the source building; `10016F60`, hook
   `0x443414`, RaiseTrenchRedirectClick `1006A170`), whose handler
   (`1006A540`) asks canTraverseTo again for the Cell's building and
@@ -86,8 +87,12 @@ SizeLimit=15              ; the largest Size= that may enter
   units their own House's (`10017760`, `10017870`): focus, gattling and
   captor dropped, `EnterTransportSound=` played, limboed
   (EnterTunnel `10009000`). Self-clicking an entrance whose network holds
-  a Foot unloads it (`100173A0`), last in first out, one per Unload
-  dispatch (UnloadOne `100098A0`, `sim::transport_unload`). A
+  a Foot unloads it (`100173A0`): the click is the absorbers' arm of
+  `BuildingClass::ClickedAction_Object`, `ClickedMission(Unload)` on the
+  building (vt+0x378, `0x443534`), which Ares opens to tunnel entrances
+  (`100172F0`, hook `0x44351A`; VERA's self-click `UnloadPassengers`). The
+  Unload mission puts members out last in first out, one per dispatch
+  (UnloadOne `100098A0`, `sim::transport_unload`). A
   `PipScale=Passengers` entrance's passenger pips show the network, as many
   as GetPipMax and the tunnel's MaxCap allow (GetPassengerPips `10044C90`:
   an infantryman's `Pip=`, else frame 4; `ui_overlays::scale_pip_draws`). When the last
@@ -117,10 +122,7 @@ SizeLimit=15              ; the largest Size= that may enter
   it); VERA moves the occupant's carrier link instead. Online, VERA's
   network gate refuses an event whose source building is another
   House's, where Ares trusts it.
-- Tunnels: the building click that radios a clicked unit (`0x10`, hook
-  `0x44351A`, `100172F0`) has no host, since VERA does not port the
-  absorbers' arm of `BuildingClass::ClickedAction_Object` (no RESERVE_DOCK
-  radio, `sim::radio`); EnterTunnel clears OnBridge after Limbo instead of before (as
+- Tunnels: EnterTunnel clears OnBridge after Limbo instead of before (as
   `board_passenger` does); UnloadOne keeps a member whose nearest-cell
   search or Unlimbo fails, where native puts a vehicle on cell (0, 0) or
   drops it.
@@ -143,13 +145,13 @@ SizeLimit=15              ; the largest Size= that may enter
 | `0x443414` | `10016F60` | BuildingClass_ActionOnObject | ported: `app::input::context_order::building_object_orders` raises event 0x60 (`AresTrenchRedirectRecord`; handler `Simulation::ares_respond_to_trench_redirect`); its Deactivated arm is `Simulation::click_order_receivers` ([ares-techno-hooks.md](ares-techno-hooks.md)) |
 | `0x44725F` | `100171B0` | BuildingClass_GetActionOnObject_TargetABuilding | ported: `app::input::cursor::capability_cursor_for_hover` and the click release, through `Simulation::ares_can_traverse_to` |
 | `0x4C6CCD` | `1006A540` | Networking_RespondToEvent | ported for 0x60: `decode_native_command_record` keeps the record raw and `apply_command` runs `Simulation::ares_respond_to_trench_redirect`; the 0x61 FirewallToggle arm has no raiser ([ares-firestorm.md](ares-firestorm.md)) |
-| `0x64B704` | `1006A5F0` | sub_64B660_PayloadSize | ported: `net::event_packet::event_payload_len` answers 10 for 0x60 (GetEventPayloadSize `1006A130`); 0x61 has no raiser |
+| `0x64B704` | `1006A5F0` | sub_64B660_PayloadSize | ported: `sim::command::event_body_len` answers 10 for 0x60 (GetEventPayloadSize `1006A130`); 0x61 has no raiser |
 | `0x64BE83` | `1006A620` | sub_64BDD0_PayloadSize1 | ported: as above, the one payload table serves both directions |
 | `0x64C314` | `1006A660` | sub_64BDD0_PayloadSize2 | ported: as above |
 | `0x4586CA` | `10017220` | BuildingClass_KillOccupiers_EachOccupierKilled | ported: `passenger::garrison_eject::kill_building_occupants` runs evalRaidStatus before each assaulted occupant's kill; the vector still holds them all there, so only the all-killed hook `0x458729` can return a raided building |
 | `0x43C326` | `100174E0` | BuildingClass_ReceivedRadioCommand_QueryCanEnter_Tunnel | ported: `sim::radio::receive::can_load`, IsPassengerAllowed included |
 | `0x43C716` | `100176B0` | BuildingClass_ReceivedRadioCommand_RequestCompleteEnter_Tunnel | ported: `sim::radio::receive` DOCK_NOW |
-| `0x44351A` | `100172F0` | BuildingClass_ActionOnObject_Tunnel | residual: the absorbers' click arm it extends is not in VERA |
+| `0x44351A` | `100172F0` | BuildingClass_ActionOnObject_Tunnel | ported: the self-click `UnloadPassengers` (`app::input::context_order::self_click`), an Unload MegaMission on the building |
 | `0x44731C` | `100173A0` | BuildingClass_GetActionOnObject_Tunnel | ported: `app::input::context_order` self click, `Command::UnloadPassengers` admission |
 | `0x44D8A7` | `100174A0` | BuildingClass_Mi_Unload_Tunnel | ported: `transport_unload::ares_tunnel_mission_unload` |
 | `0x442DF2` | `10017350` | BuildingClass_Demolish_Tunnel | ported: `crew_survival::spawn_building_survivors` |

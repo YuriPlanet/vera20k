@@ -116,6 +116,10 @@ pub struct BuildupAssetCatalog {
     /// type; an unbound type keeps the constructor's 0. Only a bind for Rules
     /// read the Ares way fills it.
     sell_rates: BTreeMap<String, i32>,
+    /// VERA: the game-folder files whose Buildup SHP has another frame
+    /// count than the copy a retail install reads
+    /// (`retail_sources::FolderFiles`); not hashed.
+    folder_files: std::collections::BTreeSet<String>,
 }
 
 /// The sale rates fold only when bound, so a stock game hashes its controls
@@ -134,6 +138,12 @@ impl BuildupAssetCatalog {
     /// whose SHP the theater lacks, keeps [`NO_BUILDUP`].
     pub fn bind(rules: &RuleSet, asset_manager: &AssetManager, theater_name: &str) -> Self {
         let mut catalog = Self::default();
+        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
+        let frame_word = |bytes: &[u8]| {
+            bytes
+                .get(6..8)
+                .map(|word| i16::from_le_bytes([word[0], word[1]]))
+        };
         let buildup_time = NativeF64Bits::from_bits(rules.general.buildup_time.to_bits());
         for object in rules
             .all_objects()
@@ -150,14 +160,13 @@ impl BuildupAssetCatalog {
             };
             let Some(data) = crate::rules::art_data::building_shp_names(buildup, theater_name)
                 .iter()
-                .find_map(|candidate| asset_manager.get_ref(candidate))
+                .find_map(|candidate| {
+                    folder.read_noting(candidate, frame_word, &mut catalog.folder_files)
+                })
             else {
                 continue;
             };
-            let Some(raw) = data
-                .get(6..8)
-                .map(|word| i16::from_le_bytes([word[0], word[1]]))
-            else {
+            let Some(raw) = frame_word(data) else {
                 continue;
             };
             let gate_stages = object.gate.then_some(art.building_gate_stages);
@@ -178,6 +187,11 @@ impl BuildupAssetCatalog {
                 .insert(object.id.to_ascii_uppercase(), control);
         }
         catalog
+    }
+
+    /// VERA: the game-folder files that change the bound controls.
+    pub(crate) fn folder_files(&self) -> impl Iterator<Item = &str> {
+        self.folder_files.iter().map(String::as_str)
     }
 
     /// Ares: the sale's frame rate of `type_id` (`SellFrameDuration`). A

@@ -139,7 +139,7 @@ impl ConnectionControl {
 /// wait counts, each 2 px in from both ends; presses pass through it), the
 /// statics (the countdown unaligned); then the painted bars.
 pub fn spec() -> NodeSpec {
-    let align = crate::render::shell_text::ShellAlign::NONE;
+    let align = crate::ui::shell::geom::ShellAlign::NONE;
     NodeSpec::new(NodeKind::Dialog)
         .children(ConnectionControl::all().map(move |control| {
             let kind = match control {
@@ -738,7 +738,7 @@ mod tests {
                 assert_eq!(at, RectPx::new(r.x + 2, r.y, r.w - 4, r.h));
             }
             // The countdown is unaligned, as `paint.text(.., NONE)` drew it.
-            let none = i32::from(crate::render::shell_text::ShellAlign::NONE.0);
+            let none = i32::from(crate::ui::shell::geom::ShellAlign::NONE.0);
             assert_eq!(
                 gui.get(node(COUNTDOWN_ID), Prop::Align).unwrap(),
                 Some(&Value::Int(none))

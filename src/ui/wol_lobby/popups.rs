@@ -166,7 +166,7 @@ impl WolLobbyPopup {
 /// statics come last: they take no pointer.
 fn popup_spec(create: bool, room: Option<RoomLimits>) -> NodeSpec {
     let online = room.is_some();
-    use crate::render::shell_text::ShellAlign;
+    use crate::ui::shell::geom::ShellAlign;
     // A greyed caption takes 0x612F5F's colour, as the buttons' do.
     let grey = Value::Rgba(vera20k_gui::Rgba(0x48, 0, 0, 0xFF));
     let caption = |id: u16| {

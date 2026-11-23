@@ -94,7 +94,10 @@ const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-stead
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
 /// A page's column button pressed on the settled `0xD5`: that page showing.
-const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 6] = [
+const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 9] = [
+    ("options-0xd5-settings-main", Category::LauncherMain),
+    ("options-0xd5-settings-enhancements", Category::Enhancements),
+    ("options-0xd5-settings-extensions", Category::Extensions),
     ("options-0xd5-settings-display", Category::Display),
     ("options-0xd5-settings-gameplay", Category::Gameplay),
     ("options-0xd5-settings-interface", Category::Interface),
@@ -856,11 +859,17 @@ impl ShellCaptureCheckpoint {
             Self::CampaignLoadingFirst(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST
             }
+            Self::CampaignLoadingFirst(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-loading-first"
+            }
             Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Allied) => {
                 CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE
             }
             Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE
+            }
+            Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-first-live"
             }
             Self::CampaignExplicitFirstLive("SOV05UMD.MAP") => "campaign-sov05-first-live-frame",
             Self::CampaignExplicitFirstLive("ALL02UMD.MAP") => "campaign-all02-first-live-frame",
@@ -871,11 +880,17 @@ impl ShellCaptureCheckpoint {
             Self::CampaignInitialSaved(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 "campaign-sov1-initial-save"
             }
+            Self::CampaignInitialSaved(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-initial-save"
+            }
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Allied) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN
             }
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN
+            }
+            Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-abort-return"
             }
             Self::CampaignRestart(movies::RestartTarget::AbortShown) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART_SHOWN
@@ -1206,7 +1221,7 @@ impl ShellCaptureCheckpoint {
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
-                category: Category::Display,
+                category: Category::LauncherMain,
             },
             Self::OptionsSettings(category) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
@@ -1216,7 +1231,7 @@ impl ShellCaptureCheckpoint {
             Self::Options0xD5Entry(tick) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: Some(tick),
                 hover: None,
-                category: Category::Display,
+                category: Category::LauncherMain,
             },
             Self::Options0xD5Hover(index) => {
                 let (_, category, point) = OPTIONS_0XD5_HOVER_CHECKPOINTS[index];
@@ -1636,7 +1651,7 @@ where
 
     // The settled main menu also captures in any larger window, to compare
     // its scaled drawing, with the pointer resting at the window's centre.
-    // VERA's room and its Create Game form also follow the window scale.
+    // VERA's room, Create Game form, and WOL options also follow the window scale.
     let scaled = (checkpoint == ShellCaptureCheckpoint::MainMenu0xE2Steady
         || matches!(
             checkpoint.movies_target(),
@@ -1644,6 +1659,9 @@ where
                 movies::WolTarget::ModernCreate
                     | movies::WolTarget::ModernTeams
                     | movies::WolTarget::ModernLobbySummary { .. }
+                    | movies::WolTarget::ModernOptions
+                    | movies::WolTarget::ModernOptionsTranslation
+                    | movies::WolTarget::ModernOptionsTranslationList
             ))
         ))
         && (width, height) != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
@@ -1653,7 +1671,7 @@ where
         (width == EXPECTED_WIDTH && height == EXPECTED_HEIGHT)
             || (online_latency && width == 640 && height == 480)
             || scaled,
-        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency, a larger window for the main menu and VERA's room), got {width}x{height}",
+        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (other supported dimensions depend on the checkpoint), got {width}x{height}",
         checkpoint.as_str()
     );
     let neutral = if scaled {

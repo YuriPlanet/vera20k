@@ -74,6 +74,7 @@ pub(crate) mod action {
     pub(crate) const SABOTAGE: u8 = 0x10;
     pub(crate) const TOTE: u8 = 0x11;
     pub(crate) const GUARD_AREA: u8 = 0x1A;
+    pub(crate) const HEAL: u8 = 0x1B;
     pub(crate) const DAMAGE: u8 = 0x1C;
     pub(crate) const GREPAIR: u8 = 0x1D;
     pub(crate) const NO_DEPLOY: u8 = 0x1E;
@@ -190,6 +191,7 @@ impl CursorOverrides {
             Kind::Grind => REPAIR,
             Kind::NoEnter => NO_ENTER,
             Kind::Tote => TOTE,
+            Kind::Heal => HEAL,
             Kind::EngineerDamage => DAMAGE,
             Kind::RepairAction(true) => GREPAIR,
             Kind::RepairAction(false) => NO_GREPAIR,
@@ -478,6 +480,21 @@ pub(crate) fn what_action_entry(
     let Some(actor) = cursors_of(actor_id) else {
         return overrides;
     };
+    // Ares' EMP deployer hook returns at Infantry What_Action's entry
+    // (`0x0051E3B0`), before the Techno What_Action that holds these hooks.
+    if hover_object
+        .and_then(HoverObject::techno)
+        .is_some_and(|hover| {
+            crate::app::input::context_order::ares_emp_deployer_refuses_itself(
+                sim,
+                rules,
+                actor_id,
+                hover.stable_id,
+            )
+        })
+    {
+        return overrides;
+    }
     overrides.set_cursor(actor.move_, action::MOVE);
     overrides.set_cursor(actor.no_move, action::NO_MOVE);
     let Some(target_id) = hover_object

@@ -132,6 +132,24 @@ fn test_shp_vehicle_non_eight_facings_draws_slot_zero() {
     assert_eq!(resolve_shp_frame(&def, 128, 2), 2);
 }
 
+/// Ares `UnitClass_DrawSHP_FacingsA` (`0x10047FE0`) buckets 16 and 32 SHP
+/// facings by `floor(log2(Facings))` where stock draws bucket 0; at 8 it
+/// agrees with stock, and a disguised Unit still draws bucket 0.
+#[test]
+fn ares_shp_unit_buckets_more_than_eight_facings() {
+    for facing in [0, 0x1000, 0xF000] {
+        assert_eq!(
+            shp_vehicle_facing_slot(8, facing, false, true),
+            shp_vehicle_facing_slot(8, facing, false, false)
+        );
+    }
+    assert_eq!(shp_vehicle_facing_slot(16, 0, false, false), 0);
+    assert_eq!(shp_vehicle_facing_slot(16, 0, false, true), 2);
+    assert_eq!(shp_vehicle_facing_slot(16, 0xF000, false, true), 1);
+    assert_eq!(shp_vehicle_facing_slot(32, 0xC000, false, true), 28);
+    assert_eq!(shp_vehicle_facing_slot(32, 0xC000, true, true), 0);
+}
+
 fn gsi_13_06_active_shp_unit(type_name: &str, kind: LocomotorKind) -> GameEntity {
     let mut entity = GameEntity::test_default(13_006, type_name, "Soviet", 5, 5);
     entity.set_is_voxel_for_test(false);
@@ -431,7 +449,7 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dlph, 0, 7, -1, -1, false, false),
+        resolve_shp_vehicle_body_frame(&dlph, stock_slot(0), 7, -1, -1, false, true),
         Some(7),
         "idle Dolphin uses walk/swim slot 1 and counter 7 % 6"
     );
@@ -445,22 +463,27 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&sqd, 0, 3, -1, -1, false, false),
+        resolve_shp_vehicle_body_frame(&sqd, stock_slot(0), 3, -1, -1, false, true),
         Some(23),
         "idle Squid uses walk/swim slot 1 and counter 3"
     );
 
     let dron = gsi_13_06_shp_set(6, 48, FootBodyCadence::native_defaults());
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 99, -1, -1, false, false),
+        resolve_shp_vehicle_body_frame(&dron, stock_slot(0), 99, -1, -1, false, true),
         Some(49),
         "idle Terror Drone with IdleRate=0 uses standing slot 1"
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 7, -1, -1, true, false),
+        resolve_shp_vehicle_body_frame(&dron, stock_slot(0), 7, -1, -1, true, true),
         Some(7),
         "moving Terror Drone uses counter 7 % 6"
     );
+}
+
+/// The stock bucket an eight-facing SHP Unit draws for a byte facing.
+fn stock_slot(facing: u8) -> i32 {
+    shp_vehicle_facing_slot(8, u16::from(facing) << 8, false, false)
 }
 
 #[test]
@@ -508,7 +531,7 @@ fn retail_drone_firing_counter_and_frames_match_original() {
         .enumerate()
     {
         assert_eq!(
-            resolve_shp_vehicle_body_frame(set, facing as u8, 0, 7, -1, false, false),
+            resolve_shp_vehicle_body_frame(set, stock_slot(facing as u8), 0, 7, -1, false, true),
             Some(u16::try_from(expected.as_u64().unwrap()).unwrap()),
             "native DRON first firing image, facing {facing}"
         );
@@ -517,7 +540,15 @@ fn retail_drone_firing_counter_and_frames_match_original() {
         let facing = u8::try_from(row["facing"].as_u64().unwrap()).unwrap();
         for (step, expected) in row["frames"].as_array().unwrap().iter().enumerate() {
             assert_eq!(
-                resolve_shp_vehicle_body_frame(set, facing, 99, 7 - step as i32, -1, true, false),
+                resolve_shp_vehicle_body_frame(
+                    set,
+                    stock_slot(facing),
+                    99,
+                    7 - step as i32,
+                    -1,
+                    true,
+                    true
+                ),
                 Some(u16::try_from(expected.as_u64().unwrap()).unwrap()),
                 "firing precedes moving body: facing {facing}, step {step}"
             );

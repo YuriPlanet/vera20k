@@ -104,6 +104,10 @@ fn prepare_saved(
 
 #[test]
 fn wallet_survives_prepared_load_and_active_cancellation() {
+    crate::test_fixture::on_game_stack(wallet_survives_prepared_load_and_active_cancellation_body);
+}
+
+fn wallet_survives_prepared_load_and_active_cancellation_body() {
     let rules = factory_rules();
     let mut saved = load_fixture_simulation(true);
     saved.intern_rule_type_ids(&rules);

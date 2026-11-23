@@ -134,6 +134,7 @@ pub mod world; // Simulation orchestrator, command dispatch, spawn, hash
 
 // --- Mission scheduler substrate + radio contact RPC vocabulary ---
 pub mod mission; // MissionType, MissionTimer, MissionControl (INI table)
+pub(crate) mod ra2_all02_diagnostic; // -ra2-only ALL02S owner/count trace -> logs/ra2.log
 pub mod radio; // RadioMessage / RadioResponse / RadioPayload
 
 // --- Movement: ground pathing, speed ramping, cell transitions,

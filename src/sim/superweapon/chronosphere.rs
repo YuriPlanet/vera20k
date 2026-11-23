@@ -446,15 +446,12 @@ fn arm_chrono_warp(
             z: target.z.wrapping_add(here.z.wrapping_sub(source.z)),
         };
         // `MapClass::GetCellAt(CoordStruct) @ 0x00565730`.
-        if super::cell_grid::cell_has_bridge_flag(
+        destination.z = super::cell_grid::bridge_adjusted_z(
             sim,
             (destination.x / 256) as i16,
             (destination.y / 256) as i16,
-        ) {
-            destination.z = destination
-                .z
-                .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        }
+            destination.z,
+        );
     }
     let Some(runtime) = sim
         .substrate
@@ -1222,11 +1219,7 @@ fn ares_arm_chrono_warp(
         y: here.y.wrapping_add(dy.wrapping_mul(256)),
         z: here.z,
     };
-    if super::cell_grid::cell_has_bridge_flag(sim, cx, cy) {
-        destination.z = destination
-            .z
-            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
+    destination.z = super::cell_grid::bridge_adjusted_z(sim, cx, cy, destination.z);
     sim.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
     let _ = sim.force_track(id, -1, here, rules, overlay_registry, frame_effects);
     Simulation::object_raw_receiver_at(

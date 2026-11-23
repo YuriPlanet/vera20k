@@ -72,6 +72,10 @@ pub(crate) const HAS_CHECK_FOR_UPDATES: bool = !BROWSER;
 /// The column's Mods button, which opens VERA's Mods page
 /// (`ui::mods_shell`). The browser build has no Mods folder.
 pub(crate) const HAS_MODS: bool = !BROWSER;
+/// The Gameplay page's RA2 Mode (`util::ra2_launch`). The browser build keeps
+/// one game instance across its starts, and its launcher probe reads no saved
+/// choice, so it has no box.
+pub(crate) const HAS_RA2_MODE: bool = !BROWSER;
 /// The Esc menu's Set Window Size button. A browser tab's canvas takes its size
 /// from the page and an Android window fills the screen, so those builds have
 /// none.
@@ -96,7 +100,6 @@ pub(crate) fn ares_label(setting: crate::util::ares_launch::AresSetting) -> Stri
 /// A Zoom row: the zoom and the battle's size in game pixels in this window,
 /// what `App::sync_zoom_pass` will give the match.
 pub(crate) fn zoom_label(zoom: Zoom, (width, height): (u32, u32), original_shape: bool) -> String {
-    use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
     let shape = if original_shape {
         FrameShape::Original
     } else {
@@ -289,6 +292,115 @@ impl Zoom {
             Ok(percent @ 100..=10_000) if percent % Self::STEP == 0 => Self::Percent(percent),
             _ => Self::Auto,
         }
+    }
+}
+
+/// The match frame's shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FrameShape {
+    /// The window's own: a wider window shows more battlefield.
+    #[default]
+    Window,
+    /// gamemd's 4:3 screen, with black bars on a window of any other shape.
+    Original,
+}
+
+/// Where a zoomed frame sits in the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ZoomGeometry {
+    /// Window pixels per 100 source pixels, on each axis; at least 100.
+    pub percent: u32,
+    pub src_width: u32,
+    pub src_height: u32,
+    /// The window pixel where source pixel (0, 0) lands.
+    pub origin: (u32, u32),
+}
+
+impl ZoomGeometry {
+    pub fn new(window_width: u32, window_height: u32, percent: u32, shape: FrameShape) -> Self {
+        let percent = percent.max(100);
+        let mut src_width = (window_width * 100 / percent).max(1);
+        let mut src_height = (window_height * 100 / percent).max(1);
+        if shape == FrameShape::Original {
+            if src_width * 3 > src_height * 4 {
+                src_width = (src_height * 4 / 3).max(1);
+            } else {
+                src_height = (src_width * 3 / 4).max(1);
+            }
+        }
+        let zoom = Self {
+            percent,
+            src_width,
+            src_height,
+            origin: (0, 0),
+        };
+        let (frame_width, frame_height) = zoom.frame_size();
+        Self {
+            origin: (
+                window_width.saturating_sub(frame_width) / 2,
+                window_height.saturating_sub(frame_height) / 2,
+            ),
+            ..zoom
+        }
+    }
+
+    /// Window pixels per source pixel.
+    pub fn scale(self) -> f32 {
+        self.percent as f32 / 100.0
+    }
+
+    /// Whether every source pixel is a whole block of window pixels.
+    pub fn is_sharp(self) -> bool {
+        self.percent.is_multiple_of(100)
+    }
+
+    /// The scaled frame, in whole window pixels.
+    pub fn frame_size(self) -> (u32, u32) {
+        (
+            self.src_width * self.percent / 100,
+            self.src_height * self.percent / 100,
+        )
+    }
+
+    /// Whether the frame is the whole window, unscaled: no pass is needed.
+    pub fn is_whole_window(self, window_width: u32, window_height: u32) -> bool {
+        self.percent == 100 && (self.src_width, self.src_height) == (window_width, window_height)
+    }
+
+    /// A window point in source pixels. The border clamps to the frame's edge.
+    pub fn window_to_source(self, x: f32, y: f32) -> (f32, f32) {
+        let scale = self.scale();
+        (
+            ((x - self.origin.0 as f32) / scale).clamp(0.0, (self.src_width - 1) as f32),
+            ((y - self.origin.1 as f32) / scale).clamp(0.0, (self.src_height - 1) as f32),
+        )
+    }
+
+    /// A source point in window pixels.
+    pub fn source_to_window(self, x: f32, y: f32) -> (f32, f32) {
+        let scale = self.scale();
+        (
+            x * scale + self.origin.0 as f32,
+            y * scale + self.origin.1 as f32,
+        )
+    }
+
+    /// The window pixels wholly inside source rect `(x, y, width, height)`
+    /// once scaled: one it shares with a neighbour keeps the zoom's blend.
+    pub(crate) fn window_rect(self, (x, y, width, height): (u32, u32, u32, u32)) -> [u32; 4] {
+        let (left, top) = self.source_to_window(x as f32, y as f32);
+        let (right, bottom) = self.source_to_window((x + width) as f32, (y + height) as f32);
+        let (frame_width, frame_height) = self.frame_size();
+        let left = left.ceil() as u32;
+        let top = top.ceil() as u32;
+        let right = (right.floor() as u32).min(self.origin.0 + frame_width);
+        let bottom = (bottom.floor() as u32).min(self.origin.1 + frame_height);
+        [
+            left,
+            top,
+            right.saturating_sub(left),
+            bottom.saturating_sub(top),
+        ]
     }
 }
 
@@ -691,6 +803,8 @@ pub(crate) enum LauncherTrackbarId {
     /// How strongly the `[Colors]` team-colour bands are boosted, on the
     /// [`crate::rules::house_colors`] scale: position 0 is the retail strength.
     HouseColorStrength,
+    /// Number of build cameos shown per sidebar row.
+    SidebarColumns,
     /// The in-game menu's Game Speed, the slider of gamemd's Game Controls
     /// (`0xBBB` control `0x529`). The profile pack leaves it out: the menu
     /// sets it up with [`OptionsDialogState::set_in_game_controls`] and
@@ -728,6 +842,7 @@ impl LauncherTrackbarId {
         match self {
             Self::Score | Self::Sound | Self::Voice => 10,
             Self::GameSpeed => crate::ui::shell::game_speed::MAX_POSITION as u8,
+            Self::SidebarColumns => (SidebarColumns::ALL.len() - 1) as u8,
             Self::HouseColorStrength => {
                 crate::rules::house_colors::STRENGTH_MAX - crate::rules::house_colors::STRENGTH_MIN
             }
@@ -740,17 +855,16 @@ impl LauncherTrackbarId {
     const fn value_base(self) -> i32 {
         match self {
             Self::HouseColorStrength => crate::rules::house_colors::STRENGTH_MIN as i32,
+            Self::SidebarColumns => 2,
             _ => 0,
         }
     }
 
     /// The value plaque's reserve; Detail, Difficulty and Scroll turn the
-    /// plaque off (`0x4AC` with 0). VERA's Team Color Strength has none
-    /// either, so it matches Visual Details beside it and prints its level
-    /// where Visual Details prints its step.
+    /// plaque off (`0x4AC` with 0). Sidebar Columns uses a value plaque.
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
-            Self::Score | Self::Sound | Self::Voice => 50,
+            Self::Score | Self::Sound | Self::Voice | Self::SidebarColumns => 50,
             _ => 0,
         }
     }
@@ -794,6 +908,9 @@ pub(crate) enum LauncherCheckboxId {
     ShiftQueue,
     /// The player's damaged buildings are sent the Repair order by themselves.
     AutoRepair,
+    /// The next start plays original Red Alert 2 (`[VERA] RA2Mode=`,
+    /// docs/ra2-mode.md).
+    Ra2Mode,
     /// The wheel changes battle view distance.
     MouseWheelZoom,
     /// Alternative controls: left selects, right commands.
@@ -867,6 +984,9 @@ impl Setting {
     /// The setting's caption and status help (`0x00604729..0x00604838` for
     /// retail's).
     pub(crate) fn text(self) -> (&'static str, &'static str) {
+        if self == Self::Slider(LauncherTrackbarId::SidebarColumns) {
+            return ("VERA:SidebarColumns", "VERA:SidebarColumnsHelp");
+        }
         ROWS.iter()
             .find(|row| row.setting == self)
             .map_or(("", ""), |row| (row.caption, row.help))
@@ -881,6 +1001,7 @@ impl Setting {
             ) => HAS_VSYNC,
             Self::List(LauncherComboId::GraphicsApi) => HAS_GRAPHICS_API,
             Self::Checkbox(LauncherCheckboxId::HdMapPreviews) => HAS_HD_MAP_PREVIEWS,
+            Self::Checkbox(LauncherCheckboxId::Ra2Mode) => HAS_RA2_MODE,
             _ => true,
         }
     }
@@ -962,6 +1083,7 @@ pub(crate) const ROWS: &[Row] = {
             "BuildingProductionQueue"
         ),
         row!(Gameplay, Checkbox(AutoRepair), "AutoRepair"),
+        row!(Gameplay, Checkbox(Ra2Mode), "Ra2Mode"),
         row!(Gameplay, List(Ares), "AresSetting"),
         row!(
             Gameplay,
@@ -1080,6 +1202,9 @@ pub enum Category {
     Audio,
     Controls,
     General,
+    LauncherMain,
+    Enhancements,
+    Extensions,
     /// The in-game menu's first page, which its own Game Controls button
     /// shows ([`GAME_CONTROLS`]). No column button.
     GameControls,
@@ -1121,6 +1246,9 @@ impl Category {
             Self::Audio => "GUI:AudioOptions",
             Self::Controls => "VERA:Controls",
             Self::General => "VERA:General",
+            Self::LauncherMain => "GUI:OptionsMenu",
+            Self::Enhancements => "VERA:EnhancementsDebug",
+            Self::Extensions => "VERA:ExtensionsOptions",
             Self::GameControls => "GUI:GameControls",
         }
     }
@@ -1135,7 +1263,9 @@ impl Category {
             Self::Audio => Some("VERA:AudioPageHelp"),
             Self::Controls => Some("VERA:ControlsPageHelp"),
             Self::General => Some("VERA:GeneralPageHelp"),
-            Self::GameControls => None,
+            Self::Enhancements => Some("VERA:EnhancementsDebugHelp"),
+            Self::Extensions => Some("VERA:ExtensionsOptionsHelp"),
+            Self::LauncherMain | Self::GameControls => None,
         }
     }
 }
@@ -1234,7 +1364,7 @@ impl Default for LauncherOptionsValues {
         }
         Self {
             checks,
-            positions: [1, 1, 3, 4, 7, 7, 0, 0],
+            positions: [1, 1, 3, 4, 7, 7, 0, 0, 0],
             sidebar: SidebarSize::default(),
             sidebar_columns: SidebarColumns::default(),
             health_bars: HealthBarMode::default(),
@@ -1500,6 +1630,9 @@ impl OptionsDialogState {
     }
 
     pub(crate) fn trackbar_position(&self, id: LauncherTrackbarId) -> u8 {
+        if id == LauncherTrackbarId::SidebarColumns {
+            return (self.values.sidebar_columns.count() - 2) as u8;
+        }
         self.values[id]
     }
 
@@ -1507,16 +1640,27 @@ impl OptionsDialogState {
     /// captions and queues preview/cue work only after the integer position
     /// actually changes; the accepted projection remains owned by `0x0055FAA0`.
     fn set_trackbar_position(&mut self, id: LauncherTrackbarId, position: u8) {
-        if position > id.maximum() || !self.trackbar_enabled(id) || self.values[id] == position {
+        if position > id.maximum()
+            || !self.trackbar_enabled(id)
+            || self.trackbar_position(id) == position
+        {
             return;
         }
-        self.values[id] = position;
+        if id != LauncherTrackbarId::SidebarColumns {
+            self.values[id] = position;
+        }
         let volume = f32::from(position) * 0.1;
         // The audio sliders preview instead of the notch click.
         let event = match id {
             LauncherTrackbarId::Score => LauncherOptionsEvent::ScorePreview(volume),
             LauncherTrackbarId::Sound => LauncherOptionsEvent::SoundPreview(volume),
             LauncherTrackbarId::Voice => LauncherOptionsEvent::VoicePreview(volume),
+            LauncherTrackbarId::SidebarColumns => {
+                self.pending_cues.push(PageCue::ListClick);
+                let columns = SidebarColumns::ALL[usize::from(position)];
+                self.values.sidebar_columns = columns;
+                LauncherOptionsEvent::SidebarColumnsSelected(columns)
+            }
             // 61E609..61E6DD: a changed position plays the cue. Game Speed
             // applies when the menu closes. The strength is a once-per-drag
             // setting rather than a live preview: the battle it applies to
@@ -2345,11 +2489,13 @@ mod tests {
             - 2 * usize::from(!HAS_VSYNC)
             - usize::from(!HAS_HD_MAP_PREVIEWS);
         assert_eq!(count(|s| matches!(s, Setting::Checkbox(_))), boxes);
-        // Every slider but Game Speed; all eight lists, and Graphics API
-        // where the build has it.
+        // Every slider but Game Speed and Sidebar Columns, whose slider only
+        // the launcher's Enhancements page shows (`shell::launcher_pages`);
+        // these pages keep its list. All eight lists, and Graphics API where
+        // the build has it.
         assert_eq!(
             count(|s| matches!(s, Setting::Slider(_))),
-            LauncherTrackbarId::COUNT - 1
+            LauncherTrackbarId::COUNT - 2
         );
         assert_eq!(
             count(|s| matches!(s, Setting::List(_))),
@@ -2365,5 +2511,77 @@ mod tests {
                 "{setting:?}"
             );
         }
+    }
+
+    #[test]
+    fn zoom_centres_whole_blocks_and_maps_points_both_ways() {
+        // An even window: the frame covers it exactly.
+        let wide = ZoomGeometry::new(3440, 1440, 200, FrameShape::Window);
+        assert_eq!(
+            (wide.src_width, wide.src_height, wide.origin),
+            (1720, 720, (0, 0))
+        );
+        // An odd window keeps a border under one block, split evenly.
+        let odd = ZoomGeometry::new(1925, 1083, 300, FrameShape::Window);
+        assert_eq!(
+            (odd.src_width, odd.src_height, odd.origin),
+            (641, 361, (1, 0))
+        );
+        assert_eq!(odd.source_to_window(10.0, 20.0), (31.0, 60.0));
+        assert_eq!(odd.window_to_source(31.0, 60.0), (10.0, 20.0));
+        // The border clamps to the frame's edge pixels.
+        assert_eq!(odd.window_to_source(0.0, 1082.0), (0.0, 360.0));
+        // 100% is the identity.
+        let plain = ZoomGeometry::new(800, 600, 100, FrameShape::Window);
+        assert_eq!(
+            (plain.src_width, plain.src_height, plain.origin),
+            (800, 600, (0, 0))
+        );
+        assert_eq!(plain.window_to_source(399.5, 299.5), (399.5, 299.5));
+        assert!(plain.is_whole_window(800, 600));
+        assert!(!wide.is_whole_window(3440, 1440));
+        assert!(wide.is_sharp() && odd.is_sharp());
+    }
+
+    #[test]
+    fn a_step_between_whole_zooms_scales_smoothly_from_the_centre() {
+        let half = ZoomGeometry::new(1920, 1080, 150, FrameShape::Window);
+        assert_eq!(
+            (half.src_width, half.src_height, half.origin),
+            (1280, 720, (0, 0))
+        );
+        assert!(!half.is_sharp());
+        assert_eq!(half.frame_size(), (1920, 1080));
+        assert_eq!(half.source_to_window(10.0, 20.0), (15.0, 30.0));
+        assert_eq!(half.window_to_source(15.0, 30.0), (10.0, 20.0));
+        // A window the step doesn't divide keeps a border under one source
+        // pixel.
+        let odd = ZoomGeometry::new(1366, 768, 150, FrameShape::Window);
+        assert_eq!((odd.src_width, odd.src_height), (910, 512));
+        assert_eq!((odd.frame_size(), odd.origin), ((1365, 768), (0, 0)));
+        assert!(!odd.is_whole_window(1366, 768));
+    }
+
+    #[test]
+    fn original_shape_keeps_a_4_3_frame_between_centred_bars() {
+        let frame = |w, h, percent| {
+            let zoom = ZoomGeometry::new(w, h, percent, FrameShape::Original);
+            (zoom.src_width, zoom.src_height, zoom.origin)
+        };
+        // A widescreen gets bars at the sides, at any zoom.
+        assert_eq!(frame(1920, 1080, 100), (1440, 1080, (240, 0)));
+        assert_eq!(frame(1920, 1080, 200), (720, 540, (240, 0)));
+        assert_eq!(frame(1920, 1080, 150), (960, 720, (240, 0)));
+        // A taller screen gets them above and below.
+        assert_eq!(frame(1280, 1024, 100), (1280, 960, (0, 32)));
+        // A 4:3 window is unchanged, and at 100% needs no pass.
+        assert_eq!(frame(1600, 1200, 200), (800, 600, (0, 0)));
+        let whole = ZoomGeometry::new(1024, 768, 100, FrameShape::Original);
+        assert!(whole.is_whole_window(1024, 768));
+        let barred = ZoomGeometry::new(1920, 1080, 100, FrameShape::Original);
+        assert!(!barred.is_whole_window(1920, 1080));
+        // The bars clamp to the frame's edge, like the zoom's own border.
+        assert_eq!(barred.window_to_source(100.0, 500.0), (0.0, 500.0));
+        assert_eq!(barred.source_to_window(0.0, 0.0), (240.0, 0.0));
     }
 }

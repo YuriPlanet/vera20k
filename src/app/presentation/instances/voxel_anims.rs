@@ -40,7 +40,7 @@ use crate::rules::house_colors::NO_REMAP;
 use crate::rules::voxel_anim_type::VoxelAnimType;
 use crate::sim::voxel_anim::VoxelAnimObject;
 use crate::sim::world::Simulation;
-use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, absolute_leptons_to_screen};
+use crate::util::lepton::absolute_leptons_to_screen;
 use crate::util::native_x87::adjust_for_z_standard;
 
 /// Both blits walk gradient 0. DrawIt hands `0x004AF2A0` a literal 0 for
@@ -68,9 +68,8 @@ struct DebrisGeometry {
 /// is `-4 - AdjustForZ(surface)` (`0x00749D2A..0x00749D36`) and the body's
 /// `-2 - AdjustForZ(GetCoordZ)` (`0x00749EA4..0x00749EB6`); the body point is
 /// ObjectClass::DrawIfVisible's projection of the Location.
-fn geometry(location: IVec3, ground_z: i32, bridge: bool) -> DebrisGeometry {
-    let deck = ground_z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
-    let (shadow_z, surface_z) = if bridge && location.z >= deck {
+fn geometry(location: IVec3, ground_z: i32, deck: Option<i32>) -> DebrisGeometry {
+    let (shadow_z, surface_z) = if let Some(deck) = deck.filter(|deck| location.z >= *deck) {
         (deck.wrapping_add(1), deck)
     } else {
         (ground_z, ground_z)
@@ -237,8 +236,8 @@ fn voxel_anim_draw_instance(
 ) -> Option<()> {
     let parent = order.object_draw(id, SpriteEncoding::Voxel)?;
     let location = piece.world_coord();
-    let (ground_z, bridge) = super::foot_depth::floor_probe(view.terrain, location.x, location.y)?;
-    let geometry = geometry(location, ground_z, bridge);
+    let (ground_z, deck) = super::foot_depth::floor_probe(view.terrain, location.x, location.y)?;
+    let geometry = geometry(location, ground_z, deck);
     let matrix = piece.bounce().drawing_matrix().ok().map(|matrix| {
         crate::render::vxl_raster::hva_to_mat4(&matrix.map(|v| f32::from_bits(v.bits())), 1.)
     })?;

@@ -21,7 +21,8 @@ pub(crate) use codec::{
     read_u32, read_u64,
 };
 pub(crate) use measure::{
-    JitterMeter, LossCursor, LossStats, RttEstimator, StateClock, link_state, pto, reader_rtt,
+    JitterMeter, LossCursor, LossStats, RttEstimator, StateClock, ack_interval, link_state, pto,
+    reader_rtt,
 };
 
 use crate::{
@@ -125,7 +126,8 @@ pub const RESTORE_PULL_INTERVAL_MS: u64 = 100;
 /// One pace measurement a second (spec §6.3, pace segment).
 pub const PACE_INTERVAL_MS: u64 = 1_000;
 /// The hop keepalive PING of a ready hop that is not renewing (spec
-/// appendix A.4).
+/// appendix A.4), which a hop trading traffic both ways skips
+/// (`ClientSession::busy_both_ways`).
 pub const HOP_PING_INTERVAL_MS: u64 = 2_000;
 /// HELLO retries before readiness, and both hops' probes while renewing:
 /// about a second, 62 of the game's 16 ms service buckets.
@@ -283,6 +285,22 @@ impl ClientSession {
         self.probe(out)
     }
 
+    /// Whether this hop traded traffic both ways within
+    /// `HOP_PING_INTERVAL_MS` of `now_ms`: it sent a datagram other than a
+    /// probe, and `receive_at` returned an event other than a READY or
+    /// CHALLENGE. An established hop that did needs no keepalive PING at
+    /// that interval: the relay treats every authenticated datagram of a hop
+    /// as it does a PING (`RelayServer::process_at`: the hop's receipt and
+    /// endpoint, its reader's state, its source's silence), and every such
+    /// event counts as the relay's answer to the game. The keepalive
+    /// exchange is not traffic, so a hop with nothing else to say pings
+    /// every interval, and one that falls quiet within two.
+    pub fn busy_both_ways(&self, now_ms: u64) -> bool {
+        let recent =
+            |at: Option<u64>| at.is_some_and(|at| now_ms.saturating_sub(at) < HOP_PING_INTERVAL_MS);
+        recent(self.hop.traffic_sent_ms) && recent(self.hop.traffic_heard_ms)
+    }
+
     /// CONFIRM at `now_ms`: returns the CHALLENGE's 40-byte `cookie`, with a
     /// federated match's roster. The relay's `up` window for this hop starts
     /// with this datagram (spec §4.1).
@@ -383,6 +401,9 @@ impl ClientSession {
     ) -> Result<ServerEvent<'a>, RelayError> {
         self.clock_ms = now_ms;
         let event = self.receive(bytes)?;
+        if !matches!(&event, ServerEvent::Ready | ServerEvent::Challenge(_)) {
+            self.hop.traffic_heard_ms = Some(now_ms);
+        }
         self.note_ordering_receipt(
             matches!(
                 &event,
@@ -592,6 +613,11 @@ pub(crate) struct HopLink {
     // The last `poll_uplink` send on this hop: one UPLINK per service. A
     // renewed hop's first UPLINK is its own (spec §4.7).
     pub(crate) last_service_ms: Option<u64>,
+    // The hop's latest traffic each way (`ClientSession::busy_both_ways`):
+    // a datagram sent other than a probe, and an event `receive_at` returned
+    // other than a READY or CHALLENGE.
+    traffic_sent_ms: Option<u64>,
+    traffic_heard_ms: Option<u64>,
 }
 
 impl Default for HopLink {
@@ -606,6 +632,8 @@ impl Default for HopLink {
             uplinks: 0,
             first_pack: false,
             last_service_ms: None,
+            traffic_sent_ms: None,
+            traffic_heard_ms: None,
         }
     }
 }
@@ -913,9 +941,12 @@ impl ReaderLink {
 
 impl ClientSession {
     /// Logs a datagram this hop sends (spec §4.2); HELLO is not counted by
-    /// the relay's window and is never logged.
-    pub(crate) fn hop_sent(&mut self, sequence: u64) {
+    /// the relay's window and is never logged. `traffic`: it is no PING.
+    pub(crate) fn hop_sent(&mut self, sequence: u64, traffic: bool) {
         self.hop.record_send(sequence, self.clock_ms);
+        if traffic {
+            self.hop.traffic_sent_ms = Some(self.clock_ms);
+        }
     }
 
     /// One PACK's part in the downlink jitter (spec §4.8): a pack bringing a
@@ -994,10 +1025,8 @@ impl ClientSession {
         let Some(ordering) = self.ordering.as_mut() else {
             return;
         };
-        let rtt = &ordering.link.rtt;
-        let wait = rtt
-            .srtt
-            .map_or(300, |srtt| u64::from(srtt) + 4 * u64::from(rtt.rttvar));
+        let (srtt, rttvar) = ordering.link.rtt.rtt_or_default();
+        let wait = srtt + 4 * rttvar;
         let hop = &mut self.hop;
         let log = &hop.log;
         let sent = |sequence: u64| {

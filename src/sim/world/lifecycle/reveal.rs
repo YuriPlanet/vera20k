@@ -134,6 +134,11 @@ impl Simulation {
             );
         let input_z = if let Some(input_z) = position.exact_z_leptons() {
             input_z
+        } else if entity.on_bridge()
+            && let Some(deck) = terrain
+                .corrected_high_bridge_deck_level(((xy[0] / 256) as u16, (xy[1] / 256) as u16))
+        {
+            i32::from(deck).wrapping_mul(LEPTONS_PER_LEVEL as i32)
         } else if entity.on_bridge() && i32::from(position.z() as i8) == i32::from(level) + 4 {
             // VERA input adapter: retain the ramp remainder that the existing
             // coarse bridge-level API cannot carry. Native clamp remains max.
@@ -633,14 +638,14 @@ impl Simulation {
             })
         {
             let terrain = context.terrain().or(self.resolved_terrain.as_ref());
-            let ground = crate::sim::movement::ground_pose::ground_surface_z_at(
+            let deck = crate::sim::movement::ground_pose::ground_surface_z_at(
                 [coord.x, coord.y],
-                false,
+                true,
                 terrain,
                 None,
             )
-            .unwrap_or(coord.z);
-            if coord.z <= ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS) {
+            .unwrap_or_else(|| coord.z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS));
+            if coord.z <= deck {
                 crate::sim::movement::walk_head::raw_at(
                     &mut self.substrate.raw_cell_occupation,
                     owner,
@@ -800,7 +805,11 @@ impl Simulation {
                 logic_registered = self.register_logic_object(stable_id);
             }
             // Unlimbo's AlphaShapeClass block follows the Logic registration.
-            self.construct_alpha_shape(stable_id, context.rules());
+            self.unlimbo_alpha_shape(
+                stable_id,
+                crate::sim::world::substrate::ObjectKind::Entity,
+                context.rules(),
+            );
         }
         // Building4415D8: successful normal Unlimbo after opening/base-plan.
         // The early dead/failed paths do not reach this call.

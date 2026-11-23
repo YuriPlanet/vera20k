@@ -75,6 +75,7 @@ pub(crate) use allocated_order::{AllocatedCellOrder, ROW_NEIGHBORS};
 pub(crate) use bridge_flags::RealCellBridgeFlags0x1180;
 pub use build::OverlayLoadSource;
 pub(crate) use build::cliff_back_normal_reclass_applies;
+pub use build::map_tiles_exist;
 pub use build::{AuthoredTerrainFill, RadarColorMetadata, current_tile_permissions};
 use build::{presentation_tile_parts, wheel_speed_at_or_below_one_percent};
 pub(crate) use cell_recalc::{
@@ -255,7 +256,7 @@ impl BridgeLayer {
         let direction = BridgeDirection::from_overlay_id(overlay_id);
         let deck_level = match direction {
             BridgeDirection::Low => level,
-            BridgeDirection::EastWest | BridgeDirection::NorthSouth => level.saturating_add(4),
+            BridgeDirection::EastWest | BridgeDirection::NorthSouth => level.wrapping_add(4),
         };
         Self {
             deck_level,
@@ -375,7 +376,8 @@ pub struct ResolvedTerrainCell {
 
 impl ResolvedTerrainCell {
     /// Refresh byte-encoded height views of the current Cell, independently of
-    /// its Recalc-owned class, flags and cached topology. Preserve the encoded
+    /// its Recalc-owned class, flags and cached topology. The retained span
+    /// elevation lives on the anchor's bridge facts. Preserve the encoded
     /// signed-level +4 result: raw252 (-4) has a structural deck at level0.
     /// Native47B3A0/5F5FA0: tools/ramp_height_{oracle.py,vectors.json}; this
     /// byte projection does not establish signed world-coordinate consumers.
@@ -396,6 +398,19 @@ impl ResolvedTerrainCell {
         } else {
             self.level
         };
+    }
+
+    pub(crate) fn retained_high_bridge_base_level(&self) -> Option<u8> {
+        let lift = crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16;
+        let base = self.bridge_facts.fixed_deck_level?.checked_sub(lift)?;
+        i8::try_from(base).ok().map(|base| base as u8)
+    }
+
+    /// Projection base for a live high-bridge overlay on this anchor. Damaged
+    /// art can outlive the structural flags, so the retained height applies
+    /// until the overlay is removed. The art provides its own four-level lift.
+    pub fn high_bridge_art_base_level(&self) -> u8 {
+        self.retained_high_bridge_base_level().unwrap_or(self.level)
     }
 
     pub fn bridge_deck_level_if_any(&self) -> Option<u8> {
@@ -751,6 +766,20 @@ impl LevelSpan {
         span
     }
 
+    fn of_terrain(
+        cells: impl IntoIterator<Item = impl std::borrow::Borrow<ResolvedTerrainCell>>,
+    ) -> Self {
+        let mut span = Self::default();
+        for cell in cells {
+            let cell = cell.borrow();
+            span.widen(cell.level);
+            if let Some(base) = cell.retained_high_bridge_base_level() {
+                span.widen(base);
+            }
+        }
+        span
+    }
+
     fn widen(&mut self, level: u8) {
         self.min = self.min.min(level as i8);
         self.max = self.max.max(level as i8);
@@ -847,6 +876,7 @@ pub struct ResolvedTerrainGrid {
     bridge_set_start: Option<u16>,
     /// Immutable signed ReadTheater545150 identities for high-rim selection.
     high_bridge_rim_tiles: Option<super::bridge_rim_tiles::HighBridgeRimTiles>,
+    wood_bridge_rim_tiles: super::bridge_rim_tiles::WoodBridgeRimTiles,
     /// First flat tile id of the active theater's wooden high-bridge set.
     wood_bridge_set_start: Option<u16>,
     /// Terrain animations the load resolved, in the native anti-diagonal cell
@@ -1216,7 +1246,7 @@ impl ResolvedTerrainGrid {
         Self {
             width,
             height,
-            level_span: LevelSpan::of(cells.iter().map(|cell| cell.level)),
+            level_span: LevelSpan::of_terrain(&cells),
             cells: terrain_cells::TerrainCells::new(cells),
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Default::default(),
@@ -1236,6 +1266,7 @@ impl ResolvedTerrainGrid {
             dummy_accepts_smudge: false,
             bridge_set_start: None,
             high_bridge_rim_tiles: None,
+            wood_bridge_rim_tiles: Default::default(),
             wood_bridge_set_start: None,
             tile_animations: Vec::new(),
             destroyable_cliff_catalog: None,
@@ -1556,8 +1587,8 @@ impl ResolvedTerrainGrid {
         self.level_span.widen(level);
     }
 
-    /// A signed range holding every stored cell's level and 0. It only widens
-    /// while the grid lives, so it can be wider than the current levels.
+    /// Signed bounds for ground and retained bridge projection bases, including
+    /// zero. They only widen while the grid lives.
     pub fn level_span(&self) -> LevelSpan {
         debug_assert!(
             self.cells
@@ -1601,6 +1632,9 @@ impl ResolvedTerrainGrid {
             .then(|| self.cells[index].clone());
         state.apply(&mut self.cells[index]);
         self.set_cell_level(index, state.level);
+        if let Some(base) = self.cells[index].retained_high_bridge_base_level() {
+            self.level_span.widen(base);
+        }
         if !same_entry {
             if let Some(before) = before {
                 if let Err(error) = self.refresh_saved_cell_presentation(index) {
@@ -1669,6 +1703,10 @@ impl crate::map::terrain::TacticalCellLookup for ResolvedTerrainGrid {
     fn cell_level(&self, rx: u16, ry: u16) -> Option<u8> {
         // Original6D6753 reads the current candidate, not a load-time level.
         self.cell(rx, ry).map(|cell| cell.level)
+    }
+
+    fn corrected_bridge_base_level(&self, rx: u16, ry: u16) -> Option<u8> {
+        self.corrected_high_bridge_base_level((rx, ry))
     }
 
     fn bridge_cell(&self, rx: u16, ry: u16) -> Option<crate::map::terrain::TacticalBridgeCell> {

@@ -349,10 +349,13 @@ every other when it last heard its players (link kind 4, Silence below). Link pa
 address on the relay's existing UDP port and are authenticated by their MAC,
 whatever address they arrive from. Deploy and roll back every relay at once,
 so all run one version: relays of different versions can end the same startup
-differently. The digit in `VF1L` is the link version, bumped whenever the
-layout or meaning of an existing link kind changes (the FRAME header and its
-entries, a coordinator control batch, DATA, pace, checksum or silence reports),
-since a relay refuses a packet it cannot read: one refused FRAME stalls the
+differently. The digit in the link magic carries the link version and the
+marking together: this version sends `VF1L` unmarked and `VF2L` marked. The
+version is bumped whenever the layout or meaning of an existing link kind
+changes (the FRAME header and its entries, a coordinator control batch, DATA,
+pace, checksum or silence reports), and a bump moves both magics to digits no
+build has used (`VF3L` and `VF4L` next), so no two versions share a digit. A
+relay refuses a packet it cannot read: one refused FRAME stalls the
 merged stream, and refused reports leave desyncs and slow players unnoticed.
 Only a new kind whose loss changes no result needs none, as kind 4 did: an
 older relay only leaves that silence untold. The 32-byte link header and the
@@ -374,7 +377,11 @@ journals therefore advertise oldest sequence 1 throughout the match.
 
 A short outage never removes a player. Healthy players continue; the returning
 player can replay from its old cursor even after every short hop ticket expired.
-Any authenticated packet, keepalives included, keeps a source's place. A started
+Any authenticated packet, keepalives included, keeps a source's place. A game's
+keepalive is a PING every two seconds, answered with READY; an established hop
+that traded other datagrams both ways within those two seconds skips it, so a
+match's UPLINKs and pushes are its keepalive (a released game pings throughout).
+A started
 source silent for 10 minutes departs through the stream (`ABSENT_MS`; a game
 that hears nothing from its relay for that long releases its route, which ends
 the match). Before the start, a
@@ -448,9 +455,9 @@ datagram, accepted or junk, adds a pass.
 
 Explicit Leave is retried on the original socket until a terminal acknowledgement
 echoes that exact signed request. After a Leave, or once its ticket expired, a
-session takes only Leave, each answered again, for as long as a room can live
-plus 300 seconds; then it is released. Its tag still verifies, and an existing
-room checks its
+player's session takes only Leave, each answered again, for as long as a room can
+live plus 300 seconds; then it is released (a watcher's: [Watchers](#watchers)).
+Its tag still verifies, and an existing room checks its
 certified source and retained principal/generation. An already expired, absent
 room can acknowledge without recreating membership or storage. Other expired
 operations remain rejected. Menu cleanup retains this transport until the
@@ -541,16 +548,21 @@ federation roster) and spends the players' handshake budgets. The relay admits
 a watcher only to a match that started and whose whole stream is in its journal,
 and at most 256 watchers a match and 1,024 in all (`Full`). A CONFIRM with the
 same watcher and a later expiry renews the hop: a new session that keeps the old
-hop's agreement and budgets, and the old session goes at once. A watcher sends
-only PING, which READY answers, and CONTROL requests: Ready `[0][agreement32]`,
-the startup agreement, which must equal the players' (`AgreementMismatch`
-otherwise) and is answered with STATUS; Pull `[2][next varint]`, refused before
-an agreed Ready (`NotConfigured`), answered with STATUS and at most 4 PACKs (1,020
-records) from `next`; and Leave `[3]`, answered with LEAVE_ACK echoing its
-sequence, which frees the hop at once and writes nothing. Anything else, UPLINK,
-batches, DATA and Pause included, is refused. A watcher whose ticket expires,
-who is silent for 30 seconds, or whose match the relay no longer holds loses its
-hop.
+hop's agreement and budgets. A watcher sends only PING, which READY answers, and
+CONTROL requests: Ready `[0][agreement32]`, the startup agreement, which must equal
+the players' (`AgreementMismatch` otherwise) and is answered with STATUS; Pull
+`[2][next varint]`, refused before an agreed Ready (`NotConfigured`), answered
+with STATUS and at most 4 PACKs (1,020 records) from `next`; and Leave `[3]`,
+which ends the hop and writes nothing.
+Anything else, UPLINK, batches, DATA and Pause included, is refused. After a
+Leave, or once a renewal replaced it, a watcher's session takes only Leave for 62
+seconds, the client's minute of resends, then it is released. Each Leave, resends
+included, is answered with LEAVE_ACK echoing its sequence, as a player's is, and
+spends the watcher's own handshake budget. A watcher whose ticket expires, who
+is silent for 30 seconds, or whose match the relay no longer holds loses its hop
+without being told, and its session takes only Leave for 677 seconds: its game
+keeps a route that hears nothing for up to 615 seconds, and may start its minute
+of Leave resends until then.
 
 The delay holds in every reply. Once a second the room notes its stream's end
 (frame, next record, active sources), keeping 86,402 such marks (24 bytes each,

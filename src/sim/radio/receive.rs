@@ -352,8 +352,10 @@ pub(crate) fn can_load(
         }
     }
     // `0x0043C4F8..0x0043C500`: a `Grinding=` building (`+0x16AD`) takes
-    // anyone the gates above admit.
-    if building_type.grinding {
+    // anyone the gates above admit. Original RA2 has no Grinding= field: the
+    // refund-on-entry behavior is hardcoded on the Cloning vats, so on the
+    // RA2 profile a `Cloning=` building also takes any admitted foot here.
+    if building_type.grinding || (rules.ra2() && building_type.cloning) {
         return CanLoad::Answer(RadioResponse::Roger);
     }
     // 0x0043C506..0x0043C541, a `Bunker=` building (+0x16AB): CanEnterBunker
@@ -378,12 +380,33 @@ pub(crate) fn can_load(
     //building Ammo must be nonzero. Techno's constructor starts it at0,
     //and Building43FE98 explicitly excludes hospitals from auto-refill.
     if building_type.hospital && unit.category() == EntityCategory::Infantry {
+        // Original RA2 leaves Hospital Ammo=0 in rules.ini (the "healing
+        // count" field is commented out) and treats that as unlimited healing;
+        // only captives/mind-controlled are refused. On the RA2 profile drop
+        // the Ammo==0 refusal. YR keeps the finite-count contract unchanged.
         let refused = unit
             .capture_manager
             .as_ref()
             .is_some_and(|manager| manager.has_any())
             || unit.seldom.mind_control.is_mind_controlled()
-            || building.ammo().map_or(0, |ammo| ammo.current()) == 0;
+            || (!rules.ra2() && building.ammo().map_or(0, |ammo| ammo.current()) == 0);
+        return CanLoad::Answer(if refused {
+            RadioResponse::Negatory
+        } else {
+            RadioResponse::Roger
+        });
+    }
+    // An Armory takes an infantry trainee while it still has promotions.
+    // Native reads the absolute value of Ammo, so the constructor's -1 still
+    // admits exactly one soldier. Captives and mind-controlled infantry are
+    // refused just as they are at the Hospital.
+    if building_type.armory() && unit.category() == EntityCategory::Infantry {
+        let refused = unit
+            .capture_manager
+            .as_ref()
+            .is_some_and(|manager| manager.has_any())
+            || unit.seldom.mind_control.is_mind_controlled()
+            || crate::sim::docking::armory::promotions_remaining(building) <= 0;
         return CanLoad::Answer(if refused {
             RadioResponse::Negatory
         } else {
@@ -817,8 +840,9 @@ fn building_dock_now(
     // 0x0043C732..0x0043C785: the repair and reload docks and Bunker queue
     // their own mission; the radio contacts retain the admitted sender.
     // Hospital43C746 also queues Repair/Sleep; cargo arrival is owned by
-    // Infantry PerCell51A21F. Armory remains a separate training mechanism.
-    if object.unit_repair || object.unit_reload || object.hospital {
+    // Infantry PerCell51A21F. An Armory uses this same service contact;
+    // its MissionRepair arm promotes the trainee instead of healing it.
+    if object.unit_repair || object.unit_reload || object.hospital || object.armory() {
         // Building43C7B5..C7DC: service request and the occupant's Sleep
         // queue. The Building mission owns the admitted pad contact.
         if let Some(building) = sim.substrate.entities.get_mut(building_id) {

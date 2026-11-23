@@ -23,6 +23,8 @@ impl RuleSet {
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // Eager and authored loads recover the same deck, including wooden rims.
+        b"independent-high-bridge-deck-v6".hash(&mut hasher);
         // A previous scenario's list survives RulesClass's Type reset even
         // when the incoming source text omits AIHateDelays.
         if !self.general.ai_hate_delays.is_empty() {
@@ -1518,24 +1520,7 @@ impl RuleSet {
         self.rubble_assets.hash(&mut hasher);
         self.terrain_assets.hash(&mut hasher);
         b"art-smudge-config-v2".hash(&mut hasher);
-        let smudge_anim_inputs = self
-            .art_registry
-            .iter_entries()
-            .filter(|(_, entry)| entry.scorch || entry.crater || entry.force_big_craters)
-            .map(|(name, entry)| {
-                (
-                    name.to_string(),
-                    (
-                        entry.scorch,
-                        entry.crater,
-                        entry.force_big_craters,
-                        entry.frame_width,
-                        entry.frame_height,
-                    ),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-        smudge_anim_inputs.hash(&mut hasher);
+        self.art_registry.fold_smudge_anim_dims(&mut hasher);
         // These effective Bullet values feed FireAt and drawing after load. Hash
         // consumed values in canonical type order, not ART insertion order,
         // authored-key presence, or unrelated presentation metadata.
@@ -1718,6 +1703,121 @@ impl RuleSet {
         self.hash_building_body_config(&mut hasher);
         self.hash_building_slot_config(&mut hasher);
         hasher.finish()
+    }
+
+    /// VERA: what the simulation takes from the contents of picture and
+    /// model files, in one number that a network match's start certifies
+    /// (`net::live_commands::StartupAgreement::new`). No room
+    /// compares those files, so two games whose rules agree could still time
+    /// a building's unfolding, an animation's end or a shot's origin
+    /// differently and leave step in mid-match; with this they do not start.
+    ///
+    /// It folds only what a simulation reader takes from a file: the Buildup
+    /// SHP's frame count behind the construction and sale controls, a
+    /// resource spawner's frame count, which LeaveRubble images are long
+    /// enough, which main voxel models loaded with their first limb's half
+    /// sizes, the frame count, bounds and middle frame of each animation that
+    /// affects play or that a simulation owner waits on, the first weather
+    /// bolt's image height, whether a scorching or cratering animation's
+    /// frame is large, and in an Ares game which particle AlphaImage SHPs
+    /// loaded. A file that changes only how something looks (other pixels,
+    /// another palette, a model's other parts, the file that supplied an
+    /// image, the frames of an effect animation that changes nothing but its
+    /// picture) leaves the number as it is, so players with such files play
+    /// together. Values the INI text decides ride along where they share a
+    /// fold; the rules digest compares them already.
+    ///
+    /// RESIDUAL: of the picture-only animations a simulation owner waits on,
+    /// only a unit's `DeployingAnim=`, the Psychic Dominator's two and the
+    /// Lightning Storm's clouds are folded. Another one (a building's
+    /// delayed-fire animation, an Ares superweapon's own lists, with its
+    /// `Bolts=` image height) with other frames in two games still takes
+    /// their battles apart; a mod's files are compared with the mod.
+    pub fn file_inputs_hash(&self) -> u64 {
+        let mut hasher = crate::util::state_hasher::StateHasher::new();
+        b"rules-file-inputs-v1".hash(&mut hasher);
+        // Construction and sale timing (`world_spawn::construction`,
+        // `production_sell`), TIBTRE timing (`terrain_spawn`) and the rubble
+        // a destroyed building leaves (`building_after_destruction`).
+        self.buildup_assets.hash(&mut hasher);
+        self.terrain_assets.hash(&mut hasher);
+        self.rubble_assets.fold_admissions(&mut hasher);
+        // IsVoxel and the tilt matrix behind a shot's origin
+        // (`combat::area_rocker`, `combat::fire_coord`).
+        self.voxel_assets.fold_loaded(&mut hasher);
+        // The length and middle frame of each anim that affects play
+        // (`anim_class`), and of the ones that pace a deployment
+        // (`unit_simple_deploy`), the Psychic Dominator and the Lightning
+        // Storm (`Simulation::anim_stage_and_frames`).
+        self.art_registry
+            .fold_anim_frame_bounds(self.paced_anims(), &mut hasher);
+        // `LightningStorm::CreateCloudBolt` (`0x0053A16B`) lifts its clouds
+        // by half the first bolt image's height.
+        self.general
+            .weather_con_bolts
+            .first()
+            .map(|bolt| {
+                self.art_registry
+                    .anim_runtime_config(bolt)
+                    .and_then(|config| config.raw_shp_height)
+            })
+            .hash(&mut hasher);
+        // The smudge a scorching or cratering anim leaves (`anim_class::ai`).
+        self.art_registry.fold_smudge_frame_classes(&mut hasher);
+        // Ares picks its own particle simulation for a system whose held
+        // type has no loaded AlphaImage (`particles::ares_system`). Without
+        // Ares an alpha image only lights and draws.
+        if self.ares {
+            b"ares-particle-alpha-images-v1".hash(&mut hasher);
+            self.particle_types_iter()
+                .filter(|particle| self.alpha_images.loaded(&particle.alpha_image))
+                .map(|particle| particle.alpha_image.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+                .hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
+    /// The picture-only AnimTypes a simulation owner waits on, which
+    /// [`Self::file_inputs_hash`] folds with the ones that affect play: each
+    /// unit's `DeployingAnim=`, the Psychic Dominator's two and the Lightning
+    /// Storm's clouds.
+    fn paced_anims(&self) -> impl Iterator<Item = &str> {
+        self.object_list
+            .iter()
+            .filter_map(|object| object.deploying_anim.as_deref())
+            .chain([
+                self.general.dominator_first_anim.as_str(),
+                self.general.dominator_second_anim.as_str(),
+            ])
+            .chain(self.general.weather_con_clouds.iter().map(String::as_str))
+    }
+
+    /// VERA: the game-folder files (a loose file's name, else an archive's,
+    /// `retail_sources::game_folder_file`) that change what
+    /// [`Self::file_inputs_hash`] folds, in name order: each supplies a
+    /// picture or model whose folded value is not the one the copy a retail
+    /// install reads gives, or one a retail install lacks. Empty for a game
+    /// whose folder changes none, a graphics pack that only redraws
+    /// included. Each binder notes them as it reads
+    /// (`retail_sources::FolderFiles`), and a refused start names them
+    /// (`agreement::start_changes_text`).
+    pub fn file_input_folder_files(&self) -> Vec<String> {
+        let weather_bolt = self.general.weather_con_bolts.first().map(String::as_str);
+        let mut files: std::collections::BTreeSet<&str> = self
+            .art_registry
+            .anim_folder_files(self.paced_anims(), weather_bolt);
+        files.extend(self.buildup_assets.folder_files());
+        files.extend(self.terrain_assets.folder_files());
+        files.extend(self.rubble_assets.folder_files());
+        files.extend(self.voxel_assets.folder_files());
+        if self.ares {
+            files.extend(
+                self.particle_types_iter()
+                    .filter_map(|particle| self.alpha_images.folder_file(&particle.alpha_image)),
+            );
+        }
+        files.into_iter().map(str::to_owned).collect()
     }
 
     /// Slot constructors consume selected names, offsets and the common runtime

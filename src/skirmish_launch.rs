@@ -496,7 +496,7 @@ pub struct SkirmishLaunchOptions {
     /// Left out while Off, as the bans are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teams: Option<u8>,
-    /// Balance automatically, which 0.3.3 and 0.3.4 hosts send with Teams.
+    /// Balance automatically, which hosts on 0.3.2 to 0.3.4 send with Teams.
     /// Read only so that their options parse; nothing reads it, and it is
     /// never sent.
     #[serde(default, skip_serializing)]
@@ -507,9 +507,8 @@ pub struct SkirmishLaunchOptions {
     /// waits.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queue: Vec<String>,
-    /// VERA's room rules: the host's Terrain Deformation and personal
-    /// rules, which every player's match plays. Left out while the room has
-    /// neither.
+    /// VERA's room rules: the host's Options switches ([`HostRules`]). Left
+    /// out while all are off.
     #[serde(default, skip_serializing_if = "HostRules::is_empty")]
     pub host_rules: HostRules,
 }
@@ -517,8 +516,9 @@ pub struct SkirmishLaunchOptions {
 /// VERA: the rules a network room plays besides its options, which only its
 /// host sets: the host's Terrain Deformation box, Superweapon Limit and
 /// Building Production Queue.
-/// Every player's match plays these instead of their own; offline games play
-/// the player's own (`ProcessAssets::use_personal_rules`).
+/// Every player's match plays these instead of their own, except in a co-op
+/// campaign (`MatchSession::network_personal_rules`); offline games play the
+/// player's own (`ProcessAssets::use_personal_rules`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostRules {
@@ -1607,7 +1607,7 @@ mod tests {
         );
     }
 
-    /// A 0.3.3 or 0.3.4 host's options still parse with its Balance
+    /// The options of a host on 0.3.2 to 0.3.4 still parse with its Balance
     /// automatically, and the setting never goes out again.
     #[test]
     fn an_older_hosts_balance_automatically_parses_and_is_never_sent() {

@@ -1609,14 +1609,17 @@ struct GroupMemberTarget {
 }
 
 /// The spread's height of a Cell: its signed level (`+0x11B`), plus
-/// `BRIDGE_DECK_HEIGHT_LEVELS` on the bridge flag (`+0x140 & 0x100`). The
-/// target's is EBX (`0x0064D2AA..0x0064D2DF`), which Can_Enter_Cell receives;
+/// `BRIDGE_DECK_HEIGHT_LEVELS` on the bridge flag (`+0x140 & 0x100`) in the
+/// absence of a fixed deck. The target's is EBX (`0x0064D2AA..0x0064D2DF`),
+/// which Can_Enter_Cell receives;
 /// a candidate's is measured against it (`0x0064D55F..0x0064D592`).
 /// Native executions: tools/spatial_oracle/group_spread_gates.{py,json,meta.json}.
 fn spread_height(terrain: &ResolvedTerrainGrid, cell: NativeCellIdentity) -> i32 {
     let level = i32::from(terrain.native_cell_ground_fields(cell).0 as i8);
     if terrain.native_cell_flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0 {
-        level + BRIDGE_DECK_HEIGHT_LEVELS
+        terrain
+            .corrected_high_bridge_deck_at(cell)
+            .map_or(level + BRIDGE_DECK_HEIGHT_LEVELS, i32::from)
     } else {
         level
     }

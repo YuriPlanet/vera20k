@@ -138,13 +138,65 @@ impl WolCapture {
         Ok(())
     }
 
-    /// The modern `0x2BC` settled: real clicks choose Simplified Chinese in
-    /// the translation list, clear Translate in Matches, then OK.
+    /// Apply the modern options from the visible page, then navigate back.
     fn translation_picked(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        use crate::ui::wol_options::OK;
+        use crate::app::shell_wol::options;
+        use crate::ui::shell::sound::SHELL_SOUND_SLIDERS;
+        use crate::ui::wol_options::{CANCEL, MUSIC, OK, SOUND_OPTIONS};
         self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
-        let layout = crate::app::shell_wol::options::layout(state);
-        welcome_click(state, translate_list_arrow(&layout)?);
+        let layout = options::layout(state);
+        ensure!(
+            layout.rect(OK).is_none() && layout.rect(SOUND_OPTIONS).is_none(),
+            "the modern page still offers OK or Sound Options"
+        );
+        options_checkbox(state, MUSIC)?;
+        ensure!(
+            state.frontend.wol_preferences.lobby_music == 0
+                && state
+                    .persistence
+                    .options_profile
+                    .wol_preferences
+                    .lobby_music
+                    == 0
+                && state.audio.theme.saved_slots()[1] == crate::audio::theme::THEME_HOLD,
+            "Play Music did not apply in place"
+        );
+        if state.audio.launcher_audio_available {
+            let mut expected = crate::app::input::sound::volume_positions(state);
+            for (index, id) in SHELL_SOUND_SLIDERS.into_iter().enumerate() {
+                let rail = layout.rect(id).context("volume trackbar")?;
+                let base = layout.page.scale.base_rect(rail);
+                let x = if index == 1 {
+                    base.x + base.w - 2
+                } else {
+                    base.x + 1
+                };
+                let press = layout
+                    .page
+                    .scale
+                    .scale_rect(RectPx::new(x, base.y, 1, base.h));
+                welcome_click(state, press);
+                expected[index] = if index == 1 { 10 } else { 0 };
+                ensure!(
+                    crate::app::input::sound::volume_positions(state) == expected
+                        && options::sound_positions(state) == Some(expected),
+                    "volume {id:#x} did not update the corresponding channel in place"
+                );
+            }
+            self.event(frame, json!({"live volume positions": expected}));
+        }
+        let arrow = translate_list_arrow(&layout)?;
+        welcome_click(state, arrow);
+        ensure!(
+            options::translate_popup(state).is_some(),
+            "the list did not open"
+        );
+        App::handle_wol_key(state, Some(winit::keyboard::KeyCode::Escape), true, None);
+        ensure!(
+            options::translate_popup(state).is_none() && state.frontend.shell_exit.is_none(),
+            "Escape did not dismiss just the translation list"
+        );
+        welcome_click(state, arrow);
         let popup = crate::app::shell_wol::options::translate_popup(state)
             .context("the translation list did not open")?;
         welcome_click(state, popup.row_rect(2).context("Simplified Chinese")?);
@@ -158,31 +210,59 @@ impl WolCapture {
         let translate = crate::app::shell_wol::options::shown(state).map(|(_, chat)| chat);
         ensure!(
             translate == Some(translated_lobby_only())
-                && crate::app::shell_wol::options::translate_popup(state).is_none(),
+                && state.persistence.options_profile.chat_translation == translated_lobby_only()
+                && options::translate_popup(state).is_none(),
             "the clicks did not pick the settings: {translate:?}"
         );
-        options_button(state, OK)?;
+        let saved = read_settings(state)?.context("VERA.INI before Previous")?;
+        let ini = crate::rules::ini_parser::IniFile::from_bytes(&saved)?;
+        let wonline = ini.section_or_empty("WOnline");
+        let vera = ini.section_or_empty("VERA");
+        ensure!(
+            wonline.read_int("LobMusic", 1) == 0
+                && vera.read_string("TranslateChat", "", 16) == "zh-Hans"
+                && !vera.read_bool("TranslateMatches", true),
+            "the active options did not save before Previous"
+        );
+        if state.audio.launcher_audio_available {
+            let audio = ini.section_or_empty("Audio");
+            for (key, expected) in [
+                ("ScoreVolume", 0.0),
+                ("SoundVolume", 1.0),
+                ("VoiceVolume", 0.0),
+            ] {
+                ensure!(
+                    audio.read_double(key, -1.0) == expected,
+                    "{key} did not save in place"
+                );
+            }
+        }
+        self.event(
+            frame,
+            "music and translation persisted before Previous; Escape dismissed the list",
+        );
+        options_button(state, CANCEL)?;
         ensure!(
             state.frontend.shell_exit.is_some(),
             "0x2BC did not slide out"
         );
-        self.event(frame, "Simplified Chinese, not in matches, OK");
+        self.event(frame, "Previous returned without confirmation");
         self.phase = WolPhase::TranslationReturn;
         Ok(())
     }
 
-    /// OK kept and wrote the settings; Options opens again to show them.
+    /// The lobby returns and Options opens again with the live settings.
     pub(super) fn translation_saved(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let chat = state.persistence.options_profile.chat_translation;
         ensure!(
             chat == translated_lobby_only(),
-            "OK did not keep the settings: {chat:?}"
+            "Previous did not keep the settings: {chat:?}"
         );
         let saved = read_settings(state)?.context("VERA.INI")?;
         let saved = String::from_utf8_lossy(&saved);
         ensure!(
             saved.contains("TranslateChat=zh-Hans") && saved.contains("TranslateMatches=no"),
-            "OK did not write VERA.INI"
+            "translation settings are missing from VERA.INI after Previous"
         );
         self.event(frame, "the lobby again: the settings are saved");
         let layout = crate::app::shell_wol::lobby::layout(state);
@@ -193,11 +273,19 @@ impl WolCapture {
 
     pub(super) fn translation_reopened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let layout = crate::app::shell_wol::options::layout(state);
+        let shown = crate::app::shell_wol::options::shown(state);
         ensure!(
-            crate::app::shell_wol::options::shown(state).map(|(_, chat)| chat)
-                == Some(translated_lobby_only()),
+            shown.is_some_and(|(preferences, chat)| {
+                preferences.lobby_music == 0 && chat == translated_lobby_only()
+            }),
             "the reopened page does not show the saved settings"
         );
+        if state.audio.launcher_audio_available {
+            ensure!(
+                crate::app::shell_wol::options::sound_positions(state) == Some([0, 10, 0]),
+                "the reopened page does not show the saved volumes"
+            );
+        }
         self.event(frame, "reopened with the saved settings");
         // The capture's isolated profile goes back as it was.
         let (bytes, _) = self.options_before.clone().context("saved VERA.INI")?;

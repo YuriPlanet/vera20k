@@ -519,15 +519,14 @@ impl Simulation {
         )
         .unwrap_or(0);
         let bridge = terrain.is_some_and(|terrain| {
-            let cell = terrain
-                .native_cell_identity(((location.x / 256) as i16, (location.y / 256) as i16));
-            terrain.native_cell_flags(cell) & 0x100 != 0
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let cell = cells.lookup_world(location.x, location.y);
+            let bridge = cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0;
+            if bridge {
+                coord.z = crate::sim::movement::ground_pose::deck_surface_z(&cells, cell, coord.z);
+            }
+            bridge
         });
-        if bridge {
-            coord.z = coord
-                .z
-                .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        }
         let requested = carrier.position.at_location_with_level(coord);
         let frame = self.session.binary_frame();
         let ares = rules.ares_form();

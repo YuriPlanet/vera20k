@@ -329,6 +329,7 @@ fn lay_spiral(
 
         particle.direction = direction;
         Simulation::reveal_particle(&mut sim.substrate, particle.stable_id());
+        sim.unlimbo_particle_alpha_shape(&particle, rules);
         sys.particles.push(particle);
     }
     Ok(())

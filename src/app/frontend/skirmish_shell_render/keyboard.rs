@@ -20,7 +20,7 @@ use crate::render::bit_font::BitFont;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::{
     shell_paint,
-    shell_text::{self, ShellAlign, ShellTextDraw},
+    shell_text::{self, ShellTextDraw},
 };
 use crate::ui::shell::geom::{RETAIL_SCALE, RectPx, ShellScale};
 use crate::ui::shell::keyboard::{

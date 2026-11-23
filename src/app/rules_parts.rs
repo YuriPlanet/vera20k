@@ -66,16 +66,22 @@ pub(crate) struct RulesSettings {
     /// without it has the parts it had before the switch was named here.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(crate) building_production_queue: bool,
-    /// The Ares setting: `auto`, `on` or `off`.
+    /// The Ares setting where it decides which game this is, as the digest
+    /// counts it (`ProcessAssets::agreed_ares_setting`): `on`, `off`, or
+    /// `auto` for Auto and for a setting that opens the game Auto opens.
     pub(crate) ares: &'static str,
     /// `ares.mix` is mounted.
     pub(crate) ares_mix: bool,
-    /// The Rules, Art and AI roots, the theater suffix and the mode and map
-    /// catalogs are YR's (`ProcessAssets::stock_ini_roots`).
+    /// The INI roots listed under `resources` and the theater suffix are all
+    /// YR's (`ProcessAssets::stock_ini_roots`).
     pub(crate) ini_roots_stock: bool,
-    /// The INI roots and archive names the game reads, when a mod requires
-    /// Ares or any of them is not YR's; absent otherwise. The rules digest
-    /// compares them then.
+    /// RA2 Mode is on (docs/ra2-mode.md). Left out while off, so a game
+    /// without it has the parts it had before the setting was named here.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) ra2: bool,
+    /// The INI roots and archive names players' games compare, when a mod
+    /// requires Ares or any of them is not YR's; absent otherwise. The rules
+    /// digest compares them then.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) resources: Option<ResourceSelection>,
     #[serde(rename = "mod")]
@@ -95,8 +101,8 @@ pub(crate) struct ModIdentity {
 pub(crate) struct ResourceSelection {
     /// The selected mod's `mod.ini` requires Ares.
     pub(crate) requires_ares: bool,
-    /// The Rules, Art, AI, sound, EVA, theme, campaign, mission, map
-    /// selection, mode and map catalog INIs, in that order.
+    /// The Rules, Art, AI, mode and map catalog files, in that order
+    /// (`IniRoots::agreed_files`).
     pub(crate) roots: Vec<String>,
     /// The expansion and map archive prefixes, the multiplayer and theme
     /// archives and the movie archive prefix, in that order.
@@ -205,6 +211,7 @@ impl RulesParts {
                 ares: "auto",
                 ares_mix: false,
                 ini_roots_stock: true,
+                ra2: false,
                 resources: None,
                 mod_in_use: None,
             },
@@ -286,6 +293,11 @@ mod tests {
         let queue = RulesParts::new(vec![file("rules", false)], queue, None);
         assert_ne!(queue.digest, parts.digest);
         assert!(queue.json().contains(r#""superweapon_limit":0,"building_production_queue":true,"#));
+        let mut ra2 = settings();
+        ra2.ra2 = true;
+        let ra2 = RulesParts::new(vec![file("rules", false)], ra2, None);
+        assert_ne!(ra2.digest, parts.digest);
+        assert!(ra2.json().contains(r#""ini_roots_stock":true,"ra2":true,"#));
     }
 
     /// Each of the player's own rule switches (`PersonalRules`, which the

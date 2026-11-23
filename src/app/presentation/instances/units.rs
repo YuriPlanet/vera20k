@@ -290,6 +290,10 @@ fn unit_shadow_slope(
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     entity: &crate::app::presentation::frame::ObjectRecord,
 ) -> u8 {
+    // A shadow on the high deck follows its level surface.
+    if entity.on_bridge() {
+        return 0;
+    }
     let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     clamp_slope_for_render(cells.map_or(0, |cells| cells.ground_fields(cells.lookup_world(x, y)).1))
 }
@@ -313,7 +317,7 @@ fn unit_render_slope_state(
     if let Some(slope_state) = locomotor_render_slope_state(entity, display_binary_frame) {
         return slope_state;
     }
-    if entity.category() == EntityCategory::Aircraft {
+    if entity.on_bridge() || entity.category() == EntityCategory::Aircraft {
         return UnitRenderSlopeState::Stable(0);
     }
     let kind = entity
@@ -503,7 +507,7 @@ pub(crate) fn build_unit_instances(
         return;
     };
     for (entity, band) in super::helpers::drawn_display_entities(sim, frame) {
-        visit(objects, entity, band);
+        visit(objects, entity, band, None);
     }
 }
 
@@ -515,7 +519,12 @@ pub(crate) fn unit_visitor<'a>(
     state: &'a AppState,
     display_order: &'a NativeDisplayOrder,
 ) -> Option<
-    impl FnMut(&mut PlannedObjects, &crate::app::presentation::frame::ObjectRecord, EntityDrawBand) + 'a,
+    impl FnMut(
+        &mut PlannedObjects,
+        &crate::app::presentation::frame::ObjectRecord,
+        EntityDrawBand,
+        Option<&mut super::shp::ShpVisit<'_>>,
+    ) + 'a,
 > {
     let (sim, atlas) = match (
         state
@@ -585,7 +594,8 @@ pub(crate) fn unit_visitor<'a>(
     Some(
         move |objects: &mut PlannedObjects,
               entity: &crate::app::presentation::frame::ObjectRecord,
-              member_band: EntityDrawBand| {
+              member_band: EntityDrawBand,
+              shp_cargo: Option<&mut super::shp::ShpVisit<'_>>| {
             // One object's pieces: the visited member, or the cargo a Carryall
             // draws inside its own Draw_It (`carried`).
             let mut draw = |entity: &crate::app::presentation::frame::ObjectRecord,
@@ -684,13 +694,12 @@ pub(crate) fn unit_visitor<'a>(
                 // The cargo is in limbo inside its Carryall, whose admission the
                 // Display member already passed; only its own DrawState applies.
                 let draw_decision = match carried {
-                    Some(_) => Some(DrawState::for_entity(
+                    Some(_) => carried_admission(
                         entity,
                         sim.session().binary_frame(),
                         house_color_to_remap_row(hc),
                         observer,
-                    ))
-                    .filter(|decision| decision.visible),
+                    ),
                     None => tactical_entity_admission(
                         super::helpers::TacticalEntityPurpose::Drawing,
                         entity,
@@ -766,17 +775,9 @@ pub(crate) fn unit_visitor<'a>(
                         sim,
                         sim.session().binary_frame(),
                     );
-                // `UnitClass::DrawIt @ 0x0073CEC0`: a carried Unit (IsOnCarryall
-                // `+0x424`) draws its body 14 pixels below the point it is given
-                // (`0x0073CEFC..0x0073CF19`), its Carryall's body point
-                // (`AircraftClass::Draw_It`, `0x0041463A..0x00414653`), less its
-                // own lift (`+0x6B4`).
-                let (center_x, center_y): (f32, f32) = match carried {
-                    Some(carried) => (
-                        carried.point[0],
-                        carried.point[1] - render_pose.visual_lift + CARRIED_DROP_PIXELS,
-                    ),
-                    None => (sx, sy),
+                let [center_x, center_y] = match carried {
+                    Some(carried) => carried_body_point(carried.point, entity),
+                    None => [sx, sy],
                 };
 
                 // Docked miners render in front of the refinery building they're on.
@@ -1132,6 +1133,17 @@ pub(crate) fn unit_visitor<'a>(
                 };
                 if draw(cargo, Some(carried), &mut cargo_pieces).is_none() {
                     cargo_pieces.clear();
+                    // An SHP cargo: DrawIt's SHP arm (vt+0x558, `0x0073D38F`)
+                    // at the same point.
+                    if let Some(shp) = shp_cargo {
+                        shp(
+                            super::shp::ShpDraw::Carried {
+                                carrier: drawn.body_point,
+                                pieces: &mut cargo_pieces,
+                            },
+                            cargo,
+                        );
+                    }
                 }
             }
 
@@ -1173,8 +1185,50 @@ pub(crate) fn unit_visitor<'a>(
 }
 
 /// The pixels a carried Unit's body is drawn below the point its Carryall
-/// gives it (`UnitClass::DrawIt`, `0x0073CF16`).
-const CARRIED_DROP_PIXELS: f32 = 14.0;
+/// gives it (`UnitClass::DrawIt`, `0x0073CF16`), and its SHP shadow above
+/// its body point, back at the given point (`0x0073C753`, `0x00706481`,
+/// `0x00706559`; Ares `UnitClass_DrawSHP_DrawShadowEarlier`, Ares.dll
+/// `10047F6D`).
+pub(crate) const CARRIED_DROP_PIXELS: f32 = 14.0;
+
+/// Where `UnitClass::DrawIt @ 0x0073CEC0` draws a Unit its Carryall draws at
+/// `carrier`, the Carryall's body point (`AircraftClass::Draw_It`,
+/// `0x0041463A..0x00414653`): less the Unit's own lift (`+0x6B4`), and
+/// [`CARRIED_DROP_PIXELS`] lower while IsOnCarryall (`+0x424`) is set
+/// (`0x0073CEF3..0x0073CF19`). Its voxel (vt+0x554) and SHP (vt+0x558)
+/// draws both take this point.
+pub(crate) fn carried_body_point(
+    carrier: [f32; 2],
+    cargo: &crate::app::presentation::frame::ObjectRecord,
+) -> [f32; 2] {
+    let drop = if cargo.on_carryall {
+        CARRIED_DROP_PIXELS
+    } else {
+        0.0
+    };
+    [
+        carrier[0],
+        carrier[1] - f32::from(cargo.ion_blast_lift_pixels()) + drop,
+    ]
+}
+
+/// A carried cargo's admission: it is in limbo inside its Carryall, whose
+/// Display member the tactical admission already passed, so only its own
+/// DrawState applies.
+pub(crate) fn carried_admission(
+    cargo: &crate::app::presentation::frame::ObjectRecord,
+    binary_frame: u32,
+    remap_row: u32,
+    observer: crate::render::draw_state::ObserverDrawContext,
+) -> Option<crate::render::draw_state::DrawDecision> {
+    Some(DrawState::for_entity(
+        cargo,
+        binary_frame,
+        remap_row,
+        observer,
+    ))
+    .filter(|decision| decision.visible)
+}
 
 /// Where a Carryall draws its cargo ([`unit_visitor`]): its own body point
 /// and Display band.
@@ -1374,8 +1428,9 @@ fn unit_body_draw<'a>(
 /// WaterImage wins over deployed UnloadingClass and observer disguise. The
 /// miner's temporary Type swap73D29C..73D2C4 precedes this lookup. The live
 /// object's OnBridge and GetCell5F6960 decide admission, independently of Z
-/// or locomotor. The ordinary model already decided SHP/VXL dispatch.
-fn water_image_type<'a>(
+/// or locomotor. The ordinary model already decided SHP/VXL dispatch. The
+/// SHP draw's hooks call the same function (`shp::ShpUnitLayout`).
+pub(super) fn water_image_type<'a>(
     entity: &crate::app::presentation::frame::ObjectRecord,
     interner: &crate::sim::intern::StringInterner,
     rules: Option<&'a crate::rules::ruleset::RuleSet>,

@@ -921,6 +921,17 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
     // launch, nested death and fallout are real. The former overlay0 was not
     // admitted by native587180's structural body branch.
     let span = [(5, 5), (5, 4), (5, 3), (5, 2), (5, 6)];
+    // The ground is raised before the Mark: the stamp is what records the
+    // span's deck, and a level written afterwards would leave that deck four
+    // levels above the old ground.
+    for &(x, y) in &span {
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(x, y)
+            .unwrap()
+            .level = 3;
+    }
     sim.resolved_terrain
         .as_mut()
         .unwrap()

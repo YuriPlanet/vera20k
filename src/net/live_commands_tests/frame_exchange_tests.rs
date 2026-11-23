@@ -156,7 +156,8 @@ fn a_one_human_match_orders_through_the_relay_only_when_the_lobby_marked_it() {
             "marked: {alone}"
         );
         let clock = relay_clock(LiveCommandMode::Wol, &wire, 1).unwrap();
-        let agreement = StartupAgreement::new([(0, 0)], [0], 73, 10, 30, rate, 0, "", "").unwrap();
+        let agreement =
+            StartupAgreement::new([(0, 0)], [0], 73, 10, 30, rate, 0, 0, "", "").unwrap();
         let live =
             LiveCommandSession::new(agreement, wire, 0, 73, rate, LiveCommandMode::Wol, clock)
                 .unwrap();
@@ -175,7 +176,8 @@ fn solo_wol_commands_apply_without_ahead_or_batching_across_timing_updates() {
         .install_network_command_timing(0, std::num::NonZeroU8::new(10).unwrap(), [0]);
     let rate = NonZeroU32::new(10).unwrap();
     let agreement =
-        StartupAgreement::new([(0, 0)], [0], 73, 40, 30, rate, sim.state_hash(), "", "").unwrap();
+        StartupAgreement::new([(0, 0)], [0], 73, 40, 30, rate, sim.state_hash(), 0, "", "")
+            .unwrap();
     let mut live = LiveCommandSession::new(
         agreement,
         transport(),

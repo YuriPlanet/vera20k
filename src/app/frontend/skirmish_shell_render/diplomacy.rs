@@ -11,7 +11,7 @@
 use super::gui_paint::{ButtonArt, GuiStyle};
 use crate::app::AppState;
 use crate::app::input::diplomacy::DIALOG;
-use crate::render::shell_text::ShellAlign;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::diplomacy::{
     DIPLOMACY_ROWS, DiplomacyControl, DiplomacyHeader, TAUNTS_LABEL,
 };

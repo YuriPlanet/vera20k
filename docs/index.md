@@ -64,11 +64,13 @@ simulation, session and network command owners.
 - [Ferry order](ferry.md): press J and click a drop spot to have a transport carry units there and come back for more.
 - [Formation line](formation-line.md): hold F and drag with the left button to line a group up along a drawn line.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
+- [RA2 Mode](ra2-mode.md): tick it in Options to play original Red Alert 2 from the next start.
 - [Lobby player colours](skirmish-colors.md): the thirty colours a lobby lists, and `[SkirmishColors]` for a mod's own.
 - [Interface layout](interface-layout.md): `veraui.ini`, a mod's own places for the sidebar, the command bar and the sidebar's parts.
 - [Computer players pick the nearest enemy](ai-nearest-enemy.md): the `[General] AINearestEnemy=` rules key that stops every computer player in a free-for-all from choosing the human as its enemy.
 - [Jumpjets land beside a taken cell](jumpjet-land-nearby.md): the `[JumpjetControls] LandNearby=` rules key that sends a Nighthawk refused its landing cell to the nearest clear one.
 - [Smooth Jumpjet facing](jumpjet-smooth-facing.md): the `[JumpjetControls] SmoothFacing=` rules key that stops a Nighthawk's body snapping at take-off and unload.
+- [Level high-bridge decks](level-bridge-decks.md): a high bridge keeps one deck height, so a map can run it over a valley or a slope.
 - [Minimap beacons](minimap-beacons.md): tick it in Options, press B and click the minimap to place a beacon far away.
 - [Menu reference](menu-reference.md): every page and menu a player can open, in or out of a match, with where each setting is saved.
 - [Map format](map-format.md): bigger maps and maps for up to 30 players, for people who write map editors and tools.

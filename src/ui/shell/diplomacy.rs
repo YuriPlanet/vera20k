@@ -277,7 +277,7 @@ pub struct DiplomacyView {
 /// insignia pictures and the left-aligned statics, each with its status
 /// help. Disabled children still hover.
 pub fn spec() -> NodeSpec {
-    let left = Value::Int(i32::from(crate::render::shell_text::ShellAlign::NONE.0));
+    let left = Value::Int(i32::from(crate::ui::shell::geom::ShellAlign::NONE.0));
     NodeSpec::new(NodeKind::Dialog).children(DiplomacyControl::all().map(|control| {
         let kind = match control {
             DiplomacyControl::Return

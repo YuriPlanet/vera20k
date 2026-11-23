@@ -171,6 +171,9 @@ impl App {
                     );
                 }
             }
+            SavedSeedOutcome::Convert(path) => {
+                crate::app::persistence::commands::request_saved_game_conversion(state, path);
+            }
             SavedSeedOutcome::Delete(file_name) => {
                 let prefix = state.csf_label("TXT_DELETE_FILE_QUERY", "Delete this file?");
                 let description = state
@@ -195,6 +198,7 @@ impl App {
         state: &mut AppState,
         path: &std::path::Path,
         result: Result<(), crate::app::persistence::PreparedLoadError>,
+        was_converted: bool,
     ) {
         match result {
             Ok(()) => {
@@ -203,7 +207,14 @@ impl App {
             }
             Err(error) => {
                 log::warn!("Load browser: {}: {error}", path.display());
-                let body = state.csf_label("TXT_ERROR_LOADING_GAME", "Error loading game.");
+                if was_converted {
+                    let rows = Self::saved_game_layout(state, SavedSeedMode::Load)
+                        .as_ref()
+                        .map_or(1, saved_browser_rows);
+                    state.match_state.match_presentation.saved_game_browser =
+                        Some(Self::open_converted_save_for_retry(state, path, rows));
+                }
+                let body = Self::saved_game_load_error_message(state, &error, was_converted);
                 Self::show_saved_game_prompt(state, SavedSeedPromptPurpose::Error, body, false);
             }
         }
