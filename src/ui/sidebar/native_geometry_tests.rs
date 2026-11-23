@@ -59,8 +59,7 @@ fn view(screen: [i32; 2], side: usize, count: usize, scroll: usize) -> SidebarVi
     cameos.set_scroll_row(SidebarTab::Building, scroll);
     build_sidebar_view_with_spec(
         spec(side),
-        screen[0] as f32,
-        screen[1] as f32,
+        SidebarFrame::for_layout(screen[0] as u32, screen[1] as u32, 100, &spec(side)),
         SidebarTab::Building,
         100,
         0,
@@ -261,7 +260,8 @@ fn radar_aperture_is_the_same_in_the_gdi_and_nod_tables() {
     for gdi_positions in [true, false] {
         let spec =
             SidebarChromeLayoutSpec::for_theme_and_positions(SidebarTheme::Soviet, gdi_positions);
-        let layout = compute_layout_with_spec(spec, 800., 600., 0);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
+        let layout = compute_layout_with_spec(spec, frame);
         assert_eq!(layout.minimap_rect(&spec), aperture);
     }
 }

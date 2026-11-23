@@ -184,8 +184,7 @@ mod tests {
 
         build_sidebar_view_with_spec(
             SidebarChromeLayoutSpec::stock(),
-            1024.0,
-            768.0,
+            crate::ui::sidebar::SidebarFrame::native(1024, 768),
             SidebarTab::Building,
             credits,
             0,

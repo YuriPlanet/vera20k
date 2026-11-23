@@ -105,8 +105,7 @@ fn superweapon_money_cameo_refresh_tracks_wallet_without_membership_rebuild() {
     projection.model.reconcile_fixture(owner, &candidates, 4, true);
     let mut view = build_sidebar_view_with_spec(
         SidebarChromeLayoutSpec::stock(),
-        800.0,
-        600.0,
+        crate::ui::sidebar::SidebarFrame::native(800, 600),
         SidebarTab::Defense,
         50_000,
         0,
@@ -237,7 +236,7 @@ fn a_built_view_holds_only_while_its_inputs_and_strips_hold() {
     ));
     let inputs = |sim: &Arc<SidebarSimInputs>, tab| SidebarViewInputs {
         spec: SidebarChromeLayoutSpec::stock(),
-        screen: (800.0, 600.0),
+        frame: crate::ui::sidebar::SidebarFrame::native(800, 600),
         tab,
         credits: 50_000,
         sim: Arc::clone(sim),
@@ -289,8 +288,7 @@ fn view_with_gadgets(
 ) -> SidebarView {
     build_sidebar_view_with_spec(
         SidebarChromeLayoutSpec::stock(),
-        800.0,
-        height,
+        crate::ui::sidebar::SidebarFrame::native(800, height as u32),
         tab,
         50_000,
         1_000,
@@ -1702,8 +1700,7 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
         assert_eq!(ids, vec![CameoId::SuperWeapon(sw_views[0].type_id)]);
         let mut sidebar = build_sidebar_view_with_spec(
             SidebarChromeLayoutSpec::stock(),
-            800.0,
-            430.0,
+            crate::ui::sidebar::SidebarFrame::native(800, 430),
             SidebarTab::Defense,
             50_000,
             1_000,

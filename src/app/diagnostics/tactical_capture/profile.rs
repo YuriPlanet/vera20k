@@ -808,7 +808,10 @@ mod tests {
             .value;
             assert_eq!(profile.capture.app_ui_scale, 1.0);
             let spec = SidebarChromeLayoutSpec::for_theme(theme);
-            let layout = compute_layout_with_spec(spec, 800.0, 600.0, 0);
+            let layout = compute_layout_with_spec(
+                spec,
+                crate::ui::sidebar::SidebarFrame::for_layout(800, 600, 100, &spec),
+            );
             assert_eq!(
                 (
                     layout.sidebar_x,

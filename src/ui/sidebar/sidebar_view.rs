@@ -110,8 +110,9 @@ impl ArmedSidebarEntry {
     }
 }
 use super::{
-    Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarItem, SidebarPart, SidebarScrollButton,
-    SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView, compute_layout_with_spec,
+    Rect, SidebarAction, SidebarChromeLayoutSpec, SidebarFrame, SidebarItem, SidebarPart,
+    SidebarScrollButton, SidebarTab, SidebarTabButton, SidebarToggleButton, SidebarView,
+    compute_layout_with_spec,
 };
 
 #[cfg(test)]
@@ -138,8 +139,7 @@ pub(crate) fn build_sidebar_view(
     cameos.set_scroll_row(active_tab, scroll_rows);
     build_sidebar_view_with_spec(
         SidebarChromeLayoutSpec::stock(),
-        screen_w,
-        screen_h,
+        SidebarFrame::native(screen_w as u32, screen_h as u32),
         active_tab,
         credits,
         power_produced,
@@ -163,8 +163,7 @@ pub(crate) fn build_sidebar_view(
 
 pub(crate) fn build_sidebar_view_with_spec(
     layout_spec: SidebarChromeLayoutSpec,
-    screen_w: f32,
-    screen_h: f32,
+    frame: SidebarFrame,
     active_tab: SidebarTab,
     credits: i32,
     power_produced: i32,
@@ -208,12 +207,13 @@ pub(crate) fn build_sidebar_view_with_spec(
     let total_rows = total_items.div_ceil(columns);
 
     // Native screen capacity is independent of the item count.
-    let layout = compute_layout_with_spec(layout_spec, screen_w, screen_h, total_rows);
+    let layout = compute_layout_with_spec(layout_spec, frame);
+    let (side_width, side_height) = frame.surface_size();
     let panel_rect = Rect {
         x: layout.sidebar_x,
         y: 0.0,
-        w: layout_spec.side_width(screen_w),
-        h: screen_h,
+        w: side_width as f32,
+        h: side_height as f32,
     };
     let low_power = power_produced < power_drained;
 

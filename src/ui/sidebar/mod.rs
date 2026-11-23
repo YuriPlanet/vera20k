@@ -18,7 +18,7 @@ mod sidebar_view;
 
 use crate::sim::production::ProductionCategory;
 
-pub use frame::{BOTTOM_STRIP_HEIGHT_PX, Edge, PanelPlaces, SIDEBAR_WIDTH_PX, SidebarFrame};
+pub use frame::{BOTTOM_STRIP_HEIGHT_PX, Edge, PanelPlaces, SidebarFrame};
 pub use layout_spec::{ArtKey, PartKind, SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
 pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
@@ -404,23 +404,15 @@ pub fn default_active_tab() -> SidebarTab {
     SidebarTab::Building
 }
 
-/// Compute the vertical layout of chrome sections for a given screen height.
-/// The sidebar shell fills the available height; item count only affects scrolling.
-pub fn compute_layout(screen_w: f32, screen_h: f32, item_rows: usize) -> SidebarLayout {
-    compute_layout_with_spec(
-        SidebarChromeLayoutSpec::stock(),
-        screen_w,
-        screen_h,
-        item_rows,
-    )
-}
-
+/// Where the chrome sections sit on `frame`'s layout screen
+/// ([`SidebarFrame::layout_screen`]): the sidebar at the frame's left edge
+/// for it, filling the screen's height. The item count only affects
+/// scrolling.
 pub(crate) fn compute_layout_with_spec(
     spec: SidebarChromeLayoutSpec,
-    screen_w: f32,
-    screen_h: f32,
-    _item_rows: usize,
+    frame: SidebarFrame,
 ) -> SidebarLayout {
+    let (_, screen_h) = frame.layout_screen();
     // Original 6A5090/6A5130: capacity depends on screen height and side,
     // never on build-item count. Integer division truncates toward zero.
     // Native keeps 60 select buttons per strip (0x3C stride, InitSelectZones
@@ -438,7 +430,7 @@ pub(crate) fn compute_layout_with_spec(
     let rows = ((screen_h as i32 - strip_y as i32 - spec.strip_footer as i32) / row_height).max(0)
         as usize;
     SidebarLayout {
-        sidebar_x: spec.sidebar_x(screen_w),
+        sidebar_x: frame.layout_left(),
         cameo_grid_top: strip_y,
         cameo_grid_bottom: strip_y + (rows as i32 * row_height) as f32,
         // Native 6A6C30 advances by the loaded SIDE2 canvas height. VERA's

@@ -100,7 +100,8 @@ pub(crate) struct SidebarProjectionState {
 #[derive(Debug)]
 pub(crate) struct SidebarViewInputs {
     pub(crate) spec: SidebarChromeLayoutSpec,
-    pub(crate) screen: (f32, f32),
+    /// The frame the sidebar lays out on.
+    pub(crate) frame: crate::ui::sidebar::SidebarFrame,
     pub(crate) tab: SidebarTab,
     pub(crate) credits: i32,
     /// Compared by identity: each frame (`presentation::frame`) derives its
@@ -121,7 +122,7 @@ impl PartialEq for SidebarViewInputs {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.sim, &other.sim)
             && self.spec == other.spec
-            && self.screen == other.screen
+            && self.frame == other.frame
             && self.tab == other.tab
             && self.credits == other.credits
             && self.button_sizes == other.button_sizes

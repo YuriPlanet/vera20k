@@ -1538,8 +1538,7 @@ mod tests {
         let (options, interner) = options(count);
         let view = build_sidebar_view_with_spec(
             spec,
-            800.0,
-            600.0,
+            SidebarFrame::for_layout(800, 600, 100, &spec),
             SidebarTab::Building,
             0,
             0,
@@ -1748,7 +1747,7 @@ mod tests {
         let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
         assert_eq!((view.panel_rect.x, view.panel_rect.w), (600.0, 200.0));
         // The frame gives the battlefield and the bottom bar what is left.
-        let frame = SidebarFrame::native(800, 600).with_column_width(spec.sidebar_width as u32);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         assert_eq!(frame.tactical_size(), (600, 568));
         assert_eq!(frame.surface_size(), (200, 600));
         assert_eq!(frame.bar_surface_size(), (600, 32));
@@ -1775,7 +1774,7 @@ mod tests {
         );
 
         let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
-        let frame = SidebarFrame::native(800, 600).with_places(spec.places);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         // The sidebar's parts follow it to the left edge, and the battlefield
         // starts beside it and under the bar.
         assert_eq!((view.panel_rect.x, view.tabs[0].rect.x), (0.0, 26.0));
@@ -1784,7 +1783,7 @@ mod tests {
 
         // A floating sidebar and no bar leave the battlefield the whole frame.
         let (spec, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod"), false));
-        let frame = SidebarFrame::native(800, 600).with_places(spec.places);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         assert_eq!(frame.tactical_rect(), (0, 0, 800, 600));
         assert_eq!(frame.column(), (632, 0, 168, 600));
         assert!(!frame.has_bar());
@@ -1801,19 +1800,16 @@ mod tests {
         file.for_side(Some("GDI"), true)
             .unwrap()
             .apply_to_sidebar(&mut spec);
-        let frame = SidebarFrame::native(800, 600)
-            .with_band_height(spec.side_height as u32)
-            .with_places(spec.places);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         assert_eq!(frame.column(), (0, 440, 800, 160));
         assert_eq!(frame.tactical_rect(), (0, 0, 800, 408));
         // The parts lay out in the band: it starts at the screen's left
         // edge, and its rows are the ones that fit in its own height.
-        let (width, height) = frame.layout_screen();
-        let layout = crate::ui::sidebar::compute_layout_with_spec(spec, width, height, 0);
+        let layout = crate::ui::sidebar::compute_layout_with_spec(spec, frame);
         assert_eq!(layout.sidebar_x, 0.0);
         assert_eq!(layout.origin(&spec, SidebarPart::Cameos)[0], 336.0);
         assert_eq!(layout.side2_tile_count, (160 - 33) / 50);
-        assert_eq!(spec.side_width(width), 800.0);
+        assert_eq!(frame.surface_size().0, 800);
     }
 
     #[test]
@@ -2012,8 +2008,7 @@ mod tests {
         let strips = CameoStrips::layout_fixture(&options, &[], &[]);
         let mut view = build_sidebar_view_with_spec(
             spec,
-            800.0,
-            600.0,
+            SidebarFrame::native(800, 600),
             SidebarTab::Building,
             0,
             0,
@@ -2136,7 +2131,7 @@ mod tests {
         // four places.
         let (_, stock) = sidebar(SidebarTheme::Allied, None);
         let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
-        let frame = SidebarFrame::native(800, 600).with_places(spec.places);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         assert_eq!(frame.tactical_rect(), (168, 32, 632, 568));
         let from_side = |view: &SidebarView, x: f32| x - view.panel_rect.x;
         assert_eq!(
@@ -2162,12 +2157,9 @@ mod tests {
         file.for_side(Some("Nod"), false)
             .unwrap()
             .apply_to_sidebar(&mut spec);
-        let frame = SidebarFrame::native(800, 600)
-            .with_band_height(spec.side_height as u32)
-            .with_places(spec.places);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         assert_eq!(frame.tactical_rect(), (0, 0, 800, 408));
-        let (width, height) = frame.layout_screen();
-        let layout = crate::ui::sidebar::compute_layout_with_spec(spec, width, height, 0);
+        let layout = crate::ui::sidebar::compute_layout_with_spec(spec, frame);
         assert_eq!(
             [SidebarPart::Radar, SidebarPart::Middle, SidebarPart::Cameos]
                 .map(|part| layout.origin(&spec, part)[0]),

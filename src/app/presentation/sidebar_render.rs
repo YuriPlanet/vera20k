@@ -43,15 +43,10 @@ pub(crate) fn current_sidebar_view(state: &AppState) -> Option<&SidebarView> {
 pub(crate) fn current_sidebar_layout(state: &AppState) -> sidebar::SidebarLayout {
     match current_sidebar_view(state) {
         Some(view) => view.layout,
-        None => {
-            let (screen_w, screen_h) = state.sidebar_frame().layout_screen();
-            sidebar::compute_layout_with_spec(
-                state.match_state.match_presentation.sidebar_layout_spec,
-                screen_w,
-                screen_h,
-                0,
-            )
-        }
+        None => sidebar::compute_layout_with_spec(
+            state.match_state.match_presentation.sidebar_layout_spec,
+            state.sidebar_frame(),
+        ),
     }
 }
 
@@ -319,9 +314,8 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     state.match_state.match_presentation.sidebar_layout_spec = spec;
     refresh_added_parts(state);
     // The sidebar lays out on its own surface (`ui::sidebar::SidebarFrame`).
-    let (screen_w, screen_h) = state.sidebar_frame().layout_screen();
-    let visible_rows =
-        sidebar::compute_layout_with_spec(spec, screen_w, screen_h, 0).side2_tile_count;
+    let sidebar_frame = state.sidebar_frame();
+    let visible_rows = sidebar::compute_layout_with_spec(spec, sidebar_frame).side2_tile_count;
     let Some(owner_name) = preferred_local_owner_name(state) else {
         state
             .match_state
@@ -529,7 +523,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         });
     let view_inputs = SidebarViewInputs {
         spec: state.match_state.match_presentation.sidebar_layout_spec,
-        screen: (screen_w, screen_h),
+        frame: sidebar_frame,
         tab: state.match_state.match_presentation.active_sidebar_tab,
         credits: display_credits,
         sim: inputs,
@@ -589,8 +583,7 @@ fn build_view(
 ) -> SidebarView {
     let mut view = sidebar::build_sidebar_view_with_spec(
         inputs.spec,
-        inputs.screen.0,
-        inputs.screen.1,
+        inputs.frame,
         inputs.tab,
         inputs.credits,
         inputs.sim.power_produced,
