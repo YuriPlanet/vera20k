@@ -273,6 +273,16 @@ impl<'a> Observation<'a> {
         })
     }
 
+    /// A power producer still being erected will eventually supply its full
+    /// output, while an *already finished but damaged* plant only contributes
+    /// what the native meter currently reports. The building planner needs
+    /// this distinction to avoid both duplicate opening plants and late-game
+    /// brownouts after a raid.
+    pub fn building_under_construction(&self, entity_id: u64) -> bool {
+        self.sim.entities().get(entity_id)
+            .is_some_and(|entity| entity.in_construction_bstate())
+    }
+
     /// Power produced by the house's live, powered buildings.
     pub fn power_output(&self) -> i32 {
         self.power().map_or(0, |(output, _)| output)

@@ -179,6 +179,8 @@ pub(super) fn run(
                 // A visible controller of our stolen unit is the legitimate
                 // target. Do not spend this cycle killing the captured tank.
                 .filter(|enemy| visible_enemies.contains(&enemy.entity_id))
+                .filter(|enemy| !super::orders::reclamation_reserved(
+                    rules, obs, &brain.census, **enemy))
                 .filter(|enemy| obs.visible_liberation_target(enemy.entity_id).is_none())
                 .map(|enemy| {
                 (

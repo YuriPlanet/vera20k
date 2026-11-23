@@ -689,7 +689,16 @@ pub(super) fn run(
         // winning the neighbourhood.
         let one_shot = blocker_shooter(&brain.census, obs, rules, &blocker)
             .is_some_and(|shooter| kills_outright(rules, shooter, ty, unit.points));
-        if !passing && armed && !outmatched(ours, theirs) && !one_shot {
+        // A healthy, armored column that massively outguns a minor bunker
+        // must be allowed to press the attack, even when that gun is merely
+        // *along* the route. The old unconditional `passing` branch made an
+        // entire tank fist sidestep forever around one pillbox.
+        let overwhelming_armor = unit.traits.combat
+            && unit.slot == super::census::Slot::Vehicle
+            && unit.health_permille >= 650
+            && ours >= theirs.saturating_mul(3)
+            && !one_shot;
+        if overwhelming_armor || (!passing && armed && !outmatched(ours, theirs) && !one_shot) {
             continue;
         }
         // Two legs, two sides: the unit's own side first, the other only when

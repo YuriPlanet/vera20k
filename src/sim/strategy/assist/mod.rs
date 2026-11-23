@@ -287,6 +287,9 @@ pub struct AssistBrain {
     /// At most two cheap mobile units may leave their routine for visible
     /// distant crates. A durable claim stops two units chasing the same box.
     pub(super) crate_claims: BTreeMap<u64, ((u16,u16), u64)>,
+    /// Last *visible* crate sightings, including those now under fog. Never
+    /// populate this from hidden global crate slots.
+    pub(super) crate_sightings: BTreeMap<(u16, u16), u64>,
     /// A bounded preparation window against the visible defensive gun line.
     pub(super) siege_wait: Option<(u64, u64)>,
     /// Target and start tick of a bounded local reinforcement assembly.
@@ -380,6 +383,10 @@ pub struct AssistBrain {
     /// Which infiltration class each spy already sent was walking to, by unit.
     /// The unit is consumed on arrival, so its disappearance is the receipt.
     pub(super) spy_errand: std::collections::BTreeMap<u64, u8>,
+    /// Stable last-seen sites for infiltration reconnaissance (not a direct
+    /// target list). A scout sighting remains useful after the shroud closes;
+    /// remove it when the cell is visible and the building is gone.
+    pub(super) spy_sites: BTreeMap<(u16, u16), u64>,
     /// Spy purchases are independent of engineer captures; one infiltration
     /// expedition must not be starved by unsuccessful engineer rushes.
     pub(super) next_spy_purchase: u64,
@@ -494,6 +501,7 @@ impl AssistBrain {
             super_at: BTreeMap::new(),
             chrono_trip: None,
             crate_claims: BTreeMap::new(),
+            crate_sightings: BTreeMap::new(),
             siege_wait: None,
             assault_wait: None,
             siege_reach: None,
@@ -511,6 +519,7 @@ impl AssistBrain {
             yard_commit: std::collections::BTreeMap::new(),
             infiltrated: std::collections::BTreeSet::new(),
             spy_errand: std::collections::BTreeMap::new(),
+            spy_sites: BTreeMap::new(),
             next_spy_purchase: 0,
             garrison_release_after: BTreeMap::new(),
             combat_board_after: 0,

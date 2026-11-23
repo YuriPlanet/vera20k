@@ -151,6 +151,9 @@ pub(super) fn spend(
     }
     place_finished(brain, rules, obs, out);
     build_next(brain, rules, obs, budget, out);
+    // Native Building and Defense factories are independent. The main build
+    // choice must not make the second strip look busy (or vice versa).
+    queue_defense_in_parallel(brain, rules, obs, budget, out);
     // After the structure decision, because `build_next` is the owner that
     // clears the hold; a reserve set before it would be zeroed by it.
     hold_for_a_second_base(brain, rules, obs, budget);
@@ -350,37 +353,11 @@ fn own_units_on_foundation(
         .collect()
 }
 
-/// The cells a wall would stand on around the house's own buildings that retail
-/// marks `ProtectWithWall=yes`: one ring outside each foundation.
-///
-/// This is the ring [`super::walls::next_segment`] closes, and the reason a
-/// foundation may not be placed on it. Walls only start once the base has
-/// [`super::walls::WALL_MIN_STRUCTURES`] structures, so by the time the first
-/// segment is queued every cell beside the yard already carries a building
-/// unless the sweep was told to leave them alone.
-fn wall_ring(rules: &RuleSet, obs: &Observation<'_>) -> BTreeSet<(u16, u16)> {
-    let mut ring = BTreeSet::new();
-    for entity in obs.own_entities() {
-        let Some(ty) = obs.object_type(rules, entity.type_id) else {
-            continue;
-        };
-        if !super::walls::protected(ty) {
-            continue;
-        }
-        let (width, height) = ty.foundation.dimensions();
-        // The ring the plan actually builds on, not the one `perimeter`
-        // answers: the wall stands `WALL_OFFSET_CELLS` out, and reserving the
-        // cell beside the foundation instead left every segment a ring
-        // further out than the space kept for it — one cell off, in the same
-        // direction on all four sides, which is what "the wall is shifted"
-        // looked like.
-        ring.extend(super::walls::ring_at(
-            entity.cell,
-            (width, height),
-            super::walls::WALL_OFFSET_CELLS,
-        ));
-    }
-    ring
+/// Do not reserve imaginary wall slots around friendly buildings. Auto wall
+/// rings are deliberately disabled until their real passability and autofill
+/// effects are proven safe for miners and the MCV.
+fn wall_ring(_rules: &RuleSet, _obs: &Observation<'_>) -> BTreeSet<(u16, u16)> {
+    BTreeSet::new()
 }
 
 /// The wallet the house keeps for the harvesters it has not built yet.
@@ -430,21 +407,12 @@ fn build_next(
     // left over from a decision that has since been paid for would starve the
     // factories of money nobody is saving.
     brain.yard_reserve = 0;
-    // A wall segment first, and before the yard's own guard: it is the Defense
-    // line's work, so it delays no structure and the plan is not held back by
-    // it. The gates inside are the wallet's (a wall is worth a production slot
-    // only while the house has money), the line's own, and the base's size.
-    if brain.census.refineries > 0
-        && brain.census.harvesters > 0
-        && brain.director.permits_build(Item::Defense)
-        && !brain.director.protecting_base()
-        && brain.director.objective() != super::strategy::Objective::ExpandOre
-        && super::frontier::needed(rules, obs, &brain.census, &brain.ore_known, budget.free).is_none()
-        && !plan::needs_power_reserve(rules, obs, &brain.census, budget.free)
-        && super::walls::queue_segment(brain, rules, obs, budget.free, out)
-    {
-        return;
-    }
+    // Do not automatically close wall rings until their gate connectivity is
+    // verified *after* native overlay autofill. A two-cell planned gap can be
+    // blocked by terrain or another building, stranding miners and tanks.
+    // Wall construction remains available to players and scripted teams; the
+    // unattended planner favors armed towers over speculative fortifications.
+
     // A structure the yard has finished and not yet put down is *owned*: it is
     // waiting for a cell, not for a buyer. Starting another because the count
     // on the map has not caught up is how an opening ended with two power
@@ -492,16 +460,28 @@ fn build_next(
         Some((plan::Chosen { step: None, item, ty: chosen.0, type_id: chosen.1 }, anchor))
     });
     let focused = frontier.as_ref().map(|(_,anchor)| *anchor);
-    let Some(chosen) = frontier.map(|(chosen, _)| chosen).or_else(|| next_building_for(
+    let Some(mut chosen) = frontier.map(|(chosen, _)| chosen).or_else(|| next_building_for(
         rules,
         obs,
         &brain.census,
         budget,
         held.map(|(step, _)| step),
-        |item| brain.director.permits_build(item),
+        // The Defense factory is planned separately in the same frame.
+        // A busy Defense strip must never hide a ready main construction strip.
+        |item| item != Item::Defense && brain.director.permits_build(item),
     )) else {
         return;
     };
+    // Frontier decisions bypass `next_building_for`: a remote defensive
+    // position still draws from the *same house-wide power grid*. Gate that
+    // path too, and put its replacement generator at the frontier anchor.
+    if chosen.item == Item::Defense
+        && plan::consumer_breaks_reserve(rules, obs, &brain.census, chosen.ty.power)
+    {
+        let Some((ty, type_id)) = first_buildable(rules, obs, &rules.build_power_types)
+        else { return; };
+        chosen = plan::Chosen { step: None, item: Item::Power, ty, type_id };
+    }
     // Power is spliced in ahead of the plan and held by nobody, so the entry
     // the house was saving for still stands when the plant is paid for.
     if let Some(step) = chosen.step {
@@ -661,6 +641,77 @@ fn build_next(
     out.intent(Intent::QueueProduction { type_id });
 }
 
+/// Ask the independent Defense factory after the normal construction strip.
+/// A single `next_building` choice per frame serialized production: when the
+/// normal plan wanted another refinery while Building was busy, Defense went
+/// idle even though retail offers a separate strip. Neither line may double
+/// spend the current wallet, nor may a tower brown out the house.
+fn queue_defense_in_parallel(
+    brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+    budget: &Budget, out: &mut Outbox,
+) {
+    if brain.census.line(ProductionCategory::Defense).busy()
+        || brain.census.refineries == 0 || brain.census.harvesters == 0
+        || !brain.director.permits_build(Item::Defense)
+        || plan::power_short(rules, obs, &brain.census)
+    { return; }
+    let already_queued = out.intents.iter().any(|intent| {
+        if let Intent::QueueProduction { type_id } = intent {
+            return obs.object_type(rules, *type_id).is_some_and(|ty|
+                crate::sim::production::category_for_object(ty)
+                    == ProductionCategory::Defense);
+        }
+        false
+    });
+    if already_queued { return; }
+    // The outpost planner may need a *local* defense even while the normal
+    // Building strip is busy with a refinery. Do not require the idle Building
+    // strip for a remote defense that the separate native Defense strip owns.
+    let frontier = super::frontier::needed(
+        rules, obs, &brain.census, &brain.ore_known, budget.free,
+    ).and_then(|(item, anchor)| {
+        if item != Item::Defense { return None; }
+        let (ty, type_id) = defense_building(rules, obs, &brain.census)?;
+        Some((plan::Chosen { step: None, item, ty, type_id }, anchor))
+    });
+    // Respect the normal defense quota/gates instead of blindly filling the
+    // second strip. When a remote guard point is needed, preserve its site
+    // anchor through the same placement mission as other frontier buildings.
+    let focused = frontier.as_ref().map(|(_, anchor)| *anchor);
+    let Some(chosen) = frontier.map(|(plan, _)| plan).or_else(||
+        plan::answer_where(rules, obs, &brain.census, budget, None,
+            |item| item == Item::Defense)
+    ) else { return; };
+    if plan::consumer_breaks_reserve(rules, obs, &brain.census, chosen.ty.power)
+        || obs.in_production(rules, chosen.type_id)
+    { return; }
+    let committed = out.intents.iter().filter_map(|intent| {
+        if let Intent::QueueProduction { type_id } = intent {
+            return obs.object_type(rules, *type_id)
+                .map(|ty| obs.cost_of(rules, ty).max(0));
+        }
+        None
+    }).fold(0i32, |sum, price| sum.saturating_add(price));
+    let price = obs.cost_of(rules, chosen.ty).max(0);
+    if !two_strip_budget_admits(budget.free, committed, price) { return; }
+    // A second queue can only help if its finished building also has a site.
+    // Never buy an endless backlog of towers without land for them.
+    if Placement::new(obs, rules).cell_for(chosen.type_id, 0).is_none() {
+        return;
+    }
+    if let Some(anchor) = focused {
+        brain.outpost_builds.insert(chosen.type_id, anchor);
+    }
+    out.intent(Intent::QueueProduction { type_id: chosen.type_id });
+}
+
+/// Both native construction strips may work in the same frame, but both
+/// requests must share one wallet. Prevent the defense strip from re-spending
+/// credits already committed to the normal construction strip.
+fn two_strip_budget_admits(free: i32, committed: i32, price: i32) -> bool {
+    free.saturating_sub(committed.max(0)) >= price.max(0)
+}
+
 /// Hold the wallet for a second base, when the house has decided it wants one.
 ///
 /// The factories spend everything they are given, so a maker's price is only
@@ -790,18 +841,27 @@ fn next_building_for<'r>(
     // One emergency tower may be justified when the base is actually under
     // attack, but not before its refinery exists or when the enemy is remote.
     // Normal defense steps remain in the ordered plan for the later economy.
-    if census.refineries > 0
+    if admits(Item::Defense)
+        && census.refineries > 0
         && census.harvesters > 0
         && !base_defended(rules, obs, census)
         && census.base_cell.is_some_and(|home| census.enemies_near(home, 16) > 0)
     {
         if let Some((ty, type_id)) = defense_building(rules, obs, census) {
-            return Some(plan::Chosen {
-                step: None,
-                item: Item::Defense,
-                ty,
-                type_id,
-            });
+            // Even an emergency tower cannot turn its own defense grid off.
+            // Do not bypass this guard just because the normal build plan has
+            // not yet been consulted this frame.
+            if plan::consumer_breaks_reserve(rules, obs, census, ty.power) {
+                if let Some((plant, plant_id)) = first_buildable(rules, obs, &rules.build_power_types) {
+                    return Some(plan::Chosen {
+                        step: None, item: Item::Power, ty: plant, type_id: plant_id,
+                    });
+                }
+            } else {
+                return Some(plan::Chosen {
+                    step: None, item: Item::Defense, ty, type_id,
+                });
+            }
         }
     }
     let chosen = match plan::answer_where(rules, obs, census, budget, held, admits) {
@@ -837,6 +897,16 @@ fn next_building_for<'r>(
             census.refineries,
             census.harvesters,
         );
+    }
+    // The tower is useful only while the house can operate it. Queue power
+    // *before* a new consumer would consume the grid's reserve, including
+    // commitments already on either structure line. This guard also covers
+    // a defense chosen by the normal list rather than the emergency path.
+    if chosen.item == Item::Defense
+        && plan::consumer_breaks_reserve(rules, obs, census, chosen.ty.power)
+    {
+        return first_buildable(rules, obs, &rules.build_power_types).map(|(ty,type_id)|
+            plan::Chosen { step: None, item: Item::Power, ty, type_id });
     }
     // `Power=` is the type's net contribution: negative is what it draws, and
     // the plant that would feed it is counted at the output it will have. The
@@ -877,6 +947,21 @@ fn next_building_for<'r>(
 /// `RequiredHouses=` and `ForbiddenHouses=`, because `Owner=` is the sidebar's
 /// and the AI selector's gate. This brain is the AI's selector for its house,
 /// so the gate belongs here.
+/// Country-exclusive rules content: British Snipers, German Tank Destroyers,
+/// Korean Black Eagles and French Grand Cannons are selected by the *actual*
+/// country, not by a unit name. Owner= with one country and explicit
+/// RequiredHouses= are two separate ways a mod can express this restriction.
+/// Never treat the generic Allied/Soviet/Yuri roster as national specialists.
+pub(super) fn country_special(ty: &ObjectType, country: &str) -> bool {
+    country_special_tokens(&ty.owner, &ty.required_houses, country)
+}
+
+fn country_special_tokens(owner: &[String], required: &[String], country: &str) -> bool {
+    (owner.len() == 1 && owner[0].eq_ignore_ascii_case(country))
+        || (!required.is_empty() && required.len() <= 2
+            && required.iter().any(|name| name.eq_ignore_ascii_case(country)))
+}
+
 pub(super) fn house_owns(rules: &RuleSet, obs: &Observation<'_>, ty: &ObjectType) -> bool {
     if ty.owner.is_empty() {
         return true;
@@ -1070,9 +1155,20 @@ pub(super) fn defense_building<'r>(
     // an enemy with no aircraft has spent the price of a prism tower on nothing
     // — and the wishlist asks for defences chosen by what they can shoot, not by
     // a quota. Once the enemy has shown aircraft, the mix holds.
-    let enemy_air = census.threat[crate::rules::unit_role::Role::AntiAir.index()] > 0;
-    // Fewer than one anti-air tower per `ANTI_AIR_SHARE` defences: buy one.
-    if enemy_air
+    let enemy_air = census.threat[crate::rules::unit_role::Role::AntiAir.index()] > 0
+        || census.enemies.iter().any(|enemy| {
+            obs.object_type(rules, enemy.type_id).is_some_and(|ty| {
+                ty.category == ObjectCategory::Aircraft || ty.jumpjet
+            })
+        });
+    // A healthy two-refinery base needs at least one real AA launcher even
+    // before the first bomber crosses current vision. Otherwise the opening
+    // Kirow/Black Eagle volley kills the mine before a tower can be queued.
+    // Beyond that single baseline, expand the AA share only on known air
+    // pressure; do not waste an early one-refinery economy on SAM spam.
+    let preventive_air_cover = census.refineries >= 2
+        && ring >= 2 && anti_air_towers == 0;
+    if (enemy_air || preventive_air_cover)
         && anti_air_towers * ANTI_AIR_SHARE <= ring
         && let Some(found) = candidates
             .iter()
@@ -1085,6 +1181,24 @@ pub(super) fn defense_building<'r>(
             })
     {
         return Some(*found);
+    }
+    // A nation's exclusive fortification (France's long-range cannon in
+    // retail) is an actual weapon, not generic decorative base clutter. Its
+    // type may be absent from [AI] BaseDefenses, which is shared by the whole
+    // Allied side. Give a solvent base one such position per three defenses,
+    // without stealing the urgent anti-air answer above.
+    if census.refineries > 0 && census.harvesters > 0 && ring >= 2
+        && let Some(country) = obs.country()
+        && let Some(found) = class_types(rules, obs, ObjectCategory::Building)
+            .filter(|(ty,_)| ty.is_base_defense && country_special(ty, &country))
+            .filter(|(ty,_)| {
+                let armed = armament(rules, ty);
+                armed.range > 0 && armed.anti_ground
+            })
+            .filter(|(_,id)| census.type_count(*id) < (ring / 3).max(1))
+            .max_by_key(|(ty,_)| (armament(rules,ty).range, obs.cost_of(rules,ty)))
+    {
+        return Some(found);
     }
     // The ground ring is chosen by what it can **shoot**, not by what it costs.
     //
@@ -1131,7 +1245,7 @@ fn armed_defenses(rules: &RuleSet, obs: &Observation<'_>, census: &Census) -> (u
         // is where the house lives, not part of the ring around it.
         if ty.category != ObjectCategory::Building
             || ty.construction_yard
-            || ty.weapon_at(0).is_none()
+            || armament(rules, ty).range <= 0
         {
             continue;
         }
@@ -2269,5 +2383,33 @@ mod tests {
         assert!(!grants_a_strike(&rules, plant), "a power plant is not");
         let lab = rules.object("GATECH").expect("the lab");
         assert!(!grants_a_strike(&rules, lab), "and neither is the lab");
+    }
+}
+
+#[cfg(test)]
+mod v17_national_defense_tests {
+    use super::*;
+
+    #[test]
+    fn special_defense_requires_this_country_not_its_generic_side() {
+        let one = vec!["French".to_owned()];
+        let allied = vec!["French".to_owned(), "Germans".to_owned()];
+        assert!(country_special_tokens(&one, &[], "French"));
+        assert!(!country_special_tokens(&one, &[], "Americans"));
+        assert!(!country_special_tokens(&allied, &[], "French"));
+        assert!(country_special_tokens(&allied, &one, "French"));
+    }
+}
+
+#[cfg(test)]
+mod v18_dual_strip_tests {
+    use super::*;
+
+    #[test]
+    fn defense_queue_cannot_spend_the_main_buildings_committed_money() {
+        assert!(two_strip_budget_admits(4_000, 2_000, 1_500));
+        assert!(!two_strip_budget_admits(3_000, 2_000, 1_500));
+        assert!(!two_strip_budget_admits(1_000, 0, 1_200));
+        assert!(two_strip_budget_admits(3_000, 2_000, 1_000));
     }
 }

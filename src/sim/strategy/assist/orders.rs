@@ -131,14 +131,23 @@ pub(super) fn captures(
     out: &mut Outbox,
 ) {
     let tick = obs.tick();
-    if !brain
-        .census
-        .units
-        .iter()
-        .any(|unit| walks_into_buildings_flags(&unit.traits))
-    {
-        return;
-    }
+    // A dog can discover a cash refinery long before we have a spy. Remember
+    // the *observed cell* even if no engineer/spy exists yet; otherwise the
+    // early return below loses the only reconnaissance that could later guide
+    // a spy through shroud. A remembered cell is never authority to click a
+    // hidden entity -- it can only be a Move/reconnaissance destination.
+    // Store only real sightings. Full-map spyable_buildings is a native
+    // entity query, not permission to learn a hidden building's position.
+    let visible_spy_cells: BTreeSet<(u16, u16)> = obs.spyable_buildings(rules)
+        .filter(|e| obs.is_cell_visible(e.cell.0, e.cell.1))
+        .map(|e| e.cell).collect();
+    for &cell in &visible_spy_cells { brain.spy_sites.insert(cell, tick); }
+    brain.spy_sites.retain(|cell, since| {
+        tick.saturating_sub(*since) < SPY_SITE_MEMORY_FRAMES
+            && (!obs.is_cell_visible(cell.0, cell.1) || visible_spy_cells.contains(cell))
+    });
+    if !brain.census.units.iter().any(|unit|
+        walks_into_buildings_flags(&unit.traits)) { return; }
     // Neutral structures are public map objectives (v2 requirement). Enemy
     // buildings are not: an enemy-owned factory in unexplored fog cannot be
     // chosen for an engineer simply because the native list knows it exists.
@@ -330,6 +339,19 @@ pub(super) fn captures(
             )
         };
         let Some(target) = chosen else {
+            // A spy may have been produced *after* the dog last saw the
+            // refinery. Last sighting is not authority to click an invisible
+            // building: walk towards that remembered site, then ask the native
+            // Capture admission once it comes into real sight again.
+            if ty.agent && spy_targets.is_empty() {
+                if let Some(post) = spy_recon_post(brain, rules, obs, unit.cell, ty.movement_zone) {
+                    let _ = issue_tracked(
+                        &mut brain.tracked, brain.trace, out, rules, obs,
+                        unit.entity_id, TrackedKind::Move, None, Some(post),
+                        Goal::Move { cell: post },
+                    );
+                }
+            }
             continue;
         };
         // Capture safety applies to *new* and continuing walks alike. After
@@ -348,11 +370,16 @@ pub(super) fn captures(
         // [`CAPTURE_RECHECK_FRAMES`]. Gating the whole check on that modulus was
         // measured and fired zero times in four matches: it is one frame in
         // thirty, so the gate was reading the clock rather than the ground.
-        let close = guards.iter().any(|cell| {
+        // Ordinary riflemen do not reveal a disguised spy. Engineers must
+        // avoid every hostile rifle; spies avoid the actual detector/psychic
+        // watchers only. Applying the engineer's guard list here aborted every
+        // cash theft as soon as a refinery came into a normal garrison's view.
+        let route_threats = capture_route_threats(ty.agent, &guards, &watchers);
+        let close = route_threats.iter().any(|cell| {
             squared_distance(*cell, unit.cell) <= CAPTURE_CLEAR_CELLS * CAPTURE_CLEAR_CELLS
         });
         let crossed = tick % CAPTURE_RECHECK_FRAMES == 0
-            && path_crosses(&guards, unit.cell, target.cell, PATH_CLEAR_CELLS);
+            && path_crosses(route_threats, unit.cell, target.cell, PATH_CLEAR_CELLS);
         if close || crossed {
             brain.tracked.void(unit.entity_id, TrackedKind::Capture);
             // The walk is no longer safe: it is an abort, not a
@@ -387,6 +414,46 @@ pub(super) fn captures(
         }
         issued += 1;
     }
+}
+
+/// A disguised spy needs to avoid detectors, not ordinary riflemen. A
+/// regular engineer needs clearance from every visible hostile. Keep this
+/// distinction in both the initial Capture and its cross-frame rechecks.
+fn capture_route_threats<'a>(
+    spy: bool, general_guards: &'a [(u16, u16)],
+    spy_watchers: &'a [(u16, u16)],
+) -> &'a [(u16, u16)] {
+    if spy { spy_watchers } else { general_guards }
+}
+
+/// A fogged spy target is an old sighting, *not* an entity we may click.
+/// Stage a spy several cells short of its last seen building, so the ordinary
+/// visibility-gated Capture logic gets another chance. The fog may still be
+/// stale: never issue an object-target command here.
+fn spy_recon_post(
+    brain: &AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+    from: (u16, u16), zone: MovementZone,
+) -> Option<(u16, u16)> {
+    let sites: Vec<(u16, u16)> = brain.spy_sites.keys().copied()
+        .filter(|cell| !obs.is_cell_visible(cell.0, cell.1)).collect();
+    sites.into_iter().flat_map(|site| {
+        // A nearby approach avoids blindly walking to the building's centre.
+        [(5,0), (-5,0), (0,5), (0,-5)].into_iter().filter_map(move |(dx,dy)| {
+            let x = u16::try_from(i32::from(site.0) + dx).ok()?;
+            let y = u16::try_from(i32::from(site.1) + dy).ok()?;
+            Some((x,y))
+        })
+    })
+    .filter(|cell| obs.is_cell_in_playfield(cell.0, cell.1)
+        && obs.is_ground_walkable(cell.0, cell.1)
+        && (!obs.has_zone_grid() || obs.can_reach(zone, from, *cell)))
+    .filter(|cell| !obs.visible_enemy_entities().any(|enemy| {
+        obs.entity_type(rules, enemy.entity_id)
+            .is_some_and(|ty| super::census::Traits::of(rules, ty).scout
+                || mind_controls(rules, ty))
+            && squared_distance(enemy.cell, *cell) <= SPY_WATCH_CELLS * SPY_WATCH_CELLS
+    }))
+    .min_by_key(|cell| (squared_distance(from, *cell), *cell))
 }
 
 /// Spend a unit whose weapon spends it on something worth more than it costs.
@@ -727,7 +794,9 @@ pub(super) fn garrison(
         .census
         .units
         .iter()
-        .filter(|unit| unit.traits.occupier && obs.inside_transport(unit.entity_id).is_some())
+        .filter(|unit| unit.traits.occupier && obs.inside_transport(unit.entity_id)
+            .is_some_and(|carrier| obs.entity_type(rules, carrier)
+                .is_some_and(|ty| ty.category == ObjectCategory::Building)))
         .count();
     // Ordinary home garrisons must not occupy the entire budget that a
     // paradrop needs for the houses immediately outside the enemy perimeter.
@@ -738,11 +807,25 @@ pub(super) fn garrison(
         brain.census.base_cell.is_some_and(|home|
             squared_distance(home, billet.cell) >= 18 * 18)
             && enemy_cells.iter().any(|enemy|
-                squared_distance(*enemy, billet.cell) <= 15 * 15)
+                squared_distance(*enemy, billet.cell) <= 20 * 20)
     }).map(|billet| billet.building_id).collect();
     let front_available = !front_ids.is_empty();
-    let limit = garrison_budget(front_available);
+    // Garrison capacity belongs to *buildings*, not a global population cap.
+    // Count active Capture missions against the empty seats before arrival.
+    let mut room_left: std::collections::BTreeMap<u64, usize> = billets.iter()
+        .map(|billet| {
+            let pending = brain.tracked.pending_captures(tick, billet.building_id)
+                .filter(|id| obs.inside_transport(*id).is_none())
+                .count();
+            (billet.building_id, (billet.room as usize).saturating_sub(pending))
+        }).collect();
+    let limit = garrison_budget(front_available, billets.iter()
+        .filter(|billet| front_ids.contains(&billet.building_id))
+        .map(|billet| billet.room as usize).sum());
     let mut issued = 0;
+    let mut available_mobiles = brain.census.units.iter()
+        .filter(|unit| unit.controllable() && unit.traits.combat
+            && obs.inside_transport(unit.entity_id).is_none()).count();
     for unit in &brain.census.units {
         if issued >= FORCE_ORDERS_PER_FRAME || garrisoned >= limit {
             break;
@@ -765,6 +848,12 @@ pub(super) fn garrison(
         let Some(billet) = billets
             .iter()
             .filter(|billet| squared_distance(unit.cell, billet.cell) <= HOME_REACH_CELLS.pow(2))
+            .filter(|billet| room_left.get(&billet.building_id).copied().unwrap_or(0) > 0)
+            .filter(|billet| {
+                // Preserve a minimal mobile base defense while sending the
+                // paradropped/front-line infantry to available cover.
+                front_ids.contains(&billet.building_id) || available_mobiles > 3
+            })
             .filter(|billet| obs.can_garrison(rules, unit.entity_id, billet.building_id))
             .min_by_key(|billet| {
                 let at_front = front_ids.contains(&billet.building_id);
@@ -784,6 +873,10 @@ pub(super) fn garrison(
         ) {
             issued += 1;
             garrisoned += 1;
+            available_mobiles = available_mobiles.saturating_sub(1);
+            if let Some(room) = room_left.get_mut(&billet.building_id) {
+                *room = room.saturating_sub(1);
+            }
         }
     }
 }
@@ -796,9 +889,12 @@ fn may_garrison_from_mission(mission: MissionId, near_front: bool, firing: bool)
         || (mission == MissionId::from_known(MissionType::Attack) && !firing))
 }
 
-/// Keep a home contingent but reserve slots for an enemy-side paradrop.
-fn garrison_budget(front_available: bool) -> usize {
-    GARRISON_MAX + usize::from(front_available) * 4
+/// Keep a small home contingent while front-line infantry fill the actual
+/// remaining seats, subject to the shared order budget.
+fn garrison_budget(front_available: bool, front_room: usize) -> usize {
+    // The four home slots are a *base* reserve, not a global population cap.
+    // A city block near the enemy can be filled to its own real capacity.
+    GARRISON_MAX + if front_available { front_room.min(32) } else { 0 }
 }
 
 /// What a spy gets out of a building, in retail's own categories.
@@ -1028,10 +1124,51 @@ fn engineer_preference(
 /// Public infrastructure remains strategically useful after another house
 /// captures it. Use rules data rather than remembered neutral ownership: an
 /// oil derrick still has ProduceCashAmount after the enemy takes it.
-fn strategic_public_asset(ty: &ObjectType) -> bool {
+pub(super) fn strategic_public_asset(ty: &ObjectType) -> bool {
     ty.capturable && (ty.produce_cash_amount > 0 || ty.hospital
         || ty.unit_repair || ty.refinery || ty.radar
         || ty.super_weapon.is_some() || ty.super_weapon2.is_some())
+}
+
+/// Preserve a visible strategic public building from our own army's fire
+/// when an engineer can actually take it in the near future. The native
+/// action can be Damage for a healthy hostile building; it is still a legal
+/// engineering operation and must not turn into a tank-demolition order.
+///
+/// Do not protect indefinitely a distant asset with no available engineer:
+/// the ordinary push must remain able to finish an enemy base.
+pub(super) fn reclamation_reserved(
+    rules: &RuleSet, obs: &Observation<'_>,
+    census: &super::census::Census, target: EnemyEntity,
+) -> bool {
+    let Some(ty) = obs.object_type(rules, target.type_id) else { return false; };
+    // Civilian infrastructure has a repeatable strategic value even after an
+    // enemy captured it. Do not grant this protection to hostile nuclear
+    // silos/tech labs/weapon plants just because they happen to be capturable:
+    // those remain valid attack objectives in an emergency.
+    let public_prize = ty.capturable
+        && (ty.produce_cash_amount > 0 || ty.hospital || ty.unit_repair);
+    if !public_prize || !obs.is_cell_visible(target.cell.0, target.cell.1) {
+        return false;
+    }
+    // Reserve the asset as soon as an engineer can take it, or while the
+    // enemy still has other live targets that should be cleared first. If
+    // *only* an enemy oil derrick remains and no engineer can reach it, let
+    // the ordinary final clean-up path finish the game instead of stalling.
+    let engineer_arriving = census.units.iter().any(|engineer| {
+        engineer.traits.engineer && engineer.controllable()
+            && squared_distance(engineer.cell, target.cell) <= 45 * 45
+            && obs.can_take_building(rules, engineer.entity_id, target.entity_id)
+    });
+    engineer_arriving || census.enemies.iter().any(|enemy| {
+        enemy.entity_id != target.entity_id
+            && obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+            && obs.object_type(rules, enemy.type_id).is_some_and(|other| {
+                other.category != ObjectCategory::Building
+                    || !(other.capturable && (other.produce_cash_amount > 0
+                        || other.hospital || other.unit_repair))
+            })
+    })
 }
 
 /// What a building is worth to the house that captures it, in the same
@@ -1740,6 +1877,9 @@ fn spy_route_blocked(
 /// How near a spy's target a watcher may stand before the walk is refused, in
 /// cells: the reveal range plus a step, since the spy is seen on approach.
 const SPY_WATCH_CELLS: i32 = 6;
+/// Strategic memory lasts longer than live combat sightings, but the next
+/// Capture still requires current visual confirmation of the actual building.
+const SPY_SITE_MEMORY_FRAMES: u64 = 7_200;
 
 /// How near a crate has to be for it to be a detour, in cells.
 ///
@@ -1748,10 +1888,10 @@ const SPY_WATCH_CELLS: i32 = 6;
 /// give a unit one: measured, a fighter that walked thirty cells for a box
 /// turned a win into a timeout.
 const CRATE_SEEK_CELLS: i32 = 8;
-/// A known distant crate is worth one scout's journey, not a tank attack
-/// group. No unseen crate may leak from the scenario's global crate slots.
-const CRATE_SCOUT_CELLS: i32 = 56;
-const CRATE_CLAIM_FRAMES: u64 = 600;
+/// A seen distant crate is worth a scout's whole-map journey, not a tank
+/// attack group. Re-check sightings only with the house's actual vision.
+const CRATE_MEMORY_FRAMES: u64 = 900;
+const CRATE_CLAIM_FRAMES: u64 = 1_800;
 
 /// Give an available scout a visible crate collection errand.
 ///
@@ -1765,15 +1905,28 @@ pub(super) fn crates(
     out: &mut Outbox,
 ) {
     let tick = obs.tick();
-    let cells: Vec<(u16, u16)> = obs.crate_cells(rules);
+    let visible_cells: BTreeSet<(u16, u16)> = obs.crate_cells(rules)
+        .into_iter().filter(|cell| obs.is_cell_visible(cell.0, cell.1))
+        .collect();
+    for &cell in &visible_cells {
+        brain.crate_sightings.insert(cell, tick);
+    }
+    // Do not peek at crate slots behind fog to determine whether a sighting
+    // still exists. Confirm disappearance only where we have current vision.
+    let claimed_cells: BTreeSet<(u16, u16)> = brain.crate_claims.values()
+        .filter(|(_, until)| *until > tick).map(|(cell, _)| *cell).collect();
+    brain.crate_sightings.retain(|cell, seen| {
+        (tick.saturating_sub(*seen) <= CRATE_MEMORY_FRAMES
+            || claimed_cells.contains(cell))
+            && (!obs.is_cell_visible(cell.0, cell.1) || visible_cells.contains(cell))
+    });
+    let cells: Vec<(u16, u16)> = brain.crate_sightings.keys().copied().collect();
     let live = &brain.tracked;
     brain.crate_claims.retain(|id, (cell, until)| {
         *until > tick && cells.contains(cell)
             && live.primary_goal(*id) == Some(Goal::Move { cell: *cell })
     });
-    if cells.is_empty() {
-        return;
-    }
+    if cells.is_empty() { return; }
     // A crate is a bonus and not a job, and the unit that takes it is one
     // with nothing else to do: not a unit the push owns, not a unit that is
     // already walking somewhere, not a unit that is fighting.
@@ -1839,9 +1992,10 @@ pub(super) fn crates(
         if !crate_runner_available(brain.crate_claims.len(), CRATE_RUNNERS) {
             break;
         }
-        // Global crate slots are not a fog-of-war observation.
-        if !obs.is_cell_visible(cell.0, cell.1) { continue; }
-        // The nearest idle unit that can walk there. The unit's own movement
+        // Each site is a firsthand or time-limited remembered sighting.
+        // Never read the current hidden global crate slots at assignment time.
+        // The nearest available scout across the map, or an idle nearby
+        // fighter. The unit's own movement
         // zone: a tank and a dog reach different ground, and asking with the
         // infantry's zone for everybody sends vehicles at cells they cannot
         // walk to.
@@ -1851,11 +2005,11 @@ pub(super) fn crates(
         // the map for it is a house that is not fighting: measured, sending a
         // fighter thirty cells for a box turned a win into a timeout.
         let reachable = |unit: &(u64, (u16, u16), MovementZone, bool, i32), range: i32| {
-            let remote_scout = scouts.contains(&unit.0)
-                && obs.is_cell_visible(cell.0,cell.1)
-                && squared_distance(unit.1,cell)
-                    <= CRATE_SCOUT_CELLS * CRATE_SCOUT_CELLS;
-            (squared_distance(unit.1, cell) <= range * range || remote_scout)
+            // Dedicated scouts can cross the entire *known* map for a prize.
+            // Combat units remain limited to their short detour range.
+            let remote_scout = scouts.contains(&unit.0);
+            crate_runner_in_range(remote_scout,
+                squared_distance(unit.1, cell), range)
                 && obs.can_reach(unit.2, unit.1, cell)
                 && !brain.census.enemies.iter().any(|enemy| {
                     obs.is_cell_visible(enemy.cell.0,enemy.cell.1)
@@ -1920,6 +2074,13 @@ fn crate_runner_available(claimed: usize, cap: usize) -> bool {
 const CRATE_RUNNER_SPEED: i32 = 6;
 
 /// How many units the crate detail holds at once.
+/// The dedicated scout detail travels to already-seen crates across the
+/// entire reachable map; ordinary fighters are constrained to short detours.
+/// Visibility and zone connectivity are checked separately at assignment.
+fn crate_runner_in_range(scout: bool, distance_squared: i32, near: i32) -> bool {
+    scout || distance_squared <= near.saturating_mul(near)
+}
+
 const CRATE_RUNNERS: usize = 4;
 
 /// The health a building is worth the wrench at, in permille of its full
@@ -3067,13 +3228,53 @@ mod v16_objective_tests {
 
     #[test]
     fn forward_garrison_does_not_exhaust_the_home_garrison_quota() {
-        assert_eq!(garrison_budget(false), GARRISON_MAX);
-        assert_eq!(garrison_budget(true), GARRISON_MAX + 4);
+        assert_eq!(garrison_budget(false, 0), GARRISON_MAX);
+        assert_eq!(garrison_budget(true, 4), GARRISON_MAX + 4);
         let attack = MissionId::from_known(MissionType::Attack);
         let move_mission = MissionId::from_known(MissionType::Move);
         assert!(may_garrison_from_mission(attack, true, false));
         assert!(may_garrison_from_mission(move_mission, true, false));
         assert!(!may_garrison_from_mission(attack, true, true));
         assert!(!may_garrison_from_mission(attack, false, false));
+    }
+}
+
+#[cfg(test)]
+mod v18_execution_tests {
+    use super::*;
+
+    #[test]
+    fn a_spy_crosses_ordinary_soldiers_but_avoids_detectors() {
+        let guards = [(10, 10), (15, 15)];
+        let watchers = [(15, 15)];
+        assert_eq!(capture_route_threats(false, &guards, &watchers), &guards);
+        assert_eq!(capture_route_threats(true, &guards, &watchers), &watchers);
+        assert!(!path_crosses(capture_route_threats(true, &guards, &watchers),
+            (0, 10), (20, 10), 2));
+        assert!(path_crosses(capture_route_threats(false, &guards, &watchers),
+            (0, 10), (20, 10), 2));
+    }
+
+    #[test]
+    fn dedicated_scouts_can_pursue_crates_across_the_seen_map() {
+        assert!(crate_runner_in_range(true, 120 * 120, CRATE_SEEK_CELLS));
+        assert!(!crate_runner_in_range(false, 120 * 120, CRATE_SEEK_CELLS));
+        assert!(crate_runner_in_range(false, 4 * 4, CRATE_SEEK_CELLS));
+    }
+
+    #[test]
+    fn forward_houses_take_all_their_seats_with_a_bounded_detail() {
+        assert_eq!(garrison_budget(false, 30), GARRISON_MAX);
+        assert_eq!(garrison_budget(true, 12), GARRISON_MAX + 12);
+        assert_eq!(garrison_budget(true, 100), GARRISON_MAX + 32);
+    }
+
+    #[test]
+    fn both_sides_can_capture_a_public_oil_asset() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+        else { return; };
+        let Some(oil) = rules.object("CAOILD") else { return; };
+        assert!(strategic_public_asset(oil));
+        assert!(capture_value(&rules, oil, true) > 0);
     }
 }

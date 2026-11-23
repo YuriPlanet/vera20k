@@ -352,6 +352,18 @@ impl Tracker {
         }).map(|(id, _)| *id)
     }
 
+    /// Number of outstanding capture/garrison walks to this building. A
+    /// building reports its *current* free seats, not seats already promised
+    /// to infantry that have not arrived yet.
+    pub(super) fn pending_captures(&self, now: u64, building: u64)
+        -> impl Iterator<Item = u64> + '_
+    {
+        self.intents.iter().filter(move |(_, intent)| {
+            intent.kind == TrackedKind::Capture
+                && intent.target == Some(building) && now < intent.until
+        }).map(|(id, _)| *id)
+    }
+
     /// Whether anyone at all still has a live `kind` intent on `target`.
     ///
     /// The reverse of `admits`, for the orders that are about a *place* rather
@@ -926,4 +938,22 @@ mod tests {
         assert_eq!(tracker.pending_enterers(10_000,600).count(),0);
     }
 
+}
+
+#[cfg(test)]
+mod v18_garrison_lease_tests {
+    use super::*;
+
+    #[test]
+    fn garrison_walks_hold_seats_only_while_their_intents_are_live() {
+        let mut tracker = Tracker::new();
+        tracker.record(100, 7, TrackedKind::Capture, Some(42), Some((4, 4)));
+        tracker.record(101, 8, TrackedKind::Capture, Some(42), Some((4, 4)));
+        tracker.record(101, 9, TrackedKind::Capture, Some(43), Some((6, 6)));
+        let enroute: Vec<_> = tracker.pending_captures(102, 42).collect();
+        assert_eq!(enroute, vec![7, 8]);
+        tracker.void(7, TrackedKind::Capture);
+        assert_eq!(tracker.pending_captures(102, 42).collect::<Vec<_>>(), vec![8]);
+        assert!(tracker.pending_captures(100_000, 42).next().is_none());
+    }
 }

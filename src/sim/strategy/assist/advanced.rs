@@ -43,10 +43,20 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
     if threats.is_empty() { return; }
     let defenders = brain.squads.squad(Role::Defend)
         .map(|s| s.members.clone()).unwrap_or_default();
+    let attackers = brain.squads.squad(Role::Attack)
+        .map(|s| s.members.clone()).unwrap_or_default();
     let mut issued = 0;
     for defender in &brain.census.units {
-        if issued >= 3 { break; }
-        if !defenders.contains(&defender.entity_id) || !defender.controllable()
+        if issued >= 5 { break; }
+        // Base emergencies can also borrow an idle *local* mobile not assigned
+        // to the attacking fist. This is especially important against air:
+        // the Defense role may contain only anti-ground units.
+        let local_reserve = !attackers.contains(&defender.entity_id)
+            && sites.iter().any(|site|
+                squared_distance(*site, defender.cell) <= 14 * 14)
+            && obs.attack_target(defender.entity_id).is_none();
+        if !(defenders.contains(&defender.entity_id) || local_reserve)
+            || !defender.controllable()
             || defender.in_service() || !defender.traits.combat
             || ordered_this_frame(out, defender.entity_id)
             || brain.tracked.held(obs.tick(), defender.entity_id) { continue; }

@@ -2230,12 +2230,6 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "AI_Manage_Build_Queue's mode: 2 for a harvester (0x004FE109), 1 for a building (0x004FE3AB)",
         ),
         (
-            "sim/control/board.rs",
-            "set_domains",
-            "the player's two-key switch: L2 owns which halves auto play may touch, and the \
-             hotkey (app/input/dispatch.rs) is its only writer",
-        ),
-        (
             "sim/control/budget.rs",
             "set_rotation_start",
             "the micro rotation resumes past the last object stepped this frame; only \

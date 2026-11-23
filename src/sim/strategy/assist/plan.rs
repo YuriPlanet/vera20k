@@ -581,9 +581,9 @@ pub(super) fn power_deficit(
     census: &Census,
     about_to_draw: i32,
 ) -> i32 {
-    obs.power_drain()
-        .saturating_add(about_to_draw.abs().min(i32::MAX - 1))
-        .wrapping_sub(planned_output(rules, obs, census))
+    planned_drain(rules, obs, census)
+        .saturating_add(about_to_draw.saturating_neg().max(0))
+        .saturating_sub(planned_output(rules, obs, census))
 }
 
 pub(super) fn power_short(rules: &RuleSet, obs: &Observation<'_>, census: &Census) -> bool {
@@ -597,51 +597,81 @@ fn desired_power_reserve(drain: i32) -> i32 {
     120.max(drain.max(0) / 4)
 }
 
+/// Predict the draw of structures already queued/finished but not yet placed.
+/// The house's live meter includes *standing* buildings, not an unplaced
+/// defense waiting in the sidebar; ignoring that draw allows the next tower
+/// to brown out the base as soon as both are placed.
+pub(super) fn planned_drain(
+    rules: &RuleSet, obs: &Observation<'_>, census: &Census,
+) -> i32 {
+    let mut draw = obs.power_drain();
+    for line in &census.lines {
+        for type_id in [line.product, line.ready].into_iter().flatten() {
+            if let Some(ty) = obs.object_type(rules, type_id) {
+                draw = draw.saturating_add(ty.power.saturating_neg().max(0));
+            }
+        }
+    }
+    draw
+}
+
+/// A new power consumer may not eat the emergency reserve. This check is
+/// intentionally independent of wallet size: a poor house must save for
+/// power before a tower, not build the tower first and discover an outage.
+pub(super) fn consumer_breaks_reserve(
+    rules: &RuleSet, obs: &Observation<'_>, census: &Census, power: i32,
+) -> bool {
+    if power >= 0 { return false; }
+    let future_drain = planned_drain(rules, obs, census)
+        .saturating_add(power.saturating_neg());
+    projected_power_shortfall(planned_output(rules, obs, census), future_drain)
+}
+
+fn projected_power_shortfall(output: i32, drain: i32) -> bool {
+    output.saturating_sub(drain) < desired_power_reserve(drain)
+}
+
 pub(super) fn needs_power_reserve(
     rules: &RuleSet, obs: &Observation<'_>, census: &Census, free: i32,
 ) -> bool {
     census.refineries > 0 && census.harvesters >= 2
         && free >= 2_500 && obs.power_drain() > 0
-        && planned_output(rules, obs, census).saturating_sub(obs.power_drain())
-            < desired_power_reserve(obs.power_drain())
+        && projected_power_shortfall(
+            planned_output(rules, obs, census), planned_drain(rules, obs, census),
+        )
 }
 
-/// The output the base has once everything it is already paying for is built.
-///
-/// A plant under construction supplies `Power=` scaled by the health it has
-/// built (`sim::power_system`), a plant that has finished but has not been
-/// placed supplies nothing yet, and one still on the yard's line supplies
-/// nothing either. All three are counted here at what they *will* supply,
-/// because the question is not "is the base dark this frame" — the
-/// simulation's own answer to that is the brownout — but "does the base need
-/// another plant", which is a question about the plant it is already paying
-/// for.
-///
-/// The sum is taken from the buildings themselves rather than from
-/// [`Observation::power_output`], because the running figure is the scaled one:
-/// a plant at a tenth of its health reads as a tenth of its output, which is
-/// exactly the deficit that answered "build a second plant" while the first was
-/// still going up. That was the opening with two plants and one refinery, and
-/// it survived the earlier fixes because the plant was no longer on a line by
-/// the time it was counted.
+/// Predict generation once currently commissioned plants finish construction
+/// and the already queued plants are placed. The native meter supplies live
+/// output; finished but damaged/EMP-disabled generators must never be treated
+/// as undamaged simply because their nominal `Power=` is high. Only actual
+/// construction progress and queued generators add future production.
 pub(super) fn planned_output(rules: &RuleSet, obs: &Observation<'_>, census: &Census) -> i32 {
-    let mut output: i32 = 0;
+    // Start with the *real* meter: a damaged, EMP-disabled or drained plant
+    // must not be counted at full nameplate output merely because it exists.
+    // Upgrades and rules modifiers already included in the meter are retained.
+    let mut output = obs.power_output();
     for entity in obs.own_entities() {
-        let Some(ty) = obs.object_type(rules, entity.type_id) else {
-            continue;
-        };
-        if ty.category != crate::rules::object_type::ObjectCategory::Building {
-            continue;
-        }
-        output = output.wrapping_add(ty.power.max(0));
+        let Some(ty) = obs.object_type(rules, entity.type_id) else { continue; };
+        if ty.category != crate::rules::object_type::ObjectCategory::Building
+            || ty.power <= 0 || !obs.building_under_construction(entity.entity_id)
+        { continue; }
+        // An unfinished plant is supposed to reach its rated power once
+        // built. Count only its remaining future contribution; its current
+        // health-scaled output is already in the native house power meter.
+        // Never grant this optimism to an already completed damaged plant.
+        let expected_now = i64::from(ty.power)
+            .saturating_mul(i64::from(entity.health.max(0)))
+            / i64::from(ty.strength.max(1));
+        let future = i64::from(ty.power).saturating_sub(expected_now).max(0);
+        output = output.saturating_add(i32::try_from(future).unwrap_or(i32::MAX));
     }
-    // What the yard holds and has not put down yet: it is on the map as far as
-    // this question is concerned, and on no line, so the loop above cannot see
-    // it.
+    // Finished but unplaced, and factory lines that have not finished: they
+    // supply nothing now but are commitments already bought and paid for.
     for line in &census.lines {
         for type_id in [line.product, line.ready].into_iter().flatten() {
             if let Some(ty) = obs.object_type(rules, type_id) {
-                output = output.wrapping_add(ty.power.max(0));
+                output = output.saturating_add(ty.power.max(0));
             }
         }
     }
@@ -996,6 +1026,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn queued_consumers_count_against_the_power_meter_before_placement() {
+        let Some((mut sim, rules)) = arena(0xA17) else { return; };
+        let owner = sim.interner.intern("Americans");
+        let pending = sim.interner().get("GAPILE").expect("the barracks type");
+        let draw = rules.object("GAPILE").expect("the barracks")
+            .power.saturating_neg().max(0);
+        assert!(draw > 0, "the retail barracks consumes electricity");
+        let obs = Observation::new(&sim, owner);
+        let mut census = Census::default();
+        assert_eq!(planned_drain(&rules, &obs, &census), obs.power_drain());
+        census.lines[crate::sim::strategy::assist::census::LINE_BUILDING].ready = Some(pending);
+        assert_eq!(planned_drain(&rules, &obs, &census),
+            obs.power_drain().saturating_add(draw));
+    }
+
     /// The index in [`STEPS`] of the entry wanting `count` of `item`.
     fn step_of(item: Item, count: usize) -> usize {
         STEPS
@@ -1069,4 +1115,18 @@ mod v15_support_steps_tests {
                 && step.want == 1 && step.gate == Gate::Surplus));
         }
     }
+}
+
+#[cfg(test)]
+mod v17_power_tests {
+    use super::*;
+
+    #[test]
+    fn a_new_tower_must_not_consume_the_emergency_reserve() {
+        assert!(!projected_power_shortfall(1_000, 700));
+        assert!(projected_power_shortfall(1_000, 840));
+        assert!(projected_power_shortfall(1_000, 1_100));
+        assert!(!projected_power_shortfall(1_500, 1_100));
+    }
+
 }

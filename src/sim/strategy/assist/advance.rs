@@ -998,7 +998,22 @@ pub(super) fn advance(
         // expire into a guaranteed suicidal march.
         if let Some((gun, reach)) = super::tactics::lethal_approach(
             rules, obs, unit.entity_id, unit.cell, march_cell,
-        ) {
+        ).filter(|(gun, _)| {
+            // Individual fragility rules must still protect infantry and
+            // aircraft. A healthy armored fist, however, is allowed to trade
+            // through a lone bunker when the nearby force is overwhelming.
+            let ours = fighters.iter()
+                .filter(|f| cell_distance(f.cell, *gun) <= 16)
+                .fold(0i32, |sum, f| sum.saturating_add(f.points));
+            let theirs = brain.census.enemy_points(rules, obs, *gun, 16);
+            let can_hit_gun = obs.visible_enemy_entities().any(|enemy| {
+                enemy.cell == *gun && obs.can_hurt(rules, unit.entity_id, enemy.entity_id)
+            });
+            !(can_hit_gun && super::tactics::overwhelming_armor_commit(
+                unit.slot == super::census::Slot::Vehicle,
+                unit.health_permille, ours, theirs,
+            ))
+        }) {
             let safe = super::tactics::siege_post(
                 rules, obs, unit.entity_id, unit.cell, gun, reach,
             ).or_else(|| {

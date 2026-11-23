@@ -90,6 +90,11 @@ pub(super) fn choose(
                 .filter(|ty| ty.category == ObjectCategory::Building)
                 .map(|ty| (ty, *enemy))
         })
+        // Do not shell a recapturable derrick/hospital while a valid
+        // engineer is approaching. Without this, one tank destroyed the
+        // very asset that the capture planner was trying to win back.
+        .filter(|(_, enemy)| !super::super::orders::reclamation_reserved(
+            rules, obs, census, *enemy))
         .filter(|(_, enemy)| {
             !tracked.claimed_by_other(
                 tick,

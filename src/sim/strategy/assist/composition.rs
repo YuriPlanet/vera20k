@@ -131,7 +131,8 @@ pub(super) fn fill_lines(
     // The infantry floor decides who gets the wallet first when it is thin: a
     // house below its share of infantry spends on the barracks before it
     // spends on the war factory.
-    let infantry_short = infantry_below_floor(&brain.census);
+    let (infantry_floor, infantry_ceiling) = infantry_targets(obs.side_index());
+    let infantry_short = infantry_below_share(&brain.census, infantry_floor);
     // And the ceiling decides when it stops. A soldier costs a tenth of a tank,
     // so a barracks left to itself spends every credit the house earns on
     // infantry and the wallet never reaches the price of one — which is the
@@ -171,7 +172,7 @@ pub(super) fn fill_lines(
     // One soldier under the price is a soldier that resets the saving; a
     // wallet that already holds the price is the war factory's turn and the
     // barracks stops regardless.
-    let infantry_full = infantry_above_ceiling(&brain.census);
+    let infantry_full = infantry_above_share(&brain.census, infantry_ceiling);
     let saving_for_the_tank = budget.free < vehicle_floor;
     let a_soldier_would_reset_the_saving =
         saving_for_the_tank && budget.free >= vehicle_floor - INFANTRY_MIN_CREDITS;
@@ -319,18 +320,33 @@ pub(super) fn fill_lines(
 /// first soldier the floor's, rather than leaving an empty army's share at
 /// zero and letting the war factory decide what the opening is made of.
 fn infantry_below_floor(census: &Census) -> bool {
-    let infantry: usize = census.tiers[Slot::Infantry.index()].iter().sum();
-    infantry * 100 < census.fighters.max(1) * INFANTRY_SHARE_PERCENT
+    infantry_below_share(census, INFANTRY_SHARE_PERCENT)
 }
 
-/// Whether the army has all the infantry it needs, so the wallet can go to the
-/// vehicles instead ([`INFANTRY_CEILING_PERCENT`]).
-///
-/// The same reading the floor makes, of the same fighters: a house with no
-/// army is below the floor and below the ceiling, and the barracks fires.
 fn infantry_above_ceiling(census: &Census) -> bool {
+    infantry_above_share(census, INFANTRY_CEILING_PERCENT)
+}
+
+/// The common 40/55 infantry band overproduces cheap Soviet infantry while
+/// its war factory waits for Rhino/Apocalypse money. Yuri's mind-control
+/// infantry is more valuable than a conscript, so its ceiling remains higher.
+/// The side numbers come from the rules' country side index, not unit names.
+fn infantry_targets(side: Option<i32>) -> (usize, usize) {
+    match side {
+        Some(1) => (25, 42), // Soviet: keep vehicle money in the war factory
+        Some(2) => (35, 52), // Yuri: retain room for control infantry
+        _ => (INFANTRY_SHARE_PERCENT, INFANTRY_CEILING_PERCENT),
+    }
+}
+
+fn infantry_below_share(census: &Census, percent: usize) -> bool {
     let infantry: usize = census.tiers[Slot::Infantry.index()].iter().sum();
-    infantry * 100 > census.fighters.max(1) * INFANTRY_CEILING_PERCENT
+    infantry * 100 < census.fighters.max(1) * percent
+}
+
+fn infantry_above_share(census: &Census, percent: usize) -> bool {
+    let infantry: usize = census.tiers[Slot::Infantry.index()].iter().sum();
+    infantry * 100 > census.fighters.max(1) * percent
 }
 
 /// How many engineers the house keeps, and how many spies.
@@ -350,6 +366,10 @@ const SPY_WANT: usize = 3;
 /// How many attack dogs the house keeps: one for the scan, a second behind it
 /// for the dog the enemy sends at the first.
 const DOG_WANT: usize = 2;
+/// Crates can spawn anywhere. Once the normal scouts and infiltration tools
+/// are established, a prosperous house may keep a larger independent crate
+/// detail without making the opening starve for dogs.
+const CRATE_SCOUT_WANT: usize = 4;
 
 /// Engineers that may come to nothing before the house stops buying them.
 ///
@@ -430,6 +450,8 @@ fn tool<'r>(
     credits: i32,
     ledger: &EngineerLedger,
     spy_ready: bool,
+    known_spy_site: bool,
+    crate_work: bool,
 ) -> Option<(&'r ObjectType, InternedId)> {
     let engineers = census
         .units
@@ -457,12 +479,17 @@ fn tool<'r>(
     let spy_preparation = engineers >= ENGINEER_WANT
         && dogs >= DOG_WANT
         && credits >= 3_000;
+    // A dog sighting remains useful for a later spy even after fog closes.
+    // The site authorizes *reconnaissance only*, never a blind Capture click.
     let want_spy = spies < SPY_WANT && spy_ready
-        && (visible_spy_target || spy_preparation);
+        && (visible_spy_target || (known_spy_site && credits >= 1_500)
+            || spy_preparation);
     // Once the first scout and engineer are available, a visible infiltration
     // opportunity deserves a slot before another engineer is purchased.
     let urgent_spy = want_spy && dogs >= 1 && engineers >= 1 && spies == 0;
-    let want_dog = dogs < DOG_WANT;
+    let want_dog = dogs < DOG_WANT
+        || (crate_work && dogs < CRATE_SCOUT_WANT
+            && spies >= 1 && credits >= 2_500);
     if !want_engineer && !want_spy && !want_dog {
         return None;
     }
@@ -549,6 +576,36 @@ fn product_for<'r>(
     {
         return Some(found);
     }
+    if category == ProductionCategory::Aircraft
+        && let Some(signature) = national_signature(brain, rules, obs,
+            ObjectCategory::Aircraft, budget.free)
+    {
+        return Some(signature);
+    }
+    if category == ProductionCategory::Infantry
+        && let Some(signature) = national_signature(brain, rules, obs,
+            ObjectCategory::Infantry, budget.free)
+    {
+        return Some(signature);
+    }
+    if category == ProductionCategory::Vehicle && budget.free >= vehicle_floor
+        && brain.census.harvesters_served()
+        && let Some(signature) = national_signature(brain, rules, obs,
+            ObjectCategory::Vehicle, budget.free)
+    {
+        return Some(signature);
+    }
+    // A control weapon has no ordinary DPS score. Give Yuri a small real
+    // control corps *before* the native generic infantry/tank suggestion,
+    // otherwise this capability may never reach the factory at all.
+    if matches!(category, ProductionCategory::Infantry | ProductionCategory::Vehicle)
+        && let Some(specialist) = mind_control_purchase(brain, rules, obs,
+            if category == ProductionCategory::Vehicle {
+                ObjectCategory::Vehicle
+            } else { ObjectCategory::Infantry }, budget.free)
+    {
+        return Some(specialist);
+    }
     if let Some(found) = chosen_product(rules, obs, category, budget.free) {
         let traits = census::Traits::of(rules, found.0);
         if !(brain.director.protecting_base() || brain.director.recovering_income())
@@ -607,7 +664,8 @@ fn product_for<'r>(
         && !brain.director.protecting_base()
         && !brain.director.recovering_income()
         && let Some(found) = tool(rules, obs, &brain.census, budget.free, &brain.engineers,
-            obs.tick() >= brain.next_spy_purchase)
+            obs.tick() >= brain.next_spy_purchase,
+            !brain.spy_sites.is_empty(), !brain.crate_sightings.is_empty())
     {
         return Some(found);
     }
@@ -732,7 +790,7 @@ fn early_spy_infiltration<'r>(
     // single engineer died, although the spy uses neither unit to infiltrate.
     let target_visible = obs.spyable_buildings(rules)
         .any(|building| obs.is_cell_visible(building.cell.0, building.cell.1));
-    if !target_visible && !(credits >= 6_000
+    if !target_visible && brain.spy_sites.is_empty() && !(credits >= 6_000
         && brain.census.units.iter().any(|unit| unit.traits.scout)
         && brain.census.units.iter().any(|unit| unit.traits.engineer))
     {
@@ -742,6 +800,77 @@ fn early_spy_infiltration<'r>(
         .filter(|(ty, _)| census::Traits::of(rules, ty).spy)
         .filter(|(ty, _)| obs.cost_of(rules, ty) <= credits)
         .min_by_key(|(ty, id)| (obs.cost_of(rules, ty), *id))
+}
+
+/// Buy a rule-driven country-exclusive unit instead of letting the generic
+/// side AI choose the same line tank forever. The roster band is bounded, so
+/// the signature unit never replaces all of the ordinary front line. Korean
+/// aircraft receive the first opportunity, because an empty airfield has no
+/// aircraft pool with which to satisfy a normal ratio.
+fn national_signature<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>,
+    category: ObjectCategory, credits: i32,
+) -> Option<(&'r ObjectType, InternedId)> {
+    if brain.director.recovering_income() || brain.director.protecting_base()
+        || brain.push_gate == "need-siege"
+        || brain.census.refineries == 0 || brain.census.harvesters == 0
+        || credits < 1_500 || obs.side_index() == Some(2)
+    { return None; }
+    let country = obs.country()?;
+    let pool: usize = brain.census.tiers[slot_category(category).index()].iter().sum();
+    let signatures = brain.census.units.iter()
+        .filter(|unit| obs.object_type(rules, unit.type_id).is_some_and(|ty|
+            ty.category == category && build::country_special(ty, &country)))
+        .count();
+    if !signature_due(category, pool, signatures) { return None; }
+    build::class_types(rules, obs, category)
+        .filter(|(ty,_)| category != ObjectCategory::Vehicle || !ty.naval)
+        .filter(|(ty,_)| super::orders::is_combat_unit(rules, ty))
+        .filter(|(ty,_)| build::country_special(ty, &country))
+        .filter(|(ty,_)| obs.cost_of(rules, ty) <= credits)
+        .min_by_key(|(ty,id)| (
+            brain.census.type_count(*id),
+            std::cmp::Reverse(obs.cost_of(rules,ty)), *id,
+        ))
+}
+
+fn signature_due(category: ObjectCategory, pool: usize, signatures: usize) -> bool {
+    if category == ObjectCategory::Aircraft {
+        signatures.saturating_mul(2) <= pool
+    } else {
+        pool >= 4 && signatures.saturating_mul(5) < pool
+    }
+}
+
+/// Mind-control is a strategic capability, not a damage-per-second role.
+/// Keep at most roughly one control unit per eight fighters, and let normal
+/// production resume while any existing controller can still do its work.
+fn mind_control_purchase<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>,
+    category: ObjectCategory, credits: i32,
+) -> Option<(&'r ObjectType, InternedId)> {
+    if obs.side_index() != Some(2) || credits < 2_000
+        || brain.census.fighters < 6
+        || brain.director.recovering_income() || brain.director.protecting_base()
+        || brain.census.refineries == 0 || brain.census.harvesters == 0
+    { return None; }
+    let existing = brain.census.units.iter().filter(|unit| {
+        obs.object_type(rules, unit.type_id).is_some_and(|ty|
+            crate::rules::capabilities::Capabilities::of(rules, ty)
+                .has(crate::rules::capabilities::Tag::MindControl))
+    }).count();
+    if !control_specialist_due(brain.census.fighters, existing) { return None; }
+    build::class_types(rules, obs, category)
+        .filter(|(ty,_)| !ty.naval && super::orders::is_combat_unit(rules,ty))
+        .filter(|(ty,_)| crate::rules::capabilities::Capabilities::of(rules, ty)
+            .has(crate::rules::capabilities::Tag::MindControl))
+        .filter(|(ty,_)| obs.cost_of(rules, ty) <= credits)
+        .min_by_key(|(ty,id)| (brain.census.type_count(*id),
+            obs.cost_of(rules,ty), *id))
+}
+
+fn control_specialist_due(fighters: usize, controllers: usize) -> bool {
+    fighters >= 6 && controllers.saturating_mul(8) < fighters
 }
 
 /// The type the house's own choice has this factory make, when the house may
@@ -1754,7 +1883,8 @@ mod tests {
         );
 
         let obs = Observation::new(&sim, owner);
-        let (ty, _) = tool(&rules, &obs, &census, 100_000, &EngineerLedger::default(), true)
+        let (ty, _) = tool(&rules, &obs, &census, 100_000, &EngineerLedger::default(), true,
+            false, false)
             .expect("the infantry line still has a tool to make");
         assert!(ty.agent, "the tool is a spy, not {}", ty.id);
     }
@@ -1997,5 +2127,48 @@ mod tests {
             ),
             "a rich house does not idle its barracks: {rich_queued:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod v17_faction_tests {
+    use super::*;
+
+    #[test]
+    fn each_side_keeps_a_different_infantry_budget() {
+        assert_eq!(infantry_targets(Some(0)), (40,55));
+        assert_eq!(infantry_targets(Some(1)), (25,42));
+        assert_eq!(infantry_targets(Some(2)), (35,52));
+        assert!(control_specialist_due(8, 0));
+        assert!(!control_specialist_due(8, 1));
+        assert!(control_specialist_due(16, 1));
+    }
+
+    #[test]
+    fn national_units_take_a_bounded_share_not_the_entire_factory() {
+        assert!(!signature_due(ObjectCategory::Vehicle, 3, 0));
+        assert!(signature_due(ObjectCategory::Vehicle, 5, 0));
+        assert!(!signature_due(ObjectCategory::Vehicle, 5, 1));
+        assert!(signature_due(ObjectCategory::Vehicle, 10, 1));
+        assert!(signature_due(ObjectCategory::Aircraft, 0, 0));
+        assert!(!signature_due(ObjectCategory::Aircraft, 1, 1));
+        assert!(signature_due(ObjectCategory::Aircraft, 2, 1));
+    }
+
+    #[test]
+    fn retail_country_specials_are_not_generic_allied_actors() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+            return;
+        };
+        for (unit, country) in [
+            ("TNKD", "Germans"), ("SNIPE", "British"),
+            ("BEAG", "Alliance"), ("GTGCAN", "French"),
+        ] {
+            let ty = rules.object(unit).unwrap_or_else(|| panic!("{unit}"));
+            assert!(build::country_special(ty, country),
+                "{unit} should be identified as {country}-exclusive");
+            assert!(!build::country_special(ty, "Americans"),
+                "{unit} is not an American generic unit");
+        }
     }
 }

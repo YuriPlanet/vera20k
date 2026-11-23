@@ -183,6 +183,16 @@ pub(super) fn actual_threat_reach(
 /// that it cannot answer. This includes AA against jumpjet infantry, snipers
 /// against infantry and fixed artillery against short-range tanks. A whole
 /// army may have adequate points while one such unit has no useful trade.
+/// Combat strength is a group property, not a reason to kite every healthy
+/// armored unit from a single weak pillbox. Never apply this to fragile air or
+/// infantry, and never override the psychic controller emergency.
+pub(super) fn overwhelming_armor_commit(
+    armored: bool, health_permille: u16, ours: i32, theirs: i32,
+) -> bool {
+    armored && health_permille >= 650 && theirs > 0
+        && ours >= theirs.saturating_mul(3)
+}
+
 fn loses_range_trade(own_reach: i32, hostile_reach: i32, can_answer: bool) -> bool {
     hostile_reach > 0 && (!can_answer || own_reach <= hostile_reach + 1)
 }
@@ -382,5 +392,19 @@ mod v14_counter_tests {
         assert!(loses_range_trade(12, 5, false));
         assert!(!loses_range_trade(12, 5, true));
         assert!(!loses_range_trade(0, 0, false));
+    }
+}
+
+#[cfg(test)]
+mod v18_commit_tests {
+    use super::*;
+
+    #[test]
+    fn only_healthy_overwhelming_armor_may_ignore_a_minor_pillbox() {
+        assert!(overwhelming_armor_commit(true, 900, 900, 300));
+        assert!(!overwhelming_armor_commit(false, 900, 900, 300));
+        assert!(!overwhelming_armor_commit(true, 500, 900, 300));
+        assert!(!overwhelming_armor_commit(true, 900, 899, 300));
+        assert!(!overwhelming_armor_commit(true, 900, 900, 0));
     }
 }
