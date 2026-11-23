@@ -209,8 +209,9 @@ impl SidebarChromeLayoutSpec {
     /// SIDEBAR MIX and chrome heights; `gdi_positions` selects the GDI
     /// (allied) position table.
     ///
-    /// The positions are the built-in `original.ini`, a `veraui.ini` of two
-    /// layouts; what a layout file has no key for stays here.
+    /// The positions are the built-in `veraui_default.ini`, the bottom layer
+    /// under a mod's `veraui.ini` and the player's own; what a layout file has
+    /// no key for stays here.
     pub fn for_theme_and_positions(theme: SidebarTheme, gdi_positions: bool) -> Self {
         let mut spec = Self {
             theme,
@@ -226,7 +227,7 @@ impl SidebarChromeLayoutSpec {
         };
         let layout = ORIGINAL
             .for_side(Some(if gdi_positions { "GDI" } else { "Nod" }))
-            .expect("original.ini has both position tables");
+            .expect("veraui_default.ini has both position tables");
         layout.apply_to_sidebar(&mut spec);
         // SIDE2 paints two cells of the table's own column width.
         spec.cameo_cell_source_width = spec.cameo_column_pitch;
@@ -237,7 +238,7 @@ impl SidebarChromeLayoutSpec {
 /// The original sidebar's numbers, read once.
 static ORIGINAL: std::sync::LazyLock<crate::ui::match_layout::MatchLayoutFile> =
     std::sync::LazyLock::new(|| {
-        crate::ui::match_layout::MatchLayoutFile::from_bytes(include_bytes!("original.ini"))
+        crate::ui::match_layout::MatchLayoutFile::from_bytes(include_bytes!("veraui_default.ini"))
     });
 
 impl SidebarChromeLayoutSpec {

@@ -27,6 +27,11 @@ An older VERA20k doesn't read the file, or skips the keys it doesn't know and te
 the player. If your mod needs its layout, say so with `Needs=` in the mod's
 [`mod.ini`](modding.md#modini).
 
+Every layout starts from the original interface, which is itself a `veraui.ini`
+built into the game: [`src/ui/sidebar/veraui_default.ini`](../src/ui/sidebar/veraui_default.ini).
+Its `GDI` layout is the allied sidebar, its `Nod` layout the one the Soviets and Yuri
+use; each number there is the original value of its key, which your file writes over.
+
 [`docs/examples/veraui.ini`](examples/veraui.ini) is a sample you can copy. It has
 three layouts, all with the original pictures:
 
