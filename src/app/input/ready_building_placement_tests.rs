@@ -8,7 +8,6 @@
 //! building rejects a new entry, including another type's completed building.
 
 use super::MatchInputState;
-use crate::app::input::gadget_input::ID_CAMEO_BASE;
 use crate::app::input::hotkeys::HotkeyBindings;
 use crate::app::input::sidebar_eva::{self, CameoClick, CameoOrder, CameoPress};
 use crate::app::sidebar_projection::{SidebarProjectionState, cameo_candidates};
@@ -20,13 +19,6 @@ use crate::sim::intern::InternedId;
 use crate::sim::production::{self, BuildQueueState, ProductionCategory};
 use crate::sim::world::{
     FrameEffects, LifecycleOutput, SimFrameOutput, SimSoundEvent, Simulation, TickLane,
-};
-use crate::ui::gadget::focus::FocusState;
-use crate::ui::gadget::list::{GadgetList, GadgetSpec};
-use crate::ui::gadget::tick::{GadgetInput, TickOutput, tick};
-use crate::ui::gadget::{
-    GadgetRect, KEY_LMB_DOWN, KEY_LMB_UP, KEY_RMB_DOWN, KEY_RMB_UP, ListId, RESULT_BUTTON,
-    RESULT_RIGHT,
 };
 use crate::ui::sidebar::cameo_order::{CameoId, CameoRequestState};
 use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
@@ -359,56 +351,34 @@ fn press_cameo(
     {
         assert!(item.is_ready, "the actual completed factory draws Ready");
     }
-    let mut list = GadgetList::new(ListId(1));
-    let handles: Vec<_> = view
+    let rects: Vec<_> = view
         .items
         .iter()
-        .enumerate()
-        .map(|(slot, item)| {
+        .map(|item| {
             let rect = item.rect;
-            list.add_tail(GadgetSpec::cameo(
-                GadgetRect::new(
-                    rect.x.round() as i32,
-                    rect.y.round() as i32,
-                    rect.w.round() as i32,
-                    rect.h.round() as i32,
-                ),
-                ID_CAMEO_BASE + slot as u16,
-            ))
+            vera20k_gui::Rect::new(
+                rect.x.round() as i32,
+                rect.y.round() as i32,
+                rect.w.round() as i32,
+                rect.h.round() as i32,
+            )
         })
         .collect();
     let x = (item.rect.x + item.rect.w / 2.0).round() as i32;
     let y = (item.rect.y + item.rect.h / 2.0).round() as i32;
-    let mut focus = FocusState::new();
-    let mut output = TickOutput::default();
     let (is_right, shift) = match press {
         CameoPress::Left => (false, false),
         CameoPress::Right { shift } => (true, shift),
     };
-    let result = tick(
-        &mut list,
-        &mut focus,
-        &GadgetInput {
-            queued_key: if is_right { KEY_RMB_DOWN } else { KEY_LMB_DOWN },
-            event_x: x,
-            event_y: y,
-            mouse_x: x,
-            mouse_y: y,
-            left_held: !is_right,
-            right_held: is_right,
-            shift,
-            ..Default::default()
-        },
-        &mut output,
-    );
-    let right_flag = if is_right { RESULT_RIGHT } else { 0 };
-    assert_eq!(
-        result,
-        RESULT_BUTTON | right_flag | (ID_CAMEO_BASE + slot as u16)
-    );
-    assert_eq!(output.consumed_by, Some(handles[slot]));
-    let fired_slot = ((result & !(RESULT_BUTTON | RESULT_RIGHT)) - ID_CAMEO_BASE) as usize;
-    let action = hit_test_item(&view.items[fired_slot], (result & RESULT_RIGHT) != 0, shift);
+    // The chrome's cameo pool on the view's items: the press fires cameo
+    // `ID_CAMEO_BASE + slot`, with the right marker for the right button.
+    let (fired_slot, right_marker) = crate::app::input::chrome_input::press_cameo(
+        &rects, x, y, is_right,
+    )
+    .expect("the cameo fires on the press");
+    assert_eq!(fired_slot, slot);
+    assert_eq!(right_marker, is_right);
+    let action = hit_test_item(&view.items[fired_slot], right_marker, shift);
     let SidebarAction::CameoPress {
         type_id,
         right,
@@ -454,22 +424,8 @@ fn press_cameo(
         fixture.sim.interner().get(&type_id).unwrap(),
         click,
     );
-    // Cameos fire on DOWN; the real UP edge must not dispatch another entry.
-    let release = tick(
-        &mut list,
-        &mut focus,
-        &GadgetInput {
-            queued_key: if is_right { KEY_RMB_UP } else { KEY_LMB_UP },
-            event_x: x,
-            event_y: y,
-            mouse_x: x,
-            mouse_y: y,
-            shift,
-            ..Default::default()
-        },
-        &mut output,
-    );
-    assert_eq!(release & RESULT_BUTTON, 0);
+    // Cameos fire on DOWN; the real UP edge dispatches no other entry
+    // (`press_cameo` checks the release).
     click
 }
 

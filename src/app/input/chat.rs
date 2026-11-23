@@ -546,11 +546,7 @@ fn skirmish_command(state: &mut AppState, line: &str) -> Result<String, &'static
             );
             // A button held while typing cannot confirm the new order.
             state.match_state.input.cancel_tactical_drag();
-            state
-                .match_state
-                .match_presentation
-                .in_game_gadgets
-                .cancel_pointer_capture();
+            crate::app::input::chrome_input::cancel(state);
             state.match_state.input.skirmish_spawn = Some(order);
             Ok(prompt)
         }

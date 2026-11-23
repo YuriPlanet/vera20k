@@ -229,8 +229,8 @@ pub(crate) struct TimerDock {
     expanded: bool,
     offset: usize,
     max_offset: usize,
-    toggle_rect: Option<crate::ui::gadget::GadgetRect>,
-    scroll_rows: Vec<crate::ui::gadget::GadgetRect>,
+    toggle_rect: Option<crate::ui::shell::geom::RectPx>,
+    scroll_rows: Vec<crate::ui::shell::geom::RectPx>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,7 +249,7 @@ impl TimerDock {
         self.scroll_rows.clear();
     }
 
-    pub(crate) fn toggle_rect(&self) -> Option<crate::ui::gadget::GadgetRect> {
+    pub(crate) fn toggle_rect(&self) -> Option<crate::ui::shell::geom::RectPx> {
         self.toggle_rect
     }
 
@@ -354,7 +354,7 @@ impl TimerDock {
         }
         if let Some(index) = rows.iter().position(|row| *row == DockRow::Toggle) {
             let y = place_line(index, view, font_height, 0, 0).1.y;
-            self.toggle_rect = Some(crate::ui::gadget::GadgetRect::new(
+            self.toggle_rect = Some(crate::ui::shell::geom::RectPx::new(
                 view[0] - RIGHT_MARGIN - 16,
                 y - 1,
                 16,
@@ -411,7 +411,7 @@ pub(crate) struct TimerFrame {
     /// colour.
     pub(crate) texts: Vec<(String, TextPlace, [u8; 3])>,
     /// The dock's toggle and whether the dock is open.
-    pub(crate) toggle: Option<(crate::ui::gadget::GadgetRect, bool)>,
+    pub(crate) toggle: Option<(crate::ui::shell::geom::RectPx, bool)>,
 }
 
 /// Each drawn frame's timer step, before its timers are drawn: the lines,
@@ -685,7 +685,7 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
         );
         let time_rgb = if blinking { blink_rgb } else { *rgb };
         if dock.expanded && matches!(line.source, TimerSource::Super(_)) {
-            dock.scroll_rows.push(crate::ui::gadget::GadgetRect::new(
+            dock.scroll_rows.push(crate::ui::shell::geom::RectPx::new(
                 label_at.fill[0],
                 label_at.fill[1],
                 time_at.fill[0] + time_at.fill[2] - label_at.fill[0],

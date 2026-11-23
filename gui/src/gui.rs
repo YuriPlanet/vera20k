@@ -331,6 +331,13 @@ impl Gui {
         self.dialogs.first().filter(|d| d.chrome.is_some()).map(|d| d.id)
     }
 
+    /// The node the chrome layer would hover at `x`, `y`: its smallest live
+    /// node there, none larger than its seed area.
+    pub fn chrome_hit(&self, x: i32, y: i32) -> Option<NodeId> {
+        let d = self.dialogs.first()?;
+        self.chrome_hover_at(d.root, x, y, d.chrome?.hover_seed_area)
+    }
+
     /// Pops the dialog and removes its nodes.
     pub fn pop_dialog(&mut self, id: DialogId) -> Result<(), Refused> {
         let pos = self.dialogs.iter().position(|d| d.id == id).ok_or(Refused::NotFound)?;

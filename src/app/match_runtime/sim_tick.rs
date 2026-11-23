@@ -1688,8 +1688,18 @@ fn after_simulation_pass(
     crate::app::presentation::building_anim::update_power_bar_anim(state, wall_ms, sidebar_visits);
     crate::app::presentation::sidebar_render::advance_sidebar_credits(state, sidebar_visits);
     crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(state, sidebar_visits);
-    // Per-frame gadget idle tick (G22 rows 2/3 drag-off/drag-back tracking).
-    crate::app::input::gadget_input::idle_tick(state);
+    // Every unlocked pass republishes the complete sidebar projection,
+    // including the retained House power pair the tooltip driver reads.
+    if state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .view()
+        .is_some()
+        && !crate::app::input::campaign_input::is_locked(state)
+    {
+        crate::app::presentation::sidebar_render::republish_sidebar_projection(state);
+    }
     // The audio service is NOT gated on the simulation. gamemd's
     // `AudioSystem::Pump @ 0x00406F70` hangs off `Network_ServiceLoop @
     // 0x0048D080`, whose callers include `Main_Tick` itself (offline, the

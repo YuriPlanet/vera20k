@@ -110,11 +110,7 @@ pub(crate) fn start(state: &mut AppState) {
     });
     // Whatever the mouse was doing in the match ends here.
     state.match_state.input.cancel_tactical_drag();
-    state
-        .match_state
-        .match_presentation
-        .in_game_gadgets
-        .cancel_pointer_capture();
+    crate::app::input::chrome_input::cancel(state);
     crate::app::input::messages::post_layout_edit(
         state,
         crate::app::input::messages::LayoutEditLine::On,

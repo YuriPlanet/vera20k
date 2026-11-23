@@ -10,7 +10,7 @@
 use crate::app::AppState;
 use crate::app::presentation::text_hud::{self, TextHud};
 use crate::app::input::cursor::CursorVisibility;
-use crate::app::input::gadget_input::{
+use crate::app::input::chrome_input::{
     ID_DIPLOMACY, ID_OPTIONS, ID_SCROLL_DOWN, ID_SCROLL_UP, ID_TAB_BASE,
 };
 use crate::app::presentation::sidebar_render::{current_sidebar_side, current_sidebar_view};
@@ -42,7 +42,7 @@ pub(crate) const SW_SIDEBAR_TIP_ID_BASE: u32 = 2000;
 const CAMEO_TIP_MONEY_FORMAT: &str = "TXT_MONEY_FORMAT_2";
 
 /// CSF labels for the sidebar gadget tips. gamemd dispatches these by the same
-/// gadget ids we use (`gadget_input::ID_*`), passing the label in ECX; the
+/// gadget ids we use (`chrome_input::ID_*`), passing the label in ECX; the
 /// numbers previously mistaken for CSF ids at these call sites are the
 /// engine's `__LINE__` values.
 const TIP_LABEL_SCROLL_UP: &str = "Tip:ScrollUp";
@@ -694,7 +694,7 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     }));
     // Power meter first: gamemd asks the power bar for a tip before the
     // sidebar gadget ids, and registration order decides the hit here.
-    // Gadget idle republishes these retained House values each unlocked pump.
+    // Each unlocked frame pass republishes these retained House values.
     let power_rect = crate::ui::sidebar::power_bar_rect(
         &view.layout,
         state.match_state.match_presentation.sidebar_layout_spec,
@@ -724,12 +724,12 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
         }));
     }
     regions.push(region(
-        crate::app::input::gadget_input::ID_REPAIR as u32,
+        crate::app::input::chrome_input::ID_REPAIR as u32,
         tip_rect(frame, view.repair_button.rect),
         &|| state.csf_text("TXT_REPAIR_MODE"),
     ));
     regions.push(region(
-        crate::app::input::gadget_input::ID_SELL as u32,
+        crate::app::input::chrome_input::ID_SELL as u32,
         tip_rect(frame, view.sell_button.rect),
         &|| state.csf_text("TXT_SELL_MODE"),
     ));
@@ -795,8 +795,8 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     }
     // TabClass::ToggleSidebar 0x006D04F0 registers the command bar's tips
     // after SidebarClass's own; a labelled tip reads its CSF text directly.
-    for (id, rect, label) in crate::app::input::gadget_input::command_bar_tooltips(
-        &state.match_state.match_presentation.in_game_gadgets,
+    for (id, rect, label) in crate::app::input::chrome_input::command_bar_tooltips(
+        &crate::app::input::chrome_input::command_bar_places(state),
     ) {
         regions.push(region(
             u32::from(id),

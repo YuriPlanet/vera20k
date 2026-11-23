@@ -159,7 +159,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
     refresh_projection(state, false);
 }
 
-/// The gadget idle tick's republish on every presentation pass: the same
+/// The frame pass's republish on every unlocked presentation pass: the same
 /// refresh, reusing the simulation inputs kept for the world's revision
 /// ([`crate::app::sidebar_projection::SidebarSimInputs`]).
 pub(crate) fn republish_sidebar_projection(state: &mut AppState) {

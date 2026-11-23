@@ -24,7 +24,7 @@ pub(crate) mod ferry;
 pub(crate) mod primary_rotation;
 pub(crate) mod formation_line;
 pub(crate) mod formation_lock;
-pub(crate) mod gadget_input;
+pub(crate) mod chrome_input;
 pub(crate) mod layout_edit;
 pub(crate) mod hotkeys;
 pub(crate) mod ime;

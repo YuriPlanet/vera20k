@@ -1908,12 +1908,7 @@ pub(crate) fn spawn_pointer_world_point(state: &AppState) -> Option<(f32, f32)> 
         return None;
     }
     let (px, py) = state.match_state.input.cursor_px();
-    if state
-        .match_state
-        .match_presentation
-        .in_game_gadgets
-        .control_at(px, py)
-    {
+    if crate::app::input::chrome_input::control_at(state, px, py) {
         return None;
     }
     #[cfg(feature = "phobos")]

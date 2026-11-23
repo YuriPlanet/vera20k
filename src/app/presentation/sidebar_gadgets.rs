@@ -99,7 +99,7 @@ pub(crate) fn current_sidebar_action_visits(state: &AppState, sidebar_action: bo
 /// also includes ready Supers; the shared gadget owner supplies phase/timing.
 /// The scroll roll moves one row per Sidebar Action visit
 /// ([`sidebar_action_visits`]); the view is rebuilt from the moved row by the
-/// idle tick that follows.
+/// pass's republish that follows.
 pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
     // A ready tab's completed object is the frame's (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();

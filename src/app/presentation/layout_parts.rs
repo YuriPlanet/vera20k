@@ -200,13 +200,12 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
     let field = [x as i32, y as i32, width as i32, height as i32];
     let art = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .map(|atlas| &atlas.layout_art);
-    let gadgets = &state.match_state.match_presentation.in_game_gadgets;
     // Each part's own content and size first, at no place yet.
     let mut placed: Vec<Placed> = parts
         .iter()
         .enumerate()
         .map(|(index, part)| {
-            let pressed = gadgets.layout_button_pressed(index);
+            let pressed = crate::app::input::chrome_input::layout_button_pressed(state, index);
             let (text, button, picture) = match &part.kind {
                 AddedKind::Button {
                     label, art: name, ..
