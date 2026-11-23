@@ -713,18 +713,18 @@ fn tactical_left_up(state: &mut AppState) {
     // selection/toggle. Ground move, attack, and every other
     // context action keep their ordinary priority while T is held.
     // `type_select_held` was read with the release, above.
-    if matches!(
-        route_click_action_before_type_select(
-            release.click_point(),
-            left_click_can_issue_orders(state),
-            |sx, sy| {
-                // A resolved context dispatch consumes the click
-                // even when its receiver admits no command.
-                try_queue_context_order(state, ContextOrderTarget::ScreenPoint(sx, sy), true)
-                    .then_some(())
-            },
-        ),
-        ClickActionRoute::ContextOrder(())
+    let pick_toggles = match route_click_action_before_type_select(
+        release.click_point(),
+        left_click_can_issue_orders(state),
+        |sx, sy| {
+            // A resolved context dispatch consumes the click
+            // even when its receiver admits no command.
+            Some(try_queue_context_order(
+                state,
+                ContextOrderTarget::ScreenPoint(sx, sy),
+                true,
+            ))
+        },
     ) {
         ClickActionRoute::ContextOrder(ContextClick::Consumed) => return,
         ClickActionRoute::ContextOrder(ContextClick::Select) => false,

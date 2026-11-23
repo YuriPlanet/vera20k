@@ -36,7 +36,7 @@ use crate::sim::movement::jumpjet_movement::jumpjet_flight::{
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::RawCellKey;
 use crate::sim::world::FrameEffects;
-use crate::util::lepton::{ground_height_leptons, lepton_to_cell_packed};
+use crate::util::lepton::{ground_height_leptons_clamped, lepton_to_cell_packed};
 use crate::util::retail_trig::TrigTable;
 
 struct CruiseHost<'a> {

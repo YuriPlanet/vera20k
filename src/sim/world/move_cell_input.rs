@@ -941,7 +941,7 @@ impl Simulation {
         let cells = NativeCellQuery::isolated(self.resolved_terrain.as_ref()?);
         let coords =
             ground_pose::target_get_coords(TargetKind::Entity(target), self, Some(&cells))?;
-        let point = grounded_coordinate(&cells, coords.x, coords.y).ok()?;
+        let point = grounded_coordinate(&cells, coords.x, coords.y);
         crate::sim::vision::point_is_shrouded(&self.fog, &cells, viewer, point).then_some(
             if object.move_to_shroud {
                 MoveAction::Move
@@ -1518,7 +1518,7 @@ fn clicked_cell_shrouded(
         fog,
         cells,
         viewer,
-        clicked_coordinate(cells, clicked)?,
+        clicked_coordinate(cells, clicked),
     ))
 }
 
@@ -1557,10 +1557,7 @@ fn unit_harvests_land(object: &crate::rules::object_type::ObjectType, land: i32)
 /// A clicked Cell's centre on its ground, raised to a bridge deck: the
 /// coordinate What_Action and 4DE1D0 build before IsShrouded (`0x0074056E..
 /// 0x007405CD`, `0x004DE1FD..0x004DE25D`).
-fn clicked_coordinate(
-    cells: &NativeCellQuery<'_>,
-    clicked: (i16, i16),
-) -> Result<DriveCoord, String> {
+fn clicked_coordinate(cells: &NativeCellQuery<'_>, clicked: (i16, i16)) -> DriveCoord {
     let centre = cell_center(
         CellCoordinate {
             x: i32::from(clicked.0),
@@ -1575,15 +1572,15 @@ fn clicked_coordinate(
 /// 0x00578080`), raised to a bridge deck where the Cell under it has one
 /// (Cell `+0x140 & 0x100`): [`clicked_coordinate`] from a Cell's centre, and
 /// Foot What_Action's object coordinate (`0x004DDEE7..0x004DDF41`).
-fn grounded_coordinate(cells: &NativeCellQuery<'_>, x: i32, y: i32) -> Result<DriveCoord, String> {
+fn grounded_coordinate(cells: &NativeCellQuery<'_>, x: i32, y: i32) -> DriveCoord {
     let mut point = DriveCoord { x, y, z: 0 };
-    point.z = query_ground(cells, point)?;
+    point.z = query_ground(cells, point);
     // 4DE242/4DE38C are separate Map calls after the height query.
     let cell = cells.lookup_world(point.x, point.y);
     if cells.flags(cell) & 0x100 != 0 {
         point.z = ground_pose::deck_surface_z(cells, cell, point.z);
     }
-    Ok(point)
+    point
 }
 
 /// Original 4DE1D0 for every Foot. No A* search and no
@@ -1600,7 +1597,7 @@ fn resolve_foot_cell_click(
 ) -> Result<Option<(u16, u16)>, String> {
     let cells = &map.cells;
     let in_playfield = map.in_playfield(click.clicked);
-    let point = clicked_coordinate(cells, click.clicked)?;
+    let point = clicked_coordinate(cells, click.clicked);
     if !click.move_to_shroud && crate::sim::vision::coordinate_is_shrouded(cells, point, &open)? {
         return Ok(None);
     }
@@ -1614,7 +1611,7 @@ fn resolve_foot_cell_click(
     };
     let special = in_air || click.mover.special_type;
     let source_bridge = map.source_bridge(&click.mover)?;
-    let point = clicked_coordinate(cells, click.clicked)?;
+    let point = clicked_coordinate(cells, click.clicked);
     let shrouded = crate::sim::vision::coordinate_is_shrouded(cells, point, &open)?;
     let unrestricted = special && click.action == 2;
     let clicked =

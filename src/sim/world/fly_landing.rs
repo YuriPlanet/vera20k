@@ -143,7 +143,7 @@ impl Simulation {
         }
         let rise = match ground_pose::corrected_deck_z(terrain, cell) {
             Some(_) if entity.on_bridge() => return height,
-            Some(deck) => deck.wrapping_sub(ground_pose::query_ground_height(&cells, coord).unwrap_or(0)),
+            Some(deck) => deck.wrapping_sub(ground_pose::query_ground_height(&cells, coord)),
             None => crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
         };
         if height >= rise {
@@ -298,7 +298,7 @@ impl Simulation {
                 && coord.z >= ground_pose::deck_surface_z(
                     &cells,
                     cell,
-                    ground_pose::query_ground_height(&cells, coord).unwrap_or(0),
+                    ground_pose::query_ground_height(&cells, coord),
                 )
             {
                 self.substrate

@@ -14,9 +14,7 @@ use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
-use crate::util::lepton::{
-    GROUND_LEVEL_HEIGHT_LEPTONS, LEPTONS_PER_CELL_I32, ground_height_leptons,
-};
+use crate::util::lepton::{LEPTONS_PER_CELL_I32, ground_height_leptons_clamped};
 
 /// `AnimClass` constructor draw-flags argument of the twinkle spawn:
 /// `FUN_00684C30` calls `AnimClass(OreTwinkle, coord, 0, 1, 0x600, 0, 0)`.

@@ -338,7 +338,7 @@ pub(crate) fn projectile_draw_instance_for_frame(
     }
     let frame = crate::sim::projectile::projectile_shp_frame(projectile, kind, logic_frame, ares);
     let entry = atlas?.projectile_sprite(type_id, kind, frame, scheme)?;
-    let (ground_z, deck_z) = super::foot_depth::floor_probe(terrain, position.x, position.y)?;
+    let (ground_z, deck_z) = super::foot_depth::floor_probe(terrain, position.x, position.y);
     let geometry = geometry(
         position,
         ground_z,

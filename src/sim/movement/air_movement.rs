@@ -230,9 +230,11 @@ pub fn object_height_in_query(
     on_bridge: bool,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> i32 {
-    match cells.and_then(|cells| super::ground_pose::query_surface_z(cells, coord, on_bridge).ok())
-    {
-        Some(surface) => coord.z.wrapping_sub(surface),
+    match cells {
+        Some(cells) => {
+            coord.z
+                .wrapping_sub(super::ground_pose::query_surface_z(cells, coord, on_bridge))
+        }
         None => super::ground_pose::height_at_z(coord.z, 0, on_bridge),
     }
 }

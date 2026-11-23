@@ -71,14 +71,14 @@ pub fn decode_rle_frame(data: &[u8], width: usize, height: usize) -> Result<Vec<
     // fails, which a low-memory machine or the browser cannot give.
     const RESERVED_PIXELS: usize = 1 << 22;
     let mut pixels = Vec::new();
+    let reserve_error = |_| {
+        parse_error(format!(
+            "RLE frame could not allocate its pixels for {width}x{height}"
+        ))
+    };
     pixels
         .try_reserve_exact(pixel_count.min(RESERVED_PIXELS))
-        .map_err(|_| {
-            parse_error(format!(
-                "RLE frame could not reserve {} pixels for {width}x{height}",
-                pixel_count.min(RESERVED_PIXELS)
-            ))
-        })?;
+        .map_err(reserve_error)?;
     let mut offset = 0usize;
 
     for row in 0..height {

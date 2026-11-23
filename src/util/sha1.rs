@@ -34,6 +34,7 @@ pub fn sha1_bytes(bytes: &[u8]) -> [u8; 20] {
     for (chunk, word) in digest.chunks_exact_mut(4).zip(state) {
         chunk.copy_from_slice(&word.to_be_bytes());
     }
+    digest
 }
 
 fn compress(state: &mut [u32; 5], block: &[u8; 64]) {

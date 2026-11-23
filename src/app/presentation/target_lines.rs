@@ -380,7 +380,7 @@ pub(crate) fn rally_line_coords(
     }
     let mut target = target_get_coords(entity.archive_target()?, sim, Some(cells))?;
     let on_bridge = cells.flags(cells.lookup_world(target.x, target.y)) & 0x100 != 0;
-    target.z = query_surface_z(cells, target, on_bridge).ok()?;
+    target.z = query_surface_z(cells, target, on_bridge);
     Some([object_get_coords(entity, Some(cells.terrain())), target])
 }
 
@@ -423,7 +423,7 @@ pub(crate) fn action_line_endpoints(
         && let Some(cells) = cells
         && cells.flags(cells.lookup_world(end.x, end.y)) & 0x100 != 0
     {
-        end.z = query_surface_z(cells, end, true).ok()?;
+        end.z = query_surface_z(cells, end, true);
     }
     let start = object_location(entity, terrain);
     Some(SelectedActionLine {

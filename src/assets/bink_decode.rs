@@ -296,10 +296,10 @@ impl BinkFrame {
         let stride_y = ((width + 15) & !15) as usize;
         let stride_uv = (((width + 31) & !31) / 2) as usize;
         let y_size = stride_y
-            .checked_mul((height + 15) & !15)
+            .checked_mul(((height + 15) & !15) as usize)
             .ok_or_else(|| bink_error("Bink frame plane size overflows"))?;
         let uv_size = stride_uv
-            .checked_mul(((height + 31) & !31) / 2)
+            .checked_mul((((height + 31) & !31) / 2) as usize)
             .ok_or_else(|| bink_error("Bink frame plane size overflows"))?;
         Ok(Self {
             width,

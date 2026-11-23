@@ -16,20 +16,17 @@ use crate::util::native_x87::adjust_for_z_standard;
 /// Cell578080's floor height at world X/Y and, on a structural cell, its
 /// bridge Z, without the shared dummy-coordinate write.
 /// Rendering must not change a retained DummyCell target or future
-/// gameplay/RNG state. `None` for a cell slope the map data gives that has no
-/// native height: the object is not drawn there.
-pub(super) fn floor_probe(
-    terrain: &ResolvedTerrainGrid,
-    x: i32,
-    y: i32,
-) -> Option<(i32, Option<i32>)> {
+/// gameplay/RNG state. `CellClass::GetGroundHeight @ 0x00578080` answers a
+/// height and never a failure, so a slope byte outside the native table
+/// reads as flat ground at the cell's level.
+pub(super) fn floor_probe(terrain: &ResolvedTerrainGrid, x: i32, y: i32) -> (i32, Option<i32>) {
     let cell = depth_cell(terrain, None, None, [(x / 256) as i16, (y / 256) as i16]);
     let ground =
         crate::util::lepton::ground_height_leptons_clamped(cell.level as u8, cell.ramp, x, y);
-    Some((
+    (
         ground,
         (cell.flags & 0x100 != 0).then(|| cell.deck_z(ground)),
-    ))
+    )
 }
 
 /// Exact fixed-slot aliases and fallback values, without GetCell's simulation

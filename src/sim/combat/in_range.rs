@@ -730,11 +730,11 @@ pub(crate) fn native_ground_target_z(x: i32, y: i32, cells: &NativeCellQuery<'_>
         crate::sim::components::DriveCoord { x, y, z: 0 },
     );
     let cell = cells.lookup_world(x, y);
-    Some(i64::from(if cells.flags(cell) & 0x100 != 0 {
+    i64::from(if cells.flags(cell) & 0x100 != 0 {
         crate::sim::movement::ground_pose::deck_surface_z(cells, cell, ground)
     } else {
         ground
-    }))
+    })
 }
 
 /// InRange6F7601 first reads source flags; only a structural span reaches
@@ -755,9 +755,7 @@ fn native_source_under_bridge(
             y: src.1 as i32,
             z: 0,
         },
-    ) else {
-        return false;
-    };
+    );
     let top = i64::from(crate::sim::movement::ground_pose::deck_surface_z(
         cells, cell, ground,
     ));

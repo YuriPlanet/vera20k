@@ -523,7 +523,7 @@ impl EntityStore {
             }
         }
         self.refocus();
-        if !self.techno_registry.contains(&id) {
+        if !self.techno_registry.contains(id) {
             self.techno_registry.insert(id);
         }
         self.building_registry.remove(id);
@@ -1418,7 +1418,7 @@ impl ClassRegistry {
                     .last()
                     .is_some_and(|last| last.len() >= Self::CHUNK);
                 if full {
-                    self.chunks.push_back(VecDeque::from([id]));
+                    self.chunks.push(VecDeque::from([id]));
                 } else if let Some(last) = self.chunks.last_mut() {
                     last.push_back(id);
                 }
@@ -1443,7 +1443,7 @@ impl ClassRegistry {
                     }
                 });
                 if let Some(moved) = overflow {
-                    self.chunks.push_back(VecDeque::from([moved]));
+                    self.chunks.push(VecDeque::from([moved]));
                 }
             }
         }

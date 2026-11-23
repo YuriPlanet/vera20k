@@ -443,9 +443,7 @@ impl Simulation {
                 y: centre.y,
                 z: 0,
             },
-        ) else {
-            return false;
-        };
+        );
         let target = cells.lookup_world(centre.x, centre.y);
         if cells.flags(target) & 0x100 != 0 {
             z = crate::sim::movement::ground_pose::deck_surface_z(&cells, target, z);

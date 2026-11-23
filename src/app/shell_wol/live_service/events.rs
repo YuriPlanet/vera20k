@@ -422,8 +422,11 @@ pub(super) fn apply_event(
             // them: a refused admission leaves the room at the revision
             // it had, so the host's next options are admitted again
             // instead of taken for an echo of the ones that failed.
+            // The admission borrows the state for the call and gives it
+            // back, so the refusal below can still read the session.
+            let state_ref = &mut *state;
             let admitted = service.admit_options(revision, &canonical, move |room| {
-                admit_room_options(state, room, revision, p.options, &local)
+                admit_room_options(state_ref, room, revision, p.options, &local)
             });
             if let Err(source) = admitted {
                 // The room is told once for this revision, so the host
@@ -431,7 +434,7 @@ pub(super) fn apply_event(
                 if !state.match_state.session.host() {
                     tell_room_of_the_refusal(state, service, revision);
                 }
-                return Err(RoomNotAdmitted { source });
+                return Err(anyhow::Error::new(RoomNotAdmitted { source }));
             }
             // The start this room prepares with is these options, or it is
             // abandoned: a room that took them cannot start with the ones

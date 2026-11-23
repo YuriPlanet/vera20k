@@ -947,6 +947,14 @@ fn gradient_route(
     let route = field.route_cells_from(start)?;
     let mut steps: Vec<LayeredPathStep> = Vec::with_capacity(route.len());
     let mut height = start_height;
+    // The corrected high bridge deck of a cell, the one the stock search
+    // gives its own neighbours (`compute_node_height`'s corrected decks).
+    let corrected_deck = |coord: (u16, u16), cell: &PathCell| -> Option<i16> {
+        if !cell.has_structural_bridge() {
+            return None;
+        }
+        resolved_terrain?.corrected_high_bridge_deck_level(coord)
+    };
     for pair in route.windows(2) {
         let (from, to) = (pair[0], pair[1]);
         if !search_cell_allocated(resolved_terrain, to) {
@@ -954,7 +962,12 @@ fn gradient_route(
         }
         let parent_cell = grid.cell(from.0, from.1)?;
         let child_cell = grid.cell(to.0, to.1)?;
-        let child_height = compute_node_height(height, Some(parent_cell), child_cell);
+        let child_height = compute_node_height(
+            height,
+            Some(parent_cell),
+            child_cell,
+            [corrected_deck(from, parent_cell), corrected_deck(to, child_cell)],
+        );
         if is_at_bridge_level(child_height, child_cell) {
             // The field's plane is the ground one, so a deck cell is not on
             // the walk: the stock search routes over it.

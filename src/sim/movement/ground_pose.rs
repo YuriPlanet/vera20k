@@ -364,24 +364,27 @@ fn ground_height_in_cell(
     cells: &NativeCellQuery<'_>,
     cell: NativeCellIdentity,
     point: DriveCoord,
-) -> Result<i32, String> {
+) -> i32 {
     let (level, slope) = cells.ground_fields(cell);
     ground_height_leptons_clamped(level, slope, point.x, point.y)
 }
 
 /// Surface Z in leptons for a caller that already knows its layer. Keep the
 /// Map578080 lookup and its Dummy identity even on a corrected bridge.
+///
+/// The ground is a height and never a failure (see [`query_ground_height`]),
+/// so this answers a Z for every cell too.
 pub fn query_surface_z(
     cells: &NativeCellQuery<'_>,
     point: DriveCoord,
     on_bridge: bool,
-) -> Result<i32, String> {
+) -> i32 {
     let cell = cells.lookup_world(point.x, point.y);
     if on_bridge && let Some(deck) = corrected_deck_z(cells.terrain(), cell) {
-        return Ok(deck);
+        return deck;
     }
-    let ground = ground_height_in_cell(cells, cell, point)?;
-    Ok(z_at_height(ground, 0, on_bridge))
+    let ground = ground_height_in_cell(cells, cell, point);
+    z_at_height(ground, 0, on_bridge)
 }
 
 /// Deck Z for a caller that samples ground before its separate bridge lookup
@@ -471,9 +474,9 @@ pub(crate) fn navigation_should_be_on_bridge(
         return Ok(false);
     }
     let head_cell = cells.lookup_world(navigation.x, navigation.y);
-    let head_ground = ground_height_in_cell(cells, head_cell, navigation)?;
+    let head_ground = ground_height_in_cell(cells, head_cell, navigation);
     let current_cell = cells.lookup_world(current.x, current.y);
-    let current_ground = ground_height_in_cell(cells, current_cell, current)?;
+    let current_ground = ground_height_in_cell(cells, current_cell, current);
     if !on_bridge && current_ground.wrapping_sub(head_ground) > 3 * GROUND_LEVEL_HEIGHT_LEPTONS {
         return Ok(cells.flags(cells.lookup_world(navigation.x, navigation.y)) & 0x100 != 0);
     }

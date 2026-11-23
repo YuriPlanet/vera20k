@@ -34,7 +34,9 @@ use crate::sim::overlay_grid::{
 use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
 use crate::sim::rng::SimRng;
 use crate::util::fixed_math::SimFixed;
-use crate::util::lepton::{CELL_CENTER_LEPTON, LEPTONS_PER_LEVEL, ground_height_leptons};
+use crate::util::lepton::{
+    CELL_CENTER_LEPTON, LEPTONS_PER_LEVEL, ground_height_leptons_clamped,
+};
 use crate::util::native_x87::distance_3d_leptons;
 
 const BUILDING_CENTER_HEIGHT_ALLOWANCE_LEPTONS: i32 = 2 * LEPTONS_PER_LEVEL as i32;

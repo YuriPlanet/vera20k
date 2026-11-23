@@ -20,7 +20,7 @@ use crate::sim::cell_rect::{CellRef, get_cellclass_fallback_leptons};
 use crate::sim::movement::ground_pose::{corrected_deck_z, z_at_height};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::Simulation;
-use crate::util::lepton::{UnsupportedGroundSlope, ground_height_leptons};
+use crate::util::lepton::ground_height_leptons_clamped;
 use crate::util::native_x87::NativeF32Bits;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -76,7 +76,7 @@ fn ground_height_for_selection(
     selection: &SelectedSparkCell<'_>,
     world_x: i32,
     world_y: i32,
-) -> Result<i32, SparkWorldError> {
+) -> i32 {
     debug_assert_eq!(selection.role, SparkCellSelectionRole::Ground);
     let (level, slope_type) = match &selection.cell {
         CellRef::Real(cell) => (cell.level, cell.slope_type),
@@ -104,7 +104,7 @@ pub(super) fn constructor_ground_height(
         return Ok(None);
     };
     let selected = select_cell(terrain, SparkCellSelectionRole::Ground, world_x, world_y);
-    ground_height_for_selection(&selected, world_x, world_y).map(Some)
+    Ok(Some(ground_height_for_selection(&selected, world_x, world_y)))
 }
 
 fn selected_bridge_z(
@@ -135,7 +135,7 @@ pub(super) fn smoke_bridge_deck(
         return Ok(None);
     }
     let ground = select_cell(terrain, SparkCellSelectionRole::Ground, coords.x, coords.y);
-    let ground_z = ground_height_for_selection(&ground, coords.x, coords.y)?;
+    let ground_z = ground_height_for_selection(&ground, coords.x, coords.y);
     Ok(Some(selected_bridge_z(terrain, &cell, ground_z)))
 }
 
@@ -205,7 +205,7 @@ impl<'a> SparkCollisionWorld<'a> {
             &candidate_ground,
             motion.candidate_coords.x,
             motion.candidate_coords.y,
-        )?;
+        );
 
         let candidate_cell = select(
             SparkCellSelectionRole::Cell,
@@ -401,7 +401,7 @@ pub(super) fn ares_spark_dies(
         return Ok(false);
     };
     let ground = select_cell(terrain, SparkCellSelectionRole::Ground, new.x, new.y);
-    let floor = ground_height_for_selection(&ground, new.x, new.y)?;
+    let floor = ground_height_for_selection(&ground, new.x, new.y);
     if new.z < floor {
         return Ok(true);
     }

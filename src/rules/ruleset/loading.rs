@@ -73,6 +73,8 @@ impl RuleSet {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_ra2_for_test(&mut self, ra2: bool) {
         self.apply_ra2(ra2);
+    }
+
     /// The handle of the object of `category` whose stored ID is exactly `id`.
     ///
     /// Registry construction keeps one slot per category and ASCII

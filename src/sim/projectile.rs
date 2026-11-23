@@ -2894,8 +2894,7 @@ pub(crate) fn projectile_surface_z(
                 z: coord.z,
             },
             true,
-        )
-        .expect("projectile surface probe requires a supported CellClass slope");
+        );
     }
     crate::sim::movement::ground_pose::z_at_height(
         projectile_ground_z(terrain, shared_cell_dummy, coord),

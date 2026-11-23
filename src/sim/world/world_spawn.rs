@@ -568,16 +568,11 @@ impl Simulation {
                         requested.z = i32::from(z as i8)
                             .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS);
                         if let Some(terrain) = resolved_terrain.or(sim.resolved_terrain.as_ref()) {
-                            match crate::sim::movement::ground_pose::query_surface_z(
+                            requested.z = crate::sim::movement::ground_pose::query_surface_z(
                                 &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
                                 requested,
                                 true,
-                            ) {
-                                Ok(surface) => requested.z = surface,
-                                // Unsupported slope identities retain the prior
-                                // coarse adapter; no native height claim for them.
-                                Err(cause) => log::warn!("authored Unit HIGH height: {cause}"),
-                            }
+                            );
                         }
                     }
                     // LOW supplies Z0 (743408..743431); ObjectType747EB0 then
@@ -616,14 +611,11 @@ impl Simulation {
                     // Infantry51E018 compares the incoming raw Z with ground.
                     // Present the deck Z so that placement retains the authored spot.
                     let point = crate::sim::movement::ground_pose::position_world_coord(&ge.position);
-                    match crate::sim::movement::ground_pose::query_surface_z(
+                    ge.position.put_z(crate::sim::movement::ground_pose::query_surface_z(
                         &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
                         point,
                         true,
-                    ) {
-                        Ok(surface) => ge.position.put_z(surface),
-                        Err(cause) => log::warn!("authored Infantry HIGH height: {cause}"),
-                    }
+                    ));
                 }
                 // The line's AI Sellable and AI Repairable, written after the
                 // constructor and before the Unlimbo (`BuildingClass::ReadFromINI`

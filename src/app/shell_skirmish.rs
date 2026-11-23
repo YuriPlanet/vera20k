@@ -563,43 +563,38 @@ impl App {
         selected_mode_id: i32,
         current_record_index: Option<usize>,
     ) {
-        state.frontend.skirmish_shell_state.open_combo_dropdown = None;
-        state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
-        state.frontend.skirmish_shell_state.trackbar_hold = None;
-        state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button = None;
-        crate::ui::skirmish_shell::clear_status_help_text(&mut state.frontend.skirmish_shell_state);
+        (state.frontend.skirmish_shell_state.statics)
+            .hover("", crate::util::time::Instant::now());
+        // A fresh `0x6B`: its widgets build on the first sync.
+        crate::ui::skirmish_shell::choose_map_page::close(&mut state.frontend.shell_controller);
         // VeraX: the game's data turns the Skirmish map hot reload on, so a
         // map copied after launch appears without a restart. A network lobby
         // keeps its launch snapshot, because the map list is local and peers
         // must still compare the same catalog.
+        let network_setup = state.frontend.shell_route == ShellRoute::NetworkSetup;
         let current_record_index =
-            if Self::verax_map_reload(state.rules(), state.frontend.shell_route.network_setup()) {
+            if Self::verax_map_reload(state.rules(), network_setup) {
                 Self::reload_skirmish_catalog(state, current_record_index)
             } else {
                 current_record_index
             };
-        let layout = Self::skirmish_choose_map_layout(state);
+        let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+        let session = &state.match_state.session;
+        let context = if network_setup {
+            let room = session.network_room();
+            crate::ui::skirmish_shell::ChooseMapContext::Network {
+                observer: session
+                    .network_setup()
+                    .is_some_and(|launch| launch.local_player().is_observer()),
+                tournament_room: room.tournament_or_clan(),
+                clan_room: room.clan,
+            }
+        } else {
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish
+        };
         state.frontend.skirmish_shell_state.choose_map_modal =
             Some(crate::ui::skirmish_shell::ChooseMapModalState::open(
-                if state.frontend.shell_route.network_setup() {
-                    {
-                        let room = state.match_state.session.network_room();
-                        crate::ui::skirmish_shell::ChooseMapContext::Network {
-                            observer: state
-                                .match_state
-                                .session
-                                .network_setup()
-                                .is_some_and(|launch| launch.local_player().is_observer()),
-                            tournament_room: room.tournament_or_clan(),
-                            clan_room: room.clan,
-                        }
-                    }
-                } else {
-                    crate::ui::skirmish_shell::ChooseMapContext::Skirmish
-                },
+                context,
                 selected_mode_id,
                 current_record_index,
                 &state.frontend.skirmish_modes,
