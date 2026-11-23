@@ -2374,6 +2374,248 @@ mod tests {
         (art, texts)
     }
 
+    /// The lanes the painter kept before the HUD paint held them: a
+    /// vector each (`GuiPaint`).
+    #[derive(Default)]
+    struct OldLanes {
+        controls: Vec<SpriteInstance>,
+        side: Vec<SpriteInstance>,
+        column: Vec<SpriteInstance>,
+        icons: Vec<SpriteInstance>,
+        popup: Vec<SpriteInstance>,
+        page_art: Vec<SpriteInstance>,
+        texts: Vec<ShellTextDraw>,
+        popup_texts: Vec<ShellTextDraw>,
+    }
+
+    /// Each lane of `paint` is the old lane, sprite for sprite, and holds
+    /// nothing else; the texts are the old texts.
+    fn same_lanes(paint: &HudPaint, old: &OldLanes) {
+        for (material, lane) in [
+            (Material::Controls, &old.controls),
+            (Material::Side, &old.side),
+            (Material::Column, &old.column),
+            (Material::Icons, &old.icons),
+            (Material::Popup, &old.popup),
+            (Material::PageArt, &old.page_art),
+        ] {
+            let painted: Vec<SpriteInstance> = paint.lane(material).copied().collect();
+            same_sprites(&painted, lane);
+        }
+        let all: usize = paint.runs().iter().map(|(_, run)| run.len()).sum();
+        assert_eq!(all, paint.instances().len());
+        same_texts(&paint.texts, &old.texts);
+        same_texts(&paint.popup_texts, &old.popup_texts);
+    }
+
+    /// The painter's old walk: a stack of nodes, a hidden one's subtree
+    /// skipped.
+    fn old_walk(gui: &Gui, root: NodeId) -> Vec<NodeId> {
+        let mut walked = Vec::new();
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if !flag(gui, node, Prop::Visible, true) {
+                continue;
+            }
+            if let Ok(children) = gui.tree().children(node) {
+                stack.extend(children.iter().rev());
+            }
+            walked.push(node);
+        }
+        walked
+    }
+
+    #[test]
+    fn the_layouts_walk_visits_a_dialog_as_the_painters_old_walk() {
+        let mut gui = Gui::new(32);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        let node = |gui: &mut Gui, kind, id, parent| {
+            gui.create_tree(&NodeSpec::new(kind).id(id), Some(parent)).unwrap()
+        };
+        node(&mut gui, NodeKind::Button, 1, root);
+        let hidden = node(&mut gui, NodeKind::Panel, 2, root);
+        node(&mut gui, NodeKind::Text, 3, hidden);
+        let panel = node(&mut gui, NodeKind::Panel, 4, root);
+        node(&mut gui, NodeKind::Checkbox, 5, panel);
+        let gone = node(&mut gui, NodeKind::Panel, 6, panel);
+        node(&mut gui, NodeKind::Button, 7, gone);
+        node(&mut gui, NodeKind::Text, 8, panel);
+        node(&mut gui, NodeKind::Combo, 9, root);
+        for off in [hidden, gone] {
+            gui.set(off, Prop::Visible, Value::Bool(false)).unwrap();
+        }
+        for from in [root, panel, hidden] {
+            let mut walked = Vec::new();
+            gui.tree().walk_visible(from, |node| walked.push(node));
+            assert_eq!(walked, old_walk(&gui, from));
+        }
+        let ids: Vec<_> = old_walk(&gui, root)
+            .into_iter()
+            .filter_map(|node| gui.id_of(node))
+            .collect();
+        assert_eq!(ids, [1, 4, 5, 8, 9]);
+    }
+
+    #[test]
+    fn an_in_game_dialogs_lanes_are_the_old_lanes() {
+        // FF's pause menu as it paints: a side button, the group box, a
+        // checkbox, the second side button, a connection bar and a sunken
+        // field, each into its lane, their texts in order.
+        let font = font();
+        let white = Some(entry(1.0, 1.0, 0.9));
+        let side = SideButtons {
+            frames: [
+                Some(side_entry(125.0, 25.0, 0.0)),
+                Some(side_entry(125.0, 25.0, 0.2)),
+                Some(side_entry(125.0, 25.0, 0.4)),
+            ],
+            theme: SidebarTheme::Allied,
+            clip: RectPx::new(0, 0, 800, 600),
+        };
+        let chrome = crate::render::skirmish_shell_chrome::ControlChrome {
+            checkbox_unchecked_cue_i: Some(entry(18.0, 18.0, 0.0)),
+            checkbox_checked_cce_i: Some(entry(18.0, 18.0, 0.2)),
+            ..Default::default()
+        };
+        let look = TextLook {
+            align: ShellAlign::NONE,
+            glyph: 1.0,
+            rgb: SHELL_LABEL_TEXT_RGB,
+        };
+        let up = PauseMenuButtonState {
+            enabled: true,
+            ..Default::default()
+        };
+        let down = PauseMenuButtonState {
+            pressed: true,
+            ..up
+        };
+        let (first, second) = (RectPx::new(653, 227, 125, 25), RectPx::new(653, 262, 125, 25));
+        let group = RectPx::new(100, 300, 400, 120);
+        let checkbox = || ControlPaint::Checkbox {
+            checked: true,
+            rect: RectPx::new(120, 330, 120, 18),
+        };
+        let bar = BarLook {
+            percent: 42,
+            outline: [0.5; 3],
+            fill: [0.0, 0.8, 0.0],
+        };
+        let field = RectPx::new(92, 394, 191, 28);
+        let plain = FrameArt::Plain { outer_light: true };
+        let s = RETAIL_SCALE;
+
+        let mut old = OldLanes::default();
+        push_side_button(&mut old.side, &mut old.texts, &font, side, first, Some("AAA"), up, 1.0);
+        let caption = Some(("AAA", true));
+        push_frame(&mut old.controls, &mut old.texts, &font, white, group, FrameArt::Group, caption, look, s);
+        paint_control(&mut old.controls, &chrome, checkbox(), s);
+        push_side_button(&mut old.side, &mut old.texts, &font, side, second, Some("A"), down, 1.0);
+        push_bar(&mut old.controls, white, RectPx::new(500, 120, 96, 14), bar);
+        push_frame(&mut old.controls, &mut old.texts, &font, white, field, plain, None, look, s);
+
+        let mut paint = HudPaint::default();
+        paint.draw(Material::Side, |art, texts| {
+            push_side_button(art, texts, &font, side, first, Some("AAA"), up, 1.0)
+        });
+        paint.draw(Material::Controls, |out, texts| {
+            push_frame(out, texts, &font, white, group, FrameArt::Group, caption, look, s)
+        });
+        paint.draw(Material::Controls, |out, _| paint_control(out, &chrome, checkbox(), s));
+        paint.draw(Material::Side, |art, texts| {
+            push_side_button(art, texts, &font, side, second, Some("A"), down, 1.0)
+        });
+        paint.draw(Material::Controls, |out, _| {
+            push_bar(out, white, RectPx::new(500, 120, 96, 14), bar)
+        });
+        paint.draw(Material::Controls, |out, texts| {
+            push_frame(out, texts, &font, white, field, plain, None, look, s)
+        });
+
+        assert!(!old.side.is_empty() && !old.controls.is_empty() && !old.texts.is_empty());
+        same_lanes(&paint, &old);
+        // Neighbours of one lane share a run: side, controls, side, controls.
+        let lanes: Vec<_> = paint.runs().iter().map(|(material, _)| *material).collect();
+        let (c, d) = (Material::Controls, Material::Side);
+        assert_eq!(lanes, [d, c, d, c]);
+    }
+
+    #[test]
+    fn a_combos_open_list_keeps_its_popup_lane_and_texts_apart() {
+        // A combo's face and an open 0x105-style list (fill, outline, the
+        // selected row) with its rows' texts, then a list's scrollbar under
+        // it, then a second open list: the popup lane holds both lists in
+        // order, the controls lane the face and the bar.
+        let font = font();
+        let white = Some(entry(1.0, 1.0, 0.9));
+        let chrome = crate::render::skirmish_shell_chrome::ControlChrome {
+            combo_face_150: Some(entry(150.0, 20.0, 0.1)),
+            combo_arrow_down_released: Some(entry(16.0, 16.0, 0.3)),
+            white_pixel: white,
+            scrollbar_arrow_up_released: Some(entry(16.0, 16.0, 0.5)),
+            scrollbar_arrow_down_released: Some(entry(16.0, 16.0, 0.6)),
+            scrollbar_thumb_top: Some(entry(16.0, 4.0, 0.7)),
+            scrollbar_thumb_mid: Some(entry(16.0, 1.0, 0.75)),
+            scrollbar_thumb_bottom: Some(entry(16.0, 4.0, 0.8)),
+            ..Default::default()
+        };
+        let face = RectPx::new(200, 100, 150, 20);
+        let combo = || ControlPaint::Combo {
+            rect: face,
+            swatch: None,
+            open: true,
+            disabled: false,
+        };
+        let list = RectPx::new(200, 120, 150, 80);
+        let row = RectPx::new(201, 141, 148, 20);
+        let open = |out: &mut Vec<SpriteInstance>, rect: RectPx| {
+            let depth = super::super::SHELL_DROPDOWN_DEPTH - 0.00015;
+            super::super::chrome::push_solid_rect_px(out, white, rect, [0.1; 3], depth);
+            super::super::chrome::push_rect_outline_px(out, white, rect, [0.5; 3], depth);
+            super::super::chrome::push_solid_rect_px(out, white, row, [0.2; 3], depth);
+        };
+        let row_text = |at: RectPx| {
+            shell_text::draw_in_rect_scaled(
+                &font,
+                "AA",
+                rect_to_text_rect(at),
+                SHELL_LABEL_TEXT_RGB,
+                ShellAlign::V_CENTER,
+                [0.0; 2],
+                SHELL_DROPDOWN_TEXT_DEPTH,
+                1.0,
+            )
+        };
+        let bar = || ControlPaint::ScrollBar {
+            scrollbar: RectPx::new(400, 100, 16, 120),
+            thumb: RectPx::new(400, 116, 16, 30),
+            pressed_part: None,
+        };
+        let second = RectPx::new(450, 120, 150, 80);
+        let s = RETAIL_SCALE;
+
+        let mut old = OldLanes::default();
+        paint_control(&mut old.controls, &chrome, combo(), s);
+        old.texts.push(row_text(face));
+        open(&mut old.popup, list);
+        old.popup_texts.push(row_text(row));
+        paint_control(&mut old.controls, &chrome, bar(), s);
+        open(&mut old.popup, second);
+        old.popup_texts.push(row_text(second));
+
+        let mut paint = HudPaint::default();
+        paint.draw(Material::Controls, |out, _| paint_control(out, &chrome, combo(), s));
+        paint.texts.push(row_text(face));
+        paint.draw(Material::Popup, |out, _| open(out, list));
+        paint.popup_texts.push(row_text(row));
+        paint.draw(Material::Controls, |out, _| paint_control(out, &chrome, bar(), s));
+        paint.draw(Material::Popup, |out, _| open(out, second));
+        paint.popup_texts.push(row_text(second));
+
+        assert!(!old.controls.is_empty() && !old.popup.is_empty());
+        same_lanes(&paint, &old);
+    }
+
     #[test]
     fn a_side_button_paints_as_the_hand_owner_button() {
         let font = font();
