@@ -118,6 +118,33 @@ const BACKGROUND: u32 = 1;
 /// State bit: the scale pips are asked for.
 const SCALE: u32 = 2;
 
+/// The status marks an object shows one of each at most: the bomb clock,
+/// the repair wrench, Ares' power-off marker, the rank insignia and the
+/// self-heal marker. Each is a built-in template of its own (`status.<mark>`),
+/// a single slot whose code is the frame the host picked, so a template can
+/// hide a mark, give its frames other pictures or move it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Mark {
+    BombClock,
+    Wrench,
+    PowerOff,
+    Rank,
+    SelfHeal,
+}
+
+const MARKS: [(Mark, &str); 5] = [
+    (Mark::BombClock, "bomb_clock"),
+    (Mark::Wrench, "wrench"),
+    (Mark::PowerOff, "power_off"),
+    (Mark::Rank, "rank"),
+    (Mark::SelfHeal, "self_heal"),
+];
+
+/// A mark's state bit, after the bars' and the scale's.
+const fn mark_bit(mark: Mark) -> u32 {
+    4 << mark as u32
+}
+
 /// PIPBRD frames are told apart from PIPS frames by this bit of the art id.
 const BORDER_ART: u32 = 1 << 16;
 
@@ -197,6 +224,18 @@ fn templates() -> Vec<StatusTemplate> {
         }],
         ..Default::default()
     });
+    for (mark, name) in MARKS {
+        all.push(StatusTemplate {
+            name: format!("status.{name}"),
+            state: mark_bit(mark),
+            elements: vec![Element::Slots {
+                at: at(0, 0),
+                step: (0, 0),
+                arts: (0..MAX_SLOT_ARTS as u32).map(pips).collect(),
+            }],
+            ..Default::default()
+        });
+    }
     all.push(StatusTemplate {
         name: "scale.building".into(),
         category: class_bit(HealthClass::Building),
@@ -397,6 +436,43 @@ pub(crate) fn scale_pips(
     }
 }
 
+/// The `mark` showing `frame`, as its template has it: the frame to draw
+/// and the offset to move it by, or none where the template hides it.
+pub(crate) fn mark(mark: Mark, frame: usize) -> Option<(usize, [i32; 2])> {
+    let slot = [Slot {
+        index: 0,
+        code: u16::try_from(frame).unwrap_or(u16::MAX),
+        lift: 0,
+    }];
+    let object = ObjectView {
+        id: 0,
+        x: 0,
+        y: 0,
+        type_id: 0,
+        category: 0,
+        relation: 0,
+        state: mark_bit(mark),
+        values: &[],
+        slots: &slot,
+    };
+    let mut cmds = Vec::with_capacity(1);
+    BUILT_IN.paint_status(std::slice::from_ref(&object), &mut cmds);
+    cmds.iter().find_map(|cmd| match cmd.op {
+        WorldOp::Image { rect, art } => Some((art.0 as usize, [rect.x, rect.y])),
+        _ => None,
+    })
+}
+
+/// `point` moved by a template's `offset`; untouched where there is none,
+/// so a stock mark keeps the original arithmetic to the last bit.
+pub(crate) fn shifted(point: (f32, f32), offset: [i32; 2]) -> (f32, f32) {
+    if offset == [0, 0] {
+        point
+    } else {
+        (point.0 + offset[0] as f32, point.1 + offset[1] as f32)
+    }
+}
+
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
@@ -427,6 +503,18 @@ mod tests {
             [HealthPiece::Background { frame: 1, offset: (11, -25) }]
         );
         assert!(pieces(HealthClass::Infantry, false, None).is_empty());
+    }
+
+    #[test]
+    fn a_stock_mark_keeps_its_frame_and_place() {
+        for (mark, _) in MARKS {
+            assert_eq!(super::mark(mark, 14), Some((14, [0, 0])));
+            assert_eq!(super::mark(mark, 0), Some((0, [0, 0])));
+            assert_eq!(super::mark(mark, MAX_SLOT_ARTS), None, "past the table");
+        }
+        let point = (-0.0f32, 12.5f32);
+        let kept = shifted(point, [0, 0]);
+        assert_eq!((kept.0.to_bits(), kept.1.to_bits()), (point.0.to_bits(), point.1.to_bits()));
     }
 
     #[test]

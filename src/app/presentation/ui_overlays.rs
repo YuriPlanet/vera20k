@@ -361,7 +361,7 @@ impl StatusInfo {
 const UNIT_PIPS_VEHICLE: u32 = 17; // vehicles + aircraft
 const UNIT_PIPS_INFANTRY: u32 = 8;
 
-use crate::app::presentation::health_templates::{self, HealthAnchor, HealthBand, HealthClass};
+use crate::app::presentation::health_templates::{self, HealthAnchor, HealthBand, HealthClass, Mark};
 
 /// The object under the cursor whose health bar the original draws on hover,
 /// for either Techno health branch, from the frame's cursor `hover`
@@ -2074,10 +2074,15 @@ pub(crate) fn techno_extras_for_parent(
             entity.hud.get_coords
         };
         let point = crate::util::lepton::absolute_leptons_to_screen(render.x, render.y, render.z);
+        // Each mark through its built-in template (`health_templates`), which
+        // picks its picture and may move it.
         let prefix = |shape: &crate::render::selection_overlay::CenteredShapeStrip,
-                      frame,
+                      mark: Mark,
+                      frame: usize,
                       shift: f32| {
-            let mut instance = shape.instance(frame, (point.0 + shift, point.1 + shift), 0.0)?;
+            let (frame, offset) = health_templates::mark(mark, frame)?;
+            let at = health_templates::shifted((point.0 + shift, point.1 + shift), offset);
+            let mut instance = shape.instance(frame, at, 0.0)?;
             // Init52C1D8 MOUSEPAL N1; E00/493DF0 consumes A with zero
             // row offsets and performs opaque packed stores, bypassing Z.
             instance.palette_light = crate::render::palette_light::PaletteLight::plain(1, 1000);
@@ -2112,7 +2117,7 @@ pub(crate) fn techno_extras_for_parent(
             )
             && let Ok(frame) = usize::try_from(frame)
         {
-            strip.bomb_clock = prefix(shape, frame, 0.0);
+            strip.bomb_clock = prefix(shape, Mark::BombClock, frame, 0.0);
         }
         let binary_frame = sim.session().binary_frame() as i32;
         let options = sim.session().game_options();
@@ -2126,7 +2131,7 @@ pub(crate) fn techno_extras_for_parent(
             // pixels up and left.
             let shift = if power_off { -7.0 } else { 0.0 };
             if let Ok(frame) = usize::try_from(frame) {
-                strip.wrench = prefix(shape, frame, shift);
+                strip.wrench = prefix(shape, Mark::Wrench, frame, shift);
             }
         }
         // 10049FE0 draws the marker after the wrench, 18 pixels down and
@@ -2140,7 +2145,7 @@ pub(crate) fn techno_extras_for_parent(
                 shape.frame_count(),
             ))
         {
-            strip.power_off = prefix(shape, frame, if repairing { 18.0 } else { 0.0 });
+            strip.power_off = prefix(shape, Mark::PowerOff, frame, if repairing { 18.0 } else { 0.0 });
         }
     }
     if admitted_techno_observer(sim, entity, local_owner_id).is_none() {
@@ -2194,7 +2199,10 @@ pub(crate) fn techno_extras_for_parent(
             };
             //70AA20..AA4F: opaque PIPS E00, plain53/1000, A-consuming/no-Z.
             // Its -2 Z-adjust is unused by this leaf; do not inherit body FX.
-            strip.rank = instance(shape, frame, (sx + dx, sy + dy), 0.0006)
+            strip.rank = health_templates::mark(Mark::Rank, frame)
+                .and_then(|(frame, offset)| {
+                    instance(shape, frame, health_templates::shifted((sx + dx, sy + dy), offset), 0.0006)
+                })
                 .filter(|rank| viewport.contains(rank))
                 .map(|mut rank| {
                     rank.z_adjust = -2.0;
@@ -2217,7 +2225,10 @@ pub(crate) fn techno_extras_for_parent(
             sy,
         )
     {
-        strip.rank = instance(shape, frame, point, 0.0006)
+        strip.rank = health_templates::mark(Mark::Rank, frame)
+            .and_then(|(frame, offset)| {
+                instance(shape, frame, health_templates::shifted(point, offset), 0.0006)
+            })
             .filter(|rank| viewport.contains(rank))
             .map(|mut rank| {
                 rank.z_adjust = -2.0;
@@ -2238,7 +2249,10 @@ pub(crate) fn techno_extras_for_parent(
         } else {
             (10.0, 6.0)
         };
-        strip.rank = instance(shape, frame, (sx + dx, sy + dy), 0.0006)
+        strip.rank = health_templates::mark(Mark::Rank, frame)
+            .and_then(|(frame, offset)| {
+                instance(shape, frame, health_templates::shifted((sx + dx, sy + dy), offset), 0.0006)
+            })
             .filter(|rank| viewport.contains(rank))
             .map(|mut rank| {
                 rank.z_adjust = -2.0;
@@ -2491,7 +2505,15 @@ pub(crate) fn techno_extras_for_parent(
             let remainder = frame.checked_rem(period).unwrap_or(i32::MAX);
             let selector = u8::from(remainder <= 5 && entity.health.current() < object.strength);
             let (offset_x, offset_y) = self_heal_pip_offset(entity.category());
-            strip.self_heal = instance(shape, arm.frame(), (sx + offset_x, sy + offset_y), 0.0004)
+            strip.self_heal = health_templates::mark(Mark::SelfHeal, arm.frame())
+                .and_then(|(frame, offset)| {
+                    instance(
+                        shape,
+                        frame,
+                        health_templates::shifted((sx + offset_x, sy + offset_y), offset),
+                        0.0004,
+                    )
+                })
                 .map(|mut instance| {
                     instance.draw_state =
                         crate::render::draw_state::DrawState::from_native_selector(0, selector);
