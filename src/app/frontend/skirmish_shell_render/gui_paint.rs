@@ -16,6 +16,13 @@
 //! ([`GuiStyle::frame_of`]), dual-state and disabled checkboxes
 //! ([`checkbox_face`], [`GuiStyle::dim_disabled_checkboxes`]), flag
 //! pictures (`Image` nodes) and host-coloured bars (`Bar` nodes).
+//!
+//! VERA's room paints here whole: its statics in host colours
+//! ([`GuiStyle::rgb_of`]), its boxes, bands and roster scrollbar
+//! ([`FrameArt::Outline`], [`FrameArt::Fill`], [`FrameArt::ListBar`]), its
+//! roster's cells ([`ComboArt::Cell`]), its badges, status icons and emote
+//! button ([`Picture`], [`ButtonArt::Image`]) and its chat edit under its
+//! boxes ([`GuiStyle::focus_of`], [`GuiStyle::ime_target`]).
 
 use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
 
@@ -28,6 +35,7 @@ use super::{
     COMBODROPWIN_TEXT_INSET_X, OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
     SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
     SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB,
+    SHELL_SWATCH_DEPTH,
 };
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
@@ -133,6 +141,11 @@ pub(crate) enum ButtonArt {
     /// dialogs' MNBTTN buttons: centred in [`button_text_rect`]
     /// (pressed +2/+4, not owner-draw's +2/+5).
     ModalType2,
+    /// An image button (`0x00612B70`, frame type 0): the released picture
+    /// of [`GuiStyle::picture_of`], or its pressed one (the released one
+    /// when it has none) while pushed, copied 1:1 at the rect's top-left
+    /// and cut to the rect, with no frame or caption (`0x6131D7..0x613237`).
+    Image,
 }
 
 impl ButtonArt {
@@ -146,7 +159,8 @@ impl ButtonArt {
             | ButtonArt::ModalSqueezed
             | ButtonArt::ModalType2
             | ButtonArt::PanelType2
-            | ButtonArt::Side => held,
+            | ButtonArt::Side
+            | ButtonArt::Image => held,
             _ => captured,
         }
     }
@@ -197,7 +211,7 @@ pub(crate) struct SideButtons {
 
 /// What a node paints as, by its `Id`, in place of its kind
 /// ([`GuiStyle::frame_of`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum FrameArt {
     /// A group box (`0x0061E700`): the bevel from half a font cell below the
     /// node's top, its caption (`Label`, `Text` or `text_of`) 10 px in and
@@ -209,6 +223,15 @@ pub(crate) enum FrameArt {
     /// native's extra pixel and the two-pixel border). `outer_light` puts
     /// the light colour on the outer ring (a sunken field).
     Plain { outer_light: bool },
+    /// A one-pixel outline in one colour on the node's rect (VERA's roster's
+    /// group and team bar boxes).
+    Outline { rgb: [f32; 3] },
+    /// The node's rect filled in one colour at `depth` (VERA's roster's
+    /// band behind the local player's row).
+    Fill { rgb: [f32; 3], depth: f32 },
+    /// A List node's scrollbar alone, as its geometry places it, its held
+    /// part pushed; no frame or rows (VERA's roster's).
+    ListBar,
 }
 
 /// How a dialog's combos paint their face.
@@ -227,6 +250,26 @@ pub(crate) enum ComboArt {
     /// `PopupRect`, the row under the pointer lit, else the selection
     /// (A3's category list).
     Beveled,
+    /// No face, frame or arrow: the selected row's text in the node's
+    /// `Align` (else centred vertically) at the style's glyph scale, or a
+    /// colour row's 12 px swatch centred on the cell. A cell
+    /// [`GuiStyle::rgb_of`] colours shows lit: its text in that colour, its
+    /// swatch ringed in it (VERA's roster's cells).
+    Cell,
+}
+
+/// A picture an `Image` node (or an [`ButtonArt::Image`] button) shows
+/// from the shell art other than an `Art` flag, by the host's word
+/// ([`GuiStyle::picture_of`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Picture {
+    /// A player's WOL badge, fitted to the node.
+    Badge(&'static str),
+    /// The LAN host or accepted icon (host first), clipped and centred;
+    /// neither shows none.
+    Status { host: bool, accepted: bool },
+    /// C2/C9's emote pictures (`wodact` released, `wouact` pressed).
+    Emote,
 }
 
 /// Share the right-panel heading's text width while keeping the retail
@@ -307,6 +350,19 @@ pub(crate) struct GuiStyle<'a> {
     /// A text that reveals as a kind-1 static does by its `Id` (a heading),
     /// in place of its colour.
     pub(crate) reveal_of: Option<&'a dyn Fn(i32) -> Option<PathAReveal>>,
+    /// The host's colour for a text, or a [`ComboArt::Cell`], by its `Id`
+    /// (a team's tint, a caption lit under the pointer), in place of its
+    /// `Color`.
+    pub(crate) rgb_of: Option<&'a dyn Fn(i32) -> Option<[f32; 3]>>,
+    /// The picture an `Image` node or an image button shows by its `Id`,
+    /// in place of its `Art` flag.
+    pub(crate) picture_of: Option<&'a dyn Fn(i32) -> Option<Picture>>,
+    /// An edit has the focus by the host's word (its dialog's own focus,
+    /// under a box over it too), in place of the gui's.
+    pub(crate) focus_of: Option<&'a dyn Fn(NodeId) -> bool>,
+    /// The edits show this input-method target's composition, focused or
+    /// not, in place of the open one in the focused edit.
+    pub(crate) ime_target: Option<crate::app::input::ime::ImeTarget>,
 }
 
 impl Default for GuiStyle<'_> {
@@ -333,6 +389,10 @@ impl Default for GuiStyle<'_> {
             frame_of: None,
             dim_disabled_checkboxes: false,
             reveal_of: None,
+            rgb_of: None,
+            picture_of: None,
+            focus_of: None,
+            ime_target: None,
         }
     }
 }
@@ -605,6 +665,10 @@ pub(crate) fn paint_gui_into(
             .zip(id(node))
             .and_then(|(frame_of, id)| frame_of(id))
         {
+            if frame == FrameArt::ListBar {
+                push_list_bar(&mut paint.controls, &chrome, gui, node, scale);
+                continue;
+            }
             let label = caption(node);
             let look = TextLook {
                 align: match gui.get(node, Prop::Align).ok().flatten() {
@@ -666,6 +730,17 @@ pub(crate) fn paint_gui_into(
                     }
                     // The rest are the shell control art's.
                     (_, None) => continue,
+                    (ButtonArt::Image, Some(atlas)) => {
+                        let picture = style
+                            .picture_of
+                            .zip(id(node))
+                            .and_then(|(picture_of, id)| picture_of(id));
+                        if let Some(picture) = picture {
+                            let out = &mut paint.controls;
+                            push_picture(out, atlas, picture, rect, pressed, scale);
+                        }
+                        continue;
+                    }
                     (
                         ButtonArt::Panel | ButtonArt::PanelCentred | ButtonArt::PanelType2,
                         Some(atlas),
@@ -924,11 +999,14 @@ pub(crate) fn paint_gui_into(
             NodeKind::Edit => {
                 let Some(atlas) = atlas else { continue };
                 let mut edit = gui.edit_state(node).unwrap_or_default();
-                let composition = state
-                    .platform
-                    .ime
-                    .open_composition()
-                    .filter(|_| style.ime && edit.focused);
+                if let Some(focus_of) = style.focus_of {
+                    edit.focused = focus_of(node);
+                }
+                let ime = &state.platform.ime;
+                let composition = match style.ime_target {
+                    Some(target) => ime.composition(target),
+                    None => ime.open_composition().filter(|_| style.ime && edit.focused),
+                };
                 let caret = match style.caret_of {
                     Some(caret_of) => caret_of(node),
                     None => state.frontend.shell_controller.caret_visible(node),
@@ -999,17 +1077,29 @@ pub(crate) fn paint_gui_into(
                             glyph,
                         ),
                         None => {
-                            let rgb = text_rgb(gui, node, enabled, style.rgb, None);
+                            let rgb = style
+                                .rgb_of
+                                .zip(id(node))
+                                .and_then(|(rgb_of, id)| rgb_of(id))
+                                .unwrap_or_else(|| text_rgb(gui, node, enabled, style.rgb, None));
                             text(state, &label, at, align, glyph, rgb, depth)
                         }
                     });
                 }
             }
-            // A flag or insignia PCX (`Art`) from the shell art's flags,
-            // clipped to the node and centred in it.
+            // The host's picture, else a flag or insignia PCX (`Art`) from
+            // the shell art's flags, clipped to the node and centred in it.
             NodeKind::Image => {
-                let (Some(atlas), Ok(Some(Value::Text(name)))) = (atlas, gui.get(node, Prop::Art))
-                else {
+                let Some(atlas) = atlas else { continue };
+                let host = style
+                    .picture_of
+                    .zip(id(node))
+                    .and_then(|(picture_of, id)| picture_of(id));
+                if let Some(picture) = host {
+                    push_picture(&mut paint.controls, atlas, picture, rect, false, scale);
+                    continue;
+                }
+                let Ok(Some(Value::Text(name))) = gui.get(node, Prop::Art) else {
                     continue;
                 };
                 if let Some(entry) = atlas.lan_player_side(name) {
@@ -1166,6 +1256,80 @@ pub(crate) fn push_frame(
         FrameArt::Plain { outer_light } => {
             push_group_or_plain_frame(controls, white, rect, None, outer_light, scale)
         }
+        FrameArt::Outline { rgb } => {
+            super::chrome::push_rect_outline_px(controls, white, rect, rgb, SHELL_CONTROL_DEPTH)
+        }
+        FrameArt::Fill { rgb, depth } => {
+            super::chrome::push_solid_rect_px(controls, white, rect, rgb, depth)
+        }
+        // [`push_list_bar`]: it needs the list's own geometry.
+        FrameArt::ListBar => {}
+    }
+}
+
+/// [`FrameArt::ListBar`]: List `node`'s scrollbar where its geometry puts
+/// it, while its rows do not all fit, the part a press holds pushed.
+fn push_list_bar(
+    out: &mut Vec<SpriteInstance>,
+    chrome: &crate::render::skirmish_shell_chrome::ControlChrome,
+    gui: &Gui,
+    node: NodeId,
+    scale: ShellScale,
+) {
+    let (Some(view), Some(geometry)) = (gui.list_view(node), gui.list_geometry(node)) else {
+        return;
+    };
+    let (Some(scrollbar), Some(thumb)) = (geometry.scrollbar, geometry.thumb) else {
+        return;
+    };
+    let control = ControlPaint::ScrollBar {
+        scrollbar,
+        thumb,
+        pressed_part: view.pressed.map(dropdown_scroll_part),
+    };
+    paint_control(out, chrome, control, scale);
+}
+
+/// A [`Picture`] on `rect`: a status icon clipped and centred, a badge
+/// fitted, the emote picture (its pressed one while `pressed`) at the
+/// rect's top-left, cut to it.
+fn push_picture(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    picture: Picture,
+    rect: RectPx,
+    pressed: bool,
+    scale: ShellScale,
+) {
+    use super::chrome::{push_entry_fitted, push_entry_sized, push_flag_entry_clipped_centered};
+    match picture {
+        Picture::Status { host, accepted } => {
+            if let Some(entry) = atlas.lan_player_status(host, accepted) {
+                push_flag_entry_clipped_centered(out, entry, rect, scale, SHELL_CONTROL_DEPTH);
+            }
+        }
+        Picture::Badge(file) => {
+            if let Some(entry) = atlas.wol_badge(file) {
+                push_entry_fitted(out, entry, rect, scale, SHELL_SWATCH_DEPTH);
+            }
+        }
+        Picture::Emote => {
+            let (Some(released), pressed_art) = atlas.wol_emote_images() else {
+                return;
+            };
+            let mut entry = match pressed {
+                true => pressed_art.unwrap_or(released),
+                false => released,
+            };
+            let [art_w, art_h] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
+            if art_w > 0.0 && art_h > 0.0 {
+                let draw = [art_w.min(rect.w as f32), art_h.min(rect.h as f32)];
+                entry.uv_size[0] *= draw[0] / art_w;
+                entry.uv_size[1] *= draw[1] / art_h;
+                let (x, y) = (rect.x as f32, rect.y as f32);
+                push_entry_sized(out, entry, x, y, draw, SHELL_CONTROL_DEPTH);
+            }
+        }
     }
 }
 
@@ -1229,6 +1393,50 @@ fn paint_cells(
     }
 }
 
+/// [`ComboArt::Cell`]'s face: the row's swatch (ringed while `lit`) or its
+/// text in `lit`'s colour, else `rgb`.
+#[allow(clippy::too_many_arguments)]
+fn push_cell(
+    paint: &mut GuiPaint,
+    state: &AppState,
+    atlas: &SkirmishShellChromeAtlas,
+    gui: &Gui,
+    node: NodeId,
+    (rect, caption, swatch, item): (RectPx, bool, Option<[f32; 3]>, &str),
+    (lit, glyph): (Option<[f32; 3]>, f32),
+    rgb: [f32; 3],
+    scale: ShellScale,
+) {
+    let rgb = lit.unwrap_or(rgb);
+    if let Some(tint) = swatch {
+        let chip = scale.derive_rect(rect, |rect| {
+            RectPx::new(
+                rect.x + (rect.w - 12) / 2,
+                rect.y + (rect.h - 12) / 2,
+                12,
+                12,
+            )
+        });
+        let out = &mut paint.controls;
+        super::chrome::push_solid_rect(out, atlas, chip, tint, SHELL_SWATCH_DEPTH);
+        if lit.is_some() {
+            let ring = scale.derive_rect(chip, |rect| {
+                RectPx::new(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2)
+            });
+            super::chrome::push_rect_outline(out, atlas, ring, rgb, SHELL_SWATCH_DEPTH);
+        }
+        return;
+    }
+    if !caption {
+        return;
+    }
+    let align = ShellAlign(int(gui, node, Prop::Align, ShellAlign::V_CENTER.0 as i32) as u8);
+    let depth = SHELL_CONTROL_TEXT_DEPTH;
+    paint
+        .texts
+        .push(text(state, item, rect, align, glyph, rgb, depth));
+}
+
 /// An owner-draw combo's face, its caption unless an overlay covers it, and
 /// its drop-down while it is open, its rows in the style's colour and glyph
 /// scale.
@@ -1263,7 +1471,14 @@ fn paint_combo(
         None => items.iter().map(|row| (row.as_str(), u32::MAX)).collect(),
     };
     let font = &state.renderer.bit_font;
-    if style.combos != ComboArt::Host {
+    if style.combos == ComboArt::Cell {
+        let lit = (style.rgb_of.zip(gui.id_of(node))).and_then(|(rgb_of, id)| rgb_of(id));
+        if let Some((row, (item, _))) = selected.and_then(|row| Some((row, *rows.get(row)?))) {
+            let look = (lit, style.text_factor.unwrap_or(scale.factor()));
+            let face = (rect, caption, swatch(row), item);
+            push_cell(paint, state, atlas, gui, node, face, look, style.rgb, scale);
+        }
+    } else if style.combos != ComboArt::Host {
         paint_control(
             &mut paint.controls,
             &atlas.control_chrome(),
