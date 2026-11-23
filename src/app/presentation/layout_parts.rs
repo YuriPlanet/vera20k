@@ -485,8 +485,9 @@ impl PartsHud {
 
     /// Show this frame's `parts` and fill the lanes. `tint` is the side's
     /// text colour, whose channels are whole 255ths
-    /// (`native_radar_outline_color`). `camera` is what the lanes' shaders
-    /// subtract. Text draws at the font's raster of now.
+    /// ([`crate::render::sidebar_text::native_outline_from`]). `camera` is
+    /// what the lanes' shaders subtract. Text draws at the font's raster of
+    /// now.
     pub(crate) fn draw(
         &mut self,
         parts: &[Placed],
