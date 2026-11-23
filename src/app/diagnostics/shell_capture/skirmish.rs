@@ -357,6 +357,44 @@ fn guard(
     .validate()
 }
 
+/// The match a Start Game route launches: the player America in colour 0
+/// at start 0, one Easy AI as Russia in colour 1 at start 1, no teams and
+/// no other computer row. A profile's Random country, colour or start would
+/// otherwise draw anew each run and change the loading screen and every
+/// in-game dialog that lists the players. The map, name and game options
+/// stay the profile's; the manifest's selection records them.
+fn pin_match_setup(state: &mut AppState) {
+    use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition};
+    use crate::ui::skirmish_shell::SkirmishAiRowType;
+    let shell = &mut state.frontend.skirmish_shell_state;
+    shell.player_country = LaunchCountry::America;
+    shell.player_country_random = false;
+    shell.player_color_index = 0;
+    shell.player_color_claimed = true;
+    shell.player_start_position = LaunchStartPosition::Position(0);
+    shell.player_team = -2;
+    for (index, row) in shell.opponents.iter_mut().enumerate() {
+        if index == 0 {
+            row.enabled = true;
+            row.row_type = SkirmishAiRowType::Easy;
+            row.difficulty = AiDifficulty::Easy;
+            row.country = LaunchCountry::Russia;
+            row.country_random = false;
+            row.color_index = 1;
+            row.color_claimed = true;
+            row.start_position = LaunchStartPosition::Position(1);
+            row.team = -2;
+        } else {
+            // An inactive row, as a fresh profile's rows 2.. are.
+            row.enabled = false;
+            row.row_type = SkirmishAiRowType::None;
+            row.country_random = true;
+            row.color_claimed = false;
+            row.start_position = LaunchStartPosition::Auto;
+        }
+    }
+}
+
 fn selected_scene(state: &AppState) -> Result<Value> {
     let shell = &state.frontend.skirmish_shell_state;
     let map = state
@@ -1153,6 +1191,10 @@ impl SkirmishCapture {
                 {
                     self.check_short_game(state, frame)?;
                 } else if self.selected_scene.is_some() && self.loading.is_some() {
+                    pin_match_setup(state);
+                    self.selected_scene = Some(selected_scene(state)?);
+                    self.route.push(json!({"dialog": 0x102, "frame": frame,
+                        "action": "pin match setup", "selection": self.selected_scene}));
                     // The pointer moves onto Start Game (`0x617`), whose help
                     // reaches the status line as it would before a click,
                     // then the production action runs and the pointer rests
@@ -1505,14 +1547,18 @@ impl SkirmishCapture {
                     let Some(LoadingTarget::InGameMenu(target)) = self.loading else {
                         bail!("the in-game menu route runs only for menu targets");
                     };
-                    // Ordinary Escape opens B5; for B6 the same owner then
-                    // presses and releases Abort and stops once B6 presents.
+                    // Ordinary Escape queues Options and the frame loop's
+                    // next tick opens B5 (the shell-started match has no
+                    // exact-step owner); for B6 the same owner then presses
+                    // and releases Abort and stops once B6 presents.
                     use super::movies::abort_return::AbortReturnInput;
-                    self.menu_input = Some(if target == InGameMenuTarget::AbortConfirm {
-                        AbortReturnInput::begin_choosing(state, &mut self.route, frame, None)?
-                    } else {
-                        AbortReturnInput::begin_menu(state, &mut self.route, frame)?
-                    });
+                    self.menu_input = Some(AbortReturnInput::begin_live(
+                        state,
+                        &mut self.route,
+                        frame,
+                        None,
+                        target != InGameMenuTarget::AbortConfirm,
+                    )?);
                     self.phase = Phase::InGameMenu;
                 }
             }
