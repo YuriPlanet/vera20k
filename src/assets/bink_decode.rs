@@ -239,6 +239,19 @@ enum Src {
 }
 const NB_SRC: usize = 9;
 
+/// The widest or tallest frame one BINK decoder accepts.
+///
+/// The frame planes and the block scratch are both sized from the header, so
+/// a damaged header that names any `u32` has to be refused before it is used.
+pub const MAX_BINK_FRAME_SIDE: u32 = 8192;
+
+/// The most block scratch one BINK decoder may hold.
+///
+/// The scratch is nine bundle planes over an 8x8 block grid: a 4K frame needs
+/// about 75 MB of it. The ceiling is VERA's own budget, not a native rule,
+/// and sits far above any retail movie.
+pub const MAX_BINK_SCRATCH_BYTES: usize = 256 * 1024 * 1024;
+
 /// YUV frame buffer; planes have their own strides (Y stride = rounded-up
 /// width, UV stride = rounded-up width/2).
 pub struct BinkFrame {
@@ -364,20 +377,42 @@ impl BinkDecoder {
             _ => ColorRange::Mpeg,
         };
 
-        let bw = (header.width as usize + 7) >> 3;
-        let bh = (header.height as usize + 7) >> 3;
-        let blocks = bw
-            .checked_mul(bh)
-            .ok_or_else(|| bink_error("Bink frame size overflows"))?;
+        // The header alone sizes the block scratch and the frame planes, so
+        // its dimensions are checked before they are used: `width + 7`
+        // overflows a u32 for a damaged header, and a huge frame asks for
+        // gigabytes of scratch before a single frame is read.
+        if header.width > MAX_BINK_FRAME_SIDE || header.height > MAX_BINK_FRAME_SIDE {
+            return Err(AssetError::BinkError {
+                reason: format!(
+                    "Bink {}x{} is past the {MAX_BINK_FRAME_SIDE}-pixel frame side",
+                    header.width, header.height
+                ),
+            });
+        }
+        let bw = ((header.width + 7) >> 3) as usize;
+        let bh = ((header.height + 7) >> 3) as usize;
+        let blocks = bw * bh;
         let total_bytes = blocks.saturating_mul(64 * NB_SRC);
+        if total_bytes > MAX_BINK_SCRATCH_BYTES {
+            return Err(AssetError::BinkError {
+                reason: format!(
+                    "Bink {}x{} needs {total_bytes} bytes of block scratch, past the \
+                     {MAX_BINK_SCRATCH_BYTES}-byte budget",
+                    header.width, header.height
+                ),
+            });
+        }
         // The block scratch is sized by the header alone, so a movie that
         // cannot hold its own scratch does not play; it must not abort the
         // process on a machine without that much memory.
-        let mut bundle_data: Vec<u8> = Vec::new();
+        let mut bundle_data = Vec::new();
         bundle_data
             .try_reserve_exact(total_bytes)
             .map_err(|_| AssetError::BinkError {
-                reason: format!("Bink movie needs {total_bytes} bytes of block scratch"),
+                reason: format!(
+                    "Bink {}x{} needs {} bytes of block scratch",
+                    header.width, header.height, total_bytes
+                ),
             })?;
         bundle_data.resize(total_bytes, 0);
 
@@ -1765,6 +1800,85 @@ mod tests {
         d.init_bundle_lengths(320, bw);
         assert_eq!(d.bundles[Src::BlockTypes as usize].len_bits, 10);
         assert_eq!(d.bundles[Src::SubBlockTypes as usize].len_bits, 10);
+    }
+
+    #[test]
+    fn a_damaged_header_is_refused_before_the_scratch_is_sized() {
+        let h = crate::assets::bink_file::BinkHeader {
+            version: BinkVersion::BikI,
+            file_size: 1000,
+            num_frames: 1,
+            width: u32::MAX,
+            height: u32::MAX,
+            fps_num: 30,
+            fps_den: 1,
+            video_flags: 0,
+            num_audio_tracks: 0,
+            audio_tracks: vec![],
+            frame_index_offset: 0,
+        };
+        let err = BinkDecoder::new(&h)
+            .err()
+            .expect("a damaged header is refused");
+        assert!(
+            matches!(err, AssetError::BinkError { .. }),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn a_header_past_the_scratch_budget_is_refused() {
+        // 1024x1024 fits the budget; 8192x3650 asks for nine bundle planes
+        // over a 1024x457 block grid, which is just past it.
+        let mut h = crate::assets::bink_file::BinkHeader {
+            version: BinkVersion::BikI,
+            file_size: 1000,
+            num_frames: 1,
+            width: 1024,
+            height: 1024,
+            fps_num: 30,
+            fps_den: 1,
+            video_flags: 0,
+            num_audio_tracks: 0,
+            audio_tracks: vec![],
+            frame_index_offset: 0,
+        };
+        assert!(BinkDecoder::new(&h).is_ok());
+        h.width = 8192;
+        h.height = 3650;
+        let err = BinkDecoder::new(&h)
+            .err()
+            .expect("a header past the budget is refused");
+        let AssetError::BinkError { reason } = err else {
+            panic!("expected a Bink error: {err:?}");
+        };
+        assert!(reason.contains("budget"), "unexpected reason: {reason}");
+    }
+
+    #[test]
+    fn a_header_past_the_frame_side_is_refused() {
+        // A frame side past the ceiling is refused before the frame planes
+        // and the block scratch are sized from it.
+        let h = crate::assets::bink_file::BinkHeader {
+            version: BinkVersion::BikI,
+            file_size: 1000,
+            num_frames: 1,
+            width: MAX_BINK_FRAME_SIDE + 1,
+            height: 16,
+            fps_num: 30,
+            fps_den: 1,
+            video_flags: 0,
+            num_audio_tracks: 0,
+            audio_tracks: vec![],
+            frame_index_offset: 0,
+        };
+        let err = BinkDecoder::new(&h)
+            .err()
+            .expect("a frame side past the ceiling is refused");
+        let AssetError::BinkError { reason } = err else {
+            panic!("expected a Bink error: {err:?}");
+        };
+        assert!(reason.contains("frame side"), "unexpected reason: {reason}");
     }
 
     /// A scaled block on the last block row of a 320x200 movie (25 luma and
