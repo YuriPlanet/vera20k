@@ -560,10 +560,17 @@ pub(super) fn choose_map_paint(
     let rows_of = |id| Some(choose_map_rows(state, modal, layout, id == 0x6EB));
     // VERA's search line over the map list shows the search with its
     // composition, or names itself while empty; an empty list says why.
+    // The line takes its text once a frame: it moves in, not a copy.
     let search = map_search_display(state, &modal.search);
-    let text_of = |id: i32| (id == i32::from(choose_map_page::MAP_SEARCH)).then(|| search.clone());
+    let empty = search.is_empty();
+    let search = std::cell::Cell::new(Some(search));
+    let text_of = |id: i32| {
+        (id == i32::from(choose_map_page::MAP_SEARCH))
+            .then(|| search.take())
+            .flatten()
+    };
     let hint_of = |id: i32| {
-        (id == i32::from(choose_map_page::MAP_SEARCH) && search.is_empty())
+        (id == i32::from(choose_map_page::MAP_SEARCH) && empty)
             .then(|| (tr("VERA:MapSearchHint"), choose_map_page::MAP_SEARCH_INSET.x))
     };
     let empty_of = |id: i32| {

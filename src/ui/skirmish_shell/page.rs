@@ -262,19 +262,22 @@ fn flag_art_slot(id: u16) -> Option<usize> {
 }
 
 /// Puts each row slot's flag picture, `flag(slot)` (none for a row that
-/// shows none), on its `FLAG_ART` node under `root`; it allocates only on a
-/// change.
+/// shows none), on its `FLAG_ART` node under `root`. The pictures are the
+/// tree's last children, built in slot order, so each is found by its
+/// place, not a search; a node's `Art` changes only when its flag does.
 pub fn show_flags<'a>(gui: &mut Gui, root: NodeId, flag: impl Fn(usize) -> Option<&'a str>) {
-    let count = gui.tree().children(root).map_or(0, <[NodeId]>::len);
-    for index in 0..count {
-        let Some(node) = gui.tree().children(root).ok().and_then(|c| c.get(index).copied()) else {
-            break;
-        };
-        let Some(slot) = gui
-            .id_of(node)
-            .and_then(|id| u16::try_from(id).ok())
-            .and_then(flag_art_slot)
-        else {
+    let Ok(children) = gui.tree().children(root) else {
+        return;
+    };
+    let Some(first) = children.len().checked_sub(SKIRMISH_LONG_ROW_COUNT) else {
+        return;
+    };
+    let nodes: [Option<NodeId>; SKIRMISH_LONG_ROW_COUNT] =
+        std::array::from_fn(|slot| children.get(first + slot).copied());
+    for (slot, node) in nodes.into_iter().enumerate() {
+        let Some(node) = node.filter(|node| {
+            gui.id_of(*node) == Some(i32::from(FLAG_ART) + slot as i32)
+        }) else {
             continue;
         };
         let art = flag(slot).unwrap_or_default();
