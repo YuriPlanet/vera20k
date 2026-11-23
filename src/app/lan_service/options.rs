@@ -20,7 +20,7 @@ use crate::net::lan_messages::game_name_hash;
 use crate::net::lan_messages::setup;
 use crate::skirmish_launch::{
     AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT,
-    SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLocalSlot,
+    SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchOptions,
 };
 
 pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
@@ -781,7 +781,7 @@ fn host_options(
             .iter_mut()
             .find(|human| human.name.eq_ignore_ascii_case(&choices.name))
         {
-            human.slot = decoded_choices(
+            human.slot = super::picks::decoded_pick(
                 &human.slot,
                 choices.country,
                 choices.color,
@@ -799,7 +799,7 @@ fn host_options(
         let old = session
             .network_row_choices(row)
             .ok_or_else(|| anyhow!("no setup row {row}"))?;
-        let choices = decoded_choices(&old, ai.country, ai.color, ai.start, ai.team)?;
+        let choices = super::picks::decoded_pick(&old, ai.country, ai.color, ai.start, ai.team)?;
         opponents.push(SkirmishAiSlot {
             raw_slot_index: row,
             country: choices.country,
@@ -826,53 +826,6 @@ fn host_options(
         cooperative_difficulty: room.cooperative_difficulty,
         seed: Some(room.seed),
     })
-}
-
-pub(super) fn decoded_choices(
-    old: &SkirmishLocalSlot,
-    country: i32,
-    color: i32,
-    start: i32,
-    team: i32,
-) -> Result<SkirmishLocalSlot> {
-    let mut slot = old.clone();
-    ensure!(
-        country == -3 || country == -2 || (0..=i32::from(u16::MAX)).contains(&country),
-        "country outside native registry domain"
-    );
-    slot.country_random = country == -2;
-    if country >= 0 {
-        slot.country = LaunchCountry::from_country_index(country as u32);
-    } else if country == -2 {
-        //696F99 clears the concrete country when SetCountry receives Random.
-        //The AI-array parser5E5BAB..5E5C3C likewise replaces its word with -2; there
-        //is no previous display-row country to retain in that representation.
-        slot.country = LaunchCountry::America;
-    }
-    ensure!(
-        color == -2 || (0..=i32::from(u8::MAX)).contains(&color),
-        "color outside native slot domain"
-    );
-    slot.color_random = color == -2;
-    if color >= 0 {
-        slot.color_index = color as u8;
-    } else {
-        //696FC9 sets the concrete color to -1 for Random. The Rust slot
-        //represents that sentinel with color_random; its unused u8 payload
-        //has canonical value0, independent of whichever row was displayed.
-        slot.color_index = 0;
-    }
-    slot.start_position = match start {
-        -2 | -1 => LaunchStartPosition::Auto,
-        0..=29 => LaunchStartPosition::Position(start as u8),
-        _ => anyhow::bail!("start outside supported waypoint domain"),
-    };
-    slot.team = match team {
-        -2 | -1 => LaunchTeam::None,
-        0..=255 => LaunchTeam::Team(team as u8),
-        _ => anyhow::bail!("team outside native slot domain"),
-    };
-    Ok(slot)
 }
 
 pub(super) fn decoded_difficulty(value: i32) -> Result<AiDifficulty> {

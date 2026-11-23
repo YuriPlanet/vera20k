@@ -474,13 +474,13 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
             }
         }
         SetupColumn::Start => {
-            slot.start_position = if value < 0 {
-                LaunchStartPosition::Auto
-            } else {
-                LaunchStartPosition::Position(value as u8)
-            }
+            slot.start_position = LaunchStartPosition::from_shell_value(value)
+                .ok_or_else(|| anyhow::anyhow!("start outside the shell's start domain"))?
         }
-        SetupColumn::Team => slot.team = LaunchTeam::from_shell_value(value),
+        SetupColumn::Team => {
+            slot.team = LaunchTeam::from_shell_value(value)
+                .ok_or_else(|| anyhow::anyhow!("team outside the shell's team domain"))?
+        }
         SetupColumn::Player => unreachable!(),
     }
     // A VERA room's guest watches with Observer and plays with a side; the

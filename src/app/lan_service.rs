@@ -1988,11 +1988,6 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     return Ok(());
                 }
                 anyhow::ensure!(text.first() == Some(&b'R'), "unknown player choices text");
-                let text = crate::util::native_string::widen_bytes(&text[1..]);
-                let values: Vec<_> = crate::rules::ini_value::strtok(&text, &[','])
-                    .map(crate::rules::ini_value::crt_atoi)
-                    .collect();
-                anyhow::ensure!(values.len() >= 4, "incomplete player choices");
                 let name = message.name();
                 let launch = state
                     .match_state
@@ -2007,22 +2002,38 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     .network_endpoint_source(incoming.source)
                     .filter(|&source| launch.humans[source].name.eq_ignore_ascii_case(&name))
                     .ok_or_else(|| anyhow::anyhow!("player choices sender is not admitted"))?;
-                let mut choices =
-                    received_choices(values[0], values[1], &launch.humans[source].slot)?;
-                choices.start_position = if values[2] < 0 {
-                    crate::skirmish_launch::LaunchStartPosition::Auto
-                } else {
-                    crate::skirmish_launch::LaunchStartPosition::Position(u8::try_from(values[2])?)
-                };
-                choices.team = crate::skirmish_launch::LaunchTeam::from_shell_value(values[3]);
-                super::shell_network_setup::service_event(
-                    state,
-                    super::shell_network_setup::NetworkSetupEvent::PlayerChoices {
-                        index: source,
-                        choices,
-                        observer: values[0] == -3,
-                    },
-                )?;
+                // The guest's pick is read by the same owner the room
+                // publication uses, so a pick the host accepts is a pick the
+                // room re-applies.
+                let (mut choices, mut observer) =
+                    picks::decoded_player_choices(&text[1..], &launch.humans[source].slot)?;
+                // A guest's own seat and team pick keep to the room's teams.
+                let refused = state.match_state.session.admit_network_team(
+                    source,
+                    &mut choices,
+                    &mut observer,
+                );
+                let mut change = state
+                    .match_state
+                    .session
+                    .accept_lan_peer_choices(source, choices, observer)?;
+                change.options |= refused;
+                // A VERA room's guest who starts or stops watching changes
+                // rows: the roster, then the options, as WOL's R arm.
+                let mut deferred = Vec::new();
+                if change.roster && !options::publish_roster(state)? {
+                    deferred.push(super::shell_network_setup::NetworkSetupRequest::PublishRoster);
+                }
+                if change.options && !options::publish_options(state)? {
+                    deferred.push(super::shell_network_setup::NetworkSetupRequest::PublishOptions);
+                }
+                state
+                    .match_state
+                    .lan_service
+                    .as_mut()
+                    .ok_or_else(closed_visit)?
+                    .deferred_setup
+                    .extend(deferred);
             }
         }
         LanPayload::ReadyToGo => {
@@ -2227,7 +2238,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             service.peer_admissions.insert(incoming.source, record);
             let mut local = state.frontend.multiplayer_shell_runtime.local_participant();
             local.raw_slot_index = Some(u8::try_from(fields.assigned_row)?);
-            local.slot = received_choices(fields.country, fields.color, &local.slot)?;
+            local.slot = picks::decoded_participant(fields.country, fields.color, &local.slot)?;
             local.role = crate::skirmish_launch::LaunchHumanRole::from_observer(
                 (several_observers || fields.assigned_row == fields.observer_row)
                     && fields.country == -3,
@@ -2455,12 +2466,13 @@ use super::{App, match_runtime, shell_lan, shell_network_setup};
 mod gameplay;
 mod lobby;
 mod online;
+mod picks;
 mod setup_room;
 pub(crate) use gameplay::{install_gameplay, return_transport};
 use gameplay::{send_bytes, send_sources};
 use lobby::{
     accept_participant, active_game_name, cancel_join, chat_line, chat_packet, confirm_join,
-    drain_requests, offer_join, project_games, received_choices,
+    drain_requests, offer_join, project_games,
 };
 #[cfg(test)]
 pub(crate) use online::DirectAdmission;

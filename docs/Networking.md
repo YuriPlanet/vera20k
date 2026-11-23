@@ -853,6 +853,15 @@ doesn't offer it. A guest's own pick sent at the same moment carries its whole r
 wins on the host. Online, a game sends its room commands to the lobby one at a time; a
 newer options, map-status or ready command replaces an older one of the same kind that
 is still waiting, and goes out after whatever was queued before it.
+A guest's own pick travels as the `R` words the shell wrote, and the host reads them
+with the same owner the room's publication uses (`app::lan_service::picks`): a side
+(-3 while the seat watches, -2 for Random, else the country index up to 65535), a
+colour (-2 for Random, else the index up to 255), a start (-2 or -1 for Auto, else a
+waypoint below the shell's own 120 rows) and a team (-2 or -1 for no team, else the
+team index up to 255). A value outside its domain is refused rather than trimmed, so
+the row the host stores is the row the room re-applies. A guest of another build never
+reaches this path: it is refused at the build check. Online, a pick travels as the
+lobby's typed room data, not as these words, so the online wire is unchanged.
 
 ### Build check
 
