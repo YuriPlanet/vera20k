@@ -558,8 +558,8 @@ pub(crate) fn encode_family_page(
     if let Some(window) = panel.title {
         labels.push(PaintLabel {
             text: state.csf_text(title_key).into(),
-            rect: layout.title,
-            align: ShellAlign::PANEL_TITLE,
+            rect: layout.right_panel.family_title_caption(layout.title),
+            align: ShellAlign::ART_CAPTION,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });

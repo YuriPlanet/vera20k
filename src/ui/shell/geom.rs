@@ -67,16 +67,17 @@ pub const LOWER_STRIP_H: i32 = 32;
 /// edge; the surrounding chrome remains 168 pixels wide.
 pub const SDBTNANM_CELL_W_NARROW: i32 = 156;
 
-/// VERA's own: the widest centred caption that stays on the right panel's
-/// art. An SDBTNANM button's red face spans about 13..134 px of the 156-px
-/// cell, whose caption rect, the cell less 2 px, centres text 77 px in (78
-/// pressed); the title window spans 658..774 at 800x600, where the title
-/// rect centres text at 713 (716 in battle). Measured on the art at 1:1.
+/// Legacy fit for shell controls that still use `PANEL_FACE`.
 pub const RIGHT_PANEL_FACE_W: u32 = 110;
+
+/// The family heading and column buttons share the SDTP window's 116 native
+/// pixels less one pixel on either side. Other shell controls keep their fit.
+pub(crate) const FAMILY_CAPTION_W: i32 = 116 - 2;
 
 /// The shell's text alignment flags: what a GUI text node carries in
 /// `Prop::Align` and `render::shell_text::draw_in_rect_scaled` draws by.
-/// 0x01 = h-center, 0x02 = h-right, 0x04 = v-center, 0x08 = panel face.
+/// 0x01 = h-center, 0x02 = h-right, 0x04 = v-center, 0x08 = panel face,
+/// 0x10 = single line.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct ShellAlign(pub u8);
 
@@ -93,6 +94,9 @@ impl ShellAlign {
     pub const BUTTON_CAPTION: ShellAlign = ShellAlign(0x01 | 0x04 | 0x08);
     /// The right panel's title, centred in its window.
     pub const PANEL_TITLE: ShellAlign = ShellAlign(0x01 | 0x08);
+    /// Centred text whose rect already bounds the painted art.
+    pub const ART_CAPTION: ShellAlign = ShellAlign(0x01 | 0x10);
+    pub(crate) const SINGLE_LINE: ShellAlign = ShellAlign(0x10);
 
     pub fn contains(self, flag: ShellAlign) -> bool {
         (self.0 & flag.0) != 0
@@ -121,6 +125,19 @@ pub struct RightPanelRects {
 }
 
 impl RightPanelRects {
+    /// Text viewport in the family's SDTP heading window. At 800×600 the
+    /// black inset is [658, 774); leave one pixel of margin on either side.
+    /// Keep the heading static's native y and height (0x0060BD17).
+    pub(crate) fn family_title_caption(self, title: RectPx) -> RectPx {
+        let art = self.scale.scale_rect(RectPx::new(
+            self.authored_tile.x + (RIGHT_PANEL_WIDTH - FAMILY_CAPTION_W) / 2,
+            0,
+            FAMILY_CAPTION_W,
+            0,
+        ));
+        RectPx::new(art.x, title.y, art.w, title.h)
+    }
+
     /// Tile row `row` of the column. A scaled panel rounds each row's edges
     /// like any other authored rect, so row `k` lands where a button authored
     /// on row `k` does; stepping `tile.y` by the rounded height drifts a pixel
@@ -363,6 +380,22 @@ pub fn snap_button_biased_truncate(
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn family_caption_fits_the_black_heading_at_native_and_scaled_sizes() {
+        let layout = crate::ui::main_menu_shell::compute_layout(800, 600);
+        let panel = layout.right_panel;
+        let title = layout.title;
+        let actual = panel.family_title_caption(title);
+        assert_eq!(actual, RectPx::new(659, title.y, 114, title.h));
+        for size in [(1600, 1200), (2048, 1532)] {
+            let scale = shell_scale(size.0, size.1);
+            assert_eq!(
+                panel.scaled(scale).family_title_caption(scale.scale_rect(title)),
+                scale.scale_rect(actual),
+            );
+        }
+    }
 
     #[test]
     fn dialog_origin_letterboxes_only_from_1024x768() {
