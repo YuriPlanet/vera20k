@@ -1287,11 +1287,17 @@ impl Simulation {
                 ))
             });
             let frame = sim.session.binary_frame();
-            if let Some((cadence, hover_attack, deploy_to_land, air_rate)) = foot_body_cadence
-                && let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |entity| {
+            if let Some((cadence, hover_attack, deploy_to_land, air_rate)) = foot_body_cadence {
+                // The predicate is pure: it reads this entity, this frame and
+                // this state, and nothing changes between the admission and
+                // the counter it admits. Ask it once and advance on its
+                // answer, so a foot is asked one time per frame.
+                let speed_rules =
+                    crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses);
+                let due = sim.substrate.entities.get(stable_id).is_some_and(|entity| {
                     crate::sim::animation::foot_body_frame_due(
                         entity,
-                        crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
+                        speed_rules,
                         cadence,
                         hover_attack,
                         deploy_to_land,
@@ -1299,18 +1305,12 @@ impl Simulation {
                         sim.resolved_terrain.as_ref(),
                         frame,
                     )
-                })
-            {
-                crate::sim::animation::tick_foot_body_frame_counter(
-                    entity,
-                    crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
-                    cadence,
-                    hover_attack,
-                    deploy_to_land,
-                    air_rate,
-                    sim.resolved_terrain.as_ref(),
-                    sim.session.binary_frame(),
-                );
+                });
+                // Only a due foot is handed out, so a foot that is not due
+                // stays out of the touch logs as before.
+                if let Some(entity) = sim.substrate.entities.get_mut_if(stable_id, |_| due) {
+                    crate::sim::animation::tick_foot_body_frame_counter(entity, due);
+                }
             }
         }
 
