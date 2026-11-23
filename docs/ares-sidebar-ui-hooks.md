@@ -27,6 +27,15 @@ takes its Ares form, in every build, when Ares plays in the game
   its own count when ticked; a held build, a finished build and the structure strips
   keep their single event.
 
+- **Extra string tables and `NOSTR:`** (`CSF_LoadExtraFiles` 0x6BD886,
+  `CSF_AddOrOverrideLabel` 0x734A5F, `CSF_LoadString_1` 0x734E83,
+  `CSF_LoadString_2` 0x734EC2): a game that ships `ares.mix` reads `ares.csf`,
+  `ares_<language>.csf` and `stringtable00.csf` to `stringtable99.csf` after the
+  base table, each label replacing an earlier one (`CsfFile::load_active`,
+  `append_ares`). Any text the game looks up as a label, such as a `UIName=`,
+  may be written `NOSTR:text` to show `text` itself, and Ares keeps that text and
+  a missing label's to 101 characters (GetDynamicString `100607C0`).
+
 - **Skirmish alone** (`Ares_AllowSinglePlay` 0x6AD0ED, Ares.dll 10003AD0): in a
   front end Ares plays in, Start skips the "at least two players" and "more than
   one team" gates after the capacity check, as `[VERA] SoloSkirmish=` does
@@ -99,12 +108,12 @@ takes its Ares form, in every build, when Ares plays in the game
 | `0x6ABF44` | `1002D0E0` | sub_6ABD30_Strip1 | `Ext/Rules/Hooks.Selects.cpp` | Not applicable | gamemd gadget-list plumbing for the shared SelectClass buttons; the engine pools one hit region per visible cameo, grown on demand (`sync_cameos`, `src/app/input/gadget_input.rs`) |
 | `0x6ABFB2` | `1002D100` | sub_6ABD30_Strip2 | `Ext/Rules/Hooks.Selects.cpp` | Not applicable | gamemd gadget-list plumbing for the shared SelectClass buttons; the engine pools one hit region per visible cameo, grown on demand (`sync_cameos`, `src/app/input/gadget_input.rs`) |
 | `0x6AC02F` | `1002D130` | sub_6ABD30_Strip3 | `Ext/Rules/Hooks.Selects.cpp` | Not applicable | tooltip registration for the select buttons; the engine builds tooltip regions from the visible items (`in_game_regions`, `src/app/input/tooltips.rs`) |
-| `0x7346D0` | `10060DD0` | CSF_LoadBaseFile | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
-| `0x734823` | `10060D60` | CSF_AllocateMemory | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
-| `0x7349CF` | `10060F20` | StringTable_ParseFile_Buffer | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
-| `0x734A97` | `10060EE0` | CSF_SetIndex | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
-| `0x734E83` | `10060E80` | CSF_LoadString_1 | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
-| `0x734EC2` | `10060EC0` | CSF_LoadString_2 | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
+| `0x7346D0` | `10060DD0` | CSF_LoadBaseFile | `Misc/CSFLoader.cpp` | Equivalent | marks the table loaded and resets the count of extra files before the base table loads; `CsfFile::load_active` (`src/assets/csf_file.rs`) loads the base table, then appends the extra files |
+| `0x734823` | `10060D60` | CSF_AllocateMemory | `Misc/CSFLoader.cpp` | Equivalent | allocates 20,000 label slots (`MaxEntries`) instead of the base table's count, so extra files can add labels; the Ares table grows as labels arrive (`append_ares`). Past 20,000 labels Ares writes beyond its arrays, VERA keeps them |
+| `0x7349CF` | `10060F20` | StringTable_ParseFile_Buffer | `Misc/CSFLoader.cpp` | Not applicable | reads the whole file into memory before the parser's small reads, a speed change; VERA parses CSF bytes already in memory |
+| `0x734A97` | `10060EE0` | CSF_SetIndex | `Misc/CSFLoader.cpp` | Ported | with an extra file, the value goes to the slot CSF_AddOrOverrideLabel (`0x734A5F`, `10060C80`) chose: an existing label's or a new one; `append_ares`, `src/assets/csf_file.rs` |
+| `0x734E83` | `10060E80` | CSF_LoadString_1 | `Misc/CSFLoader.cpp` | Ported | a label starting `NOSTR:` shows the rest of itself, before the table search; `CsfFile::get`/`text` (`ares_literal`), `src/assets/csf_file.rs` |
+| `0x734EC2` | `10060EC0` | CSF_LoadString_2 | `Misc/CSFLoader.cpp` | Ported | the `MISSING:'label'` text becomes a dynamic string per label instead of a fresh buffer per call; same text, kept to 101 characters (`ares_dynamic_text`, `CsfFile::text`) |
 | `0x6AB773` | `10064520` | SelectClass_ProcessInput_ProduceUnsuspended | `Misc/Gadgets.cpp` | Ported | `produce_copies`, `src/app/input/sidebar_eva.rs`, called by `sidebar_cameo_press`, `src/app/input/dispatch.rs`: Shift queues five PRODUCE events |
 | `0x4E42A0` | `10067000` | GameSetup_GetColorTooltip | `Misc/Interface.PlayerColors.cpp` | Equivalent | tooltips for the eight colours and the observer are `STT:PlayerColor*` (`src/ui/skirmish_shell/state/hit_test.rs`); `Slot%d.Tooltip` is residual R2 |
 | `0x4E4556` | `10067200` | hWnd_GetSlotColorIndex | `Misc/Interface.PlayerColors.cpp` | Not applicable | Win32 colour combo-box bookkeeping; the shell tracks each row's claim itself (`available_color_choices`, `color_claimed_by_other_row`, `src/ui/skirmish_shell/state/combos.rs`) |

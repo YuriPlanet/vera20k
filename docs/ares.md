@@ -313,8 +313,8 @@ Supported extensions:
   updates, `TeamRetaliate`, `AIInnerBase`, `EVA.Lost`, EMP on Fly and Jumpjet
   victims, and the `CanMakeStuffUp` draws.
 - [Sidebar and interface hooks](ares-sidebar-ui-hooks.md): no cameo limit, the
-  Ares cameo insertion and top row, and Shift-click batch production. The CSF
-  loader hooks are deferred.
+  Ares cameo insertion and top row, Shift-click batch production, the extra
+  string tables and `NOSTR:` labels.
 - [Radiation types](ares-radiation.md): Ares 3.0 never loads `[RadiationTypes]`;
   its snow-theater hook is the only live radiation hook.
 - [Random-map generator](ares-rmg.md): Archipelago and Desert in the dialog, the
