@@ -1625,7 +1625,7 @@ where
 
     // The settled main menu also captures in any larger window, to compare
     // its scaled drawing, with the pointer resting at the window's centre.
-    // VERA's room and its Create Game form also follow the window scale.
+    // VERA's room, Create Game form, and WOL options also follow the window scale.
     let scaled = (checkpoint == ShellCaptureCheckpoint::MainMenu0xE2Steady
         || matches!(
             checkpoint.movies_target(),
@@ -1633,6 +1633,9 @@ where
                 movies::WolTarget::ModernCreate
                     | movies::WolTarget::ModernTeams
                     | movies::WolTarget::ModernLobbySummary { .. }
+                    | movies::WolTarget::ModernOptions
+                    | movies::WolTarget::ModernOptionsTranslation
+                    | movies::WolTarget::ModernOptionsTranslationList
             ))
         ))
         && (width, height) != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
@@ -1642,7 +1645,7 @@ where
         (width == EXPECTED_WIDTH && height == EXPECTED_HEIGHT)
             || (online_latency && width == 640 && height == 480)
             || scaled,
-        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency, a larger window for the main menu and VERA's room), got {width}x{height}",
+        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (other supported dimensions depend on the checkpoint), got {width}x{height}",
         checkpoint.as_str()
     );
     let neutral = if scaled {
