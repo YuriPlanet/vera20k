@@ -71,7 +71,7 @@ Parts=Field,Side
 | `CameoGrid` | 建造图标网格，按剩余高度决定行数 | `Columns`、`Cell=60,48`、`Pitch=63,50`、`RowArt`、`EmptyRowArt`、`Clock`、`Darken`、`LabelColor`、`LabelStrip`、`Tab`（固定显示某一类） |
 | `Repeat` | 把一张图沿纵向或横向铺到指定长度 | `Along=Down/Right` |
 | `PowerBar` | 电力条 | `Step`、`HitWidth`；帧 `Empty,Surplus,Spare,Drain,Blink` |
-| `CommandBar` | 命令栏底轨、两端、底座 | `Rail`、`LeftCap`、`RightCap`、`Slot`；子节点是命令按钮 |
+| `CommandBar` | 命令栏底轨、两端、底座和命令按钮 | `Rail`、`LeftCap`、`RightCap`、`Slot`、`Buttons`（命令名到图片）；**哪些按钮、顺序、空格由 `UIMD.INI` 的 `ButtonList` 决定**（单人 `[AdvancedCommandBar]`，联机 `[MultiplayerAdvancedCommandBar]`，`x` 为空格），不写 `Parts=` |
 | `Battlefield` | 战场 | 子节点：`Timers`、`Messages`、`Banner`、`Tooltip` |
 
 `Text` 的 `Value=Credits` 在观战时自动显示对局时间（现在的行为）。
@@ -292,14 +292,9 @@ Rail=lspacer.shp
 LeftCap=lendcap.shp
 RightCap=rendcap.shp
 Slot=bttnbkgd.shp
-Parts=Team01,Team02,Team03,TypeSelect,Deploy,AttackMove,Guard,Beacon,Stop,PlanningMode,Cheer
-
-[GDI.Team01]
-Type=Button
-Art=button00.shp
-Frames=Idle,Pressed
-Command=Team01
-; ... Team02 .. Cheer the same, button01..button10
+; Which buttons, in which order, with which gaps: UIMD.INI's ButtonList.
+; Here only each command's picture (frames Idle,Pressed).
+Buttons=Team01:button00.shp,Team02:button01.shp,Team03:button02.shp,TypeSelect:button03.shp,Deploy:button04.shp,AttackMove:button05.shp,Guard:button06.shp,Beacon:button07.shp,Stop:button08.shp,PlanningMode:button09.shp,Cheer:button10.shp
 
 ; ---- Nod: the Soviet and Yuri table; only what differs ----
 [Nod]
@@ -340,9 +335,11 @@ X=0
 
 ## 8. 与现在行为的差异（需要截图核对）
 
+`UIMD.INI` 保留（用户 11-23 定）：命令栏的按钮、顺序、空格仍由它的 `ButtonList` 决定，Phobos 的 `[Sidebar]`
+（左侧超武栏、`CenterPauseMenuBackground`）也仍从它读；`veraui.ini` 只管命令栏的位置和图片。
+
 - 建造网格的 3–5 列（VERA 自加功能）现在按浮点间距排，改成整数像素后，列的位置可能差 1 像素。
 - `Tabs` 的间距现在是“标签起点相距 29”，改成 `Row` + `Gap` 后依赖标签图的宽度；换了宽度不同的标签图，间距会跟着变（这正是 Row 的意义）。
-- 命令栏按钮的槽位顺序改由 `Parts=` 决定，不再读 UIMD.INI 的 `ButtonList`（单人/联机两套顺序要写成两个布局，或 `Parts@Multiplayer=`）。
 
 ## 9. 实现步骤与验收
 
@@ -355,5 +352,4 @@ X=0
 ## 10. 待你确认
 
 1. 阵营变体 `键@阵营=`、颜色表 `[Colors]`、节点继承 `Base=` 这三个写法是否可以。
-2. 命令栏按钮改由 `veraui.ini` 声明、不再读 UIMD.INI（第 8 节第三条）是否可以。
-3. 第 8 节的三处可能差异是否接受。
+2. 第 8 节的两处可能差异是否接受。
