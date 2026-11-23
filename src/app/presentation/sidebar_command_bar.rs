@@ -60,9 +60,9 @@ const DEPTH: f32 = 0.00048;
 
 /// The bar's pieces into `pieces`, in drawing order: its rail, caps and
 /// tiles as its part 0, then each slot's button (command `i` is button
-/// `i`), the thumb (button 11) over the left cap, and the buttons without a
-/// slot, which draw nothing. A piece clipped away, or whose art is missing,
-/// draws nothing. `camera` is what the surface's shader subtracts.
+/// `i`) and the thumb (button 11) over the left cap. A piece clipped away,
+/// or whose art is missing, draws nothing. `camera` is what the surface's
+/// shader subtracts.
 pub(crate) fn draw(
     pieces: &mut impl ChromePieces,
     art: &crate::render::sidebar_chrome::CommandBarArt<SidebarChromeEntry>,
@@ -124,9 +124,26 @@ pub(crate) fn draw(
     }
     let thumb = art.left_cap[usize::from(gadgets.command_thumb_pressed)];
     pieces.button(11, blit(thumb, layout.left_cap.x, layout.left_cap.y));
-    for command in (0..11).filter(|command| !slots.contains(&Some(*command))) {
-        pieces.button(command, None);
+}
+
+/// The bar's nodes in the order [`draw`] draws them, and how many: its
+/// rail, caps and tiles, each slot's button, the thumb. A button without a
+/// slot draws nothing.
+pub(crate) fn paint_order(
+    nodes: &crate::app::input::chrome_input::ChromePaintNodes,
+    slots: &[Option<usize>],
+) -> ([vera20k_gui::NodeId; 13], usize) {
+    let mut order = [nodes.bar_parts[0]; 13];
+    let mut drawn = 1;
+    // `read_button_list` keeps one slot per command.
+    for command in slots.iter().flatten().copied().filter(|&command| command < 11) {
+        if drawn < 12 {
+            order[drawn] = nodes.bar_buttons[command];
+            drawn += 1;
+        }
     }
+    order[drawn] = nodes.bar_buttons[11];
+    (order, drawn + 1)
 }
 
 /// The whole of `entry` drawn over `size` at `position`, then clipped to
@@ -290,13 +307,9 @@ mod tests {
         }
         // Retail UIMD.INI [AdvancedCommandBar] ButtonList.
         let slots = vec![Some(0), Some(1), Some(3), Some(4), Some(6), Some(9)];
-        let (mut gui, mut nodes) = crate::app::input::chrome_input::test_layer();
-        let chrome = crate::app::input::chrome_input::arranged(
-            &mut gui,
-            &mut nodes,
-            &crate::ui::sidebar::SidebarChromeLayoutSpec::stock().parts,
-            &slots,
-        );
+        let (mut gui, nodes) = crate::app::input::chrome_input::test_layer();
+        let chrome = crate::app::input::chrome_input::paint_nodes_of(&nodes);
+        let (order, count) = paint_order(&chrome, &slots);
         let mut hud = crate::app::presentation::picture_hud::ChromeHud::default();
         let mut frame = |gui: &mut vera20k_gui::Gui,
                          art: &CommandBarArt<SidebarChromeEntry>,
@@ -313,7 +326,7 @@ mod tests {
                     hud.frame(gui, chrome.tree, &chrome.bar_parts, &chrome.bar_buttons);
                 draw(&mut pieces, art, layout, &slots, gadgets, camera);
             }
-            let drawn = hud.finish(gui, chrome.bar).to_vec();
+            let drawn = hud.finish(gui, &order[..count]).to_vec();
             assert_eq!(
                 bytemuck::cast_slice::<SpriteInstance, u8>(&drawn),
                 bytemuck::cast_slice::<SpriteInstance, u8>(&expected),

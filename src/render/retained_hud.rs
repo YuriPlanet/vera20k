@@ -17,7 +17,7 @@
 //! itself to a frame ([`RetainedHud::begin_in`], [`RetainedHud::finish_in`]).
 //! There the parts are the chrome's own nodes ([`RetainedHud::part_node`]),
 //! a button is drawn by its own node ([`RetainedHud::adopt`]), and the frame
-//! paints one group of that tree.
+//! paints those parts alone, in the order it drew them.
 
 use vera20k_gui::{Gui, Layer, NodeId, NodeKind, Origin, Prop, Rect, Rgba, Value};
 
@@ -272,12 +272,13 @@ impl RetainedHud {
     }
 
     /// [`Self::finish`] of a frame begun by [`Self::begin_in`]: drawn from
-    /// the subtree of `from` alone (the group the frame drew into, not the
-    /// rest of the lent tree), and the tree handed back to `gui`.
+    /// the subtrees of `from` alone, one after the other in that order (the
+    /// parts the frame drew into, not the rest of the lent tree, whose own
+    /// order is its input's), and the tree handed back to `gui`.
     pub(crate) fn finish_in(
         &mut self,
         gui: &mut Gui,
-        from: NodeId,
+        from: &[NodeId],
         space: HudSpace,
         font: Option<&BitFont>,
     ) -> &HudPaint {

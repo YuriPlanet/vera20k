@@ -12,7 +12,9 @@
 //! layer ([`ChromeHud`]): their parts are its nodes and each button is drawn
 //! by the very node that takes its clicks (`input::chrome_input`), so a
 //! button is one node, with the rect it covers on its surface (`Rect`) and
-//! the rect the cursor hits (`HitRect`).
+//! the rect the cursor hits (`HitRect`). The tree's order is the pointer's
+//! (the original gadget list's); the drawing's is the layout's, which the
+//! frame paints the parts in.
 
 use vera20k_gui::{Gui, Layer, NodeId, Origin, Rect};
 
@@ -141,9 +143,11 @@ impl ChromeHud {
         }
     }
 
-    /// End the frame: drop the pictures it no longer has, draw the group
-    /// `from` bottom to top and hand the tree back to `gui`.
-    pub(crate) fn finish(&mut self, gui: &mut Gui, from: NodeId) -> &[SpriteInstance] {
+    /// End the frame: drop the pictures it no longer has, draw the parts and
+    /// buttons `from`, one after the other bottom to top (the drawing's
+    /// order, not the tree's, which is the pointer's), and hand the tree
+    /// back to `gui`.
+    pub(crate) fn finish(&mut self, gui: &mut Gui, from: &[NodeId]) -> &[SpriteInstance] {
         self.nodes.finish_in(gui, from, SPACE, None).instances()
     }
 }
@@ -259,12 +263,11 @@ mod tests {
     /// nothing of it, or leaves it out, keeps it on the pointer.
     #[test]
     fn a_chrome_button_that_draws_nothing_still_takes_its_click() {
-        use crate::app::input::chrome_input::{ID_REPAIR, arranged, edge, test_layer};
-        use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarPart};
+        use crate::app::input::chrome_input::{ID_REPAIR, edge, paint_nodes_of, test_layer};
+        use crate::ui::sidebar::SidebarPart;
         use vera20k_gui::{MouseButton, Prop, Value};
-        let (mut gui, mut nodes) = test_layer();
-        let parts = SidebarChromeLayoutSpec::stock().parts;
-        let chrome = arranged(&mut gui, &mut nodes, &parts, &[]);
+        let (mut gui, nodes) = test_layer();
+        let chrome = paint_nodes_of(&nodes);
         let repair = nodes.repair;
         gui.set(repair, Prop::HitRect, Value::Rect(Rect::new(10, 10, 20, 20)))
             .unwrap();
@@ -280,7 +283,7 @@ mod tests {
                     pieces.button(index, piece);
                 }
             }
-            hud.finish(gui, chrome.sidebar).len()
+            hud.finish(gui, &[repair]).len()
         };
         let drawn = Some((covering(100.0, 50.0, 3.0, 4.0), quad(100.0)));
         assert_eq!(frame(&mut gui, Some(drawn)), 1);

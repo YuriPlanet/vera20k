@@ -44,10 +44,11 @@ pub(crate) fn build_sidebar_chrome_instances(state: &mut AppState) -> Vec<Sprite
     if current_sidebar_view(state).is_none() || current_sidebar_chrome(state).is_none() {
         return Vec::new();
     }
-    let Some(nodes) = crate::app::input::chrome_input::paint_nodes(state, None) else {
+    let Some(nodes) = crate::app::input::chrome_input::paint_nodes(state) else {
         return Vec::new();
     };
     let presentation = &mut state.match_state.match_presentation;
+    let (order, drawn) = sidebar_paint_order(&nodes.sidebar_parts, presentation.sidebar_layout_spec);
     let mut hud = std::mem::take(&mut presentation.chrome_paint.sidebar);
     let parts = &nodes.sidebar_parts;
     let mut frame = hud.frame(presentation.dialog_ui.gui_mut(), nodes.tree, parts, parts);
@@ -66,24 +67,29 @@ pub(crate) fn build_sidebar_chrome_instances(state: &mut AppState) -> Vec<Sprite
             ],
             presentation.radar_anim.is_none(),
         );
-        leave_out_unlisted_buttons(&mut frame, spec);
     }
     let presentation = &mut state.match_state.match_presentation;
     let instances = hud
-        .finish(presentation.dialog_ui.gui_mut(), nodes.sidebar)
+        .finish(presentation.dialog_ui.gui_mut(), &order[..drawn])
         .to_vec();
     presentation.chrome_paint.sidebar = hud;
     instances
 }
 
-/// The buttons of the parts the layout leaves out, after its own parts as
-/// the chrome's group has them: they draw nothing.
-fn leave_out_unlisted_buttons(pieces: &mut impl ChromePieces, spec: SidebarChromeLayoutSpec) {
-    for part in SidebarPart::STOCK_ORDER {
-        if !spec.shows(part) && matches!(part.kind(), PartKind::Button | PartKind::Tab) {
-            pieces.button(part as usize, None);
-        }
+/// The sidebar's part nodes `parts` (by `SidebarPart as usize`) in the
+/// order they draw in, the layout's (`spec.parts`), and how many: a part the
+/// layout leaves out draws nothing, its button taking the pointer still.
+pub(crate) fn sidebar_paint_order(
+    parts: &[vera20k_gui::NodeId; 19],
+    spec: SidebarChromeLayoutSpec,
+) -> ([vera20k_gui::NodeId; 19], usize) {
+    let mut order = *parts;
+    let mut drawn = 0;
+    for part in spec.parts_in_order() {
+        order[drawn] = parts[part as usize];
+        drawn += 1;
     }
+    (order, drawn)
 }
 
 /// The bottom command bar, which shares the chrome atlas but draws into a
@@ -94,10 +100,11 @@ pub(crate) fn build_command_bar_instances(state: &mut AppState) -> Vec<SpriteIns
         return Vec::new();
     }
     let bar = command_bar::layout_and_slots(state);
-    let slots = bar.as_ref().map(|(_, slots)| slots.as_slice());
-    let Some(nodes) = crate::app::input::chrome_input::paint_nodes(state, slots) else {
+    let Some(nodes) = crate::app::input::chrome_input::paint_nodes(state) else {
         return Vec::new();
     };
+    let slots = bar.as_ref().map_or(&[][..], |(_, slots)| slots.as_slice());
+    let (order, drawn) = command_bar::paint_order(&nodes, slots);
     let presentation = &mut state.match_state.match_presentation;
     let mut hud = std::mem::take(&mut presentation.chrome_paint.bar);
     let mut frame = hud.frame(
@@ -121,7 +128,9 @@ pub(crate) fn build_command_bar_instances(state: &mut AppState) -> Vec<SpriteIns
         );
     }
     let presentation = &mut state.match_state.match_presentation;
-    let instances = hud.finish(presentation.dialog_ui.gui_mut(), nodes.bar).to_vec();
+    let instances = hud
+        .finish(presentation.dialog_ui.gui_mut(), &order[..drawn])
+        .to_vec();
     presentation.chrome_paint.bar = hud;
     instances
 }
@@ -1702,7 +1711,7 @@ mod tests {
     /// frame, as the layout reorders its parts and leaves one out.
     #[test]
     fn the_chromes_nodes_draw_the_sidebars_pieces_in_drawing_order() {
-        use super::{SpriteInstance, draw_sidebar_chrome, leave_out_unlisted_buttons};
+        use super::{SpriteInstance, draw_sidebar_chrome, sidebar_paint_order};
         use crate::app::presentation::picture_hud::ChromeHud;
         use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
         use crate::ui::sidebar::{
@@ -1756,21 +1765,20 @@ mod tests {
         let mut anim = PowerBarAnimState::new();
         anim.set_max_segments(120);
         let camera = [2.5, -1.0];
-        let (mut gui, mut nodes) = crate::app::input::chrome_input::test_layer();
+        let (mut gui, nodes) = crate::app::input::chrome_input::test_layer();
+        let chrome = crate::app::input::chrome_input::paint_nodes_of(&nodes);
         let mut hud = ChromeHud::default();
         for spec in [stock, stock, moved, moved, stock] {
             let view = view(spec);
-            let chrome =
-                crate::app::input::chrome_input::arranged(&mut gui, &mut nodes, &spec.parts, &[]);
             let mut expected: Vec<SpriteInstance> = Vec::new();
             draw_sidebar_chrome(&mut expected, &art, spec, &view, &anim, camera, true);
             {
                 let parts = &chrome.sidebar_parts;
                 let mut pieces = hud.frame(&mut gui, chrome.tree, parts, parts);
                 draw_sidebar_chrome(&mut pieces, &art, spec, &view, &anim, camera, true);
-                leave_out_unlisted_buttons(&mut pieces, spec);
             }
-            let drawn = hud.finish(&mut gui, chrome.sidebar).to_vec();
+            let (order, count) = sidebar_paint_order(&chrome.sidebar_parts, spec);
+            let drawn = hud.finish(&mut gui, &order[..count]).to_vec();
             assert!(drawn.len() > 10, "the panels, the rows and the ten buttons");
             assert_eq!(
                 bytemuck::cast_slice::<SpriteInstance, u8>(&drawn),

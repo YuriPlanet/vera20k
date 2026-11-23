@@ -100,12 +100,13 @@ impl HudPaint {
         self.build_from(hud, None, space, font, draw);
     }
 
-    /// [`Self::build`] of `root`'s subtree alone ([`Gui::paint_from`]), or
-    /// of the whole tree without one.
+    /// [`Self::build`] of the subtrees of `roots` alone, one after the other
+    /// in that order ([`Gui::paint_from`]), or of the whole tree without
+    /// them.
     pub(crate) fn build_from(
         &mut self,
         hud: &Gui,
-        root: Option<NodeId>,
+        roots: Option<&[NodeId]>,
         space: HudSpace,
         font: Option<&BitFont>,
         mut draw: impl FnMut(NodeId) -> NodeDraw,
@@ -113,8 +114,12 @@ impl HudPaint {
         self.instances.clear();
         self.runs.clear();
         let mut commands = recycle(std::mem::take(&mut self.commands));
-        match root {
-            Some(root) => hud.paint_from(root, &mut commands),
+        match roots {
+            Some(roots) => {
+                for &root in roots {
+                    hud.paint_from(root, &mut commands);
+                }
+            }
             None => hud.paint(&mut commands),
         }
         for command in &commands {

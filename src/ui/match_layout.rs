@@ -2199,68 +2199,6 @@ mod tests {
         assert!(MatchLayoutFile::from_layers(None, None).is_original());
     }
 
-    /// The sidebar's ten buttons never overlap where the cursor hits them
-    /// (the frame pixels `input::chrome_input` gives each), in the built-in
-    /// layout and in each of the sample's, with pictures of the original's
-    /// sizes: so the order the chrome walks them in, its parts' order, which
-    /// a layout changes, takes no click from any of them.
-    #[test]
-    fn the_sidebar_buttons_never_overlap_in_the_shipped_layouts() {
-        let file = MatchLayoutFile::from_bytes(
-            crate::test_fixture::text("docs/examples/veraui.ini").as_bytes(),
-        );
-        let (options, interner) = options(40);
-        let cameos = CameoStrips::layout_fixture(&options, &[], &[]);
-        for theme in [SidebarTheme::Allied, SidebarTheme::Soviet, SidebarTheme::Yuri] {
-            for side in [None, Some("GDI"), Some("Nod"), Some("ThirdSide")] {
-                for gdi_positions in [true, false] {
-                    let mut spec =
-                        SidebarChromeLayoutSpec::for_theme_and_positions(theme, gdi_positions);
-                    if let Some(layout) = side.and_then(|side| file.for_side(Some(side), gdi_positions)) {
-                        layout.apply_to_sidebar(&mut spec);
-                    }
-                    let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
-                    let view = build_sidebar_view_with_spec(
-                        spec,
-                        frame,
-                        SidebarTab::Building,
-                        0,
-                        0,
-                        0,
-                        Some([28.0, 27.0]),
-                        &[],
-                        &options,
-                        &[],
-                        None,
-                        Some(&interner),
-                        &[],
-                        &SidebarGadgetState::new(),
-                        Some([52.0, 32.0]),
-                        Some([52.0, 32.0]),
-                        Some([45.0, 25.0]),
-                        Some([45.0, 25.0]),
-                        [Some([72.0, 18.0]); 2],
-                        &cameos,
-                    );
-                    let hits: Vec<(SidebarPart, [i32; 4])> = SidebarPart::STOCK_ORDER
-                        .into_iter()
-                        .filter_map(|part| Some((part, view.button(part)?.0)))
-                        .map(|(part, rect)| (part, frame.rect_to_frame_px(rect)))
-                        .filter(|(_, [_, _, w, h])| *w > 0 && *h > 0)
-                        .collect();
-                    let case = format!("{theme:?} {side:?} gdi={gdi_positions}");
-                    assert!(hits.len() >= 8, "{case}: {hits:?}");
-                    for (at, (part, [x, y, w, h])) in hits.iter().enumerate() {
-                        for (other, [ox, oy, ow, oh]) in &hits[at + 1..] {
-                            let apart = x + w <= *ox || ox + ow <= *x || y + h <= *oy || oy + oh <= *y;
-                            assert!(apart, "{case}: {part:?} and {other:?} overlap");
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     #[test]
     fn the_sample_layout_reads_cleanly_and_does_what_it_says() {
         let file = MatchLayoutFile::from_bytes(

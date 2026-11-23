@@ -8,14 +8,17 @@
 //! controller; the match's end takes it.
 //!
 //! The sidebar's and the command bar's buttons are also what draws them:
-//! the sidebar's parts are a group of the layer in the layout's order, each
-//! button part the button itself, each other part the panel its pictures go
-//! in, and the command bar is a group of its rail and tiles, its buttons in
-//! their slots' order and its thumb ([`ChromePaintNodes`],
-//! `presentation::picture_hud::ChromeHud`). A node keeps two rects: the one
-//! the cursor hits (`HitRect`, frame pixels, written here) and the one its
-//! picture covers on its surface (`Rect`, layout pixels, written by the
-//! paint).
+//! the sidebar's parts are a group of the layer, each button part the button
+//! itself, each other part the panel its pictures go in, and the command bar
+//! is a group of its rail and tiles, its buttons and its thumb
+//! ([`ChromePaintNodes`], `presentation::picture_hud::ChromeHud`). The
+//! tree's order is the pointer's alone, the gadget list's below; the paint
+//! draws the parts in the layout's order (`spec.parts`) and the bar's
+//! buttons in their slots', painting each part by itself, so a layout that
+//! reorders its parts never changes which of two overlapping buttons takes
+//! a press. A node keeps two rects: the one the cursor hits (`HitRect`,
+//! frame pixels, written here) and the one its picture covers on its
+//! surface (`Rect`, layout pixels, written by the paint).
 //!
 //! The layer's rules are the retained gadget list's (`vera20k_gui`'s
 //! `Gui::push_chrome`): smallest-area hover seeded at 1024x768, the press to
@@ -27,9 +30,10 @@
 //! Tree order is the gadget list's, after Phobos' superweapon column, whose
 //! input ran before the list's: the column's toggle and buttons, the
 //! layout's buttons (each added at the head, so the last first), the timer
-//! dock, the sidebar's ten buttons (in the layout's order of its parts:
-//! their rects never overlap, so the order takes nothing from any), the
-//! battlefield, the radar, the cameos, the command bar.
+//! dock, the sidebar's ten buttons (the tabs, Repair, Sell, the scroll
+//! pair, Diplomacy, Options, whatever the layout's order of its parts), the
+//! battlefield, the radar, the cameos, the command bar (its commands in
+//! order, the thumb last).
 //!
 //! The nodes take their rects from the sidebar view, the frame and the
 //! layout at a pointer message: at every button edge, as the gadget driver
@@ -118,14 +122,11 @@ pub(crate) struct ChromeNodes {
     /// no button takes no pointer. Grown to fit, never shrunk.
     pub(crate) layout_buttons: Vec<NodeId>,
     pub(crate) timer_dock: NodeId,
-    /// The sidebar's parts, in [`Self::sidebar_order`]'s order.
-    sidebar: NodeId,
-    /// Each part's node by `SidebarPart as usize`: a button or tab part is
-    /// its button below, any other a panel its pictures go in.
+    /// Each sidebar part's node by `SidebarPart as usize`, in a group of
+    /// the layer (its buttons in the gadget list's order, then the rest): a
+    /// button or tab part is its button below, any other a panel its
+    /// pictures go in.
     sidebar_parts: [NodeId; 19],
-    /// The layout's list of parts the group is in the order of; none before
-    /// the first [`arrange_sidebar`].
-    sidebar_order: Option<[Option<SidebarPart>; 19]>,
     pub(crate) tabs: [NodeId; 4],
     pub(crate) repair: NodeId,
     pub(crate) sell: NodeId,
@@ -144,29 +145,22 @@ pub(crate) struct ChromeNodes {
     /// 6A94B0 remove all 60; on an empty slot SelectClass::Action only sets
     /// the normal cursor (6AAD61) and passes flags 0 on (6AAD79 -> 6AB94F).
     pub(crate) cameos: Vec<NodeId>,
-    /// The command bar: `bar_base` (its rail, caps and tiles), then its
-    /// buttons in their slots' order, the thumb, and the buttons without a
-    /// slot.
-    bar: NodeId,
+    /// The command bar's rail, caps and tiles, in a group of the layer
+    /// before its buttons.
     bar_base: NodeId,
-    /// The slots the bar's buttons are in the order of; none before the
-    /// first [`arrange_bar`].
-    bar_slots: Option<Vec<Option<usize>>>,
     /// Command `i`'s button, the thumb last.
     pub(crate) command_bar: [NodeId; 12],
 }
 
 /// What the sidebar's and the command bar's drawing reads of the chrome:
-/// the groups it paints and the nodes it draws into.
+/// the nodes it draws into, each painted by itself in the drawing's order.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ChromePaintNodes {
     /// Which build of the chrome these are: a new one is other nodes.
     pub(crate) tree: u64,
-    pub(crate) sidebar: NodeId,
     /// Each sidebar part's node by `SidebarPart as usize`, a button part's
     /// its button.
     pub(crate) sidebar_parts: [NodeId; 19],
-    pub(crate) bar: NodeId,
     /// The bar's one part, its rail, caps and tiles.
     pub(crate) bar_parts: [NodeId; 1],
     /// Command `i`'s button, the thumb last.
@@ -177,9 +171,7 @@ impl ChromeNodes {
     fn paint(&self) -> ChromePaintNodes {
         ChromePaintNodes {
             tree: self.serial,
-            sidebar: self.sidebar,
             sidebar_parts: self.sidebar_parts,
-            bar: self.bar,
             bar_parts: [self.bar_base],
             bar_buttons: self.command_bar,
         }
@@ -272,12 +264,32 @@ fn part_button(part: SidebarPart) -> Option<(u16, i32)> {
     })
 }
 
-/// The sidebar's group: a node per part, named by it, in the original's
-/// order until [`arrange_sidebar`] puts them in the layout's.
-fn build_sidebar(gui: &mut Gui, root: NodeId) -> Result<(NodeId, [NodeId; 19]), Refused> {
+/// The sidebar's buttons in the order the gadget list had them, which
+/// gives the press where two overlap (the Soviet tabs, 32 wide, on the GDI
+/// table's 29-pixel pitch), whatever order the layout draws them in.
+const PRESS_ORDER: [SidebarPart; 10] = [
+    SidebarPart::Buildings,
+    SidebarPart::Defenses,
+    SidebarPart::Infantry,
+    SidebarPart::Vehicles,
+    SidebarPart::Repair,
+    SidebarPart::Sell,
+    SidebarPart::ScrollDown,
+    SidebarPart::ScrollUp,
+    SidebarPart::Diplomacy,
+    SidebarPart::Options,
+];
+
+/// The sidebar's group: a node per part, named by it, the buttons first in
+/// [`PRESS_ORDER`], the panels after (they take no pointer). The paint
+/// draws them in the layout's order, each by itself.
+fn build_sidebar(gui: &mut Gui, root: NodeId) -> Result<[NodeId; 19], Refused> {
     let sidebar = gui.create(NodeKind::Panel, Some(root))?;
     let mut parts = [sidebar; 19];
-    for part in SidebarPart::STOCK_ORDER {
+    let panels = SidebarPart::STOCK_ORDER
+        .into_iter()
+        .filter(|part| part_button(*part).is_none());
+    for part in PRESS_ORDER.into_iter().chain(panels) {
         let node = match part_button(part) {
             Some((id, buttons)) => drawn_button(gui, sidebar, id, buttons)?,
             None => gui.create(NodeKind::Panel, Some(sidebar))?,
@@ -285,7 +297,7 @@ fn build_sidebar(gui: &mut Gui, root: NodeId) -> Result<(NodeId, [NodeId; 19]), 
         gui.set(node, Prop::Name, Value::Text(part.name().to_owned()))?;
         parts[part as usize] = node;
     }
-    Ok((sidebar, parts))
+    Ok(parts)
 }
 
 /// Which build of the chrome is the newest: each is other nodes.
@@ -300,7 +312,7 @@ fn build(gui: &mut Gui) -> Result<ChromeNodes, Refused> {
     let sw_group = gui.create(NodeKind::Panel, Some(root))?;
     let layout_group = gui.create(NodeKind::Panel, Some(root))?;
     let timer_dock = button(gui, root, ID_TIMER_DOCK, LEFT)?;
-    let (sidebar, sidebar_parts) = build_sidebar(gui, root)?;
+    let sidebar_parts = build_sidebar(gui, root)?;
     let part = |part: SidebarPart| sidebar_parts[part as usize];
     let tabs = SidebarPart::TABS.map(part);
     let top = [part(SidebarPart::Diplomacy), part(SidebarPart::Options)];
@@ -320,9 +332,7 @@ fn build(gui: &mut Gui) -> Result<ChromeNodes, Refused> {
         layout_group,
         layout_buttons: Vec::new(),
         timer_dock,
-        sidebar,
         sidebar_parts,
-        sidebar_order: None,
         tabs,
         repair: part(SidebarPart::Repair),
         sell: part(SidebarPart::Sell),
@@ -333,51 +343,9 @@ fn build(gui: &mut Gui) -> Result<ChromeNodes, Refused> {
         minimap,
         cameo_group,
         cameos: Vec::new(),
-        bar,
         bar_base,
-        bar_slots: None,
         command_bar,
     })
-}
-
-/// Puts the sidebar's parts in the order of `parts`, the layout's list: a
-/// later part draws over an earlier one. The parts it leaves out follow in
-/// the original's order; they draw nothing, and their buttons keep taking
-/// the pointer as the view places them. Only a changed list moves a node.
-fn arrange_sidebar(gui: &mut Gui, nodes: &mut ChromeNodes, parts: &[Option<SidebarPart>; 19]) {
-    if nodes.sidebar_order.as_ref() == Some(parts) {
-        return;
-    }
-    let listed = parts.iter().flatten().copied();
-    let rest = SidebarPart::STOCK_ORDER
-        .into_iter()
-        .filter(|part| !parts.contains(&Some(*part)));
-    let order: Vec<NodeId> = listed
-        .chain(rest)
-        .map(|part| nodes.sidebar_parts[part as usize])
-        .collect();
-    if gui.reorder(nodes.sidebar, &order).is_ok() {
-        nodes.sidebar_order = Some(*parts);
-    }
-}
-
-/// Puts the command bar's buttons in the order of their `slots`, after its
-/// rail and tiles and before its thumb, which draws over them; the buttons
-/// without a slot follow. Only changed slots move a node.
-fn arrange_bar(gui: &mut Gui, nodes: &mut ChromeNodes, slots: &[Option<usize>]) {
-    if nodes.bar_slots.as_deref() == Some(slots) {
-        return;
-    }
-    let slotted = slots.iter().flatten().copied().filter(|&command| command < 11);
-    let rest = (0..11).filter(|command| !slots.contains(&Some(*command)));
-    let order: Vec<NodeId> = std::iter::once(nodes.bar_base)
-        .chain(slotted.map(|command| nodes.command_bar[command]))
-        .chain(std::iter::once(nodes.command_bar[11]))
-        .chain(rest.map(|command| nodes.command_bar[command]))
-        .collect();
-    if gui.reorder(nodes.bar, &order).is_ok() {
-        nodes.bar_slots = Some(slots.to_vec());
-    }
 }
 
 /// The chrome's nodes, built when the controller has none (a new match's
@@ -404,21 +372,11 @@ pub(crate) fn build_for_match(state: &mut AppState) {
 }
 
 /// The chrome's nodes the sidebar and the command bar draw into, built if
-/// the match's GUI has none: the sidebar's parts in the layout's order and,
-/// given the bar's `slots`, its buttons in theirs.
-pub(crate) fn paint_nodes(
-    state: &mut AppState,
-    slots: Option<&[Option<usize>]>,
-) -> Option<ChromePaintNodes> {
+/// the match's GUI has none.
+pub(crate) fn paint_nodes(state: &mut AppState) -> Option<ChromePaintNodes> {
     let presentation = &mut state.match_state.match_presentation;
-    let parts = presentation.sidebar_layout_spec.parts;
     let gui = presentation.dialog_ui.gui_mut();
-    let nodes = ensure(&mut presentation.in_game_chrome, gui)?;
-    arrange_sidebar(gui, nodes, &parts);
-    if let Some(slots) = slots {
-        arrange_bar(gui, nodes, slots);
-    }
-    Some(nodes.paint())
+    Some(ensure(&mut presentation.in_game_chrome, gui)?.paint())
 }
 
 /// Puts `node`'s hit rect on `rect` taking the pointer, or takes it off the
@@ -1121,17 +1079,9 @@ pub(crate) fn test_layer() -> (Gui, ChromeNodes) {
     (gui, nodes)
 }
 
-/// The chrome's sidebar parts in the order of `parts` and its command bar's
-/// buttons in that of `slots`, and the nodes the paint draws into.
+/// The nodes the paint draws into.
 #[cfg(test)]
-pub(crate) fn arranged(
-    gui: &mut Gui,
-    nodes: &mut ChromeNodes,
-    parts: &[Option<SidebarPart>; 19],
-    slots: &[Option<usize>],
-) -> ChromePaintNodes {
-    arrange_sidebar(gui, nodes, parts);
-    arrange_bar(gui, nodes, slots);
+pub(crate) fn paint_nodes_of(nodes: &ChromeNodes) -> ChromePaintNodes {
     nodes.paint()
 }
 
@@ -1341,6 +1291,102 @@ mod tests {
         assert_eq!(cursor_rect(rect(10.0, 20.0, 60.0, 48.0)), r(10, 20, 60, 48));
         // `x <= px < x + w` with whole cursor pixels: 11..=70 of 10.5..70.5.
         assert_eq!(cursor_rect(rect(10.5, 20.0, 60.0, 48.0)), r(11, 20, 60, 48));
+    }
+
+    /// The sidebar buttons' pictures as the retail art has them (each SHP's
+    /// canvas, which the view sizes the button by): `TAB00..03`, `REPAIR`,
+    /// `SELL`, `R-DN`/`R-UP` and `DIPLOBTN`/`OPTBTN`, the Allied art of
+    /// SIDEC01.MIX and the Soviet and Yuri art of SIDEC02.MIX. The scroll
+    /// pair's 46x25 is the stock Allied sidebar's, captured at 800x600, and
+    /// is taken for SIDEC02's too.
+    const NATIVE_SIZES: [(sidebar::SidebarTheme, NativeSizes); 3] = [
+        (sidebar::SidebarTheme::Allied, ALLIED_SIZES),
+        (sidebar::SidebarTheme::Soviet, SOVIET_SIZES),
+        (sidebar::SidebarTheme::Yuri, SOVIET_SIZES),
+    ];
+
+    /// Tab, Repair, Sell, scroll pair, top pair.
+    type NativeSizes = [[f32; 2]; 5];
+    const ALLIED_SIZES: NativeSizes = [[28.0, 27.0], [64.0, 31.0], [64.0, 31.0], [46.0, 25.0], [72.0, 18.0]];
+    const SOVIET_SIZES: NativeSizes = [[32.0, 28.0], [52.0, 32.0], [52.0, 32.0], [46.0, 25.0], [72.0, 22.0]];
+
+    /// Where two sidebar buttons overlap (in the built-in layout and the
+    /// sample's, with the art's own sizes: the Soviet tabs, 32 wide, on the
+    /// GDI table's 29-pixel pitch overlap), the press goes to the first in
+    /// the gadget list's order, whatever order the layout draws them in:
+    /// the chrome's tree, which the press walks, never follows the paint.
+    #[test]
+    fn a_press_where_sidebar_buttons_overlap_goes_by_the_gadget_order() {
+        use crate::ui::match_layout::MatchLayoutFile;
+        use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarFrame};
+        let file =
+            MatchLayoutFile::from_bytes(crate::test_fixture::text("docs/examples/veraui.ini").as_bytes());
+        let mut overlaps = 0;
+        for (theme, [tab, repair, sell, scroll, top]) in NATIVE_SIZES {
+            for side in [None, Some("GDI"), Some("Nod"), Some("ThirdSide")] {
+                for gdi_positions in [true, false] {
+                    let mut spec =
+                        SidebarChromeLayoutSpec::for_theme_and_positions(theme, gdi_positions);
+                    let layout = side.and_then(|side| file.for_side(Some(side), gdi_positions));
+                    if let Some(layout) = layout {
+                        layout.apply_to_sidebar(&mut spec);
+                    }
+                    let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
+                    let view = sidebar::build_sidebar_view_with_spec(
+                        spec,
+                        frame,
+                        SidebarTab::Building,
+                        0,
+                        0,
+                        0,
+                        Some(tab),
+                        &[],
+                        &[],
+                        &[],
+                        None,
+                        None,
+                        &[],
+                        &sidebar::gadget_flash::SidebarGadgetState::new(),
+                        Some(repair),
+                        Some(sell),
+                        Some(scroll),
+                        Some(scroll),
+                        [Some(top); 2],
+                        &sidebar::cameo_order::CameoStrips::default(),
+                    );
+                    let (mut gui, nodes) = test_layer();
+                    let hits: Vec<(NodeId, Rect)> = PRESS_ORDER
+                        .into_iter()
+                        .filter_map(|part| {
+                            let rect = rect_px(frame, view.button(part)?.0);
+                            (rect.w > 0 && rect.h > 0)
+                                .then_some((nodes.sidebar_parts[part as usize], rect))
+                        })
+                        .collect();
+                    for &(node, rect) in &hits {
+                        place(&mut gui, node, Some(rect), true);
+                    }
+                    let case = format!("{theme:?} {side:?} gdi={gdi_positions}");
+                    for (at, &(_, rect)) in hits.iter().enumerate() {
+                        for &(_, other) in &hits[at + 1..] {
+                            let both = rect.intersect(other);
+                            if both.w <= 0 || both.h <= 0 {
+                                continue;
+                            }
+                            overlaps += 1;
+                            let first = hits
+                                .iter()
+                                .find(|(_, rect)| rect.contains(both.x, both.y))
+                                .map(|(node, _)| *node);
+                            edge(&mut gui, both.x, both.y, GuiButton::Left, true);
+                            assert_eq!(gui.pressed_in(nodes.layer), first, "{case}");
+                            edge(&mut gui, both.x, both.y, GuiButton::Left, false);
+                        }
+                    }
+                }
+            }
+        }
+        assert!(overlaps > 0, "the Soviet tabs overlap on the GDI table");
     }
 
     #[test]

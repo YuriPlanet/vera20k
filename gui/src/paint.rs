@@ -449,33 +449,28 @@ mod tests {
     }
 
     /// A group inside a root paints its own subtree, its parent's other
-    /// children before and after it left out, in its children's order,
-    /// which [`Gui::reorder`] changes.
+    /// children before and after it left out; its parts painted one by one
+    /// paint in the order asked, whatever the tree's.
     #[test]
-    fn paint_from_paints_a_groups_subtree_in_its_order() {
+    fn paint_from_paints_a_groups_subtree() {
         let mut hud = hud();
         let dialog = root(&mut hud, NodeKind::Panel, VIEW);
-        let before = child(&mut hud, dialog, NodeKind::External, BOX);
+        child(&mut hud, dialog, NodeKind::External, BOX);
         let group = child(&mut hud, dialog, NodeKind::Panel, VIEW);
         let part = child(&mut hud, group, NodeKind::Panel, VIEW);
         let piece = child(&mut hud, part, NodeKind::External, BOX);
         let button = child(&mut hud, group, NodeKind::External, BOX);
         child(&mut hud, dialog, NodeKind::External, BOX);
-        let painted = |hud: &mut Gui| -> Vec<NodeId> {
-            hud.layout(VIEW);
+        hud.layout(VIEW);
+        let painted = |from: &[NodeId]| -> Vec<NodeId> {
             let mut out = Vec::new();
-            hud.paint_from(group, &mut out);
+            for &node in from {
+                hud.paint_from(node, &mut out);
+            }
             out.iter().map(|cmd| cmd.node).collect()
         };
-        assert_eq!(painted(&mut hud), [piece, button]);
-        let revision = hud.revision();
-        hud.reorder(group, &[button]).unwrap();
-        assert!(hud.revision() > revision);
-        assert_eq!(painted(&mut hud), [button, piece]);
-        let revision = hud.revision();
-        hud.reorder(group, &[button, part]).unwrap();
-        assert_eq!(hud.revision(), revision, "the same order changes nothing");
-        assert_eq!(hud.reorder(group, &[before]), Err(crate::node::Refused::NotFound));
+        assert_eq!(painted(&[group]), [piece, button]);
+        assert_eq!(painted(&[button, part]), [button, piece]);
     }
 
     #[test]
