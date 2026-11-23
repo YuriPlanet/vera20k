@@ -93,10 +93,11 @@ mod tests {
     use crate::render::shell_paint::{self, ModalButton, ModalButtonFrames, ModalDepths};
     use crate::render::skirmish_shell_chrome::SkirmishShellChromeEntry;
     use crate::ui::shell::connection::{
-        BAR_OUTLINE_RGB, CONNECTION_ROWS, ConnectionPage, ConnectionRow, PAINT_ORDER, bar_paint,
+        CONNECTION_ROWS, ConnectionPage, ConnectionRow, PAINT_ORDER, bar_paint,
         connection_layout, spec, sync_nodes,
     };
     use crate::ui::shell::geom::{RETAIL_SCALE, RectPx};
+    use vera20k_gui::shell::bar::OUTLINE_RGB as BAR_OUTLINE_RGB;
     use vera20k_gui::{Gui, NodeKind, Prop, Value};
 
     fn entry(u: f32) -> SkirmishShellChromeEntry {

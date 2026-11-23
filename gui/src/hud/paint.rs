@@ -1,6 +1,7 @@
 //! The ordered paint list the host draws.
 
 use crate::Rect;
+use crate::shell::bar;
 use crate::node::{Node, NodeId, NodeKind, Prop, Rgba, Value};
 
 use super::Hud;
@@ -44,7 +45,8 @@ impl Hud {
     /// to draw them in.
     ///
     /// A node gives, in this order and before its children: its
-    /// `Background`; its picture (`Image`, `Button`), filled part (`Bar`) or
+    /// `Background`; its picture (`Image`, `Button`), outline and fill
+    /// (`Bar`, whose `Background` is its outline: [`crate::shell::bar`]) or
     /// host area (`External`); its `Text`, or without one its `Label`
     /// (`Text`, `Button`, `Dialog`). What is empty or wholly outside its
     /// clip or the viewport is left out, so text needs a rect with a size,
@@ -63,7 +65,10 @@ impl Hud {
             };
             let mut push = |op| out.push(PaintCmd { node: id, clip, op });
 
-            if let Some(color) = color_prop(node, Prop::Background).filter(has_alpha) {
+            // A bar's `Background` is its outline.
+            if node.kind != NodeKind::Bar
+                && let Some(color) = color_prop(node, Prop::Background).filter(has_alpha)
+            {
                 push(PaintOp::Fill { rect, color });
             }
             match node.kind {
@@ -73,9 +78,19 @@ impl Hud {
                     }
                 }
                 NodeKind::Bar => {
-                    let percent = i64::from(node.int_prop(Prop::Fill, 0).clamp(0, 100));
-                    let w = (i64::from(rect.w) * percent / 100) as i32;
-                    let filled = Rect::new(rect.x, rect.y, w, rect.h);
+                    let [r, g, b] = bar::OUTLINE_RGB;
+                    let outline = color_prop(node, Prop::Background).unwrap_or(Rgba(r, g, b, 255));
+                    if has_alpha(&outline) {
+                        for edge in bar::outline_edges(rect).into_iter().flatten() {
+                            if shows(edge, area) {
+                                push(PaintOp::Fill {
+                                    rect: edge,
+                                    color: outline,
+                                });
+                            }
+                        }
+                    }
+                    let filled = bar::fill_rect(rect, node.int_prop(Prop::Fill, bar::FULL));
                     let color = color_prop(node, Prop::Color).unwrap_or(WHITE);
                     if shows(filled, area) && has_alpha(&color) {
                         push(PaintOp::Fill {
@@ -266,25 +281,47 @@ mod tests {
     }
 
     #[test]
-    fn a_bar_fills_its_percent_from_the_left() {
-        for (percent, w) in [(i32::MIN, 0), (0, 0), (25, 10), (100, 40), (i32::MAX, 40)] {
+    fn a_bar_outlines_in_its_background_and_fills_its_percent_inset() {
+        let edges = bar::outline_edges(BOX).unwrap();
+        for (percent, w) in [(i32::MIN, 2), (0, 2), (25, 6), (100, 36), (i32::MAX, 36)] {
             let mut hud = hud();
             let bar = root(&mut hud, NodeKind::Bar, BOX);
             color(&mut hud, bar, Prop::Background, INK);
             hud.set(bar, Prop::Fill, Value::Int(percent)).unwrap();
             let ops: Vec<PaintOp<'_>> = painted(&mut hud).iter().map(|cmd| cmd.op).collect();
-            let mut expected = vec![PaintOp::Fill {
-                rect: BOX,
-                color: INK,
-            }];
-            if w > 0 {
-                expected.push(PaintOp::Fill {
-                    rect: Rect::new(10, 10, w, 20),
-                    color: WHITE,
-                });
-            }
+            let mut expected: Vec<PaintOp<'_>> = edges
+                .iter()
+                .map(|&rect| PaintOp::Fill { rect, color: INK })
+                .collect();
+            expected.push(PaintOp::Fill {
+                rect: Rect::new(12, 12, w, 16),
+                color: WHITE,
+            });
             assert_eq!(ops, expected, "{percent}");
         }
+    }
+
+    #[test]
+    fn a_bar_without_props_is_full_in_the_outline_colour() {
+        let mut hud = hud();
+        root(&mut hud, NodeKind::Bar, BOX);
+        let [r, g, b] = bar::OUTLINE_RGB;
+        let ops: Vec<PaintOp<'_>> = painted(&mut hud).iter().map(|cmd| cmd.op).collect();
+        assert_eq!(ops.len(), 5);
+        assert_eq!(
+            ops[0],
+            PaintOp::Fill {
+                rect: Rect::new(10, 10, 40, 1),
+                color: Rgba(r, g, b, 255)
+            }
+        );
+        assert_eq!(
+            ops[4],
+            PaintOp::Fill {
+                rect: bar::fill_rect(BOX, bar::FULL),
+                color: WHITE
+            }
+        );
     }
 
     #[test]
@@ -347,9 +384,11 @@ mod tests {
         let window = root(&mut hud, NodeKind::Panel, Rect::new(0, 0, 20, 20));
         hud.set(window, Prop::Clip, Value::Bool(true)).unwrap();
         child(&mut hud, window, NodeKind::External, Rect::new(20, 0, 5, 5));
-        // The bar reaches into the clip, its filled part does not.
+        // The bar reaches into the clip, its outline (clear) and its
+        // filled part do not.
         let bar = child(&mut hud, window, NodeKind::Bar, Rect::new(-30, 0, 40, 5));
         hud.set(bar, Prop::Fill, Value::Int(50)).unwrap();
+        color(&mut hud, bar, Prop::Background, Rgba(0, 0, 0, 0));
         let shown = child(
             &mut hud,
             window,

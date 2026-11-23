@@ -12,6 +12,7 @@
 //! module owns control identity, geometry, the list's line rules and the
 //! per-player bar paint.
 
+use vera20k_gui::shell::bar;
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
 
 use super::descriptor::DialogResourceId;
@@ -259,17 +260,13 @@ impl ConnectionLayout {
     }
 }
 
-/// The outline colour `[0x00A8EAE4]`, set once by the static initializer
-/// 0x004E8180.
-pub const BAR_OUTLINE_RGB: [u8; 3] = [255, 0, 0];
-
 /// One row's bar as 0x0064A7B0 paints it on the dialog surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BarPaint {
     pub outline: RectPx,
     pub fill: RectPx,
     pub fill_rgb: [u8; 3],
-    /// The fill's share of the width, 0..=100 ([`bar_fill_rect`]).
+    /// The fill's share of the width, 0..=100 ([`bar::fill_rect`]).
     pub percent: i32,
 }
 
@@ -298,18 +295,10 @@ pub fn bar_paint(rect: RectPx, lag: u32, age_ticks: u32) -> BarPaint {
     let percent = percent.max(0);
     BarPaint {
         outline: rect,
-        fill: bar_fill_rect(rect, percent),
+        fill: bar::fill_rect(rect, percent),
         fill_rgb: rgb,
         percent,
     }
-}
-
-/// 0x0064A7B0's fill in the bar `rect` for `percent` (0..=100) of its
-/// width, at least 6 pixels, inset by 2.
-pub fn bar_fill_rect(rect: RectPx, percent: i32) -> RectPx {
-    let width = rect.w * percent.max(0) / 100;
-    let width = if width > 5 { width } else { 6 };
-    RectPx::new(rect.x + 2, rect.y + 2, width - 4, rect.h - 4)
 }
 
 /// A named node bound at dialog creation. VERA keeps its stable source index
@@ -695,7 +684,7 @@ mod tests {
                 let Ok(Some(Value::Int(percent))) = gui.get(node(fill), Prop::Fill) else {
                     panic!("slot {slot} has no fill");
                 };
-                assert_eq!(bar_fill_rect(rect, *percent), hand.fill, "slot {slot}");
+                assert_eq!(bar::fill_rect(rect, *percent), hand.fill, "slot {slot}");
                 let [r, g, b] = hand.fill_rgb;
                 assert_eq!(
                     gui.get(node(fill), Prop::Color).unwrap(),

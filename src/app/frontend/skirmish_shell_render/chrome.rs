@@ -291,15 +291,7 @@ pub(super) fn push_rect_outline_px(
     tint: [f32; 3],
     depth: f32,
 ) {
-    if rect.w <= 0 || rect.h <= 0 {
-        return;
-    }
-    for edge in [
-        RectPx::new(rect.x, rect.y, rect.w, 1),
-        RectPx::new(rect.x, rect.y + rect.h - 1, rect.w, 1),
-        RectPx::new(rect.x, rect.y, 1, rect.h),
-        RectPx::new(rect.x + rect.w - 1, rect.y, 1, rect.h),
-    ] {
+    for edge in vera20k_gui::shell::bar::outline_edges(rect).into_iter().flatten() {
         push_solid_rect_px(out, white_pixel, edge, tint, depth);
     }
 }
