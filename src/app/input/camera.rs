@@ -1907,12 +1907,9 @@ pub(crate) fn spawn_pointer_world_point(state: &AppState) -> Option<(f32, f32)> 
     if viewport_contains(state.sidebar_frame().column(), (x, y)) {
         return None;
     }
+    // A live control there, Phobos' superweapon column included.
     let (px, py) = state.match_state.input.cursor_px();
     if crate::app::input::chrome_input::control_at(state, px, py) {
-        return None;
-    }
-    #[cfg(feature = "phobos")]
-    if crate::app::presentation::sw_sidebar::hit_test(state, x, y).is_some() {
         return None;
     }
     Some(crate::app::match_runtime::sim_tick::screen_point_to_world(

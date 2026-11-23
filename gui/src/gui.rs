@@ -1135,7 +1135,7 @@ impl Gui {
     ///   once, any other takes the capture, a `Passthrough` one for the host.
     /// - The holder takes every button message, enabled or not, until the
     ///   release of a button it takes; a release with no holder reaches only
-    ///   a catcher.
+    ///   a catcher. An `Opaque` node swallows what it does not act on.
     /// - A held button shows pressed while the last move (or the press) left
     ///   the pointer in its rect, and its release activates it only then: a
     ///   release off it with no move since still activates it, but toggles
@@ -1162,9 +1162,14 @@ impl Gui {
                     self.top_mut().pointer.look = look;
                     return self.held_result(held);
                 }
-                let Some(node) = self.chrome_at(root, x, y, |g, n| g.takes(n, bit)) else {
+                let at = |g: &Self, n| g.takes(n, bit) || g.chrome_flag(n, Prop::Opaque);
+                let Some(node) = self.chrome_at(root, x, y, at) else {
                     return InputResult::default();
                 };
+                if !self.takes(node, bit) {
+                    // An `Opaque` node swallows a button it does not take.
+                    return InputResult { passthrough: None, consumed: true };
+                }
                 if self.chrome_flag(node, Prop::PressActivates) {
                     self.activate_by(node, button);
                     return InputResult { passthrough: None, consumed: true };
@@ -1181,8 +1186,16 @@ impl Gui {
             InputEvent::PointerUp { x, y, button } => {
                 let bit = button_bit(button);
                 let Some(held) = self.top_pointer().pressed else {
-                    let node = self.chrome_at(root, x, y, |g, n| g.takes(n, bit) && g.chrome_flag(n, Prop::Passthrough));
-                    return InputResult { passthrough: node, consumed: false };
+                    let at = |g: &Self, n| {
+                        g.takes(n, bit) && g.chrome_flag(n, Prop::Passthrough) || g.chrome_flag(n, Prop::Opaque)
+                    };
+                    return match self.chrome_at(root, x, y, at) {
+                        Some(n) if self.chrome_flag(n, Prop::Passthrough) => {
+                            InputResult { passthrough: Some(n), consumed: false }
+                        }
+                        Some(_) => InputResult { passthrough: None, consumed: true },
+                        None => InputResult::default(),
+                    };
                 };
                 let result = self.held_result(held);
                 if !self.takes(held, bit) {

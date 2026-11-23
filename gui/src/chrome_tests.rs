@@ -365,3 +365,21 @@ fn a_removed_hover_leaves_without_an_event() {
     mv(&mut g, 5, 5);
     assert!(g.drain_events().is_empty(), "no leave for a dead node");
 }
+
+#[test]
+fn an_opaque_node_swallows_what_it_does_not_act_on() {
+    let (mut g, root, c) = chrome();
+    let toggle = button(&mut g, root, Rect::new(0, 0, 10, 10), LEFT);
+    g.set(toggle, Prop::Opaque, Value::Bool(true)).unwrap();
+    let field = catcher(&mut g, root, Rect::new(0, 0, 100, 100));
+    // The right button over it reaches nothing under it, press or release.
+    assert_eq!(down(&mut g, 5, 5, R), consumed());
+    assert_eq!(g.pressed_in(c), None, "and it takes no capture for it");
+    assert_eq!(up(&mut g, 5, 5, R), consumed());
+    // A left release it holds nothing for stays with it too.
+    assert_eq!(up(&mut g, 5, 5, L), consumed());
+    assert!(fired(&mut g).is_empty());
+    // Beside it the catcher takes them.
+    assert_eq!(down(&mut g, 50, 50, R), through(field));
+    assert_eq!(up(&mut g, 50, 50, R), through(field));
+}

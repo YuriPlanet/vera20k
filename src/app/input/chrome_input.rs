@@ -14,9 +14,11 @@
 //! cameos (A2), and the two catchers (A3) handed back to the tactical and
 //! minimap bodies unconsumed.
 //!
-//! Tree order is the gadget list's: the layout's buttons (each added at the
-//! head, so the last first), the timer dock, the sidebar's eight buttons,
-//! the battlefield, the radar, the cameos, the command bar.
+//! Tree order is the gadget list's, after Phobos' superweapon column, whose
+//! input ran before the list's: the column's toggle and buttons, the
+//! layout's buttons (each added at the head, so the last first), the timer
+//! dock, the sidebar's eight buttons, the battlefield, the radar, the
+//! cameos, the command bar.
 //!
 //! The nodes take their rects from the sidebar view, the frame and the
 //! layout at a pointer message: at every button edge, as the gadget driver
@@ -58,6 +60,11 @@ const ID_TIMER_DOCK: u16 = 0x0200;
 /// the layout's order, below the tooltip ids at 999.
 const ID_LAYOUT_BASE: u16 = 0x0300;
 const LAYOUT_BUTTONS_MAX: usize = 0xE0;
+/// VERA's ids for Phobos' SuperWeaponSidebar: its toggle and one per
+/// button, past the cameo ids.
+const ID_SW_TOGGLE: u16 = 0x0600;
+const ID_SW_BASE: u16 = 0x0700;
+const SW_BUTTONS_MAX: usize = 0x100;
 /// Hit-test best-area seed: the fixed 1024×768 constants, NOT live
 /// resolution (G14). A node larger than 786,432 px² never hovers.
 pub(crate) const HIT_SEED_AREA: i64 = 1024 * 768;
@@ -85,6 +92,13 @@ pub(crate) enum ChromeRoute {
 #[derive(Debug)]
 pub(crate) struct ChromeNodes {
     pub(crate) layer: DialogId,
+    /// Phobos `ToggleSWButtonClass`: it listens to left press/release only
+    /// and switches on the release; the right button does nothing over it.
+    sw_toggle: NodeId,
+    sw_group: NodeId,
+    /// Phobos `SWButtonClass` per column button, by `sw_sidebar.entries`
+    /// index: it fires on the left or right press. Grown, never shrunk.
+    sw_buttons: Vec<NodeId>,
     layout_group: NodeId,
     /// The layout's added parts, a node each by part index: a part that is
     /// no button takes no pointer. Grown to fit, never shrunk.
@@ -115,6 +129,8 @@ pub(crate) struct ChromeNodes {
 /// the rects only when it changed.
 #[derive(Debug, Clone, PartialEq)]
 struct SyncKey {
+    /// Phobos' column: its buttons and whether it is expanded.
+    sw: (usize, bool),
     view_revision: u64,
     frame: sidebar::SidebarFrame,
     command_bar_closed: bool,
@@ -172,6 +188,9 @@ fn catcher(gui: &mut Gui, parent: NodeId) -> Result<NodeId, Refused> {
 fn build(gui: &mut Gui) -> Result<ChromeNodes, Refused> {
     let root = gui.create(NodeKind::Dialog, None)?;
     let layer = gui.push_chrome(root, HIT_SEED_AREA)?;
+    let sw_toggle = button(gui, root, ID_SW_TOGGLE, LEFT)?;
+    gui.set(sw_toggle, Prop::Opaque, Value::Bool(true))?;
+    let sw_group = gui.create(NodeKind::Panel, Some(root))?;
     let layout_group = gui.create(NodeKind::Panel, Some(root))?;
     let timer_dock = button(gui, root, ID_TIMER_DOCK, LEFT)?;
     let tabs = [
@@ -195,6 +214,9 @@ fn build(gui: &mut Gui) -> Result<ChromeNodes, Refused> {
     let command_bar = command_bar::build(gui, root)?;
     Ok(ChromeNodes {
         layer,
+        sw_toggle,
+        sw_group,
+        sw_buttons: Vec::new(),
         layout_group,
         layout_buttons: Vec::new(),
         timer_dock,
@@ -249,6 +271,58 @@ struct Places {
     command_bar: command_bar::CommandBarPlaces,
     timer: Option<Rect>,
     layout: Vec<Option<Rect>>,
+    sw: SwPlaces,
+}
+
+/// Phobos' superweapon column: the toggle and each button, `None` where it
+/// takes no pointer.
+#[derive(Debug, Default)]
+struct SwPlaces {
+    toggle: Option<Rect>,
+    buttons: Vec<Option<Rect>>,
+}
+
+/// The column's places. The toggle takes nothing without its On or Off PCX
+/// (`ToggleSWButtonClass::Draw` draws nothing and its `Action` ignores
+/// input), and the columns are inert while collapsed.
+#[cfg(feature = "phobos")]
+fn sw_places(state: &AppState) -> SwPlaces {
+    let presentation = &state.match_state.match_presentation;
+    let sw = &presentation.sw_sidebar;
+    if !sw.ui.enabled {
+        return SwPlaces::default();
+    }
+    let expanded = presentation.sidebar_projection.model.sw_sidebar_expanded();
+    let toggle = sw
+        .layout
+        .toggle
+        .filter(|_| crate::app::presentation::sw_sidebar::toggle_art(state).is_some())
+        .map(cursor_rect);
+    let buttons = sw
+        .entries
+        .iter()
+        .take(SW_BUTTONS_MAX)
+        .map(|entry| expanded.then(|| cursor_rect(entry.rect)))
+        .collect();
+    SwPlaces { toggle, buttons }
+}
+
+#[cfg(not(feature = "phobos"))]
+fn sw_places(_: &AppState) -> SwPlaces {
+    SwPlaces::default()
+}
+
+/// A half-open layout rect as the whole cursor pixels it holds: those at
+/// `x <= px < x + w`.
+#[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+fn cursor_rect(r: sidebar::Rect) -> Rect {
+    let (x, y) = (r.x.ceil() as i32, r.y.ceil() as i32);
+    Rect::new(
+        x,
+        y,
+        (r.x + r.w).ceil() as i32 - x,
+        (r.y + r.h).ceil() as i32 - y,
+    )
 }
 
 fn places(state: &AppState, view: &SidebarView) -> Places {
@@ -292,6 +366,7 @@ fn places(state: &AppState, view: &SidebarView) -> Places {
         command_bar: command_bar::places(state),
         timer: timer_rect(state),
         layout: layout_rects(state),
+        sw: sw_places(state),
     }
 }
 
@@ -334,7 +409,15 @@ fn layout_rects(state: &AppState) -> Vec<Option<Rect>> {
 
 fn sync_key(state: &AppState) -> SyncKey {
     let presentation = &state.match_state.match_presentation;
+    #[cfg(feature = "phobos")]
+    let sw = (
+        presentation.sw_sidebar.entries.len(),
+        presentation.sidebar_projection.model.sw_sidebar_expanded(),
+    );
+    #[cfg(not(feature = "phobos"))]
+    let sw = (0, false);
     SyncKey {
+        sw,
         view_revision: presentation.sidebar_projection.view_revision(),
         frame: state.sidebar_frame(),
         command_bar_closed: presentation.sidebar_gadget_state.command_bar_closed,
@@ -388,6 +471,7 @@ fn sync(state: &mut AppState, force: bool) -> bool {
 }
 
 fn write_places(gui: &mut Gui, nodes: &mut ChromeNodes, places: &Places) {
+    write_sw(gui, nodes, &places.sw);
     for (node, tab) in nodes.tabs.iter().zip(places.tabs) {
         place(gui, *node, tab.map(|t| t.0), !tab.is_some_and(|t| t.1));
     }
@@ -405,6 +489,25 @@ fn write_places(gui: &mut Gui, nodes: &mut ChromeNodes, places: &Places) {
     command_bar::sync(gui, &nodes.command_bar, &places.command_bar);
     place(gui, nodes.timer_dock, places.timer, true);
     write_layout_buttons(gui, nodes, &places.layout);
+}
+
+/// Phobos' column: the toggle, and the button pool grown to the column's
+/// buttons (`SWButtonClass::Action` fires on the left or right press; the
+/// press is consumed), the tail off the pointer.
+fn write_sw(gui: &mut Gui, nodes: &mut ChromeNodes, places: &SwPlaces) {
+    place(gui, nodes.sw_toggle, places.toggle, true);
+    while nodes.sw_buttons.len() < places.buttons.len() {
+        let index = nodes.sw_buttons.len();
+        let Ok(node) = button(gui, nodes.sw_group, ID_SW_BASE + index as u16, BOTH) else {
+            break;
+        };
+        let _ = gui.set(node, Prop::PressActivates, Value::Bool(true));
+        let _ = gui.set(node, Prop::Opaque, Value::Bool(true));
+        nodes.sw_buttons.push(node);
+    }
+    for (index, node) in nodes.sw_buttons.iter().enumerate() {
+        place(gui, *node, places.buttons.get(index).copied().flatten(), true);
+    }
 }
 
 /// Grow the cameo pool to the visible cameos (`view.items`, already per tab
@@ -609,6 +712,14 @@ pub(crate) fn hovered_cameo(state: &AppState) -> Option<usize> {
     nodes.cameos.iter().position(|&node| node == hovered)
 }
 
+/// The `sw_sidebar.entries` index of the superweapon button the chrome
+/// hovers.
+pub(crate) fn hovered_sw_button(state: &AppState) -> Option<usize> {
+    let (gui, nodes) = chrome(state)?;
+    let hovered = gui.hovered_in(nodes.layer)?;
+    nodes.sw_buttons.iter().position(|&node| node == hovered)
+}
+
 /// Whether the layout's added part `index` is a button held down now.
 pub(crate) fn layout_button_pressed(state: &AppState, index: usize) -> bool {
     chrome(state).is_some_and(|(gui, nodes)| {
@@ -655,7 +766,7 @@ fn play_gui_tab_sound(state: &mut AppState) {
 
 /// [AudioVisual] GUIMainButtonSound — the in-game Repair/Sell toggle click
 /// sound (the same event the main-menu shell buttons play).
-fn play_gui_main_button_sound(state: &mut AppState) {
+pub(crate) fn play_gui_main_button_sound(state: &mut AppState) {
     let sound = state
         .rules()
         .and_then(|r| r.general.gui_main_button_sound.clone());
@@ -667,7 +778,7 @@ fn play_gui_main_button_sound(state: &mut AppState) {
 /// identically (study §2.2: `key & ~0x4000`). The retained sidebar view the
 /// press ran on is read before the action that may change it.
 fn apply_result(state: &mut AppState, id: u16, right: bool) {
-    if command_bar::apply(state, id, right) {
+    if command_bar::apply(state, id, right) || apply_sw(state, id, right) {
         return;
     }
     let (side2_tiles, cameos) = current_sidebar_view(state).map_or((0, 0), |view| {
@@ -763,6 +874,47 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
         }
         _ => {}
     }
+}
+
+/// Phobos' column fired `id`: the toggle switches the column on its left
+/// release, a button launches or selects its superweapon by the same
+/// `apply_sidebar_action` path as the vanilla cameo. False when `id` is none
+/// of the column's.
+#[cfg(feature = "phobos")]
+fn apply_sw(state: &mut AppState, id: u16, right: bool) -> bool {
+    if id == ID_SW_TOGGLE {
+        if !right {
+            crate::app::presentation::sw_sidebar::toggle(state);
+            play_gui_main_button_sound(state);
+        }
+        return true;
+    }
+    let Some(index) = id
+        .checked_sub(ID_SW_BASE)
+        .map(usize::from)
+        .filter(|index| *index < SW_BUTTONS_MAX)
+    else {
+        return false;
+    };
+    let section = state
+        .match_state
+        .match_presentation
+        .sw_sidebar
+        .entries
+        .get(index)
+        .map(|entry| entry.type_id.clone());
+    if let Some(section) = section {
+        crate::app::input::dispatch::apply_sidebar_action(
+            state,
+            SidebarAction::SuperWeaponPress { section, right },
+        );
+    }
+    true
+}
+
+#[cfg(not(feature = "phobos"))]
+fn apply_sw(_: &mut AppState, _: u16, _: bool) -> bool {
+    false
 }
 
 /// Publish the transient pushed looks of the buttons whose frame shows them
@@ -955,6 +1107,50 @@ mod tests {
         assert_eq!(nodes.cameos.len(), 2, "never shrunk");
         assert!(!enabled(&gui, nodes.cameos[1]));
         assert!(edge(&mut gui, 70, 5, GuiButton::Left, true).1.is_empty());
+    }
+
+    /// Phobos' column over the battlefield: a button fires on either press
+    /// and swallows its release; the toggle switches on the left release
+    /// over it only and the right button does nothing there; a collapsed
+    /// column's buttons take nothing.
+    #[test]
+    fn the_superweapon_column_fires_its_buttons_on_the_press_and_its_toggle_on_the_release() {
+        let (mut gui, mut nodes) = test_layer();
+        place(&mut gui, nodes.tactical, Some(r(0, 0, 800, 600)), true);
+        let column = |expanded: bool| SwPlaces {
+            toggle: Some(r(0, 0, 10, 10)),
+            buttons: vec![expanded.then(|| r(10, 20, 60, 48))],
+        };
+        write_sw(&mut gui, &mut nodes, &column(true));
+        let sw = ID_SW_BASE;
+        assert_eq!(edge(&mut gui, 15, 25, GuiButton::Right, true).1, [(sw, true)]);
+        let (release, fired) = edge(&mut gui, 15, 25, GuiButton::Right, false);
+        assert!(fired.is_empty() && release.consumed && release.passthrough.is_none());
+        assert_eq!(edge(&mut gui, 15, 25, GuiButton::Left, true).1, [(sw, false)]);
+        edge(&mut gui, 15, 25, GuiButton::Left, false);
+        // The toggle: silent press, the release over it switches.
+        assert!(edge(&mut gui, 5, 5, GuiButton::Left, true).1.is_empty());
+        assert_eq!(edge(&mut gui, 5, 5, GuiButton::Left, false).1, [(ID_SW_TOGGLE, false)]);
+        // Let go off it, nothing switches.
+        edge(&mut gui, 5, 5, GuiButton::Left, true);
+        assert!(edge(&mut gui, 300, 300, GuiButton::Left, false).1.is_empty());
+        // The right button over it reaches neither it nor the battlefield.
+        let (press, fired) = edge(&mut gui, 5, 5, GuiButton::Right, true);
+        assert!(fired.is_empty() && press.consumed && press.passthrough.is_none());
+        let (release, fired) = edge(&mut gui, 5, 5, GuiButton::Right, false);
+        assert!(fired.is_empty() && release.consumed && release.passthrough.is_none());
+        // Collapsed, the button's place is the battlefield's.
+        write_sw(&mut gui, &mut nodes, &column(false));
+        let (press, _) = edge(&mut gui, 15, 25, GuiButton::Left, true);
+        assert_eq!(press.passthrough, Some(nodes.tactical));
+    }
+
+    #[test]
+    fn a_layout_rect_holds_the_cursor_pixels_from_its_edge_to_before_its_far_edge() {
+        let rect = |x, y, w, h| sidebar::Rect { x, y, w, h };
+        assert_eq!(cursor_rect(rect(10.0, 20.0, 60.0, 48.0)), r(10, 20, 60, 48));
+        // `x <= px < x + w` with whole cursor pixels: 11..=70 of 10.5..70.5.
+        assert_eq!(cursor_rect(rect(10.5, 20.0, 60.0, 48.0)), r(11, 20, 60, 48));
     }
 
     #[test]

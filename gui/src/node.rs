@@ -255,6 +255,10 @@ pub enum Prop {
     /// Chrome button: a release that activates it with the pointer inside
     /// its rect flips `Toggled` (1) or turns it on (2).
     ToggleOnRelease,
+    /// Chrome button: nothing under it sees a press or release over it that
+    /// it does not act on (a button it does not take, a release it holds no
+    /// capture for); it consumes them and does nothing.
+    Opaque,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -308,6 +312,7 @@ impl Prop {
             | Prop::Multiline
             | Prop::PressActivates
             | Prop::Passthrough
+            | Prop::Opaque
             | Prop::WheelPicks
             | Prop::SelectOnFocus
             | Prop::AllSelected
@@ -360,6 +365,7 @@ impl Prop {
             | Prop::Buttons
             | Prop::PressActivates
             | Prop::Passthrough
+            | Prop::Opaque
             | Prop::ToggleOnRelease => kind == NodeKind::Button,
             Prop::TabStop => kind.is_focusable(),
             Prop::KeepsBlink | Prop::BlurOnPress | Prop::Multiline => kind == NodeKind::Edit,

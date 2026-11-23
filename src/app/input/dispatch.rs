@@ -223,10 +223,6 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     if super::chat::skirmish_spawn_mouse(state, button, pressed) {
         return;
     }
-    #[cfg(feature = "phobos")]
-    if crate::app::input::sw_sidebar::mouse(state, button, pressed) {
-        return;
-    }
     match crate::app::input::chrome_input::mouse_button(state, button, pressed) {
         ChromeRoute::Tactical => tactical_mouse(state, button, btn_state),
         ChromeRoute::Minimap => minimap_mouse(state, button, btn_state),

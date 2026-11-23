@@ -14,8 +14,14 @@
 //! as the mod, or the original, has them, for Save to keep. The key again, or
 //! Esc, leaves without saving and puts back what the mode started from.
 //!
+//! The mode is a modal dialog of the match's GUI (`dialog_ui`) over its
+//! chrome: the buttons and the parts are its nodes, so the GUI's hit test,
+//! capture and drag take the pointer, and nothing under the dialog does.
+//!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
+
+use vera20k_gui::{NodeId, NodeKind, Prop, Value};
 
 use crate::app::AppState;
 use crate::app::presentation::text_hud::{self, TextHud};
@@ -31,10 +37,15 @@ pub(crate) struct LayoutEditState {
     grab: Option<Grab>,
     /// The player's file as it was when the mode came on.
     before: Vec<u8>,
-    /// The button a left press went down on: it acts if the press comes up
-    /// on it.
-    pressed: Option<EditButton>,
 }
+
+/// The mode's dialog on `dialog_ui`: VERA's own, no retail resource.
+const EDIT_DIALOG: crate::ui::shell::descriptor::DialogResourceId =
+    crate::ui::shell::descriptor::DialogResourceId(0xFE01);
+/// Its nodes' ids: the two buttons, then a part each from `ID_TARGET_BASE`.
+const ID_SAVE: i32 = 1;
+const ID_RESET: i32 = 2;
+const ID_TARGET_BASE: i32 = 100;
 
 impl LayoutEditState {
     /// Leave the mode with the player's file now `text`: without `save` the
@@ -56,6 +67,23 @@ impl LayoutEditState {
 enum EditButton {
     Save,
     Reset,
+}
+
+impl EditButton {
+    fn id(self) -> i32 {
+        match self {
+            EditButton::Save => ID_SAVE,
+            EditButton::Reset => ID_RESET,
+        }
+    }
+
+    fn of(id: i32) -> Option<Self> {
+        match id {
+            ID_SAVE => Some(EditButton::Save),
+            ID_RESET => Some(EditButton::Reset),
+            _ => None,
+        }
+    }
 }
 
 /// The part the mouse holds.
@@ -108,9 +136,15 @@ pub(crate) fn start(state: &mut AppState) {
         before: presentation.player_layout_text.clone(),
         ..Default::default()
     });
-    // Whatever the mouse was doing in the match ends here.
+    // Whatever the mouse was doing in the match ends here; the mode's dialog
+    // takes the pointer over the chrome.
     state.match_state.input.cancel_tactical_drag();
     crate::app::input::chrome_input::cancel(state);
+    state
+        .match_state
+        .match_presentation
+        .dialog_ui
+        .push_modal(EDIT_DIALOG);
     crate::app::input::messages::post_layout_edit(
         state,
         crate::app::input::messages::LayoutEditLine::On,
@@ -129,6 +163,7 @@ fn finish(state: &mut AppState, save: bool) {
     let Some(edit) = presentation.layout_edit.take() else {
         return;
     };
+    presentation.dialog_ui.close(EDIT_DIALOG);
     let changed = presentation.player_layout_text != edit.before;
     if edit.leave(&mut presentation.player_layout_text, save) {
         crate::app::presentation::player_layout::write(state);
@@ -337,8 +372,52 @@ fn buttons(state: &AppState) -> [(EditButton, String, [i32; 4]); 2] {
     })
 }
 
-fn contains([x, y, w, h]: [i32; 4], cursor: (i32, i32)) -> bool {
-    (x..x + w).contains(&cursor.0) && (y..y + h).contains(&cursor.1)
+/// Puts the mode's dialog on `dialog_ui` (again, when the controller was
+/// reset under it) with a node for each button and each part, the buttons
+/// first and the parts drawn on top before the ones under them, so the
+/// dialog's press finds the button, else the topmost part. Returns the
+/// parts by their node's `id - ID_TARGET_BASE`.
+fn sync_nodes(state: &mut AppState) -> Vec<Target> {
+    let targets = targets(state);
+    let buttons = buttons(state);
+    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    if ui.root_in(EDIT_DIALOG).is_none() {
+        ui.push_modal(EDIT_DIALOG);
+    }
+    let Some(root) = ui.root_in(EDIT_DIALOG) else {
+        return targets;
+    };
+    let gui = ui.gui_mut();
+    let old: Vec<NodeId> = gui.tree().children(root).map(<[_]>::to_vec).unwrap_or_default();
+    for node in old {
+        let _ = gui.remove(node);
+    }
+    let mut add = |id: i32, [x, y, w, h]: [i32; 4], draggable: bool| {
+        let Ok(node) = gui.create(NodeKind::Button, Some(root)) else {
+            return;
+        };
+        let _ = gui.set(node, Prop::Id, Value::Int(id));
+        let _ = gui.set(node, Prop::Rect, Value::Rect(vera20k_gui::Rect::new(x, y, w, h)));
+        if draggable {
+            // A press grabs the part; it follows from the first move.
+            let _ = gui.set(node, Prop::Draggable, Value::Bool(true));
+            let _ = gui.set(node, Prop::DragThreshold, Value::Int(0));
+        }
+    };
+    for (button, _, rect) in &buttons {
+        add(button.id(), *rect, false);
+    }
+    for (index, target) in targets.iter().enumerate().rev() {
+        add(ID_TARGET_BASE + index as i32, target.rect, true);
+    }
+    targets
+}
+
+/// The button the mode's dialog holds pressed.
+fn pressed_button(state: &AppState) -> Option<EditButton> {
+    let ui = &state.match_state.match_presentation.dialog_ui;
+    let node = ui.pressed_node_in(EDIT_DIALOG)?;
+    EditButton::of(ui.gui().id_of(node)?)
 }
 
 /// A left press on a button holds it; one elsewhere grabs the topmost part
@@ -349,19 +428,18 @@ pub(crate) fn mouse(state: &mut AppState, button: winit::event::MouseButton, pre
     }
     let cursor = state.match_state.input.cursor_px();
     if pressed {
-        let held = buttons(state)
-            .into_iter()
-            .find(|(_, _, rect)| contains(*rect, cursor))
-            .map(|(button, ..)| button);
-        let grab = held
-            .is_none()
-            .then(|| {
-                targets(state)
-                    .into_iter()
-                    .rev()
-                    .find(|target| contains(target.rect, cursor))
-            })
-            .flatten()
+        let targets = sync_nodes(state);
+        let ui = &mut state.match_state.match_presentation.dialog_ui;
+        ui.on_pointer_move(cursor.0, cursor.1);
+        ui.on_pointer_down(cursor.0, cursor.1);
+        let _ = ui.drain_events();
+        let grabbed = ui
+            .gui()
+            .drag()
+            .and_then(|drag| ui.gui().id_of(drag.node))
+            .and_then(|id| usize::try_from(id - ID_TARGET_BASE).ok());
+        let grab = grabbed
+            .and_then(|index| targets.into_iter().nth(index))
             .map(|target| Grab {
                 name: target.name,
                 cursor,
@@ -370,25 +448,25 @@ pub(crate) fn mouse(state: &mut AppState, button: winit::event::MouseButton, pre
                 at: target.xy,
             });
         if let Some(edit) = &mut state.match_state.match_presentation.layout_edit {
-            edit.pressed = held;
             edit.grab = grab;
         }
         return;
     }
+    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    ui.on_pointer_up(cursor.0, cursor.1);
+    let events = ui.drain_events();
+    let ran = events.iter().find_map(|event| match event {
+        vera20k_gui::UiEvent::Activated { node } => EditButton::of(ui.gui().id_of(*node)?),
+        _ => None,
+    });
     let Some(edit) = &mut state.match_state.match_presentation.layout_edit else {
         return;
     };
     edit.grab = None;
-    let Some(held) = edit.pressed.take() else {
-        return;
-    };
-    let released_on_it = buttons(state)
-        .iter()
-        .any(|(button, _, rect)| *button == held && contains(*rect, cursor));
-    match held {
-        _ if !released_on_it => {}
-        EditButton::Save => finish(state, true),
-        EditButton::Reset => reset(state),
+    match ran {
+        Some(EditButton::Save) => finish(state, true),
+        Some(EditButton::Reset) => reset(state),
+        None => {}
     }
 }
 
@@ -541,7 +619,7 @@ fn pieces(state: &AppState) -> Vec<EditPiece> {
     }
     for (button, label, rect) in buttons(state) {
         let [x, y, w, h] = rect.map(|v| v as f32);
-        let colour = if edit.pressed == Some(button) {
+        let colour = if pressed_button(state) == Some(button) {
             [1.0; 3]
         } else {
             tint
