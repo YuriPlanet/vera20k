@@ -226,6 +226,30 @@ fn startup_asset_or_error<T>(result: Result<T>, error: &mut Option<String>) -> O
     }
 }
 
+/// The process Rules the startup needs, and the compatibility projection.
+///
+/// A rules file the game cannot read is outside data: the startup keeps the
+/// error card, so the shell says what failed instead of opening a menu that
+/// starts games with no rules, and no mod is blamed for it.
+fn load_startup_rules(
+    process_assets: &mut crate::app::process_assets::ProcessAssets,
+    assets: &crate::assets::asset_manager::AssetManager,
+    error: &mut Option<String>,
+) -> (
+    Option<crate::rules::ruleset::RuleSet>,
+    Option<crate::rules::ini_parser::IniFile>,
+) {
+    startup_asset_or_error(
+        process_assets
+            .initialize_sources_if_needed(assets)
+            .map_err(|error| {
+                anyhow::Error::msg(error).context(crate::i18n::tr("VERA:RulesLoadFailed"))
+            }),
+        error,
+    )
+    .unwrap_or((None, None))
+}
+
 /// A startup failure in the language in use, for the error card.
 ///
 /// `std::io::Error`'s own message is in the host's language, which need not
@@ -846,15 +870,12 @@ impl App {
                 .with_personal_rules(personal_rules)
                 .with_ares_setting(ares_setting);
             process_assets.csf = startup_csf;
-            let (startup_rules, startup_rules_projection) = startup_asset_manager
-                .as_ref()
-                .and_then(|assets| {
-                    process_assets
-                        .initialize_sources_if_needed(assets)
-                        .map_err(|error| log::warn!("Startup sources unavailable: {error}"))
-                        .ok()
-                })
-                .unwrap_or((None, None));
+            let (startup_rules, startup_rules_projection) = match startup_asset_manager.as_ref() {
+                Some(assets) => {
+                    load_startup_rules(&mut process_assets, assets, &mut main_menu_shell_error)
+                }
+                None => (None, None),
+            };
             // Return to the host only after the process Rules registry is complete.
             InitializationStep::pending(window.clone(), move || {
                 if let Some(assets) = startup_asset_manager.as_mut() {
@@ -1600,6 +1621,39 @@ mod tests {
             startup_asset_or_error::<()>(Err(anyhow::anyhow!("later artwork failure")), &mut error);
             assert_eq!(error.as_deref(), Some(first.as_str()));
         }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_rules_file_the_game_cannot_read_keeps_the_startup_error_screen() {
+        // The rules file is outside data: a game whose RULESMD.INI cannot be
+        // read must say so on the error card instead of opening a menu that
+        // starts games with no rules.
+        let root = std::env::temp_dir().join(format!("vera-startup-rules-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let assets = AssetManager::from_loose_root_for_test(&root);
+        let mut process_assets = crate::app::process_assets::ProcessAssets::new(
+            crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+            false,
+        );
+        let mut error = None;
+        let (rules, projection) = load_startup_rules(&mut process_assets, &assets, &mut error);
+        assert!(rules.is_none());
+        assert!(projection.is_none());
+        let text = error
+            .clone()
+            .expect("the error screen must receive the failure");
+        // The card tells the player in the language in use, and names the
+        // file whose failure is the diagnosis.
+        assert!(
+            text.contains(&crate::i18n::tr("VERA:RulesLoadFailed")),
+            "{text}"
+        );
+        assert!(text.contains("rulesmd.ini"), "{text}");
+        // Later failures must not replace the original diagnosis.
+        startup_asset_or_error::<()>(Err(anyhow::anyhow!("later artwork failure")), &mut error);
+        assert_eq!(error.as_deref(), Some(text.as_str()));
         std::fs::remove_dir_all(root).unwrap();
     }
 

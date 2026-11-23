@@ -794,6 +794,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     }
     state.match_state.match_presentation.message_list = message_list;
     crate::app::input::messages::post_layout_problem(state);
+    crate::app::input::messages::post_palette_refusal(state);
     state.match_state.match_presentation.chat = Default::default();
     // Clear_Scene6851F0 -> 534450 resets BeaconManagerClass (53499B).
     // Display Init_Clear4A88C0 clears +11B0..+11B2, not beacon mode +11B4.

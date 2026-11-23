@@ -109,9 +109,12 @@ impl ElectricBolts {
                 //4C2942. Conceal only emitted pixels: the optional fog style
                 // must not skip geometry's shared Main draws or either update.
                 let emit = visible(&bolt.birth);
+                // PALETTE.PAL is outside data: a file the game cannot read
+                // leaves the frame drawing the bolt in the fallback colours,
+                // and the geometry's shared Main requests still happen.
                 draw.lines(
                     viewport,
-                    palette.expect("loaded tactical PALETTE.PAL"),
+                    palette.unwrap_or_else(ElectricBoltPalette::fallback),
                     main,
                     |line| {
                         if emit {

@@ -47,7 +47,7 @@ pub(crate) struct MatchPresentationState {
     /// Palette + per-house RGB ramp GPU resources for the voxel sprite shader.
     pub(crate) palette_set: Option<crate::render::palette_textures::PaletteSet>,
     /// PALETTE.PAL as `surface_palette` parsed it; a world install empties it.
-    pub(crate) surface_palette: std::cell::OnceCell<crate::assets::pal_file::Palette>,
+    pub(crate) surface_palette: SurfacePalette,
     pub(crate) sprite_atlas: Option<SpriteAtlas>,
     /// The unit and sprite atlas growths rasterizing on workers.
     pub(crate) atlas_growth: crate::render::entity_atlas_growth::EntityAtlasGrowth,
@@ -326,6 +326,69 @@ pub(crate) struct MatchPresentationState {
     pub(crate) in_game_options: crate::ui::shell::in_game_options_state::InGameOptionsState,
 }
 
+/// PALETTE.PAL in gamemd's converted form, shared by every per-frame reader:
+/// action lines, lasers, bolts and the selected building's brackets.
+///
+/// The file is outside data: a missing or unusable PALETTE.PAL leaves the
+/// frame without a palette, and the refusal is stated once rather than once
+/// per frame. A missing archive is not remembered, so a later draw can still
+/// find it.
+#[derive(Default)]
+pub(crate) struct SurfacePalette {
+    palette: std::cell::OnceCell<crate::assets::pal_file::Palette>,
+    /// The palette could not be read, and the player has not been told yet.
+    refusal: std::cell::Cell<bool>,
+    /// The refusal has been logged, so the frame does not repeat it.
+    refusal_stated: std::cell::Cell<bool>,
+}
+
+impl SurfacePalette {
+    /// The palette every per-frame reader shares, or `None` when the file is
+    /// missing or cannot be read.
+    pub(crate) fn get(
+        &self,
+        assets: Option<&crate::assets::asset_manager::AssetManager>,
+    ) -> Option<&crate::assets::pal_file::Palette> {
+        if let Some(palette) = self.palette.get() {
+            return Some(palette);
+        }
+        let Some(assets) = assets else {
+            return None;
+        };
+        let Some(bytes) = assets.get_ref("palette.pal") else {
+            self.state_the_refusal("PALETTE.PAL is missing");
+            return None;
+        };
+        let palette = match crate::assets::pal_file::Palette::from_bytes(bytes) {
+            Ok(palette) => palette,
+            Err(error) => {
+                self.state_the_refusal(&format!("PALETTE.PAL cannot be read: {error}"));
+                return None;
+            }
+        };
+        Some(self.palette.get_or_init(|| palette))
+    }
+
+    /// The frame asks again every frame; the refusal is stated once.
+    ///
+    /// The refusal is also kept for the player: the frame keeps drawing
+    /// without the game's colours, and the match's message row says so
+    /// (`app::input::messages::post_palette_refusal`).
+    fn state_the_refusal(&self, reason: &str) {
+        if self.refusal_stated.replace(true) {
+            return;
+        }
+        self.refusal.set(true);
+        log::warn!("{reason}; the frame draws without a palette");
+    }
+
+    /// Whether the palette could not be read, and the player has not been
+    /// told yet. The answer is taken, so the player is told once.
+    pub(crate) fn take_refusal(&self) -> bool {
+        self.refusal.replace(false)
+    }
+}
+
 impl MatchPresentationState {
     /// PALETTE.PAL in gamemd's converted form, for every per-frame reader:
     /// action lines, lasers, bolts and the selected building's brackets. A
@@ -334,12 +397,7 @@ impl MatchPresentationState {
         &self,
         assets: Option<&crate::assets::asset_manager::AssetManager>,
     ) -> Option<&crate::assets::pal_file::Palette> {
-        if let Some(palette) = self.surface_palette.get() {
-            return Some(palette);
-        }
-        let bytes = assets?.get_ref("palette.pal")?;
-        let palette = crate::assets::pal_file::Palette::from_bytes(bytes).ok()?;
-        Some(self.surface_palette.get_or_init(|| palette))
+        self.surface_palette.get(assets)
     }
 
     /// The house colours drawing reads: the relation colours while that
