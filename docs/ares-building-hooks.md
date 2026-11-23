@@ -56,7 +56,8 @@ SizeLimit=15              ; the largest Size= that may enter
   room, of the same trench kind, and whose Location lies within 256
   leptons (a straight neighbour) shows Enter before any stock action
   (`100171B0`, hook `0x44725F`, canTraverseTo `10011690`); Ares tests no
-  owner. The click raises the TrenchRedirectClick event (0x60, ten bytes:
+  owner, and Shift's ToggleSelect comes after it. The click raises the
+  TrenchRedirectClick event (0x60, ten bytes:
   the target building's Cell and the source building; `10016F60`, hook
   `0x443414`, RaiseTrenchRedirectClick `1006A170`), whose handler
   (`1006A540`) asks canTraverseTo again for the Cell's building and

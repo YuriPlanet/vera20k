@@ -480,23 +480,23 @@ pub(super) fn object_attack_click_command_with(
         ))
     };
     // The receiver's own key rungs ([`object_key_action`]) come before its
-    // attack rung: Ctrl+Alt's guard rung, else Alt's Move, which Foot's
-    // shroud rung may make NoMove. Shift's ToggleSelect belongs to the
-    // selection click, which handles it before this.
-    let key_action = if modifier == OrderModifier::Shift {
-        None
-    } else {
-        object_key_action_with(
-            sim,
-            control,
-            rules,
-            attacker_id,
-            target_id,
-            Some(target_id),
-            modifier,
-            force_move_key,
-        )
-    };
+    // attack rung: Shift's ToggleSelect, which Foot ClickedAction's default
+    // case takes with no order (`0x004D7CC0`) and Infantry asks before its
+    // heal arm (`0x0051E44C`); Ctrl+Alt's guard rung, else Alt's Move, which
+    // Foot's shroud rung may make NoMove.
+    let key_action = object_key_action_with(
+        sim,
+        control,
+        rules,
+        attacker_id,
+        target_id,
+        Some(target_id),
+        modifier,
+        force_move_key,
+    );
+    if key_action == Some(ObjectKeyAction::ToggleSelect) {
+        return None;
+    }
     // A healer's GuardArea over itself replaces its key answers
     // ([`healer_guards_itself`]).
     if target_id == attacker_id
