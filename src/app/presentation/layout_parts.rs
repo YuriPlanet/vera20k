@@ -12,16 +12,15 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use std::collections::HashMap;
-
-use vera20k_gui::hud::{Hud, Layer, Origin};
-use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Rgba, Value};
+use vera20k_gui::hud::{Layer, Origin};
+use vera20k_gui::{Rect, Rgba};
 
 use crate::app::AppState;
 use crate::app::input::hotkeys::HotkeyCommand;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::hud_paint::{HudPaint, HudSpace, Material, NodeDraw, Picture};
+use crate::render::hud_paint::{HudSpace, Material, NodeDraw, Picture};
+use crate::render::retained_hud::{Rest, RetainedHud, rounded};
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::ui::added_parts::{AddedKind, Holder, TextValue};
 use crate::ui::match_layout::MatchLayout;
@@ -421,14 +420,6 @@ pub(crate) fn run(state: &mut AppState, command: ButtonCommand, right: bool) {
     }
 }
 
-/// Every coordinate a part can have. The HUD culls what its viewport
-/// leaves out, and what is off screen here is the lanes' to clip.
-const UNBOUNDED: Rect = Rect::new(i32::MIN / 2, i32::MIN / 2, i32::MAX, i32::MAX);
-
-/// A button picture's `Art`. Which file and frame that is, [`placed`] has
-/// already found.
-const PICTURE: &str = "picture";
-
 /// The added parts as HUDs: the sidebar's and the battlefield's, which
 /// draw apart, each with the font's raster of its own.
 pub(crate) struct PartsHuds {
@@ -451,16 +442,8 @@ impl Default for PartsHuds {
 /// each lane draws in.
 pub(crate) struct PartsHud {
     holder: Holder,
-    hud: Hud,
     /// One node for each fill, picture and text, in drawing order.
-    nodes: Vec<(NodeKind, NodeId)>,
-    /// How many of `nodes` this update has reached.
-    used: usize,
-    /// The tree's revision at its last layout.
-    laid_out: u64,
-    /// What the tree cannot hold of a node, for the adapter.
-    draws: HashMap<NodeId, NodeDraw>,
-    paint: HudPaint,
+    nodes: RetainedHud,
     pictures: Vec<SpriteInstance>,
     boxes: Vec<SpriteInstance>,
     texts: Vec<SpriteInstance>,
@@ -468,15 +451,14 @@ pub(crate) struct PartsHud {
 
 impl PartsHud {
     pub(crate) fn new(holder: Holder) -> Self {
+        let layer = match holder {
+            Holder::Field => Layer::Field,
+            Holder::Side | Holder::Group(_) => Layer::Panels,
+        };
         Self {
             holder,
             // As many as the layout has: no part is left out for a limit.
-            hud: Hud::new(usize::MAX),
-            nodes: Vec::new(),
-            used: 0,
-            laid_out: 0,
-            draws: HashMap::new(),
-            paint: HudPaint::default(),
+            nodes: RetainedHud::new(layer, Origin::Layout, usize::MAX, 1, Rest::Remove),
             pictures: Vec::new(),
             boxes: Vec::new(),
             texts: Vec::new(),
@@ -495,25 +477,18 @@ impl PartsHud {
         font: &BitFont,
     ) {
         self.update(parts, tint);
-        if self.laid_out != self.hud.revision() {
-            self.hud.layout(UNBOUNDED);
-            self.laid_out = self.hud.revision();
-        }
         let space = HudSpace {
             origin: camera,
             scale: 1.0,
         };
-        let draws = &self.draws;
-        self.paint.build(&self.hud, space, font, |node| {
-            draws.get(&node).copied().unwrap_or_default()
-        });
+        let paint = self.nodes.finish(space, Some(font));
         for (lane, material) in [
             (&mut self.pictures, Material::Pictures),
             (&mut self.boxes, Material::Solid),
             (&mut self.texts, Material::Glyphs),
         ] {
             lane.clear();
-            lane.extend(self.paint.lane(material).copied());
+            lane.extend(paint.lane(material).copied());
         }
     }
 
@@ -538,15 +513,22 @@ impl PartsHud {
     /// inside a one-pixel frame in `tint`, the fill black and the label in
     /// `tint`, the two swapped while it is held down.
     fn update(&mut self, parts: &[Placed], tint: [f32; 3]) {
-        self.used = 0;
-        self.draws.clear();
-        let (tint, black) = (rgba(tint), rgba([0.0; 3]));
+        self.nodes.begin();
+        let (tint, black) = (rounded(tint), rounded([0.0; 3]));
         for part in parts {
             if part.group || part.holder != self.holder {
                 continue;
             }
             if let Some(picture) = part.picture {
-                self.picture(part.rect, picture);
+                let draw = NodeDraw {
+                    picture: Some(Picture {
+                        uv_origin: picture.uv_origin,
+                        uv_size: picture.uv_size,
+                        pixel_size: picture.pixel_size,
+                    }),
+                    ..Default::default()
+                };
+                self.nodes.picture(rect_of(part.rect), draw);
                 continue;
             }
             let [x, y, width, height] = part.rect;
@@ -571,101 +553,26 @@ impl PartsHud {
                 width.saturating_sub(2 * across),
                 height.saturating_sub(2 * down),
             ];
-            self.text(words, &part.text, ink);
+            // The text starts at the rect's corner and runs past it as it
+            // needs.
+            self.nodes
+                .text(rect_of(words), &part.text, ink, NodeDraw::default());
         }
-        self.forget_from(self.used);
     }
 
+    /// A fill whose size the rect cannot hold (empty or negative) keeps it.
     fn fill(&mut self, rect: [i32; 4], color: Rgba) {
-        let Some(node) = self.node(NodeKind::Panel, rect) else {
-            return;
-        };
-        self.set(node, Prop::Background, Value::Rgba(color));
         let [_, _, width, height] = rect;
-        if width < 1 || height < 1 {
-            let draw = NodeDraw {
-                size: Some([width as f32, height as f32]),
-                ..Default::default()
-            };
-            self.draws.insert(node, draw);
-        }
-    }
-
-    fn picture(&mut self, rect: [i32; 4], picture: SidebarChromeEntry) {
-        let Some(node) = self.node(NodeKind::Image, rect) else {
-            return;
-        };
-        if let Ok(None) = self.hud.get(node, Prop::Art) {
-            self.set(node, Prop::Art, Value::Text(PICTURE.to_owned()));
-        }
         let draw = NodeDraw {
-            picture: Some(Picture {
-                uv_origin: picture.uv_origin,
-                uv_size: picture.uv_size,
-                pixel_size: picture.pixel_size,
-            }),
+            size: (width < 1 || height < 1).then_some([width as f32, height as f32]),
             ..Default::default()
         };
-        self.draws.insert(node, draw);
+        self.nodes.fill(rect_of(rect), color, draw);
     }
+}
 
-    /// The text starts at the rect's corner and runs past it as it needs.
-    fn text(&mut self, rect: [i32; 4], text: &str, ink: Rgba) {
-        let Some(node) = self.node(NodeKind::Text, rect) else {
-            return;
-        };
-        self.set(node, Prop::Color, Value::Rgba(ink));
-        // Compared first: a value to set is a string of its own.
-        let same = matches!(
-            self.hud.get(node, Prop::Text),
-            Ok(Some(Value::Text(shown))) if shown == text
-        );
-        if !same {
-            self.set(node, Prop::Text, Value::Text(text.to_owned()));
-        }
-    }
-
-    /// The update's next node: last frame's if it is of `kind`, else a new
-    /// one in place of it and those after it, as the newest root is on top.
-    /// Its rect is never empty, which the HUD would not paint.
-    fn node(&mut self, kind: NodeKind, [x, y, width, height]: [i32; 4]) -> Option<NodeId> {
-        let node = match self.nodes.get(self.used) {
-            Some(&(of, node)) if of == kind => node,
-            _ => {
-                self.forget_from(self.used);
-                let layer = match self.holder {
-                    Holder::Field => Layer::Field,
-                    Holder::Side | Holder::Group(_) => Layer::Panels,
-                };
-                let node = self.hud.create_root(layer, Origin::Layout, kind).ok()?;
-                self.nodes.push((kind, node));
-                node
-            }
-        };
-        self.used += 1;
-        let rect = Rect::new(x, y, width.max(1), height.max(1));
-        self.set(node, Prop::Rect, Value::Rect(rect));
-        Some(node)
-    }
-
-    fn set(&mut self, node: NodeId, prop: Prop, value: Value) {
-        // Refused only for a node or a prop that is not this tree's.
-        let _ = self.hud.set(node, prop, value);
-    }
-
-    fn forget_from(&mut self, kept: usize) {
-        if kept >= self.nodes.len() {
-            return;
-        }
-        if kept == 0 {
-            self.hud.remove_origin(Origin::Layout);
-        } else {
-            for &(_, node) in &self.nodes[kept..] {
-                let _ = self.hud.remove(node);
-            }
-        }
-        self.nodes.truncate(kept);
-    }
+fn rect_of([x, y, width, height]: [i32; 4]) -> Rect {
+    Rect::new(x, y, width, height)
 }
 
 /// `rect` with `by` more pixels on every side. A size may end up negative.
@@ -676,12 +583,6 @@ fn grown([x, y, width, height]: [i32; 4], by: i32) -> [i32; 4] {
         width.saturating_add(2 * by),
         height.saturating_add(2 * by),
     ]
-}
-
-/// An opaque tint as a HUD colour. A whole 255th comes back the same f32.
-fn rgba(tint: [f32; 3]) -> Rgba {
-    let [red, green, blue] = tint.map(|channel| (channel * 255.0).round() as u8);
-    Rgba(red, green, blue, 255)
 }
 
 #[cfg(all(test, tests_app_presentation))]

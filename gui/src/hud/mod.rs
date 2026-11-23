@@ -192,6 +192,15 @@ impl Hud {
         Ok(())
     }
 
+    /// Removes the nodes with their subtrees at once, in the order given;
+    /// those already gone are passed over.
+    pub fn remove_all(&mut self, ids: &[NodeId]) {
+        if !ids.is_empty() {
+            self.tree.remove_all(ids);
+            self.forget_removed();
+        }
+    }
+
     /// Removes the nodes `origin` made, with their subtrees. What others made
     /// beneath them goes too, so their handles to it become `Stale`.
     pub fn remove_origin(&mut self, origin: Origin) {

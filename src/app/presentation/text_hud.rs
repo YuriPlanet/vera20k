@@ -11,50 +11,31 @@
 //! instances are the ones the overlay drew before: the boxes in one lane,
 //! the glyphs in another, each in drawing order.
 
-use std::collections::HashMap;
-
-use vera20k_gui::hud::{Hud, Layer, Origin};
-use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Rgba, Value};
+use vera20k_gui::hud::{Layer, Origin};
+use vera20k_gui::{Rect, Rgba};
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::hud_paint::{HudPaint, HudSpace, Material, NodeDraw};
+use crate::render::hud_paint::{HudSpace, Material, NodeDraw};
+use crate::render::retained_hud::{Rest, RetainedHud};
+pub(crate) use crate::render::retained_hud::{rgb, rounded};
 
 /// The pieces' tree, kept from frame to frame, and the lanes it draws.
 pub(crate) struct TextHud {
-    hud: Hud,
+    nodes: RetainedHud,
     /// The overlay's `veraui.ini` key, and the part node of that name every
     /// piece goes into ([`Self::named`]).
     name: Option<&'static str>,
-    part: Option<NodeId>,
-    /// One node per box and text, in drawing order.
-    nodes: Vec<(NodeKind, NodeId)>,
-    /// How many of `nodes` this frame has reached.
-    used: usize,
-    /// The tree's revision at its last layout.
-    laid_out: u64,
-    /// Each node's place on the target this frame.
-    draws: HashMap<NodeId, NodeDraw>,
-    paint: HudPaint,
 }
 
 impl Default for TextHud {
     fn default() -> Self {
         Self {
-            hud: Hud::new(usize::MAX),
+            nodes: RetainedHud::new(Layer::Overlay, Origin::Host, usize::MAX, 1, Rest::Remove),
             name: None,
-            part: None,
-            nodes: Vec::new(),
-            used: 0,
-            laid_out: 0,
-            draws: HashMap::new(),
-            paint: HudPaint::default(),
         }
     }
 }
-
-/// Where the tree lays out: everywhere, as the host placed every piece.
-const UNBOUNDED: Rect = Rect::new(i32::MIN / 2, i32::MIN / 2, i32::MAX, i32::MAX);
 
 /// The host places every piece itself.
 const SPACE: HudSpace = HudSpace {
@@ -76,16 +57,10 @@ impl TextHud {
 
     /// Start a frame: the pieces added from here replace the last frame's.
     pub(crate) fn begin(&mut self) {
-        if let (Some(name), None) = (self.name, self.part)
-            && let Ok(part) = self
-                .hud
-                .create_root(Layer::Overlay, Origin::Host, NodeKind::Panel)
-        {
-            let _ = self.hud.set(part, Prop::Name, Value::Text(name.to_owned()));
-            self.part = Some(part);
+        self.nodes.begin();
+        if let Some(name) = self.name {
+            self.nodes.part(Some(name));
         }
-        self.used = 0;
-        self.draws.clear();
     }
 
     /// The frame's next box: `rect` in the overlay's pixels, filled with
@@ -112,23 +87,14 @@ impl TextHud {
         depth: f32,
         tint: Option<[f32; 3]>,
     ) {
-        let Some(node) = self.node(NodeKind::Panel, rect) else {
-            return;
+        let draw = NodeDraw {
+            position: Some(position),
+            size: Some(size),
+            depth,
+            tint,
+            ..Default::default()
         };
-        if !matches!(self.hud.get(node, Prop::Background), Ok(Some(Value::Rgba(shown))) if *shown == color)
-        {
-            let _ = self.hud.set(node, Prop::Background, Value::Rgba(color));
-        }
-        self.draws.insert(
-            node,
-            NodeDraw {
-                position: Some(position),
-                size: Some(size),
-                depth,
-                tint,
-                ..Default::default()
-            },
-        );
+        self.nodes.fill(rect, color, draw);
     }
 
     /// The frame's next text: `rect` in the overlay's pixels, `text` printed
@@ -157,86 +123,30 @@ impl TextHud {
         reveal: Option<u32>,
         tint: Option<[f32; 3]>,
     ) {
-        let Some(node) = self.node(NodeKind::Text, rect) else {
-            return;
+        let draw = NodeDraw {
+            position: Some(position),
+            depth,
+            reveal,
+            tint,
+            ..Default::default()
         };
-        if !matches!(self.hud.get(node, Prop::Color), Ok(Some(Value::Rgba(shown))) if *shown == color)
-        {
-            let _ = self.hud.set(node, Prop::Color, Value::Rgba(color));
-        }
-        // Compared first: a value to set is a string of its own.
-        if !matches!(self.hud.get(node, Prop::Text), Ok(Some(Value::Text(shown))) if shown == text)
-        {
-            let _ = self.hud.set(node, Prop::Text, Value::Text(text.to_owned()));
-        }
-        self.draws.insert(
-            node,
-            NodeDraw {
-                position: Some(position),
-                depth,
-                reveal,
-                tint,
-                ..Default::default()
-            },
-        );
+        self.nodes.text(rect, text, color, draw);
     }
 
     /// End the frame: drop the pieces it no longer has and draw the rest
     /// with `font` at its raster of now.
     pub(crate) fn finish(&mut self, font: &BitFont) {
-        self.forget_from(self.used);
-        if self.laid_out != self.hud.revision() {
-            self.hud.layout(UNBOUNDED);
-            self.laid_out = self.hud.revision();
-        }
-        let draws = &self.draws;
-        self.paint.build(&self.hud, SPACE, font, |node| {
-            draws.get(&node).copied().unwrap_or_default()
-        });
+        self.nodes.finish(SPACE, Some(font));
     }
 
     /// The boxes, in drawing order.
     pub(crate) fn boxes(&self) -> impl Iterator<Item = &SpriteInstance> {
-        self.paint.lane(Material::Solid)
+        self.nodes.painted().lane(Material::Solid)
     }
 
     /// The glyphs, in drawing order.
     pub(crate) fn glyphs(&self) -> impl Iterator<Item = &SpriteInstance> {
-        self.paint.lane(Material::Glyphs)
-    }
-
-    /// The frame's next node of `kind`: last frame's where it is one, else a
-    /// new one in its place and those after it, as a newer root is on top.
-    /// Its rect is never empty, which the HUD would not paint.
-    fn node(&mut self, kind: NodeKind, rect: Rect) -> Option<NodeId> {
-        let node = match self.nodes.get(self.used) {
-            Some(&(of, node)) if of == kind => node,
-            _ => {
-                self.forget_from(self.used);
-                let node = match self.part {
-                    Some(part) => self.hud.create(kind, part, Origin::Host).ok()?,
-                    None => self
-                        .hud
-                        .create_root(Layer::Overlay, Origin::Host, kind)
-                        .ok()?,
-                };
-                self.nodes.push((kind, node));
-                node
-            }
-        };
-        self.used += 1;
-        let rect = Rect::new(rect.x, rect.y, rect.w.max(1), rect.h.max(1));
-        if !matches!(self.hud.get(node, Prop::Rect), Ok(Some(Value::Rect(shown))) if *shown == rect) {
-            let _ = self.hud.set(node, Prop::Rect, Value::Rect(rect));
-        }
-        Some(node)
-    }
-
-    fn forget_from(&mut self, kept: usize) {
-        for &(_, node) in self.nodes.get(kept..).unwrap_or_default() {
-            let _ = self.hud.remove(node);
-        }
-        self.nodes.truncate(kept);
+        self.nodes.painted().lane(Material::Glyphs)
     }
 }
 
@@ -256,20 +166,12 @@ mod tests {
             (hud.boxes().count(), hud.glyphs().count())
         };
         assert_eq!(frame(&mut hud), (1, 1));
-        let part = hud.hud.find(Origin::Host, "Timers").unwrap();
+        let part = hud.nodes.find("Timers").unwrap();
         assert_eq!(frame(&mut hud), (1, 1), "a frame keeps the one part");
-        hud.hud.set(part, Prop::Visible, Value::Bool(false)).unwrap();
+        hud.nodes
+            .hud_mut()
+            .set(part, vera20k_gui::Prop::Visible, vera20k_gui::Value::Bool(false))
+            .unwrap();
         assert_eq!(frame(&mut hud), (0, 0));
     }
-}
-
-/// The nearest opaque colour to a tint, for a node's prop.
-pub(crate) fn rounded(tint: [f32; 3]) -> Rgba {
-    let [r, g, b] = tint.map(|channel| (channel.clamp(0.0, 1.0) * 255.0).round() as u8);
-    Rgba(r, g, b, 255)
-}
-
-/// An opaque colour from whole 255ths, as the overlays give theirs.
-pub(crate) fn rgb(channels: [u8; 3]) -> Rgba {
-    Rgba(channels[0], channels[1], channels[2], 255)
 }

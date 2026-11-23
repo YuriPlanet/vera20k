@@ -49,6 +49,7 @@ pub mod frame_readback;
 pub mod gpu;
 pub(crate) mod gpu_timer;
 pub(crate) mod hud_paint;
+pub(crate) mod retained_hud;
 pub(crate) mod laser;
 pub(crate) mod line_trail;
 pub mod loading_screen_chrome;
