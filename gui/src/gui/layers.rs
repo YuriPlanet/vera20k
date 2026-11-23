@@ -193,6 +193,28 @@ impl Gui {
         self.prune_dialogs();
     }
 
+    /// Puts `parent`'s children in `order` first, in that order, and the
+    /// rest after them in theirs, so that they paint and take the pointer
+    /// in that order. A node listed twice counts once; one that is not
+    /// `parent`'s child is refused, and nothing moves.
+    pub fn reorder(&mut self, parent: NodeId, order: &[NodeId]) -> Result<(), Refused> {
+        let node = self.tree.node(parent)?;
+        if order.iter().any(|id| !node.children.contains(id)) {
+            return Err(Refused::NotFound);
+        }
+        let mut children = Vec::with_capacity(node.children.len());
+        for &id in order.iter().chain(&node.children) {
+            if !children.contains(&id) {
+                children.push(id);
+            }
+        }
+        if children != node.children {
+            self.tree.node_mut(parent)?.children = children;
+            self.touch(parent);
+        }
+        Ok(())
+    }
+
     /// Removes the nodes `origin` made, with their subtrees. What others made
     /// beneath them goes too, so their handles to it become `Stale`.
     pub fn remove_origin(&mut self, origin: Origin) {

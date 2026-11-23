@@ -69,6 +69,26 @@ impl Layout {
         (span.root == root).then(|| &self.nodes[span.start..span.start + span.len])
     }
 
+    /// The nodes of `id`'s subtree, any node's: its root's span from it
+    /// to the first node after it that is not under it. The tree is the one
+    /// the list was made from.
+    pub fn subtree(&self, tree: &Tree, id: NodeId) -> Option<&[Placed]> {
+        let (root, at) = *self.index.get(&id)?;
+        let span = self.span(root)?;
+        let under = |mut node: NodeId| loop {
+            match tree.parent(node) {
+                Ok(Some(parent)) if parent == id => return true,
+                Ok(Some(parent)) => node = parent,
+                _ => return false,
+            }
+        };
+        let len = span[at + 1..]
+            .iter()
+            .position(|placed| !under(placed.id))
+            .unwrap_or(span.len() - at - 1);
+        Some(&span[at..=at + len])
+    }
+
     pub fn placed(&self, id: NodeId) -> Option<&Placed> {
         let (root, at) = *self.index.get(&id)?;
         self.span(root)?.get(at)
@@ -188,6 +208,11 @@ impl Gui {
         let meta = &self.meta;
         let revision_of = |root: NodeId| meta.get(&root).map_or(0, |m| m.revision);
         self.layout.fill(&self.tree, &self.roots, revision_of, viewport);
+    }
+
+    /// The viewport of the last [`Self::layout`].
+    pub fn viewport(&self) -> Rect {
+        self.layout.viewport()
     }
 
     /// The rect from the last [`Self::layout`]; none while hidden or removed,
