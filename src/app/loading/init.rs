@@ -1700,18 +1700,21 @@ impl MapLoadInitial {
     }
 
     /// `-ra2` translation of the retail Allied mission ALL02S ("Hail to the
-    /// Chief"): its Chapel and Tanya triggers use RA2 event kinds whose stock
-    /// YR descendants the engine evaluates differently.
+    /// Chief"): its Chapel trigger uses an RA2 event kind whose stock YR
+    /// descendant the engine evaluates differently.
     ///
     /// `Chapel Destroyed` uses event 57, "the trigger's House owns no
     /// BuildingTypes[186]". An engineer capture moves the only Chapel out of
     /// NeutralA's registration and zeroes that House-scoped count, which the
     /// trigger cannot distinguish from the Chapel being destroyed. The YR
-    /// campaign master rewrites these triggers to event 61, "no TechnoType
+    /// campaign master rewrites that trigger to event 61, "no TechnoType
     /// named CACOLO01 exists anywhere" — still true when the Chapel is
-    /// destroyed, false while the captured building lives on. Tanya's event
-    /// 11 ("House destroyed") is the same retail-to-YR translation, rewritten
-    /// to event 61 keyed by TANY in the community master.
+    /// destroyed, false while the captured building lives on.
+    ///
+    /// Tanya's `1,11,0,3` is deliberately left alone: event 11 is "the
+    /// trigger's House is destroyed", and Germans owns only TANY on this
+    /// map, so the stock event is already correct. Limboed passengers keep
+    /// their tracking count, so entering a transport does not fake her death.
     ///
     /// This is map data, applied after every other map source has been merged
     /// and before anything reads the map's rules or triggers. It never runs in
@@ -1735,8 +1738,6 @@ impl MapLoadInitial {
             .filter_map(|(key, value)| {
                 let translated = if value.eq_ignore_ascii_case("1,57,0,186") {
                     Some("1,61,2,0,CACOLO01")
-                } else if value.eq_ignore_ascii_case("1,11,0,3") {
-                    Some("1,61,2,0,TANY")
                 } else {
                     None
                 };

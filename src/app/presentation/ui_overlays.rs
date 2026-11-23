@@ -1896,6 +1896,23 @@ fn ares_insignia_visible(
         })
 }
 
+/// `(veteran, elite, negative)` PIPS.SHP frame numbers on the stock strip.
+///
+/// Retail RA2's `ra2.mix -> conquer.mix` copy has 19 frames; YR's
+/// `ra2md.mix -> conqmd.mix` has 21. YR inserts an extra magenta pip at 12,
+/// so from there on every later frame is one slot higher. Inspecting both
+/// strips: RA2 13=single star, 14=three stars, 18=negative marker (YR puts
+/// them at 14, 15 and 19). Drawing YR's numbers over RA2's strip shows one
+/// star as three stars and three stars as the green ammo pip.
+#[cfg(not(feature = "phobos"))]
+fn stock_rank_frames() -> (usize, usize, usize) {
+    if crate::util::ra2_launch::enabled() {
+        (13, 14, 18)
+    } else {
+        (14, 15, 19)
+    }
+}
+
 /// Ares `TechnoClass_DrawVeterancy` (Ares.dll 1004E0C0, hook 0x70A990),
 /// which replaces the stock rank leaf; Phobos's `DrawInsignia` replaces it
 /// in turn. The rank shape, frame and custom SHP name, or `None`:
@@ -1932,10 +1949,11 @@ fn ares_insignia_draw<'a>(
         return None;
     }
     let raw = entity.veterancy.raw();
+    let (veteran_frame, elite_frame, _) = stock_rank_frames();
     let (rank, stock_frame) = if raw_is_elite(raw) {
-        (2, 15)
+        (2, elite_frame as i32)
     } else if raw_is_veteran(raw) {
-        (1, 14)
+        (1, veteran_frame as i32)
     } else {
         (0, -1)
     };
@@ -2210,12 +2228,13 @@ pub(crate) fn techno_extras_for_parent(
         // there is no Trainable gate.70A9B2/C2/D2 tests the raw accumulator,
         // not the cached/quantized rank. A negative value selects frame19.
         let raw = entity.veterancy.raw();
+        let (veteran_frame, elite_frame, negative_frame) = stock_rank_frames();
         let frame = if raw_is_veteran(raw) {
-            Some(14)
+            Some(veteran_frame)
         } else if raw_is_elite(raw) {
-            Some(15)
+            Some(elite_frame)
         } else if raw_is_negative(raw) {
-            Some(19)
+            Some(negative_frame)
         } else {
             None
         };
