@@ -21,8 +21,8 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1047; the chain docs give 362 more a disposition
-  (ported elsewhere, equivalent, not applicable, skipped or residual); 39 are
+  removed). The engine source cites 1049; the chain docs give 392 more a disposition
+  (ported elsewhere, equivalent, not applicable, skipped or residual); 7 are
   untouched, listed at the end. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
   [Smaller gameplay residuals](#smaller-gameplay-residuals).
@@ -57,7 +57,6 @@ only that house.
 | EMP | A LaserFencePost's fence recalc (0x4533A0, VERA builds no fence sections) | [ares-emp.md](ares-emp.md) |
 | Refinery storage | The Weeder store, Removed_From_Game's keepTiberium arm, a fifth tiberium slot, the storage pips (0x44D755, 0x709B4E) and the `Message.SilosNeeded` text (needs a sim-to-client message event) | [ares-tiberium.md](ares-tiberium.md) |
 | Trench traversal | Only a buildings-only selection gets the cursor and click; Ctrl+Alt over a friendly trench keeps its stock answer; `GarrisonedIn` is not kept | [ares-building-hooks.md](ares-building-hooks.md) |
-| Deactivated objects | The deactivated What_Action over an object gates only the hover cursor of the object that owns it; the click paths keep their stock rungs below the ClickedAction refusal | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Firestorm zones | Recalc writers other than the toggle (an overlay change, trigger action 40) and placing a section during a firestorm keep the old zone class | [ares-firestorm.md](ares-firestorm.md) |
 | DropPod | A negative count (native loops about 2^32 tries), SetDestination's prologue and Teleporter arm, the Foot's own locomotor answering while the pod flies, a landing past the end of `DropPod=` | [ares-superweapon-types.md](ares-superweapon-types.md) |
 | HunterSeeker | The tube coordinate of a target in a tunnel; the facing conversion may differ by one binary-angle unit | [ares-hunter-seeker.md](ares-hunter-seeker.md) |
@@ -126,9 +125,7 @@ Resurrection's nine pairs) have no such pair.
 
 - Unit art still needs the mixed indexed-gun draws above and the ore-gather anim
   under EMP. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) is a
-  residual in [ares-techno-hooks.md](ares-techno-hooks.md). PCX cameos are ported
-  ([ares-pcx-cameos.md](ares-pcx-cameos.md)), but that doc cites neither of their hooks
-  (`0x6A9A43`, `0x712045`), so both stay in the list.
+  residual in [ares-techno-hooks.md](ares-techno-hooks.md).
 - Technos: the damage spark and smoke
   particle-system lists (`DamageSparksParticleSystems`, `DamageSmokeParticleSystems`;
   `0x6FAD49`, `0x702894`). See [ares-techno-hooks.md](ares-techno-hooks.md).
@@ -144,8 +141,11 @@ Resurrection's nine pairs) have no such pair.
   (`[Colors] Count` above 8). Ares' defaults match the engine. See
   [ares-sidebar-ui-hooks.md](ares-sidebar-ui-hooks.md).
 - The CSF loader hooks (Misc/CSFLoader.cpp) are deferred: CSF loading is handled separately.
-- DLL plumbing (Checksum, Savegame, CopyProtection, Debug, Swizzle, Ares.cpp), most
-  of which does not apply to the engine.
+- The front-end hooks among the untouched ones below: skirmish alone
+  (`0x6AD0ED`), the skirmish MultiEngineer option, Ares' keyboard commands and the
+  uimd.ini settings. The DLL plumbing (checksums, save stream, copy protection,
+  log, swizzling, start and command line) is in
+  [ares-skipped-hooks.md](ares-skipped-hooks.md).
 - Overlay radar colours (OverlayTypeClass_GetRadarColor, `1006ACC0`, hook `0x5FED00`):
   Ares returns the OverlayType's `RadarColor` field where VERA reads the SHP frame
   header colour for the map preview. The rest of `Misc/RMG.cpp` is in
@@ -221,47 +221,15 @@ Retail INIs for retail tests: run the repo's `extract-ini` into `ini/` and set `
 
 ## Untouched hooks
 
-These 39 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
-hook script above skips this page). Most are DLL plumbing.
+These 7 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
+hook script above skips this page).
 
 | Hook | Ares.dll | Name | Source |
 |---|---|---|---|
-| `0x4A1C10` | `1005F550` | Checksummer_Add_BYTE | `Misc/Checksum.cpp` |
-| `0x4A1CA0` | `1005F600` | Checksummer_Add_bool | `Misc/Checksum.cpp` |
-| `0x4A1D30` | `1005F5E0` | Checksummer_Add_WORD | `Misc/Checksum.cpp` |
-| `0x4A1D50` | `1005F5C0` | Checksummer_Add_DWORD | `Misc/Checksum.cpp` |
-| `0x4A1D70` | `1005F660` | Checksummer_Add_float | `Misc/Checksum.cpp` |
-| `0x4A1D90` | `1005F640` | Checksummer_Add_double | `Misc/Checksum.cpp` |
-| `0x52E9AA` | `1005F680` | Frontend_WndProc_Checksum | `Misc/Checksum.cpp` |
-| `0x6516F0` | `1005F720` | Multiplay_LogToSync_MPDEBUG | `Misc/Checksum.cpp` |
-| `0x47AE36` | `10003B00` | CDFileClass_SetFileName | `Ares.cpp` |
-| `0x47B026` | `10003B90` | FileFindOpen | `Ares.cpp` |
-| `0x52C5E0` | `10003AE0` | Ares_NoLogo | `Ares.cpp` |
-| `0x52F639` | `10003C90` | YR_CmdLineParse | `Ares.cpp` |
 | `0x6AD0ED` | `10003AD0` | Ares_AllowSinglePlay | `Ares.cpp` |
-| `0x7CD810` | `10003B40` | ExeRun | `Ares.cpp` |
-| `0x7CD8EF` | `10003B60` | ExeTerminate | `Ares.cpp` |
-| `0x479110` | `1005F7F0` | CD_NeverAsk | `Misc/CopyProtection.cpp` |
-| `0x49F5C0` | `1005F820` | CopyProtection_IsLauncherRunning | `Misc/CopyProtection.cpp` |
-| `0x49F620` | `1005F830` | CopyProtection_NotifyLauncher | `Misc/CopyProtection.cpp` |
-| `0x49F7A0` | `1005F810` | CopyProtection_CheckProtectedData | `Misc/CopyProtection.cpp` |
-| `0x55CFDF` | `1005F7A0` | BlowMeUp | `Misc/CopyProtection.cpp` |
-| `0x4068E0` | `100620D0` | Debug_Log | `Misc/Debug.cpp` |
-| `0x4A4AC0` | `100620D0` | Debug_Log | `Misc/Debug.cpp` |
-| `0x4C850B` | `10062120` | Exception_Dialog | `Misc/Debug.cpp` |
-| `0x534A4D` | `10062140` | Theater_Init_ResetLogStatus | `Misc/Debug.cpp` |
-| `0x687C56` | `10062130` | INIClass_ReadScenario_ResetLogStatus | `Misc/Debug.cpp` |
 | `0x69801A` | `1006AF40` | Game_GetGameTypePrefs_MultiEngineer | `Misc/Skirmish.cpp` |
 | `0x699043` | `1006AF00` | GameMode_SaveGameSettings_MultiEngineer | `Misc/Skirmish.cpp` |
 | `0x6AEE6A` | `1006B070` | Skirmish_InitializeDialog_MultiEngineer | `Misc/Skirmish.cpp` |
-| `0x6CF240` | `1006C5B0` | SwizzleManagerClass_Swizzle | `Misc/Swizzle.cpp` |
-| `0x6CF2C0` | `1006C540` | SwizzleManagerClass_Here_I_Am | `Misc/Swizzle.cpp` |
-| `0x6CF350` | `1006C440` | SwizzleManagerClass_ConvertNodes | `Misc/Swizzle.cpp` |
-| `0x6A9A43` | `1005E300` | StripClass_Draw_DrawPCX | `Misc/Cameos.cpp` |
-| `0x712045` | `1005E480` | TechnoTypeClass_GetCameo | `Misc/Cameos.cpp` |
 | `0x533058` | `10002A80` | CommandClassCallback_Register | `Ares.Commands.cpp` |
-| `0x6BC0CD` | `10005820` | LoadRA2MD | `Ares.GlobalControls.cpp` |
 | `0x5FACDF` | `10006030` | Options_LoadFromINI | `Ares.UISettings.cpp` |
 | `0x73D219` | `10053E50` | UnitClass_Draw_OreGatherAnim | `Ext/WarheadType/Hooks.EMP.cpp` |
-| `0x4C8FE0` | `100641A0` | Exception_Handler | `Misc/Exception.cpp` |
-| `0x64CCBF` | `1006A280` | DoList_ReplaceReconMessage | `Misc/Network.cpp` |
