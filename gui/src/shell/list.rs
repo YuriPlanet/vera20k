@@ -3,6 +3,7 @@
 //! 17 + 2; a host with other text sets its own metrics. Inner rectangles
 //! exclude borders.
 
+use super::combobox::COMBO_DROPDOWN_ROW_H;
 use super::geom::{RectPx, ShellScale};
 use crate::time::{Duration, Instant};
 
@@ -25,6 +26,11 @@ const MIN_THUMB_HEIGHT: i32 = 14;
 /// A list box's row and scrollbar metrics in the pixels its page is drawn in:
 /// the default metrics on an unscaled layout, grown with the window on a
 /// stretched one.
+/// `px` grown by the stretch of `scale`, at least one pixel.
+fn grow(px: i32, scale: ShellScale) -> i32 {
+    ((px as f32 * scale.factor()).round() as i32).max(1)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListMetrics {
     pub row_h: i32,
@@ -46,12 +52,23 @@ impl ListMetrics {
         if scale.is_unscaled() {
             return Self::RETAIL;
         }
-        let grow = |px: i32, factor: f32| ((px as f32 * factor).round() as i32).max(1);
         Self {
-            row_h: grow(ROW_HEIGHT, scale.factor()),
-            scrollbar_w: grow(SCROLLBAR_WIDTH, scale.factor()),
-            arrow_h: grow(ARROW_HEIGHT, scale.factor()),
-            min_thumb_h: grow(MIN_THUMB_HEIGHT, scale.factor()),
+            row_h: grow(ROW_HEIGHT, scale),
+            scrollbar_w: grow(SCROLLBAR_WIDTH, scale),
+            arrow_h: grow(ARROW_HEIGHT, scale),
+            min_thumb_h: grow(MIN_THUMB_HEIGHT, scale),
+        }
+    }
+
+    /// The `ComboDropWin` drop-down's metrics: the same scrollbar child
+    /// (0060E72F creates it, 0060E745 subclasses it to 0061C690) on rows
+    /// [`COMBO_DROPDOWN_ROW_H`] tall, all grown by the page's stretch, so a
+    /// drop-down under a stretched combo has rows as tall as its face and
+    /// stays the same number of rows deep.
+    pub fn combo(scale: ShellScale) -> Self {
+        Self {
+            row_h: grow(COMBO_DROPDOWN_ROW_H, scale),
+            ..Self::scaled(scale)
         }
     }
 

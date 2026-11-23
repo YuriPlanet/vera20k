@@ -613,7 +613,8 @@ mod tests {
     }
     #[test]
     fn a_stretched_keyboard_page_moves_its_popup_rows_with_the_face() {
-        use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, DropdownMetrics};
+        use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
+        use vera20k_gui::shell::list::ListMetrics;
 
         // At the authored size the responsive page is the retail page.
         let retail = KeyboardLayout::new(800, 600, None);
@@ -631,10 +632,10 @@ mod tests {
         // click at that row's centre has to select it.
         for (layout, row_h) in [
             (retail, COMBO_DROPDOWN_ROW_H),
-            (stretched, DropdownMetrics::scaled(stretched.scale).row_h),
+            (stretched, ListMetrics::combo(stretched.scale).row_h),
         ] {
             assert_eq!(
-                DropdownMetrics::scaled(layout.scale).row_h,
+                ListMetrics::combo(layout.scale).row_h,
                 row_h,
                 "layout rows and paint pitch agree"
             );
