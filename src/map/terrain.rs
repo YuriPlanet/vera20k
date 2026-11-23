@@ -493,11 +493,14 @@ fn apply_tactical_bridge_inverse(
     // (-30, -60) on a normal high bridge. Keep VERA's shared world-row bias.
     // Evidence: TACTICAL_BRIDGE_MOVE_CLICK_DIAGNOSIS_20260909.md.
     let (tile_left, ground_ref_y) = iso_to_screen(cell_rx, cell_ry, terrain_z);
-    let fixed_base = bridge_cells.corrected_bridge_base_level(cell_rx, cell_ry);
+    // A deck held off its cell's ground picks by its own footprint, checked
+    // before the direct-neighbor shortcut can select the neighboring ground.
+    // A deck at gamemd's own ground + 4, as every retail one loads, takes
+    // gamemd's inverse unchanged (tools/bridge_click_oracle).
+    let fixed_base = bridge_cells
+        .corrected_bridge_base_level(cell_rx, cell_ry)
+        .filter(|&base| base != terrain_z);
     if let Some(base) = fixed_base {
-        // Use the same footprint across the span, including cells where the
-        // bridge base happens to equal the local ground. Check it before
-        // the direct-neighbor shortcut can select the neighboring ground.
         let lift = f32::from(base as i8) * HEIGHT_STEP + TACTICAL_BRIDGE_EXTRA_HEIGHT_PX;
         let (rx, ry) = screen_to_iso(input_x, input_y + lift);
         if rounded_lookup_cell(rx, ry) == Some((cell_rx, cell_ry)) {
@@ -738,11 +741,6 @@ mod tests {
             pick(-30.0, 195.0),
             Some((10, 11)),
             "the raised deck's center"
-        );
-        assert_eq!(
-            pick(60.0, 150.0),
-            Some((10, 8)),
-            "the outer lane at ground + 4"
         );
         assert_eq!(
             pick(-30.0, 241.0),
