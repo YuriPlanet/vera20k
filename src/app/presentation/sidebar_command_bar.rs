@@ -4,7 +4,13 @@
 //! the strip under the battlefield, and draws into its own surface
 //! (`presentation::sidebar_surface`); its gadgets take it in frame pixels.
 
+use std::collections::HashMap;
+
+use vera20k_gui::hud::{Hud, InputPolicy, Layer, Origin};
+use vera20k_gui::{NodeId, NodeKind, Prop, Rect as GuiRect, Value};
+
 use super::*;
+use crate::render::hud_paint::{HudPaint, HudSpace, NodeDraw, Picture};
 use crate::ui::sidebar::command_bar::{CommandBarLayout, spacer_pieces};
 
 pub(crate) fn layout_and_slots(state: &AppState) -> Option<(CommandBarLayout, Vec<Option<usize>>)> {
@@ -54,130 +60,226 @@ fn layout_on_frame(
     )
 }
 
-pub(super) fn append(state: &AppState, atlas: &SidebarChromeAtlas, out: &mut Vec<SpriteInstance>) {
-    let Some((layout, slots)) = layout_and_slots(state) else {
-        return;
-    };
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
-    append_prepared(
-        out,
-        &atlas.command_bar,
-        layout,
-        &slots,
-        &state.match_state.match_presentation.sidebar_gadget_state,
-        camera,
-    );
+/// The bar's pieces as a node tree, kept from frame to frame, and the
+/// instances it draws: one picture node per piece, in drawing order, each
+/// with its rect in the bar's layout space. A piece clipped away, or whose
+/// art is missing, has no node.
+pub(crate) struct CommandBarHud {
+    hud: Hud,
+    /// The picture nodes, in drawing order.
+    nodes: Vec<NodeId>,
+    /// How many of `nodes` this update has reached.
+    used: usize,
+    /// The tree's revision at its last layout.
+    laid_out: u64,
+    /// Each node's quad, as the bar's arithmetic places and clips it.
+    draws: HashMap<NodeId, NodeDraw>,
+    paint: HudPaint,
 }
 
-pub(crate) fn append_prepared(
-    out: &mut Vec<SpriteInstance>,
-    art: &crate::render::sidebar_chrome::CommandBarArt<SidebarChromeEntry>,
-    layout: CommandBarLayout,
-    slots: &[Option<usize>],
-    gadgets: &crate::ui::sidebar::gadget_flash::SidebarGadgetState,
-    camera: [f32; 2],
-) {
-    // 6D0A20: native sidebar converter, frame0, clipped to the tactical-bottom
-    // surface. The spacer reaches the left cap as `spacer_pieces` lays it
-    // out: 1:1 and cropped as native up to 1080-pixel frames, partly
-    // stretched in wider ones. Its NeedsRedraw gate (set by RequestRedraw
-    // 6D0F00 for triggers and mission timers, RequestTimedRedraw 6D0EC0) only
-    // skips unchanged frames; VERA draws the bar every frame.
-    if let Some(spacer) = art.spacer {
-        let cap_x = (layout.left_cap.x - layout.bounds.x).max(0.0) as u32;
-        let pieces = spacer_pieces(cap_x, spacer.pixel_size[0] as u32);
-        for piece in pieces.into_iter().flatten() {
-            append_scaled(
-                out,
-                spacer.columns(piece.source_x as f32, piece.source_w as f32),
-                [layout.bounds.x + piece.x as f32, layout.bounds.y],
-                [piece.w as f32, spacer.pixel_size[1]],
-                layout.bounds,
-                camera,
-            );
+impl Default for CommandBarHud {
+    fn default() -> Self {
+        Self {
+            hud: Hud::new(usize::MAX, InputPolicy::default()),
+            nodes: Vec::new(),
+            used: 0,
+            laid_out: 0,
+            draws: HashMap::new(),
+            paint: HudPaint::default(),
         }
     }
-    let mut draw = |entry: Option<SidebarChromeEntry>, x: f32, y: f32| {
-        if let Some(entry) = entry {
-            append_clipped(out, entry, [x, y], layout.bounds, camera);
+}
+
+/// The `Art` every piece's node names; which picture it is, the node's
+/// [`NodeDraw`] says.
+const PICTURE: &str = "picture";
+
+/// The depth the bar's surface draws at.
+const DEPTH: f32 = 0.00048;
+
+impl CommandBarHud {
+    /// The bar `state` shows, drawn: its instances, bottom to top.
+    pub(crate) fn draw_for(&mut self, state: &AppState, atlas: &SidebarChromeAtlas) -> &[SpriteInstance] {
+        let Some((layout, slots)) = layout_and_slots(state) else {
+            self.forget_from(0);
+            self.paint.build_pictures(&self.hud, SPACE, |_| NodeDraw::default());
+            return self.paint.instances();
+        };
+        let camera = [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ];
+        self.draw(
+            &atlas.command_bar,
+            layout,
+            &slots,
+            &state.match_state.match_presentation.sidebar_gadget_state,
+            camera,
+        )
+    }
+
+    /// Bring the tree to the bar and draw it. `camera` is what the surface's
+    /// shader subtracts.
+    pub(crate) fn draw(
+        &mut self,
+        art: &crate::render::sidebar_chrome::CommandBarArt<SidebarChromeEntry>,
+        layout: CommandBarLayout,
+        slots: &[Option<usize>],
+        gadgets: &crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+        camera: [f32; 2],
+    ) -> &[SpriteInstance] {
+        self.used = 0;
+        self.draws.clear();
+        // 6D0A20: native sidebar converter, frame0, clipped to the tactical-bottom
+        // surface. The spacer reaches the left cap as `spacer_pieces` lays it
+        // out: 1:1 and cropped as native up to 1080-pixel frames, partly
+        // stretched in wider ones. Its NeedsRedraw gate (set by RequestRedraw
+        // 6D0F00 for triggers and mission timers, RequestTimedRedraw 6D0EC0) only
+        // skips unchanged frames; VERA draws the bar every frame.
+        if let Some(spacer) = art.spacer {
+            let cap_x = (layout.left_cap.x - layout.bounds.x).max(0.0) as u32;
+            let pieces = spacer_pieces(cap_x, spacer.pixel_size[0] as u32);
+            for piece in pieces.into_iter().flatten() {
+                self.piece(
+                    spacer.columns(piece.source_x as f32, piece.source_w as f32),
+                    [layout.bounds.x + piece.x as f32, layout.bounds.y],
+                    [piece.w as f32, spacer.pixel_size[1]],
+                    layout.bounds,
+                    camera,
+                );
+            }
         }
-    };
-    draw(art.left_cap[0], layout.left_cap.x, layout.left_cap.y);
-    for slot in 0..layout.tile_count {
-        let rect = layout.slot(slot).unwrap();
-        draw(art.background, rect.x, rect.y);
-    }
-    if let Some(rect) = layout.filler() {
-        draw(
-            art.background.map(|tile| tile.columns(0.0, rect.w)),
-            rect.x,
-            rect.y,
-        );
-    }
-    draw(art.right_cap, layout.right_cap.x, layout.right_cap.y);
-    for (slot, command) in slots.iter().copied().enumerate() {
-        if let (Some(rect), Some(command)) = (layout.slot(slot), command) {
-            draw(
-                art.buttons[command][usize::from(gadgets.command_pressed[command])],
+        let mut blit = |hud: &mut Self, entry: Option<SidebarChromeEntry>, x: f32, y: f32| {
+            if let Some(entry) = entry {
+                hud.piece(entry, [x, y], entry.pixel_size, layout.bounds, camera);
+            }
+        };
+        blit(self, art.left_cap[0], layout.left_cap.x, layout.left_cap.y);
+        for slot in 0..layout.tile_count {
+            let rect = layout.slot(slot).unwrap();
+            blit(self, art.background, rect.x, rect.y);
+        }
+        if let Some(rect) = layout.filler() {
+            blit(
+                self,
+                art.background.map(|tile| tile.columns(0.0, rect.w)),
                 rect.x,
                 rect.y,
             );
         }
+        blit(self, art.right_cap, layout.right_cap.x, layout.right_cap.y);
+        for (slot, command) in slots.iter().copied().enumerate() {
+            if let (Some(rect), Some(command)) = (layout.slot(slot), command) {
+                blit(
+                    self,
+                    art.buttons[command][usize::from(gadgets.command_pressed[command])],
+                    rect.x,
+                    rect.y,
+                );
+            }
+        }
+        blit(
+            self,
+            art.left_cap[usize::from(gadgets.command_thumb_pressed)],
+            layout.left_cap.x,
+            layout.left_cap.y,
+        );
+        self.forget_from(self.used);
+        if self.laid_out != self.hud.revision() {
+            self.hud.layout(UNBOUNDED);
+            self.laid_out = self.hud.revision();
+        }
+        let draws = &self.draws;
+        self.paint.build_pictures(&self.hud, SPACE, |node| {
+            draws.get(&node).copied().unwrap_or_default()
+        });
+        self.paint.instances()
     }
-    draw(
-        art.left_cap[usize::from(gadgets.command_thumb_pressed)],
-        layout.left_cap.x,
-        layout.left_cap.y,
-    );
+
+    /// The whole of `entry` drawn over `size` at `position`, then clipped to
+    /// `clip`; at the canvas size it is a blit. The quad is the bar's own
+    /// arithmetic, so it lands where and as it always has.
+    fn piece(
+        &mut self,
+        entry: SidebarChromeEntry,
+        position: [f32; 2],
+        size: [f32; 2],
+        clip: Rect,
+        camera: [f32; 2],
+    ) {
+        let left = position[0].max(clip.x);
+        let top = position[1].max(clip.y);
+        let right = (position[0] + size[0]).min(clip.x + clip.w);
+        let bottom = (position[1] + size[1]).min(clip.y + clip.h);
+        if right <= left || bottom <= top {
+            return;
+        }
+        let rect = GuiRect::new(
+            left.floor() as i32,
+            top.floor() as i32,
+            ((right - left).ceil() as i32).max(1),
+            ((bottom - top).ceil() as i32).max(1),
+        );
+        let Some(node) = self.node(rect) else {
+            return;
+        };
+        let draw = NodeDraw {
+            position: Some([camera[0] + left, camera[1] + top]),
+            picture: Some(Picture {
+                uv_origin: [
+                    entry.uv_origin[0] + (left - position[0]) / size[0] * entry.uv_size[0],
+                    entry.uv_origin[1] + (top - position[1]) / size[1] * entry.uv_size[1],
+                ],
+                uv_size: [
+                    (right - left) / size[0] * entry.uv_size[0],
+                    (bottom - top) / size[1] * entry.uv_size[1],
+                ],
+                pixel_size: [right - left, bottom - top],
+            }),
+            depth: DEPTH,
+            ..Default::default()
+        };
+        self.draws.insert(node, draw);
+    }
+
+    /// The update's next node, last frame's where there is one.
+    fn node(&mut self, rect: GuiRect) -> Option<NodeId> {
+        let node = match self.nodes.get(self.used) {
+            Some(&node) => node,
+            None => {
+                let node = self
+                    .hud
+                    .create_root(Layer::Panels, Origin::Host, NodeKind::Image)
+                    .ok()?;
+                let _ = self.hud.set(node, Prop::Art, Value::Text(PICTURE.to_owned()));
+                self.nodes.push(node);
+                node
+            }
+        };
+        self.used += 1;
+        if !matches!(self.hud.get(node, Prop::Rect), Ok(Some(Value::Rect(shown))) if *shown == rect) {
+            let _ = self.hud.set(node, Prop::Rect, Value::Rect(rect));
+        }
+        Some(node)
+    }
+
+    fn forget_from(&mut self, kept: usize) {
+        for &node in self.nodes.get(kept..).unwrap_or_default() {
+            let _ = self.hud.remove(node);
+        }
+        self.nodes.truncate(kept);
+    }
 }
 
-fn append_clipped(
-    out: &mut Vec<SpriteInstance>,
-    entry: SidebarChromeEntry,
-    position: [f32; 2],
-    clip: Rect,
-    camera: [f32; 2],
-) {
-    append_scaled(out, entry, position, entry.pixel_size, clip, camera);
-}
+/// Where the tree lays out: everywhere, as the bar's arithmetic already
+/// placed each piece.
+const UNBOUNDED: GuiRect = GuiRect::new(i32::MIN / 2, i32::MIN / 2, i32::MAX, i32::MAX);
 
-/// The whole of `entry` drawn over `size` at `position`, then clipped as
-/// [`append_clipped`] clips; at the canvas size it is that blit.
-fn append_scaled(
-    out: &mut Vec<SpriteInstance>,
-    entry: SidebarChromeEntry,
-    position: [f32; 2],
-    size: [f32; 2],
-    clip: Rect,
-    camera: [f32; 2],
-) {
-    let left = position[0].max(clip.x);
-    let top = position[1].max(clip.y);
-    let right = (position[0] + size[0]).min(clip.x + clip.w);
-    let bottom = (position[1] + size[1]).min(clip.y + clip.h);
-    if right <= left || bottom <= top {
-        return;
-    }
-    out.push(SpriteInstance {
-        position: [camera[0] + left, camera[1] + top],
-        size: [right - left, bottom - top],
-        uv_origin: [
-            entry.uv_origin[0] + (left - position[0]) / size[0] * entry.uv_size[0],
-            entry.uv_origin[1] + (top - position[1]) / size[1] * entry.uv_size[1],
-        ],
-        uv_size: [
-            (right - left) / size[0] * entry.uv_size[0],
-            (bottom - top) / size[1] * entry.uv_size[1],
-        ],
-        depth: 0.00048,
-        tint: [1.; 3],
-        alpha: 1.,
-        ..Default::default()
-    });
-}
+/// The bar's pixels are the surface's: the host places every quad itself.
+const SPACE: HudSpace = HudSpace {
+    origin: [0.0; 2],
+    scale: 1.0,
+};
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
@@ -217,9 +319,9 @@ mod tests {
         assert_eq!(layout.left_cap.x, 0.0);
         assert_eq!(layout.slot(0).unwrap().x, 28.0);
         assert_eq!(layout.right_cap.x, 1724.0);
-        let mut out = Vec::new();
         let gadgets = SidebarGadgetState::default();
-        append_prepared(&mut out, &art, layout, &[], &gadgets, [0.0; 2]);
+        let mut hud = CommandBarHud::default();
+        let out = hud.draw(&art, layout, &[], &gadgets, [0.0; 2]).to_vec();
         let mut spans: Vec<_> = out
             .iter()
             .filter(|sprite| sprite.size[0] != 856.0)
@@ -252,10 +354,10 @@ mod tests {
             let layout =
                 CommandBarLayout::new([width, height], 168, [28, 32], [52, 32], [28, 32], false)
                     .unwrap();
-            let mut out = Vec::new();
             let gadgets = SidebarGadgetState::default();
-            append_prepared(&mut out, &art, layout, &[], &gadgets, [0.0; 2]);
-            out
+            CommandBarHud::default()
+                .draw(&art, layout, &[], &gadgets, [0.0; 2])
+                .to_vec()
         };
         let wide = closed_bar(1121, 741);
         let mut spans: Vec<_> = wide

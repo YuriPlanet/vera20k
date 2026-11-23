@@ -311,16 +311,16 @@ fn retail_command_bar_atlas_and_production_append_match_native_capture() {
         true,
     )
     .unwrap();
-    let mut instances = Vec::new();
     let camera = [-316.25, 1086.75];
-    crate::app::presentation::sidebar_build::command_bar::append_prepared(
-        &mut instances,
-        &art,
-        layout,
-        &art.slots[0],
-        &SidebarGadgetState::default(),
-        camera,
-    );
+    let instances = crate::app::presentation::sidebar_build::command_bar::CommandBarHud::default()
+        .draw(
+            &art,
+            layout,
+            &art.slots[0],
+            &SidebarGadgetState::default(),
+            camera,
+        )
+        .to_vec();
     let layers: Vec<_> = instances
         .into_iter()
         .map(|quad| Layer {

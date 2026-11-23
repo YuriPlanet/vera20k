@@ -56,6 +56,8 @@ pub(crate) struct NodeDraw {
     pub(crate) size: Option<[f32; 2]>,
     /// What the node's `Art` shows.
     pub(crate) picture: Option<Picture>,
+    /// The depth its instances carry, for a host whose shader sorts by it.
+    pub(crate) depth: f32,
 }
 
 /// A part of the host's picture atlas, drawn at its own size from its node's
@@ -83,6 +85,26 @@ impl HudPaint {
         hud: &Hud,
         space: HudSpace,
         font: &BitFont,
+        draw: impl FnMut(NodeId) -> NodeDraw,
+    ) {
+        self.build_with(hud, space, Some(font), draw);
+    }
+
+    /// [`Self::build`] for a HUD of fills and pictures; a text draws nothing.
+    pub(crate) fn build_pictures(
+        &mut self,
+        hud: &Hud,
+        space: HudSpace,
+        draw: impl FnMut(NodeId) -> NodeDraw,
+    ) {
+        self.build_with(hud, space, None, draw);
+    }
+
+    fn build_with(
+        &mut self,
+        hud: &Hud,
+        space: HudSpace,
+        font: Option<&BitFont>,
         mut draw: impl FnMut(NodeId) -> NodeDraw,
     ) {
         self.instances.clear();
@@ -106,6 +128,7 @@ impl HudPaint {
                         size: picture.pixel_size.map(|length| length * space.scale),
                         uv_origin: picture.uv_origin,
                         uv_size: picture.uv_size,
+                        depth: node.depth,
                         tint: [1.0; 3],
                         alpha: 1.0,
                         ..Default::default()
@@ -115,6 +138,9 @@ impl HudPaint {
                 PaintOp::Text {
                     rect, key, color, ..
                 } => {
+                    let Some(font) = font else {
+                        continue;
+                    };
                     let (rgb, alpha) = tint(color.unwrap_or(Rgba(255, 255, 255, 255)));
                     let [x, y] = node.position.unwrap_or_else(|| space.point(rect.x, rect.y));
                     let scale = node.text_scale.unwrap_or(space.scale);
@@ -124,6 +150,7 @@ impl HudPaint {
                     self.instances
                         .extend(glyphs.into_iter().map(|glyph| SpriteInstance {
                             alpha: glyph.alpha * alpha,
+                            depth: node.depth,
                             ..glyph
                         }));
                     Material::Glyphs
@@ -178,7 +205,7 @@ fn fill(rect: Rect, color: Rgba, space: HudSpace, node: NodeDraw) -> SpriteInsta
         size,
         uv_origin: [0.0; 2],
         uv_size: [1.0; 2],
-        depth: 0.0,
+        depth: node.depth,
         tint,
         alpha,
         ..Default::default()

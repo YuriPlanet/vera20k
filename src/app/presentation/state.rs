@@ -265,6 +265,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) added_parts: std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
     /// Their drawing trees, brought to `added_parts` as each frame draws.
     pub(crate) added_part_huds: crate::app::presentation::layout_parts::PartsHuds,
+    /// The bottom command bar's drawing tree.
+    pub(crate) command_bar_hud: crate::app::presentation::sidebar_build::command_bar::CommandBarHud,
     /// The row each grid of build pictures the layout adds is scrolled to,
     /// by the grid's place in `added_parts`.
     pub(crate) added_grid_scroll: Vec<usize>,

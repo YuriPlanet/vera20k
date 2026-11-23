@@ -1497,13 +1497,15 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         (Vec::new(), Vec::new(), Vec::new())
     };
 
+    // The bottom bar draws into a surface of its own.
+    let mut command_bar = if current_sidebar_view(state).is_some() {
+        build_command_bar_instances(state)
+    } else {
+        Vec::new()
+    };
     let view = current_sidebar_view(state);
     let mut chrome = view
         .map(|v| build_sidebar_chrome_instances(state, v))
-        .unwrap_or_default();
-    // The bottom bar draws into a surface of its own.
-    let mut command_bar = view
-        .map(|_| build_command_bar_instances(state))
         .unwrap_or_default();
     // The smooth sidebar's chrome copy packs the pieces apart from the atlas.
     let chrome_atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);

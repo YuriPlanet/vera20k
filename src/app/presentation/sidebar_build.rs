@@ -49,11 +49,13 @@ pub(crate) fn build_sidebar_chrome_instances(
 
 /// The bottom command bar, which shares the chrome atlas but draws into a
 /// surface of its own (`presentation::sidebar_surface`).
-pub(crate) fn build_command_bar_instances(state: &AppState) -> Vec<SpriteInstance> {
-    let mut instances = Vec::new();
-    if let Some(atlas) = current_sidebar_chrome(state) {
-        command_bar::append(state, atlas, &mut instances);
-    }
+pub(crate) fn build_command_bar_instances(state: &mut AppState) -> Vec<SpriteInstance> {
+    let mut hud = std::mem::take(&mut state.match_state.match_presentation.command_bar_hud);
+    let instances = match current_sidebar_chrome(state) {
+        Some(atlas) => hud.draw_for(state, atlas).to_vec(),
+        None => Vec::new(),
+    };
+    state.match_state.match_presentation.command_bar_hud = hud;
     instances
 }
 
