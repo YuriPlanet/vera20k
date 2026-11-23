@@ -18,6 +18,10 @@ const ALTERNATE_THEATER_ART: u32 = 0xCB54_5137;
 // bridge keeps its saved per-cell height until it is stamped again, and no
 // spin, whose rate is read only while spinning.
 const BRIDGE_DECK_AND_FLY_SPIN: u32 = 0xCADF_6067;
+// The next writer stores a map House's Ares `Degrades=` (HouseExt, read at
+// hook 0x0050114D). Older worlds hold none: their Houses convert with it
+// unset and keep their country's answer, as they played when saved.
+const HOUSE_DEGRADES: u32 = 0xD6C7_5D57;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -51,7 +55,7 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == BRIDGE_DECK_AND_FLY_SPIN
+        && snapshot_layout() == HOUSE_DEGRADES
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -61,10 +65,19 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     // The pending cell was a bare (x, y) point, the struct's first field.
     const PENDING_DECK: (&str, &[&str]) = ("PendingBridgeCell", &["corrected_deck_level"]);
     const SPIN: (&str, &[&str]) = ("FlyRuntime", &["spinning", "spin_rate"]);
+    const DEGRADES: (&str, &[&str]) = ("HouseState", &["ares_degrades"]);
     let absent_fields: &'static [_] = match source {
-        V0_3_8_AND_0_3_9 | V0_4_0 => &[IMAGE_FLAGS, ALPHA_LISTENER, DECK, PENDING_DECK, SPIN],
-        ALPHA_SHAPE_LISTENER => &[IMAGE_FLAGS, DECK, PENDING_DECK, SPIN],
-        ALTERNATE_THEATER_ART => &[DECK, PENDING_DECK, SPIN],
+        V0_3_8_AND_0_3_9 | V0_4_0 => &[
+            IMAGE_FLAGS,
+            ALPHA_LISTENER,
+            DECK,
+            PENDING_DECK,
+            SPIN,
+            DEGRADES,
+        ],
+        ALPHA_SHAPE_LISTENER => &[IMAGE_FLAGS, DECK, PENDING_DECK, SPIN, DEGRADES],
+        ALTERNATE_THEATER_ART => &[DECK, PENDING_DECK, SPIN, DEGRADES],
+        BRIDGE_DECK_AND_FLY_SPIN => &[DEGRADES],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
@@ -80,8 +93,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != BRIDGE_DECK_AND_FLY_SPIN
-    {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != HOUSE_DEGRADES {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -214,7 +226,7 @@ mod tests {
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
         if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != BRIDGE_DECK_AND_FLY_SPIN
+            || snapshot_layout() != HOUSE_DEGRADES
         {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;

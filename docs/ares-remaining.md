@@ -76,7 +76,6 @@ data.
 | Occupier + VehicleThief destination expiry | `0x4D9A83` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | The PermaDisguise arm of `InfantryClass::ClearDisguise` has no Rust caller | `0x5227A3` | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
 | `GarrisonedIn` is not kept: a garrisoned infantryman's skipped death anim, its release on Limbo and Unlimbo | `0x518434`, `0x51DF38`, `0x51DFFD` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
-| A map house section's `Degrades=` | `0x50114D` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | A repacked MCV that is still unplaced skips the conversion tail | `0x449FF8` | [ares-bugfixes.md](ares-bugfixes.md) |
 | UnInit announces expiry only when Limbo fails; VERA keeps both broadcasts and their order | `0x5F6612` | [ares-bugfixes.md](ares-bugfixes.md) |
 | Expired Flamer/Scorch anims make no SmallFire/LargeFire anims (needs `MapClass::GetRandomCoordsNear`); retail sets neither key | `0x4250C9`, `0x42511B`, `0x42513F` | [ares-anim-particles.md](ares-anim-particles.md) |
