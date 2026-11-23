@@ -8,6 +8,7 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::presentation::text_hud::{self, TextHud};
 use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
 
@@ -1277,8 +1278,11 @@ pub(crate) fn advance_messages(state: &mut AppState) {
 }
 
 /// The message lines as they stand after this frame's
-/// [`advance_messages`].
-pub(crate) fn build_message_instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+/// [`advance_messages`], drawn through `hud`.
+pub(crate) fn build_message_instances(
+    state: &AppState,
+    hud: &mut TextHud,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     if state.frontend.screen != GameScreen::InGame {
         return (Vec::new(), Vec::new());
     }
@@ -1289,18 +1293,24 @@ pub(crate) fn build_message_instances(state: &AppState) -> (Vec<SpriteInstance>,
     ) {
         return (Vec::new(), Vec::new());
     }
-    message_instances(
-        &state.renderer.bit_font,
+    let font = &state.renderer.bit_font;
+    let rows = message_rows(
+        font,
         &state.match_state.match_presentation.message_list,
         state
             .platform
             .ime
             .composition(crate::app::input::ime::ImeTarget::InGameChat)
             .map(|(units, _)| units),
+    );
+    draw_message_rows(
+        font,
+        &rows,
         [
             state.match_state.input.camera_x,
             state.match_state.input.camera_y,
         ],
+        hud,
     )
 }
 
@@ -1327,23 +1337,32 @@ pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::
     ))
 }
 
-fn message_instances(
+/// One message row as it draws: where its text starts, the text, its row,
+/// its colour in whole 255ths and how many of its units the label reveals.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct MessageRow {
+    pub(crate) x: f32,
+    pub(crate) text: String,
+    pub(crate) y: i32,
+    pub(crate) rgb: [u8; 3],
+    pub(crate) reveal: u32,
+}
+
+/// The rows Draw `0x005D49A0` paints, in order: the open edit line, whole
+/// (its reveal flag is never set and the chat cursor character 0 draws no
+/// caret), the input method's composition after its typed text, then the
+/// messages. A hidden edit (the beacon label's) draws nothing, nor its
+/// composition.
+fn message_rows(
     font: &crate::render::bit_font::BitFont,
     list: &crate::ui::messages::MessageList,
     composition: Option<&[u16]>,
-    camera_offset: [f32; 2],
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+) -> Vec<MessageRow> {
     let x = list.x() as f32;
-    let mut fills = Vec::new();
-    let mut texts = Vec::new();
-    // Draw 0x005D49A0 paints the edit label first, whole: its reveal flag
-    // is never set and the chat cursor character 0 draws no caret.
-    // A hidden edit (the beacon label's) draws nothing, nor its composition.
     let edit = list
         .edit_line()
         .filter(|edit| !edit.hidden)
         .map(|edit| crate::ui::messages::Message::edit_row(&edit));
-    // The open composition follows the typed text (`app::input::ime`).
     let composition = edit.as_ref().zip(composition).map(|(row, units)| {
         let mut row = row.clone();
         row.text = String::from_utf16_lossy(units);
@@ -1353,45 +1372,69 @@ fn message_instances(
     let composition_x = edit
         .as_ref()
         .map_or(x, |row| x + font.text_width(&row.text) as f32);
-    let rows = edit
-        .iter()
+    edit.iter()
         .map(|row| (x, row))
         .chain(composition.iter().map(|row| (composition_x, row)))
-        .chain(list.messages().iter().map(|row| (x, row)));
-    for (x, m) in rows {
+        .chain(list.messages().iter().map(|row| (x, row)))
+        .map(|(x, m)| MessageRow {
+            x,
+            text: m.text.clone(),
+            y: m.y,
+            rgb: m.rgb.map(|channel| (channel * 255.0).round() as u8),
+            reveal: m.reveal_count(),
+        })
+        .collect()
+}
+
+/// The rows of `list` drawn through a fresh tree, for the tests.
+#[cfg(test)]
+fn message_instances(
+    font: &crate::render::bit_font::BitFont,
+    list: &crate::ui::messages::MessageList,
+    composition: Option<&[u16]>,
+    camera_offset: [f32; 2],
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    let rows = message_rows(font, list, composition);
+    draw_message_rows(font, &rows, camera_offset, &mut TextHud::default())
+}
+
+/// The rows as a box node and a label node of `hud` each: the box one pixel
+/// out around the text, behind its own glyphs (box depth 0.00023, text
+/// 0.00022, the tooltip lane's ordering). Returns the boxes and the glyphs.
+fn draw_message_rows(
+    font: &crate::render::bit_font::BitFont,
+    rows: &[MessageRow],
+    camera_offset: [f32; 2],
+    hud: &mut TextHud,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    hud.begin();
+    for row in rows {
         // Message rows are screen-space, but `draw_pooled_ui` binds the
         // live world camera and the shader subtracts it. Add that camera
         // back here so scrolling cannot displace the HUD text.
-        let text = font.build_text_label(
-            &m.text,
-            x,
-            m.y as f32,
-            0.00022,
-            camera_offset,
-            m.rgb.map(|channel| (channel * 255.0).round() as u8),
-            m.reveal_count(),
-        );
-        let width = font.text_width(&m.text) as f32;
+        let width = font.text_width(&row.text) as f32;
         let height = font.cell_height() as f32;
-        fills.push(SpriteInstance {
-            position: [
-                x - 1.0 + camera_offset[0],
-                m.y as f32 - 1.0 + camera_offset[1],
+        let corner = [row.x as i32 - 1, row.y - 1];
+        hud.fill(
+            vera20k_gui::Rect::new(corner[0], corner[1], width as i32 + 2, height as i32 + 2),
+            [
+                row.x - 1.0 + camera_offset[0],
+                row.y as f32 - 1.0 + camera_offset[1],
             ],
-            size: [width + 2.0, height + 2.0],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            // The UI pass depth-tests: the box must sit BEHIND its own glyphs
-            // (text depth 0.00022), mirroring the tooltip lane's ordering
-            // (fill 0.00021 > border 0.000205 > text).
-            depth: 0.00023,
-            tint: [0.0; 3],
-            alpha: 1.0,
-            ..Default::default()
-        });
-        texts.extend(text);
+            [width + 2.0, height + 2.0],
+            text_hud::rgb([0; 3]),
+            0.00023,
+        );
+        hud.text(
+            vera20k_gui::Rect::new(row.x as i32, row.y, width as i32, height as i32),
+            &row.text,
+            [row.x + camera_offset[0], row.y as f32 + camera_offset[1]],
+            text_hud::rgb(row.rgb),
+            Some((0.00022, row.reveal)),
+        );
     }
-    (fills, texts)
+    hud.finish(font);
+    (hud.boxes().copied().collect(), hud.glyphs().copied().collect())
 }
 
 #[cfg(all(test, tests_app_input_d_z))]

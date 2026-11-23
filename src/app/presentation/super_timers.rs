@@ -738,6 +738,7 @@ fn draw_timer_frame(
                 [x as f32 + camera[0], y as f32 + camera[1]],
                 [w as f32, h as f32],
                 black,
+                0.0,
             );
         };
         for (text, at, rgb) in &frame.texts {
@@ -747,6 +748,7 @@ fn draw_timer_frame(
                 text,
                 [at.x as f32 + camera[0], at.y as f32 + camera[1]],
                 text_hud::rgb(*rgb),
+                None,
             );
         }
         if let Some((rect, expanded)) = frame.toggle {

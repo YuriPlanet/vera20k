@@ -64,8 +64,15 @@ impl TextHud {
     }
 
     /// The frame's next box: `rect` in the overlay's pixels, filled with
-    /// `color` over `size` at `position` on the target.
-    pub(crate) fn fill(&mut self, rect: Rect, position: [f32; 2], size: [f32; 2], color: Rgba) {
+    /// `color` over `size` at `position` on the target, at `depth`.
+    pub(crate) fn fill(
+        &mut self,
+        rect: Rect,
+        position: [f32; 2],
+        size: [f32; 2],
+        color: Rgba,
+        depth: f32,
+    ) {
         let Some(node) = self.node(NodeKind::Panel, rect) else {
             return;
         };
@@ -78,14 +85,23 @@ impl TextHud {
             NodeDraw {
                 position: Some(position),
                 size: Some(size),
+                depth,
                 ..Default::default()
             },
         );
     }
 
     /// The frame's next text: `rect` in the overlay's pixels, `text` printed
-    /// in `color` from `position` on the target.
-    pub(crate) fn text(&mut self, rect: Rect, text: &str, position: [f32; 2], color: Rgba) {
+    /// in `color` from `position` on the target; a label revealing `reveal`
+    /// of its units at `depth`, or plain at depth 0.
+    pub(crate) fn text(
+        &mut self,
+        rect: Rect,
+        text: &str,
+        position: [f32; 2],
+        color: Rgba,
+        label: Option<(f32, u32)>,
+    ) {
         let Some(node) = self.node(NodeKind::Text, rect) else {
             return;
         };
@@ -102,6 +118,8 @@ impl TextHud {
             node,
             NodeDraw {
                 position: Some(position),
+                depth: label.map_or(0.0, |(depth, _)| depth),
+                reveal: label.map(|(_, count)| count),
                 ..Default::default()
             },
         );

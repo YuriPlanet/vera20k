@@ -1095,7 +1095,10 @@ fn upload_to_gpu(
     // raw-wall reveal and requests typing audio once per successful paint.
     // Keep the row's existing opaque black background behind its glyphs.
     crate::app::input::messages::advance_messages(state);
-    let (message_fill, message_text) = crate::app::input::messages::build_message_instances(state);
+    let mut message_hud = std::mem::take(&mut state.match_state.match_presentation.message_hud);
+    let (message_fill, message_text) =
+        crate::app::input::messages::build_message_instances(state, &mut message_hud);
+    state.match_state.match_presentation.message_hud = message_hud;
     let verdict = crate::app::presentation::outcome_banner::visible_verdict(state);
     let (outcome_shape, outcome_text) = verdict
         .map(|kind| crate::app::presentation::outcome_banner::instances(state, kind))

@@ -61,6 +61,10 @@ pub(crate) struct NodeDraw {
     /// A picture the host has already made into its instance: drawn as it
     /// is, in the node's place in the order, instead of from `picture`.
     pub(crate) instance: Option<SpriteInstance>,
+    /// A text that reveals itself unit by unit (`BitFont::build_text_label`):
+    /// how many of its UTF-16 units show, at the node's depth and the font's
+    /// own size.
+    pub(crate) reveal: Option<u32>,
 }
 
 /// A part of the host's picture atlas, drawn at its own size from its node's
@@ -152,11 +156,16 @@ impl HudPaint {
                     let Some(font) = font else {
                         continue;
                     };
-                    let (rgb, alpha) = tint(color.unwrap_or(Rgba(255, 255, 255, 255)));
+                    let color = color.unwrap_or(Rgba(255, 255, 255, 255));
+                    let (rgb, alpha) = tint(color);
                     let [x, y] = node.position.unwrap_or_else(|| space.point(rect.x, rect.y));
                     let scale = node.text_scale.unwrap_or(space.scale);
-                    let glyphs = font.fitted(node.fit, |font| {
-                        font.build_text(key, x, y, scale, 0.0, rgb, [0.0; 2])
+                    let glyphs = font.fitted(node.fit, |font| match node.reveal {
+                        Some(count) => {
+                            let Rgba(r, g, b, _) = color;
+                            font.build_text_label(key, x, y, node.depth, [0.0; 2], [r, g, b], count)
+                        }
+                        None => font.build_text(key, x, y, scale, 0.0, rgb, [0.0; 2]),
                     });
                     self.instances
                         .extend(glyphs.into_iter().map(|glyph| SpriteInstance {

@@ -1190,6 +1190,7 @@ impl App {
                     super_timer_dock: Default::default(),
                     super_timer_frame: Default::default(),
                     super_timer_hud: Default::default(),
+                    message_hud: Default::default(),
                     minimap: None,
                     radar_anim: None,
                     radar_movies: Default::default(),
