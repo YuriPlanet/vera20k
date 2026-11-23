@@ -269,7 +269,8 @@ Supported extensions:
   cursors, every `Cursor.*` key of techno, weapon, building and superweapon types,
   and the action overrides on the tactical map and the radar.
 - [Keyboard commands](ares-commands.md): the TogglePower command and the power
-  mode it arms, and the debug commands VERA has no counterpart for.
+  mode it arms, the FPSCounter command and the release note at the bottom left
+  of the battlefield, and the debug commands VERA has no counterpart for.
 - [Gameplay bugfixes](ares-bugfixes.md): the Misc/Bugfixes hooks, each listed as
   ported, presentation, equivalent or not applicable, including the Find-only
   type-list readers (a list name no registry holds is dropped).

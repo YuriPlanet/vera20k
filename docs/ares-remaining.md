@@ -140,7 +140,7 @@ Resurrection's nine pairs) have no such pair.
   the campaign keys `DebugOnly`/`HoverSound`/`Summary`) and unlimited player colours
   (`[Colors] Count` above 8). Ares' defaults match the engine. See
   [ares-sidebar-ui-hooks.md](ares-sidebar-ui-hooks.md).
-- Ares' FPSCounter and MapSnapshot keyboard commands (hook `0x533058`); TogglePower
+- Ares' MapSnapshot keyboard command (hook `0x533058`); FPSCounter, TogglePower
   and the debug commands are in [ares-commands.md](ares-commands.md).
 - The front-end hooks among the untouched ones below: the skirmish MultiEngineer
   option and the uimd.ini settings. The DLL plumbing

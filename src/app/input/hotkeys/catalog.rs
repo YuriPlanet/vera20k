@@ -930,14 +930,24 @@ const VERA_COMMANDS: [CommandMetadata; 1] = [command!(
 /// Ares 3.0's player commands, in `Ares::RegisterCommands` order
 /// (`src/Ares.Commands.cpp`). The keyboard page lists them while Ares plays
 /// (`app::input::keyboard::open`).
-const ARES_COMMANDS: [CommandMetadata; 1] = [command!(
-    HotkeyCommand::TogglePower,
-    "TogglePower",
-    "TXT_TOGGLE_POWER",
-    "TXT_INTERFACE",
-    "TXT_TOGGLE_POWER_DESC",
-    None
-)];
+const ARES_COMMANDS: [CommandMetadata; 2] = [
+    command!(
+        HotkeyCommand::FpsCounter,
+        "FPSCounter",
+        "TXT_FPS_COUNTER",
+        "TXT_DEVELOPMENT",
+        "TXT_FPS_COUNTER_DESC",
+        None
+    ),
+    command!(
+        HotkeyCommand::TogglePower,
+        "TogglePower",
+        "TXT_TOGGLE_POWER",
+        "TXT_INTERFACE",
+        "TXT_TOGGLE_POWER_DESC",
+        None
+    ),
+];
 
 /// Whether `command` is one of Ares' (`ARES_COMMANDS`).
 pub(crate) fn is_ares_command(command: HotkeyCommand) -> bool {
