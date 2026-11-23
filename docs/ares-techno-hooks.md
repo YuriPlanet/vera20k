@@ -101,15 +101,24 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   0x51E710) is `Simulation::ares_infantry_heal_action`. Both heal any damaged
   ally the selected weapon's Verses reach, answer Select under Alt, and set
   InfantryHeal/UnitRepair; the click sends the same Attack
-  (`healer_object_action`). The Infantryman over itself still takes the stock
-  self arm at 0x51E748, which VERA does not port (NoSelfGuardArea). The arms
+  (`healer_object_action`). The Infantryman over itself takes the stock
+  self arm at 0x51E748, GuardArea, which guards its own area unless its type
+  sets `NoSelfGuardArea=yes` (10049710;
+  `Simulation::infantry_healer_guards_itself`). Only mods reach the rest of
+  the stock arm, since no retail infantryman heals, and it is not ported:
+  over an object of a house it is not allied with, a healer infantryman
+  answers 0x3B (0x51E797), which Foot's ClickedAction turns into Guard, or
+  Area Guard when weapon 0 heals, on the healer itself (case 0x3B of
+  0x4D74E0); without Ares the stock Heal over a damaged infantryman
+  (0x51E73C) is missing; and a healing Engineer under Ctrl over itself
+  answers NoMove natively, since the Engineer's Attack refusal
+  (0x51E6B4..0x51E6D5) comes first, where VERA answers GuardArea. The arms
   follow the game's Ares switch (`RuleSet::ares`) in every build, and so do
   their cursors through the Ares cursor owner (`app::input::ares_cursor`).
 - Init_1's capture manager and parasite for any weapon slot and the
   parasite slot hooks (0x629804, 0x62A020, 0x62A7B1); the gunner temporal
   swap (0x74642C, 0x74653C); Hover DeployToLand (0x513EAA, 0x514A21,
-  0x514DFE); NoSelfGuardArea (0x51E748: the healer's self arm it skips is
-  not ported); the Occupier+VehicleThief expiry
+  0x514DFE); the Occupier+VehicleThief expiry
   (0x4D9A83).
 - Dormant in retail: flying carriers (0x414338, 0x6B783B).
 - Presentation and audio: damage
@@ -225,7 +234,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `519675` | InfantryClass_UpdatePosition_BeforeInfantrySpecific | `10049820` | ported earlier |
 | `5198AD` | InfantryClass_UpdatePosition_EnteredGrinder | `100498D0` | ported: `sim::reverse_engineering` (ares-reverse-engineering.md) |
 | `51CE9A` | InfantryClass_Idle | `10049740` | ported earlier |
-| `51E748` | InfantryClass_GetActionOnObject_NoSelfGuardArea | `10049710` | residual: NoSelfGuardArea (stock self Area Guard arm unported) |
+| `51E748` | InfantryClass_GetActionOnObject_NoSelfGuardArea | `10049710` | ported: `Simulation::infantry_healer_guards_itself` |
 | `51E7BF` | InfantryClass_GetActionOnObject_CanCapture | `10049690` | ported earlier |
 | `51F76D` | InfantryClass_Unload | `10049790` | ported earlier |
 | `5202F9` | InfantryClass_UpdateVehicleThief_Check | `10049970` | equivalent: VehicleThief or CanDrive admits the follow |

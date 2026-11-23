@@ -6,6 +6,7 @@ use super::{
     attack_action_with, context_actor_viewer, context_order_receiver, cursor_owner,
     entity_can_attack_move, guard_area_admitted, heal_arm_keys_with, healer_object_action_with,
     infantry_attack_action_with, ivan_cannot_bomb, move_click_command, object_click_payload,
+    object_guard_command,
 };
 use crate::app::AppState;
 use crate::app::input::dispatch::selected_stable_ids_in_order;
@@ -239,6 +240,9 @@ pub(super) fn attack_branch_orders(
                         entity_id: id,
                         target: Some(attack_target),
                     });
+                } else if let TargetKind::Entity(target_id) = attack_target {
+                    // A healer infantryman over itself (`0x0051E748`).
+                    queued.extend(object_guard_command(sim, &control, rules, id, target_id));
                 }
             }
             AttackAction::Attack => {

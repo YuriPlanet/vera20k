@@ -311,6 +311,15 @@ pub(super) fn attack_action_with(
     let Some(kind) = sim.interner().object_type(actor.type_ref(), rules) else {
         return action;
     };
+    // InfantryClass::What_Action_OnObject's healer self arm (0x0051E748)
+    // replaces Foot's answer; its click is `object_guard_command`. A healing
+    // Engineer's Attack refusal (0x0051E6B4..0x0051E6D5) that natively comes
+    // first is a residual (docs/ares-techno-hooks.md).
+    if matches!(*target, TargetKind::Entity(id) if id == actor_id)
+        && sim.infantry_healer_guards_itself(control, actor_id, rules)
+    {
+        return AttackAction::GuardArea;
+    }
     let human = control.can_order(actor.owner());
     let armed = crate::sim::combat::combat_weapon::is_armed(
         actor,

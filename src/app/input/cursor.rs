@@ -1011,6 +1011,15 @@ pub(super) fn capability_cursor_for_hover(
         return CursorFeedbackKind::DisarmBomb;
     }
 
+    // Infantry's healer self arm (`0x0051E748`) follows the Engineer's
+    // DisarmBomb and replaces Foot's Detonate and self answers.
+    if best_id == Some(hover.stable_id)
+        && let Some(rules) = rules
+        && sim.infantry_healer_guards_itself(&control, hover.stable_id, rules)
+    {
+        return CursorFeedbackKind::GuardArea;
+    }
+
     if let Some(rules) = rules
         && super::context_order::self_detonates(sim, rules, selected, hover.stable_id)
     {

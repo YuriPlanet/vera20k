@@ -3,13 +3,14 @@
 
 use super::{
     LeftRelease, ReleaseAction, context_actor_viewer, context_owns_actor, left_release,
-    move_click_command,
+    move_click_command, object_guard_command,
 };
 use crate::app::input::entity_pick::HoverTargetKindWithId;
 use crate::app::types::OrderMode;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::Command;
 use crate::sim::intern::InternedId;
+use crate::sim::world::ControlProjection;
 
 /// The data capability shared by self-click, self-hover and the deploy key.
 /// `UnitClass::What_Action_OnObject @ 0x0074000B` admits `IsSimpleDeployer`
@@ -341,6 +342,24 @@ pub(super) fn lone_self_foot_release(
         )
         .map(|destination| move_click_command(sim, rules, order_mode, target, destination)),
     ))
+}
+
+/// A lone healer infantryman's release over itself. Infantry What_Action's
+/// healer self arm (`0x0051E748`, [`Simulation::infantry_healer_guards_itself`])
+/// answers GuardArea in place of the object's Detonate and self answers, and
+/// the release dispatches the order [`object_guard_command`] gives. `None`
+/// when the arm does not answer.
+///
+/// [`Simulation::infantry_healer_guards_itself`]: crate::sim::world::Simulation::infantry_healer_guards_itself
+pub(super) fn lone_self_healer_guard(
+    sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected_ids: &[u64],
+    target: u64,
+) -> Option<Option<Command>> {
+    (selected_ids == [target] && sim.infantry_healer_guards_itself(control, target, rules))
+        .then(|| object_guard_command(sim, control, rules, target, target))
 }
 
 /// Unit What_Action's NoDeploy answer (`0x0073FFF4`) for a self action its

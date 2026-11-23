@@ -8,11 +8,11 @@ use super::{
     cell_harvest_order, cursor_owner, disarm_bomb_engineers, engineer_capture_orders, entry_orders,
     finish_order, friendly_bomb_ivans, garrison_entry_orders, infantry_arm_attacks_with,
     infantry_c4_action_with, infiltrator_capture_orders, locked_move_cells, lone_self_foot_release,
-    move_click_command, object_action_answers_friendly, object_attack_click_command_with,
-    object_click_release, object_key_action_with, object_key_target, projected_order_selection,
-    push_move_flash, resolve_order_modifiers, selection_can_attack_move, self_answers_no_deploy,
-    self_click_command, self_detonates, terrain_forced, unit_repair_branch_orders,
-    vehicle_capture_action,
+    lone_self_healer_guard, move_click_command, object_action_answers_friendly,
+    object_attack_click_command_with, object_click_release, object_key_action_with,
+    object_key_target, projected_order_selection, push_move_flash, resolve_order_modifiers,
+    selection_can_attack_move, self_answers_no_deploy, self_click_command, self_detonates,
+    terrain_forced, unit_repair_branch_orders, vehicle_capture_action,
 };
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner;
@@ -924,6 +924,22 @@ pub(crate) fn try_queue_context_order(
                     HoverTargetKind::FriendlyUnit | HoverTargetKind::FriendlyStructure
                 )
             });
+            // Infantry's healer self arm (`0x0051E748`) replaces the lone
+            // object's Detonate and self answers; the release dispatches.
+            if context_actions_enabled
+                && let Some(target) = hover.as_ref()
+                && let Some(order) = lone_self_healer_guard(
+                    sim,
+                    &control,
+                    &resources.rules,
+                    &current_objects,
+                    target.stable_id,
+                )
+            {
+                queued
+                    .extend(order.map(|order| CommandEnvelope::new(owner_id, execute_tick, order)));
+                return finish_order(state, queued, speaker_id, rally_announce, None);
+            }
             if let Some(target) = hover.as_ref()
                 && self_detonates(sim, &resources.rules, &current_objects, target.stable_id)
                 && let Some(record) = sim.encode_detonate_record(target.stable_id)
