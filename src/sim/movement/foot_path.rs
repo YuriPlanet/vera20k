@@ -733,6 +733,7 @@ impl Simulation {
                         MoverLift::Marked,
                         self.entry_facts(),
                         None,
+                        None,
                     )
                     .0
                 }
@@ -964,6 +965,7 @@ impl Simulation {
         lift: MoverLift,
         facts: Option<&crate::sim::world::EntryFacts>,
         keep_searching: Option<&dyn Fn(u32) -> bool>,
+        field: Option<&crate::sim::pathfinding::GoalField>,
     ) -> (
         Result<Vec<i32>, super::movement_path::MovePathFailure>,
         bool,
@@ -1050,6 +1052,7 @@ impl Simulation {
             },
             &entry,
             self.foot_search_allows_hierarchy(request, is_train),
+            field,
         );
         (searched, entry.read_own_cell.get())
     }

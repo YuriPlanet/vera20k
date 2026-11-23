@@ -563,42 +563,6 @@ impl App {
         selected_mode_id: i32,
         current_record_index: Option<usize>,
     ) {
-<<<<<<< HEAD
-        (state.frontend.skirmish_shell_state.statics).hover("", crate::util::time::Instant::now());
-        // A fresh `0x6B`: its widgets build on the first sync.
-        crate::ui::skirmish_shell::choose_map_page::close(&mut state.frontend.shell_controller);
-        // VeraX: Skirmish rescans the game directory each time the chooser
-        // opens, so a map copied after launch appears without a restart. A
-        // network lobby keeps its launch snapshot, because the map list is
-        // local and peers must still compare the same catalog.
-        #[cfg(feature = "verax")]
-        let current_record_index = if state.frontend.shell_route == ShellRoute::NetworkSetup {
-            current_record_index
-        } else {
-            Self::reload_skirmish_catalog(state, current_record_index)
-        };
-        let layout = choose_map_layout(state);
-        let session = &state.match_state.session;
-        let context = if state.frontend.shell_route == ShellRoute::NetworkSetup {
-            let room = session.network_room();
-            crate::ui::skirmish_shell::ChooseMapContext::Network {
-                observer: (session.network_setup())
-                    .is_some_and(|launch| launch.local_player().is_observer()),
-                tournament_room: room.tournament_or_clan(),
-                clan_room: room.clan,
-            }
-        } else {
-            crate::ui::skirmish_shell::ChooseMapContext::Skirmish
-        };
-        state.frontend.skirmish_shell_state.choose_map_modal = Some(ChooseMapModalState::open(
-            context,
-            selected_mode_id,
-            current_record_index,
-            &state.frontend.skirmish_modes,
-            state.frontend.scenario_catalog.records(),
-            &layout,
-        ));
-=======
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.trackbar_hold = None;
@@ -642,7 +606,6 @@ impl App {
                 state.frontend.scenario_catalog.records(),
                 &layout,
             ));
->>>>>>> feature/verax-data-switch
         // VERA: the starred maps list under Favorites, and online rooms list
         // the online map library under its own row.
         let favorites = crate::app::map_library::read_favorites(state);

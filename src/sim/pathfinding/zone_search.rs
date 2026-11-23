@@ -407,6 +407,7 @@ pub(crate) fn find_layered_path_zoned_marker(
         MoverSearchFacts {
             urgency: 0,
             foot_entry: &super::WalkableEntry::new(grid),
+            field: None,
         },
         allow_zone_hierarchy,
         playfield_bounds,

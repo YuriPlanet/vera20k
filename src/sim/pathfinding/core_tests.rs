@@ -7,6 +7,7 @@ use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::map::tube_facts::{TubeFact, TubeId};
 use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
 use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::pathfinding::GoalField;
 use crate::sim::pathfinding::zone_hierarchy::{MarkedZones, ZoneLevelGraph, ZoneRecord};
 use crate::sim::pathfinding::zone_map::ZoneId;
 
@@ -1312,6 +1313,72 @@ fn astar_hierarchy_rejects_unmarked_one_ring_zone_without_blocker_exception() {
     );
 }
 
+/// The shared field's route is not bounded by the hierarchy's corridor. The
+/// corridor is the native search's own filter over the cells it expands, and
+/// the native abandons it when its precheck fails and runs the plain search
+/// over the whole map; the corridor is one search's route from its own start,
+/// so a field shared by the movers of a mass order cannot hold to all of
+/// them. The walk's route is the plain search's kind of route, not the
+/// corridor search's.
+#[test]
+fn the_shared_field_is_not_bounded_by_the_hierarchy_corridor() {
+    let grid = PathGrid::new(3, 1);
+    let level0_zones = row_level0_graph(&[1, 2, 3]);
+    let marked_zones = MarkedZones::from_iter([1]);
+    let blocker_counts = BlockerNeighborCounts::new(3, 1);
+    // The field walks straight from (0,0) to (2,0), through the unmarked
+    // zone 2 the corridor refuses.
+    let field = GoalField::build(&grid, (2, 0)).expect("the field");
+
+    // The corridor search alone refuses the unmarked zone.
+    let corridor = astar_search(
+        &grid,
+        (0, 0),
+        MovementLayer::Ground,
+        (2, 0),
+        &AStarOptions {
+            hierarchy_gate: Some(HierarchyGate {
+                level0_zones: &level0_zones,
+                marked_level0: &marked_zones,
+                blocker_neighbor_counts: &blocker_counts,
+                level0_route: &[],
+            }),
+            ..AStarOptions::new(&WalkableEntry::new(&grid))
+        },
+    );
+    assert!(
+        corridor.is_err(),
+        "the corridor search refuses the unmarked zone"
+    );
+
+    // The field's walk crosses it, and the search takes that route.
+    let shared = astar_search(
+        &grid,
+        (0, 0),
+        MovementLayer::Ground,
+        (2, 0),
+        &AStarOptions {
+            hierarchy_gate: Some(HierarchyGate {
+                level0_zones: &level0_zones,
+                marked_level0: &marked_zones,
+                blocker_neighbor_counts: &blocker_counts,
+                level0_route: &[],
+            }),
+            field: Some(&field),
+            ..AStarOptions::new(&WalkableEntry::new(&grid))
+        },
+    )
+    .expect("the field's walk answers");
+    assert_eq!(
+        shared
+            .iter()
+            .map(|step| (step.rx, step.ry))
+            .collect::<Vec<_>>(),
+        vec![(0, 0), (1, 0), (2, 0)],
+        "the shared field's route crosses the unmarked zone"
+    );
+}
+
 #[test]
 fn astar_hierarchy_allows_off_marker_cell_with_blocker_neighbor_count() {
     let grid = PathGrid::new(3, 1);
@@ -1374,6 +1441,7 @@ fn astar_hierarchy_marker_follows_the_marked_straight_path() {
         MoverSearchFacts {
             urgency: 0,
             foot_entry: &WalkableEntry::new(&grid),
+            field: None,
         },
     )
     .expect("marked straight path should succeed");
@@ -1483,4 +1551,115 @@ fn terrain_relaxation_never_reopens_a_cliff_cell() {
     let terrain = ResolvedTerrainGrid::from_cells(1, 1, vec![cliff_with_tree]);
     let grid = PathGrid::from_resolved_terrain(&terrain);
     assert!(!grid.is_walkable_for_infantry(0, 0));
+}
+
+/// The heuristic's root is the x87-stored root, bit for bit, over the
+/// offsets a cell can hold: the small ones, the ones past the binary32
+/// chopping boundary, and the 32-bit wrap of a far corner.
+#[test]
+fn the_heuristic_root_matches_the_x87_stored_root() {
+    use crate::util::native_x87::{X87Chop53, sqrt_approx_f32};
+
+    for (dx, dy) in [
+        (0i32, 0i32),
+        (1, 0),
+        (0, 1),
+        (3, 4),
+        (255, 255),
+        (4096, 4096),
+        (32767, 32767),
+        (-32768, -32768),
+    ] {
+        let cell = (dx as u16, dy as u16);
+        let goal = (0u16, 0u16);
+        let squares = dy.wrapping_mul(dy).wrapping_add(dx.wrapping_mul(dx));
+        let expected = sqrt_approx_f32(X87Chop53::load_i32(squares))
+            .expect("a square is finite")
+            .bits();
+        assert_eq!(
+            heuristic(cell, goal).to_bits(),
+            expected,
+            "offset {dx},{dy}"
+        );
+    }
+}
+
+/// A shared goal field's gradient: the walk asks one cell per step, where
+/// the search asks every neighbour of every cell it expands, and it reaches
+/// the goal.
+#[test]
+fn the_gradient_walk_asks_one_cell_per_step() {
+    let grid = PathGrid::new(9, 9);
+    let field = GoalField::build(&grid, (8, 0)).expect("the goal is on the grid");
+    let entry = AskLog {
+        walls: Vec::new(),
+        asks: RefCell::new(Vec::new()),
+    };
+    let path = astar_search(
+        &grid,
+        (0, 0),
+        MovementLayer::Ground,
+        (8, 0),
+        &AStarOptions {
+            field: Some(&field),
+            ..AStarOptions::new(&entry)
+        },
+    )
+    .expect("the route down the gradient");
+    assert_eq!(path.last().map(|step| (step.rx, step.ry)), Some((8, 0)));
+    let walk_asks = entry.asks.borrow().len();
+    assert_eq!(walk_asks, path.len() - 1, "one ask per step of the walk");
+
+    // The control: the stock search asks every neighbour of every cell it
+    // expands.
+    let stock = AskLog {
+        walls: Vec::new(),
+        asks: RefCell::new(Vec::new()),
+    };
+    astar_search(
+        &grid,
+        (0, 0),
+        MovementLayer::Ground,
+        (8, 0),
+        &AStarOptions::new(&stock),
+    )
+    .expect("the route");
+    assert!(
+        stock.asks.borrow().len() > walk_asks,
+        "the search asks more cells than the walk"
+    );
+}
+
+/// A cell the mover may not enter sends the walk back to the stock search,
+/// which routes round it. The field's plane is the ground one, which does
+/// not know the mover's own rules.
+#[test]
+fn a_refused_cell_on_the_gradient_sends_the_search_back_to_the_stock_one() {
+    let grid = PathGrid::new(9, 9);
+    let field = GoalField::build(&grid, (8, 0)).expect("the goal is on the grid");
+    let route = field
+        .route_cells_from((0, 0))
+        .expect("the start reaches the goal");
+    // A cell of the field's own route, which this mover may not enter.
+    let refused = route[route.len() / 2];
+    let entry = AskLog {
+        walls: vec![refused],
+        asks: RefCell::new(Vec::new()),
+    };
+    let path = astar_search(
+        &grid,
+        (0, 0),
+        MovementLayer::Ground,
+        (8, 0),
+        &AStarOptions {
+            field: Some(&field),
+            ..AStarOptions::new(&entry)
+        },
+    )
+    .expect("the stock search routes round the refused cell");
+    assert_eq!(path.last().map(|step| (step.rx, step.ry)), Some((8, 0)));
+    assert!(
+        !path.iter().any(|step| (step.rx, step.ry) == refused),
+        "the route goes round the refused cell"
+    );
 }

@@ -874,6 +874,20 @@ impl RuleSet {
         self.reads_ares_way
     }
 
+    /// VERA's own switches, read from the `[VERA]` section of the rules
+    /// (`rules::vera_features`). The simulation reads the one it needs.
+    #[inline]
+    pub fn vera_features(&self) -> &crate::rules::vera_features::VeraFeatures {
+        &self.vera_features
+    }
+
+    /// Whether the path batch's shared goal field plays in this game: the
+    /// rules' `[VERA] SharedGoalField=` key, off with retail data.
+    #[inline]
+    pub fn shared_goal_field(&self) -> bool {
+        self.vera_features.shared_goal_field
+    }
+
     /// Whether the code that needs Ares' own Rules takes its Ares form in this
     /// game: the superweapons, production, power and money. Their Ares arms
     /// read data only Rules read the Ares way hold (the SWTypeExt metadata

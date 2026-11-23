@@ -168,7 +168,8 @@
 
 use crate::util::time::{Duration, Instant};
 use std::cell::Cell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::foot_path::MoverLift;
@@ -186,7 +187,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionId;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::zone_search::PathSearchFailure;
-use crate::sim::pathfinding::{BlockerNeighborCounts, PathGrid, search_steps};
+use crate::sim::pathfinding::{BlockerNeighborCounts, GoalField, PathGrid, search_steps};
 use crate::sim::radio::Contacts;
 use crate::sim::world::{EntryFacts, Simulation};
 
@@ -204,6 +205,119 @@ const REPATH_STEPS_PER_PASS: u64 = crate::sim::pathfinding::MAX_SEARCH_NODES as 
 
 /// Passes whose durations the batch keeps for its mean and peak.
 const PASS_WINDOW: usize = 64;
+
+/// The factor a field's build has to clear before it is worth building.
+///
+/// The build visits every cell of the ground plane once. The searches it
+/// replaces ask the Foot about the eight neighbours of every cell they
+/// expand, and one such ask costs about as much as eight visits of the
+/// plane: the ask reads the cell, the object list and the mover's speed
+/// row, where a visit reads a bit. So a build repays itself when the
+/// group's own paths cover the map this many times over.
+const FIELD_BUILD_WORTH: u64 = 64;
+
+/// The fields a pass builds at most. A pass that built a field for every
+/// goal it served would pay the build again for every goal the cache had
+/// dropped, so a pass builds few and the cache keeps them.
+const BUILDS_PER_PASS: usize = 2;
+
+/// The shared goal fields a pass used, and the ones it built.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SharedFieldCounts {
+    /// The fields the pass used, one per goal group it served.
+    pub used: u32,
+    /// The cells those fields cover: the ground plane's cells that reach
+    /// the goal, which the walks read instead of searching.
+    pub cells: u64,
+    /// The fields the pass built. A field the batch already held costs no
+    /// build.
+    pub built: u32,
+    /// The cells the builds visited.
+    pub build_cells: u64,
+}
+
+/// The shared goal fields the batch keeps between passes.
+///
+/// A field is a reverse search over the map's ground plane for one goal
+/// cell. The batch keeps it while the plane it describes is the current
+/// one, so a mass order that names its goal every frame pays for the build
+/// once. The plane's revision names its state, so a field built from
+/// another state is dropped rather than read.
+#[derive(Clone, Debug, Default)]
+struct GoalFieldCache {
+    /// The state of the ground walkability plane the fields were built
+    /// from.
+    revision: u64,
+    /// The fields by goal cell.
+    fields: BTreeMap<(u16, u16), CachedField>,
+    /// The goals in use, the most recent first.
+    order: Vec<(u16, u16)>,
+    /// The bytes the fields hold together.
+    bytes: usize,
+}
+
+/// One cached field.
+#[derive(Clone, Debug)]
+struct CachedField {
+    field: Arc<GoalField>,
+}
+
+impl GoalFieldCache {
+    /// The fields the cache holds.
+    const CAPACITY: usize = 32;
+    /// The bytes the cached fields may hold together. A field holds one byte
+    /// per cell of the map it was built over, so this is the cache's memory.
+    const MAX_BYTES: usize = 8_000_000;
+
+    /// The field for `goal`, when the cache holds one built from the plane's
+    /// current state.
+    fn get(&mut self, goal: (u16, u16), revision: u64) -> Option<Arc<GoalField>> {
+        if self.revision != revision {
+            // The plane moved: every field the cache holds describes the
+            // plane as it was.
+            self.fields.clear();
+            self.order.clear();
+            self.bytes = 0;
+            self.revision = revision;
+            return None;
+        }
+        let field = self.fields.get(&goal)?.field.clone();
+        self.touch(goal);
+        Some(field)
+    }
+
+    /// Keep `field` for `goal`, dropping the oldest fields when the cache is
+    /// full or its memory is spent.
+    fn put(&mut self, goal: (u16, u16), revision: u64, field: Arc<GoalField>) {
+        self.revision = revision;
+        if let Some(old) = self.fields.remove(&goal) {
+            self.bytes = self.bytes.saturating_sub(old.field.footprint());
+        }
+        self.bytes += field.footprint();
+        self.fields.insert(
+            goal,
+            CachedField {
+                field: field.clone(),
+            },
+        );
+        self.touch(goal);
+        while self.fields.len() > Self::CAPACITY || self.bytes > Self::MAX_BYTES {
+            let Some(oldest) = self.order.last().copied() else {
+                break;
+            };
+            self.order.pop();
+            if let Some(entry) = self.fields.remove(&oldest) {
+                self.bytes = self.bytes.saturating_sub(entry.field.footprint());
+            }
+        }
+    }
+
+    /// Move `goal` to the front of the use order.
+    fn touch(&mut self, goal: (u16, u16)) {
+        self.order.retain(|held| *held != goal);
+        self.order.insert(0, goal);
+    }
+}
 
 /// What the latest path batch pass did: the dashboard's pathfinding line.
 ///
@@ -230,6 +344,20 @@ pub struct PathBatchStats {
     /// Of those, the urgency-1 re-paths' expansions.
     #[serde(default)]
     pub urgency1_steps: u64,
+    /// The shared goal fields the latest pass used, and the cells they
+    /// covered. VERA-only: a field is a reverse search over the map's
+    /// ground layer, so its cells are its own work and no search's
+    /// expansions.
+    #[serde(default)]
+    pub shared_fields: u32,
+    #[serde(default)]
+    pub shared_field_cells: u64,
+    /// The shared goal fields the latest pass built, and the cells their
+    /// builds visited. A field the batch already held costs no build.
+    #[serde(default)]
+    pub shared_field_builds: u32,
+    #[serde(default)]
+    pub shared_field_build_cells: u64,
     /// Milliseconds the latest pass took, and the mean and slowest over the
     /// kept window.
     pub last_ms: f64,
@@ -248,6 +376,10 @@ struct PassWindow {
     steps: u64,
     urgency2_steps: u64,
     urgency1_steps: u64,
+    shared_fields: u32,
+    shared_field_cells: u64,
+    shared_field_builds: u32,
+    shared_field_build_cells: u64,
     last_ns: u64,
     ns: [u64; PASS_WINDOW],
     next: usize,
@@ -263,6 +395,10 @@ impl Default for PassWindow {
             steps: 0,
             urgency2_steps: 0,
             urgency1_steps: 0,
+            shared_fields: 0,
+            shared_field_cells: 0,
+            shared_field_builds: 0,
+            shared_field_build_cells: 0,
             last_ns: 0,
             ns: [0; PASS_WINDOW],
             next: 0,
@@ -280,6 +416,7 @@ impl PassWindow {
         answered: usize,
         steps: u64,
         [urgency2_steps, urgency1_steps]: [u64; 2],
+        shared: SharedFieldCounts,
     ) {
         let cast = |count: usize| u32::try_from(count).unwrap_or(u32::MAX);
         self.waiting = cast(waiting);
@@ -288,6 +425,10 @@ impl PassWindow {
         self.steps = steps;
         self.urgency2_steps = urgency2_steps;
         self.urgency1_steps = urgency1_steps;
+        self.shared_fields = shared.used;
+        self.shared_field_cells = shared.cells;
+        self.shared_field_builds = shared.built;
+        self.shared_field_build_cells = shared.build_cells;
         self.last_ns = u64::try_from(took.as_nanos()).unwrap_or(u64::MAX);
         self.ns[self.next] = self.last_ns;
         self.next = (self.next + 1) % PASS_WINDOW;
@@ -308,6 +449,10 @@ impl PassWindow {
             steps: self.steps,
             urgency2_steps: self.urgency2_steps,
             urgency1_steps: self.urgency1_steps,
+            shared_fields: self.shared_fields,
+            shared_field_cells: self.shared_field_cells,
+            shared_field_builds: self.shared_field_builds,
+            shared_field_build_cells: self.shared_field_build_cells,
             last_ms: ms(self.last_ns),
             mean_ms: if window.is_empty() {
                 0.0
@@ -361,6 +506,11 @@ pub(crate) struct PathBatch {
     /// persisted nor state-hashed: no simulation code reads it.
     #[serde(skip)]
     stats: PassWindow,
+    /// The shared goal fields the batch keeps between passes. Derived from
+    /// the map's ground plane, so it is dropped when the plane moves; it
+    /// carries no state of its own.
+    #[serde(skip)]
+    fields: GoalFieldCache,
 }
 
 impl std::hash::Hash for PathBatch {
@@ -584,6 +734,71 @@ fn no_queue_destination(actor: &GameEntity) -> Option<DriveCoord> {
     }
 }
 
+/// The cell a destination names, as the core search's goal cell
+/// ([`super::movement_tick::core_search_cells`]).
+fn goal_cell(destination: DriveCoord) -> (u16, u16) {
+    ((destination.x / 256) as u16, (destination.y / 256) as u16)
+}
+
+/// Whether the shared goal field's plane is the mover's own: the field is
+/// built over the ground plane, and the ground plane is the vehicle's. The
+/// Infantry class has its own cell gate (Infantry `0x0051BF90`, Unit
+/// `0x0073F0A0`), which lets an infantryman into a cell a terrain object
+/// stands in, while the field's plane closes that cell to everybody. So the
+/// field serves the vehicle class, and an infantryman keeps the stock
+/// search.
+///
+/// The class decides this, not the locomotor: the cell gate is chosen by the
+/// mover's class, so a vehicle that walks is still gated as a vehicle and
+/// walks the field's plane.
+fn field_serves(category: EntityCategory) -> bool {
+    category == EntityCategory::Unit
+}
+
+/// The waiting registrations by the goal cell their Foots head for, and how
+/// many there are of each.
+///
+/// The demand for a goal is what decides whether a field for it repays its
+/// build: the batch answers a capped number of the waiting registrations a
+/// pass, so the pass's own group says little about how many searches a
+/// field would replace. A code-2 re-path is no demand, because it keeps the
+/// stock search, and an infantryman is no demand either, because the field
+/// serves vehicles only. A Foot that waits twice is one demand: the batch
+/// answers one registration a Foot.
+fn goal_demand(
+    entities: &EntityStore,
+    pending: &[(u64, WaitingRequest)],
+) -> BTreeMap<(u16, u16), u32> {
+    let mut demand: BTreeMap<(u16, u16), u32> = BTreeMap::new();
+    let mut counted: BTreeSet<u64> = BTreeSet::new();
+    for (id, request) in pending {
+        if matches!(request, WaitingRequest::Code2Ladder { .. }) {
+            continue;
+        }
+        if !counted.insert(*id) {
+            continue;
+        }
+        let Some(actor) = entities.get(*id) else {
+            continue;
+        };
+        if !field_serves(actor.category()) {
+            continue;
+        }
+        let Some(destination) = no_queue_destination(actor) else {
+            continue;
+        };
+        *demand.entry(goal_cell(destination)).or_default() += 1;
+    }
+    demand
+}
+
+/// Whether the cell holds a bridge, whose deck the goal field's ground plane
+/// does not describe.
+fn cell_has_bridge(grid: &PathGrid, cell: (u16, u16)) -> bool {
+    grid.cell(cell.0, cell.1)
+        .is_some_and(|cell| cell.bridge_walkable)
+}
+
 /// Whether `foot`'s `request` heads for the cell the Foot stands in: its
 /// core search would start in its goal cell. Such a request never waits;
 /// see the module docs.
@@ -746,9 +961,25 @@ impl Simulation {
         batch.left_out_recursions.clear();
         let pending = &mut batch.pending;
         if pending.is_empty() {
-            batch.stats.finish(started.elapsed(), 0, 0, 0, 0, [0; 2]);
+            batch.stats.finish(
+                started.elapsed(),
+                0,
+                0,
+                0,
+                0,
+                [0; 2],
+                SharedFieldCounts::default(),
+            );
             return;
         }
+        // The demand the waiting registrations carry: how many searches a
+        // field for a goal would replace. The scan is the pass's own work,
+        // so it runs only when the rules ask for a field.
+        let demand = if rules.shared_goal_field() {
+            goal_demand(&self.substrate.entities, &pending)
+        } else {
+            BTreeMap::new()
+        };
         // Saves and hashes see registrations in arrival order. At the pass,
         // sort stably by Foot id and keep each Foot's latest registration.
         // Drain the buffer into the turns so the next frame can reuse it.
@@ -793,11 +1024,11 @@ impl Simulation {
             .collect();
         turn.extend(others);
         let searched = turn.len();
-        let (turns, expanded, repaths_made) = match self.path_grid_snapshot() {
+        let (turns, expanded, repaths_made, shared) = match self.path_grid_snapshot() {
             Some(grid) if self.overlay_grid.is_some() && self.resolved_terrain.is_some() => {
-                self.search_batch(&turn, repaths, repath_steps, rules, &grid)
+                self.search_batch(&turn, repaths, repath_steps, rules, &grid, &demand)
             }
-            _ => (Vec::new(), 0, [0; 2]),
+            _ => (Vec::new(), 0, [0; 2], SharedFieldCounts::default()),
         };
         let mut turns = turns.into_iter();
         let batch = self.path_batch.as_mut().expect("batching is on");
@@ -837,6 +1068,7 @@ impl Simulation {
             answered,
             expanded,
             repaths_made,
+            shared,
         );
     }
 
@@ -901,7 +1133,8 @@ impl Simulation {
         repath_steps: u64,
         rules: &RuleSet,
         grid: &PathGrid,
-    ) -> (Vec<Turn>, u64, [u64; 2]) {
+        demand: &BTreeMap<(u16, u16), u32>,
+    ) -> (Vec<Turn>, u64, [u64; 2], SharedFieldCounts) {
         // One blocker plane for every search. With an overlay grid movers
         // reach it through their Foot+55C counters, which Mark0 leaves alone,
         // so it is the plane each Find_Path would read after its Mark0.
@@ -917,6 +1150,16 @@ impl Simulation {
         // Every search reads the same world, so a cell's or blocker's entry
         // facts and a cell's code-2 chain are read once a batch and shared.
         self.empty_entry_facts(true);
+        // The request each registration searches with. It is read from the
+        // actor, which the pass's frozen world keeps still.
+        let requests: Vec<Option<FootPathRequest>> = turn
+            .iter()
+            .map(|&(id, request)| self.batched_request(id, request))
+            .collect();
+        // The shared goal fields of the pass, one per registration. The
+        // fields are built before the searches start, so the batch's cache
+        // of them is written here and read by the workers.
+        let (fields, shared) = self.shared_goal_fields(&requests, grid, rules, demand);
         let sim = &*self;
         let counts = sim.movement_pass_cache.current_blocker_plane();
         let facts = sim.entry_facts().expect("batching is on");
@@ -950,7 +1193,15 @@ impl Simulation {
             );
             let base = search_steps();
             let search = |keep_searching: Option<&dyn Fn(u32) -> bool>| {
+                let Some(request) = requests[index].as_ref() else {
+                    return None;
+                };
                 dummy.detached(|| {
+                    // The shared goal field of this registration's goal
+                    // cell. The field's plane is the ground layer, so the
+                    // groups a field serves leave out the movers on a deck
+                    // and those heading for one.
+                    let field = fields[index].as_deref();
                     sim.batched_search(
                         id,
                         request,
@@ -959,6 +1210,7 @@ impl Simulation {
                         counts,
                         Some(facts),
                         keep_searching,
+                        field,
                     )
                 })
             };
@@ -1018,7 +1270,7 @@ impl Simulation {
                 searched.map_or(Turn::OverBudget, |(answer, ..)| Turn::Searched(answer))
             })
             .collect();
-        (turns, expanded, repaths_made)
+        (turns, expanded, repaths_made, shared)
     }
 
     /// `id`'s search as its `request`'s Find_Path would run it now, without
@@ -1027,19 +1279,14 @@ impl Simulation {
     fn batched_search(
         &self,
         id: u64,
-        request: WaitingRequest,
+        request: &FootPathRequest,
         rules: &RuleSet,
         grid: &PathGrid,
         counts: &BlockerNeighborCounts,
         facts: Option<&EntryFacts>,
         keep_searching: Option<&dyn Fn(u32) -> bool>,
+        field: Option<&GoalField>,
     ) -> Option<BatchedSearch> {
-        let request = match request {
-            WaitingRequest::Code2Ladder { urgency } => self.code2_ladder_request(id, urgency)?,
-            WaitingRequest::NoQueue
-            | WaitingRequest::RetryRecursion
-            | WaitingRequest::StraightReentry { .. } => self.no_queue_request(id)?,
-        };
         let goal = request.destination;
         let answer = self.find_path_target_answer(id, goal, rules).ok()??;
         if self
@@ -1050,7 +1297,7 @@ impl Simulation {
             return None;
         }
         let (found, read_own_cell) = self.foot_core_search(
-            &request,
+            request,
             goal,
             rules,
             grid,
@@ -1058,6 +1305,7 @@ impl Simulation {
             MoverLift::Emulated,
             facts,
             keep_searching,
+            field,
         );
         if read_own_cell
             || matches!(
@@ -1103,6 +1351,180 @@ impl Simulation {
             destination,
             urgency,
             self.playfield_bounds(),
+        )
+    }
+
+    /// The request `id`'s registration searches with, as the world stands.
+    /// `None` when the Foot has no destination to search toward.
+    fn batched_request(&self, id: u64, request: WaitingRequest) -> Option<FootPathRequest> {
+        match request {
+            WaitingRequest::Code2Ladder { urgency } => self.code2_ladder_request(id, urgency),
+            WaitingRequest::NoQueue
+            | WaitingRequest::RetryRecursion
+            | WaitingRequest::StraightReentry { .. } => self.no_queue_request(id),
+        }
+    }
+
+    /// The shared goal fields of a pass, one per registration, with the
+    /// fields the pass used and built.
+    ///
+    /// The registrations that head for the same goal cell share one field: a
+    /// mass order gives every selected unit the same destination, so its
+    /// registrations share a goal. A goal whose field the batch already holds
+    /// costs nothing to use, so it is used however many registrations share
+    /// it; a goal with no field yet gets one only when the searches it would
+    /// replace repay the build.
+    ///
+    /// The field's plane is the map's ground walkability, which a vehicle
+    /// walks and an infantryman does not: an infantryman walks where a
+    /// terrain object stands, so his field would be another plane. He keeps
+    /// the stock search. A mover on a deck, or one heading for a deck, keeps
+    /// it as well: the field's plane is the ground one, and a deck is not on
+    /// it.
+    ///
+    /// A field is used only when the group's own paths repay its build, and
+    /// the same test governs a field the batch already holds: whether a pass
+    /// uses a field then depends on the waiting registrations alone, and not
+    /// on what the batch happened to hold before, so a save and a reload
+    /// route the same way.
+    fn shared_goal_fields(
+        &mut self,
+        requests: &[Option<FootPathRequest>],
+        grid: &PathGrid,
+        rules: &RuleSet,
+        demand: &BTreeMap<(u16, u16), u32>,
+    ) -> (Vec<Option<Arc<GoalField>>>, SharedFieldCounts) {
+        let mut fields: Vec<Option<Arc<GoalField>>> = vec![None; requests.len()];
+        let mut counts = SharedFieldCounts::default();
+        if !rules.shared_goal_field() {
+            return (fields, counts);
+        }
+        // The cell each registration's search starts from, for the estimate
+        // of the paths the demand would take and for the deck test.
+        let starts: Vec<Option<(u16, u16)>> = requests
+            .iter()
+            .map(|request| {
+                request
+                    .as_ref()
+                    .and_then(|request| self.request_start_cell(request))
+            })
+            .collect();
+        let mut groups: BTreeMap<(u16, u16), Vec<usize>> = BTreeMap::new();
+        for (index, request) in requests.iter().enumerate() {
+            let Some(request) = request else {
+                continue;
+            };
+            if !field_serves(request.snapshot().category) {
+                continue;
+            }
+            // A code-2 re-path keeps the stock search: its urgency makes the
+            // search route around a jammed cell (the code-2 multiplier,
+            // `AStar_compute_edge_cost @ 0x00429830`), which the field's
+            // step count does not know.
+            if request.urgency != 0 {
+                continue;
+            }
+            let goal = goal_cell(request.destination);
+            // The field's plane is the ground one, so a mover on a deck, or
+            // one heading for a deck, keeps the stock search. The test is
+            // made here, where the groups are formed, so a group that holds
+            // only decks takes no build slot.
+            if cell_has_bridge(grid, goal)
+                || starts[index].is_some_and(|start| cell_has_bridge(grid, start))
+            {
+                continue;
+            }
+            groups.entry(goal).or_default().push(index);
+        }
+        // The goals by the demand they carry, the largest first: a pass
+        // builds few fields, and the ones that pay best come first.
+        let mut goals: Vec<(u16, u16)> = groups.keys().copied().collect();
+        goals.sort_by_key(|goal| std::cmp::Reverse(demand.get(goal).copied().unwrap_or(0)));
+        let Some(batch) = self.path_batch.as_mut() else {
+            return (fields, counts);
+        };
+        let revision = grid.revision();
+        let mut builds = 0;
+        for goal in goals {
+            let members = &groups[&goal];
+            // The field pays for itself only when the group's own paths
+            // cover the map enough times over; a field the batch holds is
+            // held to the same test, so the decision does not depend on what
+            // the batch held before.
+            if !Self::group_repays_the_build(members, &starts, grid, goal, demand) {
+                continue;
+            }
+            let field = match batch.fields.get(goal, revision) {
+                Some(field) => field,
+                None => {
+                    // A field of its own costs more than the search it saves.
+                    if builds >= BUILDS_PER_PASS {
+                        continue;
+                    }
+                    let Some(field) = GoalField::build(grid, goal) else {
+                        continue;
+                    };
+                    builds += 1;
+                    counts.build_cells += field.cells() as u64;
+                    counts.built += 1;
+                    let field = Arc::new(field);
+                    batch.fields.put(goal, revision, field.clone());
+                    field
+                }
+            };
+            counts.used += 1;
+            counts.cells += field.cells() as u64;
+            for index in members {
+                fields[*index] = Some(field.clone());
+            }
+        }
+        (fields, counts)
+    }
+
+    /// Whether the field's build for `goal` repays itself for the demand.
+    ///
+    /// The build visits every cell of the ground plane once; the searches
+    /// it replaces ask the Foot about the eight neighbours of every cell
+    /// they expand, and one such ask costs about as much as eight visits of
+    /// the plane. So the build pays for itself when the demand's paths cover
+    /// the map that many times over. The paths are measured by their
+    /// straight length, which is what a search over open ground expands.
+    fn group_repays_the_build(
+        members: &[usize],
+        starts: &[Option<(u16, u16)>],
+        grid: &PathGrid,
+        goal: (u16, u16),
+        demand: &BTreeMap<(u16, u16), u32>,
+    ) -> bool {
+        let demand = u64::from(demand.get(&goal).copied().unwrap_or(0));
+        if demand == 0 || members.is_empty() {
+            return false;
+        }
+        let mut total = 0u64;
+        for index in members {
+            let Some(start) = starts[*index] else {
+                return false;
+            };
+            total += u64::from(start.0.abs_diff(goal.0).max(start.1.abs_diff(goal.1)));
+        }
+        let average = total / members.len() as u64;
+        let map_cells = u64::from(grid.width()) * u64::from(grid.height());
+        demand
+            .saturating_mul(average)
+            .saturating_mul(FIELD_BUILD_WORTH)
+            >= map_cells
+    }
+
+    /// The cell `request`'s core search starts from.
+    fn request_start_cell(&self, request: &FootPathRequest) -> Option<(u16, u16)> {
+        let actor = self.substrate.entities.get(request.entity_id)?;
+        Some(
+            super::movement_tick::core_search_cells(
+                actor,
+                request.destination,
+                self.resolved_terrain.as_ref(),
+            )
+            .0,
         )
     }
 

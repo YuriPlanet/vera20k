@@ -95,6 +95,7 @@ impl Map {
             MoverSearchFacts {
                 urgency: 0,
                 foot_entry: &foot,
+                field: None,
             },
             true,
             None,
@@ -187,6 +188,7 @@ fn the_retry_excludes_the_edges_the_flood_could_not_cross() {
         MoverSearchFacts {
             urgency: 0,
             foot_entry: &foot,
+            field: None,
         },
     );
     assert_eq!(first, Err(PathSearchFailure::CellSearchExhausted));
@@ -260,6 +262,7 @@ fn a_split_zone_on_a_one_zone_route_runs_the_plain_search() {
         MoverSearchFacts {
             urgency: 0,
             foot_entry: &foot,
+            field: None,
         },
     );
     assert_eq!(first, Err(PathSearchFailure::CellSearchExhausted));
@@ -390,6 +393,7 @@ fn one_path_search_runs_five_corridor_searches() {
         MoverSearchFacts {
             urgency: 0,
             foot_entry: &foot,
+            field: None,
         },
     );
     assert!(plain.is_ok());

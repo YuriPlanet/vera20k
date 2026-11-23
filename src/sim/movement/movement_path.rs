@@ -45,11 +45,13 @@ pub(super) fn find_move_path(
     urgency: u8,
     allow_zone_hierarchy: bool,
     foot_entry: &dyn crate::sim::pathfinding::SearchFootEntry,
+    field: Option<&crate::sim::pathfinding::GoalField>,
 ) -> Result<Vec<i32>, MovePathFailure> {
     let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::PATHFINDING);
     let facts = crate::sim::pathfinding::MoverSearchFacts {
         urgency,
         foot_entry,
+        field,
     };
     let grid = ctx.path_grid.ok_or(MovePathFailure::MissingGrid)?;
     let zone_grid = ctx.zone_grid;
@@ -140,6 +142,7 @@ mod tests {
             0,
             true,
             &BorderEntry,
+            None,
         )
         .expect("the finished route reaches the Foot");
         let mut queue = crate::sim::components::FootPathQueue::default();
@@ -191,6 +194,7 @@ mod tests {
             0,
             true,
             &DeckStepRefused,
+            None,
         )
         .expect("fixture must prove a ground-plane search could succeed");
         assert_eq!(ground, [2, 2]);
@@ -212,6 +216,7 @@ mod tests {
             0,
             true,
             &DeckStepRefused,
+            None,
         );
 
         assert!(
@@ -284,6 +289,7 @@ mod tests {
             },
             &witness,
             true,
+            None,
         );
 
         assert_eq!(

@@ -269,6 +269,7 @@ impl FootPathRequest {
         ctx: PathfindingContext<'_>,
         foot_entry: &dyn crate::sim::pathfinding::SearchFootEntry,
         allow_zone_hierarchy: bool,
+        field: Option<&crate::sim::pathfinding::GoalField>,
     ) -> Result<Vec<i32>, super::movement_path::MovePathFailure> {
         use super::movement_path::MovePathFailure;
         let snap = &self.visit.snap;
@@ -312,6 +313,7 @@ impl FootPathRequest {
             self.urgency,
             allow_zone_hierarchy,
             foot_entry,
+            field,
         )
     }
 }

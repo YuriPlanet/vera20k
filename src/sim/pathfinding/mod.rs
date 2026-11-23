@@ -11,6 +11,8 @@
 mod core;
 // Search scratch shared by the cell A* and the zone precheck
 mod search_table;
+// The shared reverse field of one goal cell, for a mass order's movers
+pub mod goal_field;
 
 // Path post-processing
 pub mod path_smooth;
@@ -29,9 +31,13 @@ pub mod zone_search;
 
 // Re-export core types so external code uses crate::sim::pathfinding::PathGrid etc.
 pub use self::core::*;
+pub use self::goal_field::GoalField;
 
 #[cfg(test)] // shared by test groups
 #[path = "zone_map_tests.rs"]
 mod zone_map_tests;
+#[cfg(all(test, tests_sim_pathfinding))]
+#[path = "goal_field_tests.rs"]
+mod goal_field_tests;
 #[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
 mod zone_threat_retail_tests;

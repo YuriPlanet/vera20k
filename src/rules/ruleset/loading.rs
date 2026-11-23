@@ -1972,12 +1972,10 @@ impl RuleSet {
             ares: false,
             ares_kept_off: false,
             phobos: false,
-<<<<<<< HEAD
             ra2: false,
-=======
             verax: false,
->>>>>>> feature/verax-data-switch
             reads_ares_way: false,
+            vera_features: crate::rules::vera_features::VeraFeatures::from_ini(ini),
             ares_global_controls: processed.ares_global_controls().clone(),
             ares_mouse_cursors: processed.ares_mouse_cursors().clone(),
             ares_super_weapon_cursors: processed

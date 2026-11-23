@@ -983,19 +983,19 @@ pub struct RuleSet {
     /// Whether Phobos plays in this game, decided once from its Rules
     /// projection by `rules::phobos_switch`. Read through [`Self::phobos`].
     phobos: bool,
-<<<<<<< HEAD
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md), decided once
     /// at load from the launch's choice (`util::ra2_launch`). Read through
     /// [`Self::ra2`].
     ra2: bool,
-=======
     /// Whether VeraX plays in this game, decided once from its Rules layers
     /// by `rules::verax_switch`. Read through [`Self::verax`].
     verax: bool,
->>>>>>> feature/verax-data-switch
     /// Whether its Rules were read the Ares way (`ares_switch::ares_way`).
     /// Read through [`Self::reads_ares_way`].
     reads_ares_way: bool,
+    /// VERA's own switches, read from the `[VERA]` section of the rules.
+    /// Read through [`Self::vera_features`].
+    vera_features: crate::rules::vera_features::VeraFeatures,
     ares_global_controls: crate::rules::native_processing::AresGlobalControls,
     /// Presentation projection of the retained Ares `[MouseCursors]` list.
     ares_mouse_cursors: crate::rules::ares_mouse_cursor::MouseCursors,

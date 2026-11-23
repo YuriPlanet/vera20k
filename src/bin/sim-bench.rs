@@ -14,6 +14,10 @@
 //! `--return-at T` also gives every object a second attack-move, back home,
 //! from tick T, spread like the first orders, so movers already under way
 //! take a new destination at scale.
+//! `--shared-goal` gives every object of a house the same destination cell, as
+//! a player's mass order does, instead of a formation offset of its own, so
+//! the house's registrations share a goal and the shared goal field has
+//! something to answer.
 //!
 //! `--scenario match` plays the middle of a multiplayer match instead (see
 //! `sim_bench_match`): the map loads as a Battle against `--computers`
@@ -166,6 +170,9 @@ struct Args {
     ticks: Option<NonZeroU64>,
     types: Vec<String>,
     order_spread: u64,
+    /// The march gives every unit the same destination cell, as a player's
+    /// mass order does, instead of a formation offset of its own.
+    shared_goal: bool,
     return_at: Option<u64>,
     hash_every: u64,
     frame_hash_every: NonZeroU64,
@@ -214,6 +221,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         ticks: None,
         types: ["E1", "E2", "MTNK", "HTNK"].map(String::from).to_vec(),
         order_spread: 30,
+        shared_goal: false,
         return_at: None,
         hash_every: 0,
         frame_hash_every: vera20k_core::sim::replay::PLAY_HASH_INTERVAL,
@@ -235,7 +243,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
     };
     let mut march_flag = None;
     while let Some(flag) = argv.next() {
-        if ["--types", "--order-spread", "--return-at"].contains(&flag.as_str()) {
+        if ["--types", "--order-spread", "--return-at", "--shared-goal"].contains(&flag.as_str()) {
             march_flag.get_or_insert_with(|| flag.clone());
         }
         let mut value = || argv.next().ok_or(format!("{flag} needs a value"));
@@ -273,6 +281,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             }
             "--types" => args.types = value()?.split(',').map(str::to_string).collect(),
             "--order-spread" => args.order_spread = number(value()?)?.max(1),
+            "--shared-goal" => args.shared_goal = true,
             "--return-at" => args.return_at = Some(number(value()?)?),
             "--hash-every" => args.hash_every = number(value()?)?,
             "--frame-hash-every" => {
@@ -518,7 +527,13 @@ fn march(
             if orders.len() <= slot as usize {
                 orders.resize(slot as usize + 1, Vec::new());
             }
-            let (x, y) = sim_bench_match::offset_cell(target_home, unit.offset, grid);
+            // A mass order gives every selected unit the same destination
+            // cell, so the registrations of a house share a goal.
+            let (x, y) = if args.shared_goal {
+                target_home
+            } else {
+                sim_bench_match::offset_cell(target_home, unit.offset, grid)
+            };
             orders[slot as usize].push(CommandEnvelope::new(
                 owner_ids[unit.house],
                 first_tick + slot,
@@ -673,6 +688,11 @@ struct PathTotals {
     urgency2_steps: u64,
     urgency1_steps: u64,
     peak_pass_ms: f64,
+    /// The shared goal fields the passes used, and the ones they built.
+    shared_fields: u64,
+    shared_field_cells: u64,
+    shared_field_builds: u64,
+    shared_field_build_cells: u64,
 }
 
 impl PathTotals {
@@ -687,6 +707,10 @@ impl PathTotals {
         self.urgency2_steps += pass.urgency2_steps;
         self.urgency1_steps += pass.urgency1_steps;
         self.peak_pass_ms = self.peak_pass_ms.max(pass.last_ms);
+        self.shared_fields += u64::from(pass.shared_fields);
+        self.shared_field_cells += pass.shared_field_cells;
+        self.shared_field_builds += u64::from(pass.shared_field_builds);
+        self.shared_field_build_cells += pass.shared_field_build_cells;
     }
 }
 
@@ -1056,7 +1080,8 @@ fn main() -> Result<(), String> {
         println!(
             "path_batch passes={} waiting={} answered={} left_out={} left_out_passes={} \
              peak_left_out={} steps={} urgency2_steps={} urgency1_steps={} \
-             peak_pass_ms={:.2}",
+             shared_fields={} shared_field_cells={} shared_field_builds={} \
+             shared_field_build_cells={} peak_pass_ms={:.2}",
             paths.passes,
             paths.waiting,
             paths.answered,
@@ -1066,6 +1091,10 @@ fn main() -> Result<(), String> {
             paths.steps,
             paths.urgency2_steps,
             paths.urgency1_steps,
+            paths.shared_fields,
+            paths.shared_field_cells,
+            paths.shared_field_builds,
+            paths.shared_field_build_cells,
             paths.peak_pass_ms,
         );
     }
