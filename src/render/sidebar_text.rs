@@ -11,17 +11,23 @@ use crate::render::bit_font::BitFont;
 use crate::render::sidebar_chrome::SidebarTheme;
 use crate::ui::sidebar::Rect;
 
-/// Side highlight colors used as fade endpoint for selected-unit text effect.
-const HIGHLIGHT_ALLIED: [f32; 3] = [164.0 / 255.0, 210.0 / 255.0, 1.0];
-const HIGHLIGHT_SOVIET: [f32; 3] = [1.0, 1.0, 0.0];
-const HIGHLIGHT_YURI: [f32; 3] = [1.0, 1.0, 0.0];
-
+/// The side's sidebar text colour (`72F440`), also the fade endpoint of the
+/// selected-unit text effect: `SideText` of the built-in `veraui.ini`'s
+/// `[Colors]`, read once for each side.
 pub fn side_highlight_color(theme: SidebarTheme) -> [f32; 3] {
-    match theme {
-        SidebarTheme::Allied => HIGHLIGHT_ALLIED,
-        SidebarTheme::Soviet => HIGHLIGHT_SOVIET,
-        SidebarTheme::Yuri => HIGHLIGHT_YURI,
-    }
+    static COLORS: std::sync::LazyLock<[[f32; 3]; 3]> = std::sync::LazyLock::new(|| {
+        [
+            SidebarTheme::Allied,
+            SidebarTheme::Soviet,
+            SidebarTheme::Yuri,
+        ]
+        .map(|theme| {
+            let [r, g, b, _] = crate::ui::match_layout::built_in_color("SideText", theme)
+                .expect("veraui_default.ini gives every side's SideText");
+            [r, g, b].map(|channel| f32::from(channel) / 255.0)
+        })
+    });
+    COLORS[theme as usize]
 }
 
 /// Packed `RadarClass+0x1208` color expanded back to the presentation frame.
@@ -250,6 +256,17 @@ pub fn build_credits_instances(
 mod tests {
     use super::*;
     use crate::render::bit_font::tests::make_test_font;
+
+    #[test]
+    fn the_side_text_colours_are_the_originals() {
+        assert_eq!(
+            side_highlight_color(SidebarTheme::Allied),
+            [164.0 / 255.0, 210.0 / 255.0, 1.0]
+        );
+        for theme in [SidebarTheme::Soviet, SidebarTheme::Yuri] {
+            assert_eq!(side_highlight_color(theme), [1.0, 1.0, 0.0]);
+        }
+    }
 
     #[test]
     fn native_radar_outline_color_uses_encoded_batch_tint_contract() {

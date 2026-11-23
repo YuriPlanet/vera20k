@@ -348,6 +348,14 @@ impl MatchLayoutFile {
 
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut file = Self::default();
+        // The colours are the built-in file's until a layout's own read.
+        if let Some(colors) = ini
+            .section_names()
+            .into_iter()
+            .find(|section| section.eq_ignore_ascii_case("Colors"))
+        {
+            file.problem(colors, "", LayoutProblemKind::NotYet);
+        }
         let Some(layouts) = find_section(ini, LAYOUTS_SECTION) else {
             return file;
         };
@@ -631,6 +639,31 @@ pub fn sidebar_art(theme: crate::ui::sidebar::SidebarTheme) -> Vec<SidebarArt> {
         }
     }
     art
+}
+
+/// Colour `name` of the built-in `[Colors]` table for the side whose
+/// pictures are `theme`: `Name@Side` for that side, else `Name`. `r,g,b` or
+/// `r,g,b,a`; `None` when the table has no such colour.
+pub fn built_in_color(name: &str, theme: crate::ui::sidebar::SidebarTheme) -> Option<[u8; 4]> {
+    use crate::ui::sidebar::SidebarTheme;
+    let side = match theme {
+        SidebarTheme::Allied => "Allied",
+        SidebarTheme::Soviet => "Soviet",
+        SidebarTheme::Yuri => "Yuri",
+    };
+    let colors = find_section(&BUILT_IN, "Colors")?;
+    let text = colors
+        .read_name(&format!("{name}@{side}"), NAME_CAPACITY)
+        .or_else(|| colors.read_name(name, NAME_CAPACITY))?;
+    let channels: Vec<u8> = text
+        .split(',')
+        .map(|channel| channel.trim().parse().ok())
+        .collect::<Option<_>>()?;
+    match channels[..] {
+        [r, g, b] => Some([r, g, b, 255]),
+        [r, g, b, a] => Some([r, g, b, a]),
+        _ => None,
+    }
 }
 
 /// What reading one value gives: the value, with a problem to report when it
@@ -2035,8 +2068,8 @@ mod tests {
     }
 
     /// The built-in file is a layout file like any other: read as a mod's,
-    /// every line of it is one this version reads, and it gives the
-    /// original interface.
+    /// every line of it but its colours is one this version reads, and it
+    /// gives the original interface.
     #[test]
     fn the_built_in_file_reads_cleanly_as_a_mods() {
         let text = format!(
@@ -2044,7 +2077,10 @@ mod tests {
             String::from_utf8_lossy(include_bytes!("veraui_default.ini"))
         );
         let file = MatchLayoutFile::from_bytes(text.as_bytes());
-        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        assert_eq!(
+            problems(&file),
+            expect(&[("[Colors]", LayoutProblemKind::NotYet)])
+        );
         for (side, gdi, theme) in [
             ("GDI", true, SidebarTheme::Allied),
             ("Nod", false, SidebarTheme::Soviet),

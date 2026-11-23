@@ -563,8 +563,8 @@ A player can move the parts in a match without writing a file.
 - Pressing the key again, or Esc, ends without saving: everything goes back to how it
   was when you started.
 
-What can be dragged: the sidebar's `Credits`, `Top`, `Radar`, `Middle`, `Cameos` and
-`Power`; the `Messages`, `Timers` and `Banner` on the battlefield, each by a small
+What can be dragged: every part of the sidebar that draws, from its panels to its
+buttons, tabs, scroll buttons and the map picture; the `Messages`, `Timers` and `Banner` on the battlefield, each by a small
 handle where it sits; and every button, text, row, column and grid of build pictures a
 layout added.
 
@@ -599,6 +599,7 @@ skipped, and the game tells you.
 | `Hold`, `Width`, `Height` | A part's edge and size, for the sidebar's own parts and `Field`. `Rest` means what is left |
 | `Art`, `Frames`, `Palette` and the other picture keys on an original part | The pictures an original part draws. Replace the picture files instead |
 | `Color`, `Align`, `Font` | How a text looks |
+| A `[Colors]` section of your own | The colours parts name, like `SideText`, the side's colour of the money and the build labels. The game's own are in the built-in file |
 | `Command`, `Value`, `Tab` on an original part | A new command for an original button, a new value for the money number, or another tab for a tab button |
 
 The three big parts hold on to their edges: they have no `X` or `Y`. The command bar
