@@ -217,6 +217,19 @@ pub(crate) enum FrameArt {
     ListRings { inset: RectPx },
 }
 
+/// How an edit paints in place of a NewEdit ([`GuiStyle::edit_face_of`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EditFace {
+    /// VERA's search line ([`push_search_line`]), on a framed edit
+    /// (`TextInset`).
+    SearchLine,
+    /// An editable combo's edit, inside the combo's face: no frame of its
+    /// own, its caret and text in its rect (the face's text area), the
+    /// text from its first visible unit and no composition (the WOL
+    /// login's nickname).
+    ComboText,
+}
+
 /// How a dialog's combos paint their face.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ComboArt {
@@ -318,9 +331,8 @@ pub(crate) struct GuiStyle<'a> {
     /// that inset, vertically centred in the style's colour, after the
     /// edit's own paint (VERA's search boxes).
     pub(crate) hint_of: Option<&'a dyn Fn(i32) -> Option<(String, i32)>>,
-    /// Framed edits (`TextInset`) paint as VERA's search lines
-    /// ([`push_search_line`]) rather than as NewEdits.
-    pub(crate) search_lines: bool,
+    /// An edit's face by its `Id`, in place of the NewEdit's ([`EditFace`]).
+    pub(crate) edit_face_of: Option<&'a dyn Fn(i32) -> Option<EditFace>>,
     /// A list's message by its `Id` while it holds no rows (why it is
     /// empty), wrapped down the list from its first row.
     pub(crate) empty_of: Option<&'a dyn Fn(i32) -> Option<String>>,
@@ -361,7 +373,7 @@ impl Default for GuiStyle<'_> {
             dim_disabled_checkboxes: false,
             reveal_of: None,
             hint_of: None,
-            search_lines: false,
+            edit_face_of: None,
             empty_of: None,
             solid_lists: false,
             indent_of: None,
@@ -1003,7 +1015,33 @@ pub(crate) fn paint_gui_into(
                     let at = scale.derive_rect(rect, |r| RectPx::new(r.x + x, r.y, r.w - x, r.h));
                     text(state, &hint, at, ShellAlign::V_CENTER, glyph, rgb, depth)
                 });
-                if style.search_lines
+                let face = style
+                    .edit_face_of
+                    .zip(id(node))
+                    .and_then(|(edit_face_of, id)| edit_face_of(id));
+                if face == Some(EditFace::ComboText) {
+                    if caret {
+                        super::controls::push_new_edit_caret(
+                            &mut paint.controls,
+                            atlas,
+                            font,
+                            &edit,
+                            rect,
+                            super::SHELL_EDIT_CARET_DEPTH,
+                            scale,
+                        );
+                    }
+                    if !covered {
+                        let shown = edit.painted_text();
+                        let align = ShellAlign::V_CENTER;
+                        paint
+                            .texts
+                            .push(text(state, &shown, rect, align, glyph, rgb, depth));
+                    }
+                    paint.texts.extend(hint);
+                    continue;
+                }
+                if face == Some(EditFace::SearchLine)
                     && let Ok(Some(Value::Rect(text_inset))) = gui.get(node, Prop::TextInset)
                 {
                     // The host's text (with its own composition), else the edit's.
@@ -1298,7 +1336,7 @@ pub(crate) fn push_bar(
 /// A search line's caret width, in base pixels, as a NewEdit's.
 pub(crate) const SEARCH_CARET_W: i32 = 2;
 
-/// A search line ([`GuiStyle::search_lines`]): its rect, its `TextInset`
+/// A search line ([`EditFace::SearchLine`]): its rect, its `TextInset`
 /// (base pixels), the fill no art backs and its text's look.
 #[derive(Clone, Copy)]
 pub(crate) struct SearchLine {

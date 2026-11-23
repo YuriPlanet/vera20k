@@ -573,6 +573,9 @@ pub(super) fn choose_map_paint(
         (id == i32::from(choose_map_page::MAP_SEARCH) && empty)
             .then(|| (tr("VERA:MapSearchHint"), choose_map_page::MAP_SEARCH_INSET.x))
     };
+    let edit_face_of = |id: i32| {
+        (id == i32::from(choose_map_page::MAP_SEARCH)).then_some(super::gui_paint::EditFace::SearchLine)
+    };
     let empty_of = |id: i32| {
         (id == i32::from(choose_map_page::MAP_LIST))
             .then(|| choose_map_empty_text(state, modal))
@@ -591,7 +594,7 @@ pub(super) fn choose_map_paint(
         rows_of: Some(&rows_of),
         text_of: Some(&text_of),
         hint_of: Some(&hint_of),
-        search_lines: true,
+        edit_face_of: Some(&edit_face_of),
         edit_fill: (!backed).then_some(super::SHELL_MODAL_PANEL_RGB),
         empty_of: Some(&empty_of),
         ..Default::default()
