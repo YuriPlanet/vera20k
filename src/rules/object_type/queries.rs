@@ -59,6 +59,18 @@ impl ObjectType {
         self.weapon_offsets.weapon(index, use_elite)
     }
 
+    /// Kratos `PrimaryCrawlingFLH`/`SecondaryCrawlingFLH`: the coordinate a
+    /// prone infantry of this type fires `index` from, or `None` for a slot
+    /// the key family does not cover (slots past the original two).
+    pub fn crawling_weapon_flh(
+        &self,
+        index: i32,
+        use_elite: bool,
+    ) -> Option<crate::rules::flh::Flh> {
+        let slot = usize::try_from(index).ok()?;
+        self.weapon_offsets.crawling_weapon(slot, use_elite)
+    }
+
     /// GetFLH6F3AF5: an open transport lends its zero-based cargo port.
     pub fn alternate_fire_flh(&self, port: usize) -> crate::rules::flh::Flh {
         self.weapon_offsets.alternate(port)

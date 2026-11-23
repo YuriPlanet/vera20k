@@ -494,9 +494,10 @@ don't matter: its matches read the original terrain.
 
 - [INI roots and archive names](ini-roots.md): select your own resource filenames.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
-- [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md) and [VeraX](verax.md): what
-  each extension covers and how to turn it on or build VERA20k with it. The official
-  downloads hold all of Ares, which a game's data turns on, and none of the others.
+- [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md), [VeraX](verax.md) and
+  [Kratos](kratos.md): what each extension covers and how to turn it on or build VERA20k with
+  it. The official downloads hold all of Ares, which a game's data turns on, and none of the
+  others. Kratos is at its first pieces: the per-game switch and the prone firing offset.
 
 ## Something wrong?
 

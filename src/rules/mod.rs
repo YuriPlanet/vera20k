@@ -128,6 +128,7 @@ pub mod attach_effect;
 pub mod building_select_bracket;
 pub mod digital_display;
 pub mod insignia_type;
+pub mod kratos_switch;
 #[cfg(feature = "phobos")]
 pub mod invulnerability_rules;
 pub mod phobos_parallel_ai_queues;
@@ -242,6 +243,8 @@ pub(crate) mod weapon_offsets;
 pub use ini_parser::ini_value;
 pub mod audio_sources;
 pub mod jumpjet_params;
+#[cfg(all(test, tests_rules_a_n))]
+mod kratos_switch_tests;
 pub mod locomotor_type;
 pub mod mind_control_rules;
 pub mod missile_spawn;

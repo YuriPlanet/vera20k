@@ -536,12 +536,15 @@ impl RulesLayerStack {
                     self.ships_ares,
                     self.ares_keys_off,
                 );
+                let kratos_inputs =
+                    crate::rules::kratos_switch::KratosInputs::from_passes(&processor.ares_reads);
                 let (ini, native_type_construction_trace) = processor.clone().finish();
                 let prefix = ProcessedRulesLayers {
                     ini,
                     content_hash: self.content_hash_for_layers(index + 1),
                     native_type_construction_trace,
                     ares_inputs,
+                    kratos_inputs,
                 };
                 let rules = match RuleSet::from_processed_rules(&prefix) {
                     Ok(rules) => rules,
@@ -571,6 +574,8 @@ impl RulesLayerStack {
             self.ships_ares,
             self.ares_keys_off,
         );
+        let kratos_inputs =
+            crate::rules::kratos_switch::KratosInputs::from_passes(&processor.ares_reads);
         let (ini, native_type_construction_trace) = processor.finish();
         Ok((
             ProcessedRulesLayers {
@@ -578,6 +583,7 @@ impl RulesLayerStack {
                 content_hash: self.content_hash(),
                 native_type_construction_trace,
                 ares_inputs,
+                kratos_inputs,
             },
             after_map_result,
         ))
@@ -883,6 +889,11 @@ pub struct ProcessedRulesLayers {
     /// What the passes give the per-game Ares switch; saved with the rules,
     /// so a loaded game projects the same answer.
     ares_inputs: crate::rules::ares_switch::AresInputs,
+    /// What the passes give the per-game Kratos switch (the ART keys they
+    /// read); saved with the rules for the same reason. A rules set saved
+    /// before the switch existed reads as no Kratos key.
+    #[serde(default)]
+    kratos_inputs: crate::rules::kratos_switch::KratosInputs,
 }
 
 #[cfg(all(test, tests_rules_a_n))]

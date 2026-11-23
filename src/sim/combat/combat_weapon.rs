@@ -1428,6 +1428,37 @@ pub(crate) fn get_weapon_record<'r>(
         return occupant_weapon_record(kind, occupant.veterancy.rank());
     }
     weapon_for_index(obj, entity.veterancy.rank(), index)
+        .map(|record| crawling_flh(entity, obj, index, rules, record))
+}
+
+/// Kratos `CrawlingFLH` (`src/Ext/TechnoType/CrawlingFLH.cpp`): a crawling
+/// infantry (`InfantryClass::Crawling`, `+0x6DB`, VERA's
+/// [`InfantryRuntime::is_prone`](crate::sim::infantry::InfantryRuntime::is_prone))
+/// fires from the type's `PrimaryCrawlingFLH`/`SecondaryCrawlingFLH` (or the
+/// elite pair) instead of its `*FireFLH`. The component disables itself for a
+/// `Fearless` type, and patches `GetWeapon(0)` and `GetWeapon(1)` only, so no
+/// other slot moves. Without the keys the coordinate stays the stock one,
+/// which is why a game Kratos does not play keeps gamemd's muzzle.
+fn crawling_flh<'r>(
+    entity: &GameEntity,
+    obj: &'r ObjectType,
+    index: i32,
+    rules: &RuleSet,
+    mut record: WeaponRecord<'r>,
+) -> WeaponRecord<'r> {
+    if !rules.kratos()
+        || entity.category() != EntityCategory::Infantry
+        || obj.fearless
+        || !entity.infantry.is_some_and(|infantry| infantry.is_prone())
+    {
+        return record;
+    }
+    let elite = usize::try_from(index)
+        .is_ok_and(|slot| uses_elite_weapon(obj, entity.veterancy.rank(), slot));
+    if let Some(flh) = obj.crawling_weapon_flh(index, elite) {
+        record.flh = flh;
+    }
+    record
 }
 
 #[cfg(all(test, tests_sim_combat_a_c))]
@@ -2100,6 +2131,174 @@ mod tests {
             controlled_transport_house(&sim.substrate.entities, &rules, &sim.interner, rider),
             Some(expected),
             "a transport-arm rider reaches its OpenTopped carrier's controller"
+        );
+    }
+
+    // ---- Kratos prone firing offset ----------------------------------------
+
+    /// A crawling infantryman fires from the type's `PrimaryCrawlingFLH` (and
+    /// the elite `ElitePrimaryCrawlingFLH` at elite rank), while a standing
+    /// one keeps `PrimaryFireFLH`. The ART key is what turns Kratos on for the
+    /// game, so the same rules without it keep both coordinates.
+    #[test]
+    fn kratos_crawling_flh_replaces_the_fire_flh_only_while_prone() {
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\nElitePrimary=EGUN\n"),
+            &IniFile::from_str(
+                "[GI]\nPrimaryFireFLH=80,0,105\nElitePrimaryFireFLH=90,0,110\n\
+                 PrimaryCrawlingFLH=20,0,20\nElitePrimaryCrawlingFLH=30,0,25\n",
+            ),
+        )
+        .unwrap();
+        assert!(rules.kratos(), "the ART key turns Kratos on");
+        let world = Simulation::new();
+        let obj = rules.object("GI").unwrap();
+        let read = |entity: &GameEntity| {
+            get_weapon_record(
+                entity,
+                obj,
+                0,
+                &world.substrate.entities,
+                &rules,
+                &world.interner,
+            )
+            .unwrap()
+            .flh
+        };
+        let mut standing = GameEntity::test_default_of_category(
+            1,
+            "GI",
+            "Americans",
+            5,
+            5,
+            EntityCategory::Infantry,
+        );
+        assert_eq!(
+            (
+                read(&standing).forward,
+                read(&standing).lateral,
+                read(&standing).height
+            ),
+            (80, 0, 105)
+        );
+        standing
+            .infantry
+            .as_mut()
+            .unwrap()
+            .set_is_prone_for_test(true);
+        assert_eq!(
+            (
+                read(&standing).forward,
+                read(&standing).lateral,
+                read(&standing).height
+            ),
+            (20, 0, 20)
+        );
+        standing.veterancy.set_rank_for_test(RANK_ELITE_U16);
+        assert_eq!(
+            (
+                read(&standing).forward,
+                read(&standing).lateral,
+                read(&standing).height
+            ),
+            (30, 0, 25)
+        );
+
+        // Without a Kratos key the prone man keeps gamemd's coordinate.
+        let stock = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\n"),
+            &IniFile::from_str("[GI]\nPrimaryFireFLH=80,0,105\n"),
+        )
+        .unwrap();
+        assert!(!stock.kratos());
+        let mut prone = GameEntity::test_default_of_category(
+            2,
+            "GI",
+            "Americans",
+            5,
+            5,
+            EntityCategory::Infantry,
+        );
+        prone.infantry.as_mut().unwrap().set_is_prone_for_test(true);
+        let obj = stock.object("GI").unwrap();
+        let flh = get_weapon_record(
+            &prone,
+            obj,
+            0,
+            &world.substrate.entities,
+            &stock,
+            &world.interner,
+        )
+        .unwrap()
+        .flh;
+        assert_eq!((flh.forward, flh.height), (80, 105));
+    }
+
+    /// `CrawlingFLHData::Read` defaults each crawling coordinate to its slot's
+    /// fire coordinate with Z 20, and `CrawlingFLH::Setup` disables itself for
+    /// a `Fearless` type: the type then keeps its `PrimaryFireFLH`.
+    #[test]
+    fn kratos_crawling_flh_defaults_to_the_fire_flh_at_z_20_and_skips_fearless() {
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[InfantryTypes]\n0=GI\n1=HRND\n[GI]\nPrimary=GUN\n\
+                 [HRND]\nPrimary=GUN\nFearless=yes\n",
+            ),
+            &IniFile::from_str(
+                "[GI]\nPrimaryFireFLH=80,0,105\nSecondaryCrawlingFLH=7,8,9\n\
+                 [HRND]\nPrimaryFireFLH=60,0,101\nPrimaryCrawlingFLH=1,2,3\n",
+            ),
+        )
+        .unwrap();
+        assert!(rules.kratos(), "one crawling key turns Kratos on");
+        let world = Simulation::new();
+        let prone = |id, name: &str| {
+            let mut entity = GameEntity::test_default_of_category(
+                id,
+                name,
+                "Americans",
+                5,
+                5,
+                EntityCategory::Infantry,
+            );
+            entity
+                .infantry
+                .as_mut()
+                .unwrap()
+                .set_is_prone_for_test(true);
+            entity
+        };
+        let gi = prone(1, "GI");
+        let flh = get_weapon_record(
+            &gi,
+            rules.object("GI").unwrap(),
+            0,
+            &world.substrate.entities,
+            &rules,
+            &world.interner,
+        )
+        .unwrap()
+        .flh;
+        assert_eq!(
+            (flh.forward, flh.lateral, flh.height),
+            (80, 0, 20),
+            "the missing key defaults to the fire coordinate at Z 20"
+        );
+        let fearless = prone(2, "HRND");
+        let flh = get_weapon_record(
+            &fearless,
+            rules.object("HRND").unwrap(),
+            0,
+            &world.substrate.entities,
+            &rules,
+            &world.interner,
+        )
+        .unwrap()
+        .flh;
+        assert_eq!(
+            (flh.forward, flh.lateral, flh.height),
+            (60, 0, 101),
+            "a Fearless type keeps its fire coordinate"
         );
     }
 
