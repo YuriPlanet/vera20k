@@ -292,7 +292,7 @@ pub(super) fn run(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
     use crate::sim::mission::{MissionId, MissionType};

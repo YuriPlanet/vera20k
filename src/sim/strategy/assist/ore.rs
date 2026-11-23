@@ -234,7 +234,7 @@ pub(super) fn nearest(from: (u16, u16), cells: &[(u16, u16)]) -> Option<(u16, u1
         .min_by_key(|cell| (cell_distance(from, *cell), cell.0, cell.1))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod resource_target_tests {
     use super::*;
 

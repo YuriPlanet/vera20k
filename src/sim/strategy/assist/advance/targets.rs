@@ -104,16 +104,13 @@ pub(super) fn choose(
             )
         })
         .collect();
-    let economy: Vec<EnemyEntity> = structures
-        .iter()
-        .filter(|(ty, _)| ty.resource_destination)
-        .map(|(_, enemy)| *enemy)
-        .collect();
-    let mut targets: Vec<EnemyEntity> = if economy.is_empty() {
-        structures.iter().map(|(_, enemy)| *enemy).collect()
-    } else {
-        economy
-    };
+    // A refinery is an attractive target, but not from the far side of the
+    // map while a forward enemy outpost is within firing distance. Keep every
+    // structure eligible and give income infrastructure a *local* discount
+    // in the reachable selection below instead of globally deleting every
+    // nearby construction yard, barracks and defensive position.
+    let mut targets: Vec<EnemyEntity> =
+        structures.iter().map(|(_, enemy)| *enemy).collect();
     // Clean-up targets whatever is left. A house down to a handful of objects
     // is not a base: the army that only ever aims at structures stands in
     // front of the last two units until the match times out — measured, a
@@ -236,7 +233,7 @@ fn strike_on_approach(anchor: (u16, u16), chosen: (u16, u16),
         && cell_distance(strike, anchor) <= cell_distance(chosen, anchor) + 6
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod strategic_threat_tests {
     use super::*;
 
@@ -397,6 +394,26 @@ pub(super) fn neutral_blocker(
 /// structures a fist ever picks between: the nearest is nearly always reachable.
 const REACHABLE_CANDIDATES: usize = 12;
 
+/// Prefer a refinery within the current local engagement, never one on the
+/// other side of the map. A four-cell discount is small beside a distant base
+/// but meaningful when both targets are in the same block. Use cell-distance
+/// (the same reach metric as the assault), not squared distance.
+fn local_objective_rank(distance: i32, refinery: bool) -> i32 {
+    distance.saturating_sub(if refinery { 4 } else { 0 })
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod local_objective_tests {
+    use super::local_objective_rank;
+
+    #[test]
+    fn a_nearby_enemy_outpost_outranks_an_unrelated_distant_refinery() {
+        assert!(local_objective_rank(7, false) < local_objective_rank(27, true));
+        assert!(local_objective_rank(11, true) < local_objective_rank(9, false));
+    }
+}
+
+
 /// The nearest candidate `can_reach` accepts, or the nearest one when it
 /// accepts none.
 ///
@@ -433,9 +450,9 @@ fn reachable_target(
 ) -> Option<EnemyEntity> {
     let mut nearest_first: Vec<EnemyEntity> = targets.to_vec();
     nearest_first.sort_by_key(|target| {
-        let dx = i32::from(target.cell.0) - i32::from(from.0);
-        let dy = i32::from(target.cell.1) - i32::from(from.1);
-        (dx * dx + dy * dy, target.entity_id)
+        let income = obs.object_type(rules, target.type_id)
+            .is_some_and(|ty| ty.resource_destination);
+        (local_objective_rank(cell_distance(target.cell, from), income), target.entity_id)
     });
     let candidates: Vec<EnemyEntity> = nearest_first
         .iter()

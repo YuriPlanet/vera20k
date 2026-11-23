@@ -314,6 +314,10 @@ pub struct AssistBrain {
     /// question cell by cell, and the map is big: the answer is kept between
     /// probes instead of being recomputed every frame the maker stands still.
     pub(super) expansion_probe: Option<(u64, Option<(u16, u16)>)>,
+    /// A temporary infantry obstruction must not pin a maker forever to one
+    /// selected plot. After clearing fails, try another observed legal site.
+    pub(super) blocked_expansion_sites: BTreeMap<(u16,u16), u64>,
+    pub(super) maker_obstructed: BTreeMap<u64, ((u16,u16), u64)>,
     /// How many engineers and spies the house has bought, and how many of them
     /// came to nothing.
     ///
@@ -337,6 +341,11 @@ pub struct AssistBrain {
     /// signal the capture line has that an engineer's errand paid off, and the
     /// engineer's own disappearance cannot tell success from death.
     pub(super) capturable_last: BTreeSet<u64>,
+    /// Successful, *observed* captures and their acquisition frame. These
+    /// structures need real guards, not just a Capture order.
+    pub(super) captured_assets: BTreeMap<u64, u64>,
+    /// Defender actor -> captured asset being protected.
+    pub(super) asset_guards: BTreeMap<u64, u64>,
     /// Why the push did not leave this frame, as the gate that refused it:
     /// `push` when it did. Read by the forty-second census line — the question
     /// "why is the army standing in its yard" is otherwise unanswerable from a
@@ -387,6 +396,15 @@ pub struct AssistBrain {
     /// target list). A scout sighting remains useful after the shroud closes;
     /// remove it when the cell is visible and the building is gone.
     pub(super) spy_sites: BTreeMap<(u16, u16), u64>,
+    /// Agent -> (attempted building, last known cell, issued frame). A missing
+    /// agent is not proof of successful infiltration, but it does release the
+    /// target to be attempted again after a short recon/recruit window.
+    pub(super) spy_attempts: BTreeMap<u64, (u64, (u16, u16), u64)>,
+    pub(super) spy_target_retry: BTreeMap<u64, u64>,
+    pub(super) spy_still: BTreeMap<u64, ((u16, u16), u64)>,
+    /// One repair IFV command per short interval: re-aiming every tick
+    /// cancels its Guard healer scan just as movement cancels weapon fire.
+    pub(super) repair_ifv_after: BTreeMap<u64, u64>,
     /// Spy purchases are independent of engineer captures; one infiltration
     /// expedition must not be starved by unsuccessful engineer rushes.
     pub(super) next_spy_purchase: u64,
@@ -508,8 +526,12 @@ impl AssistBrain {
             income: plan::IncomeMeter::new(),
             avoid_cursor: 0,
             expansion_probe: None,
+            blocked_expansion_sites: BTreeMap::new(),
+            maker_obstructed: BTreeMap::new(),
             engineers: composition::EngineerLedger::default(),
             capturable_last: BTreeSet::new(),
+            captured_assets: BTreeMap::new(),
+            asset_guards: BTreeMap::new(),
             push_gate: "none",
             push_rest: (0, "none"),
             sale_at: 0,
@@ -520,6 +542,10 @@ impl AssistBrain {
             infiltrated: std::collections::BTreeSet::new(),
             spy_errand: std::collections::BTreeMap::new(),
             spy_sites: BTreeMap::new(),
+            spy_attempts: BTreeMap::new(),
+            spy_target_retry: BTreeMap::new(),
+            spy_still: BTreeMap::new(),
+            repair_ifv_after: BTreeMap::new(),
             next_spy_purchase: 0,
             garrison_release_after: BTreeMap::new(),
             combat_board_after: 0,
@@ -943,8 +969,10 @@ impl Brain for AssistBrain {
         if obs.forces_enabled() {
             advanced::protect_base(self, rules, obs, out);
             advanced::secure_outpost(self, rules, obs, out);
+            advanced::secure_captured_assets(self, rules, obs, out);
             advanced::relieve_garrison(self, rules, obs, out);
             advanced::combat_carriers(self, rules, obs, out);
+            advanced::repair_ifvs(self, rules, obs, out);
             // While the base is being raided, do not return just-evacuated
             // infantry to their occupied buildings in the same frame.
             if !self.director.under_attack_now() {

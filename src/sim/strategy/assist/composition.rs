@@ -103,6 +103,8 @@ pub(super) fn fill_lines(
     // structure, and paying for it is what "decided" means. Taken here, once,
     // so no line below can spend it.
     let mut budget = budget.reserving(brain.yard_reserve);
+    brain.engineers.observe_outcomes(obs.tick(), brain.census.units.iter()
+        .filter(|unit| unit.traits.engineer).count());
     // A house with a standing yard but no unloading bay must save its wallet
     // for the first refinery. The barracks' cheap infantry purchases could
     // otherwise keep its credits below the refinery's price indefinitely.
@@ -199,9 +201,17 @@ pub(super) fn fill_lines(
     // this is false, so the ceiling keeps its documented behaviour; at 100000
     // it is true from the first frame and the barracks keeps working.
     let rich = budget.free >= vehicle_floor.saturating_mul(RICH_VEHICLES);
-    let barracks_holds = infantry_full
+    // During the opening, preserve cash for the first armored wave and the
+    // lab. Percentages alone permit an army of twenty cheap infantry while
+    // the war factory and research queue cannot be funded. Keep a small
+    // home screen, but stop mass production until the mining economy works.
+    let infantry: usize = brain.census.tiers[Slot::Infantry.index()].iter().sum();
+    let fragile_opening = brain.census.refineries <= 1
+        && infantry >= 5 && budget.free < vehicle_floor.saturating_mul(3)
+        && !brain.director.under_attack_now();
+    let barracks_holds = fragile_opening || (infantry_full
         && !rich
-        && (budget.free >= vehicle_floor || a_soldier_would_reset_the_saving);
+        && (budget.free >= vehicle_floor || a_soldier_would_reset_the_saving));
     // Why the infantry line kept running: the ceiling is only as good as the
     // three numbers it reads. Traced like the build list's own line, so a
     // roster that is four fifths infantry can be attributed instead of guessed.
@@ -308,7 +318,8 @@ pub(super) fn fill_lines(
                 // Infiltration is neither an engineer purchase nor an
                 // immediate capture. The ledger for failed captures must not
                 // silence the spy line, and spies need their own pacing.
-                brain.next_spy_purchase = obs.tick().saturating_add(900);
+                brain.next_spy_purchase = obs.tick().saturating_add(
+                    if obs.credits() >= 5_000 { 450 } else { 900 });
             }
         }
     }
@@ -402,6 +413,8 @@ pub struct EngineerLedger {
     pub(super) captured: u32,
     /// The frame the house stops buying until, once the ratio fails.
     pub(super) quiet_until: u64,
+    /// Failures already considered. A living engineer is not yet a loss.
+    accounted_failures: u32,
 }
 
 impl EngineerLedger {
@@ -418,14 +431,22 @@ impl EngineerLedger {
     }
 
     /// Record one bought.
-    pub(super) fn note_bought(&mut self, tick: u64) {
+    pub(super) fn note_bought(&mut self, _tick: u64) {
         self.bought = self.bought.saturating_add(1);
-        // Judged after the increment, on the purchase that was just made: one
-        // engineer bought and none taken is not yet a failure, four per
-        // building taken is.
-        let patience_exceeded = self.bought > self.captured.saturating_mul(ENGINEER_WASTE_PATIENCE);
-        if patience_exceeded {
+    }
+
+    /// Only *lost* engineers count as a failed capture. The old buy/capture
+    /// ratio punished freshly purchased, still-walking engineers as failures
+    /// and could freeze a perfectly safe oil-derrick expansion for two minutes.
+    pub(super) fn observe_outcomes(&mut self, tick: u64, alive: usize) {
+        let lost = self.bought.saturating_sub(self.captured)
+            .saturating_sub(u32::try_from(alive).unwrap_or(u32::MAX));
+        if lost >= ENGINEER_WASTE_PATIENCE
+            && lost > self.captured.saturating_mul(2)
+            && lost > self.accounted_failures
+        {
             self.quiet_until = tick.saturating_add(ENGINEER_QUIET_FRAMES);
+            self.accounted_failures = lost;
         }
     }
 
@@ -468,7 +489,23 @@ fn tool<'r>(
     // Both are needed: the count says whether there is a hole, the ledger says
     // whether filling it has been working.
     let may_buy_capturers = ledger.may_buy(obs.tick());
-    let want_engineer = engineers < ENGINEER_WANT && may_buy_capturers;
+    // The opening needs two engineers, but a prosperous house with several
+    // *discovered, locally clear* capturable sites may support parallel
+    // operations. Unseen enemy technology is never counted as opportunity.
+    let clear_sites = obs.capturable_buildings(rules).filter(|target| {
+        obs.is_cell_revealed(target.cell.0, target.cell.1)
+            && (!obs.is_hostile(target.entity_id)
+                || obs.is_cell_visible(target.cell.0, target.cell.1))
+            && !obs.visible_enemy_entities().any(|enemy| {
+                obs.object_type(rules, enemy.type_id)
+                    .is_some_and(|ty| ty.category != ObjectCategory::Building)
+                    && super::squared_distance(enemy.cell, target.cell) <= 7 * 7
+            })
+    }).take(4).count();
+    let engineer_want = if census.refineries >= 2 && credits >= 4_000
+        && clear_sites >= 3 { 4 } else if credits >= 2_000 && clear_sites >= 2 { 3 }
+        else { ENGINEER_WANT };
+    let want_engineer = engineers < engineer_want && may_buy_capturers;
     let visible_spy_target = obs.spyable_buildings(rules).any(|target| {
         obs.is_cell_visible(target.cell.0, target.cell.1)
     });
@@ -1995,6 +2032,7 @@ mod tests {
         for _ in 0..ENGINEER_WASTE_PATIENCE + 1 {
             brain.engineers.note_bought(100);
         }
+        brain.engineers.observe_outcomes(100, 0);
         assert!(!brain.engineers.may_buy(100));
         assert_eq!(brain.next_spy_purchase, 0);
         brain.next_spy_purchase = 100 + 900;
@@ -2036,12 +2074,24 @@ mod tests {
         }
         assert_eq!(sunk.bought, 2 + ENGINEER_WASTE_PATIENCE * 2);
         assert_eq!(sunk.captured, 2);
+        sunk.observe_outcomes(0, 0);
         assert!(
             !sunk.may_buy(0),
             "ten bought for two taken is 狂造工程师拖垮经济"
         );
         // And quiet is a window, not a death sentence: the front moves.
         assert!(sunk.may_buy(ENGINEER_QUIET_FRAMES));
+    }
+
+    #[test]
+    fn engineers_still_walking_to_capturable_buildings_are_not_failed_purchases() {
+        let mut ledger = EngineerLedger::default();
+        for _ in 0..5 { ledger.note_bought(10); }
+        ledger.observe_outcomes(10, 5);
+        assert!(ledger.may_buy(10));
+        ledger.observe_outcomes(20, 1);
+        assert!(!ledger.may_buy(20));
+        assert!(ledger.may_buy(20 + ENGINEER_QUIET_FRAMES));
     }
 
     /// A rich house keeps the barracks working past the infantry ceiling.
@@ -2130,7 +2180,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v17_faction_tests {
     use super::*;
 

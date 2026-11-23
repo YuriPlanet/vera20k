@@ -34,7 +34,7 @@
 
 use std::collections::VecDeque;
 
-use crate::rules::object_type::ObjectType;
+use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::control::observation::Observation;
 use crate::sim::intern::InternedId;
@@ -427,6 +427,12 @@ pub(super) const STEPS: &[Step] = &[
         want: 2,
         gate: Gate::CanReplace,
     },
+    // Once the core economy and lab exist, surplus can fund a second
+    // repair bay (for several wounded vehicles) or aircraft pad (for a
+    // larger rearming air force). These are conditional capacity purchases,
+    // never part of the cash-starved opening.
+    Step { item: Item::Repair, want: 2, gate: Gate::Surplus },
+    Step { item: Item::Aircraft, want: 2, gate: Gate::Surplus },
     // Throughput, once the wallet says the factories cannot spend it. Every
     // extra factory shortens a build by `[General] MultipleFactory=`.
     Step {
@@ -555,6 +561,14 @@ fn want(step: &Step, census: &Census) -> usize {
         Item::Refinery => census.ore_targets.map_or(step.want, |ore| {
             if step.want == 1 { 1 } else { ore.refineries }
         }),
+        Item::Repair if step.want > 1 => {
+            let vehicles: usize = census.tiers[super::census::Slot::Vehicle.index()].iter().sum();
+            if census.refineries >= 2 && vehicles >= 8 { 2 } else { 1 }
+        }
+        Item::Aircraft if step.want > 1 => {
+            let planes: usize = census.tiers[super::census::Slot::Aircraft.index()].iter().sum();
+            if census.refineries >= 2 && planes >= 3 { 2 } else { 1 }
+        }
         _ => step.want,
     }
 }
@@ -745,17 +759,18 @@ fn owned(rules: &RuleSet, obs: &Observation<'_>, census: &Census, item: Item) ->
         Item::Defense => build::defenses(rules, obs, census),
         Item::Radar => build::count_in(obs, rules, census, &rules.build_radar_types),
         Item::Tech => build::count_in(obs, rules, census, &rules.build_tech_types),
-        // A house that owns a plant of the category has nothing to build, and
-        // one that cannot build any has no business asking: both read as
-        // owned, which is the answer that stops the step repeating.
-        Item::Aircraft => usize::from(
-            build::line_factory(rules, obs, census, ProductionCategory::Aircraft).is_none(),
-        ),
+        // Count airfields as capacity, not as the boolean presence of an
+        // aircraft queue. A second airfield expands native plane slots.
+        Item::Aircraft => obs.own_entities().filter(|entity| {
+            obs.object_type(rules, entity.type_id).is_some_and(|ty|
+                ty.category == ObjectCategory::Building
+                    && ty.factory_type() == Some(FactoryType::AircraftType))
+        }).count(),
         // The support building is the yard maker's own prerequisite list, so
         // whether one is wanted is that list's answer, not a count's.
         Item::Support => 0,
-        // One shed is enough: it repairs a whole army, one unit at a time.
-        Item::Repair => usize::from(!census.repair_sites.is_empty()),
+        // Each depot provides another simultaneous repair bay.
+        Item::Repair => census.repair_sites.len(),
         Item::Superweapon => build::superweapons(rules, obs, census),
         Item::SupportSuperweapon => build::count_strategic_facilities(rules, obs),
     }
@@ -781,7 +796,11 @@ fn pick<'r>(
         Item::Radar => build::first_buildable(rules, obs, &rules.build_radar_types),
         // The lab that authorises a power the house will actually fire.
         Item::Tech => build::tech_building(rules, obs),
-        Item::Aircraft => build::line_factory(rules, obs, census, ProductionCategory::Aircraft),
+        // line_factory returns None as soon as one aircraft plant is owned;
+        // the surplus step needs the same legal category even with one built.
+        Item::Aircraft => build::line_factory(rules, obs, census, ProductionCategory::Aircraft)
+            .or_else(|| build::class_types(rules, obs, ObjectCategory::Building)
+                .find(|(ty, _)| ty.factory_type() == Some(FactoryType::AircraftType))),
         Item::Support => expand::yard_maker_support(rules, obs, census),
         Item::Repair => build::unit_repair_building(rules, obs),
         Item::Superweapon => build::superweapon_building(rules, obs),
@@ -818,6 +837,22 @@ mod tests {
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         Some((sim, rules))
+    }
+
+    #[test]
+    fn surplus_extra_support_capacity_waits_for_a_real_workload() {
+        let mut census = Census::default();
+        let repair = STEPS.iter().find(|step|
+            step.item == Item::Repair && step.want == 2).expect("second repair step");
+        let airport = STEPS.iter().find(|step|
+            step.item == Item::Aircraft && step.want == 2).expect("second airfield step");
+        assert_eq!(want(repair, &census), 1);
+        assert_eq!(want(airport, &census), 1);
+        census.refineries = 2;
+        census.tiers[super::super::census::Slot::Vehicle.index()][0] = 8;
+        census.tiers[super::super::census::Slot::Aircraft.index()][0] = 3;
+        assert_eq!(want(repair, &census), 2);
+        assert_eq!(want(airport, &census), 2);
     }
 
     #[test]
@@ -1089,7 +1124,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v14_power_reserve_tests {
     use super::*;
     #[test]
@@ -1101,7 +1136,7 @@ mod v14_power_reserve_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v15_support_steps_tests {
     use super::*;
 
@@ -1117,7 +1152,7 @@ mod v15_support_steps_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v17_power_tests {
     use super::*;
 

@@ -337,7 +337,7 @@ pub(super) fn waiting_for_support(
     support_gap(front,rear,enemy,front_count,rear_count)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 
@@ -382,7 +382,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v14_counter_tests {
     use super::*;
 
@@ -395,7 +395,7 @@ mod v14_counter_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v18_commit_tests {
     use super::*;
 

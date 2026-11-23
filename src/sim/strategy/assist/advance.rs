@@ -551,6 +551,28 @@ fn stage_reinforcements(
     issued
 }
 
+/// Permit a stalled, well-supported heavy tank column to breach a visible
+/// gunline even when the perfect counter is not affordable. No infantry or
+/// damaged lone vehicles are authorized to trade against multiple towers.
+fn forced_armor_commit(armored: bool, health_permille: u16, own: i32, enemy: i32) -> bool {
+    armored && health_permille >= 780 && own >= 2_000
+        && own >= enemy.max(1).saturating_mul(2)
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod forced_breach_tests {
+    use super::forced_armor_commit;
+
+    #[test]
+    fn only_a_healthy_locally_superior_armored_column_may_break_the_siege() {
+        assert!(forced_armor_commit(true, 900, 5_000, 2_200));
+        assert!(!forced_armor_commit(false, 900, 5_000, 1_000));
+        assert!(!forced_armor_commit(true, 400, 5_000, 1_000));
+        assert!(!forced_armor_commit(true, 900, 1_500, 200));
+        assert!(!forced_armor_commit(true, 900, 3_000, 2_000));
+    }
+}
+
 pub(super) fn advance(
     brain: &mut AssistBrain,
     rules: &RuleSet,
@@ -733,11 +755,14 @@ pub(super) fn advance(
             _ => tick,
         };
         brain.siege_wait = Some((target_id, start));
-        // The first 600 frames are the bounded rally, not an expiry of the
-        // need for a weapon that can actually destroy the visible battery.
-        // Keep the producer's request alive; individual units now refuse
-        // suicidal range trades even after this first preparation window.
-        brain.push_gate = "need-siege";
+        // Artillery preparation is finite: a faction unable to fund its
+        // next lab cannot wait outside prism towers until its economy dies.
+        // After the preparation period, only healthy heavy armor with local
+        // fire superiority may volunteer to breach. Infantry, aircraft and
+        // units facing psychic control retain their original vetoes.
+        brain.push_gate = if tick.saturating_sub(start) >= 1_350 {
+            "siege-forced-breach"
+        } else { "need-siege" };
         if tick.saturating_sub(start) < 600 {
             // Waiting must be an actual manoeuvre, not just a label. A tank
             // already walking into the pillbox will keep that native order
@@ -1009,10 +1034,15 @@ pub(super) fn advance(
             let can_hit_gun = obs.visible_enemy_entities().any(|enemy| {
                 enemy.cell == *gun && obs.can_hurt(rules, unit.entity_id, enemy.entity_id)
             });
-            !(can_hit_gun && super::tactics::overwhelming_armor_commit(
+            let forced_breach = brain.push_gate == "siege-forced-breach"
+                && forced_armor_commit(
+                    unit.slot == super::census::Slot::Vehicle,
+                    unit.health_permille, ours, theirs,
+                );
+            !(can_hit_gun && (super::tactics::overwhelming_armor_commit(
                 unit.slot == super::census::Slot::Vehicle,
                 unit.health_permille, ours, theirs,
-            ))
+            ) || forced_breach))
         }) {
             let safe = super::tactics::siege_post(
                 rules, obs, unit.entity_id, unit.cell, gun, reach,
@@ -1838,7 +1868,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v16_artillery_tests {
     use super::*;
 

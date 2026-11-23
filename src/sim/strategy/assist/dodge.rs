@@ -231,6 +231,17 @@ pub(super) fn run(
         {
             continue;
         }
+        // A single small shell need not cancel a loaded, healthy gun's
+        // current exchange. The lost shot and turn can be worse than taking
+        // that shell. Wide splashes, massed fire and wounded units retain
+        // their normal emergency escape behaviour.
+        if super::micro::firing(obs, unit.mission, unit.entity_id)
+            && obs.weapon_ready(unit.entity_id)
+            && unit.health_permille >= 750
+            && threats.len() == 1 && threats[0].spread <= 1
+        {
+            continue;
+        }
         let Some(target) = escape_cell(unit.cell, &threats, obs.map_extent()) else {
             continue;
         };

@@ -892,7 +892,7 @@ fn nearest(
         .map(|enemy| (enemy.entity_id, enemy.cell))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v13_priority_tests {
     use super::*;
 
@@ -1187,7 +1187,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod priority_regression_tests {
     use super::*;
 

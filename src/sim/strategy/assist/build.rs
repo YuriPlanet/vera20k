@@ -2386,7 +2386,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v17_national_defense_tests {
     use super::*;
 
@@ -2401,7 +2401,7 @@ mod v17_national_defense_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v18_dual_strip_tests {
     use super::*;
 

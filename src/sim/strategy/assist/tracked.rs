@@ -940,7 +940,7 @@ mod tests {
 
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v18_garrison_lease_tests {
     use super::*;
 

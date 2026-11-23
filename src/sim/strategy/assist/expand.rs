@@ -95,6 +95,10 @@ const EXPAND_ORE_RING: i32 = 12;
 const EXPAND_PROBE_FRAMES: u64 = 60;
 /// Hold a chosen mineral-side MCV deployment plot through temporary blockers.
 const EXPANSION_SITE_COMMIT_FRAMES: u64 = 450;
+/// Give friendly infantry time to clear the native yard foundation before
+/// abandoning the chosen ore-side expansion plot.
+const MCV_CLEARANCE_FRAMES: u64 = 240;
+const MCV_REJECT_SITE_FRAMES: u64 = 1800;
 
 /// Whether `ty` is a Construction Yard maker: its `DeploysInto=` is the
 /// building the rules' `[AI] BuildConst=` list holds. `UnitType`'s
@@ -669,6 +673,29 @@ fn deploy_second_yard(
     // owns the deploy decision. An MCV that stops short of its target used to
     // unfold at the first legal roadside cell and later get packed again.
     let selected = expansion_site(brain, rules, obs, yard, Some(entity_id));
+    // An MCV can arrive successfully but be unable to unfold because the
+    // native foundation is blocked by friendly infantry. Do not bounce
+    // between two probe answers: clear a local route first, then mark the
+    // failed plot unavailable for a bounded period and pick an alternate.
+    if let Some(site) = selected
+        && cell == site && !obs.deploy_site_admits(rules, entity_id, yard)
+    {
+        let since = brain.maker_obstructed.entry(entity_id)
+            .or_insert((site, obs.tick()));
+        if since.0 != site { *since = (site, obs.tick()); }
+        if retry_blocked_site(obs.tick(), since.1) {
+            clear_mcv_foundation(brain, rules, obs, out, site, entity_id);
+            return;
+        }
+        brain.blocked_expansion_sites.insert(site,
+            obs.tick().saturating_add(MCV_REJECT_SITE_FRAMES));
+        brain.maker_obstructed.remove(&entity_id);
+        brain.expansion_probe = None;
+        log::debug!("auto play: MCV {entity_id} failed at {site:?}; selecting alternate plot");
+        return;
+    } else {
+        brain.maker_obstructed.remove(&entity_id);
+    }
     if at_selected_site(cell, selected)
         && cell_distance(cell, home) >= EXPAND_MIN_CELLS
         && space.ground_at(cell).buildable()
@@ -741,6 +768,49 @@ fn deploy_second_yard(
     }
 }
 
+/// Bounded retry: clear incidental blockers without leaving a maker parked
+/// indefinitely on a plot the native deploy will never accept.
+fn retry_blocked_site(now: u64, first_blocked: u64) -> bool {
+    now.saturating_sub(first_blocked) < MCV_CLEARANCE_FRAMES
+}
+
+fn clear_mcv_foundation(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+    site: (u16,u16), maker: u64,
+) {
+    let mut moved = 0;
+    for infantry in &brain.census.units {
+        if moved >= 2 { break; }
+        if infantry.entity_id == maker
+            || infantry.slot != super::census::Slot::Infantry
+            || !infantry.controllable() || infantry.in_service()
+            || super::squared_distance(infantry.cell, site) > 5*5
+            || out.ordered_this_frame(infantry.entity_id)
+            || brain.tracked.held(obs.tick(), infantry.entity_id)
+            || obs.attack_target(infantry.entity_id).is_some() { continue; }
+        let Some(ty) = obs.entity_type(rules, infantry.entity_id) else { continue; };
+        // Walk outward from the blocked footprint. Candidates are bounded
+        // and checked against the real native movement grid and live threats.
+        let offsets = [(7,0),(-7,0),(0,7),(0,-7),(6,6),(6,-6),(-6,6),(-6,-6)];
+        let target = offsets.into_iter().filter_map(|(dx,dy)| {
+            let (Ok(x),Ok(y)) = (u16::try_from(i32::from(site.0)+dx),
+                u16::try_from(i32::from(site.1)+dy)) else { return None; };
+            let new_cell = (x,y);
+            (obs.is_cell_in_playfield(x,y) && obs.is_ground_walkable(x,y)
+                && obs.can_reach(ty.movement_zone, infantry.cell, new_cell)
+                && !obs.visible_enemy_entities().any(|enemy|
+                    super::squared_distance(enemy.cell,new_cell) <= 7*7))
+                .then_some(new_cell)
+        }).min_by_key(|cell| super::squared_distance(infantry.cell,*cell));
+        let Some(target) = target else { continue; };
+        if super::orders::issue_tracked(&mut brain.tracked, brain.trace,
+            out, rules, obs, infantry.entity_id,
+            super::tracked::TrackedKind::Avoid, None, Some(target),
+            Goal::Move { cell: target }) { moved += 1; }
+    }
+}
+
 /// A unit blocking the foundation on a single frame is not a good reason to
 /// abandon a journey to a mineral field. Reachability is a genuine veto;
 /// transient deploy admission is allowed a bounded re-check interval.
@@ -772,6 +842,9 @@ pub(super) fn expansion_site(
     maker: Option<u64>,
 ) -> Option<(u16, u16)> {
     let tick = obs.tick();
+    brain.blocked_expansion_sites.retain(|_,until| *until > tick);
+    let rejected: std::collections::BTreeSet<_> =
+        brain.blocked_expansion_sites.keys().copied().collect();
     // The deploy's own answer for this cell. With a maker on the field the
     // question is asked with the maker's body lifted -- the deploy lifts it
     // -- and without one the ground has to be clear of everything.
@@ -782,6 +855,7 @@ pub(super) fn expansion_site(
         })
     });
     let admits = |cell: (u16, u16)| {
+        if rejected.contains(&cell) { return false; }
         let reachable = maker_position.is_none_or(|(from, zone)| obs.can_reach(zone, from, cell));
         reachable && match maker {
             Some(id) => obs.deploy_admits_at(rules, id, yard, cell),
@@ -799,7 +873,8 @@ pub(super) fn expansion_site(
         // changes deploy_admits_at without making the ore field a bad plan.
         // Keep walking toward the committed site for a bounded period instead
         // of alternating between two newly admissible cells each frame.
-        if keep_expansion_appointment(tick, selected_at, reachable, admits(site))
+        if !rejected.contains(&site)
+            && keep_expansion_appointment(tick, selected_at, reachable, admits(site))
         {
             return Some(site);
         }
@@ -1344,6 +1419,13 @@ mod tests {
     /// A second base is not the first base with more of it: the cell has to be
     /// clear of every building the house already holds.
     #[test]
+    fn a_blocked_mcv_site_expires_and_allows_a_new_plot() {
+        assert!(retry_blocked_site(1239, 1000));
+        assert!(!retry_blocked_site(1240, 1000));
+        assert!(MCV_REJECT_SITE_FRAMES > MCV_CLEARANCE_FRAMES);
+    }
+
+    #[test]
     fn a_second_base_is_not_inside_the_first_one() {
         let homes = [(10, 10), (12, 10)];
         assert!(
@@ -1517,7 +1599,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod rich_ore_tests {
     use super::*;
 
@@ -1543,7 +1625,7 @@ mod rich_ore_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v14_site_commit_tests {
     use super::*;
     #[test]

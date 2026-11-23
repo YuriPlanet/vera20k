@@ -137,6 +137,15 @@ pub(super) fn step_out(
         .map(|(cell, _, _)| cell)
 }
 
+/// A small increase in distance *inside the same gun arc* is not protection.
+/// A threatened, damaged unit may break off from one gun; a healthy unit
+/// already firing needs multiple guns to justify forfeiting its next shot.
+fn worth_interrupting_fire(before: Exposure, after: Exposure,
+    actively_engaged: bool, health_permille: u16) -> bool {
+    after.covered < before.covered
+        && (!actively_engaged || health_permille < 600 || before.covered >= 2)
+}
+
 pub(super) fn chebyshev(a: (u16, u16), b: (u16, u16)) -> i32 {
     super::threats::distance(a, b)
 }
@@ -351,6 +360,19 @@ pub(super) fn run(
         if !obs.is_ground_walkable(step.0, step.1) {
             continue;
         }
+        // A one-cell shuffle still inside the *same* gun coverage costs an
+        // attack opportunity and often leaves the tank dead before its next
+        // volley. Retreat during reload only for a real reduction in exposed
+        // guns, and protect a healthy gun that is already exchanging fire
+        // against a lone opponent. Parasites and lethal controller threats
+        // have their independent emergency paths above this decision.
+        if !worth_interrupting_fire(
+            exposure(unit.cell, &threats), exposure(step, &threats),
+            native_target.is_some_and(|(_, target)| chebyshev(unit.cell, target) <= mine),
+            unit.health_permille,
+        ) {
+            continue;
+        }
         // The step and the return trip keep separate tracked records — the
         // target of one is a unit id and of the other a cell — so they cannot
         // block each other in the same term.
@@ -429,6 +451,18 @@ mod tests {
             "further from the reach is better"
         );
         assert_eq!(exposure((30, 30), &two).covered, 0);
+    }
+
+    #[test]
+    fn reloading_tank_prefers_its_next_shot_to_a_cosmetic_shuffle() {
+        let before = Exposure { covered: 1, nearest: 2 };
+        let shuffle = Exposure { covered: 1, nearest: 3 };
+        let escape = Exposure { covered: 0, nearest: i32::MAX };
+        assert!(!worth_interrupting_fire(before, shuffle, true, 1000));
+        assert!(!worth_interrupting_fire(before, escape, true, 1000));
+        assert!(worth_interrupting_fire(before, escape, true, 400));
+        assert!(worth_interrupting_fire(Exposure { covered: 2, nearest: 2 },
+            Exposure { covered: 1, nearest: 3 }, true, 900));
     }
 
     /// Nothing covering the cell means no order: a pass that moves units

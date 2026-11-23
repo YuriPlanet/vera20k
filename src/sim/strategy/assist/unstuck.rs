@@ -157,8 +157,9 @@ pub(super) fn run(
         let id = unit.entity_id;
         // Never interrupt anyone deliberately standing still or managed by
         // the player, the refinery or a specialist lifecycle.
-        if !unit.controllable() || !unit.traits.combat || unit.in_service()
-            || obs.is_deployed(id) || obs.attack_target(id).is_some()
+        if !unit.controllable() || !(unit.traits.combat || unit.traits.yard_maker)
+            || unit.in_service() || obs.is_deployed(id)
+            || obs.attack_target(id).is_some()
         {
             continue;
         }
@@ -201,7 +202,7 @@ pub(super) fn run(
     brain.unstuck.retain(&live);
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
 

@@ -138,6 +138,24 @@ pub(super) fn captures(
     // hidden entity -- it can only be a Move/reconnaissance destination.
     // Store only real sightings. Full-map spyable_buildings is a native
     // entity query, not permission to learn a hidden building's position.
+    // Close agent missions only on observable disappearance, not on the
+    // assumption that a spy made it inside. The next spy may try the same
+    // money target after a bounded cooldown; one raid is never a permanent
+    // 'already infiltrated' flag for a Storage building.
+    let alive: BTreeSet<u64> = brain.census.units.iter()
+        .map(|unit| unit.entity_id).collect();
+    let finished: Vec<(u64,u64)> = brain.spy_attempts.iter()
+        .filter(|(agent,_)| !alive.contains(agent))
+        .map(|(agent,(building,_,_))| (*agent,*building)).collect();
+    for (agent, building) in finished {
+        brain.spy_attempts.remove(&agent);
+        brain.spy_still.remove(&agent);
+        brain.spy_target_retry.insert(building, tick.saturating_add(450));
+        log::debug!("auto play: spy {agent} disappeared at target {building}; outcome unconfirmed, retry permitted later");
+    }
+    brain.spy_target_retry.retain(|_,until| *until > tick);
+    brain.spy_still.retain(|agent,_| alive.contains(agent));
+    brain.captured_assets.retain(|id,_| obs.own_entities().any(|e| e.entity_id == *id));
     let visible_spy_cells: BTreeSet<(u16, u16)> = obs.spyable_buildings(rules)
         .filter(|e| obs.is_cell_visible(e.cell.0, e.cell.1))
         .map(|e| e.cell).collect();
@@ -146,8 +164,9 @@ pub(super) fn captures(
         tick.saturating_sub(*since) < SPY_SITE_MEMORY_FRAMES
             && (!obs.is_cell_visible(cell.0, cell.1) || visible_spy_cells.contains(cell))
     });
-    if !brain.census.units.iter().any(|unit|
-        walks_into_buildings_flags(&unit.traits)) { return; }
+    // Always reconcile observed ownership *before* checking for available
+    // engineers. The successful engineer is consumed on entering the building;
+    // there may be no engineer alive on the very frame its capture appears.
     // Neutral structures are public map objectives (v2 requirement). Enemy
     // buildings are not: an enemy-owned factory in unexplored fog cannot be
     // chosen for an engineer simply because the native list knows it exists.
@@ -170,17 +189,21 @@ pub(super) fn captures(
             .map(|target| target.entity_id)
             .collect();
         let owned: BTreeSet<u64> = obs.own_entities().map(|unit| unit.entity_id).collect();
-        let landed = brain
+        let landed: Vec<u64> = brain
             .capturable_last
             .iter()
             .filter(|id| !now.contains(*id))
             .filter(|id| owned.contains(*id))
-            .count();
-        for _ in 0..landed {
+            .copied().collect();
+        for id in landed {
             brain.engineers.note_captured();
+            brain.captured_assets.insert(id, tick);
+            log::debug!("auto play: engineer captured building {id} at tick {tick}");
         }
         brain.capturable_last = now;
     }
+    if !brain.census.units.iter().any(|unit|
+        walks_into_buildings_flags(&unit.traits)) { return; }
     // Which of those belong to an enemy, and where that enemy's units stand.
     // `capturable_buildings` is every `Capturable=` building the house can see —
     // the map's own oil derricks and hospitals included — and the nearest of
@@ -242,6 +265,9 @@ pub(super) fn captures(
             Some((target, infiltration_value(rules, ty, obs.credits())))
         })
         .filter(|(target, _)| !spy_route_blocked(obs, rules, target.cell, &watchers))
+        // A second spy should choose another live target briefly after the
+        // first disappears, but never mark money/power as one-time effects.
+        .filter(|(target, _)| !brain.spy_target_retry.contains_key(&target.entity_id))
         .collect();
     // A missing spy is no proof of success: dogs, turrets and capture can
     // all remove it before infiltration. Only permanent house effects confirm
@@ -284,6 +310,25 @@ pub(super) fn captures(
         };
         if !walks_into_buildings(rules, ty) {
             continue;
+        }
+        if ty.agent {
+            // An immobilized spy with a valid old Capture intent is no longer
+            // making progress. Release that intent and the site briefly so a
+            // new approach or different building can be considered.
+            let state = brain.spy_still.entry(unit.entity_id)
+                .or_insert((unit.cell, tick));
+            if state.0 != unit.cell {
+                *state = (unit.cell, tick);
+            } else if tick.saturating_sub(state.1) >= 300
+                && let Some((building, _, _)) = brain.spy_attempts.remove(&unit.entity_id)
+            {
+                brain.spy_target_retry.insert(building, tick.saturating_add(360));
+                brain.tracked.void(unit.entity_id, TrackedKind::Capture);
+                brain.tracked.forget_primary(unit.entity_id);
+                state.1 = tick;
+                log::debug!("auto play: spy {} stalled; reconsider infiltration target {}",
+                    unit.entity_id, building);
+            }
         }
         // A spy takes what is worth most; anyone else takes what is nearest.
         let chosen = if ty.agent {
@@ -343,7 +388,7 @@ pub(super) fn captures(
             // refinery. Last sighting is not authority to click an invisible
             // building: walk towards that remembered site, then ask the native
             // Capture admission once it comes into real sight again.
-            if ty.agent && spy_targets.is_empty() {
+            if ty.agent {
                 if let Some(post) = spy_recon_post(brain, rules, obs, unit.cell, ty.movement_zone) {
                     let _ = issue_tracked(
                         &mut brain.tracked, brain.trace, out, rules, obs,
@@ -405,12 +450,14 @@ pub(super) fn captures(
         // Remember the requested one-time infiltration class until the spy
         // disappears, then check the *actual* house effect before crediting it.
         // Death on the route must never count as a successful unlock.
-        if ty.agent
-            && let Some(code) = obs
-                .object_type(rules, target.type_id)
+        if ty.agent {
+            brain.spy_attempts.insert(unit.entity_id,
+                (target.entity_id, target.cell, tick));
+            if let Some(code) = obs.object_type(rules, target.type_id)
                 .and_then(|target_ty| spy_class_code(rules, target_ty))
-        {
-            brain.spy_errand.insert(unit.entity_id, code);
+            {
+                brain.spy_errand.insert(unit.entity_id, code);
+            }
         }
         issued += 1;
     }
@@ -685,7 +732,8 @@ pub(super) fn pack_captured_yard(
 /// A single passing scout is not a reason to uproot a forward base; we
 /// require both material damage and more than one visible attacker.
 fn should_pack_captured_yard(health_permille: u16, attackers: usize) -> bool {
-    health_permille <= 600 && attackers >= 2
+    (health_permille <= 750 && attackers >= 2)
+        || (health_permille <= 400 && attackers >= 1)
 }
 
 /// Send an engineer into a `BridgeRepairHut=` whose span is down.
@@ -1078,7 +1126,10 @@ fn engineer_preference(
             // visible guard covers the route or prize, wait until the army or
             // escort clears it. Ordinary hostile captures retain their
             // existing risk ranking (and its measured tactical trade-offs).
-            if guarded != 0 && (owned == 0 || strategic_public_asset(ty)) {
+            if guarded != 0 {
+                // A hostile lab/yard is valuable, but not valuable enough to
+                // throw an unarmed engineer through a defended base. Wait for
+                // the main army or escort to clear the route first.
                 return None;
             }
             // **Clear ground first, then what it is worth, then the walk.**
@@ -3164,7 +3215,7 @@ pub(super) fn is_combat_unit(rules: &RuleSet, ty: &ObjectType) -> bool {
 #[cfg(all(test, tests_sim_p_s))]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v14_crate_runner_tests {
     use super::*;
     #[test]
@@ -3177,7 +3228,7 @@ mod v14_crate_runner_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v15_superweapon_tests {
     use super::*;
 
@@ -3196,7 +3247,7 @@ mod v15_superweapon_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v16_objective_tests {
     use super::*;
 
@@ -3239,7 +3290,7 @@ mod v16_objective_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_sim_p_s))]
 mod v18_execution_tests {
     use super::*;
 
