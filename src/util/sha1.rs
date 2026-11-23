@@ -2,134 +2,37 @@
 //! (`SHAPipe::Result` `0x0069E9E0`, init words `67452301..C3D2E1F0`), which
 //! `CCINIClass::GetCRC` (`0x00476D80`) runs over an INI's `SaveToPipe` bytes.
 //!
-//! The digest is computed over the caller's bytes without copying them: a
-//! whole MIX archive or a map blob can be hundreds of megabytes, and a copy
-//! plus a byte-at-a-time padding pass held three times the input in memory
-//! while the digest was computed.
+//! Full blocks are read from the caller's bytes. Only the final, padded
+//! block or blocks need scratch space.
 
 /// SHA-1 of `bytes`.
 pub fn sha1_bytes(bytes: &[u8]) -> [u8; 20] {
-    let mut engine = Sha1::new();
-    engine.update(bytes);
-    engine.finish()
-}
-
-/// The running SHA-1 state: the five words, the partial block and the length
-/// the padding encodes.
-struct Sha1 {
-    state: [u32; 5],
-    /// The bytes of the block that is still being filled.
-    block: [u8; 64],
-    /// How many bytes of `block` are filled.
-    filled: usize,
-    /// The total number of bytes fed in, which the padding encodes.
-    length: u64,
-}
-
-impl Sha1 {
-    fn new() -> Self {
-        Self {
-            state: [
-                0x6745_2301,
-                0xefcd_ab89,
-                0x98ba_dcfe,
-                0x1032_5476,
-                0xc3d2_e1f0,
-            ],
-            block: [0; 64],
-            filled: 0,
-            length: 0,
-        }
+    let mut state: [u32; 5] = [
+        0x6745_2301,
+        0xefcd_ab89,
+        0x98ba_dcfe,
+        0x1032_5476,
+        0xc3d2_e1f0,
+    ];
+    let (blocks, tail) = bytes.as_chunks::<64>();
+    for block in blocks {
+        compress(&mut state, block);
     }
 
-    fn update(&mut self, mut bytes: &[u8]) {
-        self.length = self.length.wrapping_add(bytes.len() as u64);
-        // A full block in the buffer and more input: compress the buffer first.
-        if self.filled > 0 {
-            let take = (64 - self.filled).min(bytes.len());
-            self.block[self.filled..self.filled + take].copy_from_slice(&bytes[..take]);
-            self.filled += take;
-            bytes = &bytes[take..];
-            if self.filled == 64 {
-                let block = self.block;
-                self.compress(&block);
-                self.filled = 0;
-            }
-        }
-        // Whole blocks straight from the caller's bytes.
-        let mut blocks = bytes.chunks_exact(64);
-        for block in &mut blocks {
-            let mut chunk = [0_u8; 64];
-            chunk.copy_from_slice(block);
-            self.compress(&chunk);
-        }
-        // The rest starts the next block.
-        let rest = blocks.remainder();
-        self.block[..rest.len()].copy_from_slice(rest);
-        self.filled = rest.len();
+    let mut final_block = [0; 64];
+    final_block[..tail.len()].copy_from_slice(tail);
+    final_block[tail.len()] = 0x80;
+    if tail.len() >= 56 {
+        compress(&mut state, &final_block);
+        final_block.fill(0);
     }
+    let bit_length = (bytes.len() as u64).wrapping_mul(8);
+    final_block[56..].copy_from_slice(&bit_length.to_be_bytes());
+    compress(&mut state, &final_block);
 
-    fn finish(mut self) -> [u8; 20] {
-        let bit_length = self.length.wrapping_mul(8);
-        // The padding: a 0x80 byte, zeroes to 56 bytes into the block, then the
-        // length. It never needs more than one extra block.
-        self.block[self.filled] = 0x80;
-        let rest = self.filled + 1;
-        if rest > 56 {
-            self.block[rest..].fill(0);
-            let block = self.block;
-            self.compress(&block);
-            self.block = [0; 64];
-            self.filled = 0;
-        } else {
-            self.filled = rest;
-        }
-        self.block[self.filled..56].fill(0);
-        self.block[56..64].copy_from_slice(&bit_length.to_be_bytes());
-        let block = self.block;
-        self.compress(&block);
-
-        let mut digest = [0_u8; 20];
-        for (chunk, word) in digest.chunks_exact_mut(4).zip(self.state) {
-            chunk.copy_from_slice(&word.to_be_bytes());
-        }
-        digest
-    }
-
-    /// The SHA-1 compression function over one 64-byte block.
-    fn compress(&mut self, block: &[u8; 64]) {
-        let mut words = [0_u32; 80];
-        for (word, chunk) in words.iter_mut().zip(block.chunks_exact(4)) {
-            *word = u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-        }
-        for index in 16..80 {
-            words[index] =
-                (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16])
-                    .rotate_left(1);
-        }
-        let [mut a, mut b, mut c, mut d, mut e] = self.state;
-        for (index, word) in words.iter().enumerate() {
-            let (f, k) = match index {
-                0..20 => ((b & c) | (!b & d), 0x5a82_7999),
-                20..40 => (b ^ c ^ d, 0x6ed9_eba1),
-                40..60 => ((b & c) | (b & d) | (c & d), 0x8f1b_bcdc),
-                _ => (b ^ c ^ d, 0xca62_c1d6),
-            };
-            let temp = a
-                .rotate_left(5)
-                .wrapping_add(f)
-                .wrapping_add(e)
-                .wrapping_add(k)
-                .wrapping_add(*word);
-            e = d;
-            d = c;
-            c = b.rotate_left(30);
-            b = a;
-            a = temp;
-        }
-        for (slot, value) in self.state.iter_mut().zip([a, b, c, d, e]) {
-            *slot = slot.wrapping_add(value);
-        }
+    let mut digest = [0_u8; 20];
+    for (chunk, word) in digest.chunks_exact_mut(4).zip(state) {
+        chunk.copy_from_slice(&word.to_be_bytes());
     }
 }
 
