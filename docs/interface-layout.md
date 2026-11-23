@@ -497,7 +497,7 @@ the battlefield.
 | --- | --- |
 | `Type` | `Button` or `Text`. `Row`, `Column` and `CameoGrid` are below |
 | `Command` | For a button: what a click does. See [Commands](#commands) |
-| `Label` | For a button without a picture: the words on it. It is the name of a line in the game's string table, like `GUI:Stop`, and shows that line's text; a name the table doesn't have shows as `MISSING:'name'`, as everywhere else in the game. Without `Label` the button's label is its command's name, looked up the same way |
+| `Label` | For a button without a picture: the words on it. It is the name of a line in the game's string table, like `GUI:Stop`, and shows that line's text; a name the table doesn't have shows as `MISSING:'name'`, as everywhere else in the game (and the name itself while no table is loaded). Without `Label` the button's label is its command's name, looked up the same way |
 | `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do |
 | `Value` | For a text: what it shows. See [Values](#values) |
 | `Hold` | The corner or edge of `Side` or `Field` the part is measured from: the nine words of [On the battlefield](#on-the-battlefield). `TopLeft` if you leave it out |
@@ -679,7 +679,8 @@ skipped, and the game tells you.
 | `Type` on an original part | The kind of part: `Screen`, `Battlefield`, `Box`, `Tooltip`, `Panel`, `Image`, `Text`, `Button`, `Tab`, `Radar`, `Minimap`, `CameoGrid`, `PowerBar` or `CommandBar`. A layout can only add a `Button`, a `Text`, a `Row`, a `Column` or a `CameoGrid` |
 | `Parts` on `Radar`, `Tabs`, `Cameos`, `Power` and `Bar` | The parts inside them: the map picture, the four tabs and the two scroll buttons stay where they are |
 | `Hold`, `Width`, `Height` | A part's edge and size, for the sidebar's own parts and `Field`. `Rest` means what is left |
-| `Font` | The font a text is drawn in |
+| `Font`, and `Align` on an added text | The font a text is drawn in, and where its words sit in its box |
+| `Frames`, `Palette`, `Color` on an added part | An added button's picture always takes frames 0 and 1 in the sidebar's palette; the added parts' colours are set as in [Pictures and colours](#pictures-and-colours) |
 | `Tab` on an original tab | Another strip for a tab button |
 
 The three big parts hold on to their edges: they have no `X` or `Y`. The command bar

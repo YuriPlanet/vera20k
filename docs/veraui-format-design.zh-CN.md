@@ -1,6 +1,27 @@
 # veraui.ini 节点树格式设计（第二稿，待确认）
 
-日期：2026-11-23。状态：设计稿，未实现。用户 11-23 定：**不考虑旧 mod 的兼容**，格式可以重做。
+日期：2026-11-23。状态：设计稿，部分已实现（见第 0 节，2026-11-24 按代码核对）。用户 11-23 定：**不考虑旧 mod 的兼容**，格式可以重做。
+
+## 0. 实现现状
+
+读取器是 `src/ui/match_layout.rs`，内置文件是 `src/ui/veraui_default.ini`，玩家文档是 `docs/interface-layout.md`。
+
+| 已实现 | 说明 |
+|---|---|
+| 内置文件 | 原版界面写成部件树 `veraui_default.ini`，mod 的文件和玩家的文件叠在它上面 |
+| 文件结构 | `[Layouts]` 按阵营选布局；节点段 `[布局.节点]`；`Parts=` 列子节点；`Base=`（布局与节点两级）；没有 `Version=` |
+| 阵营变体与颜色表 | `键@Allied/Soviet/Yuri=`；`[Colors]`（`名字@阵营=`），部件的 `Color` 可写颜色表里的名字 |
+| 按类型校验 | 每种 `Type` 列出它接受的键，其它键报未知 |
+| 原版部件的图片与文字 | `Art`、`Frames`、`Palette`、`Color`、`Command`、`Value`、`Align`、`LabelColor` 等由各部件代码从树里读，图片名不再写死 |
+| 新增部件 | `Button`（`Command`、`Label`、`Art`）、`Text`（`Value`）、`Row`/`Column`（`Gap`）、`CameoGrid`（`Tab`、`Columns`、`Rows`），可放在 `Side` 或 `Field` |
+| 命令栏 | 按钮、顺序、空格仍来自 `UIMD.INI` 的 `ButtonList`（第 8 节） |
+
+| 未实现 | 现状 |
+|---|---|
+| 位置交给 gui 布局 | 仍由宿主按原版算式算：13 个数字键（`Side` 与 `Minimap` 的尺寸、`Cameos` 的格子与间距、`Power` 的 `Step`）和各部件的 `X`、`Y` |
+| 去掉“这个键暂不接受”的规则 | 仍在：原版部件的 `Type`、几个面板的 `Parts`、`Font`、原版标签的 `Tab` 等只能写原值（`NotYet`，见玩家文档的 “Not yet”） |
+| 本稿新加的键与类型 | `Visible`、`Reverse`、`Shadow`、`Toggle`、`Text=` 固定文字、`Repeat` 类型、`HitWidth`、`Root=`、`MultiplayerParts=`，以及 `Cell=`、`Pitch=` 写法（现为 `CellWidth`、`CellHeight`、`ColumnWidth`、`RowHeight`）都没有 |
+| 第 9 节 | 第 1 步大部分完成（部件表与数字绑定还在）；第 2-5 步未做 |
 
 ## 1. 目标
 
@@ -9,7 +30,7 @@
 - 位置由 gui 的布局算（`Hold`、`X`、`Y`、`Row`/`Column` 的排列和间距），不再由宿主按原版算式逐个计算。
 - 代码只保留类型的行为（雷达开合、电力条推进、建造网格的条目与滚动、标签状态、命令执行、点击规则），
   不认部件名字，不写死图片名、帧含义、颜色。
-- 预期删除：读取器里的部件表与数字绑定（`match_layout.rs` 2278 行中的大部分）、侧边栏图集的逐部件加载、
+- 预期删除：读取器里的部件表与数字绑定（`match_layout.rs` 当时 2278 行中的大部分）、侧边栏图集的逐部件加载、
   绘制与视图的逐部件分支、`SidebarChromeLayoutSpec` 的大部分字段及其使用。
 
 ## 2. 去掉的东西（相对现在的 veraui.ini）
