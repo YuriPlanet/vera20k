@@ -21,7 +21,7 @@ use crate::render::shell_paint::{
 use crate::ui::campaign_shell::{CAMPAIGN_PAGE, CampaignLayout, CampaignSide, DIFFICULTY_MAX};
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::geom::{RectPx, centred_in_window};
-use vera20k_gui::shell::trackbar::thumb_left;
+use vera20k_gui::shell::trackbar::TrackbarRange;
 
 /// Frame counts of the emblems (Allied / Soviet / Boot Camp). Boot Camp is
 /// empty under YR, which has only two emblems.
@@ -57,7 +57,8 @@ fn push_slider(
         );
     }
     if let Some(thumb) = art.slider_thumb {
-        let x = slider.x + thumb_left(position, slider.w, 0, DIFFICULTY_MAX);
+        let range = TrackbarRange::new(0, DIFFICULTY_MAX, 1).with_plaque(false);
+        let x = slider.x + range.thumb_left(position, slider.w);
         let y = slider.y + (slider.h - 22) / 2;
         push_entry_scaled(out, thumb, x, y, scale, STATIC_IMAGE_DEPTH - 0.00001);
     }

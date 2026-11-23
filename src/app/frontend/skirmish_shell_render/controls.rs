@@ -510,7 +510,7 @@ pub(super) enum ControlPaint {
         rect: RectPx,
     },
     /// A trackbar window with its thumb's window-relative left edge
-    /// ([`vera20k_gui::shell::trackbar::thumb_left`]). `plaque` is off where
+    /// ([`vera20k_gui::shell::trackbar::TrackbarRange::thumb_left`]). `plaque` is off where
     /// the owner sends `0x4AC` with 0 (Options Detail/Difficulty/Scroll, BBB).
     /// `disabled` is the window's `WS_DISABLED` style (`0x0061E0B0`).
     Trackbar {

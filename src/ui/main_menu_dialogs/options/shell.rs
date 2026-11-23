@@ -1304,13 +1304,11 @@ impl OptionsDialogState {
         window: RectPx,
         scale: ShellScale,
     ) -> i32 {
-        vera20k_gui::shell::trackbar::thumb_left_at(
-            i32::from(self.trackbar_position(id)),
-            window,
-            id.plaque_reserve(),
-            i32::from(id.maximum()),
-            scale,
-        )
+        let range = vera20k_gui::shell::trackbar::TrackbarRange {
+            reserve: id.plaque_reserve(),
+            ..vera20k_gui::shell::trackbar::TrackbarRange::new(0, i32::from(id.maximum()), 1)
+        };
+        range.thumb_left_in(i32::from(self.trackbar_position(id)), window, scale)
     }
 
     /// The slider holding the mouse, and whether it follows the pointer.
