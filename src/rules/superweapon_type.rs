@@ -975,6 +975,11 @@ impl SuperWeaponType {
                 SuperWeaponKind::GeneticConverter => Some("GeneticConverter".to_string()),
                 // SW_PsychicDominator::Initialize10070990: its cursor.
                 SuperWeaponKind::PsychicDominator => Some("PsychicDominator".to_string()),
+                // Ares SWTypeExt::LoadFromRulesFile (0x1003332A) arms both redirects;
+                // SW_ParaDrop::Initialize (0x10073F52) sets their ParaDrop cursor.
+                SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => {
+                    Some("ParaDrop".to_string())
+                }
                 // SW_SpyPlane::Initialize10075800: the SpyPlane cursor.
                 SuperWeaponKind::SpyPlane => Some("SpyPlane".to_string()),
                 // SW_LightningStorm::Initialize10072C50: SW_Cursor 0x32.

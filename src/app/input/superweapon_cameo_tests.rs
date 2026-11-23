@@ -265,11 +265,16 @@ fn use_ai_targeting_cameo_launches_immediately_through_the_normal_press_owner() 
 }
 
 #[test]
-fn delivery_missing_or_custom_action_arms_the_real_cameo_targeting_path() {
+fn ares_drop_cameos_arm_the_paradrop_cursor() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    for action in ["", "Action=Custom\n"] {
+    for (kind, action) in [
+        ("UnitDelivery", ""),
+        ("UnitDelivery", "Action=Custom\n"),
+        ("AmerParaDrop", "Action=Custom\n"),
+        ("ParaDrop", ""),
+    ] {
         let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-            "[SuperWeaponTypes]\n0=Delivery\n[Delivery]\nType=UnitDelivery\n{action}"
+            "[SuperWeaponTypes]\n0=Delivery\n[Delivery]\nType={kind}\n{action}"
         )))
         .unwrap();
         let mut sim = Simulation::new();
@@ -286,16 +291,20 @@ fn delivery_missing_or_custom_action_arms_the_real_cameo_targeting_path() {
             .entry(owner)
             .or_default()
             .insert(id, instance);
+        let item = sidebar_item(&sim, &rules, owner, "Delivery");
+        let SidebarAction::SuperWeaponPress { section, right } = gadget_press(&item, false) else {
+            panic!("the {kind} cameo did not forward the click");
+        };
         let views = superweapon_views_for_owner(&sim, &rules, &owner);
         let mut input = MatchInputState::new(Default::default());
         let result = press(
             &mut input,
             &mut SidebarGadgetState::default(),
             views.first(),
-            rules.super_weapon("Delivery").unwrap().action.as_deref(),
-            false,
+            rules.super_weapon(&section).unwrap().action.as_deref(),
+            right,
         );
-        assert_eq!(result, SuperWeaponClick::Target, "{action}");
+        assert_eq!(result, SuperWeaponClick::Target, "{kind} {action}");
         assert_eq!(
             input
                 .targeting_mode
@@ -303,6 +312,12 @@ fn delivery_missing_or_custom_action_arms_the_real_cameo_targeting_path() {
                 .and_then(TargetingMode::as_super_weapon),
             Some("Delivery")
         );
+        if kind != "UnitDelivery" {
+            assert_eq!(
+                crate::app::input::ares_cursor::super_weapon_cursor(&rules, &section, true),
+                Some(crate::rules::ares_mouse_cursor::index::PARA_DROP),
+            );
+        }
     }
 }
 
