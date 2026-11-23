@@ -133,7 +133,7 @@ fn original_signed_height_producer_and_blocked_goal_tail() {
         } else {
             MovementLayer::Ground
         };
-        let (initial, goal_height) = initial_search_heights(&start, layer, &goal);
+        let (initial, goal_height) = initial_search_heights(&start, layer, &goal, [None; 2]);
         assert_eq!(
             i64::from(initial),
             case["produced_initial_current_height"].as_i64().unwrap(),
@@ -181,7 +181,7 @@ fn original_structural_node_height_and_closed_list_selection() {
         let current = input["current_height"].as_i64().unwrap() as i16;
         let parent = (!input["initial_node"].as_bool().unwrap_or(false)).then_some(&parent);
         assert_eq!(
-            i64::from(compute_node_height(current, parent, &candidate)),
+            i64::from(compute_node_height(current, parent, &candidate, [None; 2])),
             case["node_height"].as_i64().unwrap(),
             "{input}"
         );
@@ -527,7 +527,8 @@ fn accepted_descriptor_height_survives_selected_list_transition() {
             true,
         );
         let previous_height = input["current_height"].as_i64().unwrap() as i16;
-        let next_height = compute_node_height(previous_height, Some(&parent), &candidate);
+        let next_height =
+            compute_node_height(previous_height, Some(&parent), &candidate, [None; 2]);
         let next_bridge = is_at_bridge_level(previous_height, &candidate);
         let mut ground = vec![PathDescriptor::UNVISITED; 2];
         let mut bridge = vec![PathDescriptor::UNVISITED; 2];

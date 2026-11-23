@@ -901,6 +901,11 @@ env -u RA2_DIR python -m tools.map_observation \
   --output /absolute/evidence/new-map-observation
 ```
 
+A capture reads no mod from config.toml and no VERA.INI. To observe a mod, or a
+chosen [Ares setting](../docs/ares.md#the-ares-setting), run the binary itself with
+`--mod FOLDER` before `--tactical-capture` and `--ares Auto|On|Off` among its options
+(as a `-SPAWN` launch's `[Settings] Ares=`); the wrapper passes neither.
+
 Captures use the `fast` profile: it runs the same simulation as `--release` and
 rebuilds faster after an edit. Keep timing on `--release`. The default executable is
 the unchanged `fast` or release `vera20k` recorded for this checkout by

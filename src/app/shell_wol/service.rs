@@ -14,13 +14,11 @@ use crate::util::time::{Duration, Instant};
 use super::{WolBoxThen, WolPage, WolVisit};
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::{App, AppState};
+use crate::ui::shell::modal::ShellBox;
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{WolChannel, WolMember, WolRoomSummary};
 use crate::ui::wol_login::WolCredential;
-use crate::ui::wol_shell::{
-    BOX_NO, BOX_OK, BOX_YES, WAIT_CHECK_STATUS, WAIT_DISCONNECT, WolBoxButtons, WolMessageBox,
-    WolMode, WolWaitBox,
-};
+use crate::ui::wol_shell::{WolMode, WolWaitBox};
 
 /// Which WOLAPI stands behind the visit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +83,8 @@ pub(crate) struct WolLoginAccepted {
     /// VERA: the lobby lets a room's players visit the public lobby
     /// (docs/lobby-protocol.md "Visiting the lobby").
     pub(crate) lobby_visits: bool,
+    /// VERA: the lobby offers `campaign_rooms` (docs/lobby-protocol.md).
+    pub(crate) campaign_rooms: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -720,6 +720,7 @@ impl WolVisit {
             (Awaiting::Connect { .. }, WolServiceEvent::Login(Ok(accepted))) => {
                 self.motd = Some(accepted.motd);
                 self.lobby_visits = accepted.lobby_visits;
+                self.lobby_campaign_rooms = accepted.campaign_rooms;
                 self.authenticated = true;
                 // The connect clears [0xB77DC0] (0x007867E6) and the login
                 // sink [0xB77DC2] (0x007A559D).
@@ -790,10 +791,6 @@ impl WolVisit {
             }
         }
     }
-}
-
-pub(super) fn resolve(state: &AppState, key: &str) -> String {
-    App::csf_label(state, key, key)
 }
 
 /// [`WolProvider::Unavailable`]'s synchronous answer, called where the
@@ -1155,31 +1152,21 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
 }
 
 pub(super) fn wait_box(state: &AppState, key: &str) -> WolWaitBox {
-    WolWaitBox {
-        text: resolve(state, key),
-        disconnect: resolve(state, "GUI:Disconnect"),
-        check_status: resolve(state, "GUI:WOLCheckStatus"),
-        opened_at: Instant::now(),
-        shown: false,
-    }
+    let text = |key| state.csf_text(key);
+    WolWaitBox::new(
+        text(key),
+        text("GUI:Disconnect"),
+        text("GUI:WOLCheckStatus"),
+    )
 }
 
 /// `0x005E2CD0`'s box over the shell: `0xD0` (OK) or `0x126` (Yes/No).
-pub(super) fn message_box(state: &AppState, key: &str, yes_no: bool) -> WolMessageBox {
-    message_box_text(state, resolve(state, key), yes_no)
-}
-
-/// The same box with an already formatted body.
-pub(super) fn message_box_text(state: &AppState, body: String, yes_no: bool) -> WolMessageBox {
-    let buttons = if yes_no {
-        WolBoxButtons::YesNo {
-            yes: resolve(state, "GUI:Yes"),
-            no: resolve(state, "GUI:No"),
-        }
-    } else {
-        WolBoxButtons::Ok(resolve(state, "GUI:OK"))
-    };
-    WolMessageBox { body, buttons }
+pub(super) fn message_box(state: &AppState, body: String, yes_no: bool) -> ShellBox {
+    let text = |key| state.csf_text(key);
+    match yes_no {
+        true => crate::ui::wol_shell::yes_no_box(body, text("GUI:Yes"), text("GUI:No")),
+        false => crate::ui::wol_shell::message_box(body, text("GUI:OK")),
+    }
 }
 
 /// A VERA-specific box over the current WOL page, whose OK returns to the
@@ -1188,17 +1175,16 @@ pub(super) fn show_text_box(state: &mut AppState, body: &str) -> bool {
     if state.frontend.shell_route != crate::app::shell_route::ShellRoute::Wol {
         return false;
     }
-    let message = message_box_text(state, body.to_owned(), false);
-    let dialog = message.dialog();
+    let message = message_box(state, body.to_owned(), false);
+    let dialog = message.dialog;
     let Some(visit) = state.frontend.wol.as_mut() else {
         return false;
     };
-    visit.status_help = None;
     visit.page = WolPage::Message {
         message,
         then: WolBoxThen::Welcome,
     };
-    state.frontend.shell_controller.reset_to(dialog, false);
+    state.frontend.shell_controller.reset_to(dialog);
     state.platform.window.request_redraw();
     true
 }
@@ -1224,21 +1210,20 @@ fn apply(state: &mut AppState, step: WolStep) {
             let wait = wait_box(state, key);
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
             match &mut visit.page {
-                WolPage::Backdrop { wait: Some(open) } => open.text = wait.text,
+                WolPage::Backdrop { wait: Some(open) } => open.shell_box.body = wait.shell_box.body,
                 page => *page = WolPage::Backdrop { wait: Some(wait) },
             }
             state
                 .frontend
                 .shell_controller
-                .reset_to(crate::ui::wol_shell::WAIT_DIALOG, false);
+                .reset_to(crate::ui::wol_shell::WAIT_DIALOG);
         }
         WolStep::Message { key, yes_no, then } => {
-            let message = message_box(state, key, yes_no);
-            let dialog = message.dialog();
+            let message = message_box(state, state.csf_text(key), yes_no);
+            let dialog = message.dialog;
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
-            visit.status_help = None;
             visit.page = WolPage::Message { message, then };
-            state.frontend.shell_controller.reset_to(dialog, false);
+            state.frontend.shell_controller.reset_to(dialog);
         }
         WolStep::Leave(result) => {
             // -1 (the patch download) takes PrepareSession's 0x0052E817
@@ -1313,7 +1298,7 @@ fn connect_succeeded(state: &mut AppState) {
         file.as_ref(),
         &nickname,
         server.as_ref().map(WolServer::persona_server),
-        &|key| resolve(state, key),
+        &|key| state.csf_text(key),
     );
     // The nickname becomes the session handle [0xA8B380], the persona's
     // Country and Color the MultiPlayer picks, and WriteMultiPlayerSettings
@@ -1498,36 +1483,32 @@ pub(super) fn finish_login(state: &mut AppState) {
     }
 }
 
-/// A box or wait-box button released.
-pub(super) fn box_command(state: &mut AppState, control: u16) {
+/// A box or wait-box button released: its answer (OK or Yes 0, No 1; the
+/// wait box's Disconnect 0, WOL Check Status 1).
+pub(super) fn box_command(state: &mut AppState, answer: usize) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    if matches!(visit.page, WolPage::Lobby | WolPage::QuickMatch(_)) {
-        super::lobby::box_command(state, control);
-        state.platform.window.request_redraw();
-        return;
-    }
-    let then = match &visit.page {
-        WolPage::Message { then, .. } => Some(*then),
-        _ => None,
-    };
-    let backdrop = matches!(visit.page, WolPage::Backdrop { .. });
-    let step = match (then, control) {
-        (Some(then), BOX_OK | BOX_YES | BOX_NO) => {
-            if control == BOX_YES {
+    let step = match &visit.page {
+        WolPage::Lobby | WolPage::QuickMatch(_) => {
+            super::lobby::box_command(state, answer);
+            state.platform.window.request_redraw();
+            return;
+        }
+        WolPage::Message { message, then } => {
+            if message.buttons.len() == 2 && answer == 0 {
                 // Yes opens an apiregister.westwood.com page through
                 // WOL__LaunchBrowser; VERA has no browser.
                 log::warn!("WOL account page needs a browser; not opened");
             }
-            match then {
+            match *then {
                 WolBoxThen::Leave(result) => WolStep::Leave(result),
                 WolBoxThen::Welcome => WolStep::Welcome,
                 WolBoxThen::Login => WolStep::OpenLogin,
             }
         }
-        (None, WAIT_DISCONNECT) if backdrop => visit.disconnect(),
-        (None, WAIT_CHECK_STATUS) if backdrop => {
+        WolPage::Backdrop { .. } if answer == 0 => visit.disconnect(),
+        WolPage::Backdrop { .. } => {
             // 0x00773E90 opens the embedded status browser.
             log::warn!("WOL Check Status needs the embedded browser; not opened");
             WolStep::Stay
@@ -1623,14 +1604,17 @@ mod tests {
     #[test]
     fn login_slide_policy_has_only_the_modern_or_native_forms_buttons() {
         use crate::app::frontend::shell_transition::ShellSlideKind;
-        use crate::ui::wol_login::{LoginPolicy, WolAccountGlobals, WolLoginState};
+        use crate::ui::wol_login::{LoginCx, LoginPolicy, WolAccountGlobals, WolLoginState};
         let mut visit = visit();
         let mut globals = WolAccountGlobals::default();
-        visit.page = WolPage::Login(Box::new(WolLoginState::open_online(
-            &mut globals,
-            None,
-            None,
-        )));
+        let mut ui = crate::ui::shell::controller::DialogController::default();
+        ui.push(crate::ui::wol_login::DIALOG);
+        let cx = &mut LoginCx {
+            ui: &mut ui,
+            globals: &mut globals,
+            credentials: &[],
+        };
+        visit.page = WolPage::Login(Box::new(WolLoginState::open_online(cx, None, None)));
         let modern = visit.login().unwrap().policy.page_spec();
         assert_eq!(modern, LoginPolicy::ChooseEntry.page_spec());
         let column = ShellSlideKind::WolLogin.column(9, Some(modern));
@@ -1639,7 +1623,13 @@ mod tests {
             (0, true),
             "the chooser has its two actions in the popup and Back on the rail"
         );
-        visit.page = WolPage::Login(Box::new(WolLoginState::open(&mut globals, &[])));
+        ui.reset_to(crate::ui::wol_login::DIALOG);
+        let cx = &mut LoginCx {
+            ui: &mut ui,
+            globals: &mut globals,
+            credentials: &[],
+        };
+        visit.page = WolPage::Login(Box::new(WolLoginState::open(cx)));
         let native = visit.login().unwrap().policy.page_spec();
         assert_eq!(native, LoginPolicy::Legacy.page_spec());
         let column = ShellSlideKind::WolLogin.column(9, Some(native));
@@ -1828,10 +1818,12 @@ mod tests {
             visit.reduce(WolServiceEvent::Login(Ok(WolLoginAccepted {
                 motd: "Welcome".into(),
                 lobby_visits: false,
+                campaign_rooms: true,
             }))),
             WolStep::Accepted
         );
         assert!(visit.authenticated);
+        assert!(visit.lobby_campaign_rooms);
         assert_eq!(visit.motd(), Some("Welcome"));
         // Nothing waits any more.
         assert_eq!(

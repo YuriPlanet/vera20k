@@ -238,7 +238,11 @@ pub(crate) fn run_desktop(
     output: &std::path::Path,
     mod_switch: Option<&crate::app::mods::ModSwitch>,
 ) -> Result<RandomMapReport> {
-    let config = crate::util::config::GameConfig::load()?;
+    let mut config = crate::util::config::GameConfig::load()?;
+    // RA2 Mode's theaters, as the game the launcher starts plays them.
+    config.use_ra2_mode(crate::app::spawn_probe::existing_ra2_mode(
+        config.paths.settings_dir(),
+    ));
     let map = generate_from_game(
         &config,
         crate::app::mods::launch_mod(&config.paths, mod_switch).map_err(anyhow::Error::msg)?,

@@ -42,9 +42,13 @@ impl WolCapture {
                 }
                 App::leave_shell_dialog(
                     state,
-                    crate::app::frontend::shell_transition::ShellExitThen::MainMenu(
-                        crate::ui::main_menu_shell::MainMenuShellAction::WwOnline,
-                    ),
+                    crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
+                    move |state| {
+                        crate::app::App::handle_main_menu_shell_action(
+                            state,
+                            crate::ui::main_menu_shell::MainMenuShellAction::WwOnline,
+                        )
+                    },
                 );
                 self.event(frame, "0xE2 Internet");
                 // Internet opens VERA's guest/account choice directly.
@@ -70,12 +74,7 @@ impl WolCapture {
                     && Self::page_settled(state, ShellSlideKind::WolWelcome) =>
             {
                 if self.target == WolTarget::WelcomeProfile {
-                    let texts = &state
-                        .frontend
-                        .wol
-                        .as_ref()
-                        .context("WOL visit")?
-                        .welcome_texts;
+                    let texts = &App::wol_welcome_texts(state);
                     let text = |id: u16| {
                         texts
                             .iter()
@@ -94,7 +93,7 @@ impl WolCapture {
                     return Ok(());
                 }
                 if self.target.my_info() {
-                    let rect = App::wol_welcome_layout(state)
+                    let rect = crate::app::frontend::shell_layout::wol_welcome_layout(state)
                         .page
                         .button_rect(crate::ui::wol_shell::MY_INFORMATION)
                         .context("My Information")?;
@@ -113,7 +112,7 @@ impl WolCapture {
                     } else {
                         (crate::ui::wol_shell::PLAY_BUDDY, WolPhase::ServiceLogin)
                     };
-                    let rect = App::wol_welcome_layout(state)
+                    let rect = crate::app::frontend::shell_layout::wol_welcome_layout(state)
                         .page
                         .button_rect(id)
                         .context("welcome button")?;
@@ -130,7 +129,7 @@ impl WolCapture {
                     (crate::ui::wol_shell::CUSTOM_MATCH, "Custom Match")
                 };
                 if self.target.test_service() {
-                    let rect = App::wol_welcome_layout(state)
+                    let rect = crate::app::frontend::shell_layout::wol_welcome_layout(state)
                         .page
                         .button_rect(mode_button)
                         .context("mode button")?;
@@ -139,7 +138,7 @@ impl WolCapture {
                     self.phase = WolPhase::ServiceLogin;
                     return Ok(());
                 }
-                let rect = App::wol_welcome_layout(state)
+                let rect = crate::app::frontend::shell_layout::wol_welcome_layout(state)
                     .page
                     .button_rect(mode_button)
                     .context("mode button")?;
@@ -241,6 +240,7 @@ impl WolCapture {
                                 WolServiceEvent::Login(Ok(WolLoginAccepted {
                                     motd: "Controlled message of the day".into(),
                                     lobby_visits: true,
+                                    campaign_rooms: false,
                                 })),
                             );
                             self.event(frame, "controlled login accepted");
@@ -287,11 +287,13 @@ impl WolCapture {
                     self.settle();
                     return Ok(());
                 }
-                let layout = crate::ui::shell::modal::wait_box_layout(
+                let layout = crate::ui::shell::modal::template_on(
+                    crate::ui::shell::modal::WAIT_TEMPLATE,
                     state.renderer.gpu.config.width as i32,
                     state.renderer.gpu.config.height as i32,
+                    crate::ui::shell::geom::RETAIL_SCALE,
                 );
-                welcome_click(state, layout.disconnect);
+                welcome_click(state, layout.button(0));
                 ensure!(state.frontend.wol.is_none(), "Disconnect did not leave WOL");
                 self.event(frame, "0xC4 Disconnect");
                 self.phase = WolPhase::MainReturn;
@@ -311,7 +313,7 @@ impl WolCapture {
                             },
                         ));
                         ensure!(
-                            login_mut(state)?.choosing_entry(),
+                            login_mut(state)?.0.choosing_entry(),
                             "the online entry chooser did not open"
                         );
                         let choice = layout.entry_choice().context("the two entry buttons")?;
@@ -326,7 +328,9 @@ impl WolCapture {
                         welcome_click(state, choice.account);
                         let layout = crate::app::shell_wol::login_layout(state);
                         if matches!(target, WolTarget::ModernUsername | WolTarget::ModernLogin) {
-                            let online = layout.online.context("the online sign-in form")?;
+                            let remember = layout
+                                .rect_of(crate::ui::wol_account::FORM_REMEMBER)
+                                .context("the online sign-in form")?;
                             let typed: &[&str] = if target == WolTarget::ModernLogin {
                                 &["Player", "s3cret-pw"]
                             } else {
@@ -337,17 +341,17 @@ impl WolCapture {
                                 welcome_click(
                                     state,
                                     crate::ui::skirmish_shell::checkbox_icon_rect(
-                                        online.remember,
+                                        remember,
                                         layout.page.scale,
                                     ),
                                 );
                             }
-                            let login = login_mut(state)?;
+                            let (login, ui) = login_mut(state)?;
                             ensure!(
-                                login.online_name() == "Player"
-                                    && login.button_enabled(crate::ui::wol_login::PLAY)
+                                login.online_name(ui) == "Player"
+                                    && login.button_enabled(ui, crate::ui::wol_login::PLAY)
                                         == (target == WolTarget::ModernLogin)
-                                    && login.form.as_ref().and_then(|form| form.remember)
+                                    && login.form.as_ref().and_then(|form| form.remember(ui))
                                         == Some(target == WolTarget::ModernLogin),
                                 "the sign-in form has the wrong submit or remember state"
                             );
@@ -373,14 +377,10 @@ impl WolCapture {
                         return Ok(());
                     }
                     WolTarget::LoginLastValid | WolTarget::AutoLoginFailed => {
-                        let login = state
-                            .frontend
-                            .wol
-                            .as_ref()
-                            .and_then(|visit| visit.login())
-                            .context("0x10F")?;
+                        login_mut(state)?;
+                        let ui = &state.frontend.shell_controller;
                         ensure!(
-                            login.nickname.display_text() == NICKNAME
+                            ui.text(LOGIN_DIALOG, crate::ui::wol_login::NICKNAME) == NICKNAME
                                 && info_file(state)?.auto_login().is_empty(),
                             "0x10F did not take the persona nickname with AutoLogin cleared"
                         );
@@ -398,18 +398,31 @@ impl WolCapture {
                     }
                     _ => {}
                 }
-                login_click(state, layout.nickname_face);
+                login_click(
+                    state,
+                    layout
+                        .rect_of(crate::ui::wol_login::NICKNAME_DROP)
+                        .unwrap_or_default(),
+                );
                 App::handle_wol_key(state, None, true, Some(NICKNAME));
-                login_click(state, layout.password);
+                login_click(
+                    state,
+                    layout
+                        .rect_of(crate::ui::wol_login::PASSWORD)
+                        .unwrap_or_default(),
+                );
                 App::handle_wol_key(state, None, true, Some(PASSWORD));
-                let login = state
-                    .frontend
-                    .wol
-                    .as_ref()
-                    .and_then(|visit| visit.login())
-                    .context("0x10F")?;
+                login_mut(state)?;
+                let enabled = |id| {
+                    state
+                        .frontend
+                        .shell_controller
+                        .flag(LOGIN_DIALOG, id, Prop::Enabled, true)
+                };
                 ensure!(
-                    login.login_enabled && login.remember_enabled && !login.forget_enabled,
+                    enabled(LOGIN)
+                        && enabled(crate::ui::wol_login::REMEMBER)
+                        && !enabled(crate::ui::wol_login::FORGET),
                     "typed account did not enable Login and Remember"
                 );
                 self.event(frame, "typed nickname and password");
@@ -447,6 +460,7 @@ impl WolCapture {
                         WolServiceEvent::Login(Ok(WolLoginAccepted {
                             motd: "Controlled message of the day".into(),
                             lobby_visits: true,
+                            campaign_rooms: false,
                         })),
                     );
                     self.event(frame, "controlled login accepted");
@@ -458,7 +472,7 @@ impl WolCapture {
                 }
             }
             WolPhase::Rejected => {
-                let expected = App::csf_label(state, "TXT_BADPASS", "TXT_BADPASS");
+                let expected = state.csf_label("TXT_BADPASS", "TXT_BADPASS");
                 ensure!(
                     state
                         .frontend
@@ -474,11 +488,12 @@ impl WolCapture {
                     self.settle();
                     return Ok(());
                 }
-                let ok = crate::ui::shell::modal::body_ok_layout(
+                let ok = crate::ui::shell::modal::menu_message_box(
+                    1,
                     state.renderer.gpu.config.width as i32,
                     state.renderer.gpu.config.height as i32,
                 )
-                .ok;
+                .button(0);
                 welcome_click(state, ok);
                 self.event(frame, "0xD0 OK");
                 self.phase = WolPhase::WelcomeAgain;
@@ -512,7 +527,7 @@ impl WolCapture {
                 self.settle();
             }
             WolPhase::AutoLoginBox => {
-                let expected = App::csf_label(state, "TXT_BADPASS", "TXT_BADPASS");
+                let expected = state.csf_label("TXT_BADPASS", "TXT_BADPASS");
                 ensure!(
                     state
                         .frontend
@@ -522,11 +537,12 @@ impl WolCapture {
                         .is_some_and(|message| message.body == expected),
                     "the silent connect's failure box did not show TXT_BADPASS"
                 );
-                let ok = crate::ui::shell::modal::body_ok_layout(
+                let ok = crate::ui::shell::modal::menu_message_box(
+                    1,
                     state.renderer.gpu.config.width as i32,
                     state.renderer.gpu.config.height as i32,
                 )
-                .ok;
+                .button(0);
                 welcome_click(state, ok);
                 self.event(frame, "0xD0 OK");
                 self.phase = WolPhase::Login;
@@ -542,8 +558,7 @@ impl WolCapture {
             WolPhase::PersonaClosing if state.frontend.shell_exit.is_none() => {
                 let file = info_file(state)?;
                 if let Some(locale) = self.chosen_locale {
-                    let persona =
-                        file.load_persona(NICKNAME, &|key| App::csf_label(state, key, key));
+                    let persona = file.load_persona(NICKNAME, &|key| state.csf_label(key, key));
                     ensure!(
                         (persona.locale, persona.locale_verified) == (locale, false),
                         "0xFE OK did not save the persona's locale: {persona:?}"
@@ -583,7 +598,7 @@ impl WolCapture {
                 let layout = crate::app::shell_wol::page::received_layout(state);
                 match self.target {
                     WolTarget::PageReceivedReply => {
-                        welcome_click(state, layout.reply);
+                        welcome_click(state, layout.rect_of(0x540).unwrap_or_default());
                         App::handle_wol_key(state, None, true, Some("On my way"));
                         App::handle_wol_key(
                             state,
@@ -595,7 +610,7 @@ impl WolCapture {
                         self.phase = WolPhase::PageReceivedAnswers;
                     }
                     WolTarget::PageReceivedBack => {
-                        welcome_click(state, layout.back);
+                        welcome_click(state, layout.rect_of(0x686).unwrap_or_default());
                         ensure!(
                             crate::app::shell_wol::page::page_received(state).is_none(),
                             "Back did not close 0x11E"
@@ -756,7 +771,7 @@ impl WolCapture {
             }
             WolPhase::Rejoin
                 if state.frontend.shell_exit.is_none()
-                    && state.frontend.shell_route.wol_lobby() =>
+                    && state.frontend.shell_route == ShellRoute::WolLobby =>
             {
                 let mut requests = self.requests(state, frame)?;
                 if requests.is_empty() {
@@ -778,7 +793,7 @@ impl WolCapture {
                         .context("the game channel stays until its leave")?;
                     service_event(state, WolServiceEvent::ChannelLeft);
                     let left = crate::assets::csf_file::format_csf(
-                        &App::csf_label(state, "TXT_YOULEFT", "TXT_YOULEFT"),
+                        &state.csf_label("TXT_YOULEFT", "TXT_YOULEFT"),
                         &[crate::assets::csf_file::CsfArg::Str(&game.name)],
                     );
                     let shown = Self::lobby(state)?
@@ -884,7 +899,7 @@ impl WolCapture {
                             WolServiceEvent::NetStatus(crate::app::shell_wol::NET_STATUS_LOST),
                         );
                     }
-                    let lost = App::csf_label(state, "TXT_WOL_CONNLOST", "TXT_WOL_CONNLOST");
+                    let lost = state.csf_label("TXT_WOL_CONNLOST", "TXT_WOL_CONNLOST");
                     let messages = state.match_state.match_presentation.message_list.messages();
                     ensure!(
                         rows(state) == before + 1
@@ -931,7 +946,7 @@ impl WolCapture {
                 if !house.left_game() || (!house.is_defeated() && waited < 300) {
                     return Ok(());
                 }
-                let left = App::csf_label(state, "TXT_LEFT_GAME", "TXT_LEFT_GAME");
+                let left = state.csf_label("TXT_LEFT_GAME", "TXT_LEFT_GAME");
                 let posted = state
                     .match_state
                     .match_presentation
@@ -999,7 +1014,7 @@ impl WolCapture {
                     return Ok(());
                 }
                 if self.target == WolTarget::AbortRelogin
-                    && state.frontend.shell_route == crate::app::shell_route::ShellRoute::Wol
+                    && state.frontend.shell_route == ShellRoute::Wol
                     && state.frontend.shell_exit.is_none()
                 {
                     ensure!(
@@ -1015,7 +1030,9 @@ impl WolCapture {
                     self.phase = WolPhase::Custom;
                     return Ok(());
                 }
-                if state.frontend.shell_route.wol_lobby() && state.frontend.shell_exit.is_none() {
+                if state.frontend.shell_route == ShellRoute::WolLobby
+                    && state.frontend.shell_exit.is_none()
+                {
                     ensure!(
                         self.exit_consumed
                             && state.match_state.session_mode() == SessionMode::Wol
@@ -1038,16 +1055,27 @@ impl WolCapture {
             {
                 let layout = crate::app::shell_wol::login_layout(state);
                 // A stored account selected by LastValid is ready as it is.
-                let ready = state
-                    .frontend
-                    .wol
-                    .as_ref()
-                    .and_then(|visit| visit.login())
-                    .is_some_and(|login| login.login_enabled);
+                let ready = login_mut(state).is_ok()
+                    && state.frontend.shell_controller.flag(
+                        LOGIN_DIALOG,
+                        LOGIN,
+                        Prop::Enabled,
+                        true,
+                    );
                 if !ready {
-                    login_click(state, layout.nickname_face);
+                    login_click(
+                        state,
+                        layout
+                            .rect_of(crate::ui::wol_login::NICKNAME_DROP)
+                            .unwrap_or_default(),
+                    );
                     App::handle_wol_key(state, None, true, Some(NICKNAME));
-                    login_click(state, layout.password);
+                    login_click(
+                        state,
+                        layout
+                            .rect_of(crate::ui::wol_login::PASSWORD)
+                            .unwrap_or_default(),
+                    );
                     App::handle_wol_key(state, None, true, Some(PASSWORD));
                 }
                 login_click(state, button(&layout, LOGIN)?);
@@ -1098,7 +1126,7 @@ impl WolCapture {
                     // The one chat lobby is named nowhere: no list, no join line
                     // (rows start with their time).
                     let joined = crate::assets::csf_file::format_csf(
-                        &App::csf_label(state, "TXT_JOINED_S", "TXT_JOINED_S"),
+                        &state.csf_label("TXT_JOINED_S", "TXT_JOINED_S"),
                         &[crate::assets::csf_file::CsfArg::Str("")],
                     );
                     let layout = crate::app::shell_wol::lobby::layout(state);
@@ -1126,11 +1154,8 @@ impl WolCapture {
                     // VERA's Create Game offers its room's limits, from 30
                     // people with spectators.
                     ensure!(
-                        Self::lobby(state)?.ui.popup.as_ref().is_some_and(|popup| matches!(
-                            &popup.kind,
-                            lobby_ui::WolPopupKind::Create(create) if create.room.as_ref().map(|room| room.limits)
-                                == Some(crate::ui::room_limits::RoomLimits::default())
-                        )),
+                        Self::lobby(state)?.ui.room_limits()
+                            == Some(crate::ui::room_limits::RoomLimits::default()),
                         "the modern 0xC3 has no Max players or Allow spectators"
                     );
                     self.event(frame, "0xC3 opened (modern)");
@@ -1140,9 +1165,8 @@ impl WolCapture {
                     ensure!(
                         Self::lobby(state)?
                             .ui
-                            .popup
-                            .as_ref()
-                            .and_then(|popup| popup.buttons.hovered)
+                            .hovered()
+                            .map(|id| id & !lobby_ui::LABEL)
                             == Some(lobby_ui::CREATE_LIMIT),
                         "Limit Screen Resolution has no help"
                     );
@@ -1151,7 +1175,7 @@ impl WolCapture {
                     App::handle_wol_mouse_move(state);
                     let help = crate::app::shell_wol::lobby::status_help(state);
                     ensure!(
-                        help == App::csf_label(state, "VERA:RankedGameHelp", "VERA:RankedGameHelp"),
+                        help == state.csf_label("VERA:RankedGameHelp", "VERA:RankedGameHelp"),
                         "Ranked game's help read {help:?}"
                     );
                     self.event(frame, json!({"Ranked game help": help}));
@@ -1170,7 +1194,7 @@ impl WolCapture {
                     set_window_pointer_to_rect_center(state, row);
                     App::handle_wol_mouse_move(state);
                     let help = crate::app::shell_wol::lobby::status_help(state);
-                    let label = |key: &str| App::csf_label(state, key, key);
+                    let label = |key: &str| state.csf_label(key, key);
                     let expected = crate::i18n::fill(
                         &label("VERA:PlayerHelp"),
                         &[
@@ -1204,13 +1228,13 @@ impl WolCapture {
                     App::handle_wol_mouse_move(state);
                     let help = crate::app::shell_wol::lobby::status_help(state);
                     let expected = crate::i18n::fill(
-                        &App::csf_label(state, "VERA:MessageHelp", "VERA:MessageHelp"),
+                        &state.csf_label("VERA:MessageHelp", "VERA:MessageHelp"),
                         &[("name", &"Tanya")],
                     );
                     ensure!(help == expected, "Message's help read {help:?}");
                     // The season row: her OS to the hundredth, and what OS
                     // is under the pointer.
-                    let label = |key: &str| App::csf_label(state, key, key);
+                    let label = |key: &str| state.csf_label(key, key);
                     let rows = crate::app::shell_wol::player_card::view(state)
                         .context("Tanya's card")?
                         .rows;
@@ -1292,7 +1316,7 @@ impl WolCapture {
                             state,
                             crate::ui::skirmish_shell::checkbox_icon_rect(
                                 create.clan.context("0xC3 clan box")?,
-                                crate::ui::shell::geom::ShellScale::RETAIL,
+                                crate::ui::shell::geom::RETAIL_SCALE,
                             ),
                         );
                         self.event(frame, "0xC3 clan box (squad 7)");
@@ -1330,8 +1354,7 @@ impl WolCapture {
                             .map(|line| String::from_utf16_lossy(&line.text))
                             .collect();
                         if self.target == WolTarget::GuestKicked {
-                            let kicked =
-                                App::csf_label(state, "TXT_YOURE_KICKED", "TXT_YOURE_KICKED");
+                            let kicked = state.csf_label("TXT_YOURE_KICKED", "TXT_YOURE_KICKED");
                             let expected = crate::assets::csf_file::format_csf(
                                 &kicked,
                                 &[
@@ -1411,8 +1434,11 @@ impl WolCapture {
                     setup_button(state, GAME_OPTIONS)?;
                     let crates = setup_view(state)?.checks[2];
                     ensure!(
-                        setup_view(state)?.open_box
-                            == Some(crate::ui::multiplayer_setup::RoomBox::GameOptions),
+                        state
+                            .frontend
+                            .multiplayer_setup
+                            .as_ref()
+                            .is_some_and(|ui| ui.game_options),
                         "Game Options did not open"
                     );
                     let layout = crate::app::input::multiplayer_setup::layout(state);
@@ -1435,7 +1461,11 @@ impl WolCapture {
                             .context("Game Options page button")?,
                     );
                     ensure!(
-                        setup_view(state)?.open_box
+                        state
+                            .frontend
+                            .multiplayer_setup
+                            .as_ref()
+                            .and_then(|ui| ui.game_options.then_some(ui.game_options_page))
                             == Some(crate::ui::multiplayer_setup::RoomBox::MoreOptions),
                         "Game Options did not turn to VERA's page"
                     );
@@ -1477,7 +1507,11 @@ impl WolCapture {
                             .context("Game Options page button")?,
                     );
                     ensure!(
-                        setup_view(state)?.open_box
+                        state
+                            .frontend
+                            .multiplayer_setup
+                            .as_ref()
+                            .and_then(|ui| ui.game_options.then_some(ui.game_options_page))
                             == Some(crate::ui::multiplayer_setup::RoomBox::GameOptions),
                         "Game Options did not turn back to its first page"
                     );
@@ -1673,9 +1707,9 @@ impl WolCapture {
                     ensure!(
                         !moved.is_observer()
                             && moved.slot.team == crate::skirmish_launch::LaunchTeam::Team(0)
-                            && state.frontend.multiplayer_setup.as_ref().is_some_and(|ui| {
-                                ui.popup.control.is_none() && ui.row_drag.is_none()
-                            }),
+                            && crate::app::input::multiplayer_setup::open_list(state).is_none()
+                            && state.frontend.multiplayer_setup.is_some()
+                            && state.frontend.shell_controller.gui().drag().is_none(),
                         "dragging Natasha onto Team A gave {:?}",
                         moved.slot.team
                     );
@@ -1724,12 +1758,10 @@ impl WolCapture {
                         row_combo(&wide, SetupColumn::Color, 0).context("host colour")?;
                     let face = layout.control_rect(color.id).context("colour cell")?;
                     setup_click(state, face);
-                    let popup = state
-                        .frontend
-                        .multiplayer_setup
-                        .as_ref()
-                        .and_then(|ui| ui.popup_geometry(&wide, &layout))
-                        .context("open colour list after releasing the roster thumb")?;
+                    let popup = room_input::open_list(state)
+                        .context("open colour list after releasing the roster thumb")?
+                        .1
+                        .popup;
                     let thumb = popup.thumb().context("colour list thumb")?;
                     set_window_pointer_to_rect_center(state, thumb);
                     room_input::cursor_moved(state);
@@ -1737,14 +1769,9 @@ impl WolCapture {
                     set_window_pointer_to_rect_center(state, popup.content());
                     room_input::cursor_moved(state);
                     room_input::mouse(state, winit::event::MouseButton::Left, false);
-                    let ui = state
-                        .frontend
-                        .multiplayer_setup
-                        .as_ref()
-                        .context("room page")?;
                     ensure!(
-                        ui.popup.control == Some(color.id)
-                            && ui.popup.top_index > 0
+                        room_input::open_list(state)
+                            .is_some_and(|(id, list)| id == color.id && list.popup.first > 0)
                             && setup_view(state)?.first_row == wide.first_row,
                         "the colour thumb drag failed to scroll just the list"
                     );
@@ -1753,15 +1780,10 @@ impl WolCapture {
                         room_input::wheel(state, -30.0) && room_input::wheel(state, -0.25),
                         "the colour list did not take the wheel at its limit"
                     );
-                    let ui = state
-                        .frontend
-                        .multiplayer_setup
-                        .as_ref()
-                        .context("room page")?;
                     ensure!(
-                        ui.popup.control == Some(color.id)
-                            && ui.popup.top_index == popup.total - popup.visible_rows
-                            && setup_view(state)?.first_row == wide.first_row,
+                        room_input::open_list(state).is_some_and(|(id, list)| {
+                            id == color.id && list.popup.first == popup.total - popup.visible_rows
+                        }) && setup_view(state)?.first_row == wide.first_row,
                         "wheeling to the end of the colour list moved the roster or closed the list"
                     );
                     setup_click(state, face);
@@ -2048,9 +2070,10 @@ impl WolCapture {
                 if rendered == PresentedShell::WolOptions
                     && Self::page_settled(state, ShellSlideKind::WolOptions) =>
             {
-                let checked = Self::options_page(state)?.ui.checked;
+                let checked = crate::app::shell_wol::options::shown(state)
+                    .map(|(preferences, _)| preferences.checks());
                 ensure!(
-                    checked == [false, true, true, true, true, true, true, true, false],
+                    checked == Some([false, true, true, true, true, true, true, true, false]),
                     "the reopened 0x2BC does not show the saved values: {checked:?}"
                 );
                 self.event(frame, json!({"0x2BC reopened": checked}));
@@ -2095,15 +2118,12 @@ impl WolCapture {
                 let Some(message) = &verify.mismatch else {
                     return Ok(());
                 };
-                let expected = App::csf_label(
-                    state,
-                    "TXT_SCENARIOS_DO_NOT_MATCH",
-                    "TXT_SCENARIOS_DO_NOT_MATCH",
-                );
+                let expected =
+                    state.csf_label("TXT_SCENARIOS_DO_NOT_MATCH", "TXT_SCENARIOS_DO_NOT_MATCH");
                 ensure!(
                     message.body == expected
                         && verify.names == [NICKNAME.to_owned(), SERVICE_GUEST.to_owned()]
-                        && verify.checked[..2] == [true, true],
+                        && verify.checked()[..2] == [true, true],
                     "the mismatch box over 0x130: {verify:?}"
                 );
                 self.event(frame, json!({"0x130": verify.names, "box": message.body}));
@@ -2127,7 +2147,7 @@ impl WolCapture {
                         state.renderer.gpu.config.width as i32,
                         state.renderer.gpu.config.height as i32,
                     );
-                    let ok = crate::ui::shell::modal::body_ok_layout(width, height).ok;
+                    let ok = crate::ui::shell::modal::menu_message_box(1, width, height).button(0);
                     if self.target.quick_match() {
                         // No setup dialog: 0x130 takes the WOL input routes.
                         welcome_click(state, ok);
@@ -2177,7 +2197,7 @@ impl WolCapture {
                 let channel = crate::app::shell_wol::lobby::current_channel(state)
                     .context("C2's game channel")?;
                 let line = crate::assets::csf_file::format_csf(
-                    &App::csf_label(state, "TXT_USER_KICKED", "TXT_USER_KICKED"),
+                    &state.csf_label("TXT_USER_KICKED", "TXT_USER_KICKED"),
                     &[
                         crate::assets::csf_file::CsfArg::Str(SERVICE_GUEST),
                         crate::assets::csf_file::CsfArg::Str(&channel.name),
@@ -2247,12 +2267,7 @@ impl WolCapture {
                 if rendered == PresentedShell::WolWelcome
                     && Self::page_settled(state, ShellSlideKind::WolWelcome) =>
             {
-                let texts = &state
-                    .frontend
-                    .wol
-                    .as_ref()
-                    .context("WOL visit")?
-                    .welcome_texts;
+                let texts = &App::wol_welcome_texts(state);
                 ensure!(
                     texts
                         .iter()

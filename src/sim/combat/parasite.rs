@@ -908,22 +908,25 @@ impl Simulation {
             .get(owner)
             .is_some_and(|o| o.category() == EntityCategory::Unit);
         let victim_on_bridge = victim_entity.on_bridge();
+        let terrain = self.resolved_terrain.as_ref();
+        let cells = terrain.map(NativeCellQuery::canonical);
+        let fixed_deck_at = |(x, y)| {
+            let terrain = terrain?;
+            let index = terrain.native_fixed_cell_index(x, y)?;
+            ground_pose::corrected_deck_z(
+                terrain,
+                crate::map::cell_index::NativeCellIdentity::Real(index),
+            )
+        };
         if self.parasite_can_place_at_victim(owner, victim, rules) {
             let victim_entity = self.substrate.entities.get(victim)?;
             let mut coords = ground_pose::position_world_coord(&victim_entity.position);
             if owner_is_unit {
-                coords = target_cell_coord(
-                    (coords.x / 256) as u16,
-                    (coords.y / 256) as u16,
-                    self.resolved_terrain
-                        .as_ref()
-                        .map(NativeCellQuery::canonical)
-                        .as_ref(),
-                );
+                let cell = ((coords.x / 256) as i16, (coords.y / 256) as i16);
+                coords = target_cell_coord(cell.0 as u16, cell.1 as u16, cells.as_ref());
                 if victim_on_bridge {
-                    coords.z = coords
-                        .z
-                        .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+                    coords.z = fixed_deck_at(cell)
+                        .unwrap_or_else(|| ground_pose::z_at_height(coords.z, 0, true));
                 }
             }
             self.substrate
@@ -978,11 +981,11 @@ impl Simulation {
             coords.y = i32::from(adjacent.1) * 256 + sub_y.to_num::<i32>();
         }
         let bridge = self.cell_has_bridge(adjacent);
+        let adjacent_fixed_deck = bridge.then(|| fixed_deck_at(adjacent)).flatten();
         let on_bridge = if victim_on_bridge {
             if bridge {
-                coords.z = coords
-                    .z
-                    .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+                coords.z = adjacent_fixed_deck
+                    .unwrap_or_else(|| ground_pose::z_at_height(coords.z, 0, true));
             }
             bridge
         } else if bridge {
@@ -996,10 +999,9 @@ impl Simulation {
                     .as_ref(),
             )
             .z;
-            if victim_z > coords.z {
-                coords.z = coords
-                    .z
-                    .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+            if victim_z > adjacent_fixed_deck.unwrap_or(coords.z) {
+                coords.z = adjacent_fixed_deck
+                    .unwrap_or_else(|| ground_pose::z_at_height(coords.z, 0, true));
                 true
             } else {
                 false
@@ -1148,7 +1150,7 @@ impl Simulation {
         let rx = (coord.x / 256) as u16;
         let ry = (coord.y / 256) as u16;
         // The stored level beside the coordinate: a deck release from
-        // GetReleaseCoords (`0x0062AC60..0x0062ACF6`) stands at `level + 4`
+        // GetReleaseCoords (`0x0062AC60..0x0062ACF6`) uses the selected deck
         // with the owner's OnBridge; a cell's GetCoords is its ground.
         let ground_level = self.terrain_cell_level(rx, ry).unwrap_or(0);
         let coord_level =
@@ -1268,6 +1270,7 @@ impl Simulation {
                 );
                 let registered = self.register_projectile(bullet, flat);
                 debug_assert!(registered);
+                self.unlimbo_alpha_shape(bullet, crate::sim::world::ObjectKind::Projectile, rules);
             }
         }
     }

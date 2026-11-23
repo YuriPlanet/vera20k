@@ -13,7 +13,7 @@ Historical default, allied-object and voice corpora are unchanged. The dedicated
 payload records the Ares DLL's byte count and SHA256; every gamemd.exe build is the
 same game, so it records none for the executable. Its Ares input is the
 same enrolled DLL as `rules_oracle.ares_prerequisites`; no DLL, game executable,
-MO INI or other mod asset is distributed.
+mod INI or other mod asset is distributed.
 
 The action owner remains `bunker_attack_action.run`. The reader controls reuse
 `ares_prerequisites.Probe`; physical INI controls reuse

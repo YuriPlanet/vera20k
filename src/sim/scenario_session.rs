@@ -1205,6 +1205,15 @@ impl ScenarioSession {
         self.map_height
     }
 
+    /// `[Map] Size` width plus height past the original engine's 512 limit, so
+    /// only VERA's map extension reads it ([docs/map-format.md]). The session
+    /// stores that sum as the canonical cell-array extent, not the raw axis.
+    ///
+    /// [docs/map-format.md]: ../../docs/map-format.md
+    pub const fn map_exceeds_original_size(&self) -> bool {
+        self.map_width > 512
+    }
+
     pub const fn mp_start_waypoints(&self) -> &BTreeMap<u32, (u16, u16)> {
         &self.mp_start_waypoints
     }
@@ -3198,6 +3207,20 @@ mod tests {
         let mut json = serde_json::to_value(&immune.session).unwrap();
         json.as_object_mut().unwrap().remove("harvester_immune");
         assert!(serde_json::from_value::<ScenarioSession>(json).is_err());
+    }
+
+    /// `[Map] Size` width plus height exactly 512 is still readable by the
+    /// original; the session stores that sum as the canonical extent, so only
+    /// one past it turns the map VERA-only.
+    #[test]
+    fn map_exceeds_original_size_holds_the_512_sum_boundary() {
+        let mut sim = Simulation::new();
+        sim.session.set_map_width_for_test(512);
+        sim.session.set_map_height_for_test(512);
+        assert!(!sim.session.map_exceeds_original_size());
+        sim.session.set_map_width_for_test(513);
+        sim.session.set_map_height_for_test(513);
+        assert!(sim.session.map_exceeds_original_size());
     }
 }
 

@@ -185,6 +185,10 @@ impl SavedTerrainTemplate {
         (self.width, self.height)
     }
 
+    pub(crate) fn tube(&self, id: TubeId) -> Option<&TubeFact> {
+        self.tube_facts.get(id.as_usize())
+    }
+
     pub fn validate(&self) -> Result<(), SavedTerrainError> {
         // Resize565C10 owns the fixed512x512 cell table. A one-sided empty
         // rectangle is not a materialized grid produced by the map owner.
@@ -295,7 +299,7 @@ impl SavedTerrainTemplate {
         Ok(ResolvedTerrainGrid {
             width: self.width,
             height: self.height,
-            level_span: LevelSpan::of(self.cells.iter().map(|cell| cell.level)),
+            level_span: LevelSpan::of_terrain(&self.cells),
             cells: super::terrain_cells::TerrainCells::new(self.cells),
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Default::default(),
@@ -315,6 +319,7 @@ impl SavedTerrainTemplate {
             dummy_accepts_smudge: false,
             bridge_set_start: None,
             high_bridge_rim_tiles: None,
+            wood_bridge_rim_tiles: Default::default(),
             wood_bridge_set_start: None,
             tile_animations: self.tile_animations,
             destroyable_cliff_catalog: None,
@@ -435,6 +440,12 @@ impl ResolvedTerrainGrid {
         self.dummy_accepts_smudge =
             theater.is_some_and(|td| current_tile_permissions(&td.lookup, 0xffff).0);
         self.high_bridge_rim_tiles = theater.map(|td| td.high_bridge_rim_tiles);
+        self.wood_bridge_rim_tiles =
+            theater
+                .zip(assets)
+                .map_or_else(Default::default, |(td, assets)| {
+                    crate::map::bridge_rim_tiles::WoodBridgeRimTiles::from_theater(td, assets)
+                });
         self.bridge_set_start = theater.and_then(|td| {
             td.bridge_set
                 .and_then(|set| td.lookup.bounds().get(usize::from(set)))

@@ -90,16 +90,14 @@ pub(crate) struct FrontendState {
     /// cancelled on leaving all of them.
     pub(crate) shell_slide_active_shell:
         Option<crate::app::frontend::shell_transition::ShellSlideKind>,
-    /// Monotonic identity for each newly armed exact Main Menu `0xE2` instance.
-    pub(crate) shell_slide_generation: u64,
     /// Static `0x71C` of the showing main-menu family dialog (`0xE2`, `0x100`,
     /// `0x101`, `0x129`). Reset for every new dialog instance by the shell
-    /// lifecycle reducer; drawn by the family renderers and committed after
+    /// slide driver; drawn by the family renderers and committed after
     /// present.
     pub(crate) shell_monitor: crate::ui::shell::warning_monitor::WarningMonitor,
-    /// Heading static `0x694` of the showing menu page (`0x100`, `0x101`,
-    /// `0x129`): hidden until the page's first-paint slide completes, then a
-    /// kind-1 reveal. Main menu `0xE2` keeps its own presented-entry reveal.
+    /// Heading static `0x694` of the showing family dialog (`0xE2`, `0x100`,
+    /// `0x101`, `0x129`, …): hidden until its first-paint slide completes,
+    /// then a kind-1 reveal.
     pub(crate) shell_page_title: crate::ui::shell::static_reveal::PresentedKind1Static,
     /// Status line `0x695` of the showing main-menu family dialog (`0xE2`,
     /// `0x100`, `0x101`, `0x129`): hover help, hidden until the dialog's SHOW
@@ -138,6 +136,9 @@ pub(crate) struct FrontendState {
     /// The "import game files" dialog on the startup-failure card: what step it
     /// is on, and therefore which buttons the card shows.
     pub(crate) asset_import: crate::ui::asset_import::AssetImport,
+    /// The utility card's buttons as gui nodes: hover, press and the
+    /// Enter/Escape keys run there (`status_screen::CardUi`).
+    pub(crate) status_card: crate::app::frontend::status_screen::CardUi,
     /// Show_Credits session.
     pub(crate) credits_roll: Option<crate::app::frontend::credits_roll::CreditsRollSession>,
     /// Campaign selection `0x94` instance while its route shows.
@@ -180,23 +181,12 @@ pub(crate) struct FrontendState {
     /// The host's Watching at its last Create Game in VERA's online lobby,
     /// which its next Create Game shows and its room publishes.
     pub(crate) wol_room_watching: crate::ui::wol_lobby::RoomWatching,
-    /// VERA: how this player returns to its LAN room after the match.
-    /// `0x10E`'s background and icon art (`0x0072C7E0`).
-    pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x10F`'s background art (`0x0072C600`), freed with the dialog
-    /// (`0x0072C650`).
-    pub(crate) wol_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x113`'s background and list art (`0x0072CD60`).
-    pub(crate) wol_lobby_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// WOL Options `0x2BC`'s art (`0x0072BAC0`) and its Sound Options
-    /// `0xD6`'s (`0x0072B8E0`).
-    pub(crate) wol_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x0072BCA0`: AutoLoginQuery.shp through its PAL while `0x112` runs.
-    pub(crate) wol_auto_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// The Buddy List `0x116`'s art (`0x0072C060`).
-    pub(crate) wol_buddy_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    /// `0x117`'s quickmatch.shp/.PAL (`0x0072BE80`).
-    pub(crate) wol_quick_match_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// The WOL pages' loaded art by dialog (`shell_wol::leaf::open_art`),
+    /// each freed with its page.
+    pub(crate) wol_art: Vec<(
+        crate::ui::shell::descriptor::DialogResourceId,
+        crate::render::main_menu_shell_chrome::WolPageArt,
+    )>,
     /// The buddy mirror and its queues (process globals `0xB73AA8`..).
     pub(crate) wol_buddies: crate::app::shell_wol::buddies::WolBuddies,
     /// The offline WOL test service's buddy list, standing in for the
@@ -204,9 +194,6 @@ pub(crate) struct FrontendState {
     pub(crate) wol_test_buddies: Vec<String>,
     /// The offline WOL test service's stand-in guest of a created game.
     pub(crate) wol_test_guest: crate::app::shell_wol::WolTestGuest,
-    /// My Information `0x114`'s art (`0x0072C9C0`).
-    pub(crate) wol_my_info_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
-    pub(crate) wol_sound_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// The custom lobby's process globals (sorts, lobby number, filters).
     pub(crate) wol_lobby_globals: crate::app::shell_wol::lobby::WolLobbyGlobals,
     /// The live `[WOnline]` globals (`[0xB76234]`..`[0xB73AD0]`): each WOL
@@ -297,7 +284,7 @@ pub(crate) struct FrontendState {
 /// One open shell message box `0x120` and the caller its result returns to.
 #[derive(Debug)]
 pub(crate) struct ShellMessageBox {
-    pub(crate) labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels,
+    pub(crate) shell_box: crate::ui::shell::modal::ShellBox,
     pub(crate) purpose: ShellMessageBoxPurpose,
 }
 

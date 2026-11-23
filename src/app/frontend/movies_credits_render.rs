@@ -4,457 +4,70 @@
 use anyhow::Result;
 
 use crate::app::AppState;
-use crate::app::frontend::shell_pass::{
-    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
-    software_cursor,
+use crate::app::frontend::menu_page_render::{
+    FamilyFrame, encode_family_page, family_art_ready, page_panel_state, page_tree,
 };
+use crate::app::frontend::shell_pass::{ShellComposition, TexturedDraw, encode_shell_pass};
+use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::batch::SpriteInstance;
-use crate::render::main_menu_shell_chrome::{MainMenuShellChromeAtlas, MainMenuShellChromeEntry};
-use crate::render::shell_paint::{
-    self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
-    SHELL_TEXT_RGB_ENABLED, push_entry_crop, push_entry_grown, push_entry_window_crop,
-};
+use crate::render::shell_paint::{PaintLabel, SHELL_TEXT_RGB_ENABLED};
 use crate::render::shell_surface_present::SurfaceEffects;
-use crate::render::shell_text::{ShellAlign, ShellTextDraw};
+use crate::render::shell_text::ShellTextDraw;
 use crate::ui::main_menu_shell::RectPx;
 use crate::ui::movies_credits_shell::{
-    MOVIE_LIST_CONTROL, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY,
-    MovieListLayout,
+    MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY,
+    find_family_list,
 };
-use crate::ui::shell::geom::ShellScale;
-use crate::ui::shell::list::{
-    ListFrameTone, ListMetrics, ListScrollPart, ShellListGeometry, grip_tiles, list_frame_lines,
-    scrollbar_arrow_origins, scrollbar_edge_lines, scrollbar_interior,
-};
-use crate::ui::shell::static_reveal::Kind1RevealWindow;
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::{ShellAlign, ShellScale};
+use crate::ui::shell::menu_page;
+use vera20k_gui::ListView;
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
-/// Selected-row fill `0x0000FF` (RGB red).
-const LIST_SELECTED_FILL: [u8; 3] = [0xFF, 0x00, 0x00];
-/// Row text inset from the row's left edge.
-const LIST_TEXT_INSET: i32 = 2;
-
-const LIST_DEPTH: f32 = CHROME_DEPTH - 0.00002;
-const LIST_FILL_DEPTH: f32 = CHROME_DEPTH - 0.00003;
-
-fn rgb(color: [u8; 3]) -> [f32; 3] {
-    color.map(|channel| f32::from(channel) / 255.0)
-}
-
-fn push_solid(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &MainMenuShellChromeAtlas,
-    rect: RectPx,
-    color: [u8; 3],
-    depth: f32,
-) {
-    let Some(white) = atlas.white_pixel else {
-        return;
-    };
-    if rect.w <= 0 || rect.h <= 0 {
-        return;
-    }
-    out.push(SpriteInstance {
-        position: [rect.x as f32, rect.y as f32],
-        size: [rect.w as f32, rect.h as f32],
-        uv_origin: white.uv_origin,
-        uv_size: white.uv_size,
-        depth,
-        tint: rgb(color),
-        alpha: 1.0,
-        ..Default::default()
-    });
-}
-
-/// The list's two frame rings around window `w` (`0x00619230`).
-fn push_list_frame(out: &mut Vec<SpriteInstance>, atlas: &MainMenuShellChromeAtlas, w: RectPx) {
-    for (line, tone) in list_frame_lines(w) {
-        push_solid(out, atlas, line, tone.rgb(), LIST_DEPTH);
-    }
-}
-
-/// A `BS_GROUPBOX` frame (`0x0061E700`, executed in the Westwood Online
-/// research harness): the list's two rings, light over dark, with the top
-/// edge eight pixels below the window top and the rings on the window's last
-/// column and row. The insets are the authored ones, so a stretched window
-/// keeps the caption's gap in proportion.
-pub(crate) fn push_group_box(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &MainMenuShellChromeAtlas,
-    window: RectPx,
+/// The family page `dialog`'s list as its `List` node shows it, with its
+/// geometry in window `list`.
+pub(crate) fn family_list_view(
+    state: &AppState,
+    dialog: crate::ui::shell::descriptor::DialogResourceId,
+    list: RectPx,
     scale: ShellScale,
-) {
-    push_list_frame(
-        out,
-        atlas,
-        scale.derive_rect(window, |window| {
-            RectPx::new(window.x + 1, window.y + 9, window.w - 3, window.h - 11)
-        }),
-    );
-}
-
-/// The list's darkened backing: everything inside the inner frame ring,
-/// including the scrollbar track (translucency 0 at `0x00619230`).
-fn list_interior(list: RectPx) -> RectPx {
-    RectPx::new(list.x + 1, list.y + 1, list.w - 1, list.h - 1)
-}
-
-/// Scrollbar child of list `0x744`, measured on the retail 17-row list
-/// (`list17-*.png`). Its left edge adds a light line at `bar.x` and a dark
-/// line at `bar.x + 1` between the list's top and bottom rings, taking the
-/// corner color where a line crosses a ring of the other tone. Inside, the
-/// parent background shows without the list's darkening; 18x22 arrows sit
-/// at `bar.x + 2` against the rings, and the grip middle is tiled from the
-/// thumb top with the 2-row caps drawn over it.
-fn push_list_scrollbar(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &MainMenuShellChromeAtlas,
-    backdrop: &FamilyBackdrop,
-    geometry: &ShellListGeometry,
-    pressed: Option<ListScrollPart>,
-) {
-    let (Some(bar), Some(thumb)) = (geometry.scrollbar, geometry.thumb) else {
-        return;
-    };
-    let scale = backdrop.scale;
-    for (line, tone) in scrollbar_edge_lines(bar) {
-        // The corner pixels go over the lines they cross.
-        let depth = if tone == ListFrameTone::Corner {
-            LIST_DEPTH - 0.000005
-        } else {
-            LIST_DEPTH
-        };
-        push_solid(out, atlas, line, tone.rgb(), depth);
-    }
-    let interior = scrollbar_interior(bar);
-    backdrop.push_pixels(out, backdrop.background, interior, LIST_FILL_DEPTH);
-    let art = &atlas.list_scroll;
-    let x = interior.x;
-    let arrow_h = geometry.metrics.arrow_h;
-    for ((released, pressed_art, part), (x, y)) in [
-        (art.up_released, art.up_pressed, ListScrollPart::Up),
-        (art.down_released, art.down_pressed, ListScrollPart::Down),
-    ]
-    .into_iter()
-    .zip(scrollbar_arrow_origins(bar, arrow_h))
-    {
-        let entry = if pressed == Some(part) {
-            pressed_art.or(released)
-        } else {
-            released
-        };
-        if let Some(entry) = entry {
-            push_entry_grown(out, entry, x, y, scale, LIST_DEPTH - 0.00001);
-        }
-    }
-    if let Some(mid) = art.grip_mid {
-        let [tile_w, tile_h] = scale.art_size(mid.pixel_size[0], mid.pixel_size[1]);
-        let tile_h = tile_h.round() as i32;
-        for (y, h) in grip_tiles(thumb, tile_h) {
-            out.push(SpriteInstance {
-                position: [x as f32, y as f32],
-                size: [tile_w, h as f32],
-                uv_origin: mid.uv_origin,
-                uv_size: [mid.uv_size[0], mid.uv_size[1] * h as f32 / tile_h as f32],
-                depth: LIST_DEPTH - 0.00001,
-                tint: [1.0, 1.0, 1.0],
-                alpha: 1.0,
-                ..Default::default()
-            });
-        }
-    }
-    if let Some(top) = art.grip_top {
-        push_entry_grown(out, top, x, thumb.y, scale, LIST_DEPTH - 0.00002);
-    }
-    if let Some(bottom) = art.grip_bottom {
-        let h = scale.art_size(bottom.pixel_size[0], bottom.pixel_size[1])[1].round() as i32;
-        push_entry_grown(
-            out,
-            bottom,
-            x,
-            thumb.y + thumb.h - h,
-            scale,
-            LIST_DEPTH - 0.00002,
-        );
-    }
-}
-
-/// The family pages' parent background (`0x0060D20B`: MNSCRNL, MNSCRNS at
-/// 640 wide) with its darkened copy for list interiors, at its origin: the
-/// native canvas at the centered dialog origin on the retail layout, scaled
-/// with the page while retaining the SHP canvas extent.
-pub(crate) struct FamilyBackdrop {
-    background: Option<MainMenuShellChromeEntry>,
-    darkened: Option<MainMenuShellChromeEntry>,
-    origin: (i32, i32),
-    screen: (i32, i32),
-    scale: ShellScale,
-}
-
-pub(crate) fn family_backdrop(
-    atlas: &MainMenuShellChromeAtlas,
-    screen_w: i32,
-    screen_h: i32,
-    scale: ShellScale,
-) -> FamilyBackdrop {
-    let (background, darkened) = if scale.is_retail() && screen_w == 640 {
-        (
-            atlas.parent_background_640_mnscrns,
-            atlas.parent_background_640_mnscrns_list,
-        )
-    } else {
-        (
-            atlas.parent_background_large_mnscrnl,
-            atlas.parent_background_large_mnscrnl_list,
-        )
-    };
-    FamilyBackdrop {
-        background,
-        darkened,
-        origin: if scale.is_retail() {
-            crate::ui::shell::geom::dialog_origin(screen_w, screen_h)
-        } else {
-            (0, 0)
-        },
-        screen: (screen_w, screen_h),
-        scale,
-    }
-}
-
-impl FamilyBackdrop {
-    /// The backdrop's own pixels behind `rect`, taken with the mapping the
-    /// backdrop is drawn with: 1:1 from the centered dialog canvas on the
-    /// retail layout, and, on a scaled page, proportionally from the canvas
-    /// scaled with the page, not stretched to its full extent. The list's darkened
-    /// interior and scrollbar track use this same mapping.
-    fn push_pixels(
-        &self,
-        out: &mut Vec<SpriteInstance>,
-        entry: Option<MainMenuShellChromeEntry>,
-        rect: RectPx,
-        depth: f32,
-    ) {
-        let Some(entry) = entry else {
-            return;
-        };
-        if self.scale.is_retail() {
-            push_entry_crop(out, entry, self.origin, rect, depth);
-        } else {
-            // 0x0060D20B selects MNSCRNL; its retail SHP canvas is 632x568,
-            // not the enclosing 800x600 dialog. Preserve that authored extent
-            // when scaling, including the darkened list/scrollbar under-patches.
-            let (w, h) = entry.native_size();
-            let area = self.scale.scale_rect(RectPx::new(0, 0, w, h));
-            push_entry_window_crop(out, entry, area, rect, depth);
-        }
-    }
-}
-
-pub(crate) fn push_family_backdrop(out: &mut Vec<SpriteInstance>, backdrop: &FamilyBackdrop) {
-    let (screen_w, screen_h) = backdrop.screen;
-    backdrop.push_pixels(
-        out,
-        backdrop.background,
-        RectPx::new(0, 0, screen_w, screen_h),
-        PARENT_BACKGROUND_DEPTH,
-    );
-}
-
-/// The rows a family list shows, when it has any state to paint.
-pub(crate) struct FamilyListRows<'a> {
-    pub geometry: &'a ShellListGeometry,
-    pub top: usize,
-    pub selected: Option<usize>,
-    pub pressed: Option<ListScrollPart>,
-}
-
-/// A family list box over the parent background: its darkened interior,
-/// the two frame rings around `window`, the scrollbar when the rows
-/// overflow, and the selected row's fill. Row text is the caller's.
-pub(crate) fn push_family_list(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &MainMenuShellChromeAtlas,
-    backdrop: &FamilyBackdrop,
-    window: RectPx,
-    rows: Option<FamilyListRows<'_>>,
-) {
-    backdrop.push_pixels(
-        out,
-        backdrop.darkened,
-        list_interior(window),
-        LIST_FILL_DEPTH + 0.00001,
-    );
-    push_list_frame(out, atlas, window);
-    let Some(rows) = rows else {
-        return;
-    };
-    let geometry = rows.geometry;
-    push_list_scrollbar(out, atlas, backdrop, geometry, rows.pressed);
-    if let Some(selected) = rows.selected
-        && let Some(visible) = selected.checked_sub(rows.top)
-        && visible < geometry.visible_rows
-    {
-        push_solid(
-            out,
-            atlas,
-            geometry.row(visible),
-            LIST_SELECTED_FILL,
-            LIST_FILL_DEPTH,
-        );
-    }
-}
-
-/// Sprites and labels for dialog `0x129`.
-fn movie_list_composition<'a>(
-    state: &'a AppState,
-    atlas: &MainMenuShellChromeAtlas,
-    layout: &MovieListLayout,
-    monitor_frame: Option<usize>,
-    title_window: Option<Kind1RevealWindow>,
-) -> (
-    Vec<SpriteInstance>,
-    Vec<SpriteInstance>,
-    Vec<PaintLabel<'a>>,
-) {
-    let screen_w = layout.page.screen.w;
-    let backdrop = family_backdrop(atlas, screen_w, layout.page.screen.h, layout.page.scale);
-    let mut sprites = Vec::new();
-    push_family_backdrop(&mut sprites, &backdrop);
-    sprites.extend(shell_paint::paint_chrome(
-        atlas,
-        layout.page.right_panel,
-        Some(layout.page.lower_strip),
-        screen_w,
-    ));
-    sprites.extend(monitor_frame.and_then(|frame| {
-        shell_paint::paint_warning_monitor(
-            atlas,
-            layout.page.warning_monitor,
-            frame,
-            layout.page.scale,
-        )
-    }));
-
-    let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
-        state,
-        crate::app::frontend::shell_transition::ShellSlideKind::MovieList,
-    );
-    // The teardown slide covers every child with the dialog's own repaint
-    // (`0x00622C4F`), and nothing repaints them before the dialog is gone:
-    // the list box and the prompt stay blank.
-    let leaving = exit_wave.is_some();
-    let list = state.frontend.movie_list.as_ref().filter(|_| !leaving);
-    let mut labels = Vec::new();
-    if !leaving {
-        let geometry =
-            list.map(|list| list.geometry(layout.list, ListMetrics::scaled(layout.page.scale)));
-        push_family_list(
-            &mut sprites,
-            atlas,
-            &backdrop,
-            layout.list,
-            geometry
-                .as_ref()
-                .zip(list)
-                .map(|(geometry, list)| FamilyListRows {
-                    geometry,
-                    top: list.top,
-                    selected: list.selected,
-                    pressed: list.scroll.pressed_part(),
-                }),
-        );
-    }
-    if let Some(list) = list {
-        let geometry = list.geometry(layout.list, ListMetrics::scaled(layout.page.scale));
-        for (visible, index) in (list.top..list.rows.len())
-            .take(geometry.visible_rows)
-            .enumerate()
-        {
-            let row = geometry.row(visible);
-            labels.push(PaintLabel {
-                text: resolve_csf(state, list.rows[index].label_key),
-                rect: RectPx::new(
-                    row.x + LIST_TEXT_INSET,
-                    row.y,
-                    row.w - LIST_TEXT_INSET,
-                    row.h,
-                ),
-                align: ShellAlign::NONE,
-                rgb: SHELL_TEXT_RGB_ENABLED,
-                path_a_reveal: None,
-            });
-        }
-    }
-
+) -> Option<(ShellListGeometry, ListView)> {
     let controller = &state.frontend.shell_controller;
-    let active = controller.top_id() == Some(MOVIE_LIST_PAGE.dialog);
-    let pressed = active.then(|| controller.pressed()).flatten();
-    let hovered = active.then(|| controller.hovered()).flatten();
-    let wave = exit_wave.or(state.frontend.shell_first_paint_slide.as_ref());
-    // While a slide runs the engine draws the whole tile column in place of
-    // the buttons (`0x006071E0`).
-    let buttons: Vec<PaintButton> = match wave {
-        Some(wave) => {
-            sprites.extend(shell_paint::paint_slide_column(
-                atlas,
-                layout.page.right_panel,
-                &wave.button_draws(),
-            ));
-            Vec::new()
-        }
-        None => layout
-            .page
-            .buttons
-            .iter()
-            .map(|button| PaintButton {
-                rect: button.rect,
-                pressed: pressed == Some(button.id),
-                hovered: hovered == Some(button.id),
-                enabled: true,
-            })
-            .collect(),
-    };
-    let button_sprites = shell_paint::paint_buttons(
-        atlas,
-        &buttons,
-        crate::app::frontend::menu_page_render::MENU_PAGE_BUTTON_POLICY,
-        crate::util::time::Instant::now(),
-        None,
+    let view = controller
+        .gui()
+        .list_view(find_family_list(controller, dialog)?)?;
+    let rect = vera20k_gui::shell::list::list_box_rect(list);
+    Some((view.geometry(rect, ListMetrics::scaled(scale)), view))
+}
+
+/// Whether the pointer is over the family page `dialog`'s list, its status
+/// help's hover target. The page is the top dialog.
+pub(crate) fn family_list_hovered(
+    state: &AppState,
+    dialog: crate::ui::shell::descriptor::DialogResourceId,
+) -> bool {
+    let controller = &state.frontend.shell_controller;
+    controller.top_id() == Some(dialog)
+        && find_family_list(controller, dialog)
+            .is_some_and(|node| controller.gui().hovered() == Some(node))
+}
+
+/// The family page `dialog`'s list in window `list` (`0x00619230` over the
+/// parent background), its geometry and view; the rows' text is the host's.
+pub(crate) fn paint_family_list(
+    state: &AppState,
+    dialog: DialogResourceId,
+    list: RectPx,
+    scale: ShellScale,
+) -> Option<(Vec<SpriteInstance>, ShellListGeometry, ListView)> {
+    let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
+    let (geometry, view) = family_list_view(state, dialog, list, scale)?;
+    let (top, selected, pressed) = (view.top, view.selected, view.pressed);
+    let mut out = Vec::new();
+    crate::app::frontend::skirmish_shell_render::paint_list(
+        &mut out, atlas, geometry, top, selected, pressed, false, scale,
     );
-    // The slide engine draws the button frames only; captions return with
-    // the first ordinary paint after the entry slide.
-    for button in layout.page.buttons.iter().filter(|_| wave.is_none()) {
-        let Some(spec) = MOVIE_LIST_PAGE.button(button.id) else {
-            continue;
-        };
-        labels.push(PaintLabel {
-            text: resolve_csf(state, spec.csf_key),
-            rect: owner_draw_button_label_rect(button.rect, pressed == Some(button.id)),
-            align: ShellAlign::BUTTON_CAPTION,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        });
-    }
-    if let Some(window) = title_window {
-        labels.push(PaintLabel {
-            text: resolve_csf(state, MOVIE_LIST_PAGE.title_key),
-            rect: layout.page.title,
-            align: ShellAlign::PANEL_TITLE,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: Some(
-                crate::app::frontend::main_menu_shell_render::shell_reveal_path_a(window),
-            ),
-        });
-    }
-    if !leaving {
-        labels.push(PaintLabel {
-            text: resolve_csf(state, MOVIE_LIST_PROMPT_KEY),
-            rect: layout.prompt,
-            align: ShellAlign::H_CENTER,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        });
-    }
-    (sprites, button_sprites, labels)
+    Some((out, geometry, view))
 }
 
 /// Hover help of dialog `0x129` for its status line `0x695`.
@@ -463,10 +76,12 @@ fn movie_list_status_key(state: &AppState) -> Option<&'static str> {
     if controller.top_id() != Some(MOVIE_LIST_PAGE.dialog) {
         return None;
     }
-    match controller.hovered()? {
-        MOVIE_LIST_CONTROL => Some(MOVIE_LIST_TOOLTIP_KEY),
-        id => MOVIE_LIST_PAGE.button(id).map(|button| button.tooltip_key),
+    if family_list_hovered(state, MOVIE_LIST_DIALOG) {
+        return Some(MOVIE_LIST_TOOLTIP_KEY);
     }
+    MOVIE_LIST_PAGE
+        .button(menu_page::hovered_id(controller, MOVIE_LIST_PAGE.dialog)?)
+        .map(|button| button.tooltip_key)
 }
 
 /// Paint dialog `0x129`. Returns `false` when the shell chrome is missing.
@@ -475,74 +90,58 @@ pub(crate) fn render_movie_list(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if state.frontend.main_menu_shell_chrome.is_none() {
+    if !family_art_ready(state) {
         return Ok(false);
     }
     let layout = crate::app::frontend::shell_layout::movie_list_layout(state);
-    // The teardown slide starts with a full dialog repaint (`0x00622C4F`)
-    // and pumps no messages until it ends: the statics stay blank and the
-    // monitor window shows the right panel's own art.
-    let leaving = crate::app::frontend::shell_transition::shell_exit_wave(
-        state,
-        crate::app::frontend::shell_transition::ShellSlideKind::MovieList,
-    )
-    .is_some();
-    let monitor_frame = if leaving {
-        None
-    } else {
-        crate::app::frontend::menu_page_render::paint_shell_monitor(state)
-    };
-    let (title_window, status_label) = if leaving {
-        (None, None)
-    } else {
-        let title_window = state
-            .frontend
-            .shell_page_title
-            .paint(crate::util::time::Instant::now());
-        let status_text = movie_list_status_key(state)
-            .map(|key| resolve_csf(state, key).into_owned())
-            .unwrap_or_default();
-        let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
-            state,
-            status_text,
-            layout.page.status_help,
-        );
-        (title_window, status_label)
-    };
-    let Some(atlas) = state.frontend.main_menu_shell_chrome.as_ref() else {
-        return Ok(false);
-    };
-    let (sprites, button_sprites, mut labels) =
-        movie_list_composition(state, atlas, &layout, monitor_frame, title_window);
-    labels.extend(status_label);
-    let text = shell_paint::paint_labels_scaled(
-        &state.renderer.bit_font,
-        &labels,
-        layout.page.scale.factor(),
-    );
-    let draws = [
-        TexturedDraw {
-            texture: &atlas.texture,
-            instances: sprites,
-        },
-        TexturedDraw {
-            texture: &atlas.texture,
-            instances: button_sprites,
-        },
-    ];
-    encode_shell_pass(
-        state,
-        encoder,
-        destination,
-        "Movie List Shell",
-        ShellComposition {
-            draws: &draws,
-            text: &text,
-            cursor: software_cursor(state, CURSOR_DEPTH),
-            effects: None,
-            smooth_art: false,
-        },
-    );
+    let (page, dialog) = (&layout.page, MOVIE_LIST_DIALOG);
+    let rect_of = |id| page.button_rect(id);
+    let tree = page_tree(state, dialog, || MOVIE_LIST_PAGE.nodes(), rect_of, &[]);
+    let status = |state: &AppState| movie_list_status_key(state).map(str::to_owned);
+    let kind = ShellSlideKind::MovieList;
+    let panel = page_panel_state(state, kind, true, status, page.status_help);
+    // The teardown slide covers every child with the dialog's own repaint
+    // (`0x00622C4F`), and nothing repaints them before the dialog is gone:
+    // the list box and the prompt stay blank.
+    let leaving = panel.leaving;
+    let title = MOVIE_LIST_PAGE.title_key;
+    let mut frame =
+        FamilyFrame::new("Movie List Shell", page, panel, title).on(state, dialog, &tree);
+    frame.backdrop = true;
+    if !leaving {
+        let mut bar = None;
+        if let Some(list) = state.frontend.movie_list.as_ref()
+            && let Some((sprites, geometry, view)) =
+                paint_family_list(state, dialog, layout.list, page.scale)
+        {
+            bar = geometry.scrollbar;
+            frame.over.controls.extend(sprites);
+            for (visible, movie) in list
+                .iter()
+                .skip(view.top)
+                .take(geometry.visible_rows)
+                .enumerate()
+            {
+                let row = geometry.row(visible);
+                frame.labels.push(PaintLabel {
+                    text: state.csf_text(movie.label_key).into(),
+                    rect: RectPx::new(row.x + 2, row.y, row.w - 2, row.h),
+                    align: ShellAlign::NONE,
+                    rgb: SHELL_TEXT_RGB_ENABLED,
+                    path_a_reveal: None,
+                });
+            }
+        }
+        frame.list_boxes.push((layout.list, bar));
+        frame.labels.push(PaintLabel {
+            text: state.csf_text(MOVIE_LIST_PROMPT_KEY).into(),
+            rect: layout.prompt,
+            align: ShellAlign::H_CENTER,
+            rgb: SHELL_TEXT_RGB_ENABLED,
+            path_a_reveal: None,
+        });
+    }
+    encode_family_page(state, encoder, destination, frame);
     Ok(true)
 }
 
@@ -641,68 +240,35 @@ pub(crate) fn render_credits_roll(
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
+    use vera20k_gui::shell::list::list_box_geometry;
 
     #[test]
-    fn family_background_preserves_retail_canvas_when_scaled() {
-        let entry = MainMenuShellChromeEntry {
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            pixel_size: [632.0, 568.0],
-        };
-        for (w, h) in [(1600, 1200), (1920, 1080), (640, 360)] {
-            let scale = ShellScale::from_screen(w, h);
-            let backdrop = FamilyBackdrop {
-                background: Some(entry),
-                darkened: Some(entry),
-                origin: (0, 0),
-                screen: (w, h),
-                scale,
-            };
-            let mut sprites = Vec::new();
-            push_family_backdrop(&mut sprites, &backdrop);
-            let expected = scale.scale_rect(RectPx::new(0, 0, 632, 568));
-            assert_eq!(sprites[0].position, [expected.x as f32, expected.y as f32]);
-            assert_eq!(sprites[0].size, [expected.w as f32, expected.h as f32]);
-            assert_eq!(sprites[0].uv_size, [1.0, 1.0]);
-            let inset = scale.scale_rect(RectPx::new(158, 142, 316, 284));
-            backdrop.push_pixels(&mut sprites, Some(entry), inset, LIST_FILL_DEPTH);
-            let patch = &sprites[1];
-            assert!((patch.uv_origin[0] - 0.25).abs() < 0.002);
-            assert!((patch.uv_origin[1] - 0.25).abs() < 0.002);
-            assert!((patch.uv_size[0] - 0.5).abs() < 0.002);
-            assert!((patch.uv_size[1] - 0.5).abs() < 0.002);
-        }
-    }
-
-    #[test]
-    fn list_interior_and_rows_match_the_native_capture() {
+    fn list_rows_match_the_native_capture() {
         let list = RectPx::new(120, 128, 399, 304);
         // Selection fill measured at x 121..=518, y 129..=147.
-        assert_eq!(list_interior(list), RectPx::new(121, 129, 398, 303));
-        let mut state = crate::ui::movies_credits_shell::MovieListState::open(
+        let state = crate::ui::movies_credits_shell::active_movie_entries(
             crate::ui::movies_credits_shell::MovieProgress::default(),
-            -1,
         );
-        let short = state.geometry(list, ListMetrics::RETAIL);
+        let geometry = |rows, top| list_box_geometry(list, rows, top, ListMetrics::RETAIL);
+        let short = geometry(state.len(), 0);
         assert_eq!(short.row(0), RectPx::new(121, 129, 398, 19));
         assert_eq!(short.visible_rows, 15);
         assert!(short.scrollbar.is_none());
         // Retail list with all 17 movies (`list17-*.png`): bar columns
         // 499..=518, thumb rows 151..=352 at top 0 and 208..=409 at top 2.
-        state.rows = crate::ui::movies_credits_shell::active_movie_entries(
+        let rows = crate::ui::movies_credits_shell::active_movie_entries(
             crate::ui::movies_credits_shell::MovieProgress {
                 soviet: 7,
                 allied: 7,
             },
         );
-        assert_eq!(state.rows.len(), 17);
-        let full = state.geometry(list, ListMetrics::RETAIL);
+        assert_eq!(rows.len(), 17);
+        let full = geometry(rows.len(), 0);
         assert_eq!(full.scrollbar, Some(RectPx::new(499, 128, 20, 305)));
         assert_eq!(full.thumb, Some(RectPx::new(500, 151, 18, 202)));
         assert_eq!(full.row(0), RectPx::new(121, 129, 378, 19));
-        state.top = 2;
         assert_eq!(
-            state.geometry(list, ListMetrics::RETAIL).thumb,
+            geometry(rows.len(), 2).thumb,
             Some(RectPx::new(500, 208, 18, 202))
         );
     }

@@ -149,6 +149,92 @@ save format is its own.
 | `0x67E74A` | `1002F7A0` | LoadGame_EarlyLoadSides | `Ext/Side/Hooks.cpp` |
 | `0x67F281` | `1002F800` | LoadGame_LateSkipSides | `Ext/Side/Hooks.cpp` |
 
+## Save stream and header (equivalent)
+
+Ares writes its own data after gamemd's save stream, reads it back, stamps the
+save header with the mod and Ares version, and hides a save from another mod
+or Ares version in the load dialog (`0x559F48` sets the row's other-version
+flag). VERA20K saves the Ares state inside its own snapshot (serde) with the
+game's processed rules, and its load refuses a save from another game through
+the fixed-ARTMD hash and the Ares read-way check
+(`app::persistence::resource_load`, `rules::process_owner`). The start hooks
+and the log line fix only log.
+
+| Hook | Ares.dll | Name | Source |
+|---|---|---|---|
+| `0x67D300` | `1006AEF0` | SaveGame_Start | `Misc/Savegame.cpp` |
+| `0x67E730` | `1006AE60` | LoadGame_Start | `Misc/Savegame.cpp` |
+| `0x67E42E` | `1006AED0` | SaveGame | `Misc/Savegame.cpp` |
+| `0x67F7C8` | `1006AE50` | LoadGame_End | `Misc/Savegame.cpp` |
+| `0x67D04E` | `1006AE10` | Game_Save_SavegameInformation | `Misc/Savegame.cpp` |
+| `0x559F31` | `1006AE70` | LoadOptionsClass_GetFileInfo | `Misc/Savegame.cpp` |
+| `0x67CEFE` | `1006ADF0` | Game_Save_FixLog | `Misc/Savegame.cpp` |
+
+## Checksums and sync logs (not applicable)
+
+Ares replaces gamemd's Checksummer adders, logs the INI checksums when a network game starts, and writes its own sync log on a desync. VERA20K compares its own world hash and rules digest between peers and never uses gamemd's checksums.
+
+| Hook | Ares.dll | Name | Source |
+|---|---|---|---|
+| `0x4A1C10` | `1005F550` | Checksummer_Add_BYTE | `Misc/Checksum.cpp` |
+| `0x4A1CA0` | `1005F600` | Checksummer_Add_bool | `Misc/Checksum.cpp` |
+| `0x4A1D30` | `1005F5E0` | Checksummer_Add_WORD | `Misc/Checksum.cpp` |
+| `0x4A1D50` | `1005F5C0` | Checksummer_Add_DWORD | `Misc/Checksum.cpp` |
+| `0x4A1D70` | `1005F660` | Checksummer_Add_float | `Misc/Checksum.cpp` |
+| `0x4A1D90` | `1005F640` | Checksummer_Add_double | `Misc/Checksum.cpp` |
+| `0x52E9AA` | `1005F680` | Frontend_WndProc_Checksum | `Misc/Checksum.cpp` |
+| `0x6516F0` | `1005F720` | Multiplay_LogToSync_MPDEBUG | `Misc/Checksum.cpp` |
+
+## Executable start, CD and command line (not applicable)
+
+Ares' start and exit hooks, its command-line switches (`-LOG`, `-CD`, `-NOLOGO`, `-STRICT`, `-AI-CONTROL`, `-LOG-CSF`, `-AFFINITY:`), the CD file lookup and the `Ares.ini` `DirectX.Force` setting. VERA20K has its own launcher, reads no CD and draws with wgpu.
+
+| Hook | Ares.dll | Name | Source |
+|---|---|---|---|
+| `0x47AE36` | `10003B00` | CDFileClass_SetFileName | `Ares.cpp` |
+| `0x47B026` | `10003B90` | FileFindOpen | `Ares.cpp` |
+| `0x52C5E0` | `10003AE0` | Ares_NoLogo | `Ares.cpp` |
+| `0x52F639` | `10003C90` | YR_CmdLineParse | `Ares.cpp` |
+| `0x7CD810` | `10003B40` | ExeRun | `Ares.cpp` |
+| `0x7CD8EF` | `10003B60` | ExeTerminate | `Ares.cpp` |
+| `0x6BC0CD` | `10005820` | LoadRA2MD | `Ares.GlobalControls.cpp` |
+
+## Copy protection (equivalent)
+
+Ares answers the CD and launcher checks as passed and skips the copy-protection check that blows up the player's base (`0x55CFDF` -> `0x55D059`). VERA20K has none of these checks, so it plays as Ares does.
+
+| Hook | Ares.dll | Name | Source |
+|---|---|---|---|
+| `0x479110` | `1005F7F0` | CD_NeverAsk | `Misc/CopyProtection.cpp` |
+| `0x49F5C0` | `1005F820` | CopyProtection_IsLauncherRunning | `Misc/CopyProtection.cpp` |
+| `0x49F620` | `1005F830` | CopyProtection_NotifyLauncher | `Misc/CopyProtection.cpp` |
+| `0x49F7A0` | `1005F810` | CopyProtection_CheckProtectedData | `Misc/CopyProtection.cpp` |
+| `0x55CFDF` | `1005F7A0` | BlowMeUp | `Misc/CopyProtection.cpp` |
+
+## Debug log and crash reports (not applicable)
+
+Ares' log file, its exception dialog and handler, and the desync report it offers instead of the reconnection error. VERA20K keeps its own log, crash report and desync handling.
+
+| Hook | Ares.dll | Name | Source |
+|---|---|---|---|
+| `0x4068E0` | `100620D0` | Debug_Log | `Misc/Debug.cpp` |
+| `0x4A4AC0` | `100620D0` | Debug_Log | `Misc/Debug.cpp` |
+| `0x4C850B` | `10062120` | Exception_Dialog | `Misc/Debug.cpp` |
+| `0x534A4D` | `10062140` | Theater_Init_ResetLogStatus | `Misc/Debug.cpp` |
+| `0x687C56` | `10062130` | INIClass_ReadScenario_ResetLogStatus | `Misc/Debug.cpp` |
+| `0x4C8FE0` | `100641A0` | Exception_Handler | `Misc/Exception.cpp` |
+| `0x64CCBF` | `1006A280` | DoList_ReplaceReconMessage | `Misc/Network.cpp` |
+
+## Save pointer swizzling (not applicable)
+
+Ares' replacement for gamemd's pointer fix-up after a load. VERA20K's save holds ids, not pointers, so nothing is swizzled.
+
+| Hook | Ares.dll | Name | Source |
+|---|---|---|---|
+| `0x6CF240` | `1006C5B0` | SwizzleManagerClass_Swizzle | `Misc/Swizzle.cpp` |
+| `0x6CF2C0` | `1006C540` | SwizzleManagerClass_Here_I_Am | `Misc/Swizzle.cpp` |
+| `0x6CF350` | `1006C440` | SwizzleManagerClass_ConvertNodes | `Misc/Swizzle.cpp` |
+
 ## Win32 front end (not applicable)
 
 Main menu, single player and movie dialog buttons, owner-draw control

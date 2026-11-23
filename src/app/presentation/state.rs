@@ -138,6 +138,10 @@ pub(crate) struct MatchPresentationState {
     /// A `RefCell`: the particle, overlay-anim and light draws step it while
     /// they read the presentation through `&`.
     pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
+    /// Ares' FPS counter switch (`Ares::bFPSCounter`, Ares.dll `100C0BB9`),
+    /// process-lived and off at start; the FPSCounter command flips it
+    /// ([`super::ares_tactical_text`]).
+    pub(crate) ares_fps_counter: bool,
     /// The water and ore sparkles' per-cell PixelFX and clock. A `RefCell`:
     /// the sparkle draw steps it beside the world it reads through `&AppState`.
     pub(crate) pixel_fx: std::cell::RefCell<crate::render::pixel_fx_sparkles::PixelFxCells>,
@@ -290,7 +294,11 @@ pub(crate) struct MatchPresentationState {
     /// (`0x0048CAA1`); see `App::state_machine_admission`.
     pub(crate) modal_latch: bool,
     pub(crate) pause_menu_has_saves: bool,
-    pub(crate) pause_menu_interaction: crate::ui::shell::pause_menu::PauseMenuInteraction,
+    /// The controls of the open scenario modal (B5/BBA/FF, B6, 0x73, 0x10C
+    /// and the Surrender box), rebuilt at every in-scenario state change.
+    pub(crate) dialog_ui: crate::ui::shell::controller::DialogController,
+    /// The connection dialog 0xEA's controls, over whatever modal is open.
+    pub(crate) connection_ui: crate::ui::shell::controller::DialogController,
     /// The template 4F10E0 chose when state 1 last opened; it stays for that
     /// dialog's lifetime.
     pub(crate) pause_menu_template: crate::ui::shell::pause_menu::PauseMenuTemplate,
@@ -305,15 +313,8 @@ pub(crate) struct MatchPresentationState {
     /// its stored results stay for that dialog's lifetime.
     pub(crate) abort_secondary: crate::ui::shell::abort::AbortSecondary,
     pub(crate) sound_dialog: Option<crate::ui::shell::sound::SoundState>,
-    pub(crate) abort_buttons:
-        crate::ui::shell::button::ShellButtonInteraction<crate::ui::shell::abort::AbortButton>,
-    /// The WOL tournament Surrender box's buttons (state 2).
-    pub(crate) surrender_buttons: crate::ui::shell::button::ShellButtonInteraction<
-        crate::app::input::surrender::SurrenderButton,
-    >,
-    pub(crate) diplomacy: crate::ui::shell::diplomacy::DiplomacyInteraction,
-    /// Restate 0x10C's pointer state.
-    pub(crate) restate: crate::ui::shell::restate::RestateInteraction,
+    /// The page 0x73 shows of VERA's paged rows.
+    pub(crate) diplomacy_page: crate::ui::shell::paging::RowPage,
     /// `[0xB04CA0]`: the briefing text 0x10C shows, resolved once at open.
     pub(crate) restate_text: String,
     pub(crate) saved_game_browser:

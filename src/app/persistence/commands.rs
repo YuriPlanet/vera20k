@@ -28,7 +28,10 @@ pub(crate) enum SaveCommandError {
 
 #[cfg(feature = "dev-overlays")]
 pub(crate) fn quicksave(state: &mut AppState) {
-    log_save_result("Quicksave", save(state, None, SaveDestination::New));
+    log_save_result(
+        "Quicksave",
+        save(state, None, SaveDestination::Player(None)),
+    );
 }
 
 /// UI save/create/explicit overwrite request. A new timestamp-name collision
@@ -39,16 +42,11 @@ pub(crate) fn save_game(
     description: &str,
     overwrite: Option<&Path>,
 ) -> Result<PathBuf, SaveCommandError> {
-    save(
-        state,
-        Some(description),
-        overwrite.map_or(SaveDestination::New, SaveDestination::Existing),
-    )
+    save(state, Some(description), SaveDestination::Player(overwrite))
 }
 
 enum SaveDestination<'a> {
-    New,
-    Existing(&'a Path),
+    Player(Option<&'a Path>),
     InitialCampaign(&'a str),
 }
 
@@ -157,10 +155,11 @@ fn prepare_save<'a>(
     name: Option<&str>,
     rules_owner: Option<&'a crate::rules::process_owner::NativeRulesProcessOwner>,
 ) -> Result<PreparedSave<'a>, SaveCommandError> {
-    let sanitized = name.map(sanitize_save_name);
-    if sanitized.as_deref() == Some("") {
-        return Err(SaveCommandError::EmptyDescription);
-    }
+    let sanitized = name
+        .map(|raw| {
+            super::SaveRepository::filename_part(raw).ok_or(SaveCommandError::EmptyDescription)
+        })
+        .transpose()?;
     let runtime = state
         .match_state
         .sim_runtime
@@ -343,19 +342,15 @@ impl PreparedSave<'_> {
         );
         let result = bytes.map_err(SaveCommandError::Encode).and_then(|bytes| {
             match destination {
-                SaveDestination::Existing(path) => repository
-                    .overwrite_existing(path, &bytes)
-                    .map(|()| path.to_path_buf()),
+                SaveDestination::Player(overwrite) => repository.write_player_slot(
+                    overwrite,
+                    self.sanitized.as_deref(),
+                    sim.session().tick(),
+                    self.timestamp,
+                    &bytes,
+                ),
                 SaveDestination::InitialCampaign(filename) => {
                     repository.write_initial_campaign(filename, &bytes)
-                }
-                SaveDestination::New => {
-                    let tick = sim.session().tick();
-                    let filename = match self.sanitized {
-                        Some(name) => format!("save_{name}_tick{tick}_{}.bin", self.timestamp),
-                        None => format!("save_tick{tick}_{}.bin", self.timestamp),
-                    };
-                    repository.write_named(&filename, &bytes)
                 }
             }
             .map_err(Into::into)
@@ -383,27 +378,6 @@ fn log_save_result(label: &str, result: Result<PathBuf, SaveCommandError>) {
         },
         Err(error) => log::warn!("{label}: {error}"),
     }
-}
-
-/// Sanitize a user-typed save name for use in a filename.
-///
-/// Replaces Windows-reserved characters (`/ \ : * ? " < > |`) with `_`,
-/// trims surrounding whitespace, then caps at 64 chars. Returns an empty
-/// string for empty/whitespace-only input.
-fn sanitize_save_name(raw: &str) -> String {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return String::new();
-    }
-    let mut out = String::with_capacity(trimmed.len());
-    for ch in trimmed.chars().take(64) {
-        match ch {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => out.push('_'),
-            c if c.is_control() => out.push('_'),
-            c => out.push(c),
-        }
-    }
-    out
 }
 
 #[cfg(feature = "dev-overlays")]
@@ -637,32 +611,41 @@ fn log_prepared_load_error(
 
 #[cfg(all(test, tests_app))]
 mod save_name_tests {
-    use super::sanitize_save_name;
+    use crate::app::persistence::SaveRepository;
     use crate::sim::snapshot::GameSnapshot;
     use crate::sim::world::Simulation;
 
     #[test]
-    fn empty_returns_empty() {
-        assert_eq!(sanitize_save_name(""), "");
-        assert_eq!(sanitize_save_name("   "), "");
-        assert_eq!(sanitize_save_name("\t\n"), "");
+    fn empty_description_has_no_filename() {
+        assert_eq!(SaveRepository::filename_part(""), None);
+        assert_eq!(SaveRepository::filename_part("   "), None);
+        assert_eq!(SaveRepository::filename_part("\t\n"), None);
     }
 
     #[test]
     fn strips_path_separators() {
-        assert_eq!(sanitize_save_name("../foo"), ".._foo");
-        assert_eq!(sanitize_save_name("a/b\\c"), "a_b_c");
+        assert_eq!(
+            SaveRepository::filename_part("../foo").as_deref(),
+            Some(".._foo")
+        );
+        assert_eq!(
+            SaveRepository::filename_part("a/b\\c").as_deref(),
+            Some("a_b_c")
+        );
     }
 
     #[test]
     fn strips_windows_reserved_chars() {
-        assert_eq!(sanitize_save_name("a:b*c?d\"e<f>g|h"), "a_b_c_d_e_f_g_h");
+        assert_eq!(
+            SaveRepository::filename_part("a:b*c?d\"e<f>g|h").as_deref(),
+            Some("a_b_c_d_e_f_g_h")
+        );
     }
 
     #[test]
     fn gsi_17_02_unicode_filename_cap_preserves_exact_envelope_description() {
         let raw_description = "保存".repeat(40);
-        let filename_part = sanitize_save_name(&raw_description);
+        let filename_part = SaveRepository::filename_part(&raw_description).unwrap();
         assert_eq!(filename_part.chars().count(), 64);
 
         let mut sim = Simulation::new();

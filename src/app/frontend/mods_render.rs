@@ -7,25 +7,18 @@ use std::borrow::Cow;
 use anyhow::Result;
 
 use crate::app::AppState;
-use crate::app::frontend::movies_credits_render::{
-    FamilyListRows, family_backdrop, push_family_backdrop, push_family_list,
+use crate::app::frontend::menu_page_render::{
+    FamilyFrame, encode_family_page, family_art_ready, page_panel_state, page_tree,
 };
-use crate::app::frontend::shell_pass::{
-    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
-    software_cursor,
-};
+use crate::app::frontend::movies_credits_render::{family_list_hovered, paint_family_list};
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::mods::Listed;
-use crate::render::batch::SpriteInstance;
-use crate::render::main_menu_shell_chrome::MainMenuShellChromeAtlas;
-use crate::render::shell_paint::{
-    self, CURSOR_DEPTH, PaintButton, PaintLabel, SHELL_TEXT_RGB_DISABLED, SHELL_TEXT_RGB_ENABLED,
-};
-use crate::render::shell_text::ShellAlign;
+use crate::render::shell_paint::{PaintLabel, SHELL_TEXT_RGB_ENABLED};
 use crate::ui::main_menu_shell::RectPx;
 use crate::ui::mods_shell::{self, ModsLayout, PAGE};
-use crate::ui::shell::list::ListMetrics;
-use crate::ui::shell::static_reveal::Kind1RevealWindow;
+use crate::ui::movies_credits_shell::family_list_selected;
+use crate::ui::shell::geom::ShellAlign;
+use crate::ui::shell::menu_page;
 
 /// Row text inset from the row's left edge, as in the movie list, and from
 /// its right edge for the mark of the mod in use.
@@ -72,60 +65,67 @@ fn detail_labels<'a>(row: &'a Listed, in_use: bool, layout: &ModsLayout) -> Vec<
         .collect()
 }
 
-/// Sprites and labels for the Mods page.
-fn mods_composition<'a>(
-    state: &'a AppState,
-    atlas: &MainMenuShellChromeAtlas,
-    layout: &ModsLayout,
-    monitor_frame: Option<usize>,
-    title_window: Option<Kind1RevealWindow>,
-) -> (
-    Vec<SpriteInstance>,
-    Vec<SpriteInstance>,
-    Vec<PaintLabel<'a>>,
-) {
-    let screen_w = layout.page.screen.w;
-    let backdrop = family_backdrop(atlas, screen_w, layout.page.screen.h, layout.page.scale);
-    let mut sprites = Vec::new();
-    push_family_backdrop(&mut sprites, &backdrop);
-    sprites.extend(shell_paint::paint_chrome(
-        atlas,
-        layout.page.right_panel,
-        Some(layout.page.lower_strip),
-        screen_w,
-    ));
-    sprites.extend(monitor_frame.and_then(|frame| {
-        shell_paint::paint_warning_monitor(
-            atlas,
-            layout.page.warning_monitor,
-            frame,
-            layout.page.scale,
-        )
-    }));
+/// Hover help for the page's status line.
+fn mods_status_key(state: &AppState) -> Option<&'static str> {
+    let controller = &state.frontend.shell_controller;
+    if controller.top_id() != Some(PAGE.dialog) {
+        return None;
+    }
+    if family_list_hovered(state, PAGE.dialog) {
+        return Some(mods_shell::PROMPT_KEY);
+    }
+    PAGE.button(menu_page::hovered_id(controller, PAGE.dialog)?)
+        .map(|button| button.tooltip_key)
+}
 
-    let exit_wave =
-        crate::app::frontend::shell_transition::shell_exit_wave(state, ShellSlideKind::Mods);
+/// Paint the Mods page. Returns `false` when the shell chrome is missing.
+pub(crate) fn render_mods_page(
+    state: &mut AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+) -> Result<bool> {
+    if !family_art_ready(state) {
+        return Ok(false);
+    }
+    let layout = crate::app::frontend::shell_layout::mods_layout(state);
+    let (scale, dialog) = (layout.page.scale, PAGE.dialog);
+    // Use This Mod is dark while the selection is nothing to change to, Check
+    // Files while it is the original game.
+    let mods = &state.frontend.mods;
+    let selected = family_list_selected(&state.frontend.shell_controller, dialog);
+    let enabled = [
+        (mods_shell::USE, mods.switch_to(selected).is_some()),
+        (mods_shell::CHECK, mods.picked_is_mod(selected)),
+    ];
+    let rect_of = |id| layout.page.button_rect(id);
+    let tree = page_tree(state, dialog, || PAGE.nodes(), rect_of, &enabled);
+    let status = |state: &AppState| mods_status_key(state).map(str::to_owned);
+    let kind = ShellSlideKind::Mods;
+    let panel = page_panel_state(state, kind, true, status, layout.page.status_help);
     // As for the movie list: the teardown slide repaints the dialog over its
     // children, and nothing draws them again before it is gone.
-    let leaving = exit_wave.is_some();
+    let leaving = panel.leaving;
+    let mut frame = FamilyFrame::new("Mods Shell", &layout.page, panel, PAGE.title_key)
+        .on(state, dialog, &tree);
+    frame.backdrop = true;
     let mods = &state.frontend.mods;
-    let mut labels = Vec::new();
-    if let Some(page) = mods.page.as_ref().filter(|_| !leaving) {
-        let geometry = page.geometry(layout.list, ListMetrics::scaled(layout.page.scale));
-        push_family_list(
-            &mut sprites,
-            atlas,
-            &backdrop,
-            layout.list,
-            Some(FamilyListRows {
-                geometry: &geometry,
-                top: page.top,
-                selected: page.selected,
-                pressed: page.scroll.pressed_part(),
-            }),
-        );
-        push_family_list(&mut sprites, atlas, &backdrop, layout.details, None);
-        for (visible, index) in (page.top..page.rows.len())
+    if let Some(page) = mods.page.as_ref().filter(|_| !leaving)
+        && let Some((sprites, geometry, view)) =
+            paint_family_list(state, dialog, layout.list, scale)
+    {
+        frame.over.controls.extend(sprites);
+        frame.list_boxes.push((layout.list, geometry.scrollbar));
+        frame.list_boxes.push((layout.details, None));
+        if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
+            let details = &mut frame.over.controls;
+            crate::app::frontend::skirmish_shell_render::paint_list_frame(
+                details,
+                atlas,
+                layout.details,
+            );
+        }
+        let labels = &mut frame.labels;
+        for (visible, index) in (view.top..page.len())
             .take(geometry.visible_rows)
             .enumerate()
         {
@@ -136,7 +136,7 @@ fn mods_composition<'a>(
                 row.w - 2 * ROW_TEXT_INSET,
                 row.h,
             );
-            let listed = &page.rows[index];
+            let listed = &page[index];
             if mods.in_use(listed) {
                 // The name keeps the row's left three quarters.
                 let name_w = text.w * 3 / 4;
@@ -154,9 +154,9 @@ fn mods_composition<'a>(
                 labels.push(label(listed.title(), text, ShellAlign::NONE));
             }
         }
-        // An empty Mods folder: where a mod goes, across the empty rows
-        // under No mod, one row down.
-        if let Some(hint) = crate::app::mods::none_installed_hint(&page.rows) {
+        // An empty Mods folder: where a mod goes, across the empty rows under No
+        // mod, one row down.
+        if let Some(hint) = crate::app::mods::none_installed_hint(page) {
             let content = geometry.content;
             let top = geometry.row(2).y;
             labels.push(label(
@@ -170,172 +170,15 @@ fn mods_composition<'a>(
                 ShellAlign::NONE,
             ));
         }
-        if let Some(row) = page.selected.and_then(|selected| page.rows.get(selected)) {
-            labels.extend(detail_labels(row, mods.in_use(row), layout));
+        if let Some(row) = view.selected.and_then(|selected| page.get(selected)) {
+            labels.extend(detail_labels(row, mods.in_use(row), &layout));
         }
         labels.push(label(
-            resolve_csf(state, mods_shell::PROMPT_KEY),
+            state.csf_text(mods_shell::PROMPT_KEY),
             layout.prompt,
             ShellAlign::H_CENTER,
         ));
     }
-
-    let controller = &state.frontend.shell_controller;
-    let active = controller.top_id() == Some(PAGE.dialog);
-    let pressed = active.then(|| controller.pressed()).flatten();
-    let hovered = active.then(|| controller.hovered()).flatten();
-    // Use This Mod is dark while the selection is nothing to change to, Check
-    // Files while it is the original game.
-    let enabled = |id: u16| match id {
-        mods_shell::USE => mods.switch_to().is_some(),
-        mods_shell::CHECK => mods.picked_is_mod(),
-        _ => true,
-    };
-    let wave = exit_wave.or(state.frontend.shell_first_paint_slide.as_ref());
-    // While a slide runs the engine draws the whole tile column in place of
-    // the buttons (`0x006071E0`).
-    let buttons: Vec<PaintButton> = match wave {
-        Some(wave) => {
-            sprites.extend(shell_paint::paint_slide_column(
-                atlas,
-                layout.page.right_panel,
-                &wave.button_draws(),
-            ));
-            Vec::new()
-        }
-        None => layout
-            .page
-            .buttons
-            .iter()
-            .map(|button| PaintButton {
-                rect: button.rect,
-                pressed: enabled(button.id) && pressed == Some(button.id),
-                hovered: enabled(button.id) && hovered == Some(button.id),
-                enabled: enabled(button.id),
-            })
-            .collect(),
-    };
-    let button_sprites = shell_paint::paint_buttons(
-        atlas,
-        &buttons,
-        crate::app::frontend::menu_page_render::MENU_PAGE_BUTTON_POLICY,
-        crate::util::time::Instant::now(),
-        None,
-    );
-    // The slide engine draws the button frames only; captions return with
-    // the first ordinary paint after the entry slide.
-    for button in layout.page.buttons.iter().filter(|_| wave.is_none()) {
-        let Some(spec) = PAGE.button(button.id) else {
-            continue;
-        };
-        let down = enabled(button.id) && pressed == Some(button.id);
-        labels.push(PaintLabel {
-            text: resolve_csf(state, spec.csf_key),
-            rect: owner_draw_button_label_rect(button.rect, down),
-            align: ShellAlign::BUTTON_CAPTION,
-            rgb: if enabled(button.id) {
-                SHELL_TEXT_RGB_ENABLED
-            } else {
-                SHELL_TEXT_RGB_DISABLED
-            },
-            path_a_reveal: None,
-        });
-    }
-    if let Some(window) = title_window {
-        labels.push(PaintLabel {
-            text: resolve_csf(state, PAGE.title_key),
-            rect: layout.page.title,
-            align: ShellAlign::PANEL_TITLE,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: Some(
-                crate::app::frontend::main_menu_shell_render::shell_reveal_path_a(window),
-            ),
-        });
-    }
-    (sprites, button_sprites, labels)
-}
-
-/// Hover help for the page's status line.
-fn mods_status_key(state: &AppState) -> Option<&'static str> {
-    let controller = &state.frontend.shell_controller;
-    if controller.top_id() != Some(PAGE.dialog) {
-        return None;
-    }
-    match controller.hovered()? {
-        mods_shell::LIST => Some(mods_shell::PROMPT_KEY),
-        id => PAGE.button(id).map(|button| button.tooltip_key),
-    }
-}
-
-/// Paint the Mods page. Returns `false` when the shell chrome is missing.
-pub(crate) fn render_mods_page(
-    state: &mut AppState,
-    encoder: &mut wgpu::CommandEncoder,
-    destination: &wgpu::Texture,
-) -> Result<bool> {
-    if state.frontend.main_menu_shell_chrome.is_none() {
-        return Ok(false);
-    }
-    let layout = crate::app::frontend::shell_layout::mods_layout(state);
-    // As for the movie list: no statics and no monitor while the page leaves.
-    let leaving =
-        crate::app::frontend::shell_transition::shell_exit_wave(state, ShellSlideKind::Mods)
-            .is_some();
-    let monitor_frame = if leaving {
-        None
-    } else {
-        crate::app::frontend::menu_page_render::paint_shell_monitor(state)
-    };
-    let (title_window, status_label) = if leaving {
-        (None, None)
-    } else {
-        let title_window = state
-            .frontend
-            .shell_page_title
-            .paint(crate::util::time::Instant::now());
-        let status_text = mods_status_key(state)
-            .map(|key| resolve_csf(state, key).into_owned())
-            .unwrap_or_default();
-        let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
-            state,
-            status_text,
-            layout.page.status_help,
-        );
-        (title_window, status_label)
-    };
-    let Some(atlas) = state.frontend.main_menu_shell_chrome.as_ref() else {
-        return Ok(false);
-    };
-    let (sprites, button_sprites, mut labels) =
-        mods_composition(state, atlas, &layout, monitor_frame, title_window);
-    labels.extend(status_label);
-    let text = shell_paint::paint_labels_scaled(
-        &state.renderer.bit_font,
-        &labels,
-        layout.page.scale.factor(),
-    );
-    let draws = [
-        TexturedDraw {
-            texture: &atlas.texture,
-            instances: sprites,
-        },
-        TexturedDraw {
-            texture: &atlas.texture,
-            instances: button_sprites,
-        },
-    ];
-    encode_shell_pass(
-        state,
-        encoder,
-        destination,
-        "Mods Shell",
-        ShellComposition {
-            draws: &draws,
-            text: &text,
-            cursor: software_cursor(state, CURSOR_DEPTH),
-            effects: None,
-            smooth_art: false,
-        },
-    );
+    encode_family_page(state, encoder, destination, frame);
     Ok(true)
 }

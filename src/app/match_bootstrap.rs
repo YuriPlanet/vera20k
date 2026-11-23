@@ -737,6 +737,24 @@ impl LoadingStartup {
         }
     }
 
+    /// VERA: the AI INI this load reads (`retail_sources::match_ai_file`):
+    /// the original game's for a network match that seats no computer. A
+    /// launch says whether it seats one
+    /// (`SkirmishLaunchSession::seats_computers`); a load without a launch,
+    /// a campaign's or a campaign room's, always does. The room's rules
+    /// agreement answers alike (`MatchSession::network_seats_computers`).
+    pub(crate) fn ai_file(
+        &self,
+        assets: &crate::assets::asset_manager::AssetManager,
+    ) -> crate::rules::retail_sources::AiFile {
+        crate::rules::retail_sources::match_ai_file(
+            assets,
+            self.session_mode().is_network(),
+            self.launch_session()
+                .is_none_or(SkirmishLaunchSession::seats_computers),
+        )
+    }
+
     pub fn launch_session(&self) -> Option<&SkirmishLaunchSession> {
         match self {
             Self::Network(startup) => startup

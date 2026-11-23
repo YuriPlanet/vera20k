@@ -13,8 +13,7 @@ fn rules(text: &str) -> RuleSet {
 /// `Insignia=` sets every rank and `Insignia.<Rank>=` overrides one, each
 /// value becoming `<value>.shp` whatever it ends with (0x10040640);
 /// `Insignia.ShowEnemy` is unset until authored. RulesExt `[General]
-/// EnemyInsignia` defaults to yes (constructor 0x1002A3DF); Mental Omega
-/// turns it off.
+/// EnemyInsignia` defaults to yes (constructor 0x1002A3DF).
 #[test]
 fn ares_insignia_reads_promotable_shp_names_and_enemy_visibility() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);

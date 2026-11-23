@@ -1,8 +1,8 @@
 //! Dialog 0x100 Single Player control identity and dialog-proc results.
 //!
-//! Hit-testing, press/hover and the Load Saved Game disabled guard live in the
-//! shared `ui::shell::controller::DialogController`; labels, status help and
-//! results come from the page table in `layout`.
+//! The buttons are `vera20k-gui` nodes built from the page table in `layout`
+//! (`ui::shell::menu_page`), which also gives the labels, status help and
+//! results.
 
 use super::layout::SINGLE_PLAYER_PAGE;
 
@@ -46,8 +46,8 @@ pub enum SinglePlayerShellAction {
     MainMenu,
 }
 
-/// Runtime state the page table cannot carry. Press/hover live in the shared
-/// controller; this is only the `0x497` Load Saved Game enable refresh.
+/// Runtime state the page table cannot carry: the `0x497` Load Saved Game
+/// enable refresh, which the button node follows.
 #[derive(Debug, Clone, Default)]
 pub struct SinglePlayerShellState {
     pub load_saved_game_enabled: bool,
@@ -79,19 +79,69 @@ pub fn return_code_for_action(action: SinglePlayerShellAction) -> Option<i32> {
 mod tests {
     use super::*;
     use crate::ui::shell::controller::DialogController;
-    use crate::ui::shell::descriptor::DialogId;
-    use crate::ui::shell::layout::LaidOutControl;
-    use crate::ui::single_player_shell::compute_layout;
+    use crate::ui::shell::menu_page;
+    use vera20k_gui::{InputEvent, MouseButton};
 
-    fn button_feed(layout: &crate::ui::shell::menu_page::MenuPageLayout) -> Vec<LaidOutControl> {
-        layout
-            .buttons
-            .iter()
-            .map(|b| LaidOutControl {
-                id: b.id,
-                rect: b.rect,
+    const DIALOG: crate::ui::shell::descriptor::DialogResourceId = SINGLE_PLAYER_PAGE.dialog;
+
+    /// 0x100's button nodes on the 800x600 layout, Load Saved Game enabled
+    /// or not (`0x497`).
+    fn sync(c: &mut DialogController, load_enabled: bool) {
+        let layout = crate::ui::single_player_shell::compute_layout(800, 600);
+        menu_page::sync_nodes(
+            c,
+            DIALOG,
+            || SINGLE_PLAYER_PAGE.nodes(),
+            |id| layout.button_rect(id),
+            &[(
+                SinglePlayerControlId::LoadSavedGame0x689.resource_id(),
+                load_enabled,
+            )],
+        );
+    }
+
+    fn single_player(load_enabled: bool) -> DialogController {
+        let mut c = DialogController::default();
+        c.ensure_active(DIALOG);
+        sync(&mut c, load_enabled);
+        c
+    }
+
+    fn input(c: &mut DialogController, event: InputEvent) -> Option<u16> {
+        c.on_input(event);
+        let events = c.drain_events();
+        crate::ui::shell::page::page_events(c.gui(), events)
+            .into_iter()
+            .find_map(|event| match event {
+                crate::ui::shell::page::PageEvent::Activated(id) => Some(id),
+                _ => None,
             })
-            .collect()
+    }
+
+    fn down(c: &mut DialogController, x: i32, y: i32) {
+        input(
+            c,
+            InputEvent::PointerDown {
+                x,
+                y,
+                button: MouseButton::Left,
+            },
+        );
+    }
+
+    fn up(c: &mut DialogController, x: i32, y: i32) -> Option<u16> {
+        input(
+            c,
+            InputEvent::PointerUp {
+                x,
+                y,
+                button: MouseButton::Left,
+            },
+        )
+    }
+
+    fn hover(c: &mut DialogController, x: i32, y: i32) {
+        input(c, InputEvent::PointerMove { x, y });
     }
 
     #[test]
@@ -118,50 +168,43 @@ mod tests {
 
     #[test]
     fn controller_hits_dialog_0x100_buttons_by_geometry() {
-        let layout = compute_layout(800, 600);
-        let feed = button_feed(&layout);
-        let mut c = DialogController::default();
-        c.ensure_active(DialogId(0x0100), false);
-        c.on_pointer_down(639, 204, &feed);
-        assert_eq!(c.pressed(), None);
-        c.on_pointer_down(644, 204, &feed);
+        let mut c = single_player(true);
+        down(&mut c, 639, 204);
+        assert_eq!(menu_page::pressed_id(&c, DIALOG), None);
+        down(&mut c, 644, 204);
         assert_eq!(
-            c.pressed(),
+            menu_page::pressed_id(&c, DIALOG),
             Some(SinglePlayerControlId::NewCampaign0x688.resource_id())
         );
-        c.on_pointer_down(644, 290, &feed);
+        down(&mut c, 644, 290);
         assert_eq!(
-            c.pressed(),
+            menu_page::pressed_id(&c, DIALOG),
             Some(SinglePlayerControlId::Skirmish0x579.resource_id())
         );
-        c.on_pointer_down(644, 540, &feed);
+        down(&mut c, 644, 540);
         assert_eq!(
-            c.pressed(),
+            menu_page::pressed_id(&c, DIALOG),
             Some(SinglePlayerControlId::MainMenu0x686.resource_id())
         );
     }
 
     #[test]
     fn controller_disabled_load_saved_game_suppresses_press_but_still_hovers() {
-        let layout = compute_layout(800, 600);
-        let feed = button_feed(&layout);
         let load = SinglePlayerControlId::LoadSavedGame0x689.resource_id();
-        let mut c = DialogController::default();
-        c.ensure_active(DialogId(0x0100), false);
         // Disabled (no saves): press suppressed, no action emitted...
-        c.set_disabled(load, true);
-        c.on_pointer_down(639, 248, &feed);
-        assert_eq!(c.pressed(), None);
-        assert_eq!(c.on_pointer_up(639, 248, &feed), None);
-        c.on_pointer_move(639, 248, &feed);
-        assert_eq!(c.hovered(), None);
+        let mut c = single_player(false);
+        down(&mut c, 639, 248);
+        assert_eq!(menu_page::pressed_id(&c, DIALOG), None);
+        assert_eq!(up(&mut c, 639, 248), None);
+        hover(&mut c, 639, 248);
+        assert_eq!(menu_page::hovered_id(&c, DIALOG), None);
         // ...but the disabled button still hover-tracks at its native boundary.
-        c.on_pointer_move(644, 248, &feed);
-        assert_eq!(c.hovered(), Some(load));
+        hover(&mut c, 644, 248);
+        assert_eq!(menu_page::hovered_id(&c, DIALOG), Some(load));
         // Enabled: press-and-release fires Load Saved Game.
-        c.set_disabled(load, false);
-        c.on_pointer_down(644, 248, &feed);
-        let activated = c.on_pointer_up(644, 248, &feed);
+        sync(&mut c, true);
+        down(&mut c, 644, 248);
+        let activated = up(&mut c, 644, 248);
         assert_eq!(
             activated
                 .and_then(SinglePlayerControlId::from_resource_id)

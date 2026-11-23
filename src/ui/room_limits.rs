@@ -4,8 +4,9 @@
 //! whether later arrivals may watch. The map decides the player seats.
 
 use crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT;
-use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::trackbar::{TrackbarHold, TrackbarPress, TrackbarRange};
+use crate::ui::shell::geom::RectPx;
+use vera20k_gui::shell::trackbar::TrackbarRange;
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 /// What the host of VERA's room chose at Create Game: the most people it
 /// holds, and whether later arrivals may watch once its seats are taken.
@@ -39,114 +40,125 @@ pub struct RoomLimitsLayout {
     pub spectators: RectPx,
 }
 
-/// What a press on the choices took, for its sound.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RoomLimitsPress {
-    Missed,
-    Players,
-    Spectators,
-}
+vera20k_gui::scaled_rects!(RoomLimitsLayout {
+    players_label,
+    players,
+    spectators
+});
 
-/// The choices while a Create Game box is up, with the Players trackbar's
-/// hold on the mouse.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct RoomLimitsPicker {
-    pub(crate) limits: RoomLimits,
-    hold: Option<TrackbarHold>,
-}
-
-impl RoomLimitsPicker {
-    pub(crate) fn new(limits: RoomLimits) -> Self {
-        Self { limits, hold: None }
-    }
-
-    /// A left press at `(x, y)`: the trackbar takes it as every shell
-    /// trackbar does, and the checkbox only on its icon.
-    pub(crate) fn press(
-        &mut self,
-        layout: &RoomLimitsLayout,
-        scale: ShellScale,
-        x: i32,
-        y: i32,
-    ) -> RoomLimitsPress {
-        let press = PLAYERS.press_in(i32::from(self.limits.players), x, y, layout.players, scale);
-        if let Some(hold) = press.hold(()) {
-            if let TrackbarPress::Jump(value) = press {
-                self.limits.players = value as u8;
-            }
-            self.hold = Some(hold);
-            return RoomLimitsPress::Players;
-        }
-        if crate::ui::skirmish_shell::checkbox_icon_rect(layout.spectators, scale).contains(x, y) {
-            self.limits.spectators = !self.limits.spectators;
-            return RoomLimitsPress::Spectators;
-        }
-        RoomLimitsPress::Missed
-    }
-
-    /// The pointer moved to `x`: a thumb held since the press follows it.
-    pub(crate) fn drag(&mut self, layout: &RoomLimitsLayout, scale: ShellScale, x: i32) {
-        if self.hold.is_some_and(|hold| hold.dragging) {
-            self.limits.players = PLAYERS.value_at_in(x, layout.players, scale) as u8;
-        }
-    }
-
-    /// The trackbar keeps the mouse from its press to the release.
-    pub(crate) fn release(&mut self) {
-        self.hold = None;
-    }
+/// The two choices as a box's widgets, with control ids `players` and
+/// `spectators`: the Max players trackbar takes the pointer as every shell
+/// trackbar does, and the Allow spectators box toggles on a press on its
+/// icon (`0x006163A0`).
+pub(crate) fn widgets(limits: RoomLimits, players: u16, spectators: u16) -> [NodeSpec; 2] {
+    [
+        NodeSpec::new(NodeKind::Trackbar)
+            .id(players.into())
+            .with(Prop::Min, Value::Int(PLAYERS.min))
+            .with(Prop::Max, Value::Int(PLAYERS.max))
+            .with(Prop::Pos, Value::Int(limits.players.into())),
+        NodeSpec::new(NodeKind::Checkbox)
+            .id(spectators.into())
+            .with(Prop::Checked, Value::Bool(limits.spectators))
+            .label("VERA:AllowSpectators"),
+    ]
 }
 
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    use crate::ui::shell::page;
+    use vera20k_gui::{DialogKind, Gui, InputEvent, MouseButton, NodeId};
+
+    const LAYOUT: RoomLimitsLayout = RoomLimitsLayout {
+        players_label: RectPx::new(0, 0, 100, 20),
+        players: RectPx::new(200, 100, 129, 22),
+        spectators: RectPx::new(200, 130, 210, 24),
+    };
+
+    /// The choices' widgets in a box at [`LAYOUT`], as Create Game shows them.
+    fn picker() -> (Gui, NodeId) {
+        let mut gui = Gui::new(8);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        gui.push_dialog(root, DialogKind::Modal).unwrap();
+        page::ensure_built(&mut gui, root, || {
+            NodeSpec::new(NodeKind::Dialog).children(widgets(RoomLimits::default(), 1, 2))
+        });
+        page::sync_rects(&mut gui, root, |id| match id {
+            1 => Some(LAYOUT.players),
+            2 => Some(LAYOUT.spectators),
+            _ => None,
+        });
+        (gui, root)
+    }
+
+    fn press(gui: &mut Gui, x: i32, y: i32) {
+        gui.input(InputEvent::PointerMove { x, y }, 0);
+        gui.input(
+            InputEvent::PointerDown {
+                x,
+                y,
+                button: MouseButton::Left,
+            },
+            0,
+        );
+    }
+
+    fn drag(gui: &mut Gui, x: i32) {
+        gui.input(InputEvent::PointerMove { x, y: 110 }, 0);
+    }
+
+    fn release(gui: &mut Gui, x: i32, y: i32) {
+        gui.input(
+            InputEvent::PointerUp {
+                x,
+                y,
+                button: MouseButton::Left,
+            },
+            0,
+        );
+    }
+
+    fn limits(gui: &Gui, root: NodeId) -> RoomLimits {
+        RoomLimits {
+            players: page::int(gui, root, 1, Prop::Pos).unwrap() as u8,
+            spectators: page::checked(gui, root, 2),
+        }
+    }
 
     #[test]
     fn the_players_trackbar_jumps_drags_and_keeps_two_to_thirty() {
-        let layout = RoomLimitsLayout {
-            players_label: RectPx::new(0, 0, 100, 20),
-            players: RectPx::new(200, 100, 129, 22),
-            spectators: RectPx::new(200, 130, 210, 24),
-        };
-        let scale = ShellScale::RETAIL;
-        let mut picker = RoomLimitsPicker::default();
+        let (mut gui, root) = picker();
         // A press left of the thumb jumps to the left end, without a drag.
-        let press = picker.press(&layout, scale, 201, 110);
-        assert_eq!(
-            (press, picker.limits.players),
-            (RoomLimitsPress::Players, 2)
-        );
-        picker.drag(&layout, scale, 320);
-        assert_eq!(picker.limits.players, 2);
-        picker.release();
+        press(&mut gui, 201, 110);
+        assert_eq!(limits(&gui, root).players, 2);
+        drag(&mut gui, 320);
+        assert_eq!(limits(&gui, root).players, 2);
+        release(&mut gui, 320, 110);
         // The thumb drags as far as thirty.
-        let thumb = layout.players.x + PLAYERS.thumb_left_in(2, layout.players, scale);
-        picker.press(&layout, scale, thumb + 6, 110);
-        picker.drag(&layout, scale, 400);
-        assert_eq!(picker.limits.players, 30);
+        let thumb = LAYOUT.players.x
+            + PLAYERS.thumb_left_in(2, LAYOUT.players, crate::ui::shell::geom::RETAIL_SCALE);
+        press(&mut gui, thumb + 6, 110);
+        drag(&mut gui, 400);
+        assert_eq!(limits(&gui, root).players, 30);
         // Released, the thumb stays.
-        picker.release();
-        picker.drag(&layout, scale, 210);
-        assert_eq!(picker.limits.players, 30);
+        release(&mut gui, 400, 110);
+        drag(&mut gui, 210);
+        assert_eq!(limits(&gui, root).players, 30);
     }
 
     #[test]
     fn allow_spectators_toggles_on_its_icon_only() {
-        let layout = RoomLimitsLayout {
-            players_label: RectPx::new(0, 0, 100, 20),
-            players: RectPx::new(200, 100, 129, 22),
-            spectators: RectPx::new(200, 130, 210, 24),
-        };
-        let mut picker = RoomLimitsPicker::default();
-        let press = picker.press(&layout, ShellScale::RETAIL, 205, 135);
-        assert_eq!(press, RoomLimitsPress::Spectators);
-        assert!(!picker.limits.spectators);
-        let press = picker.press(&layout, ShellScale::RETAIL, 300, 135);
-        assert_eq!(press, RoomLimitsPress::Missed);
+        let (mut gui, root) = picker();
+        press(&mut gui, 205, 135);
+        release(&mut gui, 205, 135);
+        assert!(!limits(&gui, root).spectators);
+        press(&mut gui, 300, 135);
         // A missed press holds nothing for a drag.
-        picker.drag(&layout, ShellScale::RETAIL, 320);
+        drag(&mut gui, 320);
+        release(&mut gui, 320, 135);
         assert_eq!(
-            picker.limits,
+            limits(&gui, root),
             RoomLimits {
                 players: 30,
                 spectators: false

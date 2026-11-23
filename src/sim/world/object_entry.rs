@@ -266,6 +266,10 @@ impl PreludeCells for PreludeReads<'_> {
         self.kept(cell, |facts| facts.flags)
             .unwrap_or_else(|| self.query.flags(cell))
     }
+
+    fn corrected_deck(&self, cell: Cell) -> Option<i32> {
+        self.query.corrected_deck(cell)
+    }
 }
 
 /// `HouseClass::Is_Ally_ByObject @ 0x004F9A90` / `Is_Ally`: `asker`'s own
@@ -1061,7 +1065,11 @@ fn full_foot_entry<'a>(
             return Ok(7);
         }
         //51C0AE reloads the target level after the first neighbor lookup.
-        if infantry && height.wrapping_sub(i32::from(target.level(live))) > 4 {
+        let corrected_deck = cells.corrected_deck(cell);
+        if infantry
+            && corrected_deck.is_none()
+            && height.wrapping_sub(i32::from(target.level(live))) > 4
+        {
             return Ok(0);
         }
         if !adjust_height_and_list(
@@ -1078,7 +1086,7 @@ fn full_foot_entry<'a>(
         //of the object list plane modified by4D9C60. Keep both authorities.
         if height != -1
             && target.flags(live) & 0x100 != 0
-            && height == i32::from(target.level(live)) + 4
+            && height == corrected_deck.unwrap_or_else(|| i32::from(target.level(live)) + 4)
         {
             (bits, owner) = target.deck_raw(live);
             vehicle_occupied = bits & 0x20 != 0;
@@ -1347,9 +1355,13 @@ fn full_foot_entry<'a>(
                 } else {
                     bt.unit_absorb
                 };
+                // Original RA2 has no Grinding= field; the refund-on-entry
+                // behavior lives on Cloning vats. On the RA2 profile treat a
+                // Cloning building as the grinder/eater for these gates.
+                let refund_eater = bt.grinding || (live.rules.ra2() && bt.cloning);
                 if object_target_is(e, blocker_id)
                     && ((mission == Some(MissionType::Enter) && absorber)
-                        || (mission == Some(MissionType::Eaten) && bt.grinding))
+                        || (mission == Some(MissionType::Eaten) && refund_eater))
                     && !b.warped_out
                 {
                     return Ok(0);
@@ -1357,7 +1369,7 @@ fn full_foot_entry<'a>(
                 //73F661..6CF: Grinding additionally walks CURRENT ground E4,
                 //without mission/NavCom/radio/warp gates. Do the actual lookup
                 //at this list position, preserving shared-Dummy stamping.
-                if bt.grinding {
+                if refund_eater {
                     let current =
                         crate::sim::movement::ground_pose::position_world_coord(&e.position);
                     let current_cell = live

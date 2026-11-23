@@ -26,7 +26,6 @@ use crate::sim::movement::ground_pose::query_ground_height as query_ground;
 use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
 use crate::sim::occupancy::RawCellOccupationGrid;
 use crate::sim::pathfinding::zone_map::{ZoneGrid, ZoneQueryCell};
-use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 
 /// What_Action's answer, on a Cell (vt+0x70) or over an object (vt+0x74), in
 /// the rungs a Move click reaches.
@@ -1579,9 +1578,10 @@ fn clicked_coordinate(
 fn grounded_coordinate(cells: &NativeCellQuery<'_>, x: i32, y: i32) -> Result<DriveCoord, String> {
     let mut point = DriveCoord { x, y, z: 0 };
     point.z = query_ground(cells, point)?;
-    //4DE242/4DE38C are separate Map calls after the height query.
-    if cells.flags(cells.lookup_world(point.x, point.y)) & 0x100 != 0 {
-        point.z = point.z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+    // 4DE242/4DE38C are separate Map calls after the height query.
+    let cell = cells.lookup_world(point.x, point.y);
+    if cells.flags(cell) & 0x100 != 0 {
+        point.z = ground_pose::deck_surface_z(cells, cell, point.z);
     }
     Ok(point)
 }

@@ -818,6 +818,134 @@ fn apply_one_marks_handoff_and_full_head_without_foot_enable() {
 }
 
 #[test]
+fn drive_stops_on_the_deck_over_a_depressed_side_lane() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+    let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
+    let mut terrain = test_grid(32, 32, |x, y| {
+        let mut cell = test_flat_cell(x, y);
+        cell.level = match (x, y) {
+            (10, 8) => 5,
+            (10, 9) => 0,
+            (10, 10) => 9,
+            _ => 4,
+        };
+        cell
+    });
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new((10, 8), 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    // A terrain write beneath the live span leaves its level-nine deck intact.
+    let anchor = terrain.native_cell_identity((10, 8));
+    terrain.write_native_cell_level(anchor, 4);
+    let target = terrain.native_cell_identity((10, 9));
+    let approach = terrain.native_cell_identity((10, 10));
+    terrain.write_native_cell_level(approach, 4);
+    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(&terrain);
+    assert!(
+        !crate::sim::movement::infantry_entry::adjust_height_and_list(
+            &cells,
+            target,
+            0,
+            Some(approach),
+            &mut 4,
+            &mut false,
+        ),
+        "the old ground + 4 height cannot enter the nine-level deck"
+    );
+    terrain.write_native_cell_level(approach, 9);
+    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(&terrain);
+    let (mut height, mut on_bridge) = (9, false);
+    assert!(
+        crate::sim::movement::infantry_entry::adjust_height_and_list(
+            &cells,
+            target,
+            0,
+            None,
+            &mut height,
+            &mut on_bridge,
+        )
+    );
+    assert!(on_bridge);
+    sim.install_resolved_terrain_for_new_map(terrain);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_on_bridge(true);
+    sim.track_place(
+        1,
+        DriveCoord::cell(10, 9, 0),
+        (10, 10),
+        true,
+        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        &mut |_, _, _| {},
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    let tank = sim.substrate.entities.get(1).unwrap();
+    assert!(tank.on_bridge());
+    assert_eq!(position_world_coord(&tank.position).z, 936);
+    assert_eq!(
+        sim.resolved_terrain
+            .as_ref()
+            .unwrap()
+            .cell(10, 9)
+            .unwrap()
+            .level,
+        0
+    );
+}
+
+/// The terminal point skips the bridge predicate but still enters its cell:
+/// over a dip it stores the fixed deck's level, as a crossing between cells
+/// does, not the dip's ground plus four.
+#[test]
+fn a_terminal_point_over_a_dip_stores_the_decks_level() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+    let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
+    // The anchor at level 5 puts the deck at 9; its lane (10, 9) is a dip.
+    let mut terrain = test_grid(32, 32, |x, y| {
+        let mut cell = test_flat_cell(x, y);
+        cell.level = if (x, y) == (10, 9) { 0 } else { 5 };
+        cell
+    });
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new((10, 8), 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    assert_eq!(terrain.corrected_high_bridge_deck_level((10, 9)), Some(9));
+    sim.path_grid = Some(std::sync::Arc::new(
+        crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain),
+    ));
+    sim.install_resolved_terrain_for_new_map(terrain);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_on_bridge(true);
+    sim.track_place(
+        1,
+        DriveCoord::cell(10, 9, 0),
+        (10, 10),
+        true,
+        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        &mut |_, _, _| {},
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    let tank = sim.substrate.entities.get(1).unwrap();
+    assert!(tank.on_bridge());
+    assert_eq!(tank.position.z(), 9);
+}
+
+#[test]
 fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
     let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
     if sim.path_grid.is_none() {
@@ -3457,6 +3585,7 @@ fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
             300,
             &rules,
             sim.resolved_terrain.as_ref().unwrap(),
+            sim.path_grid.as_deref(),
             &crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
             (20, 10),
             false,

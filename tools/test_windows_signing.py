@@ -104,7 +104,11 @@ class WindowsSigningTests(unittest.TestCase):
                 xml = ET.parse(SOURCE.with_name(filename))
                 files = xml.findall(".//s:pe-file", namespace)
                 for file in files:
-                    if file.get("path") == "vera20k.exe":
+                    if file.get("path") == "dxcompiler.dll":
+                        # Microsoft's signed DLL ships as released: verified, never re-signed.
+                        self.assertIsNotNone(file.find("s:authenticode-verify", namespace))
+                        self.assertIsNone(file.find("s:authenticode-sign", namespace))
+                    elif file.get("path") == "vera20k.exe":
                         self.assertEqual(file.get("product-name"), "VERA20k")
                         self.assertEqual(file.get("product-version"), "${version}")
                     else:

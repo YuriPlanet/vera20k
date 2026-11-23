@@ -13,8 +13,14 @@ use crate::sim::world::{FrameEffects, Simulation};
 /// passive so its Strategy does not send a base-less house hunting, and
 /// `Americans` a human one.
 pub(super) fn scene() -> Option<(Simulation, RuleSet, PathGrid)> {
+    scene_with_size(40)
+}
+
+/// [`scene`] on a `size` x `size` arena, for refinery scans that need VERA's
+/// extended random-map distances.
+pub(super) fn scene_with_size(size: u16) -> Option<(Simulation, RuleSet, PathGrid)> {
     let rules = crate::rules::retail_ini_fixture::retail_battle_rules()?.rules;
-    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x0073_681D, 40);
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 0x0073_681D, size);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.session

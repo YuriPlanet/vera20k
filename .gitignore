@@ -26,6 +26,7 @@ Thumbs.db
 !.github/release/macos/requirements.txt
 !.github/release/icon.png
 !/src/app/vera_icon.png
+!/src/app/title_bar_logo*.png
 !/android/app/src/main/res/mipmap-*/*.png
 *.tmp
 *.map
@@ -42,6 +43,7 @@ Thumbs.db
 
 /docs/*
 !/docs/ai-layers.md
+!/docs/save-compatibility.md
 !/docs/capabilities.md
 !/docs/wasm.md
 !/docs/sim-thread.md
@@ -110,16 +112,19 @@ Thumbs.db
 !/docs/ares-superweapon-building-gates.md
 !/docs/ares-superweapon-money.md
 !/docs/ares-building-palettes.md
+!/docs/ares-commands.md
 !/docs/ini-directives.md
 !/docs/ini-commander-personalities.md
 !/docs/ini-end-game-screens.md
 !/docs/health-bars.md
+!/docs/ra2-mode.md
 !/docs/jumpjet-smooth-facing.md
 !/docs/ai-nearest-enemy.md
 !/docs/jumpjet-land-nearby.md
 !/docs/formation-line.md
 !/docs/ferry.md
 !/docs/auto-repair.md
+!/docs/level-bridge-decks.md
 !/docs/minimap-beacons.md
 !/docs/primary-rotation.md
 !/docs/relation-colours.md
@@ -164,6 +169,7 @@ tools/vendor-eval/
 !/README.sv.md
 !/README.de.md
 !/README.zh-CN.md
+!/README.zh-TW.md
 !/README.ar.md
 !/README.es.md
 !/README.ja.md

@@ -109,22 +109,21 @@ fn show_visit(state: &mut AppState) {
     state
         .frontend
         .shell_controller
-        .reset_to(super::WOL_LOBBY_DIALOG, false);
+        .reset_to(super::WOL_LOBBY_DIALOG);
     let join = selected_admits(state);
     if let Some(lobby) = lobby_mut(state) {
         lobby.shown = true;
         lobby.covered = false;
-        lobby.ui.enable_commands(join);
+        lobby.ui.set_commands(true, join, false);
     }
     refill_players(state);
     request_games(state);
-    state.platform.window.request_redraw();
 }
 
 /// Whether the selected game row admits Join, as a player or a spectator.
 pub(super) fn selected_admits(state: &mut AppState) -> bool {
     lobby(state)
-        .and_then(|lobby| lobby.ui.game_list.selected)
+        .and_then(|lobby| lobby.ui.selected_row(GAMES))
         .is_some_and(|row| {
             admit_row(state, row, false, false) || admit_row(state, row, true, false)
         })
@@ -169,7 +168,6 @@ pub(super) fn visit_failed(state: &mut AppState) {
     };
     runner.step = Step::Ready;
     message_line(state, crate::i18n::tr("VERA:VisitFailed"));
-    state.platform.window.request_redraw();
 }
 
 /// Ends the visit with its room, as leaving it or the runner's close does:
@@ -218,11 +216,10 @@ pub(super) fn visit_settles(state: &mut AppState, line: String) {
     if let Some(lobby) = lobby_mut(state) {
         lobby.current = Some(visit.channel);
         lobby.members = visit.members;
-        lobby.ui.enable_commands(join);
+        lobby.ui.set_commands(true, join, false);
     }
     refill_players(state);
     message_line(state, line);
-    state.platform.window.request_redraw();
 }
 
 /// Another user joined the lobby this player visits: its list takes them,

@@ -12,10 +12,14 @@
 //! module owns control identity, geometry, the list's line rules and the
 //! per-player bar paint.
 
-use super::button::ShellButtonInteraction;
+use vera20k_gui::{NodeKind, NodeSpec};
+
+use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
-use crate::ui::lan_shell::{LanChatLine, LanListState};
+use crate::ui::lan_shell::LanChatLine;
+
+pub const DIALOG: DialogResourceId = DialogResourceId(0xEA);
 
 /// Physical row slots. VERA pages the complete local-first node snapshot.
 pub const CONNECTION_ROWS: usize = 8;
@@ -89,15 +93,40 @@ impl ConnectionControl {
         }
     }
 
-    fn button(self) -> Option<ConnectionButton> {
-        match self {
-            Self::Quit => Some(ConnectionButton::Quit),
-            Self::PreviousPage => Some(ConnectionButton::PreviousPage),
-            Self::NextPage => Some(ConnectionButton::NextPage),
-            Self::Player(row) => Some(ConnectionButton::Player(row)),
-            Self::Bar(_) | Self::Countdown | Self::List => None,
-        }
+    /// The children in template (Z) order (Quit, list, VERA's paging,
+    /// row buttons, bars, countdown), as `ChildWindowFromPointEx` finds them.
+    fn all() -> impl Iterator<Item = Self> {
+        [Self::Quit, Self::List, Self::PreviousPage, Self::NextPage]
+            .into_iter()
+            .chain(TEMPLATE_PLAYER_ORDER.iter().filter_map(|id| {
+                PLAYER_IDS
+                    .iter()
+                    .position(|row_id| row_id == id)
+                    .map(Self::Player)
+            }))
+            .chain((0..CONNECTION_ROWS).map(Self::Bar))
+            .chain([Self::Countdown])
     }
+
+    pub fn from_id(id: u16) -> Option<Self> {
+        Self::all().find(|control| control.id() == id)
+    }
+}
+
+/// Every child, each with its status help: the buttons, then the statics.
+pub fn spec() -> NodeSpec {
+    NodeSpec::new(NodeKind::Dialog).children(ConnectionControl::all().map(|control| {
+        let kind = match control {
+            ConnectionControl::Quit
+            | ConnectionControl::PreviousPage
+            | ConnectionControl::NextPage
+            | ConnectionControl::Player(_) => NodeKind::Button,
+            _ => NodeKind::Text,
+        };
+        NodeSpec::new(kind)
+            .id(control.id().into())
+            .tooltip(control.help_key())
+    }))
 }
 
 /// Physical rectangles of every control in the active-game shell's pixels.
@@ -222,12 +251,13 @@ pub(crate) struct ConnectionPage {
     pub(crate) countdown: Option<String>,
     /// List 0x651.
     pub(crate) lines: Vec<LanChatLine>,
-    pub(crate) list: LanListState,
+    /// List 0x651's first shown row.
+    pub(crate) top: usize,
     /// The wait's elapsed buckets at the last full repaint: the bars are
     /// drawn by WM_PAINT, which the wait posts on even countdown seconds.
     pub(crate) painted_elapsed: u64,
-    pub(crate) buttons: ShellButtonInteraction<ConnectionButton>,
-    pub(crate) hovered: Option<ConnectionControl>,
+    /// The dialog's controls are built: a new 0xEA starts them afresh.
+    pub(crate) controls_built: bool,
 }
 
 impl ConnectionPage {
@@ -242,52 +272,34 @@ impl ConnectionPage {
         super::paging::RowPage::count(self.rows.len(), CONNECTION_ROWS)
     }
     pub fn change_page(&mut self, next: bool) -> bool {
-        let changed = self.page.change(next, self.rows.len(), CONNECTION_ROWS);
-        if changed {
-            self.buttons = Default::default();
-            self.hovered = None;
+        self.page.change(next, self.rows.len(), CONNECTION_ROWS)
+    }
+
+    /// Control `id`'s rect; `None` while it is hidden (an absent row, the
+    /// paging buttons of a single page).
+    pub fn rect(&self, layout: &ConnectionLayout, id: u16) -> Option<RectPx> {
+        let control = ConnectionControl::from_id(id)?;
+        let shown = match control {
+            ConnectionControl::PreviousPage | ConnectionControl::NextPage => self.page_count() > 1,
+            ConnectionControl::Player(row) | ConnectionControl::Bar(row) => {
+                row < self.visible_range().len()
+            }
+            _ => true,
+        };
+        shown.then(|| layout.control_rect(control))
+    }
+
+    /// The button control `id` is, a row button naming its row on the page.
+    pub fn button(&self, id: u16) -> Option<ConnectionButton> {
+        match ConnectionControl::from_id(id)? {
+            ConnectionControl::Quit => Some(ConnectionButton::Quit),
+            ConnectionControl::PreviousPage => Some(ConnectionButton::PreviousPage),
+            ConnectionControl::NextPage => Some(ConnectionButton::NextPage),
+            ConnectionControl::Player(visible) => Some(ConnectionButton::Player(
+                self.visible_range().start + visible,
+            )),
+            _ => None,
         }
-        changed
-    }
-
-    /// The visible child under a pointer, in template order (Quit, list,
-    /// row buttons, bars, countdown), as `ChildWindowFromPointEx` finds it.
-    pub fn control_at(
-        &self,
-        layout: &ConnectionLayout,
-        x: i32,
-        y: i32,
-    ) -> Option<ConnectionControl> {
-        let rows = self.visible_range().len();
-        [ConnectionControl::Quit, ConnectionControl::List]
-            .into_iter()
-            .chain(
-                (self.page_count() > 1)
-                    .then_some([ConnectionControl::PreviousPage, ConnectionControl::NextPage])
-                    .into_iter()
-                    .flatten(),
-            )
-            .chain(TEMPLATE_PLAYER_ORDER.iter().filter_map(|id| {
-                PLAYER_IDS
-                    .iter()
-                    .position(|row_id| row_id == id)
-                    .filter(|row| *row < rows)
-                    .map(ConnectionControl::Player)
-            }))
-            .chain((0..rows).map(ConnectionControl::Bar))
-            .chain([ConnectionControl::Countdown])
-            .find(|control| layout.control_rect(*control).contains(x, y))
-    }
-
-    /// The button a control is, for capture.
-    pub fn button_at(&self, layout: &ConnectionLayout, x: i32, y: i32) -> Option<ConnectionButton> {
-        self.control_at(layout, x, y)
-            .and_then(|control| match control {
-                ConnectionControl::Player(visible) => Some(ConnectionButton::Player(
-                    self.visible_range().start + visible,
-                )),
-                other => other.button(),
-            })
     }
 
     /// The tail of 0x0064AAE0 / 0x0064AD10 after their line: keep at most
@@ -297,7 +309,7 @@ impl ConnectionPage {
             self.lines.remove(0);
         }
         let last = self.lines.len().saturating_sub(1);
-        self.list.top_index = last.min(self.lines.len().saturating_sub(visible_rows));
+        self.top = last.min(self.lines.len().saturating_sub(visible_rows));
     }
 }
 
@@ -405,17 +417,27 @@ mod tests {
             ],
             ..Default::default()
         };
+        let id_at = |page: &ConnectionPage, x, y| {
+            let mut gui = vera20k_gui::Gui::new(64);
+            let root = gui.create(NodeKind::Dialog, None).unwrap();
+            crate::ui::shell::page::ensure_built(&mut gui, root, spec);
+            crate::ui::shell::page::sync_rects(&mut gui, root, |id| page.rect(&layout, id));
+            let node = gui.hit_at(root, x, y, false)?;
+            Some(gui.id_of(node)? as u16)
+        };
+        let control_at =
+            |page: &ConnectionPage, x, y| ConnectionControl::from_id(id_at(page, x, y)?);
         let row1 = layout.players[1];
         assert_eq!(
-            page.control_at(&layout, row1.x + 1, row1.y + 1),
+            control_at(&page, row1.x + 1, row1.y + 1),
             Some(ConnectionControl::Player(1))
         );
         assert_eq!(ConnectionControl::Player(1).id(), 0x642);
         assert_eq!(page.row_source(1), Some(7));
         let row2 = layout.players[2];
-        assert_eq!(page.control_at(&layout, row2.x + 1, row2.y + 1), None);
+        assert_eq!(control_at(&page, row2.x + 1, row2.y + 1), None);
         let bar2 = layout.bars[2];
-        assert_eq!(page.control_at(&layout, bar2.x + 1, bar2.y + 1), None);
+        assert_eq!(control_at(&page, bar2.x + 1, bar2.y + 1), None);
         let mut page = ConnectionPage {
             rows: (0..30)
                 .map(|row| ConnectionRow {
@@ -428,7 +450,7 @@ mod tests {
         assert!(page.change_page(true));
         let first = layout.players[0];
         assert_eq!(
-            page.button_at(&layout, first.x + 1, first.y + 1),
+            id_at(&page, first.x + 1, first.y + 1).and_then(|id| page.button(id)),
             Some(ConnectionButton::Player(8))
         );
         assert_eq!(page.row_source(8), Some(21));
@@ -511,6 +533,6 @@ mod tests {
         }
         assert_eq!(page.lines.len(), 50);
         assert_eq!(String::from_utf16_lossy(&page.lines[0].text), "1");
-        assert_eq!(page.list.top_index, 43);
+        assert_eq!(page.top, 43);
     }
 }

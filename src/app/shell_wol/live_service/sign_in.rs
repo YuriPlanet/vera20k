@@ -104,10 +104,9 @@ pub(super) fn forget_deleted_account(state: &mut AppState, lobby: &str, name: &s
         globals.password.clear();
         globals.remember = false;
     }
-    if let Some(super::WolPage::Login(login)) =
-        state.frontend.wol.as_mut().map(|visit| &mut visit.page)
-    {
-        login.account_deleted(name);
+    let frontend = &mut state.frontend;
+    if let Some(super::WolPage::Login(login)) = frontend.wol.as_mut().map(|visit| &mut visit.page) {
+        login.account_deleted(&mut frontend.shell_controller, name);
     }
 }
 

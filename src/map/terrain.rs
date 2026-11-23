@@ -102,7 +102,10 @@ pub struct TacticalBridgeCell {
 pub trait TacticalCellLookup: std::fmt::Debug {
     fn cell_level(&self, rx: u16, ry: u16) -> Option<u8>;
     fn bridge_cell(&self, rx: u16, ry: u16) -> Option<TacticalBridgeCell>;
-    /// Conservative upper bound on live signed cell levels, including zero.
+    fn corrected_bridge_base_level(&self, _rx: u16, _ry: u16) -> Option<u8> {
+        None
+    }
+    /// Conservative upper bound on signed projection levels, including zero.
     fn max_cell_level(&self) -> i8;
     /// Conservative lower bound on live signed cell levels, including zero.
     fn min_cell_level(&self) -> i8;
@@ -489,9 +492,24 @@ fn apply_tactical_bridge_inverse(
     // adjustment. Using the deck's artwork origin displaced clicks by
     // (-30, -60) on a normal high bridge. Keep VERA's shared world-row bias.
     // Evidence: TACTICAL_BRIDGE_MOVE_CLICK_DIAGNOSIS_20260909.md.
-    let (tile_left, bridge_ref_y) = iso_to_screen(cell_rx, cell_ry, terrain_z);
-    let bridge_ref_x = tile_left + TILE_WIDTH / 2.0;
-    if bridge_ref_y <= input_y {
+    let (tile_left, ground_ref_y) = iso_to_screen(cell_rx, cell_ry, terrain_z);
+    // A deck held off its cell's ground picks by its own footprint, checked
+    // before the direct-neighbor shortcut can select the neighboring ground.
+    // A deck at gamemd's own ground + 4, as every retail one loads, takes
+    // gamemd's inverse unchanged (tools/bridge_click_oracle).
+    let fixed_base = bridge_cells
+        .corrected_bridge_base_level(cell_rx, cell_ry)
+        .filter(|&base| base != terrain_z);
+    if let Some(base) = fixed_base {
+        let lift = f32::from(base as i8) * HEIGHT_STEP + TACTICAL_BRIDGE_EXTRA_HEIGHT_PX;
+        let (rx, ry) = screen_to_iso(input_x, input_y + lift);
+        if rounded_lookup_cell(rx, ry) == Some((cell_rx, cell_ry)) {
+            return Some(TacticalInverseResult::Cell { rx, ry });
+        }
+    }
+    // The direct-neighbor branch still selects ground. Raising the deck
+    // must not make it select an unraised neighbor from far above the cell.
+    if ground_ref_y <= input_y {
         if direct_y {
             return Some(TacticalInverseResult::Cell {
                 rx: cell_rx as f32,
@@ -506,11 +524,16 @@ fn apply_tactical_bridge_inverse(
         }
     }
 
+    if fixed_base.is_some() {
+        return None;
+    }
+
     // Input and reference are whole pixels. Native 0x006D697D..0x006D69C0
     // divides signed dx by two toward zero, then compares strictly against 15.
     // Float division changes the result for odd dx at the railing boundary.
+    let bridge_ref_x = tile_left + TILE_WIDTH / 2.0;
     let input_x_delta = (input_x - bridge_ref_x) as i32;
-    let input_y_delta = (input_y - bridge_ref_y) as i32;
+    let input_y_delta = (input_y - ground_ref_y) as i32;
     let apply_extra_bridge_lift = if dir0_open_edge {
         input_y_delta - input_x_delta / 2 > TACTICAL_BRIDGE_EDGE_THRESHOLD_PX
     } else if dir6_open_edge {
@@ -519,8 +542,8 @@ fn apply_tactical_bridge_inverse(
         true
     };
     if apply_extra_bridge_lift {
-        *adjusted_scan_y =
-            scan_y - f32::from(terrain_z as i8) * HEIGHT_STEP - TACTICAL_BRIDGE_EXTRA_HEIGHT_PX;
+        let lift = f32::from(terrain_z as i8) * HEIGHT_STEP + TACTICAL_BRIDGE_EXTRA_HEIGHT_PX;
+        *adjusted_scan_y = scan_y - lift;
     }
     None
 }
@@ -684,6 +707,46 @@ mod tests {
             },
         );
         assert_eq!(picked, TacticalInverseResult::Cell { rx: 16.0, ry: 16.0 });
+    }
+
+    #[test]
+    fn raised_bridge_picking_uses_the_deck_footprint() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+        use crate::map::resolved_terrain::{ResolvedTerrainCell, test_flat_cell, test_grid};
+        let mut terrain = test_grid(24, 24, |rx, ry| ResolvedTerrainCell {
+            level: if (rx, ry) == (10, 8) { 6 } else { 0 },
+            ..test_flat_cell(rx, ry)
+        });
+        let anchor = (10, 10);
+        terrain.set_authored_high_bridge_deck(terrain.native_cell_identity((10, 10)), 10);
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new(anchor, 0, true),
+            BridgeStampFamily::Nesw,
+        );
+        let pick = |x, y| {
+            let result = screen_to_cell_tactical_inverse(
+                x,
+                y,
+                TacticalInverseContext {
+                    cells: Some(&terrain),
+                    viewport_offset_x: 0.0,
+                    viewport_offset_y: 0.0,
+                },
+            );
+            let (TacticalInverseResult::Cell { rx, ry }
+            | TacticalInverseResult::Fallback { rx, ry }) = result;
+            rounded_lookup_cell(rx, ry)
+        };
+        assert_eq!(
+            pick(-30.0, 195.0),
+            Some((10, 11)),
+            "the raised deck's center"
+        );
+        assert_eq!(
+            pick(-30.0, 241.0),
+            Some((7, 8)),
+            "visible ground beyond the deck"
+        );
     }
 
     #[test]

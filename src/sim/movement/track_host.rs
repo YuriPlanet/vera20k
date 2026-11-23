@@ -755,8 +755,9 @@ impl Simulation {
     /// `0x004B1851..0x004B197E`, Ship `0x006A0EDD..0x006A100A`. An `IsTrain=`
     /// (Type+0xC94) Unit that is not a follower car (Unit+0x6D0) walks the
     /// entered cell's object list: the deck list (+0xE8) when it is OnBridge
-    /// or its Location Z is not below the floor there (`0x00578080`) plus the
-    /// deck height, else the ground list (+0xE4). The successor is read
+    /// or its Location Z is not below the deck surface there, else the ground
+    /// list (+0xE4). Without a fixed deck, the surface is the floor there
+    /// (`0x00578080`) plus the native deck height. The successor is read
     /// before each object (`0x004B190B`). Every object that
     /// `Is_Crushable_By @ 0x005F6CD0` refuses takes
     /// ReceiveDamage(&10000, 0, C4Warhead, NULL, 1, 1, NULL) (`0x004B191A..
@@ -798,12 +799,11 @@ impl Simulation {
             || location.z
                 >= super::ground_pose::ground_surface_z_at(
                     [location.x, location.y],
-                    false,
+                    true,
                     terrain,
                     self.path_grid.as_deref(),
                 )
-                .unwrap_or(0)
-                    + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+                .unwrap_or(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
         {
             MovementLayer::Bridge
         } else {
@@ -927,6 +927,7 @@ impl Simulation {
                 let update = super::movement_bridge::resolve_cell_transition_bridge_state(
                     &mut entity.position,
                     grid,
+                    self.resolved_terrain.as_ref(),
                     previous_track_cell,
                     selected_cell,
                     on_bridge,
@@ -941,9 +942,15 @@ impl Simulation {
             {
                 // The terminal point skips the bridge predicate but still
                 // enters a new cell.
-                entity
-                    .position
-                    .store_cell_level(entered.ground_level, entity.on_bridge());
+                let deck = self
+                    .resolved_terrain
+                    .as_ref()
+                    .and_then(|terrain| terrain.corrected_high_bridge_deck_level(selected_cell));
+                entity.position.store_cell_level_on_deck(
+                    entered.ground_level,
+                    entity.on_bridge(),
+                    deck,
+                );
             }
         }
         if crossing && paid.is_some() {

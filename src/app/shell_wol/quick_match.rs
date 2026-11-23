@@ -26,14 +26,17 @@
 use crate::util::time::{Duration, Instant};
 
 use super::WolPage;
+use super::leaf::{self, Pointer};
 use super::lobby;
 use super::service::{self, WolServiceRequest};
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
 use crate::ui::lan_shell::LanChatLine;
+use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::wol_lobby::{GAME_CHANNEL, MEMBER_OPERATOR, WolChannel};
 use crate::ui::wol_quick_match::*;
 use crate::ui::wol_shell::WolMode;
+use vera20k_gui::{NodeId, Prop, Value};
 
 /// `0x0084A21C`: the Quick Match lobbies' prefix.
 pub(crate) const QUICK_MATCH_PREFIX: &str = "Lob_40_";
@@ -118,6 +121,9 @@ struct GameSearch {
 pub(crate) struct QuickMatchDialog {
     pub(crate) ui: WolQuickMatchPage,
     dot_at: Instant,
+    /// The status help of the control last hovered on the page itself: a
+    /// box over it takes the pointer and leaves the help as it was.
+    help: Option<String>,
 }
 
 /// `time()`.
@@ -237,78 +243,68 @@ pub(crate) fn page_open(state: &AppState) -> bool {
 }
 
 /// `0x005E2820` on `0x117`'s `0x53F`: `f` gets the page and the adder,
-/// which wraps a row to the list's width and appends it (`0x005E29A0`).
+/// which wraps a row to the list's width and appends it (`0x005E29A0`);
+/// the list widget then keeps its view ([`vera20k_gui::Gui::log_rows`]).
 fn with_transcript(
     state: &mut AppState,
     f: impl FnOnce(&mut WolQuickMatchPage, &dyn Fn(&mut WolQuickMatchPage, LanChatLine)),
 ) {
     let layout = layout(state);
-    let scale = layout.page.scale;
-    let width = scale.base_rect(layout.transcript).w;
+    let rect = layout
+        .rect_of(crate::ui::wol_quick_match::TRANSCRIPT)
+        .unwrap_or_default();
+    let width = layout.page.scale.base_rect(rect).w;
+    let root = sync(state);
+    let gui = state.frontend.shell_controller.gui_mut();
     let font = &state.renderer.bit_font;
     let Some(WolPage::QuickMatch(dialog)) =
         state.frontend.wol.as_mut().map(|visit| &mut visit.page)
     else {
         return;
     };
+    let dropped = std::cell::Cell::new(0);
     let add = |ui: &mut WolQuickMatchPage, line: LanChatLine| {
-        let visible = ui
-            .list
-            .geometry(layout.transcript, ui.lines.len(), scale)
-            .visible_rows;
-        crate::ui::lan_shell::append_list_message(
-            &mut ui.lines,
-            &mut ui.list,
-            line,
-            width,
-            visible,
-            |units| font.text_width(&String::from_utf16_lossy(units)) as i32,
-        );
+        let measure = |units: &[u16]| font.text_width(&String::from_utf16_lossy(units)) as i32;
+        let gone = crate::ui::lan_shell::append_wrapped(&mut ui.lines, line, width, measure);
+        dropped.set(dropped.get() + gone);
     };
     f(&mut dialog.ui, &add);
+    if let Some(list) = root.and_then(|root| gui.find_id(root, TRANSCRIPT.into())) {
+        // A list built after its rows came starts at its first row.
+        if gui.get(list, Prop::Top).ok().flatten().is_none() {
+            let _ = gui.set(list, Prop::Top, Value::Int(0));
+        }
+        let _ = gui.log_rows(list, dialog.ui.lines.len(), dropped.get());
+    }
 }
 
 /// A line for `0x117`'s transcript (`0x005E2700` with `0x117` on top).
 pub(crate) fn append_line(state: &mut AppState, line: LanChatLine) {
     with_transcript(state, |ui, add| add(ui, line));
-    state.platform.window.request_redraw();
 }
 
 pub(crate) fn layout(state: &AppState) -> WolQuickMatchLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    if shell_layout::fills_window(state) {
-        WolQuickMatchLayout::responsive(width as i32, height as i32)
-    } else {
-        WolQuickMatchLayout::new(width as i32, height as i32)
-    }
+    shell_layout::on(state, WolQuickMatchLayout::new)
 }
 
 /// The status help under the pointer (`0x006040B0`).
-pub(crate) fn status_key(state: &AppState) -> Option<&'static str> {
-    dialog(state)?.ui.hovered.and_then(tooltip_key)
+pub(crate) fn status_key(state: &AppState) -> Option<&str> {
+    dialog(state)?.help.as_deref()
 }
 
-/// `0x0072BE80`: quickmatch.shp (800 wide only) through quickmatch.PAL.
-pub(crate) fn open_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_quick_match_art.is_some() {
-        return true;
+/// Builds and places `0x117`'s widgets; under a box they take no pointer.
+pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
+    let layout = layout(state);
+    let boxed = App::wol_box_owns_input(state);
+    let root = leaf::sync(state, DIALOG, layout.page.scale, spec, |id| {
+        layout.rect_of(id)
+    })?;
+    let gui = state.frontend.shell_controller.gui_mut();
+    for id in [CANCEL, TRANSCRIPT] {
+        let hit = layout.rect_of(id).filter(|_| !boxed).unwrap_or_default();
+        page::set(gui, root, id, Prop::HitRect, Value::Rect(hit));
     }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_quick_match_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("quickmatch.shp", "quickmatch.PAL"),
-        &[],
-    );
-    state.frontend.wol_quick_match_art.is_some()
-}
-
-fn csf(state: &AppState, key: &str) -> String {
-    service::resolve(state, key)
+    Some(root)
 }
 
 /// `0x005E2700` into the current dialog's transcript.
@@ -323,13 +319,13 @@ fn line(state: &mut AppState, text: String, color: u32) {
 }
 
 fn csf_line(state: &mut AppState, key: &str, color: u32) {
-    let text = csf(state, key);
+    let text = state.csf_text(key);
     line(state, text, color);
 }
 
 fn csf_name_line(state: &mut AppState, key: &str, name: &str, color: u32) {
     let text = crate::assets::csf_file::format_csf(
-        &csf(state, key),
+        &state.csf_text(key),
         &[crate::assets::csf_file::CsfArg::Str(name)],
     );
     line(state, text, color);
@@ -354,7 +350,10 @@ pub(super) fn run(state: &mut AppState) {
             .multiplayer_shell_runtime
             .set_lan_observer(false);
     }
-    let away = csf(state, "TXT_AWAY_QUICKMATCH").encode_utf16().collect();
+    let away = state
+        .csf_text("TXT_AWAY_QUICKMATCH")
+        .encode_utf16()
+        .collect();
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
@@ -377,18 +376,21 @@ use crate::app::shell_network_setup::agreement::{
 };
 
 /// VERA: Quick Match pairs players who agreed on nothing, so it plays the
-/// original game. A mod fails the pre-match check; other INI roots or
-/// changed game files fail the join's rules hash (`0x0079BA60`, silently in
-/// Quick Match), against any opponent without the same, and an Ares setting
-/// other than Auto fails the start's rules digest. The box says what to
-/// turn off for the first change ([`original_game_changes`]), and the
-/// runner ends before it queues.
+/// original game. A mod fails the pre-match check. Rules, Art, AI or mode
+/// INIs that differ, by root or changed file, fail the join's rules hash
+/// (`0x0079BA60`, silently in Quick Match) against any opponent without the
+/// same; every other change (another compared INI root, the theater suffix,
+/// other changed game files, the Ares setting On) fails the start's rules
+/// digest. The Ares setting Off is no change: without a mod it opens the
+/// game Auto opens. The box says what to turn off for the first change
+/// ([`original_game_changes`]), and the runner ends before it queues.
 fn original_game_refusal(
     mod_title: Option<&str>,
     assets: &crate::app::process_assets::ProcessAssets,
 ) -> Option<&'static str> {
     Some(match original_game_changes(mod_title, assets).first()? {
         OriginalGameChange::Mod(_) => "VERA:QuickMatchNoMod",
+        OriginalGameChange::Ra2 => "VERA:QuickMatchRa2Mode",
         OriginalGameChange::IniRoots => "VERA:QuickMatchIniProfile",
         OriginalGameChange::Ares(_) => "VERA:QuickMatchAresSetting",
         OriginalGameChange::ChangedFiles(_) => CHANGED_FILES,
@@ -450,12 +452,12 @@ fn open_dialog(state: &mut AppState) {
     visit.page = WolPage::QuickMatch(Box::new(QuickMatchDialog {
         ui: WolQuickMatchPage::default(),
         dot_at: Instant::now() + DOT_PERIOD,
+        help: None,
     }));
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
-    open_art(state);
-    state.frontend.shell_controller.reset_to(DIALOG, false);
-    state.platform.window.request_redraw();
+    super::leaf::open_art(state, DIALOG);
+    state.frontend.shell_controller.reset_to(DIALOG);
 }
 
 /// The runner loop's stage tests (`0x0079FF50..0x0079FFC5`): stage 2 joins
@@ -654,7 +656,6 @@ pub(super) fn ansi_message(
         return;
     }
     matchbot_text(state, text, private, options);
-    state.platform.window.request_redraw();
 }
 
 /// `_strnicmp` of `text` against `prefix`.
@@ -1216,7 +1217,7 @@ fn close_dialog(state: &mut AppState) {
     {
         visit.page = WolPage::Lobby;
     }
-    state.frontend.wol_quick_match_art = None;
+    super::leaf::free_art(state, DIALOG);
 }
 
 /// Start Game Now's success (event 7, `0x007A029A..0x007A02C6`): the
@@ -1284,7 +1285,10 @@ pub(super) fn box_closed(state: &mut AppState, then: lobby::QuickMatchBoxThen) {
 /// Start Game Now's abort in modes 1-3 (`0x00794D69`, `0x00794E35`): stage
 /// 11 and the away text set again; event 6 then ends the runner with 0.
 pub(crate) fn start_aborted(state: &mut AppState) {
-    let away = csf(state, "TXT_AWAY_QUICKMATCH").encode_utf16().collect();
+    let away = state
+        .csf_text("TXT_AWAY_QUICKMATCH")
+        .encode_utf16()
+        .collect();
     if let Some(globals) = globals_mut(state) {
         globals.set(stage::STARTED, None);
         globals.away = Some(away);
@@ -1397,25 +1401,15 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     pump(state);
     let search = poll_search(state);
     let now = Instant::now();
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
     let mut dot = false;
-    let mut redraw = false;
-    let dialog_deadlines = dialog_mut(state).map(|dialog| {
+    let dot_at = dialog_mut(state).map(|dialog| {
         if now >= dialog.dot_at {
             dialog.dot_at = now + DOT_PERIOD;
             dot = true;
         }
-        let ui = &mut dialog.ui;
-        let geometry = ui
-            .list
-            .geometry(layout.transcript, ui.lines.len(), layout.page.scale);
-        redraw |= ui
-            .list
-            .scroll
-            .poll(geometry, &mut ui.list.top_index, x, y, now);
-        [Some(dialog.dot_at), ui.list.scroll.repeat_at()]
+        dialog.dot_at
     });
+    let repeat = leaf::poll(state, dot_at.is_some());
     if dot {
         // 0x005E2AC0's rows take colour -1.
         with_transcript(state, |ui, add| {
@@ -1429,15 +1423,10 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 )
             })
         });
-        redraw = true;
-    }
-    if redraw {
-        state.platform.window.request_redraw();
     }
     let stage_deadline = globals(state).and_then(|globals| globals.deadline(now_seconds()));
-    [stage_deadline, search]
+    [stage_deadline, search, dot_at, repeat]
         .into_iter()
-        .chain(dialog_deadlines.into_iter().flatten())
         .flatten()
         .min()
 }
@@ -1452,62 +1441,22 @@ pub(crate) fn expire_stage(state: &mut AppState) {
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let Some(dialog) = dialog_mut(state) else {
-        return;
-    };
-    let ui = &mut dialog.ui;
-    ui.hovered = layout.control_at(x, y);
-    ui.buttons.hovered = ui.hovered.filter(|id| *id == CANCEL);
-    let geometry = ui
-        .list
-        .geometry(layout.transcript, ui.lines.len(), layout.page.scale);
-    ui.list
-        .scroll
-        .pointer_moved(geometry, &mut ui.list.top_index, x, y);
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
+    sync(state);
+    leaf::pointer(state, Pointer::Move);
+    let help = leaf::status_key(state, DIALOG).map(str::to_owned);
+    if let Some(dialog) = dialog_mut(state) {
+        dialog.help = help;
+    }
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    if shell_transition::blocks_shell_input(state) {
+    if shell_transition::blocks_shell_input(state) || sync(state).is_none() {
         return;
     }
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = layout.control_at(x, y);
-    let Some(dialog) = dialog_mut(state) else {
-        return;
-    };
-    let ui = &mut dialog.ui;
-    if !pressed {
-        ui.list.scroll.cancel();
-        if ui.buttons.release(over.filter(|id| *id == CANCEL)) == Some(CANCEL) {
-            cancel(state);
-        }
-        state.platform.window.request_redraw();
-        return;
+    let events = leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up });
+    if events.contains(&PageEvent::Activated(CANCEL)) {
+        cancel(state);
     }
-    let geometry = ui
-        .list
-        .geometry(layout.transcript, ui.lines.len(), layout.page.scale);
-    let mut sound = false;
-    if let Some(part) = geometry.scroll_part_at(x, y) {
-        ui.list
-            .scroll
-            .press(part, geometry, &mut ui.list.top_index, y, Instant::now());
-    } else if over == Some(CANCEL) {
-        ui.buttons.press(Some(CANCEL));
-        sound = true;
-    } else {
-        ui.buttons.press(None);
-    }
-    if sound {
-        // Owner-draw buttons play GUIMainButtonSound on the press.
-        App::play_main_menu_button_sound(state);
-    }
-    state.platform.window.request_redraw();
 }
 
 /// RunMain's postmatch re-entry in modes 1/2 (`0x0077B439..0x0077B442`):
@@ -1805,6 +1754,15 @@ mod tests {
         assert_eq!(
             original_game_refusal(None, &changes),
             Some("VERA:QuickMatchAresSetting")
+        );
+        // Off opens the game Auto opens, so it is no change: the files are
+        // what Quick Match names.
+        changes = changes.with_ares_setting(AresSetting::Off);
+        assert_eq!(
+            original_game_changes(None, &changes),
+            [OriginalGameChange::ChangedFiles(
+                &["rulesmd.ini".to_owned()]
+            )]
         );
         changes = changes.with_ares_setting(AresSetting::Auto);
         // With no mod selected, an installed `ares.mix` is ignored. The

@@ -409,6 +409,7 @@ fn admit_bullet(
     );
     let spawn = delivery.spawn(&world.substrate.entities, rules, projectile_type, bullet);
     world.admit_projectile(bullet_id, spawn);
+    world.unlimbo_alpha_shape(bullet_id, crate::sim::world::ObjectKind::Projectile, rules);
     Simulation::construct_bullet_scheme(
         &world.interner,
         &world.substrate,

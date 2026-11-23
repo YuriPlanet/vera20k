@@ -28,16 +28,16 @@ fn screen(x: i32, y: i32, z: i32) -> [f32; 2] {
 fn a_piece_at_a_bridge_deck_shadows_one_lepton_above_it() {
     // Object6D2140 of (2688, 5248, 1040) is native (-300, 315), plus VERA's
     // world row bias of 15 (the projectile builder's bridge-height pin).
-    let over = geometry(IVec3::new(2688, 5248, 1040), 624, true);
+    let over = geometry(IVec3::new(2688, 5248, 1040), 624, Some(1040));
     assert_eq!(over.body.point, [-300.0, 330.0]);
     assert_eq!(over.body.z_adjust, -2 - adjust_for_z_standard(1040));
     assert_eq!(over.shadow.point, screen(2688, 5248, 1041));
     assert_eq!(over.shadow.z_adjust, -4 - adjust_for_z_standard(1040));
     // Below the deck, or off a bridge, the shadow falls to the ground.
-    let below = geometry(IVec3::new(2688, 5248, 1039), 624, true);
+    let below = geometry(IVec3::new(2688, 5248, 1039), 624, Some(1040));
     assert_eq!(below.shadow.point, screen(2688, 5248, 624));
     assert_eq!(below.shadow.z_adjust, -4 - adjust_for_z_standard(624));
-    let plain = geometry(IVec3::new(2688, 5248, 1040), 624, false);
+    let plain = geometry(IVec3::new(2688, 5248, 1040), 624, None);
     assert_eq!(plain.body, over.body);
     assert_eq!(plain.shadow, below.shadow);
 }

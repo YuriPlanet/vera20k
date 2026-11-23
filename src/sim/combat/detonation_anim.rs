@@ -39,16 +39,13 @@ pub(crate) fn bullet_land(
     receiver_dispatched: bool,
     ignore_units: bool,
 ) -> i32 {
-    let floor = crate::sim::projectile::projectile_ground_z(
+    let surface = crate::sim::projectile::projectile_surface_z(
         world.resolved_terrain.as_ref(),
         &world.effective_shared_cell_dummy(),
         coordinate,
+        on_bridge,
     );
-    let height = coordinate.z.wrapping_sub(floor).wrapping_sub(if on_bridge {
-        crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-    } else {
-        0
-    });
+    let height = coordinate.z.wrapping_sub(surface);
     if height >= 2 * crate::util::lepton::LEPTONS_PER_LEVEL as i32 {
         return -1;
     }

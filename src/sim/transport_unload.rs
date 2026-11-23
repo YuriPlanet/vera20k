@@ -529,12 +529,7 @@ fn eject_head_passenger(
                     .get(pax_id)
                     .is_some_and(|passenger| passenger.deactivated.is_offline())
                 {
-                    Simulation::locomotor_power_off(
-                        &mut sim.scenario_rng,
-                        &mut sim.substrate,
-                        &sim.resolved_terrain,
-                        pax_id,
-                    );
+                    sim.locomotor_power_off(pax_id, rules, Some(rules.overlay_registry()), effects);
                 }
                 let powered = sim.substrate.entities.get(pax_id).and_then(|passenger| {
                     let cells = sim

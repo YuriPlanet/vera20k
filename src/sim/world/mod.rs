@@ -150,7 +150,7 @@ pub use world_orders::HealArmKeys;
 pub use world_orders::InfiltrateAction;
 pub use world_orders::UnitRepairAction;
 pub(crate) use world_orders::VehicleCaptureOutcome;
-pub use world_orders::{AresHeal, ControlProjection};
+pub use world_orders::{ControlProjection, InfantryHealAction};
 pub use world_orders::{EntryBaseAction, EntryClickAction};
 mod fog_objects;
 mod projectile_collision;

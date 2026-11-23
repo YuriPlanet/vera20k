@@ -1012,7 +1012,11 @@ fn fireat_launch_aim(
         weapon.speed,
         speed_projectile(weapon),
         rules.general.gravity,
-        fireat_launch_distance(source, target_coord),
+        fireat_launch_distance(
+            source,
+            target_coord,
+            world.session.map_exceeds_original_size(),
+        ),
     );
     FireAtLaunchAim {
         aim: super::aim_coord::led_target_coordinate(world, rules, snap.stable_id, tarcom),
@@ -1079,7 +1083,10 @@ fn firepower_stages(
         // `vt+0x400`: BuildingClass `0x00458DD0`, CanBeOccupied &&
         // CanOccupyFire && an occupant for FireAt; Phobos' Bullet-init
         // helper applies the same type flags without requiring an occupant.
-        occupied: is_garrison.then(|| f32_bits(multipliers.occupy_damage_multiplier)),
+        // Original RA2 has no OccupyDamageMultiplier: the garrison gun deals
+        // its plain WeaponType damage. YR applies the global multiplier.
+        occupied: (!rules.ra2() && is_garrison)
+            .then(|| f32_bits(multipliers.occupy_damage_multiplier)),
         // `+0x2E4` on a non-building: a unit installed in a Tank Bunker.
         bunkered: firer
             .filter(|firer| firer.category() != EntityCategory::Structure)
@@ -1414,6 +1421,16 @@ pub(crate) fn snapshot_get_rof(
                 crate::rules::object_type::Ability::Rof,
             ),
             veteran_rof: rules.general.veteran_rof,
+            // `TechnoClass::GetROF` divides the occupied building's ROF by
+            // its occupant count in BOTH game.exe (RA2) and gamemd.exe (YR):
+            // that signed IDIV is the sole mechanism that makes a full
+            // garrison fire faster than a single occupant. RA2 differs only
+            // in WHICH gun fires (the building's own Primary, see
+            // get_weapon_record), not in how the garrison ROF is scaled.
+            // Suppressing the divisor under -ra2 left every garrison firing
+            // at a lone occupant's cadence regardless of how many troops
+            // were inside. OccupyROFMultiplier= is a YR/Ares rule absent from
+            // retail RA2, so keep its RA2 value at identity (1.0).
             occupants: snap.garrison.as_ref().map(|gs| gs.occupant_count),
             bunkered: snap.category != EntityCategory::Structure
                 && firer.is_some_and(|firer| {
@@ -2126,6 +2143,8 @@ pub(super) fn emit_admitted_fire(
             fire.aim_facing16,
             snap.garrison.is_some(),
             in_open_transport,
+            rules.ares(),
+            rules.ra2(),
         )
         .map(|name| world.interner.intern(name)),
         occupied_building: snap.garrison.is_some(),

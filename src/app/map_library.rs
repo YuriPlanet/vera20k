@@ -13,6 +13,7 @@
 //! `[PreviewPack]`, `[Waypoints]`, `[Header]` and `[RandomMap]` sections, so
 //! its row is read by the same record reader as a local map's.
 
+use crate::app::shell_route::ShellRoute;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::Arc;
@@ -385,7 +386,7 @@ pub(crate) fn download_progress(state: &AppState) -> Option<(u64, u64)> {
 /// build that can read the library.
 pub(crate) fn listed_in_choose_map(state: &AppState) -> bool {
     crate::app::worker::THREADS
-        && state.frontend.shell_route.network_setup()
+        && state.frontend.shell_route == ShellRoute::NetworkSetup
         && state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
 }
 
@@ -531,11 +532,7 @@ fn set_prompt(state: &mut AppState, selection: ChooseMapSelection, kind: ChooseM
         .choose_map_modal
         .as_mut()
     {
-        modal.message_box = Some(ChooseMapPrompt {
-            selection,
-            pressed: None,
-            kind,
-        });
+        modal.message_box = Some(ChooseMapPrompt { selection, kind });
     }
     state.platform.window.request_redraw();
 }
@@ -674,9 +671,6 @@ fn keep_map_and_list(
         let frontend = &mut state.frontend;
         let runtime = &mut frontend.multiplayer_shell_runtime;
         runtime.set_scenario_index(remap(runtime.scenario_index()));
-        if let Some(exit) = frontend.shell_exit.as_mut() {
-            exit.remap_choose_map_selection(remap);
-        }
         if let Some(page) = frontend.coop_score_page.as_mut() {
             page.model.map_index = page.model.map_index.map(remap);
         }
@@ -689,6 +683,10 @@ fn keep_map_and_list(
             }
             if let Some(prompt) = modal.message_box.as_mut() {
                 prompt.selection.record_index = prompt.selection.record_index.map(remap);
+            }
+            // A Use Map waiting for the chooser's slide-out keeps its map.
+            if let Some(selection) = modal.use_selection.as_mut() {
+                selection.record_index = selection.record_index.map(remap);
             }
         }
     }

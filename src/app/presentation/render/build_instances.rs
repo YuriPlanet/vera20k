@@ -196,6 +196,15 @@ fn convenience_info_lines_admitted(
 /// Build all game-world sprite instances: terrain tiles, map overlays, bridges,
 /// VXL units, SHP buildings/infantry, AnimClass objects, damage fires.
 /// Ground parents retain Display order; residual effect buckets still sort depth.
+/// The SHP visitor, as the unit visitor draws a Carryall's SHP cargo with it.
+fn shp_cargo<'a, V>(shp: &'a mut Option<V>) -> Option<&'a mut instances::ShpVisit<'a>>
+where
+    V: FnMut(instances::ShpDraw<'_>, &crate::app::presentation::frame::ObjectRecord) + 'a,
+{
+    shp.as_mut()
+        .map(|visit| visit as &mut instances::ShpVisit<'a>)
+}
+
 pub(super) fn build_world_instances(
     state: &mut AppState,
     sw: f32,
@@ -364,10 +373,10 @@ pub(super) fn build_world_instances(
                                 let mut scratch =
                                     super::draw_plan_lowering::PlannedObjects::default();
                                 if let Some(visit) = units.as_mut() {
-                                    visit(&mut scratch, entity, band);
+                                    visit(&mut scratch, entity, band, shp_cargo(&mut shp));
                                 }
                                 if let Some(visit) = shp.as_mut() {
-                                    visit(&mut scratch, entity);
+                                    visit(instances::ShpDraw::Member(&mut scratch), entity);
                                 }
                                 scratch.is_empty()
                             });
@@ -398,11 +407,12 @@ pub(super) fn build_world_instances(
             ) else {
                 continue;
             };
+            // A Carryall's SHP cargo draws inside the Carryall's draw.
             if let Some(visit) = units.as_mut() {
-                visit(objects, entity, band);
+                visit(objects, entity, band, shp_cargo(&mut shp));
             }
             if let Some(visit) = shp.as_mut() {
-                visit(objects, entity);
+                visit(instances::ShpDraw::Member(objects), entity);
             }
         }
     }
@@ -711,8 +721,9 @@ pub(super) fn build_world_instances(
     let building_status_text = build_building_status_instances(state, &building_body_opportunities);
     let mut object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
     let mut fogged_objects = instances::build_fogged_instances(state);
-    // Bit_Blit seeds a raw frame from its rect clipped to the view
-    // (`native_z::Z_GRADIENT_RAW_FRAME_FLAG`), which ends this far down.
+    // Bit_Blit seeds a raw frame, and a Unit composite, from its rect clipped
+    // to the view (`native_z::Z_GRADIENT_RAW_FRAME_FLAG`,
+    // `native_z::unit_composite`), which ends this far down.
     let view_height = crate::app::input::camera::tactical_view_height(state);
     for instance in object_layers
         .iter_mut()
@@ -720,7 +731,9 @@ pub(super) fn build_world_instances(
         .chain(&mut fogged_objects.instances)
         .chain(&mut cell_bodies)
     {
-        if instance.z_gradient & crate::render::native_z::Z_GRADIENT_RAW_FRAME_FLAG != 0 {
+        if instance.z_gradient & crate::render::native_z::Z_GRADIENT_RAW_FRAME_FLAG != 0
+            || crate::render::native_z::unit_composite(instance.z_gradient)
+        {
             instance.draw_state.fx_params[3] = view_height;
         }
     }
@@ -1609,7 +1622,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
                 crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
                     .and_then(|atlas| atlas.top_strip_thin)
                     .map_or(layout_spec.sidebar_width, |plate| plate.pixel_size[0]),
-                &crate::app::frontend::shell_pass::resolve_csf(state, "TXT_TIME_FORMAT_HOURS"),
+                &state.csf_text("TXT_TIME_FORMAT_HOURS"),
                 crate::app::presentation::sidebar_text::credits_tint(theme),
                 [
                     state.match_state.input.camera_x,

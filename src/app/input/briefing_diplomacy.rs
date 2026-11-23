@@ -84,7 +84,7 @@ pub(crate) fn open(state: &mut AppState) -> bool {
         return false;
     };
     let sim = &runtime.simulation;
-    let text = |key| crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned();
+    let text = |key| state.csf_text(key);
     let briefing = match state.match_state.loaded_map_source.as_ref() {
         Some(crate::map::source::LoadedMapSource::Loose { path, .. }) => {
             crate::util::file_system::read(path).ok().and_then(|bytes| {
@@ -101,7 +101,7 @@ pub(crate) fn open(state: &mut AppState) -> bool {
         let name = name.rsplit(['/', '\\']).next().unwrap_or(name);
         let key = crate::rules::campaign_loading::restate_briefing_key(&mission.ini, name);
         (key != "Brief:Error")
-            .then(|| crate::app::frontend::shell_pass::resolve_csf(state, &key).into_owned())
+            .then(|| state.csf_text(&key))
     })
     .unwrap_or_default();
     let mut lines = Vec::new();

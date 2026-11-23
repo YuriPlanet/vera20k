@@ -521,10 +521,61 @@ fn a_relay_route_silent_past_the_relays_own_limit_is_released() {
         .unwrap();
 }
 
+/// The route keeps only a certificate its session admits: one for the
+/// ticket's room that names its source.
+#[test]
+fn a_relay_route_refuses_an_ordering_certificate_for_another_room() {
+    use vera20k_relay_protocol::{SecretKey, Ticket, derive_packet_key};
+
+    let key = SecretKey::new([31; 32]);
+    let ticket = Ticket {
+        room: [27; 16],
+        player: [1; 16],
+        source: 0,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let mut wire = transport();
+    wire.enable_relay(
+        SocketAddrV4::new(Ipv4Addr::LOCALHOST, 9),
+        &ticket,
+        *derive_packet_key(&key, &ticket).expose_for_https(),
+        [29; 32],
+    )
+    .unwrap();
+    let certificate = |room| {
+        OrderingCertificate {
+            room,
+            sources_mask: 0b11,
+            tick_hz: 30,
+            expires: 2000,
+            pacing: Default::default(),
+            ordered_alone: false,
+        }
+        .sign(&key)
+        .unwrap()
+    };
+    assert!(
+        wire.set_ordering_certificate(certificate([28; 16]))
+            .is_err()
+    );
+    assert_eq!(wire.ordering_certificate(), None);
+    wire.set_ordering_certificate(certificate([27; 16]))
+        .unwrap();
+}
+
 /// `ordered_relay` once a second source's Ready has started its match and the
 /// game has sent its first UPLINK at bucket 20, so the I/O worker owes the
-/// relay a heartbeat 250 ms later (spec §6.6). The relay socket reads nothing.
-fn started_relay() -> (UdpSocket, LanUdpTransport) {
+/// relay a heartbeat 250 ms later (spec §6.6). The relay has read nothing
+/// since the start.
+fn started_relay() -> (
+    UdpSocket,
+    vera20k_relay_protocol::RelayServer,
+    LanUdpTransport,
+) {
     use vera20k_relay_protocol::{
         ClientSession, MAX_DATAGRAM, SecretKey, ServerEvent, Ticket, derive_packet_key,
     };
@@ -583,25 +634,86 @@ fn started_relay() -> (UdpSocket, LanUdpTransport) {
         std::thread::yield_now();
     }
     relay_datagrams(&socket);
-    (socket, wire)
+    (socket, server, wire)
 }
 
 /// What reached the relay, waiting 100 ms for the last of it.
-fn relay_datagrams(socket: &UdpSocket) -> usize {
+fn relay_received(socket: &UdpSocket) -> Vec<Vec<u8>> {
     let mut datagram = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
     socket
         .set_read_timeout(Some(Duration::from_millis(100)))
         .unwrap();
-    let count = std::iter::from_fn(|| socket.recv_from(&mut datagram).ok()).count();
+    let mut received = Vec::new();
+    while let Ok((length, _)) = socket.recv_from(&mut datagram) {
+        received.push(datagram[..length].to_vec());
+    }
     socket
         .set_read_timeout(Some(Duration::from_secs(2)))
         .unwrap();
-    count
+    received
+}
+
+fn relay_datagrams(socket: &UdpSocket) -> usize {
+    relay_received(socket).len()
+}
+
+/// A route busy both ways sends no keepalive PING: its UPLINKs and the
+/// relay's pushes keep each end hearing the other. At the keepalive interval
+/// that finds the relay two seconds silent the PING is back, whatever the
+/// game still sends.
+#[test]
+fn a_relay_route_busy_both_ways_skips_its_keepalive_until_the_relay_falls_silent() {
+    use vera20k_relay_protocol::envelope::{Direction, PING, peek};
+
+    let (socket, mut server, mut wire) = started_relay();
+    let game = wire.primary_addr().unwrap();
+    let pings = |sent: &[Vec<u8>]| {
+        sent.iter()
+            .filter(|bytes| peek(Direction::Up, bytes).unwrap().kind == PING)
+            .count()
+    };
+    // Every 256 ms the game services, which sends the UPLINK heartbeat it
+    // owes, and the relay answers with the pushes due by then. The route's
+    // last probe was its HELLO at bucket 0, so bucket 132 is the first
+    // service past the two-second interval.
+    for tick in (36..=132).step_by(16) {
+        wire.service(tick);
+        let sent = relay_received(&socket);
+        assert!(!sent.is_empty(), "the game sends at bucket {tick}");
+        assert_eq!(pings(&sent), 0, "no keepalive at bucket {tick}");
+        let now_ms = u64::from(tick) * 16;
+        let mut answers = Vec::new();
+        for bytes in &sent {
+            answers.extend(server.process_at(game, bytes, 1000, now_ms).unwrap());
+        }
+        answers.extend(server.drain_ordering_push(now_ms, 1000));
+        answers.retain(|answer| answer.endpoint == game);
+        assert!(!answers.is_empty(), "the relay answers at bucket {tick}");
+        let heard = wire.relay_link_stats().unwrap().datagrams_received + answers.len() as u64;
+        for answer in &answers {
+            socket.send_to(&answer.bytes, answer.endpoint).unwrap();
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while wire.relay_link_stats().unwrap().datagrams_received < heard {
+            wire.service(tick);
+            assert!(Instant::now() < deadline, "the relay's answers arrived");
+            std::thread::yield_now();
+        }
+    }
+    // The relay falls silent after bucket 132, where the last interval began.
+    wire.service(132 + RELAY_PING_TICKS - 1);
+    assert_eq!(pings(&relay_received(&socket)), 0);
+    wire.service(132 + RELAY_PING_TICKS);
+    assert_eq!(
+        pings(&relay_received(&socket)),
+        1,
+        "nothing heard for two seconds"
+    );
 }
 
 #[test]
 fn io_worker_answers_for_a_long_frame_but_not_a_stalled_or_crashed_game() {
-    let (socket, mut wire) = started_relay();
+    let (socket, _, mut wire) = started_relay();
     // The game thread last serviced at bucket 20. A one-second frame later
     // the worker heartbeats (the 2-second keepalive is not due).
     wire.lock().background_pass(80, false);
@@ -1838,6 +1950,7 @@ fn live_for_campaign_delivery(
         30,
         rate,
         0,
+        0,
         "",
         "",
     )
@@ -1858,10 +1971,11 @@ fn acknowledge_campaign_delivery(
         attempt: 1,
         signal,
     };
-    let snapshot = live
-        .enqueue_reliable_globals(&record.encode(), &[peer.primary_addr().unwrap()])
+    let batch = live
+        .global_mut()
+        .send_reliable_batch(&record.encode(), &[peer.primary_addr().unwrap()])
         .unwrap();
-    assert!(!live.global_sends_delivered(snapshot));
+    assert!(!live.global().batch_delivered(batch));
     live.service_transport(now);
     malformed_after_receipt(&mut peer, now, 1);
     assert_eq!(
@@ -1877,7 +1991,7 @@ fn acknowledge_campaign_delivery(
         );
         std::thread::yield_now();
     }
-    assert!(live.global_sends_delivered(snapshot));
+    assert!(live.global().batch_delivered(batch));
 }
 
 #[test]
@@ -1917,7 +2031,8 @@ fn an_old_global_timeout_does_not_block_an_acknowledged_narrative_release() {
         timeout: 1,
     });
     assert!(
-        live.enqueue_reliable_globals(b"no ACK", &[ipv4_addr(&absent).unwrap()])
+        live.global_mut()
+            .send_reliable_batch(b"no ACK", &[ipv4_addr(&absent).unwrap()])
             .is_some()
     );
     live.service_transport(1);
@@ -1936,6 +2051,29 @@ fn an_old_global_timeout_does_not_block_an_acknowledged_narrative_release() {
 }
 
 #[test]
+fn a_later_unrelated_global_timeout_does_not_block_an_acknowledged_stage_receipt() {
+    use crate::net::lan_messages::extended_setup::campaign::{Signal, StageChoice};
+
+    let mut live = live_for_campaign_delivery(transport(), 1);
+    let absent = raw_peer();
+    live.global_mut().set_timing(RetryTiming {
+        retry_delta: 0,
+        max_retries: u32::MAX,
+        timeout: 1,
+    });
+    // A chat to a peer that stops answering is in flight before the receipt
+    // and times out after the receipt is queued.
+    assert!(live.send_global(
+        b"no ACK",
+        true,
+        GlobalDestination::direct(ipv4_addr(&absent).unwrap())
+    ));
+    live.service_transport(1);
+    assert_eq!(live.global().queued_send_count(), 1);
+    acknowledge_campaign_delivery(&mut live, Signal::StageBegun(StageChoice::Retry), 3);
+}
+
+#[test]
 fn a_worker_discard_cannot_settle_a_terminal_global_send() {
     let mut wire = transport();
     let peer = raw_peer();
@@ -1947,8 +2085,9 @@ fn a_worker_discard_cannot_settle_a_terminal_global_send() {
         max_retries: u32::MAX,
         timeout: 1,
     });
-    let snapshot = wire
-        .enqueue_reliable_globals(b"terminal receipt", &[endpoint])
+    let batch = wire
+        .global_mut()
+        .send_reliable_batch(b"terminal receipt", &[endpoint])
         .unwrap();
     // The worker sends the receipt, then times it out before the app polls.
     wire.lock().background_pass(1, false);
@@ -1958,7 +2097,7 @@ fn a_worker_discard_cannot_settle_a_terminal_global_send() {
     assert_eq!(live.global().queued_send_count(), 0);
     assert!(live.service_report().is_none());
     assert!(
-        !live.global_sends_delivered(snapshot),
+        !live.global().batch_delivered(batch),
         "retry expiry is not an ACK"
     );
 }

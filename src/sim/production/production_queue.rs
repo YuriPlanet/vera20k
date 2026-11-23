@@ -305,11 +305,19 @@ pub(in crate::sim) fn exit_produced_object(
         );
         if let Some(house) = sim.houses.get_mut(&owner_id) {
             house.ai_unit_choices_mut().clear(kind);
-            // Phobos `BuildingClass_KickOutUnit_UnitType/InfantryType/
-            // AircraftType` (`0x444119`, `0x444131`, `0x443CCA`) clears the
-            // house's factory slot at this prefix, before FreeRadio and
-            // placement retries can leave the product held.
-            if rules.parallel_ai_queues_act() {
+            // `BuildingClass_KickOutUnit_UnitType/InfantryType/AircraftType`
+            // (`0x444119`, `0x444131`, `0x443CCA`) clears the house's factory
+            // slot at this prefix, before FreeRadio and placement retries can
+            // leave the product held. Ares (`10024DC0`, `10024DA0`,
+            // `10024D60`) clears it whoever holds it, a Unit's by its own
+            // `Naval=`; Phobos only while it names this producer.
+            if rules.serial_ai_queues_act() {
+                let slot = crate::sim::ai_base_building::AiFactorySlot::for_product(
+                    product_type.category,
+                    product_type.naval,
+                );
+                house.ai_production_mut().set_parallel_factory(slot, None);
+            } else if rules.parallel_ai_queues_act() {
                 let slot = crate::sim::ai_base_building::AiFactorySlot::for_product(
                     product_type.category,
                     producer_type.naval,

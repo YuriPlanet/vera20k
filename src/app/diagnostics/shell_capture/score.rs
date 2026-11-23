@@ -200,7 +200,7 @@ impl CampaignScoreCapture {
                 .frontend
                 .campaign_score_page
                 .as_ref()
-                .is_some_and(|page| page.reveals_terminal())
+                .is_some_and(|page| page.statics.is_terminal())
         {
             self.phase = CampaignScorePhase::Settling(SETTLE_FRAMES);
         } else if let CampaignScorePhase::Settling(remaining) = self.phase {
@@ -263,7 +263,7 @@ impl CampaignScoreCapture {
                         .frontend
                         .campaign_score_page
                         .as_ref()
-                        .is_some_and(|page| page.reveals_terminal())
+                        .is_some_and(|page| page.statics.is_terminal())
                 {
                     self.route.push(json!({
                         "dialog": 0x103,
@@ -357,7 +357,7 @@ impl CampaignScoreCapture {
                     .frontend
                     .campaign_score_page
                     .as_ref()
-                    .is_some_and(|page| page.reveals_terminal())
+                    .is_some_and(|page| page.statics.is_terminal())
                 {
                     return Ok(false);
                 }
@@ -590,7 +590,7 @@ impl CampaignScoreCapture {
             .frontend
             .campaign_score_page
             .as_ref()
-            .is_some_and(|page| page.reveals_terminal()))
+            .is_some_and(|page| page.statics.is_terminal()))
     }
 
     pub(super) fn manifest(
@@ -632,23 +632,31 @@ fn campaign_score_layout(state: &AppState) -> CampaignScoreLayout {
     let (width, height) = crate::app::frontend::shell_layout::shell_screen_size(state);
     let fills_window = crate::app::frontend::shell_layout::fills_window(state);
     state.frontend.campaign_score_page.as_ref().map_or_else(
-        || CampaignScoreLayout::compute_layout(width, height),
+        || CampaignScoreLayout::compute(Default::default(), width, height, 0),
         |page| page.layout(width, height, fills_window),
     )
 }
 
 pub(super) fn click_campaign_continue(state: &mut AppState) -> Result<()> {
     let layout = campaign_score_layout(state);
-    let button = layout.continue_button;
+    let button = layout
+        .page
+        .buttons
+        .first()
+        .map(|button| button.rect)
+        .unwrap_or_default();
     state.match_state.input.cursor_x = (button.x + button.w / 2) as f32;
     state.match_state.input.cursor_y = (button.y + button.h / 2) as f32;
-    App::handle_campaign_score_mouse_move(state);
-    App::handle_campaign_score_mouse_down(state);
+    App::handle_campaign_score_mouse(state, None);
+    App::handle_campaign_score_mouse(state, Some(true));
     ensure!(
-        state.frontend.shell_controller.pressed() == Some(CONTINUE_BUTTON),
+        crate::ui::shell::menu_page::pressed_id(
+            &state.frontend.shell_controller,
+            crate::ui::campaign_score_shell::CAMPAIGN_SCORE_DIALOG
+        ) == Some(CONTINUE_BUTTON),
         "campaign Continue probe did not press control 0x423"
     );
-    App::handle_campaign_score_mouse_up(state);
+    App::handle_campaign_score_mouse(state, Some(false));
     ensure!(
         crate::app::frontend::shell_transition::shell_exit_wave(
             state,
@@ -712,8 +720,7 @@ fn comparison_model(state: &AppState) -> Result<ScoreScreenModel> {
             crate::rules::house_colors::HouseColorIndex(entry as u8),
         ))
     };
-    let computer =
-        crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER").into_owned();
+    let computer = state.csf_text("TXT_COMPUTER");
     Ok(ScoreScreenModel {
         title_key: "GUI:SkirmishScore",
         game_number: 1,
@@ -750,7 +757,7 @@ pub(super) fn reveals_settled(state: &AppState) -> bool {
             .frontend
             .score_page
             .as_ref()
-            .is_some_and(|page| page.reveals_terminal())
+            .is_some_and(|page| page.statics.is_terminal())
 }
 
 impl ScoreCapture {
@@ -794,7 +801,7 @@ impl ScoreCapture {
             .shell_first_paint_slide
             .as_ref()
             .filter(|_| state.frontend.shell_slide_active_shell == Some(ShellSlideKind::Score))
-            .and_then(|wave| wave.compatibility_tick());
+            .map(|wave| wave.tick());
         match self.phase {
             Phase::Score => match self.target {
                 ScoreTarget::Entry(target) => {
@@ -814,16 +821,16 @@ impl ScoreCapture {
                 ScoreTarget::Steady => self.phase = Phase::Settling(SETTLE_FRAMES),
                 ScoreTarget::HoverContinue | ScoreTarget::LeaveContinue => {
                     Self::set_pointer(state, CONTINUE_POINT);
-                    App::handle_score_shell_mouse_move(state);
+                    App::handle_score_shell_mouse(state, None);
                     self.route.push(json!({"dialog": 0x108, "frame": frame,
                         "action": "hover Continue"}));
                     self.phase = Phase::Hover;
                 }
                 ScoreTarget::SlideOut(_) => {
                     Self::set_pointer(state, CONTINUE_POINT);
-                    App::handle_score_shell_mouse_move(state);
-                    App::handle_score_shell_mouse_down(state);
-                    App::handle_score_shell_mouse_up(state);
+                    App::handle_score_shell_mouse(state, None);
+                    App::handle_score_shell_mouse(state, Some(true));
+                    App::handle_score_shell_mouse(state, Some(false));
                     Self::set_pointer(state, (EXPECTED_CURSOR_X as i32, EXPECTED_CURSOR_Y as i32));
                     ensure!(
                         crate::app::frontend::shell_transition::shell_exit_wave(
@@ -841,7 +848,7 @@ impl ScoreCapture {
             Phase::Hover if state.frontend.shell_status_line.is_terminal() => {
                 if self.target == ScoreTarget::LeaveContinue {
                     Self::set_pointer(state, ART_POINT);
-                    App::handle_score_shell_mouse_move(state);
+                    App::handle_score_shell_mouse(state, None);
                     self.route.push(json!({"dialog": 0x108, "frame": frame,
                         "action": "move onto the art", "point": [ART_POINT.0, ART_POINT.1]}));
                     self.phase = Phase::Left;
@@ -860,7 +867,7 @@ impl ScoreCapture {
                     state,
                     ShellSlideKind::Score,
                 )
-                .and_then(|wave| wave.compatibility_tick())
+                .map(|wave| wave.tick())
                 .context("the 0x108 teardown slide ended before its held tick")?;
                 ensure!(tick <= target, "teardown slide passed tick {target}");
                 if tick == target {

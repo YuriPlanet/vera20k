@@ -3,44 +3,47 @@
 //! (`multiplayer_setup.rs`): the online lobby's box art with its type-3 OK,
 //! then its sliders and checkboxes.
 
+use super::SkirmishShellChromeAtlas;
 use super::chrome::type3_button_frames;
-use super::controls::{ControlPaint, paint_control};
-use super::text::{button_label_color_for_disabled, localized_label, rect_to_text_rect};
+use super::text::button_label_color_for_disabled;
 use super::wol_lobby::POPUP_DEPTHS;
-use super::{SHELL_LABEL_TEXT_RGB, SkirmishShellChromeAtlas};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint::{self, ModalButton, PaintLabel};
-use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
-use crate::ui::shell::geom::RectPx;
-use crate::ui::skirmish_shell::checkbox_text_rect;
-use crate::ui::skirmish_shell::game_options::{
-    GameOptionsBox, GameOptionsControl, GameOptionsLayout, GameOptionsSlider,
-};
+use crate::render::shell_text::ShellTextDraw;
+use crate::ui::shell::geom::ShellAlign;
+use crate::ui::skirmish_shell::game_options::{GameOptionsControl, GameOptionsLayout, sync};
 
-/// The open box's art and controls, then its text, over the page.
+/// The open box's art and controls, then its text, over the page: the
+/// box's widgets ([`crate::ui::skirmish_shell::game_options::sync`]) through
+/// the shared painter.
 pub(super) fn push_game_options_box(
     sprites: &mut Vec<SpriteInstance>,
     texts: &mut Vec<ShellTextDraw>,
-    state: &AppState,
+    state: &mut AppState,
     atlas: &SkirmishShellChromeAtlas,
     layout: &GameOptionsLayout,
-    open: &GameOptionsBox,
 ) {
+    let Some(open) = state.frontend.skirmish_shell_state.game_options else {
+        return;
+    };
+    let Some(root) = sync(&mut state.frontend.shell_controller, &open, layout) else {
+        return;
+    };
+    let gui = state.frontend.shell_controller.gui();
+    let ok_pressed = gui
+        .find_id(root, GameOptionsControl::Ok.id())
+        .is_some_and(|ok| gui.pressed() == Some(ok));
     let scale = layout.scale;
-    let font = &state.renderer.bit_font;
     let ok = PaintLabel {
-        text: localized_label(state, "GUI:OK", "OK").into(),
-        rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(
-            layout.ok,
-            open.ok_pressed,
-        ),
+        text: state.csf_label("GUI:OK", "OK").into(),
+        rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(layout.ok, ok_pressed),
         align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         rgb: button_label_color_for_disabled(false),
         path_a_reveal: None,
     };
     let draw = shell_paint::paint_modal_shp(
-        font,
+        &state.renderer.bit_font,
         atlas
             .ra2_dialog_background
             .or_else(|| atlas.mode_two_dialog_background(None)),
@@ -48,7 +51,7 @@ pub(super) fn push_game_options_box(
         layout.dialog,
         &[ModalButton {
             rect: layout.ok,
-            pressed: open.ok_pressed,
+            pressed: ok_pressed,
             enabled: true,
         }],
         &[ok],
@@ -57,64 +60,8 @@ pub(super) fn push_game_options_box(
     );
     sprites.extend(draw.sprites);
     texts.extend(draw.text);
-
-    let text = |value: &str, rect: RectPx, align: ShellAlign| {
-        shell_text::draw_in_rect_scaled(
-            font,
-            value,
-            rect_to_text_rect(rect),
-            SHELL_LABEL_TEXT_RGB,
-            align,
-            [0.0; 2],
-            POPUP_DEPTHS.text,
-            scale.factor(),
-        )
-    };
-    let chrome = atlas.control_chrome();
-    for slider in GameOptionsSlider::ALL {
-        let bar = layout.slider(slider);
-        paint_control(
-            sprites,
-            &chrome,
-            ControlPaint::Trackbar {
-                rect: bar,
-                thumb_left: slider
-                    .range()
-                    .thumb_left_in(open.slider_value(slider), bar, scale),
-                plaque: true,
-                disabled: false,
-            },
-            scale,
-        );
-        if let Some(label) = GameOptionsControl::Slider(slider).label_key() {
-            texts.push(text(
-                &crate::i18n::tr(label),
-                layout.slider_label(slider),
-                ShellAlign::NONE,
-            ));
-        }
-        texts.push(text(
-            &open.slider_text(slider),
-            crate::ui::shell::trackbar::value_text_rect(bar, scale),
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        ));
-    }
-    for (control, rect) in layout.checkboxes() {
-        paint_control(
-            sprites,
-            &chrome,
-            ControlPaint::Checkbox {
-                rect,
-                checked: open.rules.checked(control),
-            },
-            scale,
-        );
-        if let Some(label) = control.label_key() {
-            texts.push(text(
-                &crate::i18n::tr(label),
-                checkbox_text_rect(rect, scale),
-                ShellAlign::V_CENTER,
-            ));
-        }
-    }
+    let widgets =
+        super::gui_paint::paint_gui_with(state, atlas, gui, root, scale, &[], Default::default());
+    sprites.extend(widgets.controls);
+    texts.extend(widgets.texts);
 }

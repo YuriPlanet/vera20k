@@ -13,6 +13,7 @@ pub(crate) mod context_order;
 pub(crate) mod cursor;
 pub(crate) mod hardware_cursor;
 pub(crate) mod connection;
+pub(crate) mod dialog_page;
 pub(crate) mod diplomacy;
 pub(crate) mod briefing_diplomacy;
 pub(crate) mod restate;
@@ -41,6 +42,7 @@ pub(crate) mod superweapon_cameo;
 pub(crate) mod page_user;
 pub(crate) mod taunt;
 pub(crate) mod beacon;
+pub(crate) mod power_mode;
 pub(crate) mod tooltips;
 pub(crate) mod transport_orders;
 

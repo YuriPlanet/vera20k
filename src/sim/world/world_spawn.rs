@@ -441,28 +441,42 @@ impl Simulation {
                     }
                 }
                 // Unit ReadUnits7434F3 writes OnBridge from HIGH itself; its
-                // 7434FB..743510 coordinate is Map578080 ground plus B1D0AC.
-                // HasBridge and navigation's bridge_walkable do not admit that
-                // reader-owned pose. Other classes retain their existing adapter.
+                // 7434FB..743510 supplies Map578080 ground plus B1D0AC in stock.
+                // Use the live span elevation for a corrected Cell. HIGH still
+                // admits the reader-owned pose independently of bridge flags.
                 let unit_high = map_ent.category == EntityCategory::Unit && map_ent.high;
-                let bridge_spawn = if unit_high {
-                    Some(
-                        resolved_terrain
-                            .or(sim.resolved_terrain.as_ref())
-                            .and_then(|terrain| terrain.cell(map_ent.cell_x, map_ent.cell_y))
-                            .map_or(0, |cell| cell.level)
-                            .wrapping_add(4),
-                    )
+                let authored_terrain = resolved_terrain.or(sim.resolved_terrain.as_ref());
+                let corrected_deck = if map_ent.high
+                    && matches!(map_ent.category, EntityCategory::Unit | EntityCategory::Infantry)
+                {
+                    authored_terrain.and_then(|terrain| {
+                        terrain.corrected_high_bridge_deck_level((map_ent.cell_x, map_ent.cell_y))
+                    })
                 } else {
-                    map_ent
-                        .high
-                        .then(|| {
-                            resolved_terrain
+                    None
+                };
+                let bridge_spawn = if unit_high {
+                    Some(corrected_deck.map_or_else(
+                        || {
+                            authored_terrain
                                 .and_then(|terrain| terrain.cell(map_ent.cell_x, map_ent.cell_y))
-                                .filter(|cell| cell.bridge_walkable)
-                                .map(|cell| cell.bridge_deck_level)
-                        })
-                        .flatten()
+                                .map_or(0, |cell| cell.level)
+                                .wrapping_add(4)
+                        },
+                        |deck| deck as u8,
+                    ))
+                } else if map_ent.high {
+                    let bridge_terrain = if corrected_deck.is_some() {
+                        authored_terrain
+                    } else {
+                        resolved_terrain
+                    };
+                    bridge_terrain
+                        .and_then(|terrain| terrain.cell(map_ent.cell_x, map_ent.cell_y))
+                        .filter(|cell| cell.bridge_walkable)
+                        .map(|cell| corrected_deck.map_or(cell.bridge_deck_level, |deck| deck as u8))
+                } else {
+                    None
                 };
                 if map_ent.high && bridge_spawn.is_none() {
                     log::warn!(
@@ -554,15 +568,12 @@ impl Simulation {
                         requested.z = i32::from(z as i8)
                             .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS);
                         if let Some(terrain) = resolved_terrain.or(sim.resolved_terrain.as_ref()) {
-                            match crate::sim::movement::ground_pose::query_ground_height(
+                            match crate::sim::movement::ground_pose::query_surface_z(
                                 &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
                                 requested,
+                                true,
                             ) {
-                                Ok(ground) => {
-                                    requested.z = ground.wrapping_add(
-                                        crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
-                                    );
-                                }
+                                Ok(surface) => requested.z = surface,
                                 // Unsupported slope identities retain the prior
                                 // coarse adapter; no native height claim for them.
                                 Err(cause) => log::warn!("authored Unit HIGH height: {cause}"),
@@ -597,6 +608,23 @@ impl Simulation {
                         bridge_deck: bridge_spawn,
                     },
                 );
+                if map_ent.category == EntityCategory::Infantry
+                    && bridge_spawn.is_some()
+                    && corrected_deck.is_some()
+                    && let Some(terrain) = resolved_terrain.or(sim.resolved_terrain.as_ref())
+                {
+                    // Infantry51E018 compares the incoming raw Z with ground.
+                    // Present the deck Z so that placement retains the authored spot.
+                    let point = crate::sim::movement::ground_pose::position_world_coord(&ge.position);
+                    match crate::sim::movement::ground_pose::query_surface_z(
+                        &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+                        point,
+                        true,
+                    ) {
+                        Ok(surface) => ge.position.put_z(surface),
+                        Err(cause) => log::warn!("authored Infantry HIGH height: {cause}"),
+                    }
+                }
                 // The line's AI Sellable and AI Repairable, written after the
                 // constructor and before the Unlimbo (`BuildingClass::ReadFromINI`
                 // `0x0044FB5B`, `0x0044FB70`).

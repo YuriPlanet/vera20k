@@ -66,6 +66,7 @@ fn fixture_agreement(
         30,
         rate,
         0,
+        0,
         "",
         "",
     )

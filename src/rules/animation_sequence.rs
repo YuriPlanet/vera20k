@@ -265,6 +265,9 @@ pub struct SequenceSet {
     /// The UnitType's ART death layout a running death counter draws.
     #[serde(default)]
     shp_vehicle_death: Option<ShpVehicleDeathFrames>,
+    /// The UnitType's ART firing layout a running firing counter draws.
+    #[serde(default)]
+    shp_vehicle_fire: Option<ShpVehicleFireFrames>,
     /// A `Turret=yes` SHP Unit's thirty-two turret frames. The Unit draw
     /// picks one from the turret heading; see [`ShpVehicleTurret`].
     #[serde(default)]
@@ -305,6 +308,32 @@ impl ShpVehicleDeathFrames {
     }
 }
 
+/// UnitType's ART `StartFiringFrame=` (`+0xE30`) and the signed
+/// `FiringFrames=` byte (`+0xE5D`), as `UnitClass::Draw_Body_And_Turret`
+/// reads them (`0x0073C655..0x0073C672`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ShpVehicleFireFrames {
+    start: i32,
+    frames: i32,
+}
+
+impl ShpVehicleFireFrames {
+    pub(crate) const fn new(start: i32, frames: i32) -> Self {
+        Self { start, frames }
+    }
+
+    /// The image for a firing counter in facing bucket `slot`:
+    /// StartFiringFrame plus FiringFrames times the bucket plus half the
+    /// counter, unbounded. The counter is seeded from the actual type's
+    /// FiringFrames, so under Ares the water type
+    /// (`UnitClass_DrawSHP_ChangeType1`) can step past its own block.
+    pub fn image(self, slot: i32, counter: i32) -> i32 {
+        self.start
+            .wrapping_add(self.frames.wrapping_mul(slot))
+            .wrapping_add(counter / 2)
+    }
+}
+
 /// Frame block one SHP Unit's turret occupies inside its own body SHP.
 ///
 /// A `Turret=yes` SHP Unit draws thirty-two turret frames, one per 11.25° of
@@ -312,8 +341,7 @@ impl ShpVehicleDeathFrames {
 /// (UnitClass SHP draw `0x0073CCF7..0x0073CD03`). The frames share the body's
 /// draw point; `TurretOffset` does not apply.
 ///
-/// MO's Cyclops Walker (`CYCL`, `Voxel=no`, `Turret=yes`, `WalkFrames=22`)
-/// is the shipped example: frames 0..175 walk, 176..207 the turret.
+/// With `WalkFrames=22`, frames 0..175 walk and 176..207 are the turret.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ShpVehicleTurret {
     /// First turret frame, in the body SHP's own frame numbering.
@@ -353,6 +381,7 @@ impl SequenceSet {
             infantry_actions: None,
             shp_vehicle_cadence: None,
             shp_vehicle_death: None,
+            shp_vehicle_fire: None,
             shp_vehicle_turret: None,
         }
     }
@@ -400,6 +429,14 @@ impl SequenceSet {
 
     pub fn shp_vehicle_death(&self) -> Option<ShpVehicleDeathFrames> {
         self.shp_vehicle_death
+    }
+
+    pub(crate) fn set_shp_vehicle_fire(&mut self, fire: ShpVehicleFireFrames) {
+        self.shp_vehicle_fire = Some(fire);
+    }
+
+    pub fn shp_vehicle_fire(&self) -> Option<ShpVehicleFireFrames> {
+        self.shp_vehicle_fire
     }
 
     pub(crate) fn set_shp_vehicle_turret(&mut self, turret: ShpVehicleTurret) {

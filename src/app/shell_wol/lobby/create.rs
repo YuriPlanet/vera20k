@@ -232,8 +232,8 @@ pub(super) fn create_confirmed(
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
-    lobby.ui.popup = None;
-    lobby.ui.observer = observe;
+    lobby.ui.close_popup();
+    lobby.ui.set_observer(observe);
     leave_then_create(state, channel, key, observe, ranked);
 }
 
@@ -283,10 +283,10 @@ pub(super) fn create_ended(state: &mut AppState) {
     if let Some(lobby) = lobby_mut(state) {
         lobby.covered = false;
         lobby.step = Step::Ready;
-        lobby.ui.enable_commands(false);
+        lobby.ui.set_commands(true, false, false);
     }
     state
         .frontend
         .shell_controller
-        .reset_to(super::WOL_LOBBY_DIALOG, false);
+        .reset_to(super::WOL_LOBBY_DIALOG);
 }

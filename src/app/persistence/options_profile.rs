@@ -291,6 +291,11 @@ pub(crate) struct RetailOptionsProfile {
     /// change applies from the next start. Auto keeps the game's data in
     /// charge; an unknown value reads as Auto.
     pub(crate) ares: crate::util::ares_launch::AresSetting,
+    /// `[VERA] RA2Mode=`: the Options page's RA2 Mode box (docs/ra2-mode.md).
+    /// On, the game plays original Red Alert 2 from the installation's
+    /// non-md files (`util::ra2_launch`). Read at start, like the Ares
+    /// setting: a change applies from the next start. Off by default.
+    pub(crate) ra2_mode: bool,
     /// `[VERA] ColorVisionMode=`: the whole-viewport colour-vision filter, as
     /// a [`ColorVisionMode`](crate::ui::main_menu_dialogs::options::ColorVisionMode)
     /// value. `Off` keeps the retail image. Client presentation only: the
@@ -435,6 +440,7 @@ impl Default for RetailOptionsProfile {
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             auto_repair: false,
+            ra2_mode: false,
             minimap_beacons: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
@@ -476,7 +482,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 43],
+    pub(crate) vera: [(&'static str, String); 44],
 }
 
 impl RetailOptionsLoad {
@@ -575,6 +581,16 @@ impl RetailOptionsLoad {
 }
 
 impl RetailOptionsProfile {
+    /// The YR Original Style box as this start plays it. RA2 Mode paints the
+    /// shell with RA2 art: the YR style (GLSMD.PAL / GLSLMD.SHP, the
+    /// Cooperative setup art, the YR menu movie) lives in md archives RA2
+    /// Mode does not mount, so honouring `YROriginalStyle=yes` would leave the
+    /// splash, menu and lobby without their art. The saved choice is kept for
+    /// a start without RA2 Mode.
+    pub(crate) fn plays_yr_original_style(&self) -> bool {
+        self.yr_original_style && !crate::util::ra2_launch::enabled()
+    }
+
     /// `OptionsClass::Set_Score_Volume` at `0x005FA4A0` stores an upper-only
     /// clamped f32. Reuse the INI reader's normalization so live setters retain
     /// negative and unordered inputs instead of copying the output clamp.
@@ -714,6 +730,7 @@ impl RetailOptionsProfile {
                 vera.read_int("SuperweaponLimit", i32::from(self.superweapon_limit)),
             );
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
+            self.ra2_mode = vera.read_bool("RA2Mode", self.ra2_mode);
             self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
@@ -957,6 +974,7 @@ impl RetailOptionsProfile {
                     format_bool(self.skirmish_cheats).to_string(),
                 ),
                 ("AutoRepair", format_bool(self.auto_repair).to_string()),
+                ("RA2Mode", format_bool(self.ra2_mode).to_string()),
                 (
                     "MinimapBeacons",
                     format_bool(self.minimap_beacons).to_string(),
@@ -2357,6 +2375,22 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             explicit_new_key.retained_profile.yr_original_style,
             "the YR-original preference must be read from its own key"
         );
+    }
+
+    /// RA2 Mode comes from its own key and is saved under it, and saving
+    /// keeps the player's YR Original Style choice, which RA2 Mode only sets
+    /// aside while it plays (`plays_yr_original_style`).
+    #[test]
+    fn ra2_mode_round_trips_and_keeps_the_yr_original_style_choice() {
+        let on = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[VERA]\nRA2Mode=yes\nYROriginalStyle=yes\n",
+        )
+        .retained_profile;
+        assert!(on.ra2_mode);
+        let output = String::from_utf8(on.transform_settings(b"[VERA]\n")).unwrap();
+        assert!(output.contains("RA2Mode=yes"), "{output}");
+        assert!(output.contains("YROriginalStyle=yes"), "{output}");
     }
 
     #[test]

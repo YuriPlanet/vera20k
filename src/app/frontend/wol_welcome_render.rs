@@ -14,26 +14,27 @@ use anyhow::Result;
 use crate::app::AppState;
 use crate::app::diagnostics::shell_capture::PresentedShell;
 use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
-use crate::app::frontend::movies_credits_render::push_group_box;
 use crate::app::frontend::shell_pass::{
-    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
-    software_cursor,
+    ShellComposition, TexturedDraw, encode_shell_pass, software_cursor,
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::app::frontend::skirmish_shell_render::WolLobbyPaint;
+use crate::app::frontend::skirmish_shell_render::gui_paint::{
+    ButtonArt, GuiPaint, GuiStyle, paint_gui_styled,
+};
+use crate::app::frontend::skirmish_shell_render::{BoxLook, paint_shell_box};
+use crate::app::frontend::skirmish_shell_render::{WolLobbyPaint, paint_list_frame};
 use crate::app::shell_wol::WolPage;
 use crate::render::shell_paint::{
-    self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
-    SHELL_TEXT_RGB_ENABLED, push_entry_scaled,
+    self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED,
+    push_entry_scaled,
 };
-use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::geom::{RectPx, ShellScale, centred_in_window};
-use crate::ui::shell::menu_page::{MenuPageButtonRect, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::ShellAlign;
+use crate::ui::shell::geom::{RectPx, centred_in_window};
+use crate::ui::shell::menu_page::{MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::slide::PanelArt;
-use crate::ui::wol_shell::{
-    BOX_NO, BOX_OK, BOX_YES, StaticAlign, WAIT_CHECK_STATUS, WAIT_DISCONNECT, WOL_LOBBY_TITLE_KEY,
-    WolBoxButtons,
-};
+use crate::ui::shell::sound::SHELL_SOUND_PAGE;
+use crate::ui::wol_shell::{WOL_LOBBY_TITLE_KEY, WOL_WELCOME_DIALOG};
 
 /// Icon and group-box children sit over the background, under the text.
 const CHILD_DEPTH: f32 = CHROME_DEPTH - 0.00002;
@@ -44,82 +45,6 @@ const BOX_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDepths {
     text: 0.00040,
 };
 
-fn align(value: StaticAlign) -> ShellAlign {
-    match value {
-        StaticAlign::Left => ShellAlign::NONE,
-        StaticAlign::Center => ShellAlign::H_CENTER,
-        StaticAlign::Right => ShellAlign::H_RIGHT,
-    }
-}
-
-/// A box `0xD0` or `0x126` from `0x005E2CD0`: its dialog, buttons with
-/// their pushed state, and labels (the body, then the button captions).
-pub(crate) fn message_box_parts(
-    message: &crate::ui::wol_shell::WolMessageBox,
-    pressed: Option<u16>,
-    screen_w: i32,
-    screen_h: i32,
-    scale: ShellScale,
-) -> (
-    crate::ui::shell::geom::RectPx,
-    Vec<(crate::ui::shell::geom::RectPx, bool)>,
-    Vec<PaintLabel<'static>>,
-) {
-    let label = |value: &str, rect, align| PaintLabel {
-        text: value.to_owned().into(),
-        rect,
-        align,
-        rgb: SHELL_TEXT_RGB_ENABLED,
-        path_a_reveal: None,
-    };
-    let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
-    let geometry = message.layout(screen_w, screen_h, scale);
-    match &message.buttons {
-        WolBoxButtons::Ok(ok) => {
-            let ok_pressed = pressed == Some(BOX_OK);
-            (
-                geometry.dialog,
-                vec![(geometry.ok, ok_pressed)],
-                vec![
-                    label(&message.body, geometry.body, ShellAlign::NONE),
-                    label(
-                        ok,
-                        owner_draw_button_label_rect(geometry.ok, ok_pressed),
-                        button_align,
-                    ),
-                ],
-            )
-        }
-        WolBoxButtons::YesNo { yes, no } => {
-            let yes_pressed = pressed == Some(BOX_YES);
-            let no_pressed = pressed == Some(BOX_NO);
-            (
-                geometry.dialog,
-                vec![
-                    (geometry.ok, yes_pressed),
-                    (geometry.cancel.expect("Yes/No has No"), no_pressed),
-                ],
-                vec![
-                    label(&message.body, geometry.body, ShellAlign::NONE),
-                    label(
-                        yes,
-                        owner_draw_button_label_rect(geometry.ok, yes_pressed),
-                        button_align,
-                    ),
-                    label(
-                        no,
-                        owner_draw_button_label_rect(
-                            geometry.cancel.expect("Yes/No has No"),
-                            no_pressed,
-                        ),
-                        button_align,
-                    ),
-                ],
-            )
-        }
-    }
-}
-
 /// Which shell the capture driver saw for the visit's current page.
 pub(crate) fn presented_wol_page(state: &AppState) -> PresentedShell {
     match state.frontend.wol.as_ref().map(|visit| &visit.page) {
@@ -127,7 +52,7 @@ pub(crate) fn presented_wol_page(state: &AppState) -> PresentedShell {
         Some(WolPage::Lobby) => PresentedShell::WolLobby,
         Some(WolPage::Options(page)) if page.sound.is_some() => PresentedShell::WolSoundOptions,
         Some(WolPage::Options(_)) => PresentedShell::WolOptions,
-        Some(WolPage::AutoLoginQuery(_)) => PresentedShell::WolAutoLoginQuery,
+        Some(WolPage::AutoLoginQuery) => PresentedShell::WolAutoLoginQuery,
         Some(WolPage::Locale(_)) => PresentedShell::WolLocale,
         Some(WolPage::MyInformation(_)) => PresentedShell::WolMyInformation,
         Some(WolPage::Buddy(_)) => PresentedShell::WolBuddyList,
@@ -155,65 +80,207 @@ pub(crate) fn page_dialogs_paint(state: &AppState) -> Option<(RectPx, WolLobbyPa
     ))
 }
 
-/// The page being painted and what it needs beyond the shared chrome.
-enum Painted {
+/// What a page paints beyond the family chrome every WOL page shares.
+enum Body {
+    /// `0x10E`'s group boxes, icons and statics.
     Welcome(crate::ui::wol_shell::WolWelcomeLayout),
     Login(crate::ui::wol_login::WolLoginLayout),
     Lobby(crate::ui::wol_lobby::WolLobbyLayout),
-    Options(crate::ui::wol_options::WolOptionsLayout),
-    SoundOptions(crate::ui::shell::sound::ShellSoundLayout),
-    /// `0x112` or `0xFE`.
-    Persona(crate::ui::wol_persona::WolPersonaLayout),
-    /// `0x114`.
-    MyInfo(crate::ui::wol_my_info::WolMyInfoLayout),
+    /// `0x114`'s group box, under its widgets.
+    MyInfo(RectPx),
     /// `0x116`.
     Buddy(crate::ui::wol_buddy::WolBuddyLayout),
     /// `0x117`.
     QuickMatch(crate::ui::wol_quick_match::WolQuickMatchLayout),
-    /// A dialog has closed: the empty backdrop, under a box or the wait box.
-    Backdrop,
+    /// Widgets alone: WOL Options, its Sound Options, `0x112`, `0xFE` and
+    /// `0x122`.
+    Widgets,
 }
 
+/// The page being painted: its dialog, right panel, status line, the page
+/// whose captions its buttons show, and its body.
+struct Painted {
+    dialog: DialogResourceId,
+    page: MenuPageLayout,
+    status_help: RectPx,
+    spec: &'static MenuPageSpec,
+    body: Body,
+}
+
+/// The shell's Sound Options over WOL Options.
+const SOUND_DIALOG: DialogResourceId = SHELL_SOUND_PAGE.dialog;
+
+/// The WOL pages' slides.
+const SLIDES: [ShellSlideKind; 11] = [
+    ShellSlideKind::WolWelcome,
+    ShellSlideKind::WolLogin,
+    ShellSlideKind::WolLobby,
+    ShellSlideKind::WolOptions,
+    ShellSlideKind::WolSoundOptions,
+    ShellSlideKind::WolAutoLoginQuery,
+    ShellSlideKind::WolLocale,
+    ShellSlideKind::WolMyInformation,
+    ShellSlideKind::WolBuddyList,
+    ShellSlideKind::WolQuickMatch,
+    ShellSlideKind::WolAddBuddyQuery,
+];
+
 impl Painted {
-    fn kind(&self) -> Option<ShellSlideKind> {
-        match self {
-            Self::Welcome(_) => Some(ShellSlideKind::WolWelcome),
-            Self::Login(_) => Some(ShellSlideKind::WolLogin),
-            Self::Lobby(_) => Some(ShellSlideKind::WolLobby),
-            Self::Options(_) => Some(ShellSlideKind::WolOptions),
-            Self::SoundOptions(_) => Some(ShellSlideKind::WolSoundOptions),
-            Self::Persona(layout) if layout.dialog == crate::ui::wol_persona::LOCALE_DIALOG => {
-                Some(ShellSlideKind::WolLocale)
-            }
-            Self::Persona(layout) if layout.dialog == crate::ui::wol_persona::ADD_BUDDY_DIALOG => {
-                Some(ShellSlideKind::WolAddBuddyQuery)
-            }
-            Self::Persona(_) => Some(ShellSlideKind::WolAutoLoginQuery),
-            Self::MyInfo(_) => Some(ShellSlideKind::WolMyInformation),
-            Self::Buddy(_) => Some(ShellSlideKind::WolBuddyList),
-            Self::QuickMatch(_) => Some(ShellSlideKind::WolQuickMatch),
-            Self::Backdrop => None,
-        }
+    fn kind(&self) -> ShellSlideKind {
+        let kind = SLIDES
+            .into_iter()
+            .find(|kind| kind.dialog_id() == self.dialog);
+        kind.expect("every painted WOL page slides")
     }
 
+    /// The heading's key: `0x113` keeps its own; `0x122` has none.
     fn title_key(&self) -> Option<&'static str> {
-        match self {
-            Self::Welcome(layout) => Some(layout.page_spec().title_key),
-            Self::Login(layout) => Some(layout.page_spec().title_key),
-            Self::Lobby(_) => Some(WOL_LOBBY_TITLE_KEY),
-            Self::Options(_) => Some(crate::ui::wol_options::PAGE.title_key),
-            Self::SoundOptions(_) => Some(crate::ui::shell::sound::SHELL_SOUND_PAGE.title_key),
-            // 0x122 has no heading.
-            Self::Persona(layout) => {
-                Some(crate::ui::wol_persona::WolPersonaLayout::spec(layout.dialog).title_key)
-                    .filter(|key| !key.is_empty())
-            }
-            Self::MyInfo(_) => Some(crate::ui::wol_my_info::PAGE.title_key),
-            Self::Buddy(_) => Some(crate::ui::wol_buddy::PAGE.title_key),
-            Self::QuickMatch(_) => Some(crate::ui::wol_quick_match::PAGE.title_key),
-            Self::Backdrop => None,
-        }
+        let key = match self.body {
+            Body::Lobby(_) => WOL_LOBBY_TITLE_KEY,
+            _ => self.spec.title_key,
+        };
+        Some(key).filter(|key| !key.is_empty())
     }
+}
+
+/// The visit's page with its art loaded and its widgets placed; `None` for
+/// the empty backdrop (a dialog has closed, under a box or the wait box).
+fn painted(state: &mut AppState) -> Option<Painted> {
+    use crate::app::shell_wol::{buddy, leaf, lobby, my_info, options, persona, quick_match};
+    use crate::ui::{wol_buddy, wol_lobby, wol_login, wol_my_info, wol_options, wol_quick_match};
+    // 0x11E opens over the empty backdrop (0x0052FEC0), except from 0x116's
+    // Page, which runs it over the Buddy List.
+    let received = crate::app::shell_wol::page::page_received(state);
+    if received.is_some_and(|received| !received.modal) {
+        return None;
+    }
+    let dialog = match &state.frontend.wol.as_ref()?.page {
+        WolPage::Welcome => WOL_WELCOME_DIALOG,
+        WolPage::Login(_) => wol_login::DIALOG,
+        WolPage::Lobby => wol_lobby::DIALOG,
+        WolPage::Options(page) if page.sound.is_some() => SOUND_DIALOG,
+        WolPage::Options(_) => wol_options::DIALOG,
+        WolPage::AutoLoginQuery | WolPage::Locale(_) | WolPage::AddBuddyQuery(_) => {
+            persona::dialog(state)?
+        }
+        WolPage::MyInformation(_) => wol_my_info::DIALOG,
+        WolPage::Buddy(_) => wol_buddy::DIALOG,
+        WolPage::QuickMatch(_) => wol_quick_match::DIALOG,
+        WolPage::Backdrop { .. } | WolPage::Message { .. } => return None,
+    };
+    leaf::open_art(state, dialog);
+    let painted = |page, status_help, spec, body| Painted {
+        dialog,
+        page,
+        status_help,
+        spec,
+        body,
+    };
+    Some(match dialog {
+        WOL_WELCOME_DIALOG => {
+            crate::app::App::wol_welcome_sync(state, &[]);
+            let layout = crate::app::frontend::shell_layout::wol_welcome_layout(state);
+            let spec = layout.page_spec();
+            painted(
+                layout.page.clone(),
+                layout.page.status_help,
+                spec,
+                Body::Welcome(layout),
+            )
+        }
+        wol_login::DIALOG => {
+            let layout = crate::app::shell_wol::login_layout(state);
+            let spec = layout.page_spec();
+            painted(
+                layout.page.clone(),
+                layout.page.status_help,
+                spec,
+                Body::Login(layout),
+            )
+        }
+        wol_lobby::DIALOG => {
+            // Hidden (created hidden, or slid out for a join) or covered by
+            // the empty backdrop for a popup: only the backdrop shows.
+            let lobby_ui = state.frontend.wol.as_ref().and_then(|visit| visit.lobby());
+            if !lobby_ui.is_some_and(|lobby| lobby.shown && !lobby.covered) {
+                return None;
+            }
+            let spec = lobby_ui.map_or(&wol_lobby::PAGE, |lobby| lobby.ui.page_spec());
+            lobby::sync(state);
+            let layout = lobby::layout(state);
+            painted(
+                layout.page.clone(),
+                layout.page.status_help,
+                spec,
+                Body::Lobby(layout),
+            )
+        }
+        wol_options::DIALOG => {
+            let spec = options::menu_spec(state);
+            let layout = options::layout(state);
+            options::sync_gui(state);
+            painted(
+                layout.page.clone(),
+                layout.page.status_help,
+                spec,
+                Body::Widgets,
+            )
+        }
+        SOUND_DIALOG => {
+            let layout = options::sound_layout(state);
+            options::sync_gui(state);
+            painted(
+                layout.page.clone(),
+                layout.page.status_help,
+                &SHELL_SOUND_PAGE,
+                Body::Widgets,
+            )
+        }
+        wol_my_info::DIALOG => {
+            my_info::sync(state);
+            let layout = my_info::layout(state);
+            let group_box = layout.rect_of(wol_my_info::GROUP_BOX).unwrap_or_default();
+            let help = layout.page.status_help;
+            painted(
+                layout.page.clone(),
+                help,
+                &wol_my_info::PAGE,
+                Body::MyInfo(group_box),
+            )
+        }
+        wol_buddy::DIALOG => {
+            buddy::sync(state);
+            let layout = buddy::layout(state);
+            painted(
+                layout.page.clone(),
+                layout.page.status_help,
+                &wol_buddy::PAGE,
+                Body::Buddy(layout),
+            )
+        }
+        wol_quick_match::DIALOG => {
+            quick_match::sync(state);
+            let layout = quick_match::layout(state);
+            let spec = &wol_quick_match::PAGE;
+            painted(
+                layout.page.clone(),
+                layout.page.status_help,
+                spec,
+                Body::QuickMatch(layout),
+            )
+        }
+        _ => {
+            persona::sync(state);
+            let layout = persona::layout(state)?;
+            let spec = crate::ui::wol_persona::WolPersonaLayout::spec(dialog);
+            painted(
+                layout.page.clone(),
+                layout.page.status_help,
+                spec,
+                Body::Widgets,
+            )
+        }
+    })
 }
 
 /// Paint the visit's page. Returns `false` when the shell chrome is missing.
@@ -225,88 +292,13 @@ pub(crate) fn render_wol_page(
     if state.frontend.main_menu_shell_chrome.is_none() || state.frontend.wol.is_none() {
         return Ok(false);
     }
-    let welcome = crate::app::App::wol_welcome_layout(state);
-    let painted = match &state.frontend.wol.as_ref().expect("checked").page {
-        // 0x11E opens over the empty backdrop (0x0052FEC0), except from
-        // 0x116's Page, which runs it over the Buddy List.
-        _ if crate::app::shell_wol::page::page_received(state)
-            .is_some_and(|received| !received.modal) =>
-        {
-            Painted::Backdrop
-        }
-        WolPage::Welcome => {
-            crate::app::App::ensure_wol_welcome_art(state);
-            Painted::Welcome(welcome.clone())
-        }
-        WolPage::Login(_) => {
-            crate::app::shell_wol::open_login_art(state);
-            Painted::Login(crate::app::shell_wol::login_layout(state))
-        }
-        WolPage::Lobby => {
-            crate::app::shell_wol::lobby::open_art(state);
-            // Hidden (created hidden, or slid out for a join) or covered by
-            // the empty backdrop for a popup: only the backdrop shows.
-            let visible = state
-                .frontend
-                .wol
-                .as_ref()
-                .and_then(|visit| visit.lobby())
-                .is_some_and(|lobby| lobby.shown && !lobby.covered);
-            if visible {
-                Painted::Lobby(crate::app::shell_wol::lobby::layout(state))
-            } else {
-                Painted::Backdrop
-            }
-        }
-        WolPage::Options(page) => {
-            let sound = page.sound.is_some();
-            if sound {
-                crate::app::shell_wol::options::open_sound_art(state);
-                Painted::SoundOptions(crate::app::shell_wol::options::sound_layout(state))
-            } else {
-                crate::app::shell_wol::options::open_art(state);
-                Painted::Options(crate::app::shell_wol::options::layout(state))
-            }
-        }
-        WolPage::AutoLoginQuery(_) | WolPage::Locale(_) | WolPage::AddBuddyQuery(_) => {
-            if matches!(
-                state.frontend.wol.as_ref().map(|visit| &visit.page),
-                Some(WolPage::AutoLoginQuery(_))
-            ) {
-                crate::app::shell_wol::persona::open_art(state);
-            }
-            match crate::app::shell_wol::persona::layout(state) {
-                Some(layout) => Painted::Persona(layout),
-                None => Painted::Backdrop,
-            }
-        }
-        WolPage::MyInformation(_) => {
-            crate::app::shell_wol::my_info::open_art(state);
-            Painted::MyInfo(crate::app::shell_wol::my_info::layout(state))
-        }
-        WolPage::Buddy(_) => {
-            crate::app::shell_wol::buddy::open_art(state);
-            Painted::Buddy(crate::app::shell_wol::buddy::layout(state))
-        }
-        WolPage::QuickMatch(_) => {
-            crate::app::shell_wol::quick_match::open_art(state);
-            Painted::QuickMatch(crate::app::shell_wol::quick_match::layout(state))
-        }
-        WolPage::Backdrop { .. } | WolPage::Message { .. } => Painted::Backdrop,
+    let painted = painted(state);
+    let kind = painted.as_ref().map(Painted::kind);
+    let page = match &painted {
+        Some(painted) => painted.page.clone(),
+        // The right panel's geometry is the family's on every WOL page.
+        None => crate::app::frontend::shell_layout::wol_welcome_layout(state).page,
     };
-    // The right panel's geometry is the family's on every WOL page.
-    let page: &MenuPageLayout = match &painted {
-        Painted::Login(layout) => &layout.page,
-        Painted::Lobby(layout) => &layout.page,
-        Painted::Options(layout) => &layout.page,
-        Painted::SoundOptions(layout) => &layout.page,
-        Painted::Persona(layout) => &layout.page,
-        Painted::MyInfo(layout) => &layout.page,
-        Painted::Buddy(layout) => &layout.page,
-        Painted::QuickMatch(layout) => &layout.page,
-        _ => &welcome.page,
-    };
-    let page = page.clone();
     let screen_w = page.screen.w;
     let screen_h = page.screen.h;
     let scale = page.scale;
@@ -316,21 +308,19 @@ pub(crate) fn render_wol_page(
 
     // The teardown slide starts with a full dialog repaint (`0x00622C4F`)
     // and pumps no messages until it ends: every child stays blank.
-    let exit_wave = painted.kind().and_then(|kind| {
+    let exit_wave = kind.and_then(|kind| {
         crate::app::frontend::shell_transition::shell_exit_wave(state, kind).cloned()
     });
     let leaving = exit_wave.is_some();
-    let wave = exit_wave.or_else(|| {
-        painted
-            .kind()
-            .and_then(|_| state.frontend.shell_first_paint_slide.clone())
-    });
-    let page_statics = painted.kind().is_some() && !leaving;
+    let wave =
+        exit_wave.or_else(|| kind.and_then(|_| state.frontend.shell_first_paint_slide.clone()));
+    let page_statics = kind.is_some() && !leaving;
+    let body = painted.as_ref().map(|painted| &painted.body);
     // The chat lobby 0x113 has no warning monitor (template static 0x71C;
     // 0x60AB71..0x60AC9E lists the family dialogs carrying it) but has the
     // +0xD5 top panel instead; every other painted WOL page is the reverse,
     // as is the online lobby, which has no lobby list.
-    let top_panel = matches!(painted, Painted::Lobby(_))
+    let top_panel = matches!(body, Some(Body::Lobby(_)))
         && state
             .frontend
             .wol
@@ -347,48 +337,26 @@ pub(crate) fn render_wol_page(
             .frontend
             .shell_page_title
             .paint(crate::util::time::Instant::now());
-        let (status_key, status_rect) = match &painted {
-            Painted::Welcome(layout) => {
-                (crate::app::App::wol_status_key(state), layout.status_help)
-            }
-            Painted::Lobby(layout) => (None, layout.page.status_help),
-            Painted::Options(layout) => (
-                crate::app::shell_wol::options::status_key(state),
-                layout.status_help,
-            ),
-            Painted::SoundOptions(layout) => (None, layout.status_help),
-            Painted::MyInfo(layout) => (
-                crate::app::shell_wol::my_info::status_key(state),
-                layout.status_help,
-            ),
-            Painted::Buddy(layout) => (
-                crate::app::shell_wol::buddy::status_key(state),
-                layout.status_help,
-            ),
-            Painted::Persona(layout) => (
-                crate::app::shell_wol::persona::status_key(state),
-                layout.status_help,
-            ),
-            Painted::QuickMatch(layout) => (
-                crate::app::shell_wol::quick_match::status_key(state),
-                layout.status_help,
-            ),
-            Painted::Login(layout) => (
-                state
-                    .frontend
-                    .wol
-                    .as_ref()
-                    .and_then(|visit| visit.login())
-                    .and_then(|login| login.buttons.hovered)
-                    .and_then(|control| layout.tooltip_key(control)),
-                layout.status_help,
-            ),
-            _ => (None, page.status_help),
+        use crate::app::shell_wol::{leaf, options, quick_match};
+        let status_rect = painted
+            .as_ref()
+            .map_or(page.status_help, |painted| painted.status_help);
+        let status_key = match painted.as_ref().map(|painted| painted.dialog) {
+            // The lobby writes its own line.
+            _ if matches!(body, Some(Body::Lobby(_))) => None,
+            Some(crate::ui::wol_login::DIALOG) => crate::app::shell_wol::login_status_key(state),
+            Some(crate::ui::wol_options::DIALOG) => options::status_key(state),
+            Some(crate::ui::wol_quick_match::DIALOG) => quick_match::status_key(state),
+            Some(SOUND_DIALOG) => None,
+            // The control the last move hovered (none arrives while a button
+            // holds the mouse).
+            Some(dialog) => leaf::status_key(state, dialog),
+            None => None,
         };
-        let status_text = match &painted {
-            Painted::Lobby(_) => crate::app::shell_wol::lobby::status_help(state),
+        let status_text = match body {
+            Some(Body::Lobby(_)) => crate::app::shell_wol::lobby::status_help(state),
             _ => status_key
-                .map(|key| resolve_csf(state, key).into_owned())
+                .map(|key| state.csf_text(key))
                 .unwrap_or_default(),
         };
         let status_label = crate::app::frontend::menu_page_render::paint_shell_status_line(
@@ -406,21 +374,10 @@ pub(crate) fn render_wol_page(
         .main_menu_shell_chrome
         .as_ref()
         .expect("checked before render");
-    let art = match &painted {
-        Painted::Welcome(_) => state.frontend.wol_welcome_art.as_ref(),
-        Painted::Login(_) => state.frontend.wol_login_art.as_ref(),
-        Painted::Lobby(_) => state.frontend.wol_lobby_art.as_ref(),
-        Painted::Options(_) => state.frontend.wol_options_art.as_ref(),
-        Painted::SoundOptions(_) => state.frontend.wol_sound_options_art.as_ref(),
-        Painted::Persona(layout) if layout.dialog == crate::ui::wol_persona::AUTO_LOGIN_DIALOG => {
-            state.frontend.wol_auto_login_art.as_ref()
-        }
-        Painted::MyInfo(_) => state.frontend.wol_my_info_art.as_ref(),
-        Painted::Buddy(_) => state.frontend.wol_buddy_art.as_ref(),
-        Painted::QuickMatch(_) => state.frontend.wol_quick_match_art.as_ref(),
-        // 0xFE and 0x122 load no art of their own.
-        Painted::Persona(_) | Painted::Backdrop => None,
-    };
+    // 0xFE and 0x122 load no art of their own.
+    let art = painted
+        .as_ref()
+        .and_then(|painted| crate::app::shell_wol::leaf::art(state, painted.dialog));
     let mut sprites = Vec::new();
     // The dialog's own background exists only at 800 wide; elsewhere, and
     // behind the boxes, the empty shell backdrop shows (`0x0052FEC0`).
@@ -448,7 +405,7 @@ pub(crate) fn render_wol_page(
         Some(page.lower_strip),
         screen_w,
     ));
-    if top_panel && painted.kind().is_some() {
+    if top_panel {
         let art = match &wave {
             Some(wave) => wave.panel_art(),
             None => vec![PanelArt::Sdtp(1)],
@@ -464,50 +421,46 @@ pub(crate) fn render_wol_page(
     let children = page_statics;
     let mut icon_sprites = Vec::new();
     let mut labels = Vec::new();
-    if let (true, Painted::Welcome(layout)) = (children, &painted) {
-        for window in &layout.group_boxes {
-            push_group_box(&mut sprites, chrome, *window, scale);
+    let mut welcome_texts = None;
+    // `BS_GROUPBOX` frames (`0x0061E700`): the list's two rings, the top
+    // edge eight pixels below the window top, on the window's last column
+    // and row.
+    let mut group_boxes = Vec::new();
+    let mut group_box = |window: RectPx| {
+        if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
+            let frame = scale.derive_rect(window, |window| {
+                RectPx::new(window.x + 1, window.y + 9, window.w - 3, window.h - 11)
+            });
+            paint_list_frame(&mut group_boxes, atlas, frame);
         }
-        if let Some(art) = art {
-            for (file, window) in &layout.icons {
-                let Some((_, entry)) = art.icons.iter().find(|(name, _)| name == file) else {
+    };
+    match body.filter(|_| children) {
+        Some(Body::Welcome(layout)) => {
+            layout.group_boxes().into_iter().for_each(&mut group_box);
+            let icons = art.iter().flat_map(|art| &art.icons);
+            for (file, window) in layout.icons() {
+                let Some((_, entry)) = icons.clone().find(|(name, _)| name == file) else {
                     continue;
                 };
                 let (w, h) = entry.native_size();
-                let (x, y) = centred_in_window(scale.base_rect(*window), w, h);
+                let (x, y) = centred_in_window(scale.base_rect(window), w, h);
                 push_entry_scaled(&mut icon_sprites, *entry, x, y, scale, CHILD_DEPTH);
             }
+            welcome_texts =
+                Some(crate::app::shell_wol::leaf::paint(state, WOL_WELCOME_DIALOG, scale).texts);
         }
-        let filled = &state.frontend.wol.as_ref().expect("checked").welcome_texts;
-        for (text, rect) in &layout.texts {
-            let caption = match filled.iter().find(|(id, _)| Some(*id) == text.id) {
-                Some((_, value)) => value.as_str().into(),
-                // An empty template caption is no label: the persona heading
-                // stays blank without a nickname.
-                None if text.key.is_empty() => continue,
-                None => resolve_csf(state, text.key),
-            };
-            if caption.is_empty() {
-                continue;
-            }
-            labels.push(PaintLabel {
-                text: caption,
-                rect: *rect,
-                align: align(text.align),
-                rgb: SHELL_TEXT_RGB_ENABLED,
-                path_a_reveal: None,
-            });
-        }
+        Some(Body::MyInfo(window)) => group_box(*window),
+        Some(Body::Buddy(layout)) => group_box(
+            layout
+                .rect_of(crate::ui::wol_buddy::GROUP_BOX)
+                .unwrap_or_default(),
+        ),
+        _ => {}
     }
-    if let (true, Painted::MyInfo(layout)) = (children, &painted) {
-        push_group_box(&mut sprites, chrome, layout.group_box, scale);
-    }
-    if let (true, Painted::Buddy(layout)) = (children, &painted) {
-        push_group_box(&mut sprites, chrome, layout.group_box, scale);
-    }
+    let shown = body.filter(|_| children);
     let buddy_page = crate::app::shell_wol::buddy::page(state);
-    let buddy_children = match (&painted, children, buddy_page) {
-        (Painted::Buddy(layout), true, Some(dialog)) => Some(
+    let buddy_children = match (shown, buddy_page) {
+        (Some(Body::Buddy(layout)), Some(dialog)) => Some(
             crate::app::frontend::skirmish_shell_render::paint_wol_buddy_children(
                 state, &dialog.ui, layout, art,
             ),
@@ -516,53 +469,39 @@ pub(crate) fn render_wol_page(
     };
     let add_buddy = buddy_page
         .and_then(|dialog| dialog.ui.add.as_ref())
-        .map(|add| {
+        .map(|_| {
             crate::app::frontend::skirmish_shell_render::paint_wol_add_buddy(
                 state,
-                add,
                 &crate::ui::shell::modal::wol_add_buddy_layout(screen_w, screen_h),
             )
         });
     // 0x115 sits over 0x116 without covering it.
-    let buddy_popup = match &painted {
-        Painted::Buddy(_) if add_buddy.is_some() => {
+    let buddy_popup = match body {
+        Some(Body::Buddy(_)) if add_buddy.is_some() => {
             Some(crate::ui::shell::modal::wol_add_buddy_layout(screen_w, screen_h).dialog)
         }
         _ => None,
     };
-    let my_info_children = match (&painted, children) {
-        (Painted::MyInfo(layout), true) => {
-            crate::app::shell_wol::my_info::page(state).map(|page| {
-                crate::app::frontend::skirmish_shell_render::paint_wol_my_info_children(
-                    state, page, layout,
-                )
-            })
-        }
+    // The pages drawn by their widgets alone.
+    let widget_children = match (&painted, shown) {
+        (Some(painted), Some(Body::MyInfo(_) | Body::Widgets)) => Some(
+            crate::app::shell_wol::leaf::paint(state, painted.dialog, painted.page.scale),
+        ),
         _ => None,
     };
-    let login_children = match (&painted, children) {
-        (Painted::Login(layout), true) => state
-            .frontend
-            .wol
-            .as_ref()
-            .and_then(|visit| visit.login())
-            .map(|login| {
-                crate::app::frontend::skirmish_shell_render::paint_wol_login_children(
-                    state, login, layout,
-                )
-            }),
+    let login = state.frontend.wol.as_ref().and_then(|visit| visit.login());
+    let login_children = match (shown, login) {
+        (Some(Body::Login(layout)), Some(login)) => Some(
+            crate::app::frontend::skirmish_shell_render::paint_wol_login_children(
+                state, login, layout,
+            ),
+        ),
         _ => None,
     };
     // VERA online's account popup over the login page.
-    let account_form = match (&painted, children) {
-        (Painted::Login(layout), true) => state
-            .frontend
-            .wol
-            .as_ref()
-            .and_then(|visit| visit.login())
-            .and_then(|login| login.account.as_ref())
-            .zip(crate::app::shell_wol::account_form_layout(state))
-            .map(|(form, rects)| {
+    let account_form = match (shown, login.and_then(|login| login.account.as_ref())) {
+        (Some(Body::Login(layout)), Some(form)) => {
+            crate::app::shell_wol::account_form_layout(state).map(|rects| {
                 (
                     rects.dialog,
                     crate::app::frontend::skirmish_shell_render::paint_wol_account_form(
@@ -572,55 +511,13 @@ pub(crate) fn render_wol_page(
                         layout.page.scale,
                     ),
                 )
-            }),
-        _ => None,
-    };
-    let options_page = match &state.frontend.wol.as_ref().expect("checked").page {
-        WolPage::Options(page) => Some(page.as_ref()),
-        _ => None,
-    };
-    let options_children = match (&painted, children, options_page) {
-        (Painted::Options(layout), true, Some(page)) => Some(
-            crate::app::frontend::skirmish_shell_render::paint_wol_options_children(
-                state, &page.ui, layout,
-            ),
-        ),
-        (Painted::SoundOptions(layout), true, Some(page)) => page.sound.as_ref().map(|dialog| {
-            crate::app::frontend::skirmish_shell_render::paint_shell_sound_children(
-                state, dialog, layout,
-            )
-        }),
-        (Painted::Persona(layout), true, _) => {
-            match &state.frontend.wol.as_ref().expect("checked").page {
-                WolPage::AutoLoginQuery(query) => Some(
-                    crate::app::frontend::skirmish_shell_render::paint_wol_auto_login_children(
-                        state,
-                        query,
-                        &resolve_csf(state, crate::ui::wol_persona::AUTO_LOGIN_TEXT_KEY),
-                        layout,
-                    ),
-                ),
-                WolPage::AddBuddyQuery(page) => Some(
-                    crate::app::frontend::skirmish_shell_render::paint_wol_auto_login_children(
-                        state,
-                        &page.query,
-                        &crate::app::shell_wol::persona::add_buddy_text(state).unwrap_or_default(),
-                        layout,
-                    ),
-                ),
-                WolPage::Locale(page) => Some(
-                    crate::app::frontend::skirmish_shell_render::paint_wol_locale_children(
-                        state, page, layout,
-                    ),
-                ),
-                _ => None,
-            }
+            })
         }
         _ => None,
     };
     let lobby = state.frontend.wol.as_ref().and_then(|visit| visit.lobby());
-    let lobby_children = match (&painted, children, lobby) {
-        (Painted::Lobby(layout), true, Some(lobby)) => {
+    let lobby_children = match (shown, lobby) {
+        (Some(Body::Lobby(layout)), Some(lobby)) => {
             let base_names = crate::app::shell_wol::lobby::base_names(state);
             Some(
                 crate::app::frontend::skirmish_shell_render::paint_wol_lobby_children(
@@ -635,31 +532,29 @@ pub(crate) fn render_wol_page(
         _ => None,
     };
     // VERA's player card over the modern lobby.
-    let player_card = match (&painted, children) {
-        (Painted::Lobby(layout), true) => {
-            crate::app::shell_wol::player_card::view(state).map(|view| {
-                let scale = layout.page.scale;
-                (
-                    view.layout.dialog,
-                    crate::app::frontend::skirmish_shell_render::paint_wol_player_card(
-                        state, &view, art, scale,
-                    ),
-                    view.countries.as_ref().map(|list| {
-                        (
-                            list.popup.rect,
-                            crate::app::frontend::skirmish_shell_render::paint_wol_card_countries(
-                                state, list, scale,
-                            ),
-                        )
-                    }),
-                )
-            })
-        }
+    let player_card = match shown {
+        Some(Body::Lobby(layout)) => crate::app::shell_wol::player_card::view(state).map(|view| {
+            let scale = layout.page.scale;
+            (
+                view.layout.dialog,
+                crate::app::frontend::skirmish_shell_render::paint_wol_player_card(
+                    state, &view, art, scale,
+                ),
+                view.countries.as_ref().map(|list| {
+                    (
+                        list.popup.rect,
+                        crate::app::frontend::skirmish_shell_render::paint_wol_card_countries(
+                            state, scale,
+                        ),
+                    )
+                }),
+            )
+        }),
         _ => None,
     };
     let lobby_popup = lobby.and_then(|lobby| {
-        let popup = lobby.ui.popup.as_ref()?;
-        let status = if page_statics || matches!(painted, Painted::Backdrop) {
+        lobby.ui.popup.as_ref()?;
+        let status = if page_statics || painted.is_none() {
             crate::app::shell_wol::lobby::status_help(state)
         } else {
             String::new()
@@ -667,20 +562,18 @@ pub(crate) fn render_wol_page(
         Some(
             crate::app::frontend::skirmish_shell_render::paint_wol_lobby_popup(
                 state,
-                popup,
-                lobby.ui.is_modern(),
+                &lobby.ui,
                 screen_w,
                 screen_h,
                 crate::app::shell_wol::lobby::popup_scale(state),
                 &status,
-                lobby.ui.caret_visible(crate::util::time::Instant::now()),
             ),
         )
     });
 
     let quick_match_page = crate::app::shell_wol::quick_match::dialog(state);
-    let quick_match_children = match (&painted, children, quick_match_page) {
-        (Painted::QuickMatch(layout), true, Some(dialog)) => Some(
+    let quick_match_children = match (shown, quick_match_page) {
+        (Some(Body::QuickMatch(layout)), Some(dialog)) => Some(
             crate::app::frontend::skirmish_shell_render::paint_wol_quick_match_children(
                 state, &dialog.ui, layout,
             ),
@@ -702,226 +595,68 @@ pub(crate) fn render_wol_page(
     let page_dialogs = page_dialogs_paint(state);
 
     // The column: the slide engine draws it while a slide runs, the empty
-    // backdrop draws it shut, otherwise the page's buttons paint.
-    let controller = &state.frontend.shell_controller;
-    let mut painted_buttons: Vec<(MenuPageButtonRect, bool, bool)> = Vec::new();
-    let mut spec: Option<&MenuPageSpec> = None;
+    // backdrop draws it shut, otherwise the page's buttons paint from their
+    // nodes, the lobby's in its own tree and every other page's in the
+    // shell's (`0x10E` paints the one of each row its press shows).
     let column = match (&painted, &wave) {
         (_, Some(wave)) => Some(wave.button_draws()),
-        (Painted::Backdrop, None) => Some(shell_paint::shuttered_column(page.right_panel)),
-        (Painted::Welcome(layout), None) => {
-            spec = Some(layout.page_spec());
-            let active = controller.top_id() == Some(layout.page_spec().dialog);
-            let pressed = active.then(|| controller.pressed()).flatten();
-            painted_buttons = layout
-                .painted_buttons(pressed)
-                .into_iter()
-                .map(|button| (button, pressed == Some(button.id), true))
-                .collect();
-            None
-        }
-        (Painted::Login(layout), None) => {
-            spec = Some(layout.page_spec());
-            if let Some(login) = state.frontend.wol.as_ref().and_then(|visit| visit.login()) {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| {
-                        (
-                            *button,
-                            login.buttons.is_pressed(button.id),
-                            login.button_enabled(button.id),
-                        )
-                    })
-                    .collect();
-            }
-            None
-        }
-        (Painted::Options(layout), None) => {
-            spec = Some(&crate::ui::wol_options::PAGE);
-            if let Some(page) = options_page {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| (*button, page.ui.buttons.is_pressed(button.id), true))
-                    .collect();
-            }
-            None
-        }
-        (Painted::SoundOptions(layout), None) => {
-            spec = Some(&crate::ui::shell::sound::SHELL_SOUND_PAGE);
-            if let Some(dialog) = options_page.and_then(|page| page.sound.as_ref()) {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| {
-                        (
-                            *button,
-                            dialog
-                                .buttons
-                                .is_pressed(crate::ui::shell::sound::SoundButton::Back),
-                            true,
-                        )
-                    })
-                    .collect();
-            }
-            None
-        }
-        (Painted::Persona(layout), None) => {
-            spec = Some(crate::ui::wol_persona::WolPersonaLayout::spec(
-                layout.dialog,
-            ));
-            match &state.frontend.wol.as_ref().expect("checked").page {
-                WolPage::AutoLoginQuery(query) => {
-                    painted_buttons = layout
-                        .page
-                        .buttons
-                        .iter()
-                        .map(|button| (*button, query.buttons.is_pressed(button.id), true))
-                        .collect();
-                }
-                WolPage::AddBuddyQuery(page) => {
-                    painted_buttons = layout
-                        .page
-                        .buttons
-                        .iter()
-                        .map(|button| (*button, page.query.buttons.is_pressed(button.id), true))
-                        .collect();
-                }
-                WolPage::Locale(page) => {
-                    painted_buttons = layout
-                        .page
-                        .buttons
-                        .iter()
-                        .map(|button| {
-                            (
-                                *button,
-                                page.buttons.is_pressed(button.id),
-                                page.button_enabled(button.id),
-                            )
-                        })
-                        .collect();
-                }
-                _ => {}
-            }
-            None
-        }
-        (Painted::MyInfo(layout), None) => {
-            spec = Some(&crate::ui::wol_my_info::PAGE);
-            if let Some(page) = crate::app::shell_wol::my_info::page(state) {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| {
-                        (
-                            *button,
-                            page.buttons.is_pressed(button.id),
-                            page.enabled(button.id),
-                        )
-                    })
-                    .collect();
-            }
-            None
-        }
-        (Painted::Buddy(layout), None) => {
-            spec = Some(&crate::ui::wol_buddy::PAGE);
-            if let Some(dialog) = buddy_page {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| {
-                        (
-                            *button,
-                            dialog.ui.buttons.is_pressed(button.id),
-                            dialog.ui.enabled(button.id),
-                        )
-                    })
-                    .collect();
-            }
-            None
-        }
-        (Painted::QuickMatch(layout), None) => {
-            spec = Some(&crate::ui::wol_quick_match::PAGE);
-            if let Some(dialog) = quick_match_page {
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| (*button, dialog.ui.buttons.is_pressed(button.id), true))
-                    .collect();
-            }
-            None
-        }
-        (Painted::Lobby(layout), None) => {
-            spec = Some(&crate::ui::wol_lobby::PAGE);
-            if let Some(lobby) = lobby {
-                spec = Some(lobby.ui.page_spec());
-                painted_buttons = layout
-                    .page
-                    .buttons
-                    .iter()
-                    .map(|button| {
-                        (
-                            *button,
-                            lobby.ui.buttons.is_pressed(button.id),
-                            lobby.ui.enabled(button.id),
-                        )
-                    })
-                    .collect();
-            }
-            None
-        }
+        (None, None) => Some(shell_paint::shuttered_column(page.right_panel)),
+        (Some(_), None) => None,
     };
-    if let Some(draws) = column {
-        sprites.extend(shell_paint::paint_slide_column(
+    let mut buttons = GuiPaint::default();
+    match (&painted, column) {
+        (_, Some(draws)) => sprites.extend(shell_paint::paint_slide_column(
             chrome,
             page.right_panel,
             &draws,
-        ));
-    }
-    let buttons: Vec<PaintButton> = painted_buttons
-        .iter()
-        .map(|(button, pressed, enabled)| PaintButton {
-            rect: button.rect,
-            pressed: *pressed,
-            hovered: false,
-            enabled: *enabled,
-        })
-        .collect();
-    let button_sprites = shell_paint::paint_buttons(
-        chrome,
-        &buttons,
-        crate::app::frontend::menu_page_render::MENU_PAGE_BUTTON_POLICY,
-        crate::util::time::Instant::now(),
-        None,
-    );
-    for (button, pressed, enabled) in &painted_buttons {
-        let Some(spec) = spec.and_then(|spec| spec.button(button.id)) else {
-            continue;
-        };
-        // VERA: the online page's view button names the view it shows next.
-        let text = match lobby.filter(|_| matches!(painted, Painted::Lobby(_))) {
-            Some(lobby) if button.id == crate::ui::wol_lobby::VIEW => {
-                lobby.ui.view_caption().into()
+        )),
+        (Some(painted), None) => {
+            let controller = &state.frontend.shell_controller;
+            let ids: Vec<u16> = match &painted.body {
+                Body::Welcome(layout) => {
+                    let active = controller.top_id() == Some(painted.dialog);
+                    let pressed = active.then(|| crate::app::App::wol_held(state)).flatten();
+                    let shown = layout.painted_buttons(pressed);
+                    shown.iter().map(|button| button.id).collect()
+                }
+                _ => page.buttons.iter().map(|button| button.id).collect(),
+            };
+            let lobby_ui = lobby
+                .filter(|_| matches!(painted.body, Body::Lobby(_)))
+                .map(|lobby| &lobby.ui);
+            let text_of = |id: i32| {
+                let id = u16::try_from(id).ok()?;
+                // VERA: the online page's view button names the view it shows next.
+                if let Some(ui) = lobby_ui.filter(|_| id == crate::ui::wol_lobby::VIEW) {
+                    return Some(ui.view_caption());
+                }
+                let button = painted.spec.button(id)?;
+                Some(state.csf_text(button.csf_key))
+            };
+            let enabled_of = |id: i32| Some(lobby_ui?.enabled(u16::try_from(id).ok()?));
+            let style = GuiStyle {
+                buttons: ButtonArt::Panel,
+                text_of: Some(&text_of),
+                enabled_of: Some(&enabled_of),
+                ..Default::default()
+            };
+            for id in ids {
+                let node = match lobby_ui {
+                    Some(ui) => ui.node(id).map(|node| (ui.gui(), node)),
+                    None => (controller.control(painted.dialog, id))
+                        .map(|node| (controller.gui(), node)),
+                };
+                if let Some((gui, node)) = node {
+                    buttons.extend(paint_gui_styled(state, gui, node, scale, &[], style));
+                }
             }
-            _ => resolve_csf(state, spec.csf_key),
-        };
-        labels.push(PaintLabel {
-            text,
-            rect: owner_draw_button_label_rect(button.rect, *pressed),
-            align: ShellAlign::BUTTON_CAPTION,
-            rgb: crate::app::frontend::skirmish_shell_render::wol_button_label_rgb(*enabled),
-            path_a_reveal: None,
-        });
+        }
+        (None, None) => {}
     }
-    if let (Some(window), Some(key)) = (title_window, painted.title_key()) {
+    let title_key = painted.as_ref().and_then(Painted::title_key);
+    if let (Some(window), Some(key)) = (title_window, title_key) {
         labels.push(PaintLabel {
-            text: resolve_csf(state, key),
+            text: state.csf_text(key).into(),
             rect: page.title,
             align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
@@ -931,72 +666,24 @@ pub(crate) fn render_wol_page(
     labels.extend(status_label);
     let mut text =
         shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
+    text.extend(welcome_texts.into_iter().flatten());
 
     // The boxes over the backdrop: PUDLGBGN with MNBTTN buttons.
     let mut box_sprites = Vec::new();
     let mut box_dialog = None;
-    let box_atlas = state
-        .frontend
-        .skirmish_shell_chrome
-        .as_ref()
-        .filter(|_| message.is_some() || wait.is_some());
-    if let Some(atlas) = box_atlas {
-        let pressed = state.frontend.shell_controller.pressed();
-        let label = |value: &str, rect, align| PaintLabel {
-            text: value.to_owned().into(),
-            rect,
-            align,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        };
-        let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
-        let (dialog, buttons, box_labels) = if let Some(message) = &message {
-            message_box_parts(message, pressed, screen_w, screen_h, scale)
-        } else {
-            let wait = wait.as_ref().expect("filtered above");
-            let geometry = crate::ui::shell::modal::wait_box_layout_on(screen_w, screen_h, scale);
-            let disconnect = pressed == Some(WAIT_DISCONNECT);
-            let check = pressed == Some(WAIT_CHECK_STATUS);
-            (
-                geometry.dialog,
-                vec![
-                    (geometry.disconnect, disconnect),
-                    (geometry.check_status, check),
-                ],
-                vec![
-                    // 0x5B2 is SS_CENTER.
-                    label(&wait.text, geometry.text, ShellAlign::H_CENTER),
-                    label(
-                        &wait.disconnect,
-                        owner_draw_button_label_rect(geometry.disconnect, disconnect),
-                        button_align,
-                    ),
-                    label(
-                        &wait.check_status,
-                        owner_draw_button_label_rect(geometry.check_status, check),
-                        button_align,
-                    ),
-                ],
-            )
-        };
-        box_dialog = Some(dialog);
-        let modal_buttons: Vec<shell_paint::ModalButton> = buttons
-            .iter()
-            .map(|(rect, pressed)| shell_paint::ModalButton {
-                rect: *rect,
-                pressed: *pressed,
-                enabled: true,
-            })
-            .collect();
-        let draw = shell_paint::paint_modal_shp(
-            &state.renderer.bit_font,
-            atlas.mode_two_dialog_background(None),
-            crate::app::frontend::skirmish_shell_render::type3_button_frames(atlas),
-            dialog,
-            &modal_buttons,
-            &box_labels,
-            scale,
-            BOX_DEPTHS,
+    let open = message.or(wait.map(|wait| wait.shell_box));
+    if let (Some(shell_box), Some(atlas)) = (open, state.frontend.skirmish_shell_chrome.as_ref()) {
+        let parts = shell_box.parts(screen_w, screen_h, scale);
+        box_dialog = Some(parts.dialog);
+        let held = crate::app::App::wol_held(state);
+        let look = BoxLook::new(atlas.mode_two_dialog_background(None), BOX_DEPTHS);
+        let draw = paint_shell_box(
+            state,
+            Some(atlas),
+            &shell_box,
+            &parts,
+            |id| held == Some(id),
+            look,
         );
         box_sprites = draw.sprites;
         text.extend(draw.text);
@@ -1015,162 +702,94 @@ pub(crate) fn render_wol_page(
         texture: &chrome.texture,
         instances: sprites,
     });
+    if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
+        draws.push(TexturedDraw {
+            texture: &atlas.texture,
+            instances: group_boxes,
+        });
+    }
     if let Some(art) = art {
         draws.push(TexturedDraw {
             texture: &art.texture,
             instances: icon_sprites,
         });
     }
-    draws.push(TexturedDraw {
-        texture: &chrome.texture,
-        instances: button_sprites,
+    if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
+        draws.push(TexturedDraw {
+            texture: &atlas.texture,
+            instances: buttons.controls,
+        });
+    }
+    text.extend(buttons.texts);
+    // The widget layers, in paint order, each on the controls' atlas with
+    // its icons on the page art: a dialog over the page hides the glyphs
+    // painted before it under it (`cover`), and the boxes hide a layer's
+    // own (`own`).
+    let gui = |paint: GuiPaint| {
+        let (mut controls, mut texts) = (paint.controls, paint.texts);
+        controls.extend(paint.popup);
+        texts.extend(paint.popup_texts);
+        WolLobbyPaint {
+            controls,
+            icons: Vec::new(),
+            texts,
+        }
+    };
+    let translate = crate::app::shell_wol::options::translate_popup(state).filter(|_| {
+        painted.as_ref().map(|painted| painted.dialog) == Some(crate::ui::wol_options::DIALOG)
     });
+    let widget_children = widget_children.map(|mut widgets| {
+        if let Some(list) = translate {
+            hide_glyphs_under(&mut widgets.texts, list.rect);
+        }
+        gui(widgets)
+    });
+    let (card, countries) = match player_card {
+        Some((dialog, card, countries)) => (Some((dialog, card)), countries),
+        None => (None, None),
+    };
+    let cover = |layer: Option<(RectPx, WolLobbyPaint)>| match layer {
+        Some((dialog, paint)) => (Some(dialog), None, Some(paint)),
+        None => (None, None, None),
+    };
+    let layers = [
+        (None, None, login_children.map(gui)),
+        cover(account_form),
+        (None, None, widget_children),
+        (None, box_dialog, lobby_children),
+        (None, box_dialog, quick_match_children),
+        (None, None, verify),
+        (None, None, buddy_children),
+        (buddy_popup, None, add_buddy),
+        (None, None, lobby_popup),
+        cover(card),
+        cover(countries),
+        cover(page_dialogs),
+    ];
     let controls_atlas = state.frontend.skirmish_shell_chrome.as_ref();
-    if let (Some(atlas), Some(login)) = (controls_atlas, login_children) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: login.controls,
-        });
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: login.popup,
-        });
-        text.extend(login.texts);
-        text.extend(login.popup_texts);
-    }
-    if let (Some(atlas), Some((dialog, form))) = (controls_atlas, account_form) {
-        hide_glyphs_under(&mut text, dialog);
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: form.controls,
-        });
-        text.extend(form.texts);
-    }
-    if let (Some(atlas), Some(my_info)) = (controls_atlas, my_info_children) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: my_info.controls,
-        });
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: my_info.popup,
-        });
-        text.extend(my_info.texts);
-        text.extend(my_info.popup_texts);
-    }
-    if let (Some(atlas), Some(mut options)) = (controls_atlas, options_children) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: options.controls,
-        });
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: options.popup,
-        });
-        if let Painted::Options(layout) = &painted
-            && let Some(list) = options_page.and_then(|page| page.ui.translate_popup(layout))
-        {
-            hide_glyphs_under(&mut options.texts, list.rect);
+    for (cover, own, paint) in layers {
+        let (Some(atlas), Some(mut paint)) = (controls_atlas, paint) else {
+            continue;
+        };
+        if let Some(dialog) = cover {
+            hide_glyphs_under(&mut text, dialog);
         }
-        text.extend(options.texts);
-        text.extend(options.popup_texts);
-    }
-    if let (Some(atlas), Some(mut lobby)) = (controls_atlas, lobby_children) {
         draws.push(TexturedDraw {
             texture: &atlas.texture,
-            instances: lobby.controls,
+            instances: paint.controls,
         });
         if let Some(art) = art {
             draws.push(TexturedDraw {
                 texture: &art.texture,
-                instances: lobby.icons,
+                instances: paint.icons,
             });
         }
-        if let Some(dialog) = box_dialog {
-            hide_glyphs_under(&mut lobby.texts, dialog);
+        if let Some(dialog) = own {
+            hide_glyphs_under(&mut paint.texts, dialog);
         }
-        text.extend(lobby.texts);
+        text.extend(paint.texts);
     }
-    if let (Some(atlas), Some(mut quick_match)) = (controls_atlas, quick_match_children) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: quick_match.controls,
-        });
-        if let Some(dialog) = box_dialog {
-            hide_glyphs_under(&mut quick_match.texts, dialog);
-        }
-        text.extend(quick_match.texts);
-    }
-    if let (Some(atlas), Some(verify)) = (controls_atlas, verify) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: verify.controls,
-        });
-        text.extend(verify.texts);
-    }
-    if let (Some(atlas), Some(buddy)) = (controls_atlas, buddy_children) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: buddy.controls,
-        });
-        if let Some(art) = art {
-            draws.push(TexturedDraw {
-                texture: &art.texture,
-                instances: buddy.icons,
-            });
-        }
-        text.extend(buddy.texts);
-    }
-    if let Some(dialog) = buddy_popup {
-        hide_glyphs_under(&mut text, dialog);
-    }
-    if let (Some(atlas), Some(add)) = (controls_atlas, add_buddy) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: add.controls,
-        });
-        text.extend(add.texts);
-    }
-    if let (Some(atlas), Some(popup)) = (controls_atlas, lobby_popup) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: popup.controls,
-        });
-        text.extend(popup.texts);
-    }
-    if let (Some(atlas), Some((dialog, card, countries))) = (controls_atlas, player_card) {
-        hide_glyphs_under(&mut text, dialog);
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: card.controls,
-        });
-        if let Some(art) = art {
-            draws.push(TexturedDraw {
-                texture: &art.texture,
-                instances: card.icons,
-            });
-        }
-        text.extend(card.texts);
-        if let Some((list, countries)) = countries {
-            hide_glyphs_under(&mut text, list);
-            draws.push(TexturedDraw {
-                texture: &atlas.texture,
-                instances: countries.controls,
-            });
-            text.extend(countries.texts);
-        }
-    }
-    // 0xCF and 0x11E leave the page painting beneath them, over the lobby,
-    // the buddy list or any other page.
-    if let (Some(atlas), Some((dialog, page))) = (controls_atlas, page_dialogs) {
-        hide_glyphs_under(&mut text, dialog);
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: page.controls,
-        });
-        text.extend(page.texts);
-    }
-    if let Some(atlas) = box_atlas {
+    if let (Some(atlas), Some(_)) = (state.frontend.skirmish_shell_chrome.as_ref(), box_dialog) {
         draws.push(TexturedDraw {
             texture: &atlas.texture,
             instances: box_sprites,

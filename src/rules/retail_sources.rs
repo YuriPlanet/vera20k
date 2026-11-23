@@ -63,11 +63,16 @@ pub(crate) fn select_game_ini(
     ships_ares: bool,
 ) -> Result<SelectedIni, String> {
     let _ares_way = crate::rules::ares_switch::read_ares_way(ships_ares);
-    if ships_ares || crate::rules::PHOBOS_ENABLED {
+    if expands_directives(ships_ares) {
         select_ini_with_options(assets, name, DirectiveOptions::production())
     } else {
         select_physical_ini(assets, name)
     }
+}
+
+/// Whether a game that ships `ares.mix` or not expands its INIs' directives.
+fn expands_directives(ships_ares: bool) -> bool {
+    ships_ares || crate::rules::PHOBOS_ENABLED
 }
 
 /// Explicit file-composition probe. Tool callers may inspect extension syntax
@@ -391,6 +396,100 @@ pub fn game_folder_file(source: &str) -> String {
     }
 }
 
+/// One archive a retail install searches ([`retail_archive`]): the name its
+/// files report as their source, the game-folder source it stands in for,
+/// and the archive.
+pub(crate) type RetailArchive<'a> = (&'a str, Option<&'a str>, std::borrow::Cow<'a, MixArchive>);
+
+/// The registered archives as a retail install searches them, in their
+/// order ([`retail_archive`]).
+pub(crate) fn registered_retail(asset_manager: &AssetManager) -> Vec<RetailArchive<'_>> {
+    asset_manager
+        .registered_archives()
+        .filter_map(|(source, archive)| {
+            let (replaces, retail) = retail_archive(asset_manager, source, Some(archive))?;
+            Some((source, replaces, retail))
+        })
+        .collect()
+}
+
+/// What a retail install searches in place of one archive (`None` when it
+/// does not open): the archive itself when it ships; else the shipped copy of
+/// the archive of its name, with the source it stands in for; else nothing
+/// (`expandmd99.mix`).
+pub(crate) fn retail_archive<'a>(
+    assets: &AssetManager,
+    source: &'a str,
+    archive: Option<&'a MixArchive>,
+) -> Option<(Option<&'a str>, std::borrow::Cow<'a, MixArchive>)> {
+    if let Some(archive) = archive.filter(|_| shipped_source(source)) {
+        return Some((None, std::borrow::Cow::Borrowed(archive)));
+    }
+    let name = source.rsplit("->").next().unwrap_or(source).trim();
+    shipped_nested_archive(assets, name).map(|copy| (Some(source), std::borrow::Cow::Owned(copy)))
+}
+
+/// VERA: a binder's reads of picture and model files, telling a file the
+/// game folder supplies from the copy a retail install reads. The asset
+/// binders read through it where a network start certifies what they take
+/// (`RuleSet::file_inputs_hash`), so a refused start can name the files that
+/// change it (`RuleSet::file_input_folder_files`).
+pub(crate) struct FolderFiles<'a> {
+    assets: &'a AssetManager,
+    /// [`registered_retail`], found by the first read no shipped archive
+    /// supplies; a game without such files never builds it.
+    retail: std::cell::OnceCell<Vec<RetailArchive<'a>>>,
+}
+
+impl<'a> FolderFiles<'a> {
+    pub(crate) fn new(assets: &'a AssetManager) -> Self {
+        Self {
+            assets,
+            retail: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// `name` as the game reads it (`AssetManager::get_ref`'s bytes), with
+    /// the game-folder file that supplies it ([`game_folder_file`]) when no
+    /// shipped archive does ([`shipped_source`]).
+    pub(crate) fn read(&self, name: &str) -> Option<(&'a [u8], Option<String>)> {
+        let (bytes, source) = self.assets.get_with_source_ref(name)?;
+        Some((
+            bytes,
+            (!shipped_source(source)).then(|| game_folder_file(source)),
+        ))
+    }
+
+    /// The copy of `name` a retail install reads from the registered
+    /// archives; `None` when it ships none.
+    pub(crate) fn shipped(&self, name: &str) -> Option<&[u8]> {
+        let id = crate::assets::mix_hash::mix_hash(name);
+        self.retail
+            .get_or_init(|| registered_retail(self.assets))
+            .iter()
+            .find(|(_, _, archive)| archive.contains_id(id))
+            .and_then(|(_, _, archive)| archive.get_by_id(id))
+    }
+
+    /// [`Self::read`]'s bytes, noting the game-folder file in `changed` when
+    /// `value` of them is not `value` of the shipped copy's: the file then
+    /// changes what the binder takes. A name a retail install lacks differs.
+    pub(crate) fn read_noting<V: PartialEq>(
+        &self,
+        name: &str,
+        value: impl Fn(&[u8]) -> V,
+        changed: &mut std::collections::BTreeSet<String>,
+    ) -> Option<&'a [u8]> {
+        let (bytes, folder_file) = self.read(name)?;
+        if let Some(file) = folder_file
+            && self.shipped(name).map(&value) != Some(value(bytes))
+        {
+            changed.insert(file);
+        }
+        Some(bytes)
+    }
+}
+
 fn outermost_archive(source: &str) -> &str {
     source.split(" -> ").next().unwrap_or(source).trim()
 }
@@ -464,6 +563,16 @@ pub enum ShippedCopy<'a> {
     Changed(Option<&'a [u8]>),
 }
 
+impl<'a> UsedIni<'a> {
+    /// The copy a retail install ships: this one when it is the same.
+    pub fn shipped_bytes(&self) -> Option<&'a [u8]> {
+        match self.shipped {
+            ShippedCopy::Same => Some(self.bytes),
+            ShippedCopy::Changed(shipped) => shipped,
+        }
+    }
+}
+
 impl<'a> ShippedInis<'a> {
     pub fn new(assets: &'a AssetManager) -> Self {
         Self {
@@ -487,6 +596,16 @@ impl<'a> ShippedInis<'a> {
         if shipped_source(used.source_archive) {
             return Some(found);
         }
+        let shipped = self.shipped(name);
+        if !shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
+            found.shipped = ShippedCopy::Changed(shipped);
+        }
+        Some(found)
+    }
+
+    /// The copy of `name` a retail install ships: a shipped archive's own
+    /// entry, else the one in `ra2md.mix`'s own `localmd.mix`.
+    fn shipped(&self, name: &str) -> Option<&[u8]> {
         let local = self.local.get_or_init(|| {
             self.assets
                 .archive_with_source(SHIPPED_MASTER)
@@ -497,19 +616,72 @@ impl<'a> ShippedInis<'a> {
                         .flatten()
                 })
         });
-        let shipped = SHIPPED_ARCHIVES
+        SHIPPED_ARCHIVES
             .iter()
             .find_map(|archive| {
                 self.assets
                     .archive_with_source(archive)
                     .and_then(|(_, archive)| archive.get_by_name(name))
             })
-            .or_else(|| local.as_ref().and_then(|archive| archive.get_by_name(name)));
-        if !shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
-            found.shipped = ShippedCopy::Changed(shipped);
-        }
-        Some(found)
+            .or_else(|| local.as_ref().and_then(|archive| archive.get_by_name(name)))
     }
+}
+
+/// VERA: which AI INI (`IniRoots::ai`) a match reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiFile {
+    /// The one the game folder supplies, as every other INI root.
+    GameFolder,
+    /// The copy a retail install ships, whatever the game folder supplies.
+    Original,
+}
+
+/// VERA: the AI INI a match reads. A network match of the original game
+/// that seats no computer reads the original AI INI. No house in it runs
+/// the computer's teams, and the teams a map's triggers create are then the
+/// original game's for every player, so players whose game folders hold
+/// other AI files load one world and their rules agreement compares the
+/// original (the app's `ProcessAssets::multiplayer_match_rules_digest`).
+/// `computers` is whether the match seats a house the computer runs
+/// (`SkirmishLaunchSession::seats_computers`; a campaign always does).
+/// Every other match reads the game folder's: one with a computer, a
+/// selected mod's, whose AI file is its game, one whose AI root is not
+/// YR's, and every match off the network.
+pub fn match_ai_file(assets: &AssetManager, network: bool, computers: bool) -> AiFile {
+    let stock_root = assets
+        .ini_roots()
+        .ai()
+        .eq_ignore_ascii_case(crate::util::ini_roots::IniRoots::default().ai());
+    if network && !computers && !assets.mod_selected() && stock_root {
+        AiFile::Original
+    } else {
+        AiFile::GameFolder
+    }
+}
+
+/// The AI root as `file` names it, read as [`select_ini`] reads it. The game
+/// folder's too where a retail install ships no AI INI.
+pub fn select_ai_ini(assets: &AssetManager, file: AiFile) -> Result<IniFile, String> {
+    let name = assets.ini_roots().ai();
+    let shipped = ShippedInis::new(assets);
+    let from_folder = assets
+        .resolve_ref(name)
+        .is_some_and(|used| !shipped_source(used.source_archive));
+    if file == AiFile::Original
+        && from_folder
+        && let Some(bytes) = shipped.shipped(name)
+    {
+        let ships_ares = assets.ships_ares();
+        let _ares_way = crate::rules::ares_switch::read_ares_way(ships_ares);
+        let ini = IniFile::from_bytes(bytes)
+            .map_err(|error| format!("parse the original {name}: {error}"))?;
+        if !expands_directives(ships_ares) {
+            return Ok(ini);
+        }
+        return expand_ini_with_assets(assets, ini, name, DirectiveOptions::production())
+            .map(|(expanded, _)| expanded.ini);
+    }
+    select_ini(assets, name).map(|selected| selected.ini)
 }
 
 fn same_entries(shipped: &[u8], used: &[u8]) -> bool {

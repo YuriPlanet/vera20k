@@ -343,6 +343,7 @@ pub(super) enum Response {
         sign_in_token: Option<String>,
         /// The lobby offers `visit_lobby`.
         lobby_visits: bool,
+        /// The lobby offers `campaign_rooms`.
         campaign_rooms: bool,
     },
     LoginFailed {
@@ -948,7 +949,8 @@ impl Client {
             let mut request = self.agent.post(&url).header("User-Agent", USER_AGENT);
             if path == "/v1/sessions" {
                 // Its relay CONFIRM carries a federation roster. A browser
-                // game does not say so: its gateway reaches one fixed relay.
+                // game does not say so, and its gateway would not forward it
+                // (FORWARDED_HEADERS), so its matches stay on one relay.
                 request = request.header("Vera-Relay-Federation", "1");
                 for (name, value) in sign_in_headers(&self.changes) {
                     request = request.header(name, value);
@@ -1919,30 +1921,63 @@ mod tests {
         );
     }
 
-    /// A lobby on a local port that reads one request until `done` holds for
-    /// what it read, answers it with `reply`, and hands back what it read.
-    fn one_request_lobby(
-        done: fn(&[u8]) -> bool,
-        reply: &'static [u8],
-    ) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
-        use std::io::{Read, Write};
+    type LobbyRequests = Vec<(String, Value)>;
+
+    /// A lobby on a local port. It reads one request per connection (the
+    /// head, then a `Content-Length` JSON body), answers with the status and
+    /// body `answer` gives for them, and closes. A connection that sends
+    /// nothing ends it ([`close_lobby`]).
+    fn local_lobby(
+        mut answer: impl FnMut(&str, &Value) -> (u16, Value) + Send + 'static,
+    ) -> (std::net::SocketAddr, std::thread::JoinHandle<LobbyRequests>) {
+        use std::io::{BufRead, Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let lobby = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .unwrap();
-            let (mut request, mut chunk) = (Vec::new(), [0; 4096]);
-            while !done(&request) {
-                let read = stream.read(&mut chunk).unwrap();
-                assert_ne!(read, 0, "the request ended early");
-                request.extend_from_slice(&chunk[..read]);
+            let mut seen = Vec::new();
+            for stream in listener.incoming() {
+                let mut reader = std::io::BufReader::new(stream.unwrap());
+                let (mut head, mut length, mut line) = (String::new(), 0, String::new());
+                while reader.read_line(&mut line).unwrap_or(0) > 2 {
+                    let lower = line.to_ascii_lowercase();
+                    if let Some(value) = lower.strip_prefix("content-length:") {
+                        length = value.trim().parse().unwrap();
+                    }
+                    head.push_str(&line);
+                    line.clear();
+                }
+                if head.is_empty() {
+                    break;
+                }
+                let mut body = vec![0; length];
+                reader.read_exact(&mut body).unwrap();
+                let body: Value = serde_json::from_slice(&body).unwrap_or_default();
+                let (status, reply) = answer(&head, &body);
+                let reply = reply.to_string();
+                let _ = write!(
+                    reader.into_inner(),
+                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len()
+                );
+                seen.push((head, body));
             }
-            stream.write_all(reply).unwrap();
-            String::from_utf8_lossy(&request).into_owned()
+            seen
         });
         (address, lobby)
+    }
+
+    /// Ends a [`local_lobby`]; gives each request's head and body, in order.
+    fn close_lobby(
+        address: std::net::SocketAddr,
+        lobby: std::thread::JoinHandle<LobbyRequests>,
+    ) -> LobbyRequests {
+        drop(std::net::TcpStream::connect(address).unwrap());
+        lobby.join().unwrap()
+    }
+
+    /// The path a request's head asks for.
+    fn request_path(head: &str) -> &str {
+        head.split(' ').nth(1).unwrap_or_default()
     }
 
     /// docs/spawn.md "Watching": a watcher's bearer polls only when asked,
@@ -1950,39 +1985,18 @@ mod tests {
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     #[test]
     fn a_watchers_worker_polls_on_request_and_stops_at_its_matchs_end() {
-        use std::io::{BufRead, Write};
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let lobby_seen = Arc::clone(&seen);
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let mut reader = std::io::BufReader::new(stream.unwrap());
-                let (mut path, mut line) = (String::new(), String::new());
-                while reader.read_line(&mut line).unwrap_or(0) > 2 {
-                    if path.is_empty() {
-                        path = line.split(' ').nth(1).unwrap_or_default().to_owned();
-                    }
-                    line.clear();
-                }
-                let (status, reply) = if path == "/v1/events?after=0" {
-                    (
-                        200,
-                        json!({"cursor":1,"events":[{"sequence":1,"kind":"watch_renewed",
-                            "payload":{"match_id":"m"}}]}),
-                    )
-                } else {
-                    (409, json!({"error":{"code":"unknown_match"}}))
-                };
-                let reply = reply.to_string();
-                lobby_seen.lock().unwrap().push(path.clone());
-                let _ = write!(
-                    reader.into_inner(),
-                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
-                    reply.len()
-                );
+        let (address, lobby) = local_lobby(|head, _| {
+            if request_path(head) == "/v1/events?after=0" {
+                (
+                    200,
+                    json!({"cursor":1,"events":[{"sequence":1,"kind":"watch_renewed",
+                        "payload":{"match_id":"m"}}]}),
+                )
+            } else {
+                (409, json!({"error":{"code":"unknown_match"}}))
             }
         });
+        let base = format!("http://{address}");
         let (requests, input) = std::sync::mpsc::channel();
         let (output, responses) = std::sync::mpsc::channel();
         let stopping = Arc::new(AtomicBool::new(false));
@@ -2017,50 +2031,22 @@ mod tests {
         stopping.store(true, Ordering::Release);
         drop(requests);
         worker.join().unwrap();
-        assert_eq!(
-            *seen.lock().unwrap(),
-            ["/v1/events?after=0", "/v1/events?after=1"]
-        );
+        let seen = close_lobby(address, lobby);
+        let paths: Vec<_> = seen.iter().map(|(head, _)| request_path(head)).collect();
+        assert_eq!(paths, ["/v1/events?after=0", "/v1/events?after=1"]);
     }
 
     #[test]
     fn only_generated_names_retry_collisions_and_they_stop_after_four_attempts() {
-        use std::io::{BufRead, BufReader, Write};
-        use std::net::{TcpListener, TcpStream};
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let lobby = std::thread::spawn(move || {
-            let mut bodies = Vec::new();
-            for socket in listener.incoming() {
-                let mut socket = socket.unwrap();
-                let mut request = Vec::new();
-                // Session entry sends one flat JSON object.
-                if BufReader::new(&socket)
-                    .read_until(b'}', &mut request)
-                    .unwrap()
-                    == 0
-                {
-                    break;
-                }
-                let (_, body) = std::str::from_utf8(&request)
-                    .unwrap()
-                    .split_once("\r\n\r\n")
-                    .unwrap();
-                bodies.push(serde_json::from_str::<Value>(body).unwrap());
-                let (status, code) = if bodies.len() % 2 == 0 {
-                    (403, "name_claimed")
-                } else {
-                    (409, "name_unavailable")
-                };
-                let reply = json!({"error":{"code":code}}).to_string();
-                write!(
-                    socket,
-                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
-                    reply.len()
-                )
-                .unwrap();
-            }
-            bodies
+        let mut asked = 0;
+        let (address, lobby) = local_lobby(move |_, _| {
+            asked += 1;
+            let (status, code) = if asked % 2 == 0 {
+                (403, "name_claimed")
+            } else {
+                (409, "name_unavailable")
+            };
+            (status, json!({"error":{"code":code}}))
         });
         let client = Client::new(
             Arc::new(AtomicBool::new(false)),
@@ -2086,10 +2072,9 @@ mod tests {
             matches!(automatic, Err(Response::SignInRefused { message, .. })
             if message == crate::i18n::tr("VERA:GuestNameBusy"))
         );
-        drop(TcpStream::connect(address).unwrap());
-        let bodies = lobby.join().unwrap();
+        let bodies = close_lobby(address, lobby);
         assert_eq!(bodies.len(), 5);
-        for body in bodies {
+        for (_, body) in bodies {
             let name = body["nickname"].as_str().unwrap();
             let digits = name.strip_prefix("Guest").unwrap();
             assert_eq!(digits.len(), 5);
@@ -2104,10 +2089,7 @@ mod tests {
     /// away it stays held.
     #[test]
     fn a_held_bearer_is_logged_out_before_signing_in_again() {
-        let (address, lobby) = one_request_lobby(
-            |request| request.windows(6).any(|bytes| bytes == b"logout"),
-            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
-        );
+        let (address, lobby) = local_lobby(|_, _| (200, json!({})));
         let mut client = signed_in_client(4);
         client.base = "http://127.0.0.1:1".to_owned();
         assert!(!client.release_held_session());
@@ -2115,7 +2097,8 @@ mod tests {
         client.base = format!("http://{address}");
         assert!(client.release_held_session());
         assert!(client.token.is_none());
-        lobby.join().unwrap();
+        let seen = close_lobby(address, lobby);
+        assert!(matches!(seen.as_slice(), [(_, body)] if body["operation"] == "logout"));
     }
 
     /// Quick Match leaves its room as its match starts. The match the live
@@ -2123,75 +2106,42 @@ mod tests {
     /// held bearer's logout still finishes it first.
     #[test]
     fn a_quick_match_leave_keeps_the_match_to_resume_and_to_finish() {
-        use std::io::{BufRead, Write};
         const MATCH: &str = "11111111-1111-1111-1111-111111111111";
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        let lobby = std::thread::spawn(move || {
-            let (mut seen, mut left, mut reads_after_leave, mut sessions) =
-                (Vec::new(), false, 0, 0);
-            for stream in listener.incoming() {
-                let mut reader = std::io::BufReader::new(stream.unwrap());
-                let (mut path, mut length, mut line) = (String::new(), 0, String::new());
-                while reader.read_line(&mut line).unwrap_or(0) > 2 {
-                    let lower = line.to_ascii_lowercase();
-                    if let Some(value) = lower.strip_prefix("content-length:") {
-                        length = value.trim().parse().unwrap();
-                    } else if path.is_empty() {
-                        path = line.split(' ').nth(1).unwrap().to_owned();
-                    }
-                    line.clear();
+        let (mut left, mut reads_after_leave) = (false, 0);
+        let (address, lobby) = local_lobby(move |head, body| {
+            let batch = json!({"cursor":1,"events":[]});
+            match request_path(head) {
+                "/v1/sessions" => (200, session_response()),
+                "/v1/events?after=0" => (
+                    200,
+                    json!({"cursor":1,"events":[{"sequence":1,"kind":"timing_confirmed",
+                        "payload":{"match_id":MATCH}}]}),
+                ),
+                "/v1/commands" => {
+                    left |= body["operation"] == "leave";
+                    (200, batch)
                 }
-                let mut body = vec![0; length];
-                std::io::Read::read_exact(&mut reader, &mut body).unwrap();
-                let body: Value = serde_json::from_slice(&body).unwrap_or_default();
-                let batch = json!({"cursor":1,"events":[]});
-                let (status, reply) = match path.as_str() {
-                    "/v1/sessions" => {
-                        sessions += 1;
-                        (200, session_response())
-                    }
-                    "/v1/events?after=0" => (
-                        200,
-                        json!({"cursor":1,"events":[{"sequence":1,"kind":"timing_confirmed",
-                            "payload":{"match_id":MATCH}}]}),
-                    ),
-                    "/v1/commands" => {
-                        left |= body["operation"] == "leave";
+                // The leave's own drain, then a poll after the lobby
+                // lost this session's history.
+                "/v1/events?after=1" if left => {
+                    reads_after_leave += 1;
+                    if reads_after_leave > 1 {
+                        (409, json!({"error":{"code":"history_expired"}}))
+                    } else {
                         (200, batch)
                     }
-                    // The leave's own drain, then a poll after the lobby
-                    // lost this session's history.
-                    "/v1/events?after=1" if left => {
-                        reads_after_leave += 1;
-                        if reads_after_leave > 1 {
-                            (409, json!({"error":{"code":"history_expired"}}))
-                        } else {
-                            (200, batch)
-                        }
-                    }
-                    "/v1/events?after=1" => (200, batch),
-                    _ if path == format!("/v1/match/resume?match_id={MATCH}") => (
-                        200,
-                        json!({"match_id":MATCH,"cursor":30,"relay":{
-                            "address":"127.0.0.1:5000","ticket":"test","packet_key":"test",
-                            "payload_key":"test","source_index":1,"ordering_certificate":"test"}}),
-                    ),
-                    _ => (404, json!({})),
-                };
-                let reply = reply.to_string();
-                let _ = write!(
-                    reader.into_inner(),
-                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
-                    reply.len()
-                );
-                seen.push((path, body));
-                if sessions == 2 {
-                    return seen;
                 }
+                "/v1/events?after=1" => (200, batch),
+                path if path == format!("/v1/match/resume?match_id={MATCH}") => (
+                    200,
+                    json!({"match_id":MATCH,"cursor":30,"relay":{
+                        "address":"127.0.0.1:5000","ticket":"test","packet_key":"test",
+                        "payload_key":"test","source_index":1,"ordering_certificate":"test"}}),
+                ),
+                _ => (404, json!({})),
             }
-            unreachable!()
         });
+        let base = format!("http://{address}");
         let (requests, input) = std::sync::mpsc::channel();
         let (output, responses) = std::sync::mpsc::channel();
         let stopping = Arc::new(AtomicBool::new(false));
@@ -2238,7 +2188,7 @@ mod tests {
         stopping.store(true, Ordering::Release);
         drop(requests);
         worker.join().unwrap();
-        let seen = lobby.join().unwrap();
+        let seen = close_lobby(address, lobby);
         let held: Vec<_> = seen
             .iter()
             .filter_map(|(_, body)| body["request_id"].as_str().zip(Some(&body["payload"])))
@@ -2641,10 +2591,7 @@ mod tests {
     /// can do.
     #[test]
     fn a_sign_in_names_the_version_and_build() {
-        let (address, lobby) = one_request_lobby(
-            |request| request.ends_with(b"}"),
-            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
-        );
+        let (address, lobby) = local_lobby(|_, _| (503, json!({})));
         let mut client = Client::new(
             Arc::new(AtomicBool::new(false)),
             ureq::Agent::config_builder()
@@ -2659,7 +2606,7 @@ mod tests {
             client.request("/v1/sessions", Some(&body)),
             Err(RequestFailure::Status(503))
         );
-        let request = lobby.join().unwrap();
+        let (request, _) = close_lobby(address, lobby).remove(0);
         let header = |name: &str| {
             request.lines().find_map(|line| {
                 let (key, value) = line.split_once(':')?;

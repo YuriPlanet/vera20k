@@ -2,10 +2,13 @@
 //! its contact and landing anims and the Tiberium a landing leaves.
 
 use super::{AnimId, AnimWorldCoord, bounce_spawn_count};
+use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::art_data::AnimTypeRuntimeConfig;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::bounce::{BounceOutcome, BounceState};
+use crate::sim::movement::ground_pose::deck_surface_z;
 use crate::sim::overlay_mark_host::{OverlayRecalc, RuntimeOverlayError};
+use crate::sim::projectile::{ProjectileCoord, projectile_ground_z};
 use crate::sim::world::{FrameEffects, Simulation};
 use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
@@ -86,6 +89,23 @@ pub(super) fn bouncer_launch(
 }
 
 impl Simulation {
+    /// Anim423C4A and VoxelAnim749FA2 use the same Z cutoff for water
+    /// expiry. Preserve the native ground probe (including a Dummy miss)
+    /// and its +4 cutoff when the cell has no live fixed deck.
+    pub(crate) fn bounce_landing_deck_z(&self, position: glam::IVec3) -> i32 {
+        let ground = projectile_ground_z(
+            self.resolved_terrain.as_ref(),
+            &self.effective_shared_cell_dummy(),
+            ProjectileCoord::new(position.x, position.y, position.z),
+        );
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+        };
+        let cells = NativeCellQuery::canonical(terrain);
+        let cell = cells.lookup_world(position.x, position.y);
+        deck_surface_z(&cells, cell, ground)
+    }
+
     /// `AnimClass::ProcessBounceResult @ 0x00423930` and the landing arm of
     /// `AnimClass::AI` (`0x00423C3C..0x00424298`). Returns true when the chunk
     /// touched down, which always destroys it: Bounced and Stopped both take
@@ -96,8 +116,8 @@ impl Simulation {
     /// first builds `BounceAnim=` and hits every object in the landing cell
     /// within `DamageRadius=` (Manhattan leptons) directly; Stopped destroys
     /// the anim there (`0x00423976`), before the landing arm. Then:
-    /// - in water (`CellClass+0xEC == 2`) below the deck plane (ground +
-    ///   416): `Wake=` at the Location and the first `SplashList=` 3 leptons
+    /// - in water (`CellClass+0xEC == 2`) below the resolved deck plane:
+    ///   `Wake=` at the Location and the first `SplashList=` 3 leptons
     ///   up, no damage;
     /// - otherwise, only when the type names an `ExpireAnim=`: that anim
     ///   (flags `0x2600`, zAdjust -30), then `Apply_area_damage @ 0x00489280`
@@ -215,12 +235,7 @@ impl Simulation {
             y: position.y,
             z: position.z,
         };
-        let ground = crate::sim::projectile::projectile_ground_z(
-            self.resolved_terrain.as_ref(),
-            &self.effective_shared_cell_dummy(),
-            crate::sim::projectile::ProjectileCoord::new(position.x, position.y, position.z),
-        );
-        let above_deck = position.z >= ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+        let above_deck = position.z >= self.bounce_landing_deck_z(position);
         if self.bounce_cell_is_water(position, rules) && !above_deck {
             //423CDB..423DE2: a meteor uses the LAST splash, without a Wake.
             if !config.is_meteor {

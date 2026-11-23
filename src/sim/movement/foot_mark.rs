@@ -180,9 +180,14 @@ pub(super) fn raw_occupation_plane(
     path_grid: Option<&PathGrid>,
 ) -> ((u16, u16), MovementLayer) {
     let at = ((coord.x / 256) as u16, (coord.y / 256) as u16);
-    let ground = ground_pose::ground_surface_z_at([coord.x, coord.y], false, terrain, path_grid)
-        .unwrap_or(coord.z);
-    let deck = coord.z >= ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+    let deck_surface =
+        ground_pose::ground_surface_z_at([coord.x, coord.y], true, terrain, path_grid)
+            .unwrap_or_else(|| {
+                coord
+                    .z
+                    .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+            });
+    let deck = coord.z >= deck_surface
         && (!needs_structural
             || terrain
                 .and_then(|terrain| terrain.cell(at.0, at.1))

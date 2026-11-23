@@ -320,7 +320,7 @@ fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
     else {
         return false;
     };
-    let template = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_FROM").into_owned();
+    let template = state.csf_text("TXT_FROM");
     let prefix = crate::assets::csf_file::format_csf(
         &template,
         &[crate::assets::csf_file::CsfArg::Str(&name)],
@@ -345,8 +345,7 @@ fn open_beacon_edit(state: &mut AppState) -> bool {
     let Some(local) = local_house(state) else {
         return false;
     };
-    let prefix =
-        crate::app::frontend::shell_pass::resolve_csf(state, "TXT_BEACON_MESSAGE").into_owned();
+    let prefix = state.csf_text("TXT_BEACON_MESSAGE");
     let rgb = crate::app::input::messages::player_line_rgb(state, local);
     let list = &mut state.match_state.match_presentation.message_list;
     if list.add_edit(&prefix, rgb, false) {
@@ -830,9 +829,11 @@ fn route_houses(
     (recipients, false)
 }
 
-/// Receive `0x0048D8DD..0x0048D9B8`: the line under the packet's own sender
-/// name in its colour, then one more IncomingMessage (`0x0048D995`) on top
-/// of Add_Message's own. No mask, alliance or defeat filter applies.
+/// Receive `0x0048D8DD..0x0048D9B8`: the line under the sender's name in its
+/// colour, then one more IncomingMessage (`0x0048D995`) on top of
+/// Add_Message's own. No mask, alliance or defeat filter applies. Native
+/// takes both from the packet; VERA's caller takes an admitted sender's from
+/// the roster ([`chat_sender`](crate::app::match_runtime::network_match::chat_sender)).
 /// RESIDUAL: the `-MESSAGES` game-name hash filter (`[0xA8D60D]`, off by
 /// default) is not ported; the switch is accepted and ignored.
 pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text: &str) {

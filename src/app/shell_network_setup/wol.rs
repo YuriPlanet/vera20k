@@ -475,7 +475,6 @@ pub(super) fn options_preview(state: &mut AppState) {
     }
     protocol.accept_eligible = false;
     protocol.requests.push(NetworkSetupRequest::Ready(false));
-    state.platform.window.request_redraw();
     if let Some(index) = local
         && let Err(error) = state
             .match_state
@@ -544,7 +543,8 @@ pub(crate) fn local_left(state: &mut AppState) {
     let dialog = super::dialog(state);
     App::leave_shell_dialog(
         state,
-        shell_transition::ShellExitThen::NetworkSetupBack(dialog),
+        crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
+        crate::app::shell_network_setup::commit_back,
     );
 }
 
@@ -744,13 +744,7 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 super::commit_start(state, seed);
                 return Ok(());
             }
-            App::leave_shell_dialog(
-                state,
-                shell_transition::ShellExitThen::NetworkStart {
-                    dialog: super::dialog(state),
-                    agreed_seed: seed,
-                },
-            );
+            App::leave_shell_dialog_for_network_start(state, super::dialog(state), seed);
         }
         1 => crate::app::shell_wol::start_aborted(state),
         2 => {
@@ -779,82 +773,55 @@ fn screen(state: &AppState) -> (i32, i32) {
 
 /// `0x130`'s layout on the live screen.
 pub(crate) fn verify_layout(state: &AppState) -> crate::ui::shell::modal::WolVerifyLayout {
+    use crate::app::frontend::shell_layout;
+    use crate::ui::shell::geom::RETAIL_SCALE;
+
     let (width, height) = screen(state);
-    crate::ui::shell::modal::wol_verify_layout(width, height)
+    let scale = if !setup_dialog(state, false, SetupFlavor::Wol).modern {
+        RETAIL_SCALE
+    } else if super::quick_match(state) {
+        // Quick Match has no C2/C9 room; its backdrop uses the fitted WOL shell.
+        shell_layout::shell_scale_for_screen((width as u32, height as u32))
+    } else {
+        crate::app::input::multiplayer_setup::page_layout(state)
+            .page
+            .scale
+    };
+    crate::ui::shell::modal::wol_verify_layout(width, height, scale)
 }
 
-/// The mismatch box's OK under the pointer.
-fn mismatch_ok_at(state: &AppState, x: i32, y: i32) -> Option<u16> {
+/// The 0xD0 mismatch is a separate retail message box; do not resize it here.
+pub(crate) fn verify_mismatch_parts(
+    state: &AppState,
+    message: &crate::ui::shell::modal::ShellBox,
+) -> crate::ui::shell::modal::BoxParts {
     let (width, height) = screen(state);
-    crate::ui::shell::modal::body_ok_layout(width, height)
-        .ok
-        .contains(x, y)
-        .then_some(crate::ui::wol_shell::BOX_OK)
+    message.parts(width, height, crate::ui::shell::geom::RETAIL_SCALE)
 }
 
-/// The pointer while `0x130` is up: the mismatch box's OK takes it when
-/// the box is open; otherwise a box's 18x18 icon (`0x006163A0` toggles on
-/// the press).
-pub(crate) fn verify_mouse(state: &mut AppState, pressed: bool) {
-    let (x, y) = state.match_state.input.cursor_px();
-    let Some(verify) = verify(state) else {
+/// The pointer while `0x130` is up (`down`: `None` moves): the mismatch
+/// box's OK takes it when the box is open; otherwise a box's 18x18 icon
+/// (`0x006163A0` toggles on the press) or the extended roster's scrollbar.
+pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
+    use crate::ui::shell::page::PageEvent;
+    let at = state.match_state.input.cursor_px();
+    let ok = verify(state)
+        .and_then(|verify| verify.mismatch.as_ref())
+        .map(|message| verify_mismatch_parts(state, message).button(0))
+        .unwrap_or_default();
+    let layout = verify_layout(state);
+    let Ok(verify) = verify_mut(state) else {
         return;
     };
-    if verify.mismatch.is_some() {
-        let over = mismatch_ok_at(state, x, y);
-        let Ok(verify) = verify_mut(state) else {
-            return;
-        };
-        if pressed {
-            verify.ok.press(over);
-            if over.is_some() {
-                App::play_main_menu_button_sound(state);
-            }
-        } else if verify.ok.release(over).is_some() {
-            mismatch_ok(state);
-        }
-        state.platform.window.request_redraw();
-        return;
-    }
-    let layout = verify_layout(state);
-    let node = verify_mut(state)
-        .ok()
-        .and_then(|verify| verify.pointer_button(&layout, x, y, pressed, Instant::now()));
-    if node.is_some() {
-        App::play_launcher_options_cue(
-            state,
-            crate::ui::main_menu_dialogs::options::LauncherCue::Checkbox,
-        );
-    }
-    state.platform.window.request_redraw();
-}
-
-pub(crate) fn verify_cursor_moved(state: &mut AppState) {
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = mismatch_ok_at(state, x, y);
-    let layout = verify_layout(state);
-    if let Ok(verify) = verify_mut(state) {
-        if verify.mismatch.is_some() {
-            verify.ok.hovered = over;
-        } else {
-            verify.pointer_moved(&layout, x, y);
-        }
-        state.platform.window.request_redraw();
+    let events = verify.pointer(&layout, ok, at, down);
+    let events = App::play_page_cues(state, events, false);
+    if events.contains(&PageEvent::Activated(crate::ui::wol_shell::BOX_OK)) {
+        mismatch_ok(state);
     }
 }
 
 pub(crate) fn verify_poll_scroll(state: &mut AppState) -> Option<Instant> {
-    let layout = verify_layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let verify = verify_mut(state).ok()?;
-    if verify.mismatch.is_some() {
-        return None;
-    }
-    let (changed, deadline) = verify.poll_scroll(&layout, x, y, Instant::now());
-    if changed {
-        state.platform.window.request_redraw();
-    }
-    deadline
+    verify_mut(state).ok()?.poll_scroll().1
 }
 
 /// C2/C9 0x540 Enter (notify 0x501): commands first, then a plain line.
@@ -903,12 +870,16 @@ pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
 /// C2/C9 0x3ED (`0x791110`): the edit is cleared first; outside a channel
 /// `TXT_NOT_IN_CHAN`, an empty line `TXT_ENTER_MESSAGE`, else an action.
 pub(super) fn emote(state: &mut AppState) {
-    let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
+    if state.frontend.multiplayer_setup.is_none() {
         return;
-    };
-    let text = wol_chat::trim_line_end(&ui.chat.edit.units).to_vec();
-    ui.chat.edit.set_units_limited([], 0);
-    ui.focus_chat();
+    }
+    let units: Vec<u16> = crate::app::input::multiplayer_setup::chat_text(state)
+        .encode_utf16()
+        .collect();
+    let text = wol_chat::trim_line_end(&units).to_vec();
+    let page = super::dialog(state).page().dialog;
+    let chat = crate::ui::multiplayer_setup::CHAT;
+    state.frontend.shell_controller.set_text(page, chat, "");
     if text.is_empty() {
         message(state, "TXT_ENTER_MESSAGE", &[]);
         return;

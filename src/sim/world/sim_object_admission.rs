@@ -172,6 +172,7 @@ impl Simulation {
                 .is_some_and(|kind| kind.inviso);
             let placement = projectile.initial_target_position;
             self.admit_projectile(stable_id, projectile);
+            self.unlimbo_alpha_shape(stable_id, ObjectKind::Projectile, rules);
             Self::construct_bullet_scheme(
                 &self.interner,
                 &self.substrate,
@@ -561,7 +562,9 @@ impl Simulation {
         for spawn in spawns {
             let stable_id = spawn.object.stable_id();
             self.substrate.voxel_anims.insert(spawn.object);
-            self.reveal_voxel_anim(stable_id);
+            if self.reveal_voxel_anim(stable_id) {
+                self.unlimbo_alpha_shape(stable_id, ObjectKind::VoxelAnim, rules);
+            }
             // The constructor's tail (`0x00749864..0x007498BD`) builds the
             // type's AttachedSystem at the input location, aimed at the cell
             // there (Map565730), owned by the anim, with zero target coords

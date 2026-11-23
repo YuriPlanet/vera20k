@@ -74,11 +74,14 @@ pub(crate) mod action {
     pub(crate) const SABOTAGE: u8 = 0x10;
     pub(crate) const TOTE: u8 = 0x11;
     pub(crate) const GUARD_AREA: u8 = 0x1A;
+    pub(crate) const HEAL: u8 = 0x1B;
     pub(crate) const DAMAGE: u8 = 0x1C;
     pub(crate) const GREPAIR: u8 = 0x1D;
     pub(crate) const NO_DEPLOY: u8 = 0x1E;
     pub(crate) const NO_ENTER: u8 = 0x1F;
     pub(crate) const NO_GREPAIR: u8 = 0x20;
+    pub(crate) const TOGGLE_POWER: u8 = 0x21;
+    pub(crate) const NO_TOGGLE_POWER: u8 = 0x22;
     pub(crate) const AREA_ATTACK: u8 = 0x34;
     pub(crate) const IVAN_BOMB: u8 = 0x35;
     pub(crate) const NO_IVAN_BOMB: u8 = 0x36;
@@ -190,6 +193,7 @@ impl CursorOverrides {
             Kind::Grind => REPAIR,
             Kind::NoEnter => NO_ENTER,
             Kind::Tote => TOTE,
+            Kind::Heal => HEAL,
             Kind::EngineerDamage => DAMAGE,
             Kind::RepairAction(true) => GREPAIR,
             Kind::RepairAction(false) => NO_GREPAIR,
@@ -201,7 +205,9 @@ impl CursorOverrides {
             Kind::Detonate => DETONATE,
             Kind::Deploy => SELF_DEPLOY,
             Kind::NoDeploy => NO_DEPLOY,
-            // DetermineAction's own modes and the cursor's, never a What_Action
+            Kind::TogglePower(true) => TOGGLE_POWER,
+            Kind::TogglePower(false) => NO_TOGGLE_POWER,
+            // DetermineAction's other modes and the cursor's, never a What_Action
             // answer.
             _ => return None,
         })
@@ -478,6 +484,21 @@ pub(crate) fn what_action_entry(
     let Some(actor) = cursors_of(actor_id) else {
         return overrides;
     };
+    // Ares' EMP deployer hook returns at Infantry What_Action's entry
+    // (`0x0051E3B0`), before the Techno What_Action that holds these hooks.
+    if hover_object
+        .and_then(HoverObject::techno)
+        .is_some_and(|hover| {
+            crate::app::input::context_order::ares_emp_deployer_refuses_itself(
+                sim,
+                rules,
+                actor_id,
+                hover.stable_id,
+            )
+        })
+    {
+        return overrides;
+    }
     overrides.set_cursor(actor.move_, action::MOVE);
     overrides.set_cursor(actor.no_move, action::NO_MOVE);
     let Some(target_id) = hover_object

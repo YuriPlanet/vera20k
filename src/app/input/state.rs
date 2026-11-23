@@ -5,11 +5,11 @@
 //! shells that reuse the same cursor/key plumbing). Sim-authoritative input —
 //! queued commands — lives in the simulation, never here.
 
-use crate::render::upscale_pass::ZoomGeometry;
 use crate::sim::intern::InternedId;
 use crate::sim::snapshot::saved_local_view::{
     SavedCursorModes, SavedLocalView, SavedLocalViewError, SavedTargeting,
 };
+use crate::ui::main_menu_dialogs::options::ZoomGeometry;
 use std::collections::HashSet;
 use winit::event::MouseButton;
 use winit::keyboard::{KeyCode, ModifiersState};
@@ -19,6 +19,8 @@ pub(crate) enum TacticalPointerMode<'a> {
     Ordinary,
     SuperWeapon(&'a str),
     RepairSell,
+    /// Display `+0x11B2` ([`crate::app::input::power_mode`]).
+    Power,
 }
 
 /// Client-side handles installed by ManualPlace4FB840. The House factory
@@ -164,6 +166,10 @@ impl PreparedSavedLocalView {
         input.planning.reset();
         sidebar.repair_mode_on = modes.repair;
         sidebar.sell_mode_on = modes.sell;
+        // The raw Display load restores Power (+0x11B2) too; VERA's save has
+        // no power byte (the residual in sim::snapshot::saved_local_view), so
+        // the outgoing world's mode ends here.
+        sidebar.power_mode_on = false;
         sidebar.command_bar_closed = modes.command_bar_closed;
         input.targeting_mode = self.targeting;
         input.skirmish_spawn = None;
@@ -242,7 +248,7 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_y: f32,
     /// The match zoom `cursor_x`/`cursor_y` are in; `None` is window pixels.
     /// `AppState::sync_cursor_space` keeps it matching the current screen.
-    pub(crate) cursor_zoom: Option<crate::render::upscale_pass::ZoomGeometry>,
+    pub(crate) cursor_zoom: Option<crate::ui::main_menu_dialogs::options::ZoomGeometry>,
     /// Last physical window event, used only to measure confined cursor motion.
     /// The source cursor above remains authoritative; this anchor is neither
     /// saved nor simulation state and is discarded when pointer focus changes.
@@ -398,8 +404,10 @@ mod ready_building_placement_tests;
 impl MatchInputState {
     /// DetermineAction692610 returns the selected object's action early.
     /// With no selection, its armed targeted Super overrides Repair/Sell
-    /// at692B06..692B24. Cursor feedback and release share this decision;
-    /// the existing Super producer still owns target admission and launch.
+    /// and Power at692B06..692B24. Those three bytes are never on together
+    /// (their setters clear each other), so their arms' order is moot.
+    /// Cursor feedback and release share this decision; the existing Super
+    /// producer still owns target admission and launch.
     /// Source: original gamemd.exe instructions.
     pub(crate) fn tactical_pointer_mode(
         &self,
@@ -419,14 +427,17 @@ impl MatchInputState {
         if sidebar.repair_mode_on || sidebar.sell_mode_on {
             return TacticalPointerMode::RepairSell;
         }
+        if sidebar.power_mode_on {
+            return TacticalPointerMode::Power;
+        }
         TacticalPointerMode::Ordinary
     }
 
     /// Display Cancel4AAD30 consumes one represented cursor rung: current
-    /// placement product, Repair/Sell, then Super. Repair/Sell setters still
-    /// refuse a retained placement TYPE after its product expires. The
-    /// caller handles the beacon rung (4AAE47) and the final UnselectAll rung.
-    /// Power/Waypoint remain unrepresented Display flags.
+    /// placement product, Repair/Sell, Power (4AADD0), then Super. The mode
+    /// setters still refuse a retained placement TYPE after its product
+    /// expires. The caller handles the beacon rung (4AAE47) and the final
+    /// UnselectAll rung. Waypoint remains an unrepresented Display flag.
     /// Source: original gamemd.exe4AAD34..4AAE84.
     pub(crate) fn cancel_pointer_mode(
         &mut self,
@@ -435,13 +446,17 @@ impl MatchInputState {
         if self.cancel_building_placement() {
             return true;
         }
+        let placement_armed = self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_building_placement)
+            .is_some();
         if sidebar.repair_mode_on || sidebar.sell_mode_on {
-            let placement_armed = self
-                .targeting_mode
-                .as_ref()
-                .and_then(crate::app::types::TargetingMode::as_building_placement)
-                .is_some();
             sidebar.disable_selection_modes(placement_armed);
+            return true;
+        }
+        if sidebar.power_mode_on {
+            sidebar.set_power_mode(false, placement_armed, 0);
             return true;
         }
         if self
@@ -535,12 +550,12 @@ impl MatchInputState {
             self.last_selection_click = None;
             return false;
         }
-        crate::ui::shell::list::is_double_click(
+        vera20k_gui::shell::list::is_double_click(
             &mut self.last_selection_click,
             now,
             point.0,
             point.1,
-            crate::ui::shell::saved_file_input::host_double_click_limits(),
+            crate::ui::shell::controller::host_double_click_limits(),
         )
     }
 

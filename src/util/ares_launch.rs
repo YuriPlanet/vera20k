@@ -78,6 +78,24 @@ impl AresSetting {
     pub fn from_ini_text(text: &str) -> Self {
         Self::parse(text).unwrap_or_default()
     }
+
+    /// VERA: this setting where it decides which game opens, else
+    /// [`Self::Auto`]: On unless Auto mounts `ares.mix` too (`auto_mounts`,
+    /// `AssetManager::auto_mounts_ares`), and Off only when Auto would mount
+    /// it or the game's own Rules hold an Ares key that Off keeps from
+    /// turning Ares on (`keys_kept_off`, the startup Rules'
+    /// `RuleSet::ares_kept_off`). Players' games compare and name this
+    /// (`ProcessAssets::agreed_ares_setting`), so a setting that opens the
+    /// game Auto opens keeps no one out. Off also keeps a mode's or a map's
+    /// Ares key off; whether Ares plays is each match's own answer
+    /// (`RuleSet::ares`), which its start compares.
+    pub const fn where_it_decides(self, auto_mounts: bool, keys_kept_off: bool) -> Self {
+        match self {
+            Self::On if !auto_mounts => Self::On,
+            Self::Off if auto_mounts || keys_kept_off => Self::Off,
+            _ => Self::Auto,
+        }
+    }
 }
 
 /// Publish the game this launch opened for play: whether it ships `ares.mix`

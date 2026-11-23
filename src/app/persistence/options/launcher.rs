@@ -1,89 +1,103 @@
 //! Active-YR launcher Options parent projection and transaction ordering.
 //!
 //! The retained `RetailOptionsProfile` stays authoritative. This module owns
-//! the pure projection plus narrow operation seams for the live preview and
-//! accepted parent boundary; UI drawing, the window, concrete audio,
-//! persistence I/O, and child routing remain with their established owners.
+//! the projection into the dialog, the live preview's effects and the
+//! accepted parent transaction; UI drawing, concrete audio, persistence I/O
+//! and child routing remain with their established owners.
 
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::options::{
-    ColorVisionMode, DisplayTarget, GraphicsApi, HealthBarMode, LauncherCue, LauncherOptionsEvent,
-    LauncherOptionsLabels, LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult,
-    OptionsDialogState, SidebarColumns, SidebarSize, Zoom, admitted_initial_position,
-    admitted_volume_position,
+    LauncherCheckboxId as C, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
+    LauncherOptionsValues, LauncherParentResult, LauncherTrackbarId as S, OptionsDialogState, ROWS,
+    Setting, admitted_initial_position, admitted_volume_position,
 };
+
+/// The profile's value behind a box. Full Screen and the FPS readout are the
+/// window's and the renderer's live state, which no profile stores.
+fn stored_box(profile: &mut RetailOptionsProfile, id: C) -> Option<&mut bool> {
+    Some(match id {
+        C::FullScreen | C::PerformanceStats => return None,
+        C::Tooltips => &mut profile.tooltips,
+        C::TargetLines => &mut profile.unit_action_lines,
+        C::ShowHidden => &mut profile.show_hidden,
+        C::OriginalShape => &mut profile.original_shape,
+        C::YrOriginalStyle => &mut profile.yr_original_style,
+        C::ShiftQueue => &mut profile.shift_queue,
+        C::AutoRepair => &mut profile.auto_repair,
+        C::Ra2Mode => &mut profile.ra2_mode,
+        C::MouseWheelZoom => &mut profile.mouse_wheel_zoom,
+        C::RightClickOrders => &mut profile.right_click_orders,
+        C::MinimapBeacons => &mut profile.minimap_beacons,
+        C::LockCursor => &mut profile.lock_cursor,
+        C::VeraIcon => &mut profile.vera_icon,
+        C::HdRadar => &mut profile.hd_radar,
+        C::SmoothSidebar => &mut profile.smooth_sidebar,
+        C::SmoothOnlineMenus => &mut profile.smooth_online_menus,
+        C::VSync => &mut profile.vsync,
+        C::HighRefreshRateInBattle => &mut profile.high_refresh_rate_in_battle,
+        C::HdMapPreviews => &mut profile.hd_map_previews,
+        C::SkipIntro => &mut profile.skip_intro,
+        C::ShowStringKeys => &mut profile.show_string_keys,
+        C::CustomEndGameBanner => &mut profile.custom_end_game_banner,
+        C::CustomEndGameScore => &mut profile.custom_end_game_score,
+        C::CustomEndGameMovie => &mut profile.custom_end_game_movie,
+        C::CommanderFeedback => &mut profile.commander_feedback,
+        C::DetailedEvaText => &mut profile.detailed_eva_text,
+        C::ConvenienceHelp => &mut profile.convenience_help,
+        C::BuildingProductionQueue => &mut profile.building_production_queue,
+        C::CompactSuperTimers => &mut profile.compact_super_timers,
+        C::GroupedSuperTimers => &mut profile.grouped_super_timers,
+    })
+}
 
 /// Project the retained signed profile into the fresh native-shaped controls.
 ///
 /// gamemd-derived: launcher primary-proc setup at
 /// `0x0055FDB0..0x0056047A`. Trackbar set-position rejects an out-of-range
 /// request and leaves the fresh position at zero; it does not clamp. VERA's
-/// Full Screen box starts unticked; the opener sets it from the window. Its
-/// Original 4:3 Shape and Original YR Style boxes and Sidebar list show the
-/// retained choices.
+/// Full Screen and FPS boxes start unticked; the opener sets them from the
+/// window and the readout.
 pub(crate) fn launcher_values_from_profile(
     profile: &RetailOptionsProfile,
 ) -> LauncherOptionsValues {
-    LauncherOptionsValues {
-        detail_position: u8::from(profile.detail_level != 0),
-        difficulty_position: admitted_initial_position(i64::from(profile.difficulty), 2),
-        scroll_position: admitted_initial_position(6_i64 - i64::from(profile.scroll_rate), 6),
-        tooltips: profile.tooltips,
-        target_lines: profile.unit_action_lines,
-        show_hidden: profile.show_hidden,
-        full_screen: false,
-        original_shape: profile.original_shape,
-        yr_original_style: profile.yr_original_style,
-        mouse_wheel_zoom: profile.mouse_wheel_zoom,
-        right_click_orders: profile.right_click_orders,
-        lock_cursor: profile.lock_cursor,
-        vera_icon: profile.vera_icon,
-        hd_radar: profile.hd_radar,
-        smooth_sidebar: profile.smooth_sidebar,
-        smooth_online_menus: profile.smooth_online_menus,
-        vsync: profile.vsync,
-        high_refresh_rate_in_battle: profile.high_refresh_rate_in_battle,
-        hd_map_previews: profile.hd_map_previews,
-        shift_queue: profile.shift_queue,
-        auto_repair: profile.auto_repair,
-        minimap_beacons: profile.minimap_beacons,
-        // Off at the left end, then 2 at the first notch.
-        performance_stats: false,
-        show_string_keys: profile.show_string_keys,
-        skip_intro: profile.skip_intro,
-        custom_end_game_banner: profile.custom_end_game_banner,
-        custom_end_game_score: profile.custom_end_game_score,
-        custom_end_game_movie: profile.custom_end_game_movie,
-        commander_feedback: profile.commander_feedback,
-        detailed_eva_text: profile.detailed_eva_text,
-        convenience_help: profile.convenience_help,
-        building_production_queue: profile.building_production_queue,
-        compact_super_timers: profile.compact_super_timers,
-        grouped_super_timers: profile.grouped_super_timers,
+    let mut values = LauncherOptionsValues {
         sidebar: profile.sidebar,
         sidebar_columns: profile.sidebar_columns,
         health_bars: profile.health_bars,
         ares: profile.ares,
         graphics_api: profile.graphics_api,
         color_vision: profile.color_vision,
-        // The slider's position is the stored level less the retail strength,
-        // so gamemd's own bands sit at the left end.
-        house_color_position: profile
-            .house_color_strength
-            .saturating_sub(crate::rules::house_colors::STRENGTH_RETAIL),
-        score_position: admitted_volume_position(profile.score_volume),
-        sound_position: admitted_volume_position(profile.sound_volume),
-        voice_position: admitted_volume_position(profile.voice_volume),
+        ..Default::default()
+    };
+    let mut stored = profile.clone();
+    for row in ROWS {
+        if let Setting::Checkbox(id) = row.setting {
+            values[id] = stored_box(&mut stored, id).is_some_and(|on| *on);
+        }
     }
+    // Off at the left end, then 2 at the first notch.
+    values[S::Detail] = u8::from(profile.detail_level != 0);
+    values[S::Difficulty] = admitted_initial_position(i64::from(profile.difficulty), 2);
+    values[S::Scroll] = admitted_initial_position(6_i64 - i64::from(profile.scroll_rate), 6);
+    // The slider's position is the stored level less the retail strength,
+    // so gamemd's own bands sit at the left end.
+    values[S::HouseColorStrength] = profile
+        .house_color_strength
+        .saturating_sub(crate::rules::house_colors::STRENGTH_RETAIL);
+    values[S::Score] = admitted_volume_position(profile.score_volume);
+    values[S::Sound] = admitted_volume_position(profile.sound_volume);
+    values[S::Voice] = admitted_volume_position(profile.voice_volume);
+    values[S::GameSpeed] = 0;
+    values
 }
 
 /// Build one fresh primary snapshot from already-owned platform and text facts.
 /// Child return and initial open both use this same constructor path.
 /// The Full Screen box shows `full_screen`, the window's own state: the
 /// player can also change it with the window's title-bar button. The FPS
-/// Counter box shows `performance_stats`, the readout's live state, which no profile
-/// stores.
+/// Counter box shows `performance_stats`, the readout's live state.
 pub(crate) fn launcher_dialog_from_profile(
     profile: &RetailOptionsProfile,
     labels: LauncherOptionsLabels,
@@ -92,11 +106,9 @@ pub(crate) fn launcher_dialog_from_profile(
     launcher_audio_available: bool,
     displays: Vec<crate::ui::main_menu_dialogs::options::DisplayChoice>,
 ) -> OptionsDialogState {
-    let values = LauncherOptionsValues {
-        full_screen,
-        performance_stats,
-        ..launcher_values_from_profile(profile)
-    };
+    let mut values = launcher_values_from_profile(profile);
+    values[C::FullScreen] = full_screen;
+    values[C::PerformanceStats] = performance_stats;
     OptionsDialogState::new(
         labels,
         values,
@@ -107,227 +119,136 @@ pub(crate) fn launcher_dialog_from_profile(
     )
 }
 
-/// Concrete effects admitted by one launcher UI frame.
-///
-/// The common audio predicate is deliberately queried again at dispatch so a
-/// forged or stale audio event cannot store a profile value or touch output.
-pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
-    fn play_cue(&mut self, cue: LauncherCue);
-    fn store_zoom(&mut self, zoom: Zoom);
-    fn store_sidebar(&mut self, size: SidebarSize);
-    /// The `[VERA] SidebarColumns=` list's pick; presentation only.
-    fn store_sidebar_columns(&mut self, columns: SidebarColumns);
-    /// The `[VERA] HealthBars=` list's pick; presentation only.
-    fn store_health_bars(&mut self, mode: HealthBarMode);
-    /// The `[VERA] Ares=` list's pick; the game reads it at its next start.
-    fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting);
-    /// The `[VERA] GraphicsAPI=` list's pick; the game reads it at its next
-    /// start (`persistence::startup_backend`).
-    fn store_graphics_api(&mut self, api: GraphicsApi);
-    /// The `[VERA] ColorVisionMode=` list's pick; presentation only, read by
-    /// the final frame pass on the very next frame.
-    fn store_color_vision(&mut self, mode: ColorVisionMode);
-    /// Move the window to the picked screen, or hand it back to the system.
-    fn set_display(&mut self, display: DisplayTarget);
-    fn set_full_screen(&mut self, full_screen: bool);
-    /// Put the window back as a launch opens it.
-    fn restore_launch_window(&mut self);
-    fn store_original_shape(&mut self, original_shape: bool);
-    fn store_yr_original_style(&mut self, yr_original_style: bool);
-    fn store_mouse_wheel_zoom(&mut self, enabled: bool);
-    fn store_right_click_orders(&mut self, enabled: bool);
-    fn store_lock_cursor(&mut self, locked: bool);
-    /// Show VERA's artwork or the red star on the window, taskbar and Dock.
-    fn store_vera_icon(&mut self, vera_icon: bool);
-    /// Draw the radar at the sidebar's window scale (`[VERA] HdRadar=`).
-    fn store_hd_radar(&mut self, enabled: bool);
-    /// Draw the sidebar's art from lightly smoothed xBR copies (`[VERA] SmoothSidebar=`).
-    fn store_smooth_sidebar(&mut self, enabled: bool);
-    /// Smooth the online client's enlarged art (`[VERA] SmoothOnlineMenus=`).
-    fn store_smooth_online_menus(&mut self, enabled: bool);
-    /// Present in step with the display, or as soon as a frame is drawn
-    /// (`[VERA] VSync=`).
-    fn store_vsync(&mut self, vsync: bool);
-    fn store_high_refresh_rate_in_battle(&mut self, enabled: bool);
-    /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
-    fn store_hd_map_previews(&mut self, enabled: bool);
-    /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
-    fn store_language(&mut self, tag: String);
-    fn store_shift_queue(&mut self, shift_queue: bool);
-    /// Send the Repair order for damaged buildings by itself (`[VERA] AutoRepair=`).
-    fn store_auto_repair(&mut self, enabled: bool);
-    /// Place a beacon with a radar click in Place Beacon mode (`[VERA] MinimapBeacons=`).
-    fn store_minimap_beacons(&mut self, enabled: bool);
-    fn set_performance_stats(&mut self, shown: bool);
-    /// Show each label's string-table key instead of its text.
-    fn set_show_string_keys(&mut self, shown: bool);
-    fn store_skip_intro(&mut self, skip: bool);
-    /// Whether a finished match draws the country's own end-game picture.
-    fn store_custom_end_game_banner(&mut self, enabled: bool);
-    /// Whether a finished match starts the country's own end-game music.
-    fn store_custom_end_game_score(&mut self, enabled: bool);
-    /// Whether the exit lets the closing commander clip finish.
-    fn store_custom_end_game_movie(&mut self, enabled: bool);
-    /// Whether computer commanders play their clips.
-    fn store_commander_feedback(&mut self, enabled: bool);
-    /// VERA-only accessibility text rows; default off.
-    fn store_detailed_eva_text(&mut self, enabled: bool);
-    /// VERA's umbrella quick-status-rows switch; default off.
-    fn store_convenience_help(&mut self, enabled: bool);
-    /// VERA's structure build queue option; default off.
-    fn store_building_production_queue(&mut self, enabled: bool);
-    /// VERA's six-line super weapon timer list; default off.
-    fn store_compact_super_timers(&mut self, enabled: bool);
-    /// VERA's per-team super weapon timer lines; default off.
-    fn store_grouped_super_timers(&mut self, enabled: bool);
-    /// VERA's team-colour strength, as the level the profile stores.
-    fn store_house_color_strength(&mut self, strength: u8);
-}
-
 /// Dispatch one already-ordered UI event without an INI write. The three audio
-/// paths preserve native profile -> output -> cue order; the five display
-/// choices and Shift-Click Batch Queue take effect at once.
-pub(crate) fn dispatch_launcher_preview_event(
-    operations: &mut impl LauncherPreviewOperations,
-    event: LauncherOptionsEvent,
-) {
+/// paths preserve native profile -> output -> cue order. A list's pick and a
+/// VERA box take effect at once: they store the profile value that the next
+/// frame, cameo press, radar click, battle, match result or launch reads (and
+/// Options' accept writes out); the boxes below also apply here to the
+/// window, the renderer or the rules. The audio predicate is queried again in
+/// [`apply_volume`] so a forged or stale audio event stores nothing.
+pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: LauncherOptionsEvent) {
+    use LauncherOptionsEvent as E;
+    let profile = &mut state.persistence.options_profile;
     match event {
-        LauncherOptionsEvent::Cue(cue) => operations.play_cue(cue),
-        LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
-        LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
-        LauncherOptionsEvent::SidebarColumnsSelected(columns) => {
-            operations.store_sidebar_columns(columns)
+        E::ZoomSelected(zoom) => {
+            profile.zoom = zoom;
+            App::sync_zoom_pass(state);
         }
-        LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
-        LauncherOptionsEvent::AresSelected(setting) => operations.store_ares(setting),
-        LauncherOptionsEvent::GraphicsApiSelected(api) => operations.store_graphics_api(api),
-        LauncherOptionsEvent::ColorVisionModeSelected(mode) => operations.store_color_vision(mode),
-        LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
-        LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
-        LauncherOptionsEvent::FullScreenChanged(full_screen) => {
-            operations.set_full_screen(full_screen);
+        E::SidebarSelected(size) => profile.sidebar = size,
+        E::SidebarColumnsSelected(columns) => profile.sidebar_columns = columns,
+        E::HealthBarModeSelected(mode) => profile.health_bars = mode,
+        // Read at start, as the mod is: this launch keeps the setting it
+        // opened its files with.
+        E::AresSelected(setting) => profile.ares = setting,
+        // Read at the next start (`startup_backend`): this launch keeps the
+        // API it draws through.
+        E::GraphicsApiSelected(api) => profile.graphics_api = api,
+        // The final-frame pass reads the profile every frame; no atlas or
+        // ramp has to be rebuilt.
+        E::ColorVisionModeSelected(mode) => profile.color_vision = mode,
+        // Applied at once, like Full Screen: the window moves to the picked
+        // screen (or back to the system's choice) before the page is accepted.
+        E::DisplaySelected(display) => {
+            profile.display = display.clone();
+            let displays = crate::app::display_target::current_displays(&state.platform.window);
+            crate::app::display_target::apply(&state.platform.window, &displays, &display);
         }
-        LauncherOptionsEvent::SetWindowSizeRequested => operations.restore_launch_window(),
+        // The open Options page reads its captions again once the events
+        // have run.
+        E::LanguageSelected(tag) => {
+            if state.use_language(&tag) {
+                state.persistence.options_profile.language = Some(tag);
+            }
+        }
+        E::SetWindowSizeRequested => App::restore_launch_window(state),
         // The in-game menu opens these dialogs, and starts the layout edit
         // mode, itself (`app::input::pause_menu`).
-        LauncherOptionsEvent::InGameKeyboardRequested
-        | LauncherOptionsEvent::InGameSoundRequested
-        | LauncherOptionsEvent::EditLayoutRequested => {}
-        LauncherOptionsEvent::OriginalShapeChanged(original_shape) => {
-            operations.store_original_shape(original_shape);
+        E::InGameKeyboardRequested | E::InGameSoundRequested | E::EditLayoutRequested => {}
+        // Retail's three boxes apply with the accepted pack and publish
+        // nothing. The custom end-game stages are read when a match ends, so
+        // a match on screen keeps what it started with; the clip layer reads
+        // Commander Clips every pass.
+        E::Toggled(id, on) => {
+            if let Some(stored) = stored_box(profile, id) {
+                *stored = on;
+            }
+            apply_box(state, id, on);
         }
-        LauncherOptionsEvent::YrOriginalStyleChanged(yr_original_style) => {
-            operations.store_yr_original_style(yr_original_style)
-        }
-        LauncherOptionsEvent::MouseWheelZoomChanged(enabled) => {
-            operations.store_mouse_wheel_zoom(enabled);
-        }
-        LauncherOptionsEvent::RightClickOrdersChanged(enabled) => {
-            operations.store_right_click_orders(enabled);
-        }
-        LauncherOptionsEvent::LockCursorChanged(locked) => operations.store_lock_cursor(locked),
-        LauncherOptionsEvent::VeraIconChanged(vera_icon) => operations.store_vera_icon(vera_icon),
-        LauncherOptionsEvent::HdRadarChanged(enabled) => operations.store_hd_radar(enabled),
-        LauncherOptionsEvent::SmoothSidebarChanged(enabled) => {
-            operations.store_smooth_sidebar(enabled);
-        }
-        LauncherOptionsEvent::SmoothOnlineMenusChanged(enabled) => {
-            operations.store_smooth_online_menus(enabled);
-        }
-        LauncherOptionsEvent::VSyncChanged(vsync) => operations.store_vsync(vsync),
-        LauncherOptionsEvent::HighRefreshRateInBattleChanged(enabled) => {
-            operations.store_high_refresh_rate_in_battle(enabled)
-        }
-        LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
-            operations.store_hd_map_previews(enabled);
-        }
-        LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
-            operations.store_shift_queue(shift_queue);
-        }
-        LauncherOptionsEvent::AutoRepairChanged(enabled) => {
-            operations.store_auto_repair(enabled);
-        }
-        LauncherOptionsEvent::MinimapBeaconsChanged(enabled) => {
-            operations.store_minimap_beacons(enabled);
-        }
-        LauncherOptionsEvent::PerformanceStatsChanged(shown) => {
-            operations.set_performance_stats(shown)
-        }
-        LauncherOptionsEvent::ShowStringKeysChanged(shown) => {
-            operations.set_show_string_keys(shown)
-        }
-        LauncherOptionsEvent::SkipIntroChanged(skip) => {
-            operations.store_skip_intro(skip);
-        }
-        LauncherOptionsEvent::CustomEndGameBannerChanged(enabled) => {
-            operations.store_custom_end_game_banner(enabled);
-        }
-        LauncherOptionsEvent::CustomEndGameScoreChanged(enabled) => {
-            operations.store_custom_end_game_score(enabled);
-        }
-        LauncherOptionsEvent::CustomEndGameMovieChanged(enabled) => {
-            operations.store_custom_end_game_movie(enabled);
-        }
-        LauncherOptionsEvent::CommanderFeedbackChanged(enabled) => {
-            operations.store_commander_feedback(enabled);
-        }
-        LauncherOptionsEvent::DetailedEvaTextChanged(enabled) => {
-            operations.store_detailed_eva_text(enabled);
-        }
-        LauncherOptionsEvent::ConvenienceHelpChanged(enabled) => {
-            operations.store_convenience_help(enabled);
-        }
-        LauncherOptionsEvent::BuildingProductionQueueChanged(enabled) => {
-            operations.store_building_production_queue(enabled);
-        }
-        LauncherOptionsEvent::CompactSuperTimersChanged(enabled) => {
-            operations.store_compact_super_timers(enabled);
-        }
-        LauncherOptionsEvent::GroupedSuperTimersChanged(enabled) => {
-            operations.store_grouped_super_timers(enabled);
-        }
-        LauncherOptionsEvent::HouseColorStrengthChanged(strength) => {
-            operations.store_house_color_strength(strength);
-        }
-        LauncherOptionsEvent::ScorePreview(volume) => {
-            apply_volume(operations, AudioVolume::Score, volume, true)
-        }
-        LauncherOptionsEvent::SoundPreview(volume) => {
-            apply_volume(operations, AudioVolume::Sound, volume, true)
-        }
-        LauncherOptionsEvent::VoicePreview(volume) => {
-            apply_volume(operations, AudioVolume::Voice, volume, true)
-        }
+        // Baked into a battle's colour tables when it loads, like the sprite
+        // atlas that reads them.
+        E::HouseColorStrengthChanged(strength) => profile.house_color_strength = strength,
+        E::ScorePreview(volume) => apply_volume(state, AudioVolume::Score, volume, true),
+        E::SoundPreview(volume) => apply_volume(state, AudioVolume::Sound, volume, true),
+        E::VoicePreview(volume) => apply_volume(state, AudioVolume::Voice, volume, true),
     }
 }
 
-/// Narrow effect boundary for the unconditional accepted parent transaction.
-/// Production and the recorder both enter through
-/// [`dispatch_launcher_parent_result`].
-pub(crate) trait LauncherParentOperations {
-    fn observe_pack(&mut self, packed: LauncherOptionsPacked);
-    fn store_detail_level(&mut self, value: i32) -> bool;
-    fn refresh_detail(&mut self);
-    fn store_difficulty(&mut self, value: i32);
-    fn store_unit_action_lines(&mut self, value: bool);
-    fn refresh_unit_action_lines(&mut self);
-    fn store_show_hidden(&mut self, value: bool);
-    fn store_tooltips(&mut self, value: bool);
-    fn store_scroll_rate(&mut self, value: i32);
-    fn store_score_volume(&mut self, value: f32);
-    fn apply_score_output(&mut self, value: f32);
-    fn queue_then_stop_score_zero(&mut self);
-    fn store_sound_volume(&mut self, value: f32);
-    fn apply_sound_output(&mut self, value: f32);
-    fn store_voice_volume(&mut self, value: f32);
-    fn apply_voice_output(&mut self, value: f32);
-    fn primary_dropped(&mut self);
-    fn persist_profile(&mut self);
-    fn route_keyboard(&mut self);
-    fn reopen_parent(&mut self);
-    /// VERA's Mods page (`App::open_mods_page`); its Back builds the parent
-    /// again.
-    fn route_mods(&mut self);
+/// A VERA box's change beyond the profile value it stores.
+fn apply_box(state: &mut AppState, id: C, on: bool) {
+    match id {
+        C::FullScreen => App::set_full_screen(state, on),
+        C::OriginalShape => App::sync_zoom_pass(state),
+        // The menu movie's session identity carries the choice, so its next
+        // paint loads the selected game copy; the splash follows next launch.
+        // The shell atlas carries the same profile value; it is rebuilt (or
+        // built) now, before another shell screen can paint.
+        C::YrOriginalStyle => {
+            let _ = App::ensure_skirmish_shell_chrome(state);
+        }
+        C::MouseWheelZoom if !on => crate::app::input::camera::reset_view_distance(state),
+        C::LockCursor => {
+            state.platform.cursor_confined = on;
+            crate::app::input::cursor::apply_cursor_confinement(state);
+        }
+        C::VeraIcon => show_vera_icon(state, on),
+        C::VSync => App::sync_present_mode(state),
+        // Live state only; no profile stores it, so each launch starts hidden.
+        C::PerformanceStats => state.renderer.performance_overlay.set_visible(on),
+        // The box arms the hotkey but leaves the texts showing, so ticking it
+        // never swaps the page under the pointer. The loaded table and the
+        // language catalog both answer with keys once the hotkey asks; map
+        // titles follow, as on a language change.
+        C::ShowStringKeys => {
+            crate::i18n::set_show_string_keys(on);
+            state.refresh_string_key_labels();
+        }
+        // A rule switch, as Terrain Deformation is: the next offline
+        // scenario's rules read it, so a running match keeps what it started
+        // with and every peer, save and replay plays the same rules.
+        C::BuildingProductionQueue => state.process_assets.set_building_production_queue(on),
+        _ => {}
+    }
+}
+
+/// Shown at once, once the profile holds it. Unticked in an install without
+/// the red star, the window keeps VERA's icon until the next launch, which
+/// starts with the program's own.
+fn show_vera_icon(state: &mut AppState, vera_icon: bool) {
+    // Android's launcher icon is a compiled resource carried by the two
+    // activity aliases, and changing it closes the app, so the choice has to
+    // be on disk first. Every other platform applies the icon to the live
+    // window below and keeps its own write timing.
+    #[cfg(target_os = "android")]
+    {
+        crate::app::persistence::options::persist_options_profile(state);
+        crate::util::app_icon::apply(vera_icon);
+    }
+    if state.platform.window.is_visible() == Some(false) {
+        return;
+    }
+    let ra2_dir = state
+        .platform
+        .game_config
+        .as_ref()
+        .map(|config| config.paths.ra2_dir.as_path());
+    if let Some(icon) = crate::app::window_icon::WindowIcon::chosen(vera_icon, ra2_dir) {
+        icon.show_on(&state.platform.window);
+    }
+}
+
+/// The value to write: `now`, unless the in-game page opened with it (`opened`).
+fn moved<T: PartialEq>(opened: Option<T>, now: T) -> Option<T> {
+    (opened.as_ref() != Some(&now)).then_some(now)
 }
 
 /// Apply the packed parent subset in the literal native order.
@@ -341,46 +262,74 @@ pub(crate) trait LauncherParentOperations {
 /// which applies once per visit, that page closes every time the menu does,
 /// and Game Controls' three-step Detail would keep turning its Medium to High.
 fn apply_launcher_parent(
-    operations: &mut impl LauncherParentOperations,
+    state: &mut AppState,
     packed: LauncherOptionsPacked,
     opened: Option<LauncherOptionsPacked>,
 ) {
-    let moved = |unchanged: &dyn Fn(LauncherOptionsPacked) -> bool| !opened.is_some_and(unchanged);
-    if moved(&|o| o.detail_level == packed.detail_level)
-        && operations.store_detail_level(packed.detail_level)
-    {
-        operations.refresh_detail();
-    }
-    if moved(&|o| o.difficulty == packed.difficulty) {
-        operations.store_difficulty(packed.difficulty);
-    }
-    if moved(&|o| o.unit_action_lines == packed.unit_action_lines) {
-        operations.store_unit_action_lines(packed.unit_action_lines);
-        operations.refresh_unit_action_lines();
-    }
-    if moved(&|o| o.show_hidden == packed.show_hidden) {
-        operations.store_show_hidden(packed.show_hidden);
-    }
-    if moved(&|o| o.tooltips == packed.tooltips) {
-        operations.store_tooltips(packed.tooltips);
-    }
-    if moved(&|o| o.scroll_rate == packed.scroll_rate) {
-        operations.store_scroll_rate(packed.scroll_rate);
-    }
-    if moved(&|o| o.score_volume == packed.score_volume) {
-        operations.store_score_volume(packed.score_volume);
-        operations.apply_score_output(packed.score_volume);
-        if packed.score_volume == 0.0 {
-            operations.queue_then_stop_score_zero();
+    if let Some(detail) = moved(opened.map(|o| o.detail_level), packed.detail_level) {
+        let profile = &mut state.persistence.options_profile;
+        let changed = profile.detail_level != detail;
+        profile.detail_level = detail;
+        let presentation = &mut state.match_state.match_presentation;
+        presentation.in_game_options.detail_level = detail.max(0) as u32;
+        // Display4AE450 resamples synchronously, before the next Logic visit
+        // can copy a Cell's light into a grapple anim. This local operation
+        // never enters Simulation's replay/sync hash.
+        if changed {
+            if let Some(runtime) = state.match_state.sim_runtime.runtime()
+                && let Some(terrain) = runtime.simulation.resolved_terrain()
+            {
+                let detail = presentation.in_game_options.detail_level;
+                presentation
+                    .lighting
+                    .set_detail_level(terrain, &runtime.simulation, detail);
+            }
+            state.platform.window.request_redraw();
         }
     }
-    if moved(&|o| o.sound_volume == packed.sound_volume) {
-        operations.store_sound_volume(packed.sound_volume);
-        operations.apply_sound_output(packed.sound_volume);
+    let profile = &mut state.persistence.options_profile;
+    let presentation = &mut state.match_state.match_presentation;
+    if let Some(difficulty) = moved(opened.map(|o| o.difficulty), packed.difficulty) {
+        profile.difficulty = difficulty;
     }
-    if moved(&|o| o.voice_volume == packed.voice_volume) {
-        operations.store_voice_volume(packed.voice_volume);
-        operations.apply_voice_output(packed.voice_volume);
+    if let Some(lines) = moved(
+        opened.map(|o| o.unit_action_lines),
+        packed.unit_action_lines,
+    ) {
+        profile.unit_action_lines = lines;
+        presentation.in_game_options.unit_action_lines = lines;
+        presentation
+            .target_lines
+            .set_unit_action_lines_enabled(lines);
+    }
+    if let Some(hidden) = moved(opened.map(|o| o.show_hidden), packed.show_hidden) {
+        profile.show_hidden = hidden;
+        presentation.in_game_options.show_hidden = hidden;
+    }
+    if let Some(tooltips) = moved(opened.map(|o| o.tooltips), packed.tooltips) {
+        profile.tooltips = tooltips;
+        presentation.in_game_options.tooltips = tooltips;
+        presentation.tooltips.set_enabled(tooltips);
+    }
+    if let Some(rate) = moved(opened.map(|o| o.scroll_rate), packed.scroll_rate) {
+        profile.scroll_rate = rate;
+        presentation.in_game_options.scroll_rate = rate.max(0) as u32;
+    }
+    if let Some(volume) = moved(opened.map(|o| o.score_volume), packed.score_volume) {
+        state.store_score_volume(volume);
+        state.apply_score_output(volume);
+        if volume == 0.0 {
+            let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+            state.audio.queue_then_stop_score_zero(now_ms);
+        }
+    }
+    if let Some(volume) = moved(opened.map(|o| o.sound_volume), packed.sound_volume) {
+        state.store_sound_volume(volume);
+        state.apply_sound_output(volume);
+    }
+    if let Some(volume) = moved(opened.map(|o| o.voice_volume), packed.voice_volume) {
+        state.store_voice_volume(volume);
+        state.apply_voice_output(volume);
     }
 }
 
@@ -391,30 +340,31 @@ fn apply_launcher_parent(
 /// applies and destroys the primary before child preparation/route or the one
 /// final write. Keyboard then rebuilds a fresh primary without writing.
 pub(crate) fn dispatch_launcher_parent_result(
-    operations: &mut impl LauncherParentOperations,
+    state: &mut AppState,
     dialog: OptionsDialogState,
     result: LauncherParentResult,
     opened: Option<LauncherOptionsPacked>,
 ) {
-    let packed = dialog.pack();
-    operations.observe_pack(packed);
-    apply_launcher_parent(operations, packed, opened);
+    apply_launcher_parent(state, dialog.pack(), opened);
     drop(dialog);
-    operations.primary_dropped();
-
     match result {
         LauncherParentResult::Back | LauncherParentResult::Terminal => {
-            operations.persist_profile();
+            super::persist_options_profile(state);
         }
         LauncherParentResult::Keyboard => {
-            operations.route_keyboard();
-            operations.reopen_parent();
+            use crate::ui::shell::keyboard::KeyboardParent;
+            crate::app::input::keyboard::open(state, KeyboardParent::Launcher);
+            // Native caller blocks in A3. Our asynchronous child resumes this
+            // continuation when it closes (after its teardown slide).
+            if state.frontend.keyboard_dialog.is_none() {
+                App::open_launcher_options_dialog(state);
+            }
         }
         // VERA's own. Written first: Use This Mod leaves the game from the
-        // Mods page.
+        // Mods page, whose Back builds the parent again.
         LauncherParentResult::Mods => {
-            operations.persist_profile();
-            operations.route_mods();
+            super::persist_options_profile(state);
+            App::open_mods_page(state);
         }
     }
 }
@@ -441,55 +391,6 @@ mod tests {
         }
     }
 
-    /// The writes one accepted page makes.
-    #[derive(Default)]
-    struct WriteRecorder(Vec<&'static str>);
-
-    impl LauncherParentOperations for WriteRecorder {
-        fn observe_pack(&mut self, _: LauncherOptionsPacked) {}
-        fn store_detail_level(&mut self, _: i32) -> bool {
-            self.0.push("detail");
-            true
-        }
-        fn refresh_detail(&mut self) {}
-        fn store_difficulty(&mut self, _: i32) {
-            self.0.push("difficulty");
-        }
-        fn store_unit_action_lines(&mut self, _: bool) {
-            self.0.push("target lines");
-        }
-        fn refresh_unit_action_lines(&mut self) {}
-        fn store_show_hidden(&mut self, _: bool) {
-            self.0.push("show hidden");
-        }
-        fn store_tooltips(&mut self, _: bool) {
-            self.0.push("tooltips");
-        }
-        fn store_scroll_rate(&mut self, _: i32) {
-            self.0.push("scroll rate");
-        }
-        fn store_score_volume(&mut self, _: f32) {
-            self.0.push("music");
-        }
-        fn apply_score_output(&mut self, _: f32) {}
-        fn queue_then_stop_score_zero(&mut self) {
-            self.0.push("stop music");
-        }
-        fn store_sound_volume(&mut self, _: f32) {
-            self.0.push("sound");
-        }
-        fn apply_sound_output(&mut self, _: f32) {}
-        fn store_voice_volume(&mut self, _: f32) {
-            self.0.push("voice");
-        }
-        fn apply_voice_output(&mut self, _: f32) {}
-        fn primary_dropped(&mut self) {}
-        fn persist_profile(&mut self) {}
-        fn route_keyboard(&mut self) {}
-        fn route_mods(&mut self) {}
-        fn reopen_parent(&mut self) {}
-    }
-
     /// Game Controls' Medium Detail shows as High on the page's two-step
     /// slider, so closing the page must not write a slider nobody moved, even
     /// when another control changed. The main menu's accept still writes all.
@@ -509,36 +410,12 @@ mod tests {
         )
         .pack();
         assert_eq!(opened.detail_level, 2);
-
-        let mut untouched = WriteRecorder::default();
-        apply_launcher_parent(&mut untouched, opened, Some(opened));
-        assert!(untouched.0.is_empty());
-
-        let moved = LauncherOptionsPacked {
-            tooltips: !opened.tooltips,
-            score_volume: 0.0,
-            ..opened
-        };
-        let mut page = WriteRecorder::default();
-        apply_launcher_parent(&mut page, moved, Some(opened));
-        assert_eq!(page.0, ["tooltips", "music", "stop music"]);
-
-        let mut accept = WriteRecorder::default();
-        apply_launcher_parent(&mut accept, opened, None);
+        assert_eq!(moved(Some(opened.detail_level), opened.detail_level), None);
         assert_eq!(
-            accept.0,
-            [
-                "detail",
-                "difficulty",
-                "target lines",
-                "show hidden",
-                "tooltips",
-                "scroll rate",
-                "music",
-                "sound",
-                "voice"
-            ]
+            moved(Some(opened.tooltips), !opened.tooltips),
+            Some(!opened.tooltips)
         );
+        assert_eq!(moved(None, opened.detail_level), Some(2));
     }
 
     #[test]
@@ -552,7 +429,7 @@ mod tests {
                 ..RetailOptionsProfile::default()
             };
             assert_eq!(
-                launcher_values_from_profile(&profile).difficulty_position,
+                launcher_values_from_profile(&profile)[S::Difficulty],
                 expected,
                 "Difficulty={input}"
             );
@@ -563,7 +440,7 @@ mod tests {
                 ..RetailOptionsProfile::default()
             };
             assert_eq!(
-                launcher_values_from_profile(&profile).scroll_position,
+                launcher_values_from_profile(&profile)[S::Scroll],
                 expected,
                 "ScrollRate={input}"
             );
@@ -573,14 +450,13 @@ mod tests {
                 detail_level: input,
                 ..RetailOptionsProfile::default()
             };
-            assert_eq!(launcher_values_from_profile(&profile).detail_position, 1);
+            assert_eq!(launcher_values_from_profile(&profile)[S::Detail], 1);
         }
         assert_eq!(
             launcher_values_from_profile(&RetailOptionsProfile {
                 detail_level: 0,
                 ..RetailOptionsProfile::default()
-            })
-            .detail_position,
+            })[S::Detail],
             0
         );
 
@@ -603,9 +479,9 @@ mod tests {
                 ..RetailOptionsProfile::default()
             };
             let values = launcher_values_from_profile(&profile);
-            assert_eq!(values.score_position, expected, "volume={input:?}");
-            assert_eq!(values.sound_position, expected, "volume={input:?}");
-            assert_eq!(values.voice_position, expected, "volume={input:?}");
+            assert_eq!(values[S::Score], expected, "volume={input:?}");
+            assert_eq!(values[S::Sound], expected, "volume={input:?}");
+            assert_eq!(values[S::Voice], expected, "volume={input:?}");
         }
 
         let booleans = launcher_values_from_profile(&RetailOptionsProfile {
@@ -618,12 +494,12 @@ mod tests {
             shift_queue: true,
             ..RetailOptionsProfile::default()
         });
-        assert!(!booleans.tooltips);
-        assert!(!booleans.target_lines);
-        assert!(booleans.show_hidden);
-        assert!(booleans.yr_original_style);
-        assert!(booleans.skip_intro);
-        assert!(booleans.mouse_wheel_zoom);
-        assert!(booleans.shift_queue);
+        assert!(!booleans[C::Tooltips]);
+        assert!(!booleans[C::TargetLines]);
+        assert!(booleans[C::ShowHidden]);
+        assert!(booleans[C::YrOriginalStyle]);
+        assert!(booleans[C::SkipIntro]);
+        assert!(booleans[C::MouseWheelZoom]);
+        assert!(booleans[C::ShiftQueue]);
     }
 }

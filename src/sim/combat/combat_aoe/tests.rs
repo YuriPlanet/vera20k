@@ -1985,6 +1985,32 @@ fn bridge_impact_selects_the_deck_list_strictly_above_half_deck() {
 }
 
 #[test]
+fn aoe_object_list_switches_at_halfway_to_the_retained_deck() {
+    use crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
+
+    let (mut entities, occupancy, mut terrain, rules, warhead, mut interner) =
+        bridge_layer_test_fixture();
+    let cell = terrain.native_cell_identity((5, 5));
+    terrain.write_native_cell_flags(cell, BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL);
+    terrain.set_authored_high_bridge_deck(cell, 9);
+
+    for (z, layer) in [(468, ListLayer::Ground), (469, ListLayer::Bridge)] {
+        let result = apply_aoe_damage(
+            &mut entities,
+            5,
+            5,
+            100,
+            &warhead,
+            &rules,
+            &mut interner,
+            "Americans",
+            native_lists(&occupancy, &mut terrain, Some(z)),
+        );
+        assert_eq!(result.object_list_layer, layer);
+    }
+}
+
+#[test]
 fn bridge_object_layer_uses_signed_slope_floor_at_exact_subcell_xy() {
     // Reuse the established Cell47B3A0 controls from util::lepton: level2
     // ramp1 at(64,192) gives234; signed levelFF ramp1 at(1,0) gives-102.

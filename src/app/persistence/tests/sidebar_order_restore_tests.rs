@@ -241,6 +241,12 @@ fn a_loaded_game_opens_the_tab_it_was_saved_on() {
 
 #[test]
 fn sidebar_order_envelope_roundtrips_without_changing_simulation_hash() {
+    crate::test_fixture::on_game_stack(
+        sidebar_order_envelope_roundtrips_without_changing_simulation_hash_body,
+    );
+}
+
+fn sidebar_order_envelope_roundtrips_without_changing_simulation_hash_body() {
     let (sim, rules, owner, types) = fixture();
     let saved = retained_history(owner, types).saved_order().unwrap();
     let hash = sim.state_hash();
@@ -277,6 +283,12 @@ fn sidebar_order_envelope_roundtrips_without_changing_simulation_hash() {
 
 #[test]
 fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survivors() {
+    crate::test_fixture::on_game_stack(
+        sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survivors_body,
+    );
+}
+
+fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survivors_body() {
     let (sim, rules, owner, types) = fixture();
     let saved = retained_history(owner, types).saved_order().unwrap();
     let bytes = save(&sim, &rules, Some(&saved));
@@ -324,6 +336,10 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
 
 #[test]
 fn load_keeps_every_strip_order_and_shows_its_top_row() {
+    crate::test_fixture::on_game_stack(load_keeps_every_strip_order_and_shows_its_top_row_body);
+}
+
+fn load_keeps_every_strip_order_and_shows_its_top_row_body() {
     let (sim, rules, owner, candidates) = scrolling_fixture();
     let saved = scrolled_projection(owner, &candidates)
         .saved_order()

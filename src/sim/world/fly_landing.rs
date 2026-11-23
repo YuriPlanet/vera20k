@@ -3,7 +3,8 @@
 //! Native executable corpus: tools/spatial_oracle/fly_landing_phase.*.
 use super::{Simulation, display_layers::DisplayLayer};
 use crate::map::entities::EntityCategory;
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::intern::StringInterner;
@@ -120,6 +121,37 @@ impl Simulation {
         let _ = self.substrate.mission_commence_exact(id, frame);
     }
 
+    /// Fly takeoff (`0x004CE696..0x004CE6DF`) and landing (`0x004CE8AF`)
+    /// use height over the structural deck when the aircraft has reached it.
+    /// The stock landing branch also subtracts the rise for OnBridge owners.
+    /// GetHeight already uses the fixed deck for those owners.
+    pub(super) fn fly_bridge_relative_height(
+        entity: &crate::sim::game_entity::GameEntity,
+        terrain: Option<&ResolvedTerrainGrid>,
+        landing: bool,
+    ) -> i32 {
+        let mut height = air_movement::current_fly_height(entity, terrain);
+        if entity.on_bridge() && !landing {
+            return height;
+        }
+        let Some(terrain) = terrain else { return height };
+        let coord = ground_pose::position_world_coord(&entity.position);
+        let cells = NativeCellQuery::canonical(terrain);
+        let cell = cells.lookup_world(coord.x, coord.y);
+        if cells.flags(cell) & BRIDGE_FLAG_STRUCTURAL == 0 {
+            return height;
+        }
+        let rise = match ground_pose::corrected_deck_z(terrain, cell) {
+            Some(_) if entity.on_bridge() => return height,
+            Some(deck) => deck.wrapping_sub(ground_pose::query_ground_height(&cells, coord).unwrap_or(0)),
+            None => crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
+        };
+        if height >= rise {
+            height = height.wrapping_sub(rise);
+        }
+        height
+    }
+
     pub(super) fn apply_fly_landing_callback(
         &mut self,
         id: u64,
@@ -142,17 +174,7 @@ impl Simulation {
             .entities
             .get(id)
             .expect("admitted Fly landing");
-        let coord = ground_pose::position_world_coord(&entity.position);
-        let mut height = air_movement::current_fly_height(entity, self.resolved_terrain.as_ref());
-        let bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
-            let cell =
-                terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
-            terrain.native_cell_flags(cell) & 0x100 != 0
-        });
-        // Unlike takeoff,4CE8AF does not test the owner's OnBridge flag.
-        if bridge && height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS {
-            height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        }
+        let height = Self::fly_bridge_relative_height(entity, self.resolved_terrain.as_ref(), true);
         let object = self.interner.object_type(entity.type_ref(), rules);
         let dropship = object.is_some_and(|o| o.is_dropship);
         let carryall =
@@ -269,20 +291,16 @@ impl Simulation {
         }
         let coord = ground_pose::position_world_coord(&entity.position);
         //4CECAF queries the CURRENT cell again after refusal/effect callbacks.
-        let bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
-            let cell =
-                terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
-            terrain.native_cell_flags(cell) & 0x100 != 0
-        });
-        if bridge {
-            let ground = ground_pose::ground_surface_z_at(
-                [coord.x, coord.y],
-                false,
-                self.resolved_terrain.as_ref(),
-                None,
-            )
-            .unwrap_or(0);
-            if coord.z >= ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS) {
+        if let Some(terrain) = self.resolved_terrain.as_ref() {
+            let cells = NativeCellQuery::canonical(terrain);
+            let cell = cells.lookup_world(coord.x, coord.y);
+            if cells.flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0
+                && coord.z >= ground_pose::deck_surface_z(
+                    &cells,
+                    cell,
+                    ground_pose::query_ground_height(&cells, coord).unwrap_or(0),
+                )
+            {
                 self.substrate
                     .entities
                     .get_mut(id)
@@ -574,10 +592,9 @@ impl Simulation {
             .unwrap_or(0);
             if let Some(terrain) = self.resolved_terrain.as_ref() {
                 let identity = terrain.native_cell_identity((cell.0 as i16, cell.1 as i16));
-                if terrain.native_cell_flags(identity) & 0x100 != 0 {
-                    coord.z = coord
-                        .z
-                        .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+                let cells = NativeCellQuery::canonical(terrain);
+                if cells.flags(identity) & BRIDGE_FLAG_STRUCTURAL != 0 {
+                    coord.z = ground_pose::deck_surface_z(&cells, identity, coord.z);
                 }
             }
             Self::move_air_coordinate(
@@ -1130,6 +1147,36 @@ mod tests {
         assert!(fly(&sim).landing() && !fly(&sim).target_speed_is_zero());
         sim.apply_fly_landing_callback(1, &rules, &mut crate::sim::world::FrameEffects::default());
         assert!(fly(&sim).target_speed_is_zero());
+    }
+
+    #[test]
+    fn fly_descent_and_landing_use_the_fixed_deck_below_the_legacy_estimate() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/fly_landing_phase.json",
+        ))
+        .unwrap();
+        let mut row = rows
+            .into_iter()
+            .find(|row| row["input"]["name"] == "new_bridge_attachment")
+            .unwrap();
+        let deck_z = 8 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+        row["input"]["level"] = serde_json::json!(6);
+        row["before"]["coordinates"][2] = serde_json::json!(deck_z + 1);
+        let (mut sim, rules) = fixture(&row);
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        let cell = terrain.native_cell_identity((64, 64));
+        terrain.set_authored_high_bridge_deck(cell, 8);
+
+        let aircraft = sim.substrate.entities.get_mut(1).unwrap();
+        air_movement::update_fly_height(aircraft, Some(terrain), Some((&rules, &sim.interner)));
+        assert_eq!(aircraft.position.exact_z_leptons(), Some(deck_z));
+        assert!(aircraft.on_bridge());
+
+        sim.complete_fly_phase(1, &rules, None, &mut FrameEffects::default());
+        let aircraft = sim.substrate.entities.get(1).unwrap();
+        let fly = aircraft.locomotor.as_ref().unwrap().fly_runtime().unwrap();
+        assert!(!fly.landing());
+        assert_eq!(aircraft.position.exact_z_leptons(), Some(deck_z));
     }
 
     #[test]

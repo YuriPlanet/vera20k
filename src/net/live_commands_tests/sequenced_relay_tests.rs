@@ -526,6 +526,7 @@ fn sequenced_pair_paced(
             30,
             NonZeroU32::new(1).unwrap(),
             world_hash.wrapping_add(u64::from(source) * offset),
+            0,
             "",
             "",
         )
@@ -625,9 +626,12 @@ fn sequenced_agreement_mismatch_names_itself_in_the_match_report() {
 
 /// Under continuous pacing the same slow client slows the match to a whole
 /// rate under what it ran, not to the Game Speed row below it: both clients
-/// read the marker and pace at it, and the slow one keeps up.
+/// read the marker and pace at it, and the slow one catches up.
+///
+/// A step lowers the rate by at most a quarter, so 30 reaches 18 in two
+/// steps (30, 23, 18), and the slow client then drains what it fell behind by
+/// in the first one at the three frames a second it has to spare.
 #[test]
-#[ignore = "host-dependent: the count of slowdowns and the slow client's lag differ by machine (#4987)"]
 fn continuous_pacing_slows_both_clients_to_a_whole_rate() {
     use crate::net::live_commands::MatchSpeedChange;
     use crate::net::udp::CertificatePacing;
@@ -636,7 +640,7 @@ fn continuous_pacing_slows_both_clients_to_a_whole_rate() {
         sequenced_pair_paced(0, None, CertificatePacing::Continuous);
     let mut now_ms = 16_000;
     let mut changes = [Vec::new(), Vec::new()];
-    for step in 0..1200 {
+    for step in 0..2400 {
         now_ms += 16;
         service_pair(&mut worlds, &boundaries, now_ms);
         relay.pass(now_ms, |_| true);
@@ -653,7 +657,11 @@ fn continuous_pacing_slows_both_clients_to_a_whole_rate() {
     for (seen, boundary) in changes.iter().zip(&boundaries) {
         let rate = boundary.live.borrow().relay_frames_per_second().unwrap();
         assert!((16..=20).contains(&rate), "paced at {rate}");
-        assert_eq!(seen, &[MatchSpeedChange::SlowedBy(1)]);
+        assert!(
+            (1..=2).contains(&seen.len())
+                && seen.iter().all(|change| *change == MatchSpeedChange::SlowedBy(1)),
+            "speed changes {seen:?}"
+        );
     }
     let [fast, slow] = worlds
         .each_ref()

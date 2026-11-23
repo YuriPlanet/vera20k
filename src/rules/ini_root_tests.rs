@@ -24,6 +24,52 @@ fn custom_config() -> IniRootConfig {
     }
 }
 
+/// VERA: a network match of the original game that seats no computer reads
+/// the AI INI a retail install ships, whatever the game folder holds. One
+/// that seats a computer, a match off the network and a selected mod's read
+/// the folder's.
+#[test]
+fn a_network_match_without_computers_reads_the_original_ai_ini() {
+    use crate::assets::asset_manager::MediaArchiveMode;
+    use crate::assets::asset_manager::test_support::audio_test_install;
+    use crate::map::source::test_support::make_new_format_mix_bytes;
+    let dir = audio_test_install("match-ai-file");
+    let shipped = ai("ORIGINAL");
+    let local = make_new_format_mix_bytes(&[("aimd.ini", shipped.as_slice())]);
+    std::fs::remove_file(dir.path().join("localmd.mix")).unwrap();
+    std::fs::write(
+        dir.path().join("ra2md.mix"),
+        make_new_format_mix_bytes(&[("localmd.mix", &local)]),
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("aimd.ini"), ai("FOLDER")).unwrap();
+    let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let team = |file| {
+        crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
+            &assets,
+            &IniFile::empty(),
+            RulePolicy::stock_multiplayer(),
+            file,
+        )
+        .unwrap()
+        .team_types[0]
+            .id
+            .clone()
+    };
+    assert_eq!(match_ai_file(&assets, true, false), AiFile::Original);
+    assert_eq!(team(AiFile::Original), "TEAMORIGINAL");
+    assert_eq!(match_ai_file(&assets, true, true), AiFile::GameFolder);
+    assert_eq!(match_ai_file(&assets, false, false), AiFile::GameFolder);
+    assert_eq!(team(AiFile::GameFolder), "TEAMFOLDER");
+
+    let mod_dir = dir.path().join("mods-under-test").join("Ai");
+    std::fs::create_dir_all(&mod_dir).unwrap();
+    let modded =
+        AssetManager::with_mod(dir.path(), Some(&mod_dir), MediaArchiveMode::STOCK_DIGITAL)
+            .unwrap();
+    assert_eq!(match_ai_file(&modded, true, false), AiFile::GameFolder);
+}
+
 fn write_custom(dir: &TestDirectory) {
     dir.write(
         "rules-alt.ini",

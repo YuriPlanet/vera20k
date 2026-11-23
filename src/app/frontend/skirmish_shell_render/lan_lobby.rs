@@ -2,119 +2,61 @@
 //! NewEdit614B30, list619230 and scrollbar61C690. Discovery rows are UI views.
 
 use super::chrome::*;
-use super::controls::{ControlPaint, list_controls, paint_control, push_new_edit};
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
-use super::text::{button_text_rect, localized_label, rect_to_text_rect};
-use super::{
-    SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
-};
+use super::text::rect_to_text_rect;
+use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::render::shell_paint::{self, ModalButton, PaintLabel};
-use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
+use crate::render::shell_paint;
+use crate::render::shell_text::{self, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::lan_shell::{JOIN, PAGE};
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS};
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 use crate::util::time::Instant;
 
-/// LB row colors carry packed00BBGGRR; -1 means the ordinary yellow text.
-fn row_rgb(color: Option<u32>) -> [f32; 3] {
-    match color {
-        None | Some(u32::MAX) => SHELL_LABEL_TEXT_RGB,
-        Some(color) => [color as u8, (color >> 8) as u8, (color >> 16) as u8]
-            .map(|channel| f32::from(channel) / 255.0),
-    }
+/// Whether box button `id` shows pushed (612B70).
+fn box_pressed(state: &AppState, id: i32) -> bool {
+    let gui = state.frontend.shell_controller.gui();
+    gui.dialogs()
+        .last()
+        .and_then(|d| gui.find_id(gui.dialog_root(d)?, id))
+        .is_some_and(|node| gui.shows_pressed(node))
 }
 
-/// VERA's Create Game box (`LanShellRuntime::create`): the online box's art
-/// and buttons, with its room's limits.
+/// VERA's Create Game box (`LanShellRuntime::creating`): the online box's
+/// art, then its buttons and its room's limits as its widgets hold them.
 fn paint_create_box(
     state: &AppState,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
-    lobby: &crate::ui::lan_shell::LanLobbyState,
-    picker: &crate::ui::room_limits::RoomLimitsPicker,
     overlay: &mut ShellFrameOverlay,
 ) {
-    let layout = crate::ui::shell::modal::lan_create_game_layout(
-        state.render_width() as i32,
-        state.render_height() as i32,
-    );
-    let mut buttons = Vec::new();
-    let mut labels = Vec::new();
-    for (id, rect, key) in [(1, layout.ok, "GUI:OK"), (2, layout.cancel, "GUI:Cancel")] {
-        let pressed = lobby.buttons.is_pressed(id);
-        buttons.push(ModalButton {
-            rect,
-            pressed,
-            enabled: true,
-        });
-        labels.push(PaintLabel {
-            text: localized_label(state, key, key).into(),
-            rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
-            align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-            rgb: SHELL_LABEL_TEXT_RGB,
-            path_a_reveal: None,
-        });
-    }
-    let mut controls = Vec::new();
-    super::wol_lobby::paint_room_players(
+    use crate::app::shell_lan::{
+        CANCEL, MODAL, OK, ROOM_PLAYERS, ROOM_PLAYERS_CAPTION, ROOM_SPECTATORS,
+    };
+    let layout = crate::app::shell_lan::create_box_layout(state);
+    overlay.controls.extend(super::wol_lobby::online_box(
         atlas,
-        &mut controls,
-        &mut labels,
-        picker.limits.players,
-        layout.room.players,
-        ShellScale::RETAIL,
-    );
-    paint_control(
-        &mut controls,
-        &atlas.control_chrome(),
-        ControlPaint::Checkbox {
-            rect: layout.room.spectators,
-            checked: picker.limits.spectators,
-        },
-        ShellScale::RETAIL,
-    );
-    for (key, rect, align) in [
-        (
-            "VERA:MaxPlayers",
-            layout.room.players_label,
-            ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
-        ),
-        (
-            "VERA:AllowSpectators",
-            crate::ui::skirmish_shell::checkbox_text_rect(
-                layout.room.spectators,
-                ShellScale::RETAIL,
-            ),
-            ShellAlign::V_CENTER,
-        ),
-    ] {
-        labels.push(PaintLabel {
-            text: crate::i18n::tr(key).into(),
-            rect,
-            align,
-            rgb: SHELL_LABEL_TEXT_RGB,
-            path_a_reveal: None,
-        });
-    }
-    let draw = shell_paint::paint_modal_shp(
-        &state.renderer.bit_font,
-        atlas
-            .ra2_dialog_background
-            .or_else(|| atlas.mode_two_dialog_background(None)),
-        type3_button_frames(atlas),
         layout.dialog,
-        &buttons,
-        &labels,
-        ShellScale::RETAIL,
-        super::wol_lobby::POPUP_DEPTHS,
-    );
-    // The box first, then its controls.
-    overlay.controls.extend(draw.sprites);
-    overlay.controls.extend(controls);
-    overlay.texts.extend(draw.text);
+        layout.scale,
+    ));
+    let controller = &state.frontend.shell_controller;
+    let Some(root) = controller.root_in(MODAL) else {
+        return;
+    };
+    let ids = [
+        OK,
+        CANCEL,
+        ROOM_PLAYERS,
+        ROOM_PLAYERS_CAPTION,
+        ROOM_SPECTATORS,
+    ];
+    let style = super::gui_paint::GuiStyle::popup();
+    let widgets =
+        super::gui_paint::paint_gui_ids(state, controller.gui(), root, ids, layout.scale, style);
+    overlay.controls.extend(widgets.controls);
+    overlay.texts.extend(widgets.texts);
 }
 
 pub(crate) fn render_lan_lobby(
@@ -122,7 +64,7 @@ pub(crate) fn render_lan_lobby(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    crate::app::shell_lan::update_geometry(state);
+    crate::app::shell_lan::sync_gui(state);
     let now = Instant::now();
     let layout = crate::app::shell_lan::layout(state);
     let scale = layout.page.scale;
@@ -150,13 +92,9 @@ pub(crate) fn render_lan_lobby(
     let status = if sliding {
         None
     } else {
-        let help = state
-            .frontend
-            .lan
-            .as_ref()
-            .and_then(|runtime| runtime.lobby.buttons.hovered)
-            .and_then(crate::ui::lan_shell::tooltip_key)
-            .map(|key| localized_label(state, key, ""))
+        let gui = state.frontend.shell_controller.gui();
+        let help = crate::ui::shell::page::hovered_key(gui)
+            .map(|key| state.csf_label(key, ""))
             .unwrap_or_default();
         crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,
@@ -210,137 +148,99 @@ pub(crate) fn render_lan_lobby(
     };
     // VERA's Create Game box shows over the bare backdrop, as the online
     // lobby's does.
-    let creating = runtime.create.as_ref();
-    if !leaving && creating.is_none() {
-        for (key, rect) in layout.labels {
+    let gui = state.frontend.shell_controller.gui();
+    let root = state.frontend.shell_controller.root_in(PAGE.dialog);
+    if !leaving {
+        for (id, key) in crate::ui::lan_shell::LABELS {
             texts.push(text(
-                &localized_label(state, key, key),
-                rect,
+                &state.csf_label(key, key),
+                layout.rect(id).unwrap_or_default(),
                 ShellAlign::NONE,
                 SHELL_LABEL_TEXT_RGB,
             ));
         }
-        let chat_composition = state
-            .platform
-            .ime
-            .composition(crate::app::input::ime::ImeTarget::LanLobbyChat);
-        for (rect, edit, composition) in [
-            (layout.name, &lobby.name, None),
-            (layout.chat, &lobby.chat.edit, chat_composition),
-        ] {
-            push_new_edit(
-                &mut controls,
-                &mut texts,
-                atlas,
-                font,
-                edit,
-                composition,
-                rect,
-                lobby.enabled && lobby.caret_visible(now),
-                SHELL_LABEL_TEXT_RGB,
-                SHELL_CONTROL_TEXT_DEPTH,
-                scale,
-            );
-        }
-        paint_control(
-            &mut controls,
-            &atlas.control_chrome(),
-            ControlPaint::Checkbox {
-                rect: layout.observer_toggle,
-                checked: lobby.observer,
+        let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
+        // The column's buttons (left to the slide while it runs), the lists
+        // with their rows as their widgets hold them and the observer box.
+        let rows_of = |id: i32| -> Option<super::gui_paint::HostRows> {
+            let yellow = |text: String| (text, u32::MAX);
+            Some(match u16::try_from(id).ok()? {
+                GAMES => (0..lobby.game_count())
+                    .map(|index| match index.checked_sub(1) {
+                        None => yellow(state.csf_label("TXT_LOBBY", "Lobby")),
+                        Some(game) => {
+                            let game = &lobby.games[game];
+                            let format = state.csf_label(game.label_key(), game.label_key());
+                            yellow(format.replacen("%s", &game.name, 1))
+                        }
+                    })
+                    .collect(),
+                // Active BB has no custom columns: native registry record+F8
+                // is null (selected-game GUI probe).5DAFE0's4A8 color/side/status
+                // writes therefore return-1 in618D40; only the name is visible.
+                PLAYERS => lobby
+                    .players
+                    .iter()
+                    .map(|player| yellow(player.name.clone()))
+                    .collect(),
+                CHAT_LOG => {
+                    let line = |line: &crate::ui::lan_shell::LanChatLine| {
+                        (String::from_utf16_lossy(&line.text), line.color)
+                    };
+                    lobby.chat.lines.iter().map(line).collect()
+                }
+                _ => return None,
+            })
+        };
+        // The column's captions; Join reads Observe for an observer.
+        let text_of = |id: i32| {
+            let id = u16::try_from(id).ok()?;
+            let key = match id {
+                JOIN if observer => "GUI:Observe",
+                id => PAGE.button(id)?.csf_key,
+            };
+            Some(state.csf_label(key, key))
+        };
+        let enabled_of = |_| Some(lobby.enabled);
+        // An edit's caret blinks while it has BB's focus, under the message
+        // box too.
+        let controller = &state.frontend.shell_controller;
+        let caret_of = |node| lobby.enabled && controller.caret_visible_in(PAGE.dialog, node);
+        let style = super::gui_paint::GuiStyle {
+            caret_of: Some(&caret_of),
+            buttons: match sliding {
+                true => super::gui_paint::ButtonArt::Host,
+                false => super::gui_paint::ButtonArt::Panel,
             },
-            scale,
-        );
-        if let Some(entry) = atlas.lan_observer_toggle(lobby.observer) {
+            text_of: Some(&text_of),
+            enabled_of: Some(&enabled_of),
+            rows_of: Some(&rows_of),
+            control_lists: true,
+            ..Default::default()
+        };
+        if let Some(root) = root {
+            // The observer image paints as its art below, not as a box.
+            let skip = [crate::ui::lan_shell::OBSERVER_IMAGE];
+            let ids = super::gui_paint::child_ids_except(gui, root, &skip);
+            let paint = super::gui_paint::paint_gui_ids(state, gui, root, ids, scale, style);
+            controls.extend(paint.controls);
+            texts.extend(paint.texts);
+        }
+        if let Some(entry) = atlas.lan_observer_toggle(observer) {
             push_flag_entry_clipped_centered(
                 &mut controls,
                 entry,
-                layout.observer_image,
+                layout
+                    .rect(crate::ui::lan_shell::OBSERVER_IMAGE)
+                    .unwrap_or_default(),
                 scale,
                 SHELL_CONTROL_DEPTH,
             );
         }
-        let games = lobby
-            .game_list
-            .geometry(layout.games, lobby.game_count(), scale);
-        let players = lobby
-            .player_list
-            .geometry(layout.players, lobby.players.len(), scale);
-        let chat = lobby
-            .chat
-            .list
-            .geometry(layout.chat_log, lobby.chat.lines.len(), scale);
-        list_controls(&mut controls, atlas, games, &lobby.game_list, true, scale);
-        list_controls(
-            &mut controls,
-            atlas,
-            players,
-            &lobby.player_list,
-            true,
-            scale,
-        );
-        list_controls(&mut controls, atlas, chat, &lobby.chat.list, false, scale);
-        for (visible, index) in (lobby.game_list.top_index..lobby.game_count())
-            .take(games.visible_rows)
-            .enumerate()
-        {
-            let label = if index == 0 {
-                localized_label(state, "TXT_LOBBY", "Lobby")
-            } else {
-                let game = &lobby.games[index - 1];
-                localized_label(state, game.label_key(), game.label_key())
-                    .replacen("%s", &game.name, 1)
-            };
-            texts.push(text(
-                &label,
-                scale.derive_rect(games.row(visible), |rect| {
-                    RectPx::new(rect.x + 2, rect.y, rect.w - 4, rect.h)
-                }),
-                ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-            ));
-        }
-        for (visible, player) in lobby
-            .players
-            .iter()
-            .skip(lobby.player_list.top_index)
-            .take(players.visible_rows)
-            .enumerate()
-        {
-            let row = players.row(visible);
-            // Active BB has no custom columns: native registry record+F8
-            // is null (selected-game GUI probe).5DAFE0's4A8 color/side/status
-            // writes therefore return-1 in618D40; only the name is visible.
-            texts.push(text(
-                &player.name,
-                scale.derive_rect(row, |rect| {
-                    RectPx::new(rect.x + 2, rect.y, rect.w - 4, rect.h)
-                }),
-                ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-            ));
-        }
-        for (visible, line) in lobby
-            .chat
-            .lines
-            .iter()
-            .skip(lobby.chat.list.top_index)
-            .take(chat.visible_rows)
-            .enumerate()
-        {
-            texts.push(text(
-                &String::from_utf16_lossy(&line.text),
-                scale.derive_rect(chat.row(visible), |rect| {
-                    RectPx::new(rect.x + 2, rect.y, rect.w - 4, rect.h)
-                }),
-                ShellAlign::V_CENTER,
-                row_rgb(Some(line.color)),
-            ));
-        }
         if let Some(reveal) = title {
             texts.push(shell_text::draw_in_rect_path_a_scaled(
                 font,
-                &localized_label(state, PAGE.title_key, "Lobby"),
+                &state.csf_label(PAGE.title_key, "Lobby"),
                 rect_to_text_rect(layout.page.title),
                 ShellAlign::PANEL_TITLE,
                 [0.0; 2],
@@ -354,78 +254,41 @@ pub(crate) fn render_lan_lobby(
                 scale.factor(),
             ));
         }
-        if !sliding {
-            for button in &layout.page.buttons {
-                let pressed = lobby.buttons.is_pressed(button.id);
-                push_right_panel_button_shp(
-                    &mut art,
-                    atlas,
-                    button.rect,
-                    pressed,
-                    false,
-                    SHELL_CONTROL_DEPTH,
-                );
-                if let Some(spec) = PAGE.button(button.id) {
-                    let key = if button.id == JOIN && lobby.observer {
-                        "GUI:Observe"
-                    } else {
-                        spec.csf_key
-                    };
-                    texts.push(shell_text::draw_in_rect_scaled(
-                        font,
-                        &localized_label(state, key, key),
-                        button_text_rect(button.rect, pressed, scale),
-                        if lobby.enabled {
-                            SHELL_LABEL_TEXT_RGB
-                        } else {
-                            crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED
-                        },
-                        ShellAlign::BUTTON_CAPTION,
-                        [0.0; 2],
-                        SHELL_CONTROL_TEXT_DEPTH,
-                        scale.factor(),
-                    ));
-                }
-            }
-        }
-        texts.extend(crate::render::shell_paint::paint_labels_scaled(
+        texts.extend(shell_paint::paint_labels_scaled(
             font,
             &status.into_iter().collect::<Vec<_>>(),
             scale.factor(),
         ));
         if let Some(key) = runtime.modal {
-            let modal = crate::ui::shell::modal::body_ok_layout(width as i32, height as i32);
-            let pressed = lobby.buttons.is_pressed(1);
-            super::modals::push_validation_modal_instances(
-                &mut overlay.controls,
-                atlas,
-                &modal,
-                pressed,
+            use crate::app::shell_lan::{MODAL, OK};
+            let body = runtime
+                .modal_body
+                .clone()
+                .unwrap_or_else(|| state.csf_label(key, key));
+            let ok = state.csf_label("TXT_OK", "OK");
+            let notice = crate::ui::shell::modal::ShellBox::new(MODAL, body).button(OK, ok);
+            let pressed = box_pressed(state, OK.into());
+            let look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
+            let (sprites, texts) = (
+                Some(&mut overlay.controls),
+                Some((&mut overlay.texts, false)),
             );
-            overlay.texts.push(shell_text::draw_in_rect(
-                font,
-                &runtime.modal_body.clone().unwrap_or_else(|| {
-                    crate::i18n::label(state.process_assets.csf.as_ref(), key, key)
-                }),
-                rect_to_text_rect(modal.body),
-                SHELL_LABEL_TEXT_RGB,
-                super::text::validation_modal_body_text_align(),
-                [0.0; 2],
-                SHELL_DROPDOWN_TEXT_DEPTH - 0.00012,
-            ));
-            overlay.texts.push(shell_text::draw_in_rect(
-                font,
-                &localized_label(state, "TXT_OK", "OK"),
-                button_text_rect(modal.ok, pressed, ShellScale::RETAIL),
-                SHELL_LABEL_TEXT_RGB,
-                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                [0.0; 2],
-                SHELL_DROPDOWN_TEXT_DEPTH - 0.00013,
-            ));
+            let size = (width as i32, height as i32);
+            let pressed = |id| pressed && id == OK;
+            super::shell_box::push_skirmish_box(
+                state,
+                Some(atlas),
+                size,
+                &notice,
+                pressed,
+                look,
+                sprites,
+                texts,
+            );
         }
     }
-    if let Some(picker) = creating {
-        paint_create_box(state, atlas, lobby, picker, &mut overlay);
+    if runtime.creating {
+        paint_create_box(state, atlas, &mut overlay);
     }
     in_game_shell::render_shell_frame(
         state,

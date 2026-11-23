@@ -225,7 +225,7 @@ impl ProcessedRulesLayers {
                     RulesTypeFamily::Animation => ObjectImageKind::Animation,
                     _ => ObjectImageKind::Ordinary,
                 };
-                image.load_unowned_shp(kind, theater);
+                image.load_unowned_shp(kind, theater, None);
                 if family == RulesTypeFamily::Building {
                     if let Some((turret, barrel)) =
                         super::voxel_frame_catalog::building_voxel_read_names(&member.body)

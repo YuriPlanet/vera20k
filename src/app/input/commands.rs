@@ -101,7 +101,11 @@ pub(crate) fn cancel_build_by_type(state: &mut AppState, type_id: &str, all: boo
 }
 
 /// Stable id of the visible object selected by the tactical object picker.
-fn visible_object_under_point(state: &AppState, world_x: f32, world_y: f32) -> Option<u64> {
+pub(super) fn visible_object_under_point(
+    state: &AppState,
+    world_x: f32,
+    world_y: f32,
+) -> Option<u64> {
     let sim = state
         .match_state
         .sim_runtime

@@ -1,9 +1,9 @@
 //! Replays of real matches whose slow player the clock did not wait for.
 //!
-//! The relay is the real one; the players are models of the client's pace
-//! meter (`src/net/live_commands/sequenced.rs`, `PaceMeter`): each second a
-//! player runs the frames waiting for it, up to what its PC can, and reports
-//! KeepingUp, CatchingUp or Behind with what it ran and its tick cost.
+//! The relay is the real one, and so is the rule a player judges its pace by
+//! (`PaceLag`, as the game's pace meter does): each second a modelled player
+//! runs the frames waiting for it, up to what its PC can, and reports its pace
+//! with what it ran and its tick cost.
 //!
 //! The 2026-11-21 report (match 1e9fac21, 2 players and 12 AI at 60 Hz): one
 //! PC (GT 1030) ran about 55 frames a second, though its 90th-percentile tick
@@ -34,50 +34,6 @@ struct Outcome {
     late_rate: f32,
 }
 
-/// The client's pace meter, sampled once a second (`PaceMeter::report`).
-#[derive(Default)]
-struct Meter {
-    backlog_since: Option<u64>,
-    slow_windows: u8,
-}
-
-impl Meter {
-    fn report(&mut self, now_ms: u64, backlog: u32, ran: u32, rate: u16) -> OrderPace {
-        if backlog >= (u32::from(rate) / 8).max(4) {
-            self.backlog_since.get_or_insert(now_ms);
-        } else {
-            self.backlog_since = None;
-        }
-        self.slow_windows = if ran > 0 && ran < u32::from(rate) && self.backlog_since.is_some() {
-            self.slow_windows.saturating_add(1)
-        } else {
-            0
-        };
-        let lagging = self
-            .backlog_since
-            .is_some_and(|since| now_ms - since >= 2_000);
-        match (lagging, self.slow_windows >= 2) {
-            (false, _) => OrderPace::KeepingUp,
-            (true, true) => OrderPace::Behind,
-            (true, false) => OrderPace::CatchingUp,
-        }
-    }
-}
-
-fn long_client(key: &SecretKey, source: u8) -> ClientSession {
-    client_for(
-        key,
-        Ticket {
-            room: [5; 16],
-            source,
-            expires: 1200,
-            nonce: [source + 1; 16],
-            player: [source + 1; 16],
-            generation: 1,
-        },
-    )
-}
-
 /// Play `seconds` of a 60 Hz match between a fast player and `slow`.
 fn replay(slow: Player, seconds: u64) -> Outcome {
     replay_paced(slow, seconds, CertificatePacing::On)
@@ -85,22 +41,17 @@ fn replay(slow: Player, seconds: u64) -> Outcome {
 
 fn replay_paced(slow: Player, seconds: u64, pacing: CertificatePacing) -> Outcome {
     let key = SecretKey::new([73; 32]);
-    let mut server = RelayServer::new(key.clone(), 2);
-    let (mut fast_client, mut slow_client) = (long_client(&key, 0), long_client(&key, 1));
-    let cert = OrderingCertificate {
-        room: [5; 16],
-        sources_mask: 3,
-        tick_hz: 60,
-        expires: 3000,
-        pacing,
-        ordered_alone: false,
-    }
-    .sign(&key)
-    .unwrap();
-    for peer in [&mut fast_client, &mut slow_client] {
-        connect(&mut server, peer, 0);
-        configure(&mut server, peer, &cert, 0);
-    }
+    let (mut server, mut fast_client, mut slow_client) = paced_room_for(
+        &key,
+        OrderingCertificate {
+            room: [5; 16],
+            sources_mask: 3,
+            tick_hz: 60,
+            expires: 3000,
+            pacing,
+            ordered_alone: false,
+        },
+    );
     let fast = Player {
         capacity: |_| 400,
         tick_micros: 4_500,
@@ -108,8 +59,8 @@ fn replay_paced(slow: Player, seconds: u64, pacing: CertificatePacing) -> Outcom
     let mut late_frames = 0u64;
     let start = ordering(&server).starts_at.unwrap();
     let mut players = [
-        (fast, 0u32, Meter::default()),
-        (slow, 0u32, Meter::default()),
+        (fast, 0u32, PaceLag::default()),
+        (slow, 0u32, PaceLag::default()),
     ];
     let mut outcome = Outcome::default();
     let mut last_rate = ordering(&server).pace.rate;
@@ -128,11 +79,12 @@ fn replay_paced(slow: Player, seconds: u64, pacing: CertificatePacing) -> Outcom
         }
         let head = ordering(&server).head;
         let rate = ordering(&server).pace.rate;
-        for (index, (player, done, meter)) in players.iter_mut().enumerate() {
+        for (index, (player, done, lag)) in players.iter_mut().enumerate() {
             let ran = (head - *done).min((player.capacity)(second));
             *done += ran;
             let backlog = head - *done;
-            let pace = meter.report(now, backlog, ran, rate);
+            lag.observe(now as u32, backlog as usize, rate);
+            let pace = lag.classify(now as u32, ran as u16, rate);
             let client = if index == 0 {
                 &mut fast_client
             } else {
@@ -166,7 +118,6 @@ fn replay_paced(slow: Player, seconds: u64, pacing: CertificatePacing) -> Outcom
     outcome.slowdowns = counts.slowdowns;
     outcome.raises = counts.raises;
     outcome.late_rate = late_frames as f32 / (seconds - seconds * 4 / 5) as f32;
-    println!("{outcome:?}");
     outcome
 }
 
@@ -309,7 +260,12 @@ fn continuous_pacing_keeps_an_odd_rate_within_the_quarter_step() {
         tick_micros: 8_000,
     };
     let outcome = replay_paced(slow, 30, CertificatePacing::Continuous);
-    let first_rates: Vec<_> = outcome.rates.iter().take(3).map(|&(_, rate)| rate).collect();
+    let first_rates: Vec<_> = outcome
+        .rates
+        .iter()
+        .take(3)
+        .map(|&(_, rate)| rate)
+        .collect();
     assert_eq!(first_rates, [60, 45, 34]);
 }
 

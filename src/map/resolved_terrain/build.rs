@@ -1,7 +1,9 @@
 //! Map construction (Fill): materializing map cells into resolved terrain,
 //! TMP tile metadata, overlay classification and the height maps.
 
-use super::bridge_flags::apply_native_bridge_flag_stamp_to_parts;
+use super::bridge_flags::{
+    apply_native_bridge_flag_stamp_to_parts, refresh_runtime_bridge_projection,
+};
 use super::native_cell::native_resolved_cell_index;
 use super::tubes::build_auto_low_bridge_tubes;
 use super::*;
@@ -270,6 +272,7 @@ impl ResolvedTerrainGrid {
                 tile_burrowing_permissions: None,
                 dummy_accepts_smudge: false,
                 high_bridge_rim_tiles: None,
+                wood_bridge_rim_tiles: Default::default(),
                 bridge_set_start: None,
                 wood_bridge_set_start: None,
                 tile_animations: Vec::new(),
@@ -769,26 +772,55 @@ impl ResolvedTerrainGrid {
         // OverlayClass anchor is an allocated CellClass; its setter then walks
         // through MapClass lookups, so missing neighbors stamp/mutate the one
         // shared dummy rather than disappearing at the rectangular edge.
-        for overlay in projection
-            .is_eager()
-            .then_some(map.overlays.iter())
-            .into_iter()
-            .flatten()
-        {
-            let anchor_index = native_resolved_cell_index(
+        let authored_high_bridge_anchors =
+            if projection.is_eager() && overlay_load_source == OverlayLoadSource::Authored {
+                let resources = overlay_registry.zip(asset_manager).zip(theater_data);
+                let mut bridge_assets = [None; 256];
+                map.overlays
+                    .iter()
+                    .filter_map(|overlay| {
+                        let id = overlay.overlay_id;
+                        let stamp = crate::map::bridge_facts::high_bridge_stamp_for_overlay(id)?;
+                        // Match the authored reader's SHP/CellAnim gate (0x005FD446)
+                        // when assets are bound. Resource-free fixtures keep their
+                        // permissive eager projection.
+                        if let Some(((registry, assets), theater)) = resources
+                            && !*bridge_assets[usize::from(id)].get_or_insert_with(|| {
+                                registry
+                                    .flags(id)
+                                    .is_some_and(|flags| flags.cell_anim.is_some())
+                                    || registry.name(id).is_some_and(|name| {
+                                        crate::rules::effect_asset_catalog::load_overlay_shape(
+                                            assets,
+                                            registry,
+                                            name,
+                                            theater.extension,
+                                            &map.header.theater,
+                                        )
+                                        .is_some()
+                                    })
+                            })
+                        {
+                            return None;
+                        }
+                        Some(((overlay.rx, overlay.ry), stamp))
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+        for &((x, y), (family, direction)) in &authored_high_bridge_anchors {
+            if native_resolved_cell_index(
                 width,
                 height,
                 native_allocated.as_deref(),
                 cells.len(),
-                i32::from(overlay.rx),
-                i32::from(overlay.ry),
-            );
-            if overlay_load_source == OverlayLoadSource::Authored
-                && let Some((family, direction)) =
-                    crate::map::bridge_facts::high_bridge_stamp_for_overlay(overlay.overlay_id)
-                && anchor_index.is_some()
+                i32::from(x),
+                i32::from(y),
+            )
+            .is_some()
             {
-                let stamp = BridgeFlagStamp::new((overlay.rx, overlay.ry), direction, true);
+                let stamp = BridgeFlagStamp::new((x, y), direction, true);
                 let _ = apply_native_bridge_flag_stamp_to_parts(
                     &mut cells,
                     width,
@@ -807,25 +839,7 @@ impl ResolvedTerrainGrid {
             .into_iter()
             .flatten()
         {
-            let facts = cell.bridge_facts;
-            if facts.has_structural_bridge() {
-                cell.has_bridge_deck = true;
-                cell.bridge_walkable = !cell.terrain_object_blocks && !cell.overlay_blocks;
-                cell.bridge_deck_level = cell.level.saturating_add(4);
-            } else if facts.family != crate::map::bridge_facts::BridgeStampFamily::None
-                && cell
-                    .bridge_layer
-                    .as_ref()
-                    .is_some_and(|bl| bl.direction != BridgeDirection::Low)
-            {
-                cell.has_bridge_deck = false;
-                cell.bridge_walkable = false;
-                cell.bridge_deck_level = cell.level;
-            }
-
-            if facts.has_transition_flag() {
-                cell.bridge_transition = true;
-            }
+            refresh_runtime_bridge_projection(cell, false);
         }
 
         {
@@ -965,7 +979,7 @@ impl ResolvedTerrainGrid {
         let mut grid = Self {
             width,
             height,
-            level_span: LevelSpan::of(cells.iter().map(|cell| cell.level)),
+            level_span: LevelSpan::of_terrain(cells.iter()),
             cells: super::terrain_cells::TerrainCells::new(cells),
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Default::default(),
@@ -984,6 +998,7 @@ impl ResolvedTerrainGrid {
             tile_burrowing_permissions: None,
             dummy_accepts_smudge: false,
             high_bridge_rim_tiles: None,
+            wood_bridge_rim_tiles: Default::default(),
             bridge_set_start: None,
             wood_bridge_set_start: None,
             tile_animations,
@@ -1004,6 +1019,15 @@ impl ResolvedTerrainGrid {
                 .as_ref()
                 .map_or_else(Default::default, |s| s.selector()),
         );
+        if projection.is_eager() && overlay_load_source == OverlayLoadSource::Authored {
+            let decks =
+                grid.recover_authored_high_bridge_decks(authored_high_bridge_anchors, |_| true);
+            for ((x, y), deck) in decks {
+                if let Some(index) = grid.native_fixed_cell_index(x as i16, y as i16) {
+                    grid.set_authored_high_bridge_deck(NativeCellIdentity::Real(index), deck);
+                }
+            }
+        }
         grid
     }
 }
@@ -1666,6 +1690,22 @@ fn selector_free_map_cells(map: &MapFile, lookup: Option<&TilesetLookup>) -> Vec
             cell
         })
         .collect()
+}
+
+/// VERA: whether every tile `map`'s cells name, translated as a load
+/// translates them, has a file that `exists`. A map whose tiles all exist
+/// among the original game's plays on them (`map::theater::TerrainFiles`).
+pub fn map_tiles_exist(
+    map: &MapFile,
+    lookup: &TilesetLookup,
+    mut exists: impl FnMut(&str) -> bool,
+) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    selector_free_map_cells(map, Some(lookup))
+        .iter()
+        .map(|cell| cell.tile_index)
+        .filter(|&tile| tile != crate::map::theater::NO_TILE && tile != i32::from(u16::MAX))
+        .all(|tile| !seen.insert(tile) || lookup.filename(tile).is_some_and(&mut exists))
 }
 
 pub(super) fn materialize_map_load_cells(

@@ -118,6 +118,24 @@ struct ObservedParticipant {
     last_seen: u32,
 }
 
+/// VERA: an outside-data clamp. gamemd's receive adds each new name to its
+/// growable game list (`0x005E038F`); here a new sender is ignored while the
+/// list is full, listed rows keep refreshing, and the `0x005DB720` expiry frees
+/// rows. It bounds what each advertisement re-projects and compares.
+const MAX_LAN_GAMES: usize = 64;
+
+/// VERA: the same clamp for lobby player observations. A row is kept per sender
+/// and message kind, so a player sending both Presence and ParticipantDetails
+/// takes two.
+const MAX_LAN_PARTICIPANTS: usize = 256;
+
+/// VERA: rows one IPv4 address may hold in each table, so one machine sending
+/// from many ports cannot fill a table. A game binds the one LAN port, so an
+/// honest address holds one game and two observations; the rest is room for
+/// machines behind one address.
+const MAX_LAN_GAMES_PER_ADDRESS: usize = 4;
+const MAX_LAN_PARTICIPANTS_PER_ADDRESS: usize = 8;
+
 /// How long a player the host kicks from VERA's room is kept out of it.
 const KICK_KEEP_OUT_BUCKETS: u32 = super::match_runtime::frame_pacer::frame_bucket(5 * 60 * 1000);
 
@@ -489,7 +507,9 @@ impl LanService {
     /// (`0x005E018D..0x005E0233`) finds the row by name and moves its address
     /// only when the game turns open, so same-named hosts share one row; here
     /// each sender keeps its own row, and a rematch guest rejoins its original
-    /// host. The usual `0x005DB720` expiry retires stale entries.
+    /// host. The usual `0x005DB720` expiry retires stale entries, and a new
+    /// sender is ignored while [`MAX_LAN_GAMES`] are listed, or
+    /// [`MAX_LAN_GAMES_PER_ADDRESS`] from its address.
     fn record_advertised_game(
         &mut self,
         endpoint: SocketAddrV4,
@@ -505,11 +525,50 @@ impl LanService {
             record.name = name;
             record.open = open;
             record.last_seen = now;
-        } else {
+        } else if self.games.len() < MAX_LAN_GAMES
+            && self
+                .games
+                .iter()
+                .filter(|record| record.endpoint.ip() == endpoint.ip())
+                .count()
+                < MAX_LAN_GAMES_PER_ADDRESS
+        {
             self.games.push(DiscoveryRecord {
                 endpoint,
                 name,
                 open,
+                last_seen: now,
+            });
+        }
+    }
+
+    /// Keeps the latest message of its kind from each sender for BB's player
+    /// list; a new row is ignored while [`MAX_LAN_PARTICIPANTS`] are held, or
+    /// [`MAX_LAN_PARTICIPANTS_PER_ADDRESS`] from its address.
+    fn record_observed_participant(
+        &mut self,
+        endpoint: SocketAddrV4,
+        message: LanMessage,
+        now: u32,
+    ) {
+        if let Some(peer) = self
+            .observed_participants
+            .iter_mut()
+            .find(|peer| peer.endpoint == endpoint && peer.message.kind() == message.kind())
+        {
+            peer.message = message;
+            peer.last_seen = now;
+        } else if self.observed_participants.len() < MAX_LAN_PARTICIPANTS
+            && self
+                .observed_participants
+                .iter()
+                .filter(|peer| peer.endpoint.ip() == endpoint.ip())
+                .count()
+                < MAX_LAN_PARTICIPANTS_PER_ADDRESS
+        {
+            self.observed_participants.push(ObservedParticipant {
+                endpoint,
+                message,
                 last_seen: now,
             });
         }
@@ -1182,12 +1241,9 @@ pub(super) fn verify_setup_agreement(state: &mut AppState) -> anyhow::Result<()>
         }
     };
     if expected != actual {
-        // VERA: with the same build, say what this game changes.
-        let message = if expected.version == actual.version {
-            super::shell_network_setup::agreement::rules_differ_text(state)
-        } else {
-            crate::i18n::tr("VERA:LanClientsDiffer")
-        };
+        // VERA: say what this game changes. The build is the same: the join
+        // refuses another, and so does `options::admit_host_room`.
+        let message = super::shell_network_setup::agreement::rules_differ_text(state);
         reject_setup_compatibility(state, &message);
         anyhow::bail!("LAN selected-mode agreement mismatch");
     }
@@ -1567,7 +1623,8 @@ fn advance_departure(state: &mut AppState, now: u32, service_ok: bool) -> bool {
             let dialog = super::shell_network_setup::dialog(state);
             super::App::leave_shell_dialog(
                 state,
-                super::frontend::shell_transition::ShellExitThen::NetworkSetupBack(dialog),
+                crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
+                crate::app::shell_network_setup::commit_back,
             );
         }
         DepartureReason::Kicked => {
@@ -1738,12 +1795,13 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             return Ok(());
         }
         if let Some(chat) = message.in_game_chat_fields() {
-            super::input::chat::receive_packet(
-                state,
-                &message.name(),
+            let (name, color) = super::match_runtime::network_match::chat_sender(
+                &state.match_state.session,
+                incoming.source,
+                message.name(),
                 chat.color as i32,
-                &chat.text(),
             );
+            super::input::chat::receive_packet(state, &name, color, &chat.text());
             return Ok(());
         }
         if let Some(taunt) = message.in_game_taunt_fields() {
@@ -1957,34 +2015,14 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     crate::skirmish_launch::LaunchStartPosition::Position(u8::try_from(values[2])?)
                 };
                 choices.team = crate::skirmish_launch::LaunchTeam::from_shell_value(values[3]);
-                // A guest's own seat and team pick keep to the room's teams.
-                let mut observer = values[0] == -3;
-                let refused = state.match_state.session.admit_network_team(
-                    source,
-                    &mut choices,
-                    &mut observer,
-                );
-                let mut change = state
-                    .match_state
-                    .session
-                    .accept_lan_peer_choices(source, choices, observer)?;
-                change.options |= refused;
-                // A VERA room's guest who starts or stops watching changes
-                // rows: the roster, then the options, as WOL's R arm.
-                let mut deferred = Vec::new();
-                if change.roster && !options::publish_roster(state)? {
-                    deferred.push(super::shell_network_setup::NetworkSetupRequest::PublishRoster);
-                }
-                if change.options && !options::publish_options(state)? {
-                    deferred.push(super::shell_network_setup::NetworkSetupRequest::PublishOptions);
-                }
-                state
-                    .match_state
-                    .lan_service
-                    .as_mut()
-                    .ok_or_else(closed_visit)?
-                    .deferred_setup
-                    .extend(deferred);
+                super::shell_network_setup::service_event(
+                    state,
+                    super::shell_network_setup::NetworkSetupEvent::PlayerChoices {
+                        index: source,
+                        choices,
+                        observer: values[0] == -3,
+                    },
+                )?;
             }
         }
         LanPayload::ReadyToGo => {
@@ -2470,7 +2508,7 @@ pub(crate) fn campaign_host_source(state: &AppState) -> Option<usize> {
 
 pub(crate) enum CampaignControlSend {
     Immediate,
-    Queued(u64),
+    Queued(crate::net::global::GlobalBatch),
 }
 
 pub(crate) fn send_campaign_control(
@@ -2511,8 +2549,8 @@ pub(crate) fn send_campaign_control(
         }
         return Some(CampaignControlSend::Immediate);
     }
-    let discarded_at_enqueue = if let Some(live) = state.match_state.live_network.as_mut() {
-        live.enqueue_reliable_globals(&bytes, &endpoints)
+    let batch = if let Some(live) = state.match_state.live_network.as_mut() {
+        live.global_mut().send_reliable_batch(&bytes, &endpoints)
     } else {
         state
             .match_state
@@ -2520,9 +2558,10 @@ pub(crate) fn send_campaign_control(
             .as_mut()?
             .transport
             .as_mut()?
-            .enqueue_reliable_globals(&bytes, &endpoints)
+            .global_mut()
+            .send_reliable_batch(&bytes, &endpoints)
     }?;
-    Some(CampaignControlSend::Queued(discarded_at_enqueue))
+    Some(CampaignControlSend::Queued(batch))
 }
 
 fn receive_campaign_control(state: &mut AppState, incoming: GlobalMessage) -> anyhow::Result<()> {
@@ -2597,14 +2636,13 @@ fn drain_match_requests(state: &mut AppState) {
             }
             NetworkSendRequest::Chat { recipients, text } => {
                 // BC6's chat writes [0x7EEF2C] (0x0046E126).
-                let color = if state.match_state.session.cooperative_round().is_some() {
+                let session = &state.match_state.session;
+                let color = if session.cooperative_round().is_some() {
                     crate::ui::wol_chat::PUBLIC_COLOR as i32
                 } else {
-                    state
-                        .match_state
-                        .session
-                        .network_setup()
-                        .map_or(-2, |launch| launch.local_player().slot.color_shell_value())
+                    super::match_runtime::network_match::local_source(session).map_or(-2, |local| {
+                        super::match_runtime::network_match::participant_color(session, local)
+                    })
                 };
                 let game_name = active_game_name(state).unwrap_or_default();
                 if let Ok(message) =
@@ -2614,11 +2652,11 @@ fn drain_match_requests(state: &mut AppState) {
                 }
             }
             NetworkSendRequest::Taunt { recipients, byte } => {
-                let color = state
-                    .match_state
-                    .session
-                    .network_setup()
-                    .map_or(-2, |launch| launch.local_player().slot.color_shell_value());
+                let session = &state.match_state.session;
+                let color = super::match_runtime::network_match::local_source(session)
+                    .map_or(-2, |local| {
+                        super::match_runtime::network_match::participant_color(session, local)
+                    });
                 let game_name = active_game_name(state).unwrap_or_default();
                 if let Ok(message) =
                     LanMessage::in_game_taunt(&local_name(state), color as u32, &game_name, byte)

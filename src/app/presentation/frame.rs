@@ -81,6 +81,13 @@ pub(crate) struct ObjectRecord {
     pub(crate) body_frame_counter: crate::sim::animation::BodyFrameCounter,
     pub(crate) unit_firing_counter: crate::sim::animation::UnitFiringCounter,
     pub(crate) unit_death_counter: crate::sim::animation::UnitDeathCounter,
+    /// The Foot occupation enable (`+0x6B6`), which a still SHP Unit's body
+    /// image reads (`0x0073C6D5`).
+    pub(crate) foot_occupation_enabled: bool,
+    /// IsOnCarryall (`+0x424`): `UnitClass::DrawIt` draws a carried Unit's
+    /// body lower, and its SHP shadows higher, by
+    /// [`crate::app::presentation::instances::CARRIED_DROP_PIXELS`].
+    pub(crate) on_carryall: bool,
     pub(crate) turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
     pub(crate) health: crate::sim::combat::Health,
     pub(crate) veterancy: crate::sim::combat::veterancy::Veterancy,
@@ -126,6 +133,12 @@ pub(crate) struct ObjectRecord {
     answers: Answers,
     /// [`RenderPose::read`] at the committed binary frame.
     pub(crate) pose: RenderPose,
+    /// PrimaryFacing (`+0x388`) at the committed binary frame as an SHP
+    /// Unit's body draw reads it: through `FacingClass::Current @ 0x004C93D0`
+    /// (called at `0x0073C636`), or under Ares through its own copy
+    /// (`UnitClass_DrawSHP_FacingsA`, Ares.dll `0x10048064..0x10048102`).
+    /// The pose's `body` is SecondaryFacing for a Fly locomotor.
+    pub(crate) shp_body_facing: u16,
     /// Its tether redraws (`instances::tether_redraw`).
     pub(crate) tether_draw: TetherDraw,
     /// What placing it reads of the world.
@@ -162,6 +175,7 @@ struct Answers {
     #[cfg(feature = "phobos")]
     is_power_plant_enhancer_active: bool,
     emp_remaining: i32,
+    is_under_emp: bool,
     #[cfg(feature = "phobos")]
     shield: Option<crate::sim::shield::ShieldState>,
     #[cfg(feature = "phobos")]
@@ -191,6 +205,7 @@ impl Answers {
             #[cfg(feature = "phobos")]
             is_power_plant_enhancer_active: entity.is_power_plant_enhancer_active(),
             emp_remaining: entity.emp_remaining(),
+            is_under_emp: entity.is_under_emp(),
             #[cfg(feature = "phobos")]
             shield: entity.shield().cloned(),
             #[cfg(feature = "phobos")]
@@ -620,6 +635,8 @@ impl ObjectRecord {
             body_frame_counter: entity.body_frame_counter,
             unit_firing_counter: entity.unit_firing_counter,
             unit_death_counter: entity.unit_death_counter,
+            foot_occupation_enabled: entity.foot_occupation_enabled(),
+            on_carryall: entity.is_on_carryall(),
             turret_anim_frame: entity.turret_anim_frame,
             health: entity.health,
             veterancy: entity.veterancy,
@@ -695,6 +712,11 @@ impl ObjectRecord {
             hud,
             scene,
             pose,
+            shp_body_facing: if at.rules().ares() {
+                entity.body_facing_current_ares(at.binary_frame)
+            } else {
+                entity.body_facing_current(at.binary_frame)
+            },
             tether_draw,
         }
     }
@@ -818,6 +840,11 @@ impl ObjectRecord {
 
     pub(crate) fn emp_remaining(&self) -> i32 {
         self.answers.emp_remaining
+    }
+
+    /// vt+0x37C IsUnderEMP ([`GameEntity::is_under_emp`]).
+    pub(crate) fn is_under_emp(&self) -> bool {
+        self.answers.is_under_emp
     }
 
     /// `GameEntity::voxel_recoil`, which the pose holds.

@@ -370,14 +370,16 @@ impl Particle {
         type_id: ParticleTypeId,
         coords: IVec3,
         target: IVec3,
-        pt: &ParticleType,
+        rules: &crate::rules::ruleset::RuleSet,
         sim: &mut Simulation,
     ) -> Self {
+        let pt = rules.particle_type(type_id);
         let particle = Self::new_with_ground(type_id, coords, target, pt, sim, |sim, x, y| {
             spark_world::constructor_ground_height(sim, x, y)
         })
         .expect("particle construction requires supported ground facts");
         Simulation::reveal_particle(&mut sim.substrate, particle.stable_id);
+        sim.unlimbo_particle_alpha_shape(&particle, rules);
         particle
     }
 
@@ -1244,7 +1246,7 @@ mod tests {
             ParticleTypeId(0),
             IVec3::ZERO,
             IVec3::ZERO,
-            rules.particle_type(ParticleTypeId(0)),
+            &rules,
             &mut sim,
         );
         assert_eq!(particle.lifetime_remaining(), 0);
@@ -1266,7 +1268,7 @@ mod tests {
             ParticleTypeId(0),
             IVec3::new(0x800, 0x800, 0),
             IVec3::ZERO,
-            rules.particle_type(ParticleTypeId(0)),
+            &rules,
             &mut sim,
         );
         sim.scenario_rng = crate::sim::rng::SimRng::with_next_draws_for_test(&[0, 0, 0x8000_0000]);

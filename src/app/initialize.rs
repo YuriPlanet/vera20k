@@ -380,7 +380,7 @@ impl App {
                 }
                 Ok(config)
             });
-        let game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
+        let mut game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
         if let Some(config) = &game_config {
             crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
             crate::render::locomotor_visual::set_high_terrain_building_lift(
@@ -403,6 +403,16 @@ impl App {
             options_load.startup_shell_screen,
         );
         let options_profile = options_load.retained_profile;
+        // RA2 mode holds for the whole launch, as the mod does: the `-ra2`
+        // switch or the saved Options choice, before any archive or CSF opens.
+        if let Some(config) = game_config.as_mut() {
+            config.use_ra2_mode(
+                options_profile.ra2_mode && crate::ui::main_menu_dialogs::options::HAS_RA2_MODE,
+            );
+        }
+        if crate::util::ra2_launch::enabled() {
+            log::info!("RA2 mode for this start");
+        }
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
         personal_rules.set_building_production_queue(options_profile.building_production_queue);
@@ -513,10 +523,16 @@ impl App {
         // them at the edges the player scrolls against, where the system would
         // draw its own cursor over the game's. winit applies this to its own
         // set_fullscreen only, not to full screen from the title-bar button.
+        // The title bar draws no material of its own, so it shows the window's
+        // background, which `mac_title_bar::style` sets near black; the dark
+        // appearance keeps the window buttons and title text light on it.
         #[cfg(target_os = "macos")]
         {
             use winit::platform::macos::WindowAttributesExtMacOS;
-            window_attrs = window_attrs.with_borderless_game(true);
+            window_attrs = window_attrs
+                .with_borderless_game(true)
+                .with_titlebar_transparent(true)
+                .with_theme(Some(winit::window::Theme::Dark));
         }
         // Capture windows stay hidden, so only a visible session shows the icon.
         let window_icon = window_visible
@@ -558,8 +574,11 @@ impl App {
             window.set_visible(true);
         }
         #[cfg(target_os = "macos")]
-        if let Some(icon) = &window_icon {
-            icon.set_dock_icon();
+        {
+            super::mac_title_bar::style(&window);
+            if let Some(icon) = &window_icon {
+                icon.set_dock_icon();
+            }
         }
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
@@ -786,7 +805,7 @@ impl App {
                     &bit_font,
                     gpu.config.width,
                     gpu.config.height,
-                    options_profile.yr_original_style,
+                    options_profile.plays_yr_original_style(),
                 )
                 .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
                 .ok()
@@ -988,8 +1007,8 @@ impl App {
                     .as_ref()
                     .and_then(|config| config.profile.player_name())
                 {
-                    skirmish_shell_state.player_name_edit =
-                        crate::ui::skirmish_shell::PlayerNameEditState::with_name(profile_name);
+                    skirmish_shell_state.player_name =
+                        crate::ui::skirmish_shell::player_name_from_profile(profile_name);
                 }
                 crate::ui::skirmish_shell::repair_teams_for_selected_mode(
                     &mut skirmish_shell_state,
@@ -1055,8 +1074,16 @@ impl App {
                         music_player.is_some(),
                         sfx_player.is_some(),
                     );
+                // Player-supplied in-match music: read once at startup from
+                // <settings>/musics/music.ini. Any absence or error keeps the
+                // retail playlist; this is a VERA-only, data-gated extension.
+                let custom_music = game_config
+                    .as_ref()
+                    .and_then(|config| crate::audio::custom_music::load(&config.paths.musics_dir()));
+                let mut startup_theme = crate::audio::theme::ThemeRuntime::default();
+                startup_theme.set_custom_music(custom_music);
                 let mut startup_audio_runtime = crate::app::audio_runtime::AppAudioRuntime {
-                    theme: crate::audio::theme::ThemeRuntime::default(),
+                    theme: startup_theme,
                     service_clock: crate::audio::arbiter::AudioServiceClock::default(),
                     music_player,
                     sfx_player,
@@ -1148,17 +1175,15 @@ impl App {
                     in_game_menu: crate::ui::pause_menu::InGameMenuState::default(),
                     modal_latch: true,
                     pause_menu_has_saves: false,
-                    pause_menu_interaction: Default::default(),
+                    dialog_ui: Default::default(),
+                    connection_ui: Default::default(),
                     pause_menu_template: Default::default(),
                     internet_pause: Default::default(),
                     options_page: None,
                     options_page_category: None,
                     abort_secondary: Default::default(),
                     sound_dialog: None,
-                    abort_buttons: Default::default(),
-                    surrender_buttons: Default::default(),
-                    diplomacy: Default::default(),
-                    restate: Default::default(),
+                    diplomacy_page: Default::default(),
                     restate_text: String::new(),
                     saved_game_browser: None,
                     in_game_options: startup_in_game_options,
@@ -1175,6 +1200,7 @@ impl App {
                     placement_range_pulse: Default::default(),
                     superweapon_range_pulse: Default::default(),
                     detail: Default::default(),
+                    ares_fps_counter: false,
                     pixel_fx: Default::default(),
                     hidden_super_anims: Default::default(),
                     super_timer_blinks: Default::default(),
@@ -1278,6 +1304,7 @@ impl App {
             frontend: crate::app::frontend::state::FrontendState {
                 shell_dialog_background: None,
                 asset_import: Default::default(),
+                status_card: Default::default(),
                 campaign_speed_control: startup_options.campaign_speed_control,
                 external_launch: false,
                 external_launch_error: None,
@@ -1331,7 +1358,6 @@ impl App {
                 status_screen_drawn: false,
                 shell_first_paint_slide: None,
                 shell_slide_active_shell: None,
-                shell_slide_generation: 0,
                 shell_monitor: Default::default(),
                 shell_page_title: crate::ui::shell::static_reveal::PresentedKind1Static::new(
                     crate::ui::shell::static_reveal::HEADING_KIND1,
@@ -1367,18 +1393,10 @@ impl App {
                 wol_room_unranked: false,
                 wol_room_watching: Default::default(),
                 network_setup_protocol: None,
-                wol_welcome_art: None,
-                wol_login_art: None,
-                wol_lobby_art: None,
-                wol_options_art: None,
-                wol_auto_login_art: None,
-                wol_my_info_art: None,
-                wol_buddy_art: None,
-                wol_quick_match_art: None,
+                wol_art: Vec::new(),
                 wol_buddies: Default::default(),
                 wol_test_buddies: crate::app::shell_wol::test_service_buddies(),
                 wol_test_guest: Default::default(),
-                wol_sound_options_art: None,
                 wol_lobby_globals: Default::default(),
                 wol_preferences: Default::default(),
                 score_page: None,

@@ -164,6 +164,7 @@ fn invalid_roster_context_and_initial_seed_are_explicit_failures() {
             30,
             NonZeroU32::new(5).unwrap(),
             0,
+            0,
             "",
             "",
         )

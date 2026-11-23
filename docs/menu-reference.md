@@ -65,8 +65,9 @@ Launch
     │   └─ Game room (see below)
     │
     ├─ WW Online
-    │   ├─ Sign-in: Username【[VERA] OnlineName】, Password, Remember password【Account.json】, Play, Back
-    │   │   └─ Popups: Create Account → verification code; Forgot Password → reset password; Delete Account
+    │   ├─ Entry: Play as Guest (a generated GuestNNNNN name, no account), Sign In and Play
+    │   │   └─ Sign In and Play → Sign-in: Username【[VERA] OnlineName】, Password, Remember password【Account.json】, Play, Back
+    │   │       └─ Popups: Create Account → verification code; Forgot Password → reset password; Delete Account
     │   └─ Online lobby
     │       ├─ Games list, players list (click opens the player card), Name/Ping sort, Refresh, Observe checkbox, chat, Emote
     │       ├─ Create Game: room name, password, max players, allow spectators, limit screen resolution, ranked game, lobby watching (Delayed/Off/Live) (all this run only)

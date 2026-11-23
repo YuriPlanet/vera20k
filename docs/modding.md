@@ -135,11 +135,14 @@ A mod is an external data package. VERA20k reads its files and never runs its
 executables, DLLs or launcher. A manifest selects resources and supported extensions;
 it does not install new engine code.
 
+A mod's own terms still apply. Some authors don't allow their mod in other engines:
+check a mod's terms before you use it here. VERA20k doesn't support such mods.
+
 | What you can put in a mod's folder | What it does |
 | --- | --- |
 | A file named the same as a game file, such as `rulesmd.ini` or a `.shp` | Replaces the game's copy. It must be directly in the mod's folder, not in a subfolder. |
 | An archive named `expandmd50.mix` | Replaces the game's copies of the files inside it, except the ones in `langmd.mix` and `language.mix`, which the original game reads first. An Ares game reads the expansion archives before those two as well. The number can be 00 to 99, and higher numbers win. `[Archives]` can select another expansion prefix. An archive with the same name as one in the game folder takes that archive's place. |
-| `ares.mix` | With the Ares setting on Auto, a selected mod mounting this file becomes an [Ares](ares.md) game. It mounts after expansion archives and before the game's own. Its `ares.csf` and `ares_<language>.csf` add text. A mod can also declare an Ares requirement without shipping this archive. |
+| `ares.mix` | With the Ares setting on Auto, a selected mod mounting this file becomes an [Ares](ares.md) game. It mounts after expansion archives and before the game's own. Its `ares.csf` and `ares_<language>.csf` add text, and so do `stringtable00.csf` to `stringtable99.csf` in the mod, later files replacing a label's earlier text. A text written `NOSTR:text` where the game expects a label, such as `UIName=NOSTR:Heavy Tank`, shows as written. A mod can also declare an Ares requirement without shipping this archive. |
 | An archive whose name starts with `ecache` or `elocal`, such as `ecachemd01.mix` | Adds the files inside it, as the original game does. All `ecache` archives load before all `elocal` ones, each group by name. They load after the `expandmd` archives and the game's main, cache and local archives, which keep a file name they share, and before the game's art, cameo and theater archives, whose copies they replace. |
 | Maps | Adds them to the map list while the mod is in use. |
 | Only INI files the game doesn't read, such as an AI another author made | Adds them to the map of every Skirmish and online match. See [Add to every map](#add-to-every-map). |
@@ -250,8 +253,8 @@ The folder name is only the choice saved by the menu. Its loading rules come fro
 
 An extracted CnCNet client folder can go straight into `Mods`. Put the folder
 containing `Resources/ClientDefinitions.ini` and the game archives there, then
-choose it as above. VERA uses its `MPMapsPath` catalog and can recognize one
-complete renamed Rules, Art and AI family in its numbered MIX files. A folder
+choose it as above. VERA uses its `MPMapsPath` catalog. A client whose files
+use other names declares them in `mod.ini`; VERA doesn't guess them. A folder
 that ships the Ares DLL and its injection list uses VERA's own Ares reader.
 VERA also uses the client theme's `splashScreen.png` and skirmish lobby
 background when present. It reads the configured `BackgroundTexture` from
@@ -262,7 +265,7 @@ This import opens offline Skirmish with the supported maps and modes. It applies
 their plain mode INIs and uses VERA's game options. Client-only forced settings,
 random maps, campaigns specific to the client, and multiplayer through the
 imported catalog are outside this path. An explicit loading section in
-`mod.ini` takes precedence over discovery.
+`mod.ini` takes precedence over the client folder's files.
 
 The menu keeps your choice in `config.toml`, as a `mod` line under `[paths]`, and makes
 the file beside the program if there is none yet. You can write the line yourself:
@@ -304,7 +307,9 @@ a folder that is already there, and your original game isn't changed.
 Pick a mod in the Mods menu and press **Check Files**. The game reads every file in the
 mod's folder and tells you how many there are and their **code**, such as `4F2A-91C3`.
 For a mod distributed in parts, this checks the assembled files.
-Two copies with the same code hold the same compared data files. Also keep their
+Two copies with the same code hold the same compared data files: the code leaves out what
+[playing with others](#playing-with-others) leaves out, such as a translated `.csf`, though
+the list and the count name every file. Also keep their
 `mod.ini` loading declarations in sync; the display metadata can differ.
 
 A mod can carry a list of its files, `mod-files.txt`. With one, Check Files also says
@@ -449,16 +454,24 @@ If you write a map editor or tool, the [map format](map-format.md) has the detai
 ## Playing with others
 
 A match starts only if everyone has the same VERA20k version and build, the same map, and
-the same selected Rules, Art and AI, theater INIs (such as `snowmd.ini`) and
-terrain tiles. **Terrain Deformation**, the **Superweapon Limit** and the **Building
+the same selected Rules, Art and AI. **Terrain Deformation**, the **Superweapon Limit** and the **Building
 Production Queue** don't need to match: a room plays its host's, and a match a launcher
 starts plays without the queue. With a mod in use,
-everyone also needs the same files in the mod's folder: every file there is compared by
-its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`. The folder's own name
+everyone also needs the same theater INIs (such as `snowmd.ini`) and terrain tiles, and the same
+files in the mod's folder: every file there is compared by
+its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`, and except files that
+only show, play or tell you something: text (`.csf`), fonts (`.fnt`), movies (`.bik`, `.vqa`), pictures
+only a screen draws (`.pcx`, `.png`, `.jpg`, `.jpeg`, `.bmp`, `.gif`, `.ico`, `mouse.sha`) and documents
+(`.txt`, `.md`, `.pdf`, `.rtf`, `.htm`, `.html`, `.url`, `.log`). So a mod with its text translated plays
+with the original. Sounds, music, palettes and every `.mix` archive are still compared. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what
-the file holds. Terrain tiles you put in the game folder itself, such as `clear01.sno` or
-an `isosnomd.mix`, are compared with the original game's, because they decide how high the
-ground is and where units can go. Other pictures and sounds there aren't compared.
+the file holds. Terrain tiles decide how high the ground is and where units can go, so a
+mod's are compared with the original game's. Without a mod, terrain files you put in the game
+folder itself, such as `clear01.sno`, an `isosnomd.mix` or a tile pack in `expandmd06.mix`,
+are left out of an online match on a map that uses only the original game's tiles: every
+player's game reads the original terrain there. A map that uses other tiles needs everyone
+to have the same terrain files, and the match says so when it starts. Other pictures and
+sounds there aren't compared.
 Players who don't have your map are asked whether to download it when they join your
 online room. When a match can't start because the files differ, each player's game says
 what it changes from the original game (its mod, or files such as a loose `rulesmd.ini`),
@@ -467,8 +480,9 @@ or that it plays the original, so the difference is in another player's game.
 Quick Match pairs you with anyone on the same VERA20k version, so it plays the original
 game, without anyone's Terrain Deformation, Superweapon Limit or Building Production Queue. With a mod in use it tells
 you to pick **No mod** in the Mods menu first. It also names
-any files in the game folder that change the original rules or terrain tiles, such as a
-loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left there.
+any files in the game folder that change the original rules, such as a
+loose `rulesmd.ini`, or an `expandmd99.mix` an old mod left there. Terrain files there
+don't matter: its matches read the original terrain.
 
 ## Sharing your mod
 

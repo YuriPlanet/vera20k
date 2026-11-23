@@ -1,20 +1,27 @@
 //! Add Mod collects the parts of one mod, then prepares them off the UI thread.
 //! Only the open dialog can make the finished folder visible in Mods.
+//!
+//! Its boxes are [`ShellBox`]es in VERA's [`Footer`] arrangement. While the
+//! parts are previewed, More, Move Up and Move Down stand over the footer and
+//! a `List` node of the box's dialog holds the ordered parts: the gui owns its
+//! selection, top and scrollbar; [`Selection`] keeps them while a box is
+//! rebuilt.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
+use crate::app::frontend::state::ShellMessageBoxPurpose;
 use crate::app::mod_import_picker;
 use crate::i18n::{tr, tr_fill};
-use crate::ui::main_menu_dialogs::ShellMessageBoxLabels;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::list::{ListBoxState, ListMetrics};
-use crate::ui::shell::modal::{MessageBoxLayout, ModalResult};
+use crate::ui::shell::modal::{BoxParts, Footer, ShellBox, control};
 use crate::util::mod_package::{ModImport, PreparedModImport};
 use crate::util::time::{Duration, Instant};
+use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ROW_HEIGHT, ShellListGeometry};
+use vera20k_gui::{NodeId, NodeKind, Prop, Value};
 
 use super::{App, AppState};
 
@@ -29,17 +36,39 @@ pub(crate) enum Dialog {
 pub(crate) struct Selection {
     plan: Option<ModImport>,
     // The plan owns the parts. These labels give the scrollable preview their order.
-    rows: ListBoxState<String>,
+    rows: Vec<String>,
+    /// The list's selected row and top, kept while its box is rebuilt.
+    selected: Option<usize>,
+    top: usize,
     can_browse: bool,
     choosing_kind: bool,
     error: Option<String>,
 }
 
+const ADD_MORE: u16 = 0x7E37;
+const MOVE_UP: u16 = 0x7E38;
+const MOVE_DOWN: u16 = 0x7E39;
+
+/// Every Add Mod box: More over OK, the reorder buttons over the third
+/// button and Cancel.
+const FOOTER: &[(u16, u16)] = &[
+    (ADD_MORE, control::OK),
+    (MOVE_UP, control::THIRD),
+    (MOVE_DOWN, control::CANCEL),
+];
+
+/// The parts list shows seven rows.
+const LIST_ROWS: i32 = 7;
+/// The row text's inset on each side, in 800x600 pixels.
+const ROW_TEXT_INSET: i32 = 4;
+
 impl Selection {
     fn new() -> Self {
         Self {
             plan: None,
-            rows: ListBoxState::new(Vec::new(), None),
+            rows: Vec::new(),
+            selected: None,
+            top: 0,
             can_browse: mod_import_picker::available(),
             choosing_kind: false,
             error: None,
@@ -59,7 +88,7 @@ impl Selection {
         if paths.is_empty() {
             return;
         }
-        let selected = self.rows.selected.and_then(|index| {
+        let selected = self.selected.and_then(|index| {
             self.plan
                 .as_ref()?
                 .parts()
@@ -94,24 +123,23 @@ impl Selection {
         let Some(plan) = self.plan.as_ref() else {
             return;
         };
-        self.rows.rows = plan
+        self.rows = plan
             .parts()
             .filter_map(|path| path.file_name())
             .enumerate()
             .map(|(index, name)| format!("{}. {}", index + 1, name.to_string_lossy()))
             .collect();
-        self.rows.selected = (selected < self.rows.rows.len()).then_some(selected);
-        self.rows.scroll.cancel();
+        self.selected = (selected < self.rows.len()).then_some(selected);
     }
 
     fn move_target(&self, id: u16) -> Option<(usize, usize)> {
-        let from = self.rows.selected?;
+        let from = self.selected?;
         let to = match id {
             MOVE_UP => from.checked_sub(1)?,
             MOVE_DOWN => from + 1,
             _ => return None,
         };
-        (to < self.rows.rows.len()).then_some((from, to))
+        (to < self.rows.len()).then_some((from, to))
     }
 
     fn move_selected(&mut self, id: u16) -> bool {
@@ -137,7 +165,9 @@ impl Selection {
         ));
     }
 
-    fn labels(&self) -> ShellMessageBoxLabels {
+    /// The box: its question and buttons, and in the preview More and the
+    /// reorder buttons, each greyed where it has nothing to do.
+    fn shell_box(&self) -> ShellBox {
         let cancel = tr(if self.choosing_kind {
             "VERA:ModImportBack"
         } else {
@@ -165,13 +195,36 @@ impl Selection {
         } else {
             (tr("VERA:ModsOpenFolder"), String::new(), cancel)
         };
-        ShellMessageBoxLabels {
-            title,
-            confirm,
-            third,
-            cancel,
+        let mut shell_box = import_box(ShellBox::message(title, confirm, cancel, third), self.previewing());
+        if self.previewing() {
+            if self.can_browse {
+                shell_box = shell_box.button(ADD_MORE, tr("VERA:ModImportMore"));
+            }
+            for (id, label) in [
+                (MOVE_UP, "VERA:ModImportMoveUp"),
+                (MOVE_DOWN, "VERA:ModImportMoveDown"),
+            ] {
+                shell_box = shell_box
+                    .button(id, tr(label))
+                    .disabled(id, self.move_target(id).is_none());
+            }
         }
+        shell_box
     }
+}
+
+/// `shell_box` in Add Mod's arrangement, with room for the parts `list`.
+fn import_box(shell_box: ShellBox, list: bool) -> ShellBox {
+    shell_box.footer(Footer {
+        list,
+        raised: FOOTER,
+    })
+}
+
+/// Whether `id` is one of the preview's own buttons, which act inside the
+/// box ([`App::activate_mod_import_button`]).
+pub(crate) fn is_preview_button(id: u16) -> bool {
+    matches!(id, ADD_MORE | MOVE_UP | MOVE_DOWN)
 }
 
 #[derive(Debug)]
@@ -199,200 +252,213 @@ fn preview(state: &AppState) -> Option<&Selection> {
     }
 }
 
-pub(crate) fn visible_parts(state: &AppState) -> Option<&ListBoxState<String>> {
-    preview(state).map(|selection| &selection.rows)
-}
-
-const ADD_MORE: u16 = 0x7E37;
-const MOVE_UP: u16 = 0x7E38;
-const MOVE_DOWN: u16 = 0x7E39;
-
-pub(crate) struct PreviewButton {
-    pub(crate) id: u16,
-    pub(crate) rect: RectPx,
-    pub(crate) label: &'static str,
-    pub(crate) enabled: bool,
-}
-
-/// Add and reorder buttons use the row above the install actions.
-pub(crate) fn preview_buttons(
-    state: &AppState,
-    layout: MessageBoxLayout,
-) -> impl Iterator<Item = PreviewButton> + '_ {
-    preview(state).into_iter().flat_map(move |selection| {
-        [
-            (ADD_MORE, Some(layout.ok), "VERA:ModImportMore", true),
-            (
-                MOVE_UP,
-                layout.third,
-                "VERA:ModImportMoveUp",
-                selection.move_target(MOVE_UP).is_some(),
-            ),
-            (
-                MOVE_DOWN,
-                layout.cancel,
-                "VERA:ModImportMoveDown",
-                selection.move_target(MOVE_DOWN).is_some(),
-            ),
-        ]
-        .into_iter()
-        .filter_map(move |(id, rect, label, enabled)| {
-            if id == ADD_MORE && !selection.can_browse {
-                return None;
-            }
-            Some(PreviewButton {
-                id,
-                rect: layout.scale.derive_rect(rect?, |rect| {
-                    RectPx::new(rect.x, rect.y - rect.h - 6, rect.w, rect.h)
-                }),
-                label,
-                enabled,
-            })
-        })
-    })
-}
-
-/// Most of the panel is for the ordered parts. The actions are along its footer.
-pub(crate) fn layout(base: MessageBoxLayout, has_parts: bool) -> MessageBoxLayout {
-    const INSET: i32 = 24;
-    let derive = |f: fn(RectPx) -> RectPx| base.scale.derive_rect(base.dialog, f);
-    let body = derive(|dialog| {
-        RectPx::new(
-            dialog.x + INSET,
-            dialog.y + INSET,
-            dialog.w - 2 * INSET,
-            dialog.h - 3 * INSET,
-        )
-    });
-    let button = base.scale.base_rect(base.ok);
-    let place = |slot| {
-        base.scale.derive_rect(base.dialog, |dialog| {
-            let x = match slot {
-                0 => INSET,
-                1 => (dialog.w - button.w) / 2,
-                _ => dialog.w - INSET - button.w,
-            };
-            RectPx::new(
-                dialog.x + x,
-                dialog.y + dialog.h - INSET - button.h,
-                button.w,
-                button.h,
-            )
-        })
-    };
-    MessageBoxLayout {
-        body: if has_parts {
-            base.scale
-                .derive_rect(body, |rect| RectPx::new(rect.x, rect.y, rect.w, 66))
-        } else {
-            body
-        },
-        ok: place(if base.cancel.is_some() { 0 } else { 2 }),
-        third: base.third.map(|_| place(1)),
-        cancel: base.cancel.map(|_| place(2)),
-        ..base
-    }
-}
-
-pub(crate) fn list_rect(layout: MessageBoxLayout) -> RectPx {
-    layout.scale.derive_rect(layout.body, |body| {
-        RectPx::new(
-            body.x,
-            body.y + body.h + 8,
-            body.w - 1,
-            7 * crate::ui::shell::list::ROW_HEIGHT + 1,
-        )
-    })
-}
-
-fn preview_mut(state: &mut AppState) -> Option<(&mut Selection, MessageBoxLayout)> {
-    let kind = state.frontend.shell_message_box.as_ref()?.labels.kind();
-    let layout = crate::app::frontend::shell_layout::shell_message_box_layout(state, kind);
+fn preview_mut(state: &mut AppState) -> Option<&mut Selection> {
     let ShellMessageBoxPurpose::ModImport(dialog) =
         &mut state.frontend.shell_message_box.as_mut()?.purpose
     else {
         return None;
     };
     match dialog.as_mut() {
-        Dialog::Select(selection) if selection.previewing() => Some((selection, layout)),
+        Dialog::Select(selection) if selection.previewing() => Some(selection),
         _ => None,
     }
 }
 
-pub(super) fn pointer_button(state: &mut AppState, pressed: bool) -> bool {
-    let (x, y) = state.match_state.input.cursor_px();
-    let Some((selection, layout)) = preview_mut(state) else {
-        return false;
+/// The parts list under the body, the body's width, seven rows high.
+fn list_rect(layout: &BoxParts) -> RectPx {
+    let list = layout.scale.derive_rect(layout.body, |body| {
+        RectPx::new(
+            body.x,
+            body.y + body.h + 8,
+            body.w - 1,
+            LIST_ROWS * ROW_HEIGHT + 1,
+        )
+    });
+    RectPx::new(list.x, list.y, list.w + 1, list.h + 1)
+}
+
+/// The open preview's box layout and dialog.
+fn preview_box(state: &AppState) -> Option<(&Selection, BoxParts, DialogResourceId)> {
+    let selection = preview(state)?;
+    let shell_box = &state.frontend.shell_message_box.as_ref()?.shell_box;
+    let layout = crate::app::frontend::shell_layout::shell_box_parts(state, shell_box);
+    Some((selection, layout, shell_box.dialog))
+}
+
+/// The preview box's `List` node, if built.
+fn list_node(state: &AppState, dialog: DialogResourceId) -> Option<NodeId> {
+    let controller = &state.frontend.shell_controller;
+    let gui = controller.gui();
+    let children = gui.tree().children(controller.root_in(dialog)?).ok()?;
+    children
+        .iter()
+        .copied()
+        .find(|node| gui.tree().kind(*node) == Ok(NodeKind::List))
+}
+
+/// Builds the preview's parts list in its box once (with no id, so the
+/// box's buttons still build), from the selection's rows, selected row and
+/// top, the selected row in view; keeps it on its rect and row count.
+pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
+    let (selection, layout, dialog) = preview_box(state)?;
+    let rect = list_rect(&layout);
+    let (rows, selected, top) = (selection.rows.len(), selection.selected, selection.top);
+    let scale = layout.scale;
+    let built = list_node(state, dialog);
+    let controller = &mut state.frontend.shell_controller;
+    // The list's metrics follow the box's scale, as its paint does.
+    controller.set_scale_in(dialog, scale);
+    let root = controller.root_in(dialog)?;
+    let gui = controller.gui_mut();
+    let int = |v: usize| Value::Int(i32::try_from(v).unwrap_or(i32::MAX));
+    let node = match built {
+        Some(node) => node,
+        None => {
+            let node = gui.create(NodeKind::List, Some(root)).ok()?;
+            let _ = gui.set(node, Prop::RowCount, int(rows));
+            let _ = gui.set(node, Prop::Rect, Value::Rect(rect));
+            let _ = gui.set(node, Prop::Top, int(top));
+            let _ = gui.set(node, Prop::Selected, selected.map_or(Value::Int(-1), int));
+            if let Some(row) = selected {
+                let _ = gui.ensure_row_visible(node, row);
+            }
+            node
+        }
     };
-    let parts = &mut selection.rows;
-    if !pressed {
-        parts.scroll.cancel();
-        return false;
+    let _ = gui.set(node, Prop::RowCount, int(rows));
+    let _ = gui.set(node, Prop::Rect, Value::Rect(rect));
+    Some(node)
+}
+
+/// The selection's own change of its rows or selected row: the list takes
+/// them and shows the selected row.
+fn push_selection(state: &mut AppState) {
+    let Some(node) = sync(state) else {
+        return;
+    };
+    let Some(selection) = preview(state) else {
+        return;
+    };
+    let int = |v: usize| Value::Int(i32::try_from(v).unwrap_or(i32::MAX));
+    let selected = selection.selected;
+    let gui = state.frontend.shell_controller.gui_mut();
+    let _ = gui.set(node, Prop::Selected, selected.map_or(Value::Int(-1), int));
+    if let Some(row) = selected {
+        let _ = gui.ensure_row_visible(node, row);
     }
-    let list = list_rect(layout);
+    follow_list(state);
+}
+
+/// After an input on the open preview: the selection keeps the list's
+/// selected row and top, and the reorder buttons grey where they have
+/// nothing to move.
+pub(crate) fn follow_list(state: &mut AppState) {
+    let Some((_, _, dialog)) = preview_box(state) else {
+        return;
+    };
+    let view = list_node(state, dialog)
+        .and_then(|node| state.frontend.shell_controller.gui().list_view(node));
+    let Some(message) = state.frontend.shell_message_box.as_mut() else {
+        return;
+    };
+    let ShellMessageBoxPurpose::ModImport(dialog) = &mut message.purpose else {
+        return;
+    };
+    let Dialog::Select(selection) = dialog.as_mut() else {
+        return;
+    };
+    if let Some(view) = view {
+        selection.selected = view.selected;
+        selection.top = view.top;
+    }
+    for id in [MOVE_UP, MOVE_DOWN] {
+        let disabled = selection.move_target(id).is_none();
+        if let Some(button) = message.shell_box.buttons.iter_mut().find(|b| b.id == id) {
+            button.enabled = !disabled;
+        }
+    }
+}
+
+/// What the open preview's list paints: its geometry, its rows, top and
+/// selected row, and the scrollbar part shown pushed.
+pub(crate) struct PartsView<'a> {
+    pub(crate) geometry: ShellListGeometry,
+    pub(crate) rows: &'a [String],
+    pub(crate) top: usize,
+    pub(crate) selected: Option<usize>,
+    pub(crate) pressed: Option<ListScrollPart>,
+    /// Each row's text inset, in 800x600 pixels.
+    pub(crate) text_inset: i32,
+}
+
+pub(crate) fn parts_view(state: &AppState) -> Option<PartsView<'_>> {
+    let (selection, layout, dialog) = preview_box(state)?;
+    let view = list_node(state, dialog)
+        .and_then(|node| state.frontend.shell_controller.gui().list_view(node));
+    let top = view.map_or(selection.top, |view| view.top);
+    let selected = view.map_or(selection.selected, |view| view.selected);
     let metrics = ListMetrics::scaled(layout.scale);
-    if parts.scroll_press(list, metrics, x, y, Instant::now()) {
-        return true;
-    }
-    let geometry = parts.geometry(list, metrics);
-    let row_end = parts.rows.len().min(parts.top + geometry.visible_rows);
-    if let Some(index) = geometry.row_at(row_end, parts.top, x, y) {
-        parts.selected = Some(index);
-        state.platform.window.request_redraw();
-        return true;
-    }
+    Some(PartsView {
+        geometry: ShellListGeometry::new(list_rect(&layout), selection.rows.len(), top, metrics),
+        rows: &selection.rows,
+        top,
+        selected,
+        pressed: view.and_then(|view| view.pressed),
+        text_inset: ROW_TEXT_INSET,
+    })
+}
+
+/// The box's own input reaches the parts list through the gui; this only
+/// makes sure the list is there first. Never takes the press itself.
+pub(super) fn pointer_button(state: &mut AppState, _pressed: bool) -> bool {
+    sync(state);
     false
 }
 
-fn reveal_selection(selection: &mut Selection, layout: MessageBoxLayout) {
-    let parts = &mut selection.rows;
-    if let Some(index) = parts.selected {
-        let geometry = parts.geometry(list_rect(layout), ListMetrics::scaled(layout.scale));
-        let first = index.saturating_sub(geometry.visible_rows.saturating_sub(1));
-        parts.top = parts.top.clamp(first, index).min(geometry.max_top);
-    }
-}
-
+/// The cursor drags a captured thumb and moves on or off a held arrow.
 pub(super) fn cursor_moved(state: &mut AppState) {
-    let (x, y) = state.match_state.input.cursor_px();
-    let Some((selection, layout)) = preview_mut(state) else {
+    let Some(node) = sync(state) else {
         return;
     };
-    let parts = &mut selection.rows;
-    let top = parts.top;
-    parts.scroll_pointer_moved(list_rect(layout), ListMetrics::scaled(layout.scale), x, y);
-    if top != parts.top {
-        state.platform.window.request_redraw();
+    let controller = &state.frontend.shell_controller;
+    if controller
+        .top_id()
+        .and_then(|top| controller.pressed_node_in(top))
+        != Some(node)
+    {
+        return;
     }
+    let (x, y) = state.match_state.input.cursor_px();
+    let controller = &mut state.frontend.shell_controller;
+    controller.on_pointer_move(x, y);
+    controller.drain_events();
+    follow_list(state);
 }
 
+/// Three rows a wheel notch.
 pub(super) fn wheel(state: &mut AppState, lines: f32) {
-    let Some((selection, layout)) = preview_mut(state) else {
+    let Some(node) = sync(state) else {
         return;
     };
-    let parts = &mut selection.rows;
-    let max_top = parts
-        .geometry(list_rect(layout), ListMetrics::scaled(layout.scale))
-        .max_top;
-    parts.top = (parts.top as i32 - (lines * 3.0) as i32).clamp(0, max_top as i32) as usize;
+    let controller = &mut state.frontend.shell_controller;
+    let now = controller.now();
+    let gui = controller.gui_mut();
+    let _ = gui.set(node, Prop::WheelStep, Value::Int(1));
+    gui.wheel_list(node, (lines * 3.0) as i32, now);
+    gui.drain_events();
+    follow_list(state);
     state.platform.window.request_redraw();
 }
 
+/// A held arrow's repeat; the deadline of the next one.
 fn poll_scroll(state: &mut AppState) -> Option<Instant> {
-    let (x, y) = state.match_state.input.cursor_px();
-    let (selection, layout) = preview_mut(state)?;
-    let parts = &mut selection.rows;
-    let changed = parts.scroll_poll(
-        list_rect(layout),
-        ListMetrics::scaled(layout.scale),
-        x,
-        y,
-        Instant::now(),
-    );
-    let next = parts.scroll.repeat_at();
-    if changed {
-        state.platform.window.request_redraw();
-    }
+    sync(state)?;
+    let window = &state.platform.window;
+    let next = state
+        .frontend
+        .shell_controller
+        .poll_then(|| window.request_redraw());
+    follow_list(state);
     next
 }
 
@@ -415,24 +481,23 @@ impl App {
     }
 
     fn show_import_selection(state: &mut AppState, selection: Selection) {
-        let labels = selection.labels();
-        Self::show_import_box(state, labels, Dialog::Select(selection));
-        if let Some((selection, layout)) = preview_mut(state) {
-            reveal_selection(selection, layout);
-        }
+        let shell_box = selection.shell_box();
+        Self::show_import_box(state, shell_box, Dialog::Select(selection));
+        // A new box's list shows the selected row.
+        sync(state);
     }
 
-    fn show_import_box(state: &mut AppState, labels: ShellMessageBoxLabels, dialog: Dialog) {
-        Self::open_shell_message_box(
-            state,
-            ShellMessageBox {
-                labels,
-                purpose: ShellMessageBoxPurpose::ModImport(Box::new(dialog)),
-            },
-        );
+    /// `shell_box` for `dialog`, in place of any box already open.
+    fn show_import_box(state: &mut AppState, shell_box: ShellBox, dialog: Dialog) {
+        if state.frontend.shell_message_box.is_some() {
+            Self::close_shell_message_box_from_controller(state);
+        }
+        let purpose = ShellMessageBoxPurpose::ModImport(Box::new(dialog));
+        Self::open_shell_message_box(state, shell_box, purpose);
     }
 
     pub(super) fn mod_import_drop(state: &mut AppState, path: PathBuf) {
+        follow_list(state);
         let Some(message) = state.frontend.shell_message_box.as_mut() else {
             return;
         };
@@ -442,37 +507,39 @@ impl App {
         let Dialog::Select(selection) = dialog.as_mut() else {
             return;
         };
-        let old_kind = message.labels.kind();
         selection.add([path]);
-        message.labels = selection.labels();
-        if old_kind != message.labels.kind()
-            && let Some(message) = state.frontend.shell_message_box.take()
-        {
+        let shell_box = selection.shell_box();
+        let ids = |shell_box: &ShellBox| -> Vec<u16> {
+            shell_box.buttons.iter().map(|button| button.id).collect()
+        };
+        // Other buttons make another box; the same ones keep it, and its list.
+        if ids(&shell_box) == ids(&message.shell_box) {
+            message.shell_box = shell_box;
+            push_selection(state);
+        } else if let Some(message) = state.frontend.shell_message_box.take() {
             Self::close_shell_message_box_from_controller(state);
-            Self::open_shell_message_box(state, message);
-        }
-        if let Some((selection, layout)) = preview_mut(state) {
-            reveal_selection(selection, layout);
+            Self::open_shell_message_box(state, shell_box, message.purpose);
+            sync(state);
         }
         state.platform.window.request_redraw();
     }
 
     pub(super) fn activate_mod_import_button(state: &mut AppState, id: u16) {
-        let Some((selection, layout)) = preview_mut(state) else {
+        follow_list(state);
+        let Some(selection) = preview_mut(state) else {
             return;
         };
         if id != ADD_MORE {
             if selection.move_selected(id) {
-                reveal_selection(selection, layout);
+                push_selection(state);
                 state.platform.window.request_redraw();
             }
             return;
         }
-        let Some(ShellMessageBox {
-            purpose: ShellMessageBoxPurpose::ModImport(dialog),
-            ..
-        }) = state.frontend.shell_message_box.take()
-        else {
+        let Some(message) = state.frontend.shell_message_box.take() else {
+            return;
+        };
+        let ShellMessageBoxPurpose::ModImport(dialog) = message.purpose else {
             return;
         };
         let Dialog::Select(mut selection) = *dialog else {
@@ -487,28 +554,26 @@ impl App {
         }
     }
 
-    pub(super) fn answer_mod_import(state: &mut AppState, dialog: Dialog, result: ModalResult) {
+    /// The box's answer: 0 its first button, 1 Cancel (and Enter or
+    /// Escape), 2 the third.
+    pub(super) fn answer_mod_import(state: &mut AppState, dialog: Dialog, answer: usize) {
         state.platform.window.request_redraw();
         let Dialog::Select(mut selection) = dialog else {
             return;
         };
         if selection.previewing() {
-            if let ModalResult::MessageBox(action @ (0 | 2)) = result
+            if let action @ (0 | 2) = answer
                 && let Some(plan) = selection.plan.take()
             {
                 Self::prepare_mod_import(state, plan, action == 0);
             }
             return;
         }
-        match result {
-            ModalResult::MessageBox(0) if selection.can_browse => {
-                Self::browse_mod_parts(state, selection, false);
-            }
-            ModalResult::MessageBox(0) => Self::open_mods_folder(state),
-            ModalResult::MessageBox(2) if selection.choosing_kind() => {
-                Self::browse_mod_parts(state, selection, true);
-            }
-            ModalResult::MessageBox(1) if selection.choosing_kind => {
+        match answer {
+            0 if selection.can_browse => Self::browse_mod_parts(state, selection, false),
+            0 => Self::open_mods_folder(state),
+            2 if selection.choosing_kind() => Self::browse_mod_parts(state, selection, true),
+            1 if selection.choosing_kind => {
                 selection.choosing_kind = false;
                 Self::show_import_selection(state, selection);
             }
@@ -556,14 +621,10 @@ impl App {
             Self::mod_import_failed(state, anyhow::anyhow!("The import worker could not start"));
             return;
         };
+        let shell_box = ShellBox::message(title, tr("VERA:Cancel"), String::new(), String::new());
         Self::show_import_box(
             state,
-            ShellMessageBoxLabels {
-                title,
-                confirm: tr("VERA:Cancel"),
-                third: String::new(),
-                cancel: String::new(),
-            },
+            import_box(shell_box, false),
             Dialog::Preparing(Preparation { play, stop, result }),
         );
     }
@@ -593,7 +654,8 @@ impl App {
 
     fn mod_imported(state: &mut AppState, folder: String, play: bool) {
         Self::select_installed_mod(state, &folder);
-        if play && state.frontend.mods.switch_to().is_some() {
+        let selected = Self::mods_selected(state);
+        if play && state.frontend.mods.switch_to(selected).is_some() {
             Self::answer_mod_restart(state, Some(folder), true);
             return;
         }
@@ -602,7 +664,7 @@ impl App {
             .mods
             .page
             .as_ref()
-            .and_then(|page| page.selected.and_then(|row| page.rows.get(row)));
+            .and_then(|rows| selected.and_then(|row| rows.get(row)));
         let name = row.map_or_else(|| folder.clone(), |row| row.title().into_owned());
         let added = tr_fill("VERA:ModImported", &[("mod", &name)]);
         let title = if let Some(needs) = row.and_then(|row| row.needs.as_ref()) {
@@ -622,15 +684,7 @@ impl App {
     }
 
     fn mod_import_notice(state: &mut AppState, title: String) {
-        Self::show_import_box(
-            state,
-            ShellMessageBoxLabels {
-                title,
-                confirm: Self::csf_label(state, "TXT_OK", "OK"),
-                cancel: String::new(),
-                third: String::new(),
-            },
-            Dialog::Notice,
-        );
+        let ok = state.csf_label("TXT_OK", "OK");
+        Self::show_import_box(state, import_box(ShellBox::notice(title, ok), false), Dialog::Notice);
     }
 }

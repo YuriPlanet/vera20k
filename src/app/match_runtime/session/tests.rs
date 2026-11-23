@@ -793,6 +793,34 @@ fn endpoint_bindings_follow_admitted_participants_and_source_compaction() {
 }
 
 #[test]
+fn match_chat_shows_the_sending_endpoints_admitted_name_and_colour() {
+    use crate::app::match_runtime::network_match::chat_sender;
+    use std::net::{Ipv4Addr, SocketAddrV4};
+    let mut launch = network_fixture();
+    // Longer than the packet's 19-byte name field.
+    let host = "TwentyTwoCharacterName";
+    launch.humans[0].name = host.into();
+    launch.humans[0].slot.color_index = 5;
+    let mut session = MatchSession::default();
+    session.enter_network(super::NetworkReturnContext::Wol);
+    session
+        .accept_network_setup(launch, false, None, false)
+        .unwrap();
+    let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30_001);
+    session.bind_network_endpoint(host, endpoint).unwrap();
+    // The packet names the other player, in that player's colour.
+    assert_eq!(
+        chat_sender(&session, endpoint, "Guest".into(), 2),
+        (host.to_owned(), 5)
+    );
+    let stranger = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30_002);
+    assert_eq!(
+        chat_sender(&session, stranger, "Guest".into(), 2),
+        ("Guest".to_owned(), 2)
+    );
+}
+
+#[test]
 fn network_freeze_keeps_guest_identity_seed_and_return_context_through_loading() {
     use super::NetworkReturnContext;
     for (mode, context) in [

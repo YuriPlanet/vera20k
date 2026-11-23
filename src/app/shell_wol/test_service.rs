@@ -33,6 +33,7 @@ use super::{WolProvider, WolServiceRequest, service_event};
 use crate::app::AppState;
 use crate::app::match_runtime::session::SessionMode;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
+use crate::app::shell_route::ShellRoute;
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{
     EX_INFO_VERSION, GAME_CHANNEL, MEMBER_OPERATOR, MEMBER_VOICE, WolChannel, WolMember,
@@ -94,7 +95,7 @@ fn pending(state: &AppState) -> bool {
 /// guest's leave and, as the joined game's host, the guest's choices.
 fn setup_requests(state: &mut AppState) -> Vec<NetworkSetupRequest> {
     if state.match_state.session_mode() != SessionMode::Wol
-        || !(state.frontend.shell_route.network_setup()
+        || !(state.frontend.shell_route == ShellRoute::NetworkSetup
             || super::lobby::visiting(state)
             || crate::app::shell_network_setup::quick_match(state))
     {
@@ -381,6 +382,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         WolServiceRequest::Connect { .. } => WolServiceEvent::Login(Ok(WolLoginAccepted {
             motd: crate::i18n::tr(MOTD),
             lobby_visits: true,
+            campaign_rooms: false,
         })),
         WolServiceRequest::ListChannels { kind, .. } => WolServiceEvent::Channels {
             kind,

@@ -88,8 +88,17 @@ impl Simulation {
         else {
             return false;
         };
-        let floor = (ground as i32).wrapping_add(if on_bridge { 0x1a0 } else { 0 });
-        let level = terrain.cells()[index].level;
+        let ground_level = terrain.cells()[index].level;
+        let (floor, level) = if on_bridge {
+            (
+                crate::sim::movement::ground_pose::deck_surface_z(&query, cell, ground as i32),
+                terrain
+                    .corrected_high_bridge_deck_at(cell)
+                    .map_or_else(|| ground_level.wrapping_add(4), |deck| deck as u8),
+            )
+        } else {
+            (ground as i32, ground_level)
+        };
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
@@ -129,7 +138,7 @@ impl Simulation {
                 CrewUnlimbo::Exact {
                     rx: packed.0 as u16,
                     ry: packed.1 as u16,
-                    z: level.wrapping_add(u8::from(on_bridge) * 4),
+                    z: level,
                     raw_z: Some(floor),
                     sub_x,
                     sub_y,

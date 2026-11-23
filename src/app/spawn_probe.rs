@@ -603,7 +603,7 @@ pub(crate) fn run_desktop(
     ares: Option<crate::util::ares_launch::AresSetting>,
 ) -> Result<ProbeReport> {
     let config = crate::util::config::GameConfig::load()?;
-    let config = match ra2_dir {
+    let mut config = match ra2_dir {
         Some(directory) => config.with_retail_directory(
             directory
                 .canonicalize()
@@ -611,6 +611,8 @@ pub(crate) fn run_desktop(
         )?,
         None => config,
     };
+    // RA2 mode as startup takes it: `-ra2` or VERA.INI's choice.
+    config.use_ra2_mode(existing_ra2_mode(config.paths.settings_dir()));
     let personal_rules = existing_personal_rules(config.paths.settings_dir())?;
     let ares = ares.unwrap_or_else(|| existing_ares_setting(config.paths.settings_dir()));
     let map = map
@@ -650,6 +652,17 @@ pub(crate) fn existing_ares_setting(settings_dir: &Path) -> crate::util::ares_la
     )
     .retained_profile
     .ares
+}
+
+/// The player's RA2 Mode choice as startup reads it from VERA.INI.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) fn existing_ra2_mode(settings_dir: &Path) -> bool {
+    crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
+        settings_dir,
+        &Default::default(),
+    )
+    .retained_profile
+    .ra2_mode
 }
 
 /// The player's Options switches as startup reads them from VERA.INI.
@@ -1021,7 +1034,7 @@ mod tests {
         // by its folder in `Mods`.
         let parts = serde_json::to_value(&report.rules_parts).unwrap();
         assert_eq!(
-            parts["settings"]["resources"]["roots"][9],
+            parts["settings"]["resources"]["roots"][3],
             "custom-modes.ini"
         );
         assert_eq!(parts["settings"]["mod"]["title"], "Catalog");

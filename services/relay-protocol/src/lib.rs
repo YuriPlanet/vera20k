@@ -40,7 +40,8 @@ pub use sequenced::watch::{
 pub use sequenced::{
     ABSENT_MS, CHECKSUM_INTERVAL, CONTINUOUS_FLOOR, CertificatePacing, FRAME_RATES,
     MAX_FRAME_BATCHES, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace,
-    OrderStatus, OrderingCertificate, admits_rate, paced_rates, turn_frames, turn_ms,
+    OrderStatus, OrderingCertificate, PaceLag, SUSTAIN_PERCENT, admits_rate, paced_rates,
+    turn_frames, turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -145,6 +146,14 @@ impl Ticket {
             return Err(RelayError::Malformed);
         }
         Ok(ticket)
+    }
+
+    /// The same player in the same match seat; a hop renewal keeps it.
+    fn same_identity(&self, other: &Self) -> bool {
+        self.room == other.room
+            && self.source == other.source
+            && self.player == other.player
+            && self.generation == other.generation
     }
 
     /// Cloudflare and native test clients use this same fixed byte layout.
@@ -388,16 +397,12 @@ impl ClientSession {
         _payload_key: [u8; 32],
     ) -> Result<Self, RelayError> {
         let mut next = Self::new(ticket, packet_key, [0; 32])?;
-        if next.ticket.room != self.ticket.room
-            || next.ticket.source != self.ticket.source
-            || next.ticket.player != self.ticket.player
-            || next.ticket.generation != self.ticket.generation
+        if !next.ticket.same_identity(&self.ticket)
             || next.ticket.nonce == self.ticket.nonce
             || next.ticket.expires <= self.ticket.expires
         {
             return Err(RelayError::Authentication);
         }
-        next.ordering = self.ordering.clone();
         next.federation = self.federation.clone();
         next.stream_transport = self.stream_transport;
         Ok(next)
@@ -471,7 +476,7 @@ impl ClientSession {
         )?;
         self.sent = sequence;
         if kind != HELLO {
-            self.hop_sent(self.sent);
+            self.hop_sent(self.sent, kind != PING);
         }
         Ok(())
     }
@@ -760,7 +765,6 @@ struct Peer {
     session: u32,
     endpoint: SocketAddrV4,
     sent: u64,
-    last_seen: u64,
     // After its LEAVE the hop accepts only LEAVE, until this second
     // (spec §6.2 "释放").
     left_until: Option<u64>,
@@ -768,8 +772,9 @@ struct Peer {
     link: link::ReaderLink,
 }
 
-/// A hop whose ticket expired: it accepts only LEAVE until `until`, unix
-/// seconds (spec §6.2 "释放").
+/// A hop that accepts only LEAVE until `until`, unix seconds (spec §6.2
+/// "释放"), set by `park_session`: a player's whose ticket expired or a
+/// renewal replaced, or a watcher's that left, was renewed or lost its place.
 struct LeavingHop {
     ticket: Ticket,
     key: SecretKey,
@@ -815,6 +820,14 @@ struct Room {
     federation: Option<sequenced::federation::Federation>,
     // Read-only hops apart from the players (README "Watchers").
     watchers: Vec<sequenced::watch::Watcher>,
+}
+
+impl Room {
+    /// Nothing is left to keep the room for. One that still holds watchers
+    /// waits for `prune`, whose `drop_watchers` parks their sessions for Leave.
+    fn vacant(&self) -> bool {
+        self.peers.is_empty() && self.ordering.is_none() && self.watchers.is_empty()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1005,7 +1018,7 @@ impl RelayServer {
         now_millis: u64,
     ) -> Result<Vec<ForwardDatagram>, RelayError> {
         // Rooms reserve their fair parts of this second before any budget.
-        self.prune(now);
+        self.prune(now, now_millis);
         // Relay-wide budgets are charged only after authentication and the
         // sender's own limits, so forged, junk or replayed datagrams cannot
         // spend capacity other players need. Rejecting one before any budget
@@ -1022,19 +1035,23 @@ impl RelayServer {
             self.session_incoming(header, bytes, now)?
         };
         // Watchers never reach a player's path (README "Watchers").
-        if message.ticket.source == sequenced::watch::WATCH_SOURCE {
-            return if matches!(message.kind, HELLO | CONFIRM) {
-                self.watch_handshake(source, &message, now, now_millis)
-            } else {
-                self.watch_datagram(source, &message, now, now_millis)
-            };
+        let watching = message.ticket.source == sequenced::watch::WATCH_SOURCE;
+        if watching && matches!(message.kind, HELLO | CONFIRM) {
+            return self.watch_handshake(source, &message, now, now_millis);
         }
         if message.kind == CONTROL && message.payload == [sequenced::LEAVE_REQUEST] {
-            return self.ordering_leave(source, &message, now, now_millis);
+            return if watching {
+                self.watch_leave(source, &message, now)
+            } else {
+                self.ordering_leave(source, &message, now, now_millis)
+            };
         }
         // A leaving hop accepts only LEAVE (spec §6.2 "释放").
         if leaving {
             return Err(RelayError::Unregistered);
+        }
+        if watching {
+            return self.watch_datagram(source, &message, now, now_millis);
         }
         // Only the authenticated room needs a fresh boundary before a
         // submission. The socket loop advances every room independently.
@@ -1089,7 +1106,6 @@ impl RelayServer {
         }
         admission.packets.charge(now, 1);
         self.ingress.charge_part(&mut room.ingress, 1);
-        room.peers[index].last_seen = now;
         if let Some(ordering) = room.ordering.as_mut() {
             ordering.heard(
                 message.ticket.source,
@@ -1105,7 +1121,9 @@ impl RelayServer {
         } else {
             room.peers
                 .iter()
-                .filter(|peer| data_recipient(peer, message.ticket.source, message.target, now))
+                .filter(|peer| {
+                    data_recipient(peer, message.ticket.source, message.target, now_millis)
+                })
                 .count()
         };
         let packet_bytes = envelope::OVERHEAD
@@ -1151,7 +1169,7 @@ impl RelayServer {
         }
         let mut output = Vec::with_capacity(recipients);
         for peer in &mut room.peers {
-            if data_recipient(peer, message.ticket.source, message.target, now) {
+            if data_recipient(peer, message.ticket.source, message.target, now_millis) {
                 output.push(server_packet(
                     peer,
                     DATA,
@@ -1175,15 +1193,15 @@ impl RelayServer {
         Ok(output)
     }
 
-    fn prune(&mut self, now: u64) {
+    fn prune(&mut self, now: u64, now_ms: u64) {
         if self.last_pruned == now {
             return;
         }
-        // An expired hop leaves the room but keeps its session for Leave
-        // (spec §6.2 "释放").
-        let mut expired = Vec::new();
+        // An expired hop, or a watcher that lost its place, leaves the room
+        // but keeps its session for Leave (spec §6.2 "释放").
+        let mut parked = Vec::new();
         self.rooms.retain(|_, room| {
-            sequenced::watch::prune_watchers(room, now);
+            parked.extend(sequenced::watch::drop_watchers(room, now, now_ms));
             room.peers.retain_mut(|peer| {
                 if peer.ticket.expires > now {
                     return true;
@@ -1192,22 +1210,13 @@ impl RelayServer {
                     .left_until
                     .unwrap_or(u64::MAX)
                     .min(peer.ticket.expires.saturating_add(LEAVE_GRACE));
-                expired.push((
-                    peer.session,
-                    LeavingHop {
-                        ticket: peer.ticket,
-                        key: peer.key.clone(),
-                        until,
-                    },
-                ));
+                parked.push((peer.session, peer.ticket, peer.key.clone(), until));
                 false
             });
-            !room.peers.is_empty() || room.ordering.is_some()
+            !room.vacant()
         });
-        for (session, hop) in expired {
-            if let Some(slot) = self.sessions.get_mut(&session) {
-                slot.hop = SessionHop::Leaving(Box::new(hop));
-            }
+        for (session, ticket, key, until) in parked {
+            self.park_session(session, ticket, key, until);
         }
         let released: Vec<u32> = self
             .sessions
@@ -1401,7 +1410,7 @@ impl RelayServer {
                     }
                     keep
                 });
-                if room.peers.is_empty() && room.ordering.is_none() {
+                if room.vacant() {
                     self.rooms.remove(&old.room);
                 }
                 for old in released {
@@ -1424,8 +1433,7 @@ impl RelayServer {
                     return Err(RelayError::Authentication);
                 }
                 // A renewed hop keeps the measured loss (spec §5.4).
-                let previous =
-                    std::mem::replace(peer, new_peer(message, session, source, now, now_ms));
+                let previous = std::mem::replace(peer, new_peer(message, session, source, now_ms));
                 peer.link.carry_path(&previous.link);
                 replaced = Some(previous);
             }
@@ -1439,7 +1447,6 @@ impl RelayServer {
                 peer.push = None;
             }
             peer.endpoint = source;
-            peer.last_seen = now;
             server_packet(
                 peer,
                 READY,
@@ -1449,7 +1456,7 @@ impl RelayServer {
                 link::SEND_OTHER,
             )?
         } else {
-            let mut peer = new_peer(message, session, source, now, now_ms);
+            let mut peer = new_peer(message, session, source, now_ms);
             peer.link.heard(message.sequence, now_ms)?;
             let reply = server_packet(
                 &mut peer,
@@ -1481,14 +1488,9 @@ impl RelayServer {
         // released a ticket lifetime after the old ticket expires, 300 to 600
         // seconds from now (`prune` already dropped an expired peer): time
         // for the client's minute of Leave retries.
-        if let Some(old) = replaced
-            && let Some(slot) = self.sessions.get_mut(&old.session)
-        {
-            slot.hop = SessionHop::Leaving(Box::new(LeavingHop {
-                ticket: old.ticket,
-                key: old.key.clone(),
-                until: old.ticket.expires.saturating_add(MAX_TICKET_LIFETIME),
-            }));
+        if let Some(old) = replaced {
+            let until = old.ticket.expires.saturating_add(MAX_TICKET_LIFETIME);
+            self.park_session(old.session, old.ticket, old.key, until);
         }
         let mut admission = prior.unwrap_or(Admission {
             generation: message.ticket.generation,
@@ -1567,20 +1569,13 @@ impl RelayServer {
     }
 }
 
-fn new_peer(
-    message: &Incoming<'_>,
-    session: u32,
-    endpoint: SocketAddrV4,
-    now: u64,
-    now_ms: u64,
-) -> Peer {
+fn new_peer(message: &Incoming<'_>, session: u32, endpoint: SocketAddrV4, now_ms: u64) -> Peer {
     Peer {
         ticket: message.ticket,
         key: message.key.clone(),
         session,
         endpoint,
         sent: 0,
-        last_seen: now,
         left_until: None,
         push: None,
         link: link::ReaderLink::new(now_ms),
@@ -1589,9 +1584,9 @@ fn new_peer(
 
 /// A player DATA packet goes to other addressed peers heard from in the last
 /// 30 seconds, whether it arrived on a player hop or a federation link.
-fn data_recipient(peer: &Peer, source: u8, target: u8, now: u64) -> bool {
+fn data_recipient(peer: &Peer, source: u8, target: u8, now_ms: u64) -> bool {
     peer.ticket.source != source
-        && now.saturating_sub(peer.last_seen) <= 30
+        && now_ms.saturating_sub(peer.link.last_heard_ms) <= 30_000
         && (target == BROADCAST || target == peer.ticket.source)
 }
 
@@ -1764,6 +1759,15 @@ impl RelayServer {
         }
     }
 
+    /// Parks `session`: until `until`, unix seconds, it takes only LEAVE,
+    /// each answered again, under `ticket` and `key`; then `prune` releases
+    /// it (spec §6.2 "释放").
+    fn park_session(&mut self, session: u32, ticket: Ticket, key: SecretKey, until: u64) {
+        if let Some(slot) = self.sessions.get_mut(&session) {
+            slot.hop = SessionHop::Leaving(Box::new(LeavingHop { ticket, key, until }));
+        }
+    }
+
     /// Drops `session`; it is not assigned again for 10 minutes (§6.2).
     fn release_session(&mut self, session: u32, now: u64) {
         if self.sessions.remove(&session).is_some() {
@@ -1838,9 +1842,9 @@ pub struct SessionEntry {
     pub room: [u8; 16],
     pub source: u8,
     /// The hop's current endpoint: the address of its last authenticated
-    /// fresh datagram (§6.2, NAT rebinding). `None` once its ticket expired
-    /// or a renewal replaced it (the hop then only answers LEAVE, to the
-    /// LEAVE's address).
+    /// fresh datagram (§6.2, NAT rebinding). `None` once its ticket expired,
+    /// a renewal replaced it or, for a watcher, it left or lost its place
+    /// (the hop then only answers LEAVE, to the LEAVE's address).
     pub endpoint: Option<SocketAddrV4>,
     /// The hop's ticket expiry, unix seconds like `process`'s `now`.
     pub expires: u64,
@@ -1858,7 +1862,9 @@ impl RelayServer {
     /// session. A hop is in it from its accepted CONFIRM until
     /// `LEAVE_GRACE` seconds after its LEAVE or its ticket's expiry, or, once
     /// a renewal's CONFIRM replaced it, until `MAX_TICKET_LIFETIME` seconds
-    /// after its ticket's expiry (§6.2).
+    /// after its ticket's expiry (§6.2). A watcher's goes `WATCH_LEAVE_S`
+    /// seconds after its LEAVE or renewal, or `WATCH_DROPPED_LEAVE_S` after
+    /// `drop_watchers` took it out of its room.
     pub fn session_table(&self) -> Vec<SessionEntry> {
         let mut table: Vec<_> = self
             .sessions
@@ -2095,6 +2101,58 @@ mod tests {
         assert_eq!(at_limit[0].endpoint, to);
         sender.data(1, b"ping", &mut bytes).unwrap();
         assert!(server.process(from, &bytes, 1031).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_wall_clock_step_does_not_silence_a_data_recipient() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut sender = client(&key, 1, 0);
+        let mut recipient = client(&key, 1, 1);
+        let from = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30001);
+        let to = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30002);
+        connect(&mut server, &mut sender, from);
+        connect(&mut server, &mut recipient, to);
+
+        // One second after both were heard, though the wall clock stepped
+        // forty seconds ahead.
+        let mut bytes = Vec::new();
+        sender.data(1, b"ping", &mut bytes).unwrap();
+        let output = server.process_at(from, &bytes, 1040, 1_001_000).unwrap();
+        assert_eq!(output.len(), 1);
+        assert_eq!(output[0].endpoint, to);
+    }
+
+    #[test]
+    fn a_hop_is_busy_only_while_traffic_other_than_its_keepalive_goes_both_ways() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut hop = client(&key, 1, 0);
+        let mut peer = client(&key, 1, 1);
+        let a = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30001);
+        let b = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30002);
+        connect(&mut server, &mut hop, a);
+        connect(&mut server, &mut peer, b);
+        // A PING and the READY answering it are not traffic, or one
+        // keepalive exchange would stand in for the next.
+        let mut bytes = Vec::new();
+        hop.data_at(1, b"to the peer", 10, &mut bytes).unwrap();
+        hop.probe_at(20, &mut bytes).unwrap();
+        let ready = server.process(a, &bytes, 1000).unwrap().remove(0);
+        assert!(matches!(
+            hop.receive_at(&ready.bytes, 30),
+            Ok(ServerEvent::Ready)
+        ));
+        assert!(!hop.busy_both_ways(40), "only READY heard");
+        peer.data(0, b"to the hop", &mut bytes).unwrap();
+        let forwarded = server.process(b, &bytes, 1000).unwrap().remove(0);
+        hop.receive_at(&forwarded.bytes, 3_000).unwrap();
+        hop.probe_at(3_000, &mut bytes).unwrap();
+        assert!(!hop.busy_both_ways(3_001), "only a PING sent since 10 ms");
+        // Traffic both ways, until either has been quiet for the interval.
+        hop.data_at(1, b"to the peer", 3_001, &mut bytes).unwrap();
+        assert!(hop.busy_both_ways(4_999));
+        assert!(!hop.busy_both_ways(5_000), "nothing heard since 3000 ms");
     }
 
     #[test]

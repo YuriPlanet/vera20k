@@ -1,22 +1,28 @@
 use super::*;
-use crate::ui::skirmish_shell::SkirmishShellDialog;
+use crate::app::frontend::shell_layout::{choose_map_layout, skirmish_layout};
+use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::shell_route::ShellRoute;
+use crate::ui::shell::page::PageCue;
+use crate::ui::skirmish_shell::page::Pointer;
+use crate::ui::skirmish_shell::{
+    ChooseMapModalButton, ChooseMapModalState, ChooseMapPromptKind, ChooseMapSelection,
+    SkirmishShellAction, SkirmishShellDialog,
+};
 
-/// The mouse event [`App::route_game_options_mouse`] hands the open box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GameOptionsMouse {
-    Down,
-    Up,
-    Move,
+/// Skirmish's validation box (`0xCE`).
+const VALIDATION_BOX: crate::ui::shell::descriptor::DialogResourceId =
+    crate::ui::shell::descriptor::DialogResourceId(0x00CE);
+
+/// The open Choose Map dialog.
+fn chooser(state: &mut AppState) -> Option<&mut ChooseMapModalState> {
+    state
+        .frontend
+        .skirmish_shell_state
+        .choose_map_modal
+        .as_mut()
 }
 
 impl App {
-    pub(super) fn native_skirmish_shell_active(state: &AppState) -> bool {
-        state.frontend.screen == GameScreen::MainMenu && state.frontend.shell_route.skirmish()
-    }
-    fn skirmish_shell_layout(state: &AppState) -> crate::ui::skirmish_shell::SkirmishShellLayout {
-        crate::app::frontend::shell_layout::skirmish_layout(state)
-    }
-
     /// VERA's Team Starts in the game room: the start cells
     /// of shell map `map` by start index. A map gives its start waypoints;
     /// the random map gives the starts of the last Generate
@@ -97,12 +103,6 @@ impl App {
         )
     }
 
-    fn skirmish_choose_map_layout(
-        state: &AppState,
-    ) -> crate::ui::skirmish_shell::ChooseMapModalLayout {
-        crate::app::frontend::shell_layout::choose_map_layout(state)
-    }
-
     /// The Choose Map search line takes keys only while its page is active.
     /// Its visible rectangle also anchors the platform's IME candidate UI.
     pub(super) fn choose_map_search_ime_rect(
@@ -115,13 +115,13 @@ impl App {
         ) {
             return None;
         }
-        let modal = state
+        let modal = (state
             .frontend
             .skirmish_shell_state
             .choose_map_modal
-            .as_ref()
-            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())?;
-        let layout = Self::skirmish_choose_map_layout(state);
+            .as_ref())
+        .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())?;
+        let layout = choose_map_layout(state);
         Some(
             crate::app::frontend::skirmish_shell_render::choose_map_search_ime_area(
                 state,
@@ -131,74 +131,36 @@ impl App {
         )
     }
 
-    /// Apply committed input-method text to Choose Map through the modal's
-    /// search owner, matching the ordinary key path.
+    /// Apply committed input-method text to Choose Map's search line, as
+    /// the ordinary key path does; its control characters are dropped.
     pub(super) fn choose_map_search_text(state: &mut AppState, text: &str) -> bool {
+        let text = text.chars().filter(|ch| !ch.is_control()).collect();
+        Self::choose_map_search_input(state, vera20k_gui::InputEvent::Text(text))
+    }
+
+    /// Typed text or Backspace for the search line of a Choose Map that
+    /// takes keys (see [`Self::choose_map_search_ime_rect`]), through its
+    /// edit; false when none does.
+    fn choose_map_search_input(state: &mut AppState, event: vera20k_gui::InputEvent) -> bool {
         if Self::choose_map_search_ime_rect(state).is_none() {
             return false;
         }
-        let layout = Self::skirmish_choose_map_layout(state);
+        let layout = choose_map_layout(state);
         let frontend = &mut state.frontend;
-        let Some(modal) = frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())
-        else {
+        let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() else {
             return false;
         };
-        modal.append_search_text(
-            text,
-            &frontend.skirmish_modes,
-            frontend.scenario_catalog.records(),
+        crate::ui::skirmish_shell::choose_map_page::search_input(
+            &mut frontend.shell_controller,
+            modal,
             &layout,
+            (
+                &frontend.skirmish_modes,
+                frontend.scenario_catalog.records(),
+            ),
+            event,
         );
         state.platform.window.request_redraw();
-        true
-    }
-
-    fn validation_modal_dialog_id() -> crate::ui::shell::descriptor::DialogId {
-        crate::ui::shell::descriptor::DialogId(0x00CE)
-    }
-
-    fn validation_modal_feed(state: &AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
-        let layout = crate::ui::shell::modal::body_ok_layout(
-            state.render_width() as i32,
-            state.render_height() as i32,
-        );
-        vec![crate::ui::shell::layout::LaidOutControl {
-            id: crate::ui::shell::modal::control::OK,
-            rect: layout.ok,
-        }]
-    }
-
-    pub(super) fn shell_key_for_code(code: KeyCode) -> Option<ShellKey> {
-        match code {
-            KeyCode::Tab => Some(ShellKey::Tab),
-            KeyCode::Enter | KeyCode::NumpadEnter => Some(ShellKey::Enter),
-            KeyCode::Escape => Some(ShellKey::Escape),
-            _ => None,
-        }
-    }
-
-    /// One production mutation point for shell selection plus retained-RMG
-    /// identity invalidation.
-    fn apply_selected_shell_map_index(state: &mut AppState, map_idx: usize) -> bool {
-        let Some(file_name) = state
-            .frontend
-            .scenario_catalog
-            .shell_maps()
-            .get(map_idx)
-            .map(|map| map.file_name.clone())
-        else {
-            return false;
-        };
-        crate::ui::skirmish_shell::accept_selected_map(
-            &mut state.frontend.skirmish_shell_state,
-            state.frontend.scenario_catalog.shell_maps(),
-            map_idx,
-        );
-        Self::note_selected_shell_map(state, &file_name);
         true
     }
 
@@ -240,10 +202,7 @@ impl App {
                 log::warn!("Could not pack raw Skirmish Back session: {err:?}");
             }
         }
-        Self::leave_shell_dialog(
-            state,
-            crate::app::frontend::shell_transition::ShellExitThen::SkirmishBack,
-        );
+        Self::leave_shell_dialog(state, ShellSlideKind::Skirmish, App::commit_skirmish_back);
     }
 
     /// Skirmish Start after the teardown slide: `0x006AE2C0` destroys the
@@ -253,7 +212,7 @@ impl App {
         state: &mut AppState,
         session: crate::skirmish_launch::SkirmishLaunchSession,
     ) {
-        Self::teardown_skirmish_shell_for_start(state);
+        Self::teardown_skirmish_shell(state);
         state.frontend.multiplayer_shell_runtime.persist_snapshot();
         if let Err(error) = Self::start_skirmish_session(
             state,
@@ -268,24 +227,18 @@ impl App {
     /// (`0x006990A0`), then state 1 builds the Single Player page.
     pub(super) fn commit_skirmish_back(state: &mut AppState) {
         state.frontend.multiplayer_shell_runtime.persist_snapshot();
-        Self::return_from_skirmish_to_single_player_shell(state);
+        Self::teardown_skirmish_shell(state);
+        Self::open_single_player_shell(state);
     }
 
-    pub(super) fn teardown_skirmish_shell_for_start(state: &mut AppState) {
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
+    /// `0x102` closes: its boxes and the name edit's focus go with it.
+    pub(super) fn teardown_skirmish_shell(state: &mut AppState) {
+        state.frontend.shell_route = ShellRoute::MainMenu;
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_shell_state.choose_map_modal = None;
         state.frontend.skirmish_shell_state.validation_modal = None;
         state.frontend.skirmish_shell_state.game_options = None;
-        state.frontend.skirmish_shell_state.open_combo_dropdown = None;
-        state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
-        state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
-        state.frontend.skirmish_shell_state.trackbar_hold = None;
-        state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button = None;
-        crate::ui::skirmish_shell::blur_player_name_edit(&mut state.frontend.skirmish_shell_state);
+        Self::blur_player_name(state);
         state.frontend.skirmish_preview_texture = None;
     }
 
@@ -331,13 +284,9 @@ impl App {
         }
         .with_accepted_random_map(accepted_random_map)
         .with_start_staging(rematch_staging);
-        state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button = None;
         // GameMode stays 5 through the game, so the shell resumes on a new
         // `0x102` afterwards (`App::resume_shell_after_match`).
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::Skirmish;
+        state.frontend.shell_route = ShellRoute::Skirmish;
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_preview_texture = None;
         crate::app::loading::pump::begin_loading(state, request);
@@ -347,7 +296,7 @@ impl App {
     }
 
     pub(crate) fn ensure_skirmish_shell_chrome(state: &mut AppState) -> bool {
-        let yr_original_style = state.persistence.options_profile.yr_original_style;
+        let yr_original_style = state.persistence.options_profile.plays_yr_original_style();
         if state
             .frontend
             .skirmish_shell_chrome
@@ -409,39 +358,19 @@ impl App {
         ready
     }
 
-    pub(super) fn handle_skirmish_shell_action(
-        state: &mut AppState,
-        action: crate::ui::skirmish_shell::SkirmishShellAction,
-    ) {
-        let action = crate::ui::skirmish_shell::apply_action(
-            &mut state.frontend.skirmish_shell_state,
-            action,
-            state.frontend.scenario_catalog.shell_maps(),
-        );
-
+    pub(super) fn handle_skirmish_shell_action(state: &mut AppState, action: SkirmishShellAction) {
         match action {
-            crate::ui::skirmish_shell::SkirmishShellAction::StartGame => {
-                Self::start_game_from_shell(state);
-            }
-            crate::ui::skirmish_shell::SkirmishShellAction::BackOrExit => {
-                Self::handle_skirmish_back(state);
-            }
-            crate::ui::skirmish_shell::SkirmishShellAction::ChooseMap => {
-                // `0x102` slides out (not torn down) before `0x6B` runs.
-                Self::leave_shell_dialog(
-                    state,
-                    crate::app::frontend::shell_transition::ShellExitThen::SkirmishChooseMap,
-                );
-            }
-            crate::ui::skirmish_shell::SkirmishShellAction::GameOptions => {
-                Self::open_skirmish_game_options(state);
-            }
-            crate::ui::skirmish_shell::SkirmishShellAction::Setups => {
-                Self::open_skirmish_setups(state);
-            }
-            crate::ui::skirmish_shell::SkirmishShellAction::None
-            | crate::ui::skirmish_shell::SkirmishShellAction::SelectColor(_)
-            | crate::ui::skirmish_shell::SkirmishShellAction::SelectMap(_) => {}
+            SkirmishShellAction::StartGame => Self::start_game_from_shell(state),
+            SkirmishShellAction::BackOrExit => Self::handle_skirmish_back(state),
+            // `0x102` slides out (not torn down) before `0x6B` runs.
+            SkirmishShellAction::ChooseMap => Self::leave_shell_dialog(
+                state,
+                ShellSlideKind::Skirmish,
+                App::open_choose_map_from_skirmish,
+            ),
+            SkirmishShellAction::GameOptions => Self::open_skirmish_game_options(state),
+            SkirmishShellAction::Setups => Self::open_skirmish_setups(state),
+            SkirmishShellAction::None => {}
         }
     }
 
@@ -467,6 +396,10 @@ impl App {
         let Some(open) = shell.game_options.take() else {
             return;
         };
+        let controller = &mut state.frontend.shell_controller;
+        if controller.top_id() == Some(crate::ui::skirmish_shell::game_options::DIALOG) {
+            controller.pop();
+        }
         let rules = open.rules;
         // The page keeps the session options with its own, and the Short
         // Game unticking Bases may have unticked.
@@ -494,41 +427,48 @@ impl App {
         state.platform.window.request_redraw();
     }
 
-    /// What a press, move or release in the open box asks of the page.
-    fn answer_game_options_outcome(
-        state: &mut AppState,
-        outcome: crate::ui::skirmish_shell::game_options::GameOptionsOutcome,
-    ) {
-        use crate::ui::skirmish_shell::game_options::GameOptionsOutcome;
-        match outcome {
-            GameOptionsOutcome::Stay => return,
-            GameOptionsOutcome::OkPressed => Self::play_main_menu_button_sound(state),
-            GameOptionsOutcome::Changed(sound) => Self::play_skirmish_shell_ui_sound(state, sound),
-            GameOptionsOutcome::Close => Self::close_skirmish_game_options(state),
-        }
-        state.platform.window.request_redraw();
-    }
-
     /// The open Game Options box takes every press, release and move over
     /// the page; returns whether it is open.
-    fn route_game_options_mouse(state: &mut AppState, event: GameOptionsMouse) -> bool {
+    /// A fresh Enter or Escape over the Game Options box: its OK takes both
+    /// and the box closes.
+    pub(super) fn skirmish_game_options_key(state: &mut AppState, key: vera20k_gui::Key) {
+        use crate::ui::skirmish_shell::game_options;
+        let page = skirmish_layout(state);
+        let frontend = &mut state.frontend;
+        let close = game_options::key(
+            &mut frontend.shell_controller,
+            &mut frontend.skirmish_shell_state,
+            &game_options::GameOptionsLayout::over(&page),
+            key,
+        );
+        if close {
+            Self::close_skirmish_game_options(state);
+        }
+    }
+
+    fn route_game_options_mouse(state: &mut AppState, at: Pointer) -> bool {
+        use crate::ui::skirmish_shell::game_options;
         if state.frontend.skirmish_shell_state.game_options.is_none() {
             return false;
         }
-        let page = Self::skirmish_shell_layout(state);
-        let layout = crate::ui::skirmish_shell::game_options::GameOptionsLayout::over(&page);
+        let page = skirmish_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
-        let Some(open) = state.frontend.skirmish_shell_state.game_options.as_mut() else {
-            return false;
-        };
-        let outcome = match event {
-            GameOptionsMouse::Down => open.mouse_down(&layout, x, y),
-            GameOptionsMouse::Up => open.mouse_up(&layout, x, y),
-            GameOptionsMouse::Move => open.mouse_move(&layout, x),
-        };
-        Self::answer_game_options_outcome(state, outcome);
-        if event != GameOptionsMouse::Down {
-            Self::update_skirmish_shell_status_help(state, &page, x, y);
+        let frontend = &mut state.frontend;
+        let (cues, close) = game_options::pointer(
+            &mut frontend.shell_controller,
+            &mut frontend.skirmish_shell_state,
+            &game_options::GameOptionsLayout::over(&page),
+            at,
+            x,
+            y,
+        );
+        Self::play_cues(state, cues);
+        if close {
+            Self::close_skirmish_game_options(state);
+        }
+        state.platform.window.request_redraw();
+        if at != Pointer::Down {
+            Self::update_skirmish_shell_status_help(state, x, y);
         }
         true
     }
@@ -541,7 +481,10 @@ impl App {
             &state.frontend.skirmish_shell_state,
             state.frontend.scenario_catalog.shell_maps(),
             &state.frontend.skirmish_modes,
-            state.persistence.options_profile.solo_skirmish,
+            crate::ui::skirmish_shell::start_skips_side_gates(
+                state.persistence.options_profile.solo_skirmish,
+                state.frontend.frontend_rules.as_ref(),
+            ),
         ) {
             Ok(raw_session) => {
                 match state
@@ -553,16 +496,13 @@ impl App {
                         &state.frontend.skirmish_modes,
                         &raw_session,
                     ) {
-                    Ok(resolved_session) => {
-                        // 0x006ACEE0 packs the session and writes
-                        // result 0x617; the runner (0x006AE2C0) then
-                        // slides the dialog out before the launch.
-                        Self::leave_shell_dialog(
-                            state,
-                            crate::app::frontend::shell_transition::ShellExitThen::SkirmishStart(
-                                Box::new(resolved_session),
-                            ),
-                        );
+                    // 0x006ACEE0 packs the session and writes result 0x617;
+                    // the runner (0x006AE2C0) then slides the dialog out
+                    // before the launch.
+                    Ok(session) => {
+                        Self::leave_shell_dialog(state, ShellSlideKind::Skirmish, move |state| {
+                            Self::commit_skirmish_start(state, session)
+                        })
                     }
                     Err(err) => {
                         log::error!("Could not resolve Cooperative shell assignments: {err}");
@@ -570,78 +510,53 @@ impl App {
                     }
                 }
             }
-            Err(err) => {
-                if let Some(modal) = Self::skirmish_validation_modal_for_error(state, &err) {
-                    Self::show_skirmish_validation_modal(state, modal);
-                    state.platform.window.request_redraw();
-                } else {
-                    log::warn!("Could not start skirmish shell session: {err:?}");
-                }
-            }
+            Err(err) => Self::show_skirmish_validation_box(state, &err),
         }
     }
 
-    fn skirmish_shell_label(state: &AppState, key: &str, fallback: &str) -> String {
-        Self::csf_label(state, key, fallback)
-    }
-
-    fn skirmish_validation_modal_for_error(
-        state: &AppState,
+    /// Start's validation box `0xCE` for `err`, which takes the name edit's
+    /// focus.
+    fn show_skirmish_validation_box(
+        state: &mut AppState,
         err: &crate::skirmish_launch::LaunchValidationError,
-    ) -> Option<crate::ui::skirmish_shell::SkirmishValidationModalState> {
-        let ok = Self::skirmish_shell_label(state, "TXT_OK", "OK");
+    ) {
+        use crate::skirmish_launch::LaunchValidationError as Error;
         let message = match err {
-            crate::skirmish_launch::LaunchValidationError::MapCapacityExceeded {
-                capacity, ..
-            } => {
-                let template = Self::skirmish_shell_label(
-                    state,
+            Error::MapCapacityExceeded { capacity, .. } => state
+                .csf_label(
                     "TXT_SCENARIO_TOO_SMALL",
                     "This map has a %d player max. The max includes human and computer players.",
-                );
-                template.replace("%d", &capacity.to_string())
-            }
-            crate::skirmish_launch::LaunchValidationError::NoEnabledOpponent => {
-                Self::skirmish_shell_label(
-                    state,
-                    "TXT_NEED_AT_LEAST_TWO_PLAYERS",
-                    "You need at least two players to start the game!",
                 )
-            }
-            crate::skirmish_launch::LaunchValidationError::SameExplicitTeam { .. } => {
-                Self::skirmish_shell_label(
-                    state,
-                    "TXT_CANNOT_ALLY",
-                    "Must have more than one team to start a game!",
-                )
-            }
+                .replace("%d", &capacity.to_string()),
+            Error::NoEnabledOpponent => state.csf_label(
+                "TXT_NEED_AT_LEAST_TWO_PLAYERS",
+                "You need at least two players to start the game!",
+            ),
+            Error::SameExplicitTeam { .. } => state.csf_label(
+                "TXT_CANNOT_ALLY",
+                "Must have more than one team to start a game!",
+            ),
             // VERA: map archives are optional, so the list can be empty.
-            crate::skirmish_launch::LaunchValidationError::NoSelectedMap => {
-                crate::i18n::tr("VERA:NoMapsFound")
-            }
-            _ => return None,
+            Error::NoSelectedMap => crate::i18n::tr("VERA:NoMapsFound"),
+            _ => return log::warn!("Could not start skirmish shell session: {err:?}"),
         };
-        Some(crate::ui::skirmish_shell::SkirmishValidationModalState::new(message, ok))
-    }
-
-    fn show_skirmish_validation_modal(
-        state: &mut AppState,
-        modal: crate::ui::skirmish_shell::SkirmishValidationModalState,
-    ) {
-        state.frontend.skirmish_shell_state.validation_modal = Some(modal);
+        let ok = state.csf_label("TXT_OK", "OK");
+        let shell = &mut state.frontend.skirmish_shell_state;
+        shell.validation_modal = Some(crate::ui::shell::modal::ShellBox::notice(message, ok));
+        Self::blur_player_name(state);
         state
             .frontend
             .shell_controller
-            .ensure_active(Self::validation_modal_dialog_id(), true);
-        state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button = None;
-        state.frontend.skirmish_shell_state.open_combo_dropdown = None;
-        state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
-        state.frontend.skirmish_shell_state.dropdown_scroll_press = None;
-        state.frontend.skirmish_shell_state.trackbar_hold = None;
-        crate::ui::skirmish_shell::blur_player_name_edit(&mut state.frontend.skirmish_shell_state);
+            .ensure_active(VALIDATION_BOX);
+        state.platform.window.request_redraw();
+    }
+
+    /// Skirmish Choose Map (`0x5AA`) after `0x102` slid out: `0x6B` runs on
+    /// the page's mode and map.
+    pub(super) fn open_choose_map_from_skirmish(state: &mut AppState) {
+        let mode_id = state.frontend.skirmish_shell_state.selected_mode.id;
+        let record_index = Self::current_choose_map_record_index(state);
+        Self::open_choose_map_modal(state, mode_id, record_index);
     }
 
     /// Opens the shared chooser on the caller's current mode and map. Each
@@ -651,61 +566,48 @@ impl App {
         selected_mode_id: i32,
         current_record_index: Option<usize>,
     ) {
-        state.frontend.skirmish_shell_state.open_combo_dropdown = None;
-        state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
-        state.frontend.skirmish_shell_state.trackbar_hold = None;
-        state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button = None;
-        crate::ui::skirmish_shell::clear_status_help_text(&mut state.frontend.skirmish_shell_state);
+        (state.frontend.skirmish_shell_state.statics).hover("", crate::util::time::Instant::now());
+        // A fresh `0x6B`: its widgets build on the first sync.
+        crate::ui::skirmish_shell::choose_map_page::close(&mut state.frontend.shell_controller);
         // VeraX: Skirmish rescans the game directory each time the chooser
         // opens, so a map copied after launch appears without a restart. A
         // network lobby keeps its launch snapshot, because the map list is
         // local and peers must still compare the same catalog.
         #[cfg(feature = "verax")]
-        let current_record_index = if state.frontend.shell_route.network_setup() {
+        let current_record_index = if state.frontend.shell_route == ShellRoute::NetworkSetup {
             current_record_index
         } else {
             Self::reload_skirmish_catalog(state, current_record_index)
         };
-        let layout = Self::skirmish_choose_map_layout(state);
-        state.frontend.skirmish_shell_state.choose_map_modal =
-            Some(crate::ui::skirmish_shell::ChooseMapModalState::open(
-                if state.frontend.shell_route.network_setup() {
-                    {
-                        let room = state.match_state.session.network_room();
-                        crate::ui::skirmish_shell::ChooseMapContext::Network {
-                            observer: state
-                                .match_state
-                                .session
-                                .network_setup()
-                                .is_some_and(|launch| launch.local_player().is_observer()),
-                            tournament_room: room.tournament_or_clan(),
-                            clan_room: room.clan,
-                        }
-                    }
-                } else {
-                    crate::ui::skirmish_shell::ChooseMapContext::Skirmish
-                },
-                selected_mode_id,
-                current_record_index,
-                &state.frontend.skirmish_modes,
-                state.frontend.scenario_catalog.records(),
-                &layout,
-            ));
+        let layout = choose_map_layout(state);
+        let session = &state.match_state.session;
+        let context = if state.frontend.shell_route == ShellRoute::NetworkSetup {
+            let room = session.network_room();
+            crate::ui::skirmish_shell::ChooseMapContext::Network {
+                observer: (session.network_setup())
+                    .is_some_and(|launch| launch.local_player().is_observer()),
+                tournament_room: room.tournament_or_clan(),
+                clan_room: room.clan,
+            }
+        } else {
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish
+        };
+        state.frontend.skirmish_shell_state.choose_map_modal = Some(ChooseMapModalState::open(
+            context,
+            selected_mode_id,
+            current_record_index,
+            &state.frontend.skirmish_modes,
+            state.frontend.scenario_catalog.records(),
+            &layout,
+        ));
         // VERA: the starred maps list under Favorites, and online rooms list
         // the online map library under its own row.
         let favorites = crate::app::map_library::read_favorites(state);
         let online = crate::app::map_library::listed_in_choose_map(state);
-        if let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-        {
+        let frontend = &mut state.frontend;
+        if let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() {
             if crate::app::worker::THREADS {
-                modal.add_random_maps_row(&state.frontend.skirmish_modes);
+                modal.add_random_maps_row(&frontend.skirmish_modes);
             }
             modal.add_favorites_row(favorites);
             if online {
@@ -719,7 +621,7 @@ impl App {
     /// Delete changes it in the generator above the chooser.
     pub(super) fn refresh_saved_random_maps(state: &mut AppState) {
         let dir = Self::random_map_dir(state);
-        let layout = Self::skirmish_choose_map_layout(state);
+        let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
         if let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -746,19 +648,14 @@ impl App {
         state: &mut AppState,
         current_record_index: Option<usize>,
     ) -> Option<usize> {
-        let Some(ra2_dir) = state
-            .platform
-            .game_config
-            .as_ref()
-            .map(|config| config.paths.ra2_dir.clone())
-        else {
+        let Some(config) = state.platform.game_config.as_ref() else {
             return current_record_index;
         };
+        let ra2_dir = config.paths.ra2_dir.clone();
         let selected_file = current_record_index
             .and_then(|index| state.frontend.scenario_catalog.records().get(index))
             .map(|record| record.file_name.clone());
-        let (assets, csf) = state.process_assets.scenario_rescan_sources();
-        let Some(assets) = assets else {
+        let (Some(assets), csf) = state.process_assets.scenario_rescan_sources() else {
             return current_record_index;
         };
         let Some(records) = Self::scan_skirmish_records(&ra2_dir, assets, csf) else {
@@ -820,34 +717,22 @@ impl App {
     /// Cooperative fills Choose Map's list itself (`+0x4C`), on the network
     /// only: Skirmish never lists the mode.
     fn list_cooperative_campaigns(state: &mut AppState, clicked: bool) {
-        let Some((mode_id, records)) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_ref()
-            .map(|modal| {
-                (
-                    modal.selected_mode.id,
-                    modal.filtered_record_indices.clone(),
-                )
-            })
-        else {
+        let Some(modal) = chooser(state) else {
             return;
         };
+        let (mode_id, records) = (
+            modal.selected_mode.id,
+            modal.filtered_record_indices.clone(),
+        );
         let Some(rows) = crate::app::shell_network_setup::cooperative_chooser_rows(
             state, mode_id, &records, clicked,
         ) else {
             return;
         };
-        let layout = Self::skirmish_choose_map_layout(state);
-        let records = state.frontend.scenario_catalog.records();
-        if let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-        {
-            modal.replace_rows(rows, records, &layout, clicked);
+        let layout = choose_map_layout(state);
+        let frontend = &mut state.frontend;
+        if let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() {
+            modal.replace_rows(rows, frontend.scenario_catalog.records(), &layout, clicked);
         }
     }
 
@@ -863,295 +748,219 @@ impl App {
     }
 
     pub(super) fn current_choose_map_record_index(state: &AppState) -> Option<usize> {
-        let file_name = state
-            .frontend
-            .scenario_catalog
+        let catalog = &state.frontend.scenario_catalog;
+        let map = catalog
             .shell_maps()
-            .get(state.frontend.skirmish_shell_state.selected_map_idx)?
-            .file_name
-            .as_str();
-        state
-            .frontend
-            .scenario_catalog
-            .records()
-            .iter()
-            .position(|record| record.file_name.eq_ignore_ascii_case(file_name))
+            .get(state.frontend.skirmish_shell_state.selected_map_idx)?;
+        (catalog.records().iter())
+            .position(|record| record.file_name.eq_ignore_ascii_case(&map.file_name))
     }
 
     pub(super) fn close_choose_map_modal(state: &mut AppState) {
-        if let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-        {
-            modal.pressed_button = None;
-        }
+        crate::ui::skirmish_shell::choose_map_page::close(&mut state.frontend.shell_controller);
         state.frontend.skirmish_shell_state.choose_map_modal = None;
-        state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button = None;
     }
 
     pub(super) fn commit_choose_map_selection(
         state: &mut AppState,
-        selection: crate::ui::skirmish_shell::ChooseMapSelection,
+        selection: ChooseMapSelection,
     ) -> bool {
-        let Some(record_idx) = selection.record_index else {
-            return false;
-        };
-        let Some(record) = state.frontend.scenario_catalog.records().get(record_idx) else {
-            return false;
-        };
-        let selected_file_name = record.file_name.clone();
-        let Some(map_idx) = state
-            .frontend
-            .scenario_catalog
-            .shell_maps()
-            .iter()
-            .position(|map| map.file_name.eq_ignore_ascii_case(&selected_file_name))
+        let catalog = &state.frontend.scenario_catalog;
+        let Some(record) = selection
+            .record_index
+            .and_then(|i| catalog.records().get(i))
         else {
-            log::warn!(
-                "Choose Map selected {}, but no loadable map entry exists yet",
-                selected_file_name
-            );
             return false;
         };
-
-        if state.frontend.shell_route.network_setup() {
+        let Some(map_idx) = (catalog.shell_maps().iter())
+            .position(|map| map.file_name.eq_ignore_ascii_case(&record.file_name))
+        else {
+            let file = &record.file_name;
+            log::warn!("Choose Map selected {file}, but no loadable map entry exists yet");
+            return false;
+        };
+        let file_name = catalog.shell_maps()[map_idx].file_name.clone();
+        if state.frontend.shell_route == ShellRoute::NetworkSetup {
             // `+0x18` reads the list's selected row (`0x005E66D0`).
-            let row = state
-                .frontend
-                .skirmish_shell_state
-                .choose_map_modal
-                .as_ref()
-                .and_then(|modal| modal.highlighted_filtered_index);
-            return match crate::app::shell_network_setup::commit_map_selection(
-                state,
-                selection.mode.id,
-                map_idx,
-                row,
-            ) {
-                Ok(()) => true,
-                Err(error) => {
-                    log::warn!("Could not accept LAN map selection: {error:#}");
-                    false
-                }
-            };
+            let row = chooser(state).and_then(|modal| modal.highlighted_filtered_index);
+            let mode = selection.mode.id;
+            return crate::app::shell_network_setup::commit_map_selection(
+                state, mode, map_idx, row,
+            )
+            .inspect_err(|error| log::warn!("Could not accept LAN map selection: {error:#}"))
+            .is_ok();
         }
-        state.frontend.skirmish_shell_state.selected_mode = selection.mode;
-        crate::ui::skirmish_shell::repair_teams_for_selected_mode(
-            &mut state.frontend.skirmish_shell_state,
-            &state.frontend.skirmish_modes,
-        );
-        let applied = Self::apply_selected_shell_map_index(state, map_idx);
-        debug_assert!(applied, "validated chooser map index must remain loadable");
+        let frontend = &mut state.frontend;
+        let shell = &mut frontend.skirmish_shell_state;
+        shell.selected_mode = selection.mode;
+        crate::ui::skirmish_shell::repair_teams_for_selected_mode(shell, &frontend.skirmish_modes);
+        let maps = frontend.scenario_catalog.shell_maps();
+        crate::ui::skirmish_shell::accept_selected_map(shell, maps, map_idx);
+        Self::note_selected_shell_map(state, &file_name);
         // `0x102` shows its statics again when its entry slide ends; a changed
         // game type or map name restarts that reveal (`0x006ADA99`, `0x4B2`).
         true
     }
 
     pub(super) fn handle_choose_map_modal_mouse_down(state: &mut AppState) -> bool {
-        if state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .is_none()
-        {
+        if chooser(state).is_none() {
             return false;
         }
-        let layout = Self::skirmish_choose_map_layout(state);
-        if crate::app::frontend::preview_zoom::press_on_box(state, layout.preview) {
-            return true;
+        use crate::app::frontend::preview_zoom;
+        let over =
+            preview_zoom::over_box(state, crate::ui::skirmish_shell::choose_map_page::DIALOG);
+        if !preview_zoom::press_on_box(state, over) {
+            Self::choose_map_pointer(state, Pointer::Down);
         }
+        true
+    }
+
+    /// The pointer on the chooser's widgets: their cues play, a game-type
+    /// click lists the mode's own rows and a button acts.
+    fn choose_map_pointer(state: &mut AppState, at: Pointer) {
+        let layout = choose_map_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         let frontend = &mut state.frontend;
-        let modal = frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-            .expect("checked above");
-        let double_click = modal.is_double_click(
+        let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() else {
+            return;
+        };
+        let input = crate::ui::skirmish_shell::choose_map_page::pointer(
+            &mut frontend.shell_controller,
+            modal,
             &layout,
-            (x, y),
-            Instant::now(),
-            crate::ui::shell::saved_file_input::host_double_click_limits(),
-        );
-        if double_click {
-            return true;
-        }
-        if let Some(button) = crate::ui::skirmish_shell::choose_map_modal_button_at(&layout, x, y) {
-            if modal.press_button(button) {
-                Self::play_main_menu_button_sound(state);
-            }
-            return true;
-        }
-        let press = modal.mouse_down(
-            &layout,
-            &frontend.skirmish_modes,
-            frontend.scenario_catalog.records(),
+            (
+                &frontend.skirmish_modes,
+                frontend.scenario_catalog.records(),
+            ),
             &mut frontend.choose_map_last_mode_row,
-            (x, y),
-            Instant::now(),
+            at,
+            x,
+            y,
         );
-        match press {
-            crate::ui::skirmish_shell::ChooseMapListPress::RowClicked { rebuilt } => {
-                // The list subclass plays GenericClick on a row press
-                // (`0x0061AA5A`).
-                Self::play_skirmish_shell_generic_click_sound(state);
-                if rebuilt {
-                    Self::refresh_saved_random_maps(state);
-                    Self::list_cooperative_campaigns(state, true);
-                }
-                state.platform.window.request_redraw();
-                true
-            }
-            crate::ui::skirmish_shell::ChooseMapListPress::Consumed => {
-                state.platform.window.request_redraw();
-                true
-            }
-            crate::ui::skirmish_shell::ChooseMapListPress::Missed => layout.dialog.contains(x, y),
+        Self::play_cues(state, input.cues);
+        if input.rebuilt {
+            Self::refresh_saved_random_maps(state);
+            Self::list_cooperative_campaigns(state, true);
+        }
+        state.platform.window.request_redraw();
+        if let Some(button) = input.activated {
+            Self::choose_map_button(state, button);
         }
     }
 
     /// Scrollbar arrow auto-repeat on the chooser's lists; returns the next
     /// wake deadline.
     pub(super) fn poll_choose_map_scroll(state: &mut AppState) -> Option<Instant> {
-        state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_ref()?;
-        let layout = Self::skirmish_choose_map_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        let modal = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()?;
-        if modal.poll_scroll(&layout, x, y, Instant::now()) {
+        let layout = choose_map_layout(state);
+        let frontend = &mut state.frontend;
+        let modal = frontend.skirmish_shell_state.choose_map_modal.as_mut()?;
+        let (moved, next) = crate::ui::skirmish_shell::choose_map_page::poll(
+            &mut frontend.shell_controller,
+            modal,
+            &layout,
+        );
+        if moved {
             state.platform.window.request_redraw();
         }
-        state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_ref()
-            .and_then(|modal| modal.scroll_deadline())
+        next
     }
 
     /// Arrow repeat on VERA's scrollbar beside the Skirmish computer rows;
     /// returns the next wake deadline.
     pub(super) fn poll_skirmish_opponent_scroll(state: &mut AppState) -> Option<Instant> {
         use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
-        if !crate::ui::skirmish_shell::opponent_scroll_held(&state.frontend.skirmish_shell_state)
-            || input_layer(state) != InputLayer::Screen(ScreenPage::Skirmish)
-        {
+        if input_layer(state) != InputLayer::Screen(ScreenPage::Skirmish) {
             return None;
         }
-        let layout = Self::skirmish_shell_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        if crate::ui::skirmish_shell::poll_opponent_scroll(
-            &mut state.frontend.skirmish_shell_state,
-            &layout,
-            state.frontend.scenario_catalog.shell_maps(),
-            x,
-            y,
-            Instant::now(),
-        ) {
+        let frontend = &mut state.frontend;
+        let (changed, next) = crate::ui::skirmish_shell::page::poll(
+            &mut frontend.shell_controller,
+            &mut frontend.skirmish_shell_state,
+        );
+        if changed {
             state.platform.window.request_redraw();
         }
-        crate::ui::skirmish_shell::opponent_scroll_deadline(&state.frontend.skirmish_shell_state)
+        next
     }
 
     pub(super) fn handle_choose_map_modal_mouse_up(state: &mut AppState) -> bool {
-        let layout = Self::skirmish_choose_map_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-        else {
+        if chooser(state).is_none() {
             return false;
-        };
-        modal.mouse_up();
-        let released_button = crate::ui::skirmish_shell::choose_map_modal_button_at(&layout, x, y);
-        let (had_pressed_button, fired_button) = modal.release_button(released_button);
-        let Some(fired_button) = fired_button else {
-            return layout.dialog.contains(x, y) || had_pressed_button;
+        }
+        Self::choose_map_pointer(state, Pointer::Up);
+        true
+    }
+
+    /// A chooser button released over its own press.
+    fn choose_map_button(state: &mut AppState, fired_button: ChooseMapModalButton) {
+        let layout = choose_map_layout(state);
+        let frontend = &mut state.frontend;
+        let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() else {
+            return;
         };
         // Every way out slides `0x6B` out first (`0x007757E0` ->
         // `ShellDialog__SlideOutAndWait`); its result runs afterwards.
-        let then = match fired_button {
-            crate::ui::skirmish_shell::ChooseMapModalButton::UseMap0x6c5
-                if modal.random_maps_selected() =>
-            {
+        let then: crate::app::frontend::shell_transition::ShellExitThen = match fired_button {
+            // VERA: a saved map of the Random Maps folder opens in the
+            // generator, which loads its seed and uses it.
+            ChooseMapModalButton::UseMap0x6c5 if modal.random_maps_selected() => {
                 let Some(seed) = modal.selected_saved_seed() else {
-                    return true;
+                    return;
                 };
-                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap(Some(
-                    seed.file_name.clone(),
-                ))
+                let file = seed.file_name.clone();
+                Box::new(move |state: &mut AppState| {
+                    Self::commit_choose_map_random_map(state);
+                    Self::load_random_map_seed(state, &file, true);
+                })
             }
-            crate::ui::skirmish_shell::ChooseMapModalButton::UseMap0x6c5 => {
+            ChooseMapModalButton::UseMap0x6c5 => {
                 // No map selected: Use Map does nothing (`0x005E7160`).
                 let Some(selection) = modal.accept_selection() else {
-                    return true;
+                    return;
                 };
                 // VERA: an Online map is downloaded first; the rest of Use
                 // Map runs once it is here (`map_library`).
                 if crate::app::map_library::prompt_download(state, selection) {
-                    return true;
+                    return;
                 }
                 if Self::prompt_choose_map_eject(state, selection) {
-                    return true;
+                    return;
                 }
-                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapUse(selection)
+                return Self::leave_choose_map_for_use(state, selection);
             }
-            crate::ui::skirmish_shell::ChooseMapModalButton::Cancel0x5c0 => {
-                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapCancel
-            }
-            crate::ui::skirmish_shell::ChooseMapModalButton::CreateRandomMap0x583 => {
-                crate::app::frontend::shell_transition::ShellExitThen::ChooseMapRandomMap(None)
+            ChooseMapModalButton::Cancel0x5c0 => Box::new(Self::close_choose_map_modal),
+            ChooseMapModalButton::CreateRandomMap0x583 => {
+                Box::new(Self::commit_choose_map_random_map)
             }
             // VERA: stars or unstars the highlighted map.
-            crate::ui::skirmish_shell::ChooseMapModalButton::Favorite => {
+            ChooseMapModalButton::Favorite => {
                 if let Some((key, starred)) = modal.toggle_favorite(
-                    &state.frontend.skirmish_modes,
-                    state.frontend.scenario_catalog.records(),
+                    &frontend.skirmish_modes,
+                    frontend.scenario_catalog.records(),
                     &layout,
                 ) {
                     crate::app::map_library::set_favorite(state, key, starred);
                 }
                 state.platform.window.request_redraw();
-                return true;
+                return;
             }
         };
-        Self::leave_shell_dialog(state, then);
-        true
+        Self::leave_shell_dialog(state, ShellSlideKind::ChooseMap, then);
     }
 
     /// Use Map's eject check (`0x005E72A5`): when occupied AI rows would not
     /// fit the chosen map, show `GUI:EjectAIPlayers` and report it.
     pub(super) fn prompt_choose_map_eject(
         state: &mut AppState,
-        selection: crate::ui::skirmish_shell::ChooseMapSelection,
+        selection: ChooseMapSelection,
     ) -> bool {
         if !Self::choose_map_would_eject_ai(state, selection) {
             return false;
         }
-        if let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-        {
+        if let Some(modal) = chooser(state) {
             modal.message_box = Some(crate::ui::skirmish_shell::ChooseMapPrompt {
                 selection,
-                pressed: None,
-                kind: crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi,
+                kind: ChooseMapPromptKind::EjectAi,
             });
         }
         state.platform.window.request_redraw();
@@ -1161,10 +970,7 @@ impl App {
     /// Whether Use Map must ask to eject AI players: an occupied AI row at or
     /// past the chosen map's player limit (`0x005E723C` `0x005E6520`,
     /// `0x006ACCA0`).
-    fn choose_map_would_eject_ai(
-        state: &AppState,
-        selection: crate::ui::skirmish_shell::ChooseMapSelection,
-    ) -> bool {
+    fn choose_map_would_eject_ai(state: &AppState, selection: ChooseMapSelection) -> bool {
         let Some(limit) = selection
             .record_index
             .and_then(|record| state.frontend.scenario_catalog.records().get(record))
@@ -1172,7 +978,7 @@ impl App {
         else {
             return false;
         };
-        if state.frontend.shell_route.network_setup() {
+        if state.frontend.shell_route == ShellRoute::NetworkSetup {
             return state
                 .match_state
                 .session
@@ -1190,70 +996,80 @@ impl App {
         )
     }
 
-    /// The eject box's two buttons (the two-button message box `0x120`).
-    fn choose_map_prompt_button_at(
-        state: &AppState,
-        x: i32,
-        y: i32,
-    ) -> Option<crate::ui::skirmish_shell::ChooseMapPromptButton> {
-        let layout = crate::ui::shell::modal::quit_confirm_layout(
-            state.render_width() as i32,
-            state.render_height() as i32,
+    /// Use Map's box (the two-button message box `0x120`) on the controller
+    /// over the chooser, built once and kept on its rects: OK greyed while a
+    /// download runs, Enter on [`ChooseMapPrompt::default_button`] and
+    /// Escape on Cancel. The box and its widgets' dialog; none while no box
+    /// shows.
+    fn sync_choose_map_prompt(
+        state: &mut AppState,
+    ) -> Option<(
+        crate::ui::skirmish_shell::ChooseMapPrompt,
+        crate::ui::shell::modal::ShellBox,
+    )> {
+        use crate::ui::shell::modal::control::CANCEL;
+        use vera20k_gui::{Prop, Value};
+        let prompt = chooser(state)?.message_box?;
+        let shell_box = prompt.shell_box(String::new(), String::new(), String::new());
+        let (w, h) = (state.render_width() as i32, state.render_height() as i32);
+        let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
+        let controller = &mut state.frontend.shell_controller;
+        if controller.top_id() != Some(shell_box.dialog) {
+            controller.close(shell_box.dialog);
+            controller.push_modal(shell_box.dialog);
+        }
+        crate::ui::shell::menu_page::sync_nodes(
+            controller,
+            shell_box.dialog,
+            || shell_box.nodes(),
+            |id| parts.rect_of(id),
+            &shell_box.enabled(),
         );
-        if layout.ok.contains(x, y) {
-            Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok)
-        } else if layout.cancel.contains(x, y) {
-            Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel)
-        } else {
-            None
+        for b in &shell_box.buttons {
+            let default = Value::Bool(b.id == prompt.default_button());
+            controller.set_prop(shell_box.dialog, b.id, Prop::Default, default);
+            let cancel = Value::Bool(b.id == CANCEL);
+            controller.set_prop(shell_box.dialog, b.id, Prop::Cancel, cancel);
+        }
+        Some((prompt, shell_box))
+    }
+
+    /// A pointer message (`down`; `None` moves) while Use Map's box shows:
+    /// its owner-draw buttons (`0x00612B70`) play GUIMainButtonSound on the
+    /// press and answer on the release over their own press. Download takes
+    /// no press while it runs. False when no box shows.
+    pub(super) fn choose_map_prompt_pointer(state: &mut AppState, down: Option<bool>) -> bool {
+        use crate::ui::shell::modal::control::OK;
+        let Some((prompt, shell_box)) = Self::sync_choose_map_prompt(state) else {
+            return false;
+        };
+        let (w, h) = (state.render_width() as i32, state.render_height() as i32);
+        let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
+        if let Some(id) = Self::shell_box_pointer(state, &shell_box, &parts, down) {
+            Self::answer_choose_map_prompt(state, prompt, id == OK);
+            Self::drop_choose_map_prompt(state, &shell_box);
+            // The dialog under the box sees the pointer where it let go.
+            Self::handle_skirmish_shell_mouse_move(state);
+        }
+        if down.is_some() {
+            state.platform.window.request_redraw();
+        }
+        true
+    }
+
+    /// Takes the answered box's widgets off the controller.
+    fn drop_choose_map_prompt(state: &mut AppState, shell_box: &crate::ui::shell::modal::ShellBox) {
+        if chooser(state).is_none_or(|modal| modal.message_box.is_none()) {
+            state.frontend.shell_controller.close(shell_box.dialog);
         }
     }
 
-    /// A press while Use Map's box shows: its owner-draw buttons play the
-    /// press sound (`0x00612B70`). Download takes no press while it runs.
     pub(super) fn handle_choose_map_prompt_mouse_down(state: &mut AppState) -> bool {
-        let (x, y) = state.match_state.input.cursor_px();
-        let button = Self::choose_map_prompt_button_at(state, x, y);
-        let Some(prompt) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-            .and_then(|modal| modal.message_box.as_mut())
-        else {
-            return false;
-        };
-        let button = button.filter(|button| prompt.button_enabled(*button));
-        prompt.pressed = button;
-        if button.is_some() {
-            Self::play_main_menu_button_sound(state);
-        }
-        state.platform.window.request_redraw();
-        true
+        Self::choose_map_prompt_pointer(state, Some(true))
     }
 
-    /// A release while Use Map's box shows answers it with the button it
-    /// was pressed on.
     pub(super) fn handle_choose_map_prompt_mouse_up(state: &mut AppState) -> bool {
-        let (x, y) = state.match_state.input.cursor_px();
-        let released = Self::choose_map_prompt_button_at(state, x, y);
-        let Some(prompt) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-            .and_then(|modal| modal.message_box.as_mut())
-        else {
-            return false;
-        };
-        let pressed = prompt.pressed.take();
-        let prompt = *prompt;
-        if pressed.is_some() && pressed == released {
-            let ok = pressed == Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok);
-            Self::answer_choose_map_prompt(state, prompt, ok);
-        }
-        state.platform.window.request_redraw();
-        true
+        Self::choose_map_prompt_pointer(state, Some(false))
     }
 
     /// Answers Use Map's box with OK (`ok`) or Cancel. OK goes on to Use
@@ -1266,11 +1082,7 @@ impl App {
         ok: bool,
     ) {
         use crate::ui::skirmish_shell::ChooseMapPromptAnswer as Answer;
-        let modal = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut();
+        let modal = chooser(state);
         match prompt.answer(ok) {
             Answer::UseMap => {
                 // A chooser the random-map run hid closes without a slide
@@ -1278,17 +1090,12 @@ impl App {
                 if let Some(modal) = modal {
                     modal.message_box = None;
                 }
-                if prompt.kind == crate::ui::skirmish_shell::ChooseMapPromptKind::Downloaded
+                if prompt.kind == ChooseMapPromptKind::Downloaded
                     && Self::prompt_choose_map_eject(state, prompt.selection)
                 {
                     return;
                 }
-                Self::leave_shell_dialog(
-                    state,
-                    crate::app::frontend::shell_transition::ShellExitThen::ChooseMapUse(
-                        prompt.selection,
-                    ),
-                );
+                Self::leave_choose_map_for_use(state, prompt.selection);
             }
             Answer::Download => crate::app::map_library::start_download(state, prompt.selection),
             Answer::Close => {
@@ -1311,45 +1118,12 @@ impl App {
         if !event.state.is_pressed() {
             return false;
         }
-        if Self::choose_map_search_ime_rect(state).is_none() {
-            return false;
+        if event.physical_key == PhysicalKey::Code(KeyCode::Backspace) {
+            let backspace = vera20k_gui::InputEvent::Key(vera20k_gui::Key::Backspace);
+            return Self::choose_map_search_input(state, backspace);
         }
-        let layout = Self::skirmish_choose_map_layout(state);
-        let frontend = &mut state.frontend;
-        let Some(modal) = frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-            .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())
-        else {
-            return false;
-        };
-        let mut text = modal.search.clone();
-        if event.physical_key
-            == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Backspace)
-        {
-            text.pop();
-        } else {
-            let typed: String = event
-                .text
-                .as_deref()
-                .unwrap_or_default()
-                .chars()
-                .filter(|ch| !ch.is_control())
-                .collect();
-            if typed.is_empty() {
-                return false;
-            }
-            return Self::choose_map_search_text(state, &typed);
-        }
-        modal.set_search(
-            text,
-            &frontend.skirmish_modes,
-            frontend.scenario_catalog.records(),
-            &layout,
-        );
-        state.platform.window.request_redraw();
-        true
+        let typed = event.text.as_deref().unwrap_or_default();
+        typed.chars().any(|ch| !ch.is_control()) && Self::choose_map_search_text(state, typed)
     }
 
     /// VERA's Esc menu (`app::shell_menu`): Esc stays with the seed browser,
@@ -1371,22 +1145,28 @@ impl App {
                 .is_none_or(|modal| !modal.generating)
     }
 
-    /// Enter or Escape on Use Map's box answer Cancel (`0x005D370D`). VERA's
-    /// download boxes take Enter as OK, as the room's missing-map offer
-    /// does: Download, or going on with a downloaded map. While the
-    /// download runs, Enter does nothing and Escape cancels.
+    /// Enter or Escape on Use Map's box, through its widgets: Enter its
+    /// default button ([`ChooseMapPrompt::default_button`]), Escape Cancel.
+    /// While the download runs, Enter does nothing and Escape cancels.
     pub(super) fn answer_choose_map_prompt_key(state: &mut AppState, enter: bool) -> bool {
-        let Some(prompt) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_ref()
-            .and_then(|modal| modal.message_box)
-        else {
+        use crate::ui::shell::modal::control::OK;
+        use vera20k_gui::{InputEvent, Key};
+        let Some((prompt, shell_box)) = Self::sync_choose_map_prompt(state) else {
             return false;
         };
-        let ok = enter && prompt.kind != crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi;
-        Self::answer_choose_map_prompt(state, prompt, ok);
+        let key = if enter { Key::Enter } else { Key::Escape };
+        let controller = &mut state.frontend.shell_controller;
+        controller.on_input(InputEvent::Key(key));
+        let raw = controller.drain_events();
+        let events = crate::ui::shell::page::page_events(controller.gui(), raw);
+        let answer = events.into_iter().find_map(|event| match event {
+            crate::ui::shell::page::PageEvent::Activated(id) => Some(id),
+            _ => None,
+        });
+        if let Some(id) = answer {
+            Self::answer_choose_map_prompt(state, prompt, id == OK);
+            Self::drop_choose_map_prompt(state, &shell_box);
+        }
         state.platform.window.request_redraw();
         true
     }
@@ -1395,18 +1175,25 @@ impl App {
     /// hides it): commit the selection, close the chooser; `0x102` shows
     /// again and replays its entry slide. A selection that cannot commit
     /// keeps the chooser, which shows again if it was hidden.
-    pub(super) fn commit_choose_map_use(
-        state: &mut AppState,
-        selection: crate::ui::skirmish_shell::ChooseMapSelection,
-    ) {
+    /// Use Map's slide-out: the selection waits in the chooser
+    /// ([`crate::ui::skirmish_shell::ChooseMapModalState::use_selection`]),
+    /// where a catalog change during the slide remaps it, and is committed
+    /// once the slide ends.
+    fn leave_choose_map_for_use(state: &mut AppState, selection: ChooseMapSelection) {
+        if let Some(modal) = chooser(state) {
+            modal.use_selection = Some(selection);
+        }
+        Self::leave_shell_dialog(state, ShellSlideKind::ChooseMap, |state: &mut AppState| {
+            if let Some(selection) = chooser(state).and_then(|modal| modal.use_selection.take()) {
+                App::commit_choose_map_use(state, selection);
+            }
+        });
+    }
+
+    pub(super) fn commit_choose_map_use(state: &mut AppState, selection: ChooseMapSelection) {
         if Self::commit_choose_map_selection(state, selection) {
             Self::close_choose_map_modal(state);
-        } else if let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-        {
+        } else if let Some(modal) = chooser(state) {
             modal.show();
         }
     }
@@ -1414,12 +1201,7 @@ impl App {
     /// `0x6B`'s slide-out has run for Create Random Map: the chooser hides
     /// (`0x005E6A0B`) while the random-map dialog `0x105` runs.
     pub(super) fn commit_choose_map_random_map(state: &mut AppState) {
-        let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-        else {
+        let Some(modal) = chooser(state) else {
             return;
         };
         modal.hide();
@@ -1450,7 +1232,7 @@ impl App {
             Some(previous),
             available,
         );
-        if state.frontend.shell_route.network_setup() {
+        if state.frontend.shell_route == ShellRoute::NetworkSetup {
             modal.use_network_player_limit();
         }
         modal.ares = ares;
@@ -1461,137 +1243,81 @@ impl App {
         state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);
     }
 
-    fn sync_player_name_edit_scroll(state: &mut AppState) {
-        let layout = Self::skirmish_shell_layout(state);
-        // The scroll keeps the caret inside the field on the font's authored
-        // metrics, so it runs on the field's base rect.
-        let text_rect = crate::ui::skirmish_shell::player_name_edit_text_rect(
-            layout.scale.base_rect(layout.player_name),
-            crate::ui::shell::geom::ShellScale::RETAIL,
-        );
-        let prefix_width = state.renderer.bit_font.text_width(
-            crate::ui::skirmish_shell::player_name_caret_prefix(
-                &state.frontend.skirmish_shell_state,
-            ),
-        );
-        crate::ui::skirmish_shell::update_player_name_scroll_for_caret(
-            &mut state.frontend.skirmish_shell_state,
-            text_rect.w,
-            prefix_width,
-        );
+    /// The name box `0x6A0` loses the keyboard focus.
+    pub(super) fn blur_player_name(state: &mut AppState) {
+        let page = crate::ui::skirmish_shell::page::DIALOG;
+        state.frontend.shell_controller.focus_control(page, None);
     }
 
-    pub(super) fn localized_status_help_text(state: &AppState, key: &str) -> String {
-        state
-            .process_assets
-            .csf
-            .as_ref()
-            .map(|csf| csf.text(key).into_owned())
-            .unwrap_or_default()
-    }
-
-    fn update_skirmish_shell_status_help(
-        state: &mut AppState,
-        layout: &crate::ui::skirmish_shell::SkirmishShellLayout,
-        x: i32,
-        y: i32,
-    ) {
-        // A trackbar holding the mouse keeps the dialog's hit test
-        // (`WM_NCHITTEST`, `0x00622CCB`) from running until the release.
+    /// `0x102`'s proc runs the common handler first (`0x006AE40A`): every
+    /// move writes the help, which repaints the status line. A trackbar
+    /// holding the mouse keeps the dialog's hit test (`WM_NCHITTEST`,
+    /// `0x00622CCB`) from running until the release.
+    fn update_skirmish_shell_status_help(state: &mut AppState, x: i32, y: i32) {
+        use crate::ui::skirmish_shell::{SkirmishHoverTarget, page};
         let shell = &state.frontend.skirmish_shell_state;
-        if shell.trackbar_hold.is_some()
-            || shell.game_options.is_some_and(|open| open.hold.is_some())
-        {
+        let gui = state.frontend.shell_controller.gui();
+        if page::pointer_held(gui) {
             return;
         }
-        let target = crate::ui::skirmish_shell::hovered_shell_control(
-            layout,
-            &state.frontend.skirmish_shell_state,
-            state.frontend.scenario_catalog.shell_maps(),
-            x,
-            y,
-        );
-        let text = target
-            .and_then(|target| {
-                crate::ui::skirmish_shell::status_help_key_for_hover_with_catalog(
-                    target,
-                    Some(&state.frontend.skirmish_shell_state.country_catalog),
-                )
-            })
-            .map(|key| Self::localized_status_help_text(state, key))
-            .unwrap_or_default();
-        let text =
-            if target == Some(crate::ui::skirmish_shell::SkirmishHoverTarget::MapPreview0x468) {
-                crate::app::frontend::preview_zoom::box_help(state, text)
-            } else {
-                text
-            };
-
-        // `0x102`'s proc runs the common handler first (`0x006AE40A`): every
-        // move writes the help, which repaints the status line.
-        if crate::ui::skirmish_shell::set_status_help_text(
-            &mut state.frontend.skirmish_shell_state,
-            text,
-        ) {
+        let maps = state.frontend.scenario_catalog.shell_maps();
+        let root = state.frontend.shell_controller.root_in(page::DIALOG);
+        let target = page::hover_target(gui, root, shell, maps, x, y);
+        let key = target.and_then(|target| {
+            crate::ui::skirmish_shell::status_help_key_for_hover_with_catalog(
+                target,
+                Some(&shell.country_catalog),
+            )
+        });
+        let preview = target == Some(SkirmishHoverTarget::MapPreview0x468);
+        let text = Self::status_help(state, key, preview);
+        if (state.frontend.skirmish_shell_state.statics).hover(&text, Instant::now()) {
             state.platform.window.request_redraw();
         }
     }
 
-    fn localized_choose_map_status_help_text(
-        state: &AppState,
-        target: crate::ui::skirmish_shell::ChooseMapHoverTarget,
-    ) -> String {
-        // Over a game-type row the help is the mode's description (`0x4E9`,
-        // `0x005E6E44`).
-        if let crate::ui::skirmish_shell::ChooseMapHoverTarget::ModeListRow0x6eb { mode } = target
-            && let Some(mode) = mode.resolve(&state.frontend.skirmish_modes)
-            && !mode.tooltip_key.is_empty()
-        {
-            let text = Self::localized_status_help_text(state, &mode.tooltip_key);
-            if !text.is_empty() {
-                return text;
-            }
-        }
-
-        let text = crate::ui::skirmish_shell::status_help_key_for_choose_map_hover(target)
-            .map(|key| Self::localized_status_help_text(state, key))
-            .unwrap_or_default();
-        if target == crate::ui::skirmish_shell::ChooseMapHoverTarget::Preview0x468 {
-            crate::app::frontend::preview_zoom::box_help(state, text)
-        } else {
-            text
+    /// The status line's text for help `key`; over a map `preview` it says
+    /// that a press enlarges it.
+    fn status_help(state: &AppState, key: Option<&str>, preview: bool) -> String {
+        let text = key.map(|key| state.csf_label(key, "")).unwrap_or_default();
+        match preview {
+            true => crate::app::frontend::preview_zoom::box_help(state, text),
+            false => text,
         }
     }
 
     /// A child's mouse move writes its help; over the background the last
-    /// text stays (`0x6B` has no clearing hit test).
-    fn update_choose_map_modal_status_help(
-        state: &mut AppState,
-        layout: &crate::ui::skirmish_shell::ChooseMapModalLayout,
-        x: i32,
-        y: i32,
-    ) {
-        let Some(text) = state
+    /// text stays (`0x6B` has no clearing hit test). Over a game-type row the
+    /// help is the mode's description (`0x4E9`, `0x005E6E44`).
+    fn update_choose_map_modal_status_help(state: &mut AppState) {
+        use crate::ui::skirmish_shell::ChooseMapHoverTarget as Target;
+        let (x, y) = state.match_state.input.cursor_px();
+        let gui = state.frontend.shell_controller.gui();
+        let modal = state
             .frontend
             .skirmish_shell_state
             .choose_map_modal
-            .as_ref()
-            .and_then(|modal| {
-                crate::ui::skirmish_shell::hovered_choose_map_modal_control(layout, modal, x, y)
-            })
-            .map(|target| Self::localized_choose_map_status_help_text(state, target))
-        else {
+            .as_ref();
+        let Some(target) = modal.and_then(|modal| {
+            crate::ui::skirmish_shell::choose_map_page::hover_target(gui, modal, x, y)
+        }) else {
             return;
         };
+        let mode_help = match target {
+            Target::ModeListRow0x6eb { mode } => mode
+                .resolve(&state.frontend.skirmish_modes)
+                .filter(|mode| !mode.tooltip_key.is_empty())
+                .map(|mode| state.csf_label(&mode.tooltip_key, ""))
+                .filter(|text| !text.is_empty()),
+            _ => None,
+        };
+        let text = mode_help.unwrap_or_else(|| {
+            let key = crate::ui::skirmish_shell::status_help_key_for_choose_map_hover(target);
+            Self::status_help(state, key, target == Target::Preview0x468)
+        });
         // A child's hover message writes and repaints the status line.
-        if let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-            && modal
-                .statics
-                .hover(&text, crate::util::time::Instant::now())
+        if let Some(modal) = chooser(state)
+            && modal.statics.hover(&text, Instant::now())
         {
             state.platform.window.request_redraw();
         }
@@ -1602,70 +1328,46 @@ impl App {
         code: KeyCode,
         text: Option<&str>,
     ) -> bool {
-        if !state.frontend.skirmish_shell_state.player_name_edit.focused {
-            return false;
-        }
-
-        let changed = match code {
-            KeyCode::Backspace => crate::ui::skirmish_shell::handle_player_name_backspace(
-                &mut state.frontend.skirmish_shell_state,
-            ),
-            KeyCode::Delete => crate::ui::skirmish_shell::handle_player_name_delete(
-                &mut state.frontend.skirmish_shell_state,
-            ),
-            KeyCode::ArrowLeft => crate::ui::skirmish_shell::handle_player_name_left(
-                &mut state.frontend.skirmish_shell_state,
-            ),
-            KeyCode::ArrowRight => crate::ui::skirmish_shell::handle_player_name_right(
-                &mut state.frontend.skirmish_shell_state,
-            ),
-            KeyCode::Home => crate::ui::skirmish_shell::handle_player_name_home(
-                &mut state.frontend.skirmish_shell_state,
-            ),
-            KeyCode::End => crate::ui::skirmish_shell::handle_player_name_end(
-                &mut state.frontend.skirmish_shell_state,
-            ),
-            KeyCode::Tab => crate::ui::skirmish_shell::handle_player_name_tab(
-                &mut state.frontend.skirmish_shell_state,
-            ),
-            _ => text.is_some_and(|text| {
-                crate::ui::skirmish_shell::insert_player_name_text(
-                    &mut state.frontend.skirmish_shell_state,
-                    text,
-                )
-            }),
-        };
-
-        if changed {
-            Self::sync_player_name_edit_scroll(state);
+        let shift = state.platform.live_modifiers.shift_key();
+        let event = crate::ui::shell::controller::gui_input(Some(code), shift, text);
+        let font = &state.renderer.bit_font;
+        let frontend = &mut state.frontend;
+        let focused = crate::ui::skirmish_shell::page::key(
+            &mut frontend.shell_controller,
+            &mut frontend.skirmish_shell_state,
+            event,
+            |text| font.text_width(text),
+        );
+        if focused {
             state.platform.window.request_redraw();
         }
-        true
+        focused
     }
 
     fn close_validation_modal_from_controller(state: &mut AppState) {
-        crate::ui::skirmish_shell::dismiss_validation_modal(
-            &mut state.frontend.skirmish_shell_state,
-        );
-        if state.frontend.shell_controller.top_id() == Some(Self::validation_modal_dialog_id()) {
+        state.frontend.skirmish_shell_state.validation_modal = None;
+        if state.frontend.shell_controller.top_id() == Some(VALIDATION_BOX) {
             state.frontend.shell_controller.pop();
         }
     }
 
-    pub(super) fn route_validation_modal_key(state: &mut AppState, key: ShellKey) -> bool {
-        if state
-            .frontend
-            .skirmish_shell_state
-            .validation_modal
-            .is_none()
-        {
+    /// A key while `0xCE` is up: Enter and Escape reach its hidden IDOK,
+    /// which closes it as OK does.
+    pub(super) fn route_validation_modal_key(state: &mut AppState, code: KeyCode) -> bool {
+        let Some(shell_box) = state.frontend.skirmish_shell_state.validation_modal.clone() else {
             return false;
-        }
+        };
+        let Some(key) = crate::ui::shell::controller::gui_key(code, false) else {
+            return false;
+        };
+        let (w, h) = (state.render_width() as i32, state.render_height() as i32);
+        let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
         state
             .frontend
             .shell_controller
-            .ensure_active(Self::validation_modal_dialog_id(), true);
-        if !state.frontend.shell_controller.on_key(key) {
+            .ensure_active(VALIDATION_BOX);
+        let event = vera20k_gui::InputEvent::Key(key);
+        if Self::shell_box_input(state, &shell_box, &parts, event).is_none() {
             return false;
         }
         Self::close_validation_modal_from_controller(state);
@@ -1673,387 +1375,229 @@ impl App {
         true
     }
 
-    fn route_validation_modal_mouse_down(state: &mut AppState) -> bool {
-        if state
-            .frontend
-            .skirmish_shell_state
-            .validation_modal
-            .is_none()
-        {
+    /// A press or release while `0xCE` is up: its owner-draw OK plays
+    /// GUIMainButtonSound on the press (`0x00612B70` via the message box
+    /// `0x005D3490`) and closes the box on its release.
+    fn route_validation_modal_mouse(state: &mut AppState, down: bool) -> bool {
+        use crate::ui::shell::modal::control::OK;
+        let Some(shell_box) = state.frontend.skirmish_shell_state.validation_modal.clone() else {
             return false;
-        }
-        let feed = Self::validation_modal_feed(state);
-        let (x, y) = state.match_state.input.cursor_px();
+        };
+        let (w, h) = (state.render_width() as i32, state.render_height() as i32);
+        let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
         state
             .frontend
             .shell_controller
-            .ensure_active(Self::validation_modal_dialog_id(), true);
-        state.frontend.shell_controller.on_pointer_down(x, y, &feed);
-        // `0xCE`'s owner-draw OK plays GUIMainButtonSound on the press
-        // (`0x00612B70` via the message box `0x005D3490`).
-        if state.frontend.shell_controller.pressed().is_some() {
-            Self::play_main_menu_button_sound(state);
-        }
-        state.platform.window.request_redraw();
-        true
-    }
-
-    fn route_validation_modal_mouse_up(state: &mut AppState) -> bool {
-        if state
-            .frontend
-            .skirmish_shell_state
-            .validation_modal
-            .is_none()
-        {
-            return false;
-        }
-        let feed = Self::validation_modal_feed(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(Self::validation_modal_dialog_id(), true);
-        let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
-        if activated == Some(crate::ui::shell::modal::control::OK) {
+            .ensure_active(shell_box.dialog);
+        if Self::shell_box_pointer(state, &shell_box, &parts, Some(down)) == Some(OK) {
             Self::close_validation_modal_from_controller(state);
         }
         state.platform.window.request_redraw();
         true
     }
 
+    /// `0x102`'s widgets under the shell controller, built once per visit and
+    /// showing the session; their root.
+    pub(crate) fn sync_skirmish_page(state: &mut AppState) -> Option<vera20k_gui::NodeId> {
+        let layout = skirmish_layout(state);
+        let labels = crate::app::frontend::skirmish_shell_render::skirmish_labels(state);
+        let frontend = &mut state.frontend;
+        crate::ui::skirmish_shell::page::sync_page(
+            &mut frontend.shell_controller,
+            &frontend.skirmish_shell_state,
+            &layout,
+            frontend.scenario_catalog.shell_maps(),
+            &labels,
+        )
+    }
+
+    /// The pointer on `0x102`'s widgets: the session takes their events, their
+    /// cues play and an activated button acts.
+    fn skirmish_page_pointer(state: &mut AppState, at: Pointer) {
+        let layout = skirmish_layout(state);
+        let labels = crate::app::frontend::skirmish_shell_render::skirmish_labels(state);
+        let (x, y) = state.match_state.input.cursor_px();
+        let frontend = &mut state.frontend;
+        let (cues, action) = crate::ui::skirmish_shell::page::pointer(
+            &mut frontend.shell_controller,
+            &mut frontend.skirmish_shell_state,
+            &layout,
+            frontend.scenario_catalog.shell_maps(),
+            &labels,
+            at,
+            x,
+            y,
+        );
+        Self::play_cues(state, cues);
+        // A pick from Quick Team Setup or Bulk Seat Actions acts on the rows.
+        Self::run_skirmish_menu_pick(state);
+        state.platform.window.request_redraw();
+        if let Some(action) = action {
+            Self::handle_skirmish_shell_action(state, action);
+        }
+    }
+
+    /// Whether the page's widgets have a list open.
+    fn skirmish_list_open(state: &AppState) -> bool {
+        state.frontend.shell_controller.top_id() == Some(crate::ui::skirmish_shell::page::DIALOG)
+            && state.frontend.shell_controller.gui().popup().is_some()
+    }
+
+    /// Closes the page's open list, without a cue.
+    pub(super) fn close_skirmish_list(state: &mut AppState) -> bool {
+        Self::skirmish_list_open(state) && state.frontend.shell_controller.gui_mut().close_popup()
+    }
+
+    /// The dialog on top of the Skirmish stack when it is not `0x102`.
+    fn skirmish_page_covered(state: &mut AppState, at: Pointer) -> bool {
+        let down = match at {
+            Pointer::Move => None,
+            at => Some(at == Pointer::Down),
+        };
+        match state.frontend.skirmish_shell_state.top_dialog() {
+            Some(SkirmishShellDialog::Skirmish) => {
+                return Self::route_game_options_mouse(state, at);
+            }
+            Some(SkirmishShellDialog::SeedBrowser) => match down {
+                Some(down) => _ = Self::saved_seed_browser_pointer(state, Some(down)),
+                None => Self::update_saved_seed_browser_scroll(state, true),
+            },
+            Some(SkirmishShellDialog::Setups) => match down {
+                Some(down) => {
+                    Self::skirmish_setups_pointer(state, Some(down));
+                    if down {
+                        Self::update_skirmish_setups_scroll(state, false);
+                    }
+                }
+                None => Self::update_skirmish_setups_scroll(state, true),
+            },
+            Some(SkirmishShellDialog::RandomMap) => match down {
+                Some(true) => _ = Self::handle_random_map_setup_mouse_down(state),
+                Some(false) => _ = Self::handle_random_map_setup_mouse_up(state),
+                None => Self::handle_random_map_setup_mouse_move(state),
+            },
+            Some(SkirmishShellDialog::ChooseMap) => match down {
+                Some(true) => _ = Self::handle_choose_map_modal_mouse_down(state),
+                Some(false) => _ = Self::handle_choose_map_modal_mouse_up(state),
+                None => {
+                    Self::choose_map_pointer(state, Pointer::Move);
+                    Self::update_choose_map_modal_status_help(state);
+                }
+            },
+            None => {}
+        }
+        true
+    }
+
     pub(super) fn handle_skirmish_shell_mouse_down(state: &mut AppState) {
         // A message box runs over the dialogs; else the dialog on top.
-        if Self::route_validation_modal_mouse_down(state)
+        if Self::route_validation_modal_mouse(state, true)
             || Self::handle_choose_map_prompt_mouse_down(state)
+            || Self::skirmish_page_covered(state, Pointer::Down)
         {
             return;
         }
-        match state.frontend.skirmish_shell_state.top_dialog() {
-            Some(SkirmishShellDialog::Skirmish) => {}
-            Some(SkirmishShellDialog::SeedBrowser) => {
-                Self::handle_saved_seed_browser_mouse_down(state);
-                return;
-            }
-            Some(SkirmishShellDialog::Setups) => {
-                Self::handle_skirmish_setups_mouse_down(state);
-                return;
-            }
-            Some(SkirmishShellDialog::RandomMap) => {
-                Self::handle_random_map_setup_mouse_down(state);
-                return;
-            }
-            Some(SkirmishShellDialog::ChooseMap) => {
-                Self::handle_choose_map_modal_mouse_down(state);
-                return;
-            }
-            None => return,
-        }
-        if Self::route_game_options_mouse(state, GameOptionsMouse::Down) {
-            return;
-        }
-        let layout = Self::skirmish_shell_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
-        if crate::ui::skirmish_shell::player_name_edit_rect_hit(&layout, x, y) {
-            crate::ui::skirmish_shell::focus_player_name_edit(
-                &mut state.frontend.skirmish_shell_state,
+        if crate::ui::skirmish_shell::page::over_name(&state.frontend.shell_controller, x, y) {
+            // The name box takes the press even over an open list, which
+            // closes without its cue; the press selects the name.
+            Self::close_skirmish_list(state);
+            Self::skirmish_page_pointer(state, Pointer::Down);
+            let font = &state.renderer.bit_font;
+            crate::ui::skirmish_shell::page::scroll_player_name(
+                &mut state.frontend.shell_controller,
+                |text| font.text_width(text),
             );
-            Self::sync_player_name_edit_scroll(state);
-            state.platform.window.request_redraw();
             return;
         }
-        if state.frontend.skirmish_shell_state.player_name_edit.focused {
-            crate::ui::skirmish_shell::blur_player_name_edit(
-                &mut state.frontend.skirmish_shell_state,
-            );
-            state.platform.window.request_redraw();
-        }
-        if crate::ui::skirmish_shell::combo_dropdown_open(&state.frontend.skirmish_shell_state) {
-            crate::ui::skirmish_shell::handle_option_mouse_down(
-                &mut state.frontend.skirmish_shell_state,
-                &layout,
-                state.frontend.scenario_catalog.shell_maps(),
-                x,
-                y,
-            );
-            Self::drain_skirmish_shell_ui_sounds(state);
-            Self::run_skirmish_menu_pick(state);
-            return;
-        }
-        if crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview) {
-            return;
-        }
-        state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button =
-            crate::ui::skirmish_shell::hit_test_owner_draw_button(&layout, x, y);
-        if state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button
-            .is_some()
-        {
-            Self::play_main_menu_button_sound(state);
-        } else {
-            crate::ui::skirmish_shell::handle_option_mouse_down(
-                &mut state.frontend.skirmish_shell_state,
-                &layout,
-                state.frontend.scenario_catalog.shell_maps(),
-                x,
-                y,
-            );
-            Self::drain_skirmish_shell_ui_sounds(state);
+        let over = crate::app::frontend::preview_zoom::over_box(
+            state,
+            crate::ui::skirmish_shell::page::DIALOG,
+        );
+        let zoom = over && !Self::skirmish_list_open(state);
+        // The widgets take the press (the name box loses the focus to it);
+        // on the preview it takes nothing and enlarges the picture.
+        Self::skirmish_page_pointer(state, Pointer::Down);
+        if zoom {
+            crate::app::frontend::preview_zoom::press_on_box(state, true);
         }
     }
 
     pub(super) fn handle_skirmish_shell_mouse_up(state: &mut AppState) {
-        if Self::route_validation_modal_mouse_up(state)
+        if Self::route_validation_modal_mouse(state, false)
             || Self::handle_choose_map_prompt_mouse_up(state)
+            || Self::skirmish_page_covered(state, Pointer::Up)
         {
             return;
         }
-        match state.frontend.skirmish_shell_state.top_dialog() {
-            Some(SkirmishShellDialog::Skirmish) => {}
-            Some(SkirmishShellDialog::SeedBrowser) => {
-                Self::handle_saved_seed_browser_mouse_up(state);
-                return;
-            }
-            Some(SkirmishShellDialog::Setups) => {
-                Self::handle_skirmish_setups_mouse_up(state);
-                return;
-            }
-            Some(SkirmishShellDialog::RandomMap) => {
-                Self::handle_random_map_setup_mouse_up(state);
-                return;
-            }
-            Some(SkirmishShellDialog::ChooseMap) => {
-                Self::handle_choose_map_modal_mouse_up(state);
-                return;
-            }
-            None => return,
-        }
-        if Self::route_game_options_mouse(state, GameOptionsMouse::Up) {
-            return;
-        }
-        let layout = Self::skirmish_shell_layout(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        let released_button = crate::ui::skirmish_shell::hit_test_owner_draw_button(&layout, x, y);
-        let pressed_button = state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button
-            .take();
-        if pressed_button.is_some()
-            && pressed_button == released_button
-            && let Some(button) = released_button
-        {
-            crate::ui::skirmish_shell::handle_option_mouse_up(
-                &mut state.frontend.skirmish_shell_state,
-            );
-            Self::drain_skirmish_shell_ui_sounds(state);
-            let action = crate::ui::skirmish_shell::action_for_owner_draw_button(button);
-            Self::handle_skirmish_shell_action(state, action);
-            return;
-        }
-
         // A release after a trackbar or scrollbar press goes to that control,
         // which holds the mouse; freeing it lets the dialog's hit test run
         // again.
-        let shell = &state.frontend.skirmish_shell_state;
         let held =
-            shell.trackbar_hold.is_some() || crate::ui::skirmish_shell::opponent_scroll_held(shell);
-        crate::ui::skirmish_shell::handle_option_mouse_up(&mut state.frontend.skirmish_shell_state);
-        Self::drain_skirmish_shell_ui_sounds(state);
+            crate::ui::skirmish_shell::page::pointer_held(state.frontend.shell_controller.gui());
+        Self::skirmish_page_pointer(state, Pointer::Up);
         if held {
-            Self::update_skirmish_shell_status_help(state, &layout, x, y);
-            return;
+            let (x, y) = state.match_state.input.cursor_px();
+            Self::update_skirmish_shell_status_help(state, x, y);
         }
-
-        if released_button.is_some() {
-            return;
-        }
-
-        let action = crate::ui::skirmish_shell::hit_test(&layout, x, y);
-        Self::handle_skirmish_shell_action(state, action);
     }
 
     pub(super) fn handle_skirmish_shell_mouse_move(state: &mut AppState) {
-        match state.frontend.skirmish_shell_state.top_dialog() {
-            Some(SkirmishShellDialog::Skirmish) => {}
-            Some(SkirmishShellDialog::SeedBrowser) => {
-                Self::update_saved_seed_browser_scroll(state, true);
-                return;
-            }
-            Some(SkirmishShellDialog::Setups) => {
-                Self::update_skirmish_setups_scroll(state, true);
-                return;
-            }
-            Some(SkirmishShellDialog::RandomMap) => {
-                Self::handle_random_map_setup_mouse_move(state);
-                return;
-            }
-            Some(SkirmishShellDialog::ChooseMap) => {
-                let layout = Self::skirmish_choose_map_layout(state);
-                let (x, y) = state.match_state.input.cursor_px();
-                if let Some(modal) = state
-                    .frontend
-                    .skirmish_shell_state
-                    .choose_map_modal
-                    .as_mut()
-                {
-                    modal.mouse_move(&layout, x, y);
-                }
-                Self::update_choose_map_modal_status_help(state, &layout, x, y);
-                state.platform.window.request_redraw();
-                return;
-            }
-            None => return,
+        if Self::choose_map_prompt_pointer(state, None)
+            || Self::skirmish_page_covered(state, Pointer::Move)
+        {
+            return;
         }
+        // Under the validation box the page takes no move and the status
+        // line clears.
         if state
             .frontend
             .skirmish_shell_state
             .validation_modal
-            .is_some()
+            .is_none()
         {
-            if crate::ui::skirmish_shell::clear_status_help_text(
-                &mut state.frontend.skirmish_shell_state,
-            ) {
-                state.platform.window.request_redraw();
-            }
-            return;
+            Self::skirmish_page_pointer(state, Pointer::Move);
         }
-        if Self::route_game_options_mouse(state, GameOptionsMouse::Move) {
-            return;
-        }
-        let layout = Self::skirmish_shell_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
-        Self::update_skirmish_shell_status_help(state, &layout, x, y);
-        let seen = |shell: &crate::ui::skirmish_shell::SkirmishShellState| {
-            (
-                shell.open_combo_dropdown,
-                shell.first_opponent,
-                shell.opponent_scroll.pressed_part(),
-            )
-        };
-        let before = seen(&state.frontend.skirmish_shell_state);
-        crate::ui::skirmish_shell::handle_option_mouse_move(
-            &mut state.frontend.skirmish_shell_state,
-            &layout,
-            state.frontend.scenario_catalog.shell_maps(),
-            x,
-            y,
-        );
-        if seen(&state.frontend.skirmish_shell_state) != before {
-            state.platform.window.request_redraw();
-        }
-        Self::drain_skirmish_shell_ui_sounds(state);
+        Self::update_skirmish_shell_status_help(state, x, y);
     }
 
     pub(super) fn handle_skirmish_shell_mouse_wheel(state: &mut AppState, lines: f32) -> bool {
-        if state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .is_some()
-            || state.frontend.skirmish_shell_state.setups_browser.is_some()
-        {
-            return true;
-        }
-        if state
-            .frontend
-            .skirmish_shell_state
-            .validation_modal
-            .is_some()
-            || state.frontend.skirmish_shell_state.game_options.is_some()
-        {
-            return true;
-        }
+        let shell = &state.frontend.skirmish_shell_state;
         // The chooser's lists have no wheel case (`0x00618D40`).
-        if state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .is_some()
+        if shell.saved_seed_browser.is_some()
+            || shell.setups_browser.is_some()
+            || shell.validation_modal.is_some()
+            || shell.game_options.is_some()
+            || shell.choose_map_modal.is_some()
         {
             return true;
         }
-        let consumed = crate::ui::skirmish_shell::handle_option_mouse_wheel(
-            &mut state.frontend.skirmish_shell_state,
-            state.frontend.scenario_catalog.shell_maps(),
+        let layout = skirmish_layout(state);
+        let labels = crate::app::frontend::skirmish_shell_render::skirmish_labels(state);
+        let frontend = &mut state.frontend;
+        crate::ui::skirmish_shell::page::wheel(
+            &mut frontend.shell_controller,
+            &mut frontend.skirmish_shell_state,
+            &layout,
+            frontend.scenario_catalog.shell_maps(),
+            &labels,
             lines,
-        );
-        Self::drain_skirmish_shell_ui_sounds(state);
-        consumed
+        )
     }
 
-    fn drain_skirmish_shell_ui_sounds(state: &mut AppState) {
-        for sound in crate::ui::skirmish_shell::drain_pending_ui_sounds(
-            &mut state.frontend.skirmish_shell_state,
-        ) {
-            Self::play_skirmish_shell_ui_sound(state, sound);
+    /// Plays a dialog's cues in order.
+    pub(super) fn play_cues(state: &mut AppState, cues: Vec<PageCue>) {
+        for cue in cues {
+            Self::play_page_cue(state, cue);
         }
-    }
-
-    pub(crate) fn play_skirmish_shell_generic_click_sound(state: &mut AppState) {
-        Self::play_skirmish_shell_ui_sound(
-            state,
-            crate::ui::skirmish_shell::SkirmishShellUiSound::GenericClick,
-        );
-    }
-
-    fn skirmish_shell_ui_sound_id(
-        general: &crate::rules::ruleset::GeneralRules,
-        sound: crate::ui::skirmish_shell::SkirmishShellUiSound,
-    ) -> Option<&str> {
-        match sound {
-            crate::ui::skirmish_shell::SkirmishShellUiSound::GuiCheckboxSound => {
-                general.gui_checkbox_sound.as_deref()
-            }
-            crate::ui::skirmish_shell::SkirmishShellUiSound::GenericClick => {
-                general.generic_click_sound.as_deref()
-            }
-            crate::ui::skirmish_shell::SkirmishShellUiSound::GuiComboOpenSound => {
-                general.gui_combo_open_sound.as_deref()
-            }
-            crate::ui::skirmish_shell::SkirmishShellUiSound::GuiComboCloseSound => {
-                general.gui_combo_close_sound.as_deref()
-            }
-        }
-    }
-
-    pub(super) fn play_skirmish_shell_ui_sound(
-        state: &mut AppState,
-        sound: crate::ui::skirmish_shell::SkirmishShellUiSound,
-    ) {
-        let sound_id = state
-            .rules()
-            .and_then(|rules| Self::skirmish_shell_ui_sound_id(&rules.general, sound))
-            .map(str::to_string);
-        Self::play_shell_ui_sound_by_id(state, sound_id.as_deref());
     }
 }
 
 #[cfg(all(test, tests_app))]
 mod tests {
+    #[cfg(feature = "verax")]
     use super::*;
-
-    #[test]
-    fn shell_key_translation_matches_dialog_controller_route() {
-        assert_eq!(App::shell_key_for_code(KeyCode::Tab), Some(ShellKey::Tab));
-        assert_eq!(
-            App::shell_key_for_code(KeyCode::Enter),
-            Some(ShellKey::Enter)
-        );
-        assert_eq!(
-            App::shell_key_for_code(KeyCode::NumpadEnter),
-            Some(ShellKey::Enter)
-        );
-        assert_eq!(
-            App::shell_key_for_code(KeyCode::Escape),
-            Some(ShellKey::Escape)
-        );
-        assert_eq!(App::shell_key_for_code(KeyCode::Space), None);
-    }
 
     /// A loose map the chooser lists: the retail `.yrm` branch reads
     /// `[Basic] Name=` from the file itself.

@@ -65,8 +65,7 @@ impl LowBridgeTubeMovementState {
     }
 
     /// The step along the tube's path.
-    #[cfg(test)]
-    pub fn cursor(&self) -> u8 {
+    pub(crate) fn cursor(&self) -> u8 {
         self.cursor
     }
 
@@ -133,7 +132,12 @@ fn tube_first_z(
     let ground = ground_pose::query_ground_height(&cells, DriveCoord { x, y, z: 0 })?;
     let exit = ground_pose::query_ground_height(&cells, tube_exit_centre(tube))?;
     if position.exact_z_leptons().is_none() {
-        position.put_z(ground_pose::z_at_height(ground, 0, on_bridge));
+        let z = if on_bridge {
+            ground_pose::deck_surface_z(&cells, cells.lookup_world(x, y), ground)
+        } else {
+            ground
+        };
+        position.put_z(z);
     }
     // Hover 51522D, 5152BB adds the rise to ObjectClass::GetZ (5F5F30).
     // Walk, Drive and Ship add it to the floor under the current Location.

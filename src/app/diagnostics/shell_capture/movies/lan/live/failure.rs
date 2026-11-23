@@ -411,7 +411,7 @@ impl FailureCapture {
             "removed peer retains private connection"
         );
         let lost_line = crate::assets::csf_file::format_csf(
-            &App::csf_label(state, "TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST"),
+            &state.csf_label("TXT_CONNECTION_LOST", "TXT_CONNECTION_LOST"),
             &[crate::assets::csf_file::CsfArg::Str(&self.peer_name)],
         );
         let lost_count = state
@@ -547,11 +547,12 @@ impl FailureCapture {
             if render == held.first_render {
                 return Ok(false);
             }
-            let rect = crate::ui::shell::modal::body_ok_layout(
+            let rect = crate::ui::shell::modal::menu_message_box(
+                1,
                 state.render_width() as i32,
                 state.render_height() as i32,
             )
-            .ok;
+            .button(0);
             set_window_pointer_to_rect_center(state, rect);
             network_failure::cursor_moved(state);
             if held.pressed_render.is_none() {

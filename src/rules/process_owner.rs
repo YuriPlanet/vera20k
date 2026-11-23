@@ -749,7 +749,7 @@ impl NativeRulesProcessOwner {
     }
 
     /// VERA: play the switches `rules` from the next scenario on, as a network
-    /// room plays its host's. Scenario roots compose them, so the one registry
+    /// match plays its room's. Scenario roots compose them, so the one registry
     /// and everything the shell read into it stay as they are.
     pub fn use_personal_rules(&mut self, rules: PersonalRules) {
         self.sources.personal_rules = rules;

@@ -374,6 +374,7 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
                 45,
                 std::num::NonZeroU32::new(u32::from(send_rate)).unwrap(),
                 sim.state_hash(),
+                0,
                 "",
                 "",
             )
@@ -381,6 +382,16 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
         );
     }
     assert_eq!(warm.sim().state_hash(), cold.sim().state_hash());
+    // And one reading of the picture and model files, which each start
+    // certifies with its world (`RuleSet::file_inputs_hash`).
+    assert_eq!(
+        warm.runtime.resources.rules.file_inputs_hash(),
+        cold.runtime.resources.rules.file_inputs_hash()
+    );
+    // And the retail install changes none of it: a refused start would name
+    // no file of its folder.
+    let folder_files = cold.runtime.resources.rules.file_input_folder_files();
+    assert!(folder_files.is_empty(), "{folder_files:?}");
     assert_eq!(checkpoint, Some(0));
     assert_eq!(warm.sim().native_identity_prefix_checkpoint(), Some(0));
     assert_eq!(
@@ -467,6 +478,42 @@ pub(super) fn prepared_campaign() -> crate::app::match_bootstrap::PreparedCampai
         &mut TestClock(31),
     )
     .expect("synthetic campaign catalog admits a selected campaign")
+}
+
+/// VERA: a network match that seats no computer loads the original AI INI,
+/// and one that seats a computer the game folder's; its room's rules
+/// agreement asks the same of the same launch.
+#[test]
+fn a_network_load_reads_the_original_ai_ini_only_without_computers() {
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};
+    use crate::rules::retail_sources::AiFile;
+    let dir = crate::map::source::test_support::TestDirectory::new("load-ai-file");
+    let assets = AssetManager::from_loose_root_for_test(dir.path());
+    let started = |computers: bool| {
+        let mut launch = test_launch_session(LaunchCountry::America);
+        if !computers {
+            launch.opponents.clear();
+            launch.ai_player_count = 0;
+        }
+        let mut guest = launch.humans[0].clone();
+        guest.name = "Guest".into();
+        guest.raw_slot_index = Some(2);
+        guest.slot.color_index = 2;
+        guest.slot.start_position = LaunchStartPosition::Position(2);
+        launch.humans.push(guest);
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(launch, false, Some(7), false)
+            .unwrap();
+        let room = session.network_seats_computers();
+        session.prepare_network_timing(2, || 0).unwrap();
+        let startup = session.freeze_network_start(0xabc123, None).unwrap();
+        assert_eq!(session.network_seats_computers(), room);
+        (room, startup.ai_file(&assets))
+    };
+    assert_eq!(started(false), (false, AiFile::Original));
+    assert_eq!(started(true), (true, AiFile::GameFolder));
 }
 
 #[test]
@@ -1240,7 +1287,7 @@ fn gsi_04_12_generated_prefix_uses_accepted_staging_once() {
         &launch,
         None,
         [800, 600],
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
         Some(DecodedPreview {
             width: 300,
             height: 100,
@@ -1852,7 +1899,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
         &launch,
         None,
         [800, 600],
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
         Some(preview),
         &launch_map,
         &active_scenario_waypoints,

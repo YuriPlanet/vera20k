@@ -53,7 +53,6 @@ use crate::sim::world::SimSoundEvent;
 use crate::sim::world::Simulation;
 #[cfg(test)]
 use crate::util::fixed_math::SimFixed;
-use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 #[cfg(test)]
 use crate::util::native_x87::NativeF64Bits;
 use crate::util::native_x87::NativeX87Error;
@@ -336,8 +335,8 @@ enum AnimOccupationOperation {
 }
 
 /// One MakeInfantry anim's Mark or Clear on its cell's raw planes. At or above
-/// the floor plus the deck (Anim `[0x0089A1B4]`), Mark takes the deck only
-/// while the cell keeps its structural bridge flag. Both write the anim's owner
+/// the resolved deck, Mark takes the deck only while the cell keeps its bridge
+/// flag. The native fallback uses Anim `[0x0089A1B4]`. Both write the anim's owner
 /// index, -1 (vtable `+0x38` = `0x00410490`, stored at `0x004262D0` /
 /// `0x004262F5`); Clear resets it once `0x1C` is clear (`0x0042634F` /
 /// `0x00426378`).
@@ -346,11 +345,11 @@ fn apply_anim_raw_occupation(
     key: RawCellKey,
     mask: u8,
     world_z: i32,
-    ground_z: i32,
+    deck_z: i32,
     live_structural_bridge: bool,
     operation: AnimOccupationOperation,
 ) {
-    let reaches_deck = world_z >= ground_z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+    let reaches_deck = world_z >= deck_z;
     let use_deck = match operation {
         AnimOccupationOperation::Mark => reaches_deck && live_structural_bridge,
         // AnimClass::ClearCellOccupancy deliberately ignores Cell+0x140 bit

@@ -292,6 +292,20 @@ fn find_cursor_feedback_kind(
             CursorFeedbackKind::SellMode(valid)
         });
     }
+    // DetermineAction's power arm (`0x00692815`, Ares `1005C790`): the
+    // Ares cursor table (10057F10) draws its TogglePower/NoTogglePower
+    // entries.
+    if matches!(pointer_mode, super::state::TacticalPointerMode::Power) {
+        let kind = CursorFeedbackKind::TogglePower(
+            super::power_mode::building_under_cursor(state).is_some(),
+        );
+        return Some(super::ares_cursor::tactical(
+            kind,
+            &super::ares_cursor::CursorOverrides::default(),
+            0,
+            state.rules(),
+        ));
+    }
     // No early return for an empty selection here. `242c79ad0` carried
     // `if selected.is_empty() { return None; }` (no comment, no native
     // backing), which made the no-selection arm below unreachable and showed
@@ -933,8 +947,19 @@ pub(super) fn capability_cursor_for_hover(
 ) -> CursorFeedbackKind {
     use super::context_order::OrderModifier;
     use crate::map::entities::EntityCategory;
-    // Ares hooks at the head of each class What_Action over an object: a
-    // Deactivated cursor owner answers GetDeactivatedAction alone.
+    // Ares hooks at the head of each class What_Action over an object: an
+    // EMP'd deployer answers NoDeploy over himself, and a Deactivated cursor
+    // owner answers GetDeactivatedAction alone.
+    if let (Some(actor), Some(rules)) = (best_id, rules)
+        && super::context_order::ares_emp_deployer_refuses_itself(
+            sim,
+            rules,
+            actor,
+            hover.stable_id,
+        )
+    {
+        return CursorFeedbackKind::NoDeploy;
+    }
     if let (Some(actor), Some(rules)) = (best_id, rules)
         && let Some(action) = super::context_order::ares_deactivated_action(
             sim,
@@ -1009,6 +1034,24 @@ pub(super) fn capability_cursor_for_hover(
         && sim.bomb_seen_by(hover.stable_id, actor.owner())
     {
         return CursorFeedbackKind::DisarmBomb;
+    }
+
+    // Infantry's healer self arm (`0x0051E748`) follows the Engineer's
+    // DisarmBomb and replaces Foot's Detonate and self answers. Over itself
+    // the lone selected object answers Self (`0x007000B9`) before Ctrl can
+    // force the Attack a healing Engineer refuses.
+    if best_id == Some(hover.stable_id)
+        && let Some(rules) = rules
+        && super::context_order::healer_guards_itself(
+            sim,
+            &control,
+            rules,
+            hover.stable_id,
+            selected != [hover.stable_id]
+                && super::context_order::ctrl_forces_attack_rung(modifier, key_action),
+        )
+    {
+        return CursorFeedbackKind::GuardArea;
     }
 
     if let Some(rules) = rules
@@ -1517,13 +1560,17 @@ fn no_selection_cursor(
     }
 }
 
-/// The display mapping for Unit's shared repair-object action. Original
-/// Display4AAE90 rows33/17/19 are saved in bunker_attack_action repair_rows.
+/// The display mapping for a healer's object action
+/// ([`super::context_order::healer_object_action`]). Unit's repair rows
+/// (Display4AAE90 rows33/17/19) are saved in bunker_attack_action
+/// repair_rows. An Infantryman's AttackSupport shows the arrow, and its Heal
+/// SetCursorFromAction's row 0x3C (`0x004AB45A`).
 ///
 /// With `ares` the healer arms (`1004E5A0` at `0x73FDBD`, `1004E2E0` at
 /// `0x51E710`) set InfantryHeal (0x5A) over an Organic or Infantry target and
 /// UnitRepair (0x5B) otherwise: a Unit's GRepair (0x1D) takes the override, an
 /// Infantryman's Heal (0x1B) shows it.
+#[allow(clippy::too_many_arguments)]
 fn unit_repair_feedback(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],
@@ -1535,55 +1582,56 @@ fn unit_repair_feedback(
     force_move_key: bool,
     overrides: &mut super::ares_cursor::CursorOverrides,
 ) -> Option<CursorFeedbackKind> {
+    use super::context_order::HealerAction;
+    use crate::sim::world::{InfantryHealAction, UnitRepairAction};
     if selected == [hover.stable_id] || hover.kind == HoverTargetKind::HiddenEnemy {
         return None;
     }
     let id = best_id?;
     let rules = rules?;
     let house = issuing_house?;
-    let keys = super::context_order::heal_arm_keys(
-        sim,
-        rules,
-        id,
-        hover.stable_id,
-        modifier,
-        force_move_key,
-    );
-    let heal_cursor = || {
-        let organic = sim.entities().get(hover.stable_id).is_some_and(|target| {
-            target.category() == crate::map::entities::EntityCategory::Infantry
-                || sim
-                    .interner()
-                    .object_type(target.type_ref(), rules)
-                    .is_some_and(|object| object.organic)
-        });
+    let heal_cursor = |organic: bool| {
         if organic {
             crate::rules::ares_mouse_cursor::index::INFANTRY_HEAL
         } else {
             crate::rules::ares_mouse_cursor::index::UNIT_REPAIR
         }
     };
-    if rules.ares()
-        && sim
-            .entities()
-            .get(id)
-            .is_some_and(|actor| actor.category() == crate::map::entities::EntityCategory::Infantry)
-    {
-        sim.ares_infantry_heal_action(id, hover.stable_id, house, keys, rules)?;
-        return u16::try_from(heal_cursor())
-            .ok()
-            .map(CursorFeedbackKind::AresAction);
-    }
     Some(
-        match sim.unit_repair_action(id, hover.stable_id, house, keys, rules)? {
-            crate::sim::world::UnitRepairAction::Repair => {
+        match super::context_order::healer_object_action(
+            sim,
+            rules,
+            id,
+            hover.stable_id,
+            house,
+            modifier,
+            force_move_key,
+        )? {
+            HealerAction::Unit(UnitRepairAction::Repair) => {
                 if rules.ares() {
-                    overrides.set_cursor(heal_cursor(), super::ares_cursor::action::GREPAIR);
+                    let organic = sim.entities().get(hover.stable_id).is_some_and(|target| {
+                        target.category() == crate::map::entities::EntityCategory::Infantry
+                            || sim
+                                .interner()
+                                .object_type(target.type_ref(), rules)
+                                .is_some_and(|object| object.organic)
+                    });
+                    overrides.set_cursor(heal_cursor(organic), super::ares_cursor::action::GREPAIR);
                 }
                 CursorFeedbackKind::RepairAction(true)
             }
-            crate::sim::world::UnitRepairAction::Select => CursorFeedbackKind::FriendlyUnit,
-            crate::sim::world::UnitRepairAction::Move => CursorFeedbackKind::Invalid,
+            HealerAction::Unit(UnitRepairAction::Select)
+            | HealerAction::Infantry(InfantryHealAction::Select) => {
+                CursorFeedbackKind::FriendlyUnit
+            }
+            HealerAction::Unit(UnitRepairAction::Move) => CursorFeedbackKind::Invalid,
+            HealerAction::Infantry(InfantryHealAction::AttackSupport) => {
+                CursorFeedbackKind::Default
+            }
+            HealerAction::Infantry(InfantryHealAction::Heal { organic }) if rules.ares() => {
+                CursorFeedbackKind::AresAction(u16::try_from(heal_cursor(organic)).ok()?)
+            }
+            HealerAction::Infantry(InfantryHealAction::Heal { .. }) => CursorFeedbackKind::Heal,
         },
     )
 }
@@ -1874,6 +1922,9 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         // `SetCursorFromAction @ 0x004AAE90` sends action 0x11 to row 0x3C
         // (`0x004AB45A`, frame 384); VERA draws row 0x36 (frame 329).
         CursorFeedbackKind::Tote => Some(CursorId::Tote),
+        // `SetCursorFromAction @ 0x004AAE90` sends Heal (0x1B) to row 0x3C
+        // (`0x004AB45A`), the row NoTogglePower draws.
+        CursorFeedbackKind::Heal => Some(CursorId::NoTogglePower),
         CursorFeedbackKind::EngineerDamage => Some(CursorId::EngineerRepair),
         CursorFeedbackKind::RepairAction(valid) => Some(if valid {
             CursorId::Repair
@@ -1910,6 +1961,12 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         }),
         // Action 0xD, the SellUnit row.
         CursorFeedbackKind::SellUnit => Some(CursorId::SellUnit),
+        // Actions 0x21/0x22: rows 0x37 and 0x3C (`0x004AB884` switch).
+        CursorFeedbackKind::TogglePower(valid) => Some(if valid {
+            CursorId::TogglePower
+        } else {
+            CursorId::NoTogglePower
+        }),
         CursorFeedbackKind::SuperWeaponTarget(id) => Some(id),
         // Row 0x4E: mouse.sha frames 435..449 at rate 4.
         CursorFeedbackKind::PlaceBeacon => Some(CursorId::Beacon),

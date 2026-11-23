@@ -428,11 +428,18 @@ pub struct TacticalCaptureRequest {
     profile: CaptureProfile,
     contract: SealedJsonFile<TacticalCaptureContract>,
     output_dir: PathBuf,
+    /// `--ares`: the Ares setting this start uses, as a `-SPAWN` launch's
+    /// `[Settings] Ares=` gives one; a capture reads no VERA.INI.
+    ares: Option<crate::util::ares_launch::AresSetting>,
 }
 
 impl TacticalCaptureRequest {
     pub fn checkpoint(&self) -> TacticalCaptureCheckpoint {
         self.checkpoint
+    }
+
+    pub(crate) fn ares_setting(&self) -> Option<crate::util::ares_launch::AresSetting> {
+        self.ares
     }
 
     pub(crate) fn profile(&self) -> Result<&TacticalCaptureProfile> {
@@ -593,6 +600,7 @@ fn parse_tactical_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
     let mut profile_path = None;
     let mut contract_path = None;
     let mut output_dir = None;
+    let mut ares = None;
 
     while let Some(flag) = args.next() {
         let flag = flag
@@ -622,6 +630,15 @@ fn parse_tactical_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
                         .ok_or_else(|| anyhow::anyhow!("missing value after --output"))?,
                 ),
                 "--output",
+            )?,
+            "--ares" => set_once(
+                &mut ares,
+                crate::util::ares_launch::AresSetting::parse(&next_utf8(
+                    &mut args,
+                    "value after --ares",
+                )?)
+                .context("\"--ares\" needs Auto, On or Off")?,
+                "--ares",
             )?,
             _ => bail!("unknown tactical-capture option {flag:?}"),
         }
@@ -658,6 +675,7 @@ fn parse_tactical_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
         profile,
         contract,
         output_dir,
+        ares,
     }))
 }
 
@@ -919,6 +937,19 @@ mod tests {
         );
         assert_eq!(request.map_profile().unwrap().value.ticks, 30);
         assert!(request.profile().is_err());
+        assert_eq!(request.ares_setting(), None);
+        let mut off = args.clone();
+        off.extend(["--ares".into(), "off".into()]);
+        let AppLaunchMode::TacticalCapture(request) = parse_launch_args(off.clone()).unwrap()
+        else {
+            panic!("wrong capture lifecycle");
+        };
+        assert_eq!(
+            request.ares_setting(),
+            Some(crate::util::ares_launch::AresSetting::Off)
+        );
+        off.extend(["--ares".into(), "On".into()]);
+        assert!(parse_launch_args(off).is_err());
         std::fs::create_dir(&output).unwrap();
         assert!(parse_launch_args(args).is_err());
         std::fs::remove_dir(&output).unwrap();
