@@ -19,7 +19,7 @@ use crate::ui::skirmish_shell::{
     SkirmishCountryChoice, SkirmishShellLayout, combo_text_rect, random_map_setup_dropdown_rect,
 };
 
-use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, HostRows, paint_gui_with};
+use super::gui_paint::{ButtonArt, FrameArt, GuiPaint, GuiStyle, HostRows, paint_gui_with};
 use super::{
     COMBODROPWIN_TEXT_TRUNCATION_SCROLLBAR_RESERVE_PX, SHELL_CONTROL_TEXT_DEPTH,
     SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F, SHELL_LABEL_TEXT_RGB,
@@ -479,6 +479,18 @@ pub(super) fn random_map_paint(
         }),
         _ => None,
     };
+    // The progress well while a map generates: the panel colour in the
+    // owner-draw dark outline.
+    let frame_of = |id: i32| {
+        (id == i32::from(RandomMapSetupLayout::PROGRESS_BAR)).then_some(FrameArt::Filled {
+            fill: super::SHELL_MODAL_PANEL_RGB,
+            outline: super::OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
+            depths: [
+                super::SHELL_DROPDOWN_DEPTH - 0.00013,
+                super::SHELL_DROPDOWN_DEPTH - 0.00014,
+            ],
+        })
+    };
     let style = GuiStyle {
         // The right column shows while no slide runs.
         buttons: if sliding {
@@ -489,6 +501,7 @@ pub(super) fn random_map_paint(
         art_of: Some(&art_of),
         rows_of: Some(&rows_of),
         combos: super::gui_paint::ComboArt::Framed,
+        frame_of: Some(&frame_of),
         ..Default::default()
     };
     let gui = state.frontend.shell_controller.gui();

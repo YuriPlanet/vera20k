@@ -5,13 +5,10 @@
 //! compositor draws them, and the group box, over its own backdrop and
 //! chrome.
 
-use super::SHELL_CONTROL_DEPTH;
-use super::chrome::push_flag_entry_clipped_centered;
-use super::gui_paint::{CellRow, GuiStyle, child_ids_except, paint_gui_ids};
+use super::gui_paint::{ButtonArt, CellRow, GuiStyle, Picture, paint_gui_styled};
 use super::wol_lobby::{WolLobbyPaint, row_rgb};
 use crate::app::AppState;
 use crate::render::main_menu_shell_chrome::WolPageArt;
-use crate::render::shell_paint;
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::wol_buddy::*;
 
@@ -22,85 +19,75 @@ pub(crate) fn paint_wol_buddy_children(
     art: Option<&WolPageArt>,
 ) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+    if state.frontend.skirmish_shell_chrome.is_none() {
         return paint;
-    };
+    }
     let scale = layout.page.scale;
-    // The captions, heading, statistics and observer box are widgets.
+    // The captions, heading, statistics and observer box are widgets; so
+    // are Refresh's picture (released, pressed, or disabled: the released
+    // face; the owner-draw button greys nothing of a picture) and the
+    // observer image's eye.
     let controller = &state.frontend.shell_controller;
     let gui = controller.gui();
-    let root = controller.root_in(DIALOG);
-    if let Some(root) = root {
-        // The observer image paints as its art below, not as a box, and the
-        // list after it.
-        let ids = child_ids_except(gui, root, &[OBSERVER_IMAGE, LIST]);
-        let widgets = paint_gui_ids(state, gui, root, ids, scale, GuiStyle::default());
+    // The page's Refresh and list, found when its tree was built.
+    let Some(nodes) = controller
+        .root_in(DIALOG)
+        .and_then(|root| ui.nodes(gui, root))
+    else {
+        return paint;
+    };
+    let refresh_pressed = nodes.refresh.is_some_and(|refresh| gui.shows_pressed(refresh));
+    let art_of = |id: i32| (id == i32::from(REFRESH)).then_some(ButtonArt::Image);
+    let pressed_of = |id: i32| (id == i32::from(REFRESH)).then_some(refresh_pressed);
+    let picture_of = |id: i32| match u16::try_from(id).ok()? {
+        REFRESH => Some(Picture::Icon {
+            released: REFRESH_FACES.0,
+            pressed: REFRESH_FACES.1,
+        }),
+        OBSERVER_IMAGE => Some(Picture::Observer { on: ui.observer }),
+        _ => None,
+    };
+    let style = GuiStyle {
+        art,
+        art_of: Some(&art_of),
+        pressed_of: Some(&pressed_of),
+        picture_of: Some(&picture_of),
+        ..GuiStyle::default()
+    };
+    // The root's children in tree order, the list after the rest.
+    let children = gui.tree().children(nodes.root).unwrap_or_default();
+    for child in children.iter().filter(|child| **child != nodes.list) {
+        let widgets = paint_gui_styled(state, gui, *child, scale, &[], style);
         paint.controls.extend(widgets.controls);
+        paint.icons.extend(widgets.icons);
         paint.texts.extend(widgets.texts);
-    }
-    let node = |id: u16| root.and_then(|root| gui.find_id(root, id.into()));
-
-    // Refresh's picture: released, pressed, or disabled (the released
-    // face; the owner-draw button greys nothing of a picture).
-    if let Some(art) = art {
-        let face = if node(REFRESH).is_some_and(|refresh| gui.shows_pressed(refresh)) {
-            REFRESH_FACES.1
-        } else {
-            REFRESH_FACES.0
-        };
-        if let Some((_, entry)) = art.icons.iter().find(|(name, _)| name == face) {
-            let (w, h) = entry.native_size();
-            let base = scale.base_rect(layout.rect_of(REFRESH).unwrap_or_default());
-            let [x, y] = scale.scale_point([base.x + (base.w - w) / 2, base.y + (base.h - h) / 2]);
-            shell_paint::push_entry_grown(
-                &mut paint.icons,
-                *entry,
-                x,
-                y,
-                scale,
-                SHELL_CONTROL_DEPTH - 0.00003,
-            );
-        }
-    }
-    if let Some(entry) = atlas.lan_observer_toggle(ui.observer) {
-        push_flag_entry_clipped_centered(
-            &mut paint.controls,
-            entry,
-            layout.rect_of(OBSERVER_IMAGE).unwrap_or_default(),
-            scale,
-            SHELL_CONTROL_DEPTH,
-        );
     }
 
     // The list over its widget, each row's cells the page's: only the rows
     // the list shows are filled.
-    if let Some(root) = root {
-        let list = node(LIST);
-        let top = list.and_then(|list| gui.list_view(list)).map_or(0, |view| view.top);
-        let shown = list
-            .and_then(|list| gui.list_geometry(list))
-            .map_or(0, |geometry| geometry.visible_rows);
-        let cells_of = |id: i32| {
-            (id == i32::from(LIST)).then(|| {
-                let rows = ui.rows.iter().enumerate();
-                rows.map(|(index, row)| match (top..top + shown).contains(&index) {
-                    true => buddy_cells(row),
-                    false => CellRow::default(),
-                })
-                .collect()
+    let list = nodes.list;
+    let top = gui.list_view(list).map_or(0, |view| view.top);
+    let shown = gui.list_geometry(list).map_or(0, |geometry| geometry.visible_rows);
+    let cells_of = |id: i32| {
+        (id == i32::from(LIST)).then(|| {
+            let rows = ui.rows.iter().enumerate();
+            rows.map(|(index, row)| match (top..top + shown).contains(&index) {
+                true => buddy_cells(row),
+                false => CellRow::default(),
             })
-        };
-        let style = GuiStyle {
-            cells_of: Some(&cells_of),
-            art,
-            control_lists: true,
-            ..Default::default()
-        };
-        let list = paint_gui_ids(state, gui, root, [LIST], scale, style);
-        paint.controls.extend(list.controls);
-        paint.texts.extend(list.texts);
-        paint.icons.extend(list.icons);
-    }
+            .collect()
+        })
+    };
+    let style = GuiStyle {
+        cells_of: Some(&cells_of),
+        art,
+        control_lists: true,
+        ..Default::default()
+    };
+    let list = paint_gui_styled(state, gui, list, scale, &[], style);
+    paint.controls.extend(list.controls);
+    paint.texts.extend(list.texts);
+    paint.icons.extend(list.icons);
     paint
 }
 

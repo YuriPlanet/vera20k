@@ -249,11 +249,12 @@ pub(crate) fn push_choose_map_prompt(
         && let Some(progress) = crate::app::map_library::download_progress(state)
     {
         let (w, h) = render_size(state);
-        let body = shell_box
+        let track = shell_box
             .parts(w, h, crate::ui::shell::geom::RETAIL_SCALE)
-            .body;
+            .progress_track();
         let depth = BoxLook::skirmish(None).depths.button;
-        super::modals::push_download_progress_bar(out, atlas, body, progress, depth);
+        let (white, rgb) = (atlas.white_pixel, super::SHELL_LABEL_TEXT_RGB);
+        super::gui_paint::push_progress(out, white, track, rgb, progress, depth);
     }
     // Its widgets' captured button keeps its pushed look off the pointer too.
     let held =

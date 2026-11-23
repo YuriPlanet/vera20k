@@ -88,6 +88,9 @@ pub(crate) struct CellRow {
     /// `(x, PCX)`, centred vertically.
     pub(crate) icons: Vec<(i32, &'static str)>,
     pub(crate) filled: bool,
+    /// The texts' `x` and `w` are window pixels into the row rather than
+    /// base pixels grown with the page (the Mods list's).
+    pub(crate) window: bool,
 }
 
 impl CellRow {
@@ -154,6 +157,12 @@ pub(crate) enum ButtonArt {
     /// pushed look: a button that keeps a button's presses and events but
     /// shows as a box (Ares' Urban Areas, whose caption is its own static).
     CheckboxFace,
+    /// MNBTTN's face stretched over the rect, pushed under the pointer as
+    /// [`Self::Modal`]'s, its lit frame while [`GuiStyle::lit_of`] says;
+    /// the caption centred in the owner-draw label rect grown with the
+    /// page, squeezed to fit the face less 12 base pixels (VERA online's
+    /// entry chooser).
+    ModalLit,
 }
 
 impl ButtonArt {
@@ -168,7 +177,8 @@ impl ButtonArt {
             | ButtonArt::ModalType2
             | ButtonArt::PanelType2
             | ButtonArt::Side
-            | ButtonArt::Image => held,
+            | ButtonArt::Image
+            | ButtonArt::ModalLit => held,
             _ => captured,
         }
     }
@@ -244,6 +254,22 @@ pub(crate) enum FrameArt {
     /// node's rect less `inset` (base pixels, as a `TextInset`), no
     /// caption: the WOL pages' `BS_GROUPBOX` frames.
     ListRings { inset: RectPx },
+    /// The node's rect filled in `fill`, then outlined in `outline`, at
+    /// `depths` (fill, outline): `0x105`'s progress well while a map
+    /// generates.
+    Filled {
+        fill: [f32; 3],
+        outline: [f32; 3],
+        depths: [f32; 2],
+    },
+    /// VERA's download bar ([`push_progress`]): the node's rect outlined
+    /// in `rgb` and filled two pixels in for `done` of `total`, at `depth`.
+    Progress {
+        rgb: [f32; 3],
+        done: u64,
+        total: u64,
+        depth: f32,
+    },
 }
 
 /// How an edit paints in place of a NewEdit ([`GuiStyle::edit_face_of`]).
@@ -295,6 +321,23 @@ pub(crate) enum Picture {
     Status { host: bool, accepted: bool },
     /// C2/C9's emote pictures (`wodact` released, `wouact` pressed).
     Emote,
+    /// An image button's PCX faces on the page art ([`GuiStyle::art`]),
+    /// the pressed one while pushed, centred on the node at their size
+    /// grown with the page (a face larger than the node overhangs it
+    /// evenly), on [`GuiPaint::icons`] (the WOL lobby's and buddy list's).
+    Icon {
+        released: &'static str,
+        pressed: &'static str,
+    },
+    /// The LAN observer image, on or off, clipped and centred: a checkbox
+    /// that shows as it (the lobbies' and buddy list's eye).
+    Observer { on: bool },
+    /// A kind-2 icon static's PCX on the page art ([`GuiStyle::art`]),
+    /// centred in the node, or at its left or top on an axis it outgrows
+    /// ([`crate::ui::shell::geom::centred_in_window`]), at its size grown
+    /// with the page, on
+    /// [`GuiPaint::icons`] (WOL welcome's glossary).
+    Glyph(&'static str),
 }
 
 /// Share the right-panel heading's text width while keeping the retail
@@ -418,6 +461,15 @@ pub(crate) struct GuiStyle<'a> {
     /// The picture an `Image` node shows from its page's own art by its
     /// `Id` ([`PageArt`]), into [`GuiPaint::page_art`], before `picture_of`.
     pub(crate) page_art_of: Option<&'a dyn Fn(i32) -> Option<PageArt>>,
+    /// A [`ButtonArt::ModalLit`] button shows MNBTTN's lit frame by its
+    /// `Id` (the host's word: under the pointer, else holding the focus).
+    pub(crate) lit_of: Option<&'a dyn Fn(i32) -> bool>,
+    /// A text's glyph size by its `Id`, a multiple of the page's scale, in
+    /// place of the style's: squeezed to fit its rect's width.
+    pub(crate) glyph_of: Option<&'a dyn Fn(i32) -> Option<f32>>,
+    /// The texts [`Self::glyph_of`] sizes draw over a black copy of
+    /// themselves one base pixel down and right.
+    pub(crate) shadowed_texts: bool,
 }
 
 impl Default for GuiStyle<'_> {
@@ -456,6 +508,9 @@ impl Default for GuiStyle<'_> {
             solid_lists: false,
             indent_of: None,
             page_art_of: None,
+            lit_of: None,
+            glyph_of: None,
+            shadowed_texts: false,
         }
     }
 }
@@ -586,18 +641,6 @@ pub(crate) fn paint_gui_styled(
         Some(atlas) => paint_gui_with(state, atlas, gui, root, scale, overlays, style),
         None => GuiPaint::default(),
     }
-}
-
-/// The ids of `root`'s children in tree order but `skip` (a box the host
-/// paints as its own art, such as an observer image).
-pub(crate) fn child_ids_except(gui: &Gui, root: NodeId, skip: &[u16]) -> Vec<u16> {
-    gui.tree()
-        .children(root)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|node| u16::try_from(gui.id_of(*node)?).ok())
-        .filter(|id| !skip.contains(id))
-        .collect()
 }
 
 /// The widgets of `ids` under `root` in that order rather than the tree's
@@ -799,10 +842,60 @@ pub(crate) fn paint_gui_into(
                             .picture_of
                             .zip(id(node))
                             .and_then(|(picture_of, id)| picture_of(id));
-                        if let Some(picture) = picture {
-                            let out = &mut paint.controls;
-                            push_picture(out, atlas, picture, rect, pressed, scale);
+                        match (picture, style.art) {
+                            (Some(Picture::Icon { released, pressed: down }), Some(art)) => {
+                                let face = if pressed { down } else { released };
+                                push_page_icon(&mut paint.icons, art, face, rect, false, scale);
+                            }
+                            (Some(Picture::Icon { .. }), None) | (None, _) => {}
+                            (Some(picture), _) => {
+                                let out = &mut paint.controls;
+                                push_picture(out, atlas, picture, rect, pressed, scale);
+                            }
                         }
+                        continue;
+                    }
+                    (ButtonArt::ModalLit, Some(atlas)) => {
+                        let lit = style
+                            .lit_of
+                            .zip(id(node))
+                            .is_some_and(|(lit_of, id)| lit_of(id));
+                        let mut frames = super::type3_button_frames(atlas);
+                        if lit {
+                            frames.up = atlas.modal_button_mnbttn_frame2.or(frames.up);
+                        }
+                        if let Some(face) = frames.select(pressed, true) {
+                            super::chrome::push_entry(
+                                &mut paint.controls,
+                                face,
+                                rect,
+                                SHELL_CONTROL_DEPTH,
+                            );
+                        }
+                        let Some(label) = caption(node).filter(|t| !covered && !t.is_empty())
+                        else {
+                            continue;
+                        };
+                        let at = scale.derive_rect(rect, |r| {
+                            crate::app::frontend::shell_pass::owner_draw_button_label_rect(
+                                r, pressed,
+                            )
+                        });
+                        let face_width = (scale.base_rect(at).w - 12).max(1) as u32;
+                        let rgb = text_rgb(gui, node, true, style.rgb, None);
+                        let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+                        paint.texts.push(font.fitted(font.fit_line(&label, face_width), |font| {
+                            shell_text::draw_in_rect_scaled(
+                                font,
+                                &label,
+                                rect_to_text_rect(at),
+                                rgb,
+                                centred,
+                                [0.0; 2],
+                                depth,
+                                scale.factor(),
+                            )
+                        }));
                         continue;
                     }
                     (ButtonArt::CheckboxFace, Some(_)) => {
@@ -884,6 +977,14 @@ pub(crate) fn paint_gui_into(
                 paint
                     .texts
                     .push(text(state, &label, at, align, glyph, rgb, depth));
+            }
+            // A checkbox that shows as the host's picture (the observer
+            // image): no face or caption.
+            NodeKind::Checkbox if style.picture_of.zip(id(node)).is_some_and(|(f, id)| f(id).is_some()) => {
+                let picture = style.picture_of.zip(id(node)).and_then(|(f, id)| f(id));
+                if let (Some(picture), Some(atlas)) = (picture, atlas) {
+                    push_picture(&mut paint.controls, atlas, picture, rect, false, scale);
+                }
             }
             NodeKind::Checkbox => {
                 // `Checkbox { checked }` is this face, never dimmed.
@@ -1220,6 +1321,34 @@ pub(crate) fn paint_gui_into(
                 );
                 paint.texts.extend(hint);
             }
+            // A text the host sizes: squeezed to its rect's width at that
+            // size, over its shadow when the style shadows them.
+            NodeKind::Text if style.glyph_of.zip(id(node)).is_some_and(|(f, id)| f(id).is_some()) => {
+                let size = style.glyph_of.zip(id(node)).and_then(|(f, id)| f(id));
+                let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) else {
+                    continue;
+                };
+                let sized = glyph * size.unwrap_or(1.0);
+                let fit = font.fit_line(&label, (rect.w as f32 / sized).max(1.0) as u32);
+                let rgb = text_rgb(gui, node, enabled, style.rgb, None);
+                let shadow = style
+                    .shadowed_texts
+                    .then(|| (scale.derive_rect(rect, |r| r.translate(1, 1)), [0.0; 3]));
+                font.fitted(fit, |font| {
+                    for (at, rgb) in shadow.into_iter().chain([(rect, rgb)]) {
+                        paint.texts.push(shell_text::draw_in_rect_scaled(
+                            font,
+                            &label,
+                            rect_to_text_rect(at),
+                            rgb,
+                            align,
+                            [0.0; 2],
+                            depth,
+                            sized,
+                        ));
+                    }
+                });
+            }
             NodeKind::Text => {
                 if let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) {
                     let at = inset(gui, node, rect, scale).unwrap_or(rect);
@@ -1265,6 +1394,10 @@ pub(crate) fn paint_gui_into(
                     .picture_of
                     .zip(id(node))
                     .and_then(|(picture_of, id)| picture_of(id));
+                if let (Some(Picture::Glyph(file)), Some(art)) = (host, style.art) {
+                    push_page_icon(&mut paint.icons, art, file, rect, true, scale);
+                    continue;
+                }
                 if let Some(picture) = host {
                     push_picture(&mut paint.controls, atlas, picture, rect, false, scale);
                     continue;
@@ -1281,6 +1414,19 @@ pub(crate) fn paint_gui_into(
                         scale,
                         SHELL_CONTROL_DEPTH,
                     );
+                }
+            }
+            // A lone scrollbar (VERA's random-map Advanced pages): the
+            // control scrollbar on its bar, its thumb at its position; it
+            // acts on press, so no part shows pushed.
+            NodeKind::ScrollBar => {
+                if let Some(view) = gui.scrollbar_view(node) {
+                    let control = ControlPaint::ScrollBar {
+                        scrollbar: view.bar,
+                        thumb: view.thumb,
+                        pressed_part: None,
+                    };
+                    paint_control(&mut paint.controls, &chrome, control, scale);
                 }
             }
             // A bar's one meaning (`vera20k_gui::shell::bar`): the outline
@@ -1445,6 +1591,32 @@ pub(crate) fn push_frame(
             });
             super::list::paint_list_frame_px(controls, white, window);
         }
+        FrameArt::Filled { fill, outline, depths } => {
+            super::chrome::push_solid_rect_px(controls, white, rect, fill, depths[0]);
+            super::chrome::push_rect_outline_px(controls, white, rect, outline, depths[1]);
+        }
+        FrameArt::Progress { rgb, done, total, depth } => {
+            push_progress(controls, white, rect, rgb, (done, total), depth)
+        }
+    }
+}
+
+/// VERA's download boxes show how much has arrived: `track` outlined in
+/// `rgb`, filled two pixels in for `done` of `total` of its inner width.
+pub(crate) fn push_progress(
+    out: &mut Vec<SpriteInstance>,
+    white: Option<SkirmishShellChromeEntry>,
+    track: RectPx,
+    rgb: [f32; 3],
+    (done, total): (u64, u64),
+    depth: f32,
+) {
+    super::chrome::push_rect_outline_px(out, white, track, rgb, depth);
+    let inner = track.w - 4;
+    let filled = (inner as u64 * done.min(total) / total.max(1)) as i32;
+    if filled > 0 {
+        let fill = RectPx::new(track.x + 2, track.y + 2, filled, track.h - 4);
+        super::chrome::push_solid_rect_px(out, white, fill, rgb, depth);
     }
 }
 
@@ -1494,6 +1666,13 @@ fn push_picture(
                 push_entry_fitted(out, entry, rect, scale, SHELL_SWATCH_DEPTH);
             }
         }
+        Picture::Observer { on } => {
+            if let Some(entry) = atlas.lan_observer_toggle(on) {
+                push_flag_entry_clipped_centered(out, entry, rect, scale, SHELL_CONTROL_DEPTH);
+            }
+        }
+        // On the page art: [`push_page_icon`].
+        Picture::Icon { .. } | Picture::Glyph(_) => {}
         Picture::Emote => {
             let (Some(released), pressed_art) = atlas.wol_emote_images() else {
                 return;
@@ -1537,6 +1716,30 @@ fn push_page_art(out: &mut Vec<SpriteInstance>, art: PageArt, rect: RectPx, scal
         }
         PageArt::Shape(entry) => out.extend(shell_paint::paint_kind4_static(entry, rect, scale)),
     }
+}
+
+/// [`Picture::Icon`]'s or [`Picture::Glyph`]'s `face` from the page art,
+/// centred on `rect` in base pixels at its size grown with the page; held
+/// to the rect's left and top where it outgrows it while `held`.
+fn push_page_icon(
+    out: &mut Vec<SpriteInstance>,
+    art: &WolPageArt,
+    face: &str,
+    rect: RectPx,
+    held: bool,
+    scale: ShellScale,
+) {
+    let Some((_, entry)) = art.icons.iter().find(|(name, _)| name == face) else {
+        return;
+    };
+    let (w, h) = entry.native_size();
+    let base = scale.base_rect(rect);
+    let (x, y) = match held {
+        true => crate::ui::shell::geom::centred_in_window(base, w, h),
+        false => (base.x + (base.w - w) / 2, base.y + (base.h - h) / 2),
+    };
+    let [x, y] = scale.scale_point([x, y]);
+    shell_paint::push_entry_grown(out, *entry, x, y, scale, SHELL_CONTROL_DEPTH - 0.00003);
 }
 
 /// A `Bar` node's fill share (0..=100) and colours.
@@ -1666,11 +1869,16 @@ fn paint_cells(
         );
     }
     let glyph = style.text_factor.unwrap_or(scale.factor());
+    let window = cells.window;
     for (x, w, value, align, rgb) in cells.texts.into_iter().filter(|_| !covered) {
-        let at = scale.derive_rect(row, |row| {
+        let cell = |row: RectPx| {
             let w = if w > 0 { w } else { row.w - x - 2 };
             RectPx::new(row.x + x, row.y, w, row.h)
-        });
+        };
+        let at = match window {
+            true => cell(row),
+            false => scale.derive_rect(row, cell),
+        };
         let depth = SHELL_CONTROL_TEXT_DEPTH;
         paint
             .texts

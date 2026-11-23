@@ -6,20 +6,16 @@ use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::shell::geom::LOWER_STRIP_H;
-use crate::ui::skirmish_shell::{
-    ChooseMapModalLayout, RandomMapSetupLayout, RandomMapSetupModalState, RectPx,
-    SkirmishShellLayout,
-};
+use crate::ui::skirmish_shell::{ChooseMapModalLayout, RectPx, SkirmishShellLayout};
 
 use super::chrome::{
     common_shell_origin, push_entry_grown, push_lower_strip_instance, push_rect_outline,
     push_right_panel_base_instances, push_solid_rect,
 };
-use super::controls::{ControlPaint, paint_control};
 use super::draw_order::{GenericBackgroundRole, generic_background_role};
 use super::{
     OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68, SHELL_DROPDOWN_DEPTH, SHELL_LABEL_TEXT_RGB,
-    SHELL_MODAL_BG_RGB, SHELL_MODAL_PANEL_RGB, SHELL_PARENT_BACKGROUND_DEPTH,
+    SHELL_MODAL_BG_RGB, SHELL_PARENT_BACKGROUND_DEPTH,
 };
 
 const VALIDATION_MODAL_SPRITE_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDepths {
@@ -227,30 +223,6 @@ pub(super) fn push_message_box_backdrop_instances(
     push_lower_strip_instance(out, atlas, layout);
 }
 
-/// VERA's download boxes show how much has arrived: an outlined bar under
-/// the box's text, filled in the label colour.
-pub(super) fn push_download_progress_bar(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    body: RectPx,
-    (completed, total): (u64, u64),
-    depth: f32,
-) {
-    let track = RectPx::new(body.x, body.y + body.h + 6, body.w, 10);
-    push_rect_outline(out, atlas, track, SHELL_LABEL_TEXT_RGB, depth);
-    let inner = track.w - 4;
-    let filled = (inner as u64 * completed.min(total) / total.max(1)) as i32;
-    if filled > 0 {
-        push_solid_rect(
-            out,
-            atlas,
-            RectPx::new(track.x + 2, track.y + 2, filled, track.h - 4),
-            SHELL_LABEL_TEXT_RGB,
-            depth,
-        );
-    }
-}
-
 /// The generic shell background (MNSCRNS/MNSCRNL through SHELL.PAL): the
 /// random-map dialog `0x105`'s and the empty backdrop's
 /// (`0x0072AB49..0x0072AB7E`), also selected for the RA2 skirmish skin.
@@ -324,57 +296,6 @@ pub(super) fn push_generic_shell_background_instances(
             fallback,
             OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
             SHELL_DROPDOWN_DEPTH - 0.00009,
-        );
-    }
-}
-
-/// The random-map dialog `0x105`'s own art beside its widgets
-/// ([`super::text::random_map_paint`]): VERA's Advanced scrollbar and the
-/// progress bar while a map generates.
-pub(super) fn push_random_map_setup_modal_control_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    layout: &RandomMapSetupLayout,
-    modal: &RandomMapSetupModalState,
-    // The Advanced scrollbar's widget.
-    scrollbar: Option<vera20k_gui::ScrollBarView>,
-) {
-    use crate::ui::skirmish_shell::AdvancedField;
-    let chrome = atlas.control_chrome();
-    // The native vertical scrollbar the dropdowns use, paging the seven
-    // reusable rows over every Advanced slider.
-    if let Some(bar) = scrollbar
-        .filter(|_| modal.advanced && modal.extras_page.is_none() && AdvancedField::PAGE_COUNT > 1)
-    {
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::ScrollBar {
-                scrollbar: bar.bar,
-                thumb: bar.thumb,
-                pressed_part: None,
-            },
-            layout.scale,
-        );
-    }
-    // The preview `0x468` is an SS_BLACKRECT static in the top panel: black,
-    // with no frame of its own (retail `rmg-steady.png`). The progress
-    // widgets are hidden in the resource and shown only while the
-    // synchronous generate block owns the dialog.
-    if modal.generating {
-        push_solid_rect(
-            out,
-            atlas,
-            layout.rect(RandomMapSetupLayout::PROGRESS_BAR),
-            SHELL_MODAL_PANEL_RGB,
-            SHELL_DROPDOWN_DEPTH - 0.00013,
-        );
-        push_rect_outline(
-            out,
-            atlas,
-            layout.rect(RandomMapSetupLayout::PROGRESS_BAR),
-            OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
-            SHELL_DROPDOWN_DEPTH - 0.00014,
         );
     }
 }

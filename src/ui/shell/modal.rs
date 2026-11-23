@@ -161,6 +161,12 @@ impl BoxParts {
             .nth(index)
             .map_or_else(RectPx::default, |(_, rect)| rect)
     }
+
+    /// VERA's download bar under the body (the map downloads' boxes): six
+    /// pixels below it, as wide, ten tall.
+    pub fn progress_track(&self) -> RectPx {
+        RectPx::new(self.body.x, self.body.y + self.body.h + 6, self.body.w, 10)
+    }
 }
 
 /// Section `template` in the box centred on `area`, in authored pixels.

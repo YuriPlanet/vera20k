@@ -50,6 +50,12 @@ pub(crate) const PLAY: u16 = 0x7FF3;
 /// controls: the ids only name their rects.
 pub(crate) const PLAY_AS_GUEST: u16 = 0x7FF5;
 pub(crate) const SIGN_IN_AND_PLAY: u16 = 0x7FF6;
+/// The chooser's box, which holds its welcome and player count (shown
+/// larger, over a shadow) and its two buttons. Not gamemd controls: the
+/// ids only name their rects.
+pub(crate) const CHOICE_BOX: u16 = 0x7FC0;
+pub(crate) const CHOICE_HEADING: u16 = 0x7FC1;
+pub(crate) const CHOICE_COUNT: u16 = 0x7FC2;
 /// The statics the page keeps the text of: `GUI:LoginName` and
 /// `GUI:Password`; VERA online's heading, status line, field captions and
 /// counts. Not gamemd controls: the ids only name their rects.
@@ -384,10 +390,16 @@ pub(crate) fn spec(policy: LoginPolicy) -> NodeSpec {
                 .label(key)
                 .with(Prop::TabStop, Value::Bool(true))
         };
+        let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+        let chooser = NodeSpec::new(NodeKind::Panel)
+            .id(CHOICE_BOX.into())
+            .child(text(CHOICE_HEADING, centred))
+            .child(text(CHOICE_COUNT, centred))
+            .child(choice(PLAY_AS_GUEST, "VERA:PlayAsGuest"))
+            .child(choice(SIGN_IN_AND_PLAY, "VERA:SignInAndPlay"));
         return NodeSpec::new(NodeKind::Dialog)
             .children(buttons)
-            .child(choice(PLAY_AS_GUEST, "VERA:PlayAsGuest"))
-            .child(choice(SIGN_IN_AND_PLAY, "VERA:SignInAndPlay"))
+            .child(chooser)
             .children(fields.map(|(index, kind)| kind.spec(index)))
             .child(check(FORM_REMEMBER, "VERA:RememberPassword"))
             .child(text(HEADING_TEXT, ShellAlign::H_CENTER))
@@ -1059,6 +1071,9 @@ impl WolLoginLayout {
     pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
         if let Some(choice) = self.entry_choice() {
             match id {
+                CHOICE_BOX => return Some(choice.dialog),
+                CHOICE_HEADING => return Some(choice.heading),
+                CHOICE_COUNT => return Some(choice.players_online),
                 PLAY_AS_GUEST => return Some(choice.guest),
                 SIGN_IN_AND_PLAY => return Some(choice.account),
                 _ => {}

@@ -7,8 +7,7 @@
 //! Residual: the five text sort buttons (`0x765`, `0x766`, `0x76A..0x76C`)
 //! paint their caption only; their owner-draw face is not traced.
 
-use super::chrome::*;
-use super::gui_paint::{ButtonArt, CellRow, ComboArt, GuiStyle, HostRows};
+use super::gui_paint::{ButtonArt, CellRow, ComboArt, GuiStyle, HostRows, Picture};
 use super::{SHELL_CONTROL_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
@@ -98,27 +97,26 @@ pub(crate) fn paint_wol_lobby_children(
     base_names: &[String; 8],
 ) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+    if state.frontend.skirmish_shell_chrome.is_none() {
         return paint;
-    };
+    }
     let font = &state.renderer.bit_font;
     let scale = layout.page.scale;
     let modern = ui.is_modern();
     let rect_of = |id| layout.control_rect(id).unwrap_or_default();
-    // The image buttons' faces.
-    for (id, released, pressed) in IMAGE_BUTTONS {
-        let face = if ui.pressed(id) { pressed } else { released };
-        let (Some(art), Some(rect)) = (art, layout.control_rect(id)) else {
-            continue;
-        };
-        if let Some((_, entry)) = art.icons.iter().find(|(name, _)| *name == face) {
-            let (w, h) = entry.native_size();
-            let base = scale.base_rect(rect);
-            let [x, y] = scale.scale_point([base.x + (base.w - w) / 2, base.y + (base.h - h) / 2]);
-            let depth = SHELL_CONTROL_DEPTH - 0.00003;
-            shell_paint::push_entry_grown(&mut paint.icons, *entry, x, y, scale, depth);
-        }
-    }
+    // The image buttons show their faces on the page art; the native
+    // lobby's observer image shows its eye.
+    let image = |id: i32| IMAGE_BUTTONS.into_iter().find(|(image, ..)| i32::from(*image) == id);
+    let art_of = |id: i32| image(id).map(|_| ButtonArt::Image);
+    let observer = ui.observer();
+    let picture_of = |id: i32| match image(id) {
+        Some((_, released, pressed)) => Some(Picture::Icon {
+            released,
+            pressed,
+        }),
+        None if id == i32::from(OBSERVER_IMAGE) => Some(Picture::Observer { on: observer }),
+        None => None,
+    };
 
     // The observer box, the chat NewEdit (its caret on the page's blink,
     // under the popups too) and the owner-draw lists from the page's tree:
@@ -172,6 +170,8 @@ pub(crate) fn paint_wol_lobby_children(
         caret_of: Some(&caret_of),
         hint_of: Some(&hint_of),
         control_lists: true,
+        art_of: Some(&art_of),
+        picture_of: Some(&picture_of),
         ..GuiStyle::default()
     };
     let captions = LABELS
@@ -193,23 +193,16 @@ pub(crate) fn paint_wol_lobby_children(
         HIDE_LOCKED,
     ];
     let texts = SORT_BUTTONS.iter().map(|(id, _)| *id);
-    for node in (captions.chain(texts).chain(lists))
-        .filter(|id| !IMAGE_BUTTONS.iter().any(|(image, ..)| image == id))
-        .filter_map(|id| ui.node(id))
-    {
+    let faces = IMAGE_BUTTONS.map(|(id, ..)| id);
+    let others = (captions.chain(texts).chain(lists))
+        .filter(|id| !IMAGE_BUTTONS.iter().any(|(image, ..)| image == id));
+    // The image buttons' faces first, the observer image last.
+    let eye = (!modern).then_some(OBSERVER_IMAGE);
+    for node in (faces.into_iter().chain(others).chain(eye)).filter_map(|id| ui.node(id)) {
         let widget = super::gui_paint::paint_gui_styled(state, ui.gui(), node, scale, &[], style);
         paint.controls.extend(widget.controls);
         paint.icons.extend(widget.icons);
         paint.texts.extend(widget.texts);
-    }
-    if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer()) {
-        push_flag_entry_clipped_centered(
-            &mut paint.controls,
-            entry,
-            rect_of(OBSERVER_IMAGE),
-            scale,
-            SHELL_CONTROL_DEPTH,
-        );
     }
     paint
 }

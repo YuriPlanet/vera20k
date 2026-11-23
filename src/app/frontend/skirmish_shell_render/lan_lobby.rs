@@ -190,6 +190,11 @@ pub(crate) fn render_lan_lobby(
             _ => None,
         };
         let enabled_of = |_| Some(lobby.enabled);
+        // The observer image shows its eye, not a box.
+        let picture_of = |id: i32| {
+            (id == i32::from(crate::ui::lan_shell::OBSERVER_IMAGE))
+                .then_some(super::gui_paint::Picture::Observer { on: observer })
+        };
         // An edit's caret blinks while it has BB's focus, under the message
         // box too.
         let controller = &state.frontend.shell_controller;
@@ -205,26 +210,13 @@ pub(crate) fn render_lan_lobby(
             rows_of: Some(&rows_of),
             control_lists: true,
             reveal_of: Some(&reveal_of),
+            picture_of: Some(&picture_of),
             ..Default::default()
         };
         if let Some(root) = root {
-            // The observer image paints as its art below, not as a box.
-            let skip = [crate::ui::lan_shell::OBSERVER_IMAGE];
-            let ids = super::gui_paint::child_ids_except(gui, root, &skip);
-            let paint = super::gui_paint::paint_gui_ids(state, gui, root, ids, scale, style);
+            let paint = super::gui_paint::paint_gui_styled(state, gui, root, scale, &[], style);
             controls.extend(paint.controls);
             texts.extend(paint.texts);
-        }
-        if let Some(entry) = atlas.lan_observer_toggle(observer) {
-            push_flag_entry_clipped_centered(
-                &mut controls,
-                entry,
-                layout
-                    .rect(crate::ui::lan_shell::OBSERVER_IMAGE)
-                    .unwrap_or_default(),
-                scale,
-                SHELL_CONTROL_DEPTH,
-            );
         }
         if let Some(key) = runtime.modal {
             use crate::app::shell_lan::{MODAL, OK};
