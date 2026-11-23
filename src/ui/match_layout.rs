@@ -308,6 +308,11 @@ pub struct MatchLayout {
     side_text: [[u8; 3]; 3],
     /// The cameo labels' `LabelColor=`, resolved the same way.
     label_text: [[u8; 3]; 3],
+    /// Each built-in part's `Command=` for each side's pictures, by
+    /// `SidebarTheme as usize` and `SidebarPart as usize`.
+    commands: [[Option<String>; 19]; 3],
+    /// The money's `Value=` and `Align=` for each side's pictures.
+    money: [MoneyText; 3],
 }
 
 impl MatchLayout {
@@ -343,6 +348,19 @@ impl MatchLayout {
             Some((.., text)) => channels(text),
             None => channels(value),
         }
+    }
+
+    /// The `Command=` of built-in part `part` for the side whose pictures
+    /// are `theme`, read with the layout.
+    pub fn command(&self, part: SidebarPart, theme: SidebarTheme) -> Option<&str> {
+        self.commands[theme as usize][part as usize].as_deref()
+    }
+
+    /// What the money counter shows and where, for the side whose pictures
+    /// are `theme`; a `Value=` or `Align=` the game has not keeps the
+    /// original's (`MatchLayoutFile::check_commands` names it).
+    pub fn money(&self, theme: SidebarTheme) -> MoneyText {
+        self.money[theme as usize]
     }
 
     /// A position table as it is built in: the allied one (`GDI`) or the
@@ -381,6 +399,46 @@ impl MatchLayout {
                 .unwrap_or([255; 4]);
             [r, g, b]
         })
+    }
+}
+
+/// Where a built-in text sits in its part's width: `Align=`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextAlign {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
+impl TextAlign {
+    /// The alignment a layout file names, without regard to capitals.
+    pub fn named(name: &str) -> Option<Self> {
+        [
+            ("Left", Self::Left),
+            ("Center", Self::Center),
+            ("Right", Self::Right),
+        ]
+        .into_iter()
+        .find(|(known, _)| known.eq_ignore_ascii_case(name))
+        .map(|(_, align)| align)
+    }
+}
+
+/// What the money counter shows and where: `[Layout.Money] Value=` and
+/// `Align=`. The original's is the credits, centred on the plate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MoneyText {
+    pub value: TextValue,
+    pub align: TextAlign,
+}
+
+impl Default for MoneyText {
+    fn default() -> Self {
+        Self {
+            value: TextValue::Credits,
+            align: TextAlign::Center,
+        }
     }
 }
 
@@ -601,7 +659,6 @@ impl MatchLayoutFile {
         // the layout is loaded (`MatchLayout::text`), and one it cannot use
         // keeps the built-in action or text. A key the part does not have
         // in the built-in file is not checked here.
-        const ALIGNS: [&str; 3] = ["Left", "Center", "Right"];
         for pair in &self.layouts {
             for (table, layout) in pair.iter().enumerate() {
                 let original = &ORIGINAL[table];
@@ -639,9 +696,7 @@ impl MatchLayoutFile {
                                 || match key {
                                     "Command" => known(text),
                                     "Value" => TextValue::named(text).is_some(),
-                                    _ => {
-                                        ALIGNS.iter().any(|align| align.eq_ignore_ascii_case(text))
-                                    }
+                                    _ => TextAlign::named(text).is_some(),
                                 };
                             let problem = LayoutProblem {
                                 section: value.section.clone(),
@@ -978,6 +1033,24 @@ fn read_layout(files: &[&IniFile], layout: &str, table: &str) -> (MatchLayout, V
     read.tree = Arc::new(tree);
     read.side_text = read.side_colors(SidebarPart::Money, "Color");
     read.label_text = read.side_colors(SidebarPart::Cameos, "LabelColor");
+    let themes = [
+        SidebarTheme::Allied,
+        SidebarTheme::Soviet,
+        SidebarTheme::Yuri,
+    ];
+    read.commands = themes.map(|theme| {
+        SidebarPart::STOCK_ORDER.map(|part| read.text(part, "Command", theme).map(str::to_owned))
+    });
+    read.money = themes.map(|theme| MoneyText {
+        value: read
+            .text(SidebarPart::Money, "Value", theme)
+            .and_then(TextValue::named)
+            .unwrap_or(TextValue::Credits),
+        align: read
+            .text(SidebarPart::Money, "Align", theme)
+            .and_then(TextAlign::named)
+            .unwrap_or_default(),
+    });
     (read, problems)
 }
 

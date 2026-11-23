@@ -15,7 +15,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::presentation::layout_parts::TextAlign;
+use crate::ui::match_layout::TextAlign;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarPart, SidebarView};

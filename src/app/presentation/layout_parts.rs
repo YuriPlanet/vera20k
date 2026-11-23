@@ -24,7 +24,7 @@ use crate::render::bit_font::BitFont;
 use crate::render::hud_paint::{HudPaint, HudSpace, Material, NodeDraw, Picture};
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::ui::added_parts::{AddedKind, Holder, TextValue};
-use crate::ui::match_layout::MatchLayout;
+use crate::ui::match_layout::{MatchLayout, MoneyText};
 use crate::ui::sidebar::{SidebarPart, SidebarTheme};
 
 /// What a layout button's `Command=` names.
@@ -44,46 +44,6 @@ pub(crate) fn command_named(name: &str) -> Option<ButtonCommand> {
         .position(|bar| bar.eq_ignore_ascii_case(name))
         .map(ButtonCommand::Bar)
         .or_else(|| crate::app::input::hotkeys::command_named(name).map(ButtonCommand::Hotkey))
-}
-
-/// Where a built-in text sits in its part's width: `Align=`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum TextAlign {
-    Left,
-    #[default]
-    Center,
-    Right,
-}
-
-impl TextAlign {
-    /// The alignment a layout file names, without regard to capitals.
-    fn named(name: &str) -> Option<Self> {
-        [
-            ("Left", Self::Left),
-            ("Center", Self::Center),
-            ("Right", Self::Right),
-        ]
-        .into_iter()
-        .find(|(known, _)| known.eq_ignore_ascii_case(name))
-        .map(|(_, align)| align)
-    }
-}
-
-/// What the money counter shows and where: `[Layout.Money] Value=` and
-/// `Align=`. The original's is the credits, centred on the plate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct MoneyText {
-    pub value: TextValue,
-    pub align: TextAlign,
-}
-
-impl Default for MoneyText {
-    fn default() -> Self {
-        Self {
-            value: TextValue::Credits,
-            align: TextAlign::Center,
-        }
-    }
 }
 
 /// What the local side's layout gives the built-in parts' own code, read
@@ -114,30 +74,19 @@ impl StockParts {
     pub(crate) fn read(layout: &MatchLayout, original: &MatchLayout, theme: SidebarTheme) -> Self {
         let mut commands = [None; 19];
         for part in SidebarPart::STOCK_ORDER {
-            let (Some(command), Some(own)) = (
-                layout.text(part, "Command", theme),
-                original.text(part, "Command", theme),
-            ) else {
+            let (Some(command), Some(own)) =
+                (layout.command(part, theme), original.command(part, theme))
+            else {
                 continue;
             };
             if !command.eq_ignore_ascii_case(own) {
                 commands[part as usize] = command_named(command);
             }
         }
-        let money = MoneyText {
-            value: layout
-                .text(SidebarPart::Money, "Value", theme)
-                .and_then(TextValue::named)
-                .unwrap_or(TextValue::Credits),
-            align: layout
-                .text(SidebarPart::Money, "Align", theme)
-                .and_then(TextAlign::named)
-                .unwrap_or_default(),
-        };
         Self {
             read_from: Some((layout.added().clone(), theme)),
             commands,
-            money,
+            money: layout.money(theme),
         }
     }
 
@@ -206,7 +155,9 @@ fn value_text(state: &AppState, value: TextValue) -> String {
         sim.houses().get(&sim.session().current_house()?)
     };
     match value {
-        TextValue::Credits => view.map_or(0, |view| view.credits).to_string(),
+        TextValue::Credits => {
+            crate::render::sidebar_text::format_credits(view.map_or(0, |view| view.credits))
+        }
         TextValue::Power => view.map_or(0, |view| view.power_produced).to_string(),
         TextValue::Drain => view.map_or(0, |view| view.power_drained).to_string(),
         TextValue::Name => state
@@ -687,6 +638,7 @@ fn rgba(tint: [f32; 3]) -> Rgba {
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
+    use crate::ui::match_layout::TextAlign;
 
     #[test]
     fn a_button_names_a_command_bar_button_or_a_hotkey() {
