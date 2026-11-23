@@ -42,7 +42,7 @@ use super::{
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::main_menu_shell_chrome::WolPageArt;
+use crate::render::main_menu_shell_chrome::{MainMenuShellChromeEntry, WolPageArt};
 use crate::render::shell_paint::{self, ModalButton, ModalDepths};
 use crate::render::shell_text::{self, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
@@ -70,6 +70,8 @@ pub(crate) struct GuiPaint {
     pub(crate) texts: Vec<ShellTextDraw>,
     pub(crate) popup: Vec<SpriteInstance>,
     pub(crate) popup_texts: Vec<ShellTextDraw>,
+    /// [`PageArt`] pictures, on the page's own art ([`GuiStyle::page_art_of`]).
+    pub(crate) page_art: Vec<SpriteInstance>,
 }
 
 /// A list's rows as the host keeps them: each row's text and packed
@@ -413,6 +415,9 @@ pub(crate) struct GuiStyle<'a> {
     /// right edge (rows wrapped narrower than the list, such as hanging
     /// lines under a bullet).
     pub(crate) indent_of: Option<&'a dyn Fn(i32, usize) -> Option<i32>>,
+    /// The picture an `Image` node shows from its page's own art by its
+    /// `Id` ([`PageArt`]), into [`GuiPaint::page_art`], before `picture_of`.
+    pub(crate) page_art_of: Option<&'a dyn Fn(i32) -> Option<PageArt>>,
 }
 
 impl Default for GuiStyle<'_> {
@@ -450,6 +455,7 @@ impl Default for GuiStyle<'_> {
             empty_of: None,
             solid_lists: false,
             indent_of: None,
+            page_art_of: None,
         }
     }
 }
@@ -625,6 +631,7 @@ impl GuiPaint {
         self.texts.extend(other.texts);
         self.popup.extend(other.popup);
         self.popup_texts.extend(other.popup_texts);
+        self.page_art.extend(other.page_art);
     }
 }
 
@@ -1245,6 +1252,14 @@ pub(crate) fn paint_gui_into(
             // The host's picture, else a flag or insignia PCX (`Art`) from
             // the shell art's flags, clipped to the node and centred in it.
             NodeKind::Image => {
+                if let Some(art) = style
+                    .page_art_of
+                    .zip(id(node))
+                    .and_then(|(page_art_of, id)| page_art_of(id))
+                {
+                    push_page_art(&mut paint.page_art, art, rect, scale);
+                    continue;
+                }
                 let Some(atlas) = atlas else { continue };
                 let host = style
                     .picture_of
@@ -1496,6 +1511,31 @@ fn push_picture(
                 push_entry_sized(out, entry, x, y, draw, SHELL_CONTROL_DEPTH);
             }
         }
+    }
+}
+
+/// A picture from a page's own art (not the shell control art) that an
+/// `Image` node shows ([`GuiStyle::page_art_of`]); the host draws
+/// [`GuiPaint::page_art`] with that art's texture.
+#[derive(Clone, Copy)]
+pub(crate) enum PageArt {
+    /// A PCX static (`0x108`'s band bars): at its native size
+    /// centred in its window on the 800x600 page, then grown with the page.
+    Pcx(MainMenuShellChromeEntry),
+    /// A kind-4 static's shape frame (`0x72B`'s SCRA): grown, centred in
+    /// its window and clipped to it ([`shell_paint::paint_kind4_static`]).
+    Shape(MainMenuShellChromeEntry),
+}
+
+fn push_page_art(out: &mut Vec<SpriteInstance>, art: PageArt, rect: RectPx, scale: ShellScale) {
+    match art {
+        PageArt::Pcx(entry) => {
+            let (w, h) = entry.native_size();
+            let (x, y) = crate::ui::shell::geom::centred_in_window(scale.base_rect(rect), w, h);
+            let depth = shell_paint::STATIC_IMAGE_DEPTH;
+            shell_paint::push_entry_scaled(out, entry, x, y, scale, depth);
+        }
+        PageArt::Shape(entry) => out.extend(shell_paint::paint_kind4_static(entry, rect, scale)),
     }
 }
 
