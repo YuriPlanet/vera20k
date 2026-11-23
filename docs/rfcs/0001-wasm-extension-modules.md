@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| RFC version | 0.0.18 |
+| RFC version | 0.0.19 |
 | Status | Draft |
 | Created | 2026-11-16 |
 | APIs | `vera:sim@1`, `vera:client@1` (proposed) |
@@ -350,7 +350,7 @@ Delivery events report what has already happened. A module action cannot cancel 
 **Budgets.** Each module gets a per-frame operation budget B, independent of the frame's record count and set for the slowest supported platform (section 15). In larger battles more records arrive under the same budget. Defer excess work to later frames. B is both the threshold for starting a call and the limit of one call.
 
 - Charge host calls for work done (section 4). Derived properties evaluated by filter clauses and the per-frame `ProductionAllowed` batch also draw from B. Other decisions have their own budgets (below).
-- In the module phase, start another `on_message` or `on_events` call (a fixed maximum number of records, within the delivery area capacity) only while this frame's usage is below B. Otherwise they stay queued and go first next frame under the backlog rules below. Call `on_frame` every frame as usual, even with B used up. Each call may use up to B by itself, **never reduced by earlier usage in the frame**, so the worst frame stays below 3B plus the decision budgets.
+- In the module phase, the first `on_message` or `on_events` call of the frame (a fixed maximum number of records, within the delivery area capacity) always starts, so `ProductionAllowed` using up B cannot hold delivery back. Start another only while this frame's usage is below B. Otherwise they stay queued and go first next frame under the backlog rules below. Call `on_frame` every frame as usual, even with B used up. Each call may use up to B by itself, **never reduced by earlier usage in the frame**, so the worst frame stays below 3B plus one decision call's limit plus the decision budgets.
 - Decision calls have their own per-frame budget, which module-phase work does not consume. A backlog would otherwise disable every combat veto, such as a shield, for the whole frame. Call only while usage is below it, with a fixed per-call limit. Once it is used up, skip the module's link in decision chains for the rest of the frame, pass the previous value through and report the number skipped in the cost overlay. There are two exceptions. A `ProductionAllowed` request not asked for lack of budget keeps its last cached result, so a veto does not lapse with the budget. `Defeat` has a separate budget. Once that is used up, defeat no house this frame and ask again next frame.
 - Never defer a call midway. Stop a call and disable the module (section 3) only when that call by itself uses a whole B (for decisions, the per-call limit). Earlier usage in the frame never turns a normal call into a fault.
 - Cap records delivered per module per frame. Keep records held back by the cap or budget in order, save and hash them, and deliver them first next frame. A short burst delays a module. If the backlog exceeds a fixed number of frames' worth of records, disable the module and tell the player it cannot keep up.
@@ -980,6 +980,7 @@ Question numbers are unchanged so earlier discussion still resolves. **Decided**
 
 ## Revision history
 
+- **0.0.19** (2026-11-23): The first event batch of a frame always starts. `ProductionAllowed` draws from B, so a module that refuses production every frame could otherwise receive no events at all until its backlog stopped it. The worst-frame bound gains one decision call's limit.
 - **0.0.18** (2026-11-22): Sized a search page by the caller's budget as well. With two clauses a page of 16,384 items cost more than a whole callback's budget, so the paging 0.0.17 describes could never start. Keys without an item are charged and capped.
 - **0.0.17** (2026-11-22): Corrected open question 7: the 4.6 ms search figure in 0.0.16 was extrapolated from 42,442 operations and presented as a measurement. Direct measurement gives 2.34 ms with one clause and 10.05 ms with eight, and the computation and property-read figures are now labelled as extrapolations. Made search pagination consistent with the per-call scan limit: `next` is nonzero whenever a scan is unfinished, `.first()` follows it and a scan never outruns the caller's budget.
 - **0.0.16** (2026-11-22): Answered the 18 open questions (12 decided, 6 to measure with provisional answers). From external review: one request per decision call and complete substream keys; bulk memory reduced to `memory.copy` and `memory.fill` with exported memory; rotating hash separated from an on-demand full hash; `TakeDamage` stated as settled damage, with preview `DamageIncoming` and `TargetArmor`. From performance measurements: a used-up budget defers or skips instead of disabling a healthy module, host costs are charged in advance in proportion to work, and engine work for modules is bounded. Numbers now start at 100000, `Wasm.Tags` becomes `Vera.Tags`, files distributed with a map have only map permissions and random stream seeds separate their domains.
