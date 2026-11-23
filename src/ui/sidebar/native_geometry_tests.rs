@@ -92,12 +92,13 @@ fn native_21_screen_and_theme_layouts_drive_actual_view() {
         let v = view(c.screen, c.side, 100, 0);
         let l = v.layout;
         let g = c.globals;
+        let body_y = l.origin(&spec(c.side), SidebarPart::Middle)[1];
         assert_eq!(
             [
                 l.sidebar_x as i32,
-                l.side1_y as i32,
+                body_y as i32,
                 v.panel_rect.w as i32,
-                (v.panel_rect.h - l.side1_y) as i32
+                (v.panel_rect.h - body_y) as i32
             ],
             c.body
         );

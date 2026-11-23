@@ -187,51 +187,19 @@ pub struct SidebarChromeLayoutSpec {
     /// SIDE2 and SIDE3 canvas heights, taken from the loaded art.
     pub side2_height: f32,
     pub side3_height: f32,
-    /// CREDITS.SHP plate, from the sidebar's top-left corner
-    /// (`DrawCreditsSHPBackground @ 0x006D0E60`).
-    pub credits_x: f32,
-    pub credits_y: f32,
-    /// The credits number, from the middle of the plate's top edge. gamemd
-    /// centres it on the sidebar surface and passes the literal row 2.
-    pub money_x: f32,
-    pub money_y: f32,
-    /// TOP.SHP strip, from the sidebar's top-left corner
-    /// (`RadarClass::Draw @ 0x00653100`).
-    pub top_x: f32,
-    pub top_y: f32,
-    /// DIPLOBTN then OPTBTN, from the strip's top-left corner.
-    /// `RadarClass::Init_For_House @ 0x00652E90`: shape X + 0xB and + 0x53,
-    /// top shape Y + 4 for GDI; + 0xE, + 0x56 and + 5 for NOD.
-    pub top_buttons: [[f32; 2]; 2],
-    /// Radar housing (RADAR.SHP), from the sidebar's top-left corner.
-    pub radar_housing_x: f32,
-    pub radar_housing_y: f32,
-    /// Radar aperture, from the housing's top-left corner, and its size.
-    /// `RadarClass::One_Time @ 0x00652CF0` sets MapAreaY 49 (housing at
-    /// RadarShapeY 48) and the 140x108 area; `Init_For_House @ 0x00652E90`
-    /// writes MapAreaX 16 in both its GDI and NOD arms (`0x00652ECF`,
-    /// `0x00652F13`), which differ only in the two top buttons.
-    pub radar_x: f32,
-    pub radar_y: f32,
+    /// Every part's `X` and `Y` in the part that holds it, by
+    /// `SidebarPart as usize`: see [`Self::place`]. The original's come from
+    /// `0x006A5090`, `0x006A5130`, `RadarClass::Init_For_House @ 0x00652E90`
+    /// and `DrawCreditsSHPBackground @ 0x006D0E60`, as `veraui_default.ini`
+    /// writes them.
+    pub part_places: [[f32; 2]; 19],
+    /// The radar aperture's size. `RadarClass::One_Time @ 0x00652CF0` sets
+    /// MapAreaY 49 (housing at RadarShapeY 48) and the 140x108 area;
+    /// `Init_For_House @ 0x00652E90` writes MapAreaX 16 in both its GDI and
+    /// NOD arms (`0x00652ECF`, `0x00652F13`), which differ only in the two
+    /// top buttons.
     pub radar_width: f32,
     pub radar_height: f32,
-    /// SIDE1 and the sidebar body rectangle, from the sidebar's top-left
-    /// corner (`0x006A5130`: the rectangle's top is 0x9E).
-    pub side1_x: f32,
-    pub side1_y: f32,
-    /// Repair, Sell and the first tab, from SIDE1's top-left corner
-    /// (`0x006A5090`: body + 8 or 7, body + 0x27).
-    pub repair_x: f32,
-    pub repair_y: f32,
-    pub sell_x: f32,
-    pub sell_y: f32,
-    pub tab_x: f32,
-    pub tab_y: f32,
-    pub tab_pitch: f32,
-    /// The cameo strip (its SIDE2 rows), from the sidebar's top-left corner
-    /// (`0x006A5090`: body + 0x45).
-    pub strip_x: f32,
-    pub strip_y: f32,
     /// The first cameo, from the strip's top-left corner (`0x006A5130`:
     /// sidebar + 0x16).
     pub cameo_inset_x: f32,
@@ -256,15 +224,6 @@ pub struct SidebarChromeLayoutSpec {
     /// Height kept free under the last row (`0x006A5130`: 0x1A, or 0x12 when
     /// Scenario +0x34B8 is set, plus 7).
     pub strip_footer: f32,
-    /// R-DN, from the strip's left edge and the last row's bottom, and the
-    /// step to R-UP (`0x006A5130`: sidebar + 0x27, strip bottom + 7, 0x2E or
-    /// 0x2D).
-    pub scroll_x: f32,
-    pub scroll_y: f32,
-    pub scroll_pitch: f32,
-    /// Power bar, from the sidebar's top-left corner.
-    pub power_bar_x: f32,
-    pub power_bar_y: f32,
     pub power_bar_tile_height: f32,
 }
 
@@ -304,28 +263,7 @@ impl SidebarChromeLayoutSpec {
     /// part with no panel; the bottom of the last row for the scroll
     /// buttons), as its `veraui.ini` `X` and `Y` say.
     pub fn place(&self, part: SidebarPart) -> [f32; 2] {
-        let tab = |index: f32| [index * self.tab_pitch, 0.0];
-        match part {
-            SidebarPart::Credits => [self.credits_x, self.credits_y],
-            SidebarPart::Money => [self.money_x, self.money_y],
-            SidebarPart::Top => [self.top_x, self.top_y],
-            SidebarPart::Diplomacy => self.top_buttons[0],
-            SidebarPart::Options => self.top_buttons[1],
-            SidebarPart::Radar => [self.radar_housing_x, self.radar_housing_y],
-            SidebarPart::Minimap => [self.radar_x, self.radar_y],
-            SidebarPart::Middle => [self.side1_x, self.side1_y],
-            SidebarPart::Repair => [self.repair_x, self.repair_y],
-            SidebarPart::Sell => [self.sell_x, self.sell_y],
-            SidebarPart::Tabs => [self.tab_x, self.tab_y],
-            SidebarPart::Buildings => tab(0.0),
-            SidebarPart::Defenses => tab(1.0),
-            SidebarPart::Infantry => tab(2.0),
-            SidebarPart::Vehicles => tab(3.0),
-            SidebarPart::Cameos => [self.strip_x, self.strip_y],
-            SidebarPart::ScrollDown => [self.scroll_x, self.scroll_y],
-            SidebarPart::ScrollUp => [self.scroll_x + self.scroll_pitch, self.scroll_y],
-            SidebarPart::Power => [self.power_bar_x, self.power_bar_y],
-        }
+        self.part_places[part as usize]
     }
 
     /// Where a radar movie's top-left corner sits in the radar housing:
@@ -333,7 +271,8 @@ impl SidebarChromeLayoutSpec {
     /// MapAreaY - 1) on the sidebar (`0x005BF3D0..0x005BF3E5`), the housing's
     /// own corner being (ShapeX, RadarShapeY).
     pub fn radar_movie_origin(&self) -> [f32; 2] {
-        [self.radar_x - 3.0, self.radar_y - 1.0]
+        let [x, y] = self.place(SidebarPart::Minimap);
+        [x - 3.0, y - 1.0]
     }
 
     /// Layout-space x of the sidebar's left edge on a layout screen
@@ -403,29 +342,30 @@ mod tests {
 
     #[test]
     fn gdi_positions_are_independent_of_the_art_theme() {
+        use SidebarPart::{Defenses, Minimap, Power, Tabs};
         let allied = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
         let soviet = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Soviet);
-        assert_eq!(allied.tab_x, 26.0);
-        assert_eq!(soviet.tab_x, 20.0);
+        assert_eq!(allied.place(Tabs), [26.0, 39.0]);
+        assert_eq!(soviet.place(Tabs), [20.0, 39.0]);
 
         let soviet_gdi =
             SidebarChromeLayoutSpec::for_theme_and_positions(SidebarTheme::Soviet, true);
         assert_eq!(soviet_gdi.theme, SidebarTheme::Soviet);
-        assert_eq!(soviet_gdi.tab_x, 26.0);
-        assert_eq!(soviet_gdi.tab_pitch, 29.0);
+        assert_eq!(soviet_gdi.place(Tabs), [26.0, 39.0]);
+        assert_eq!(soviet_gdi.place(Defenses), [29.0, 0.0]);
         assert_eq!(soviet_gdi.cameo_column_pitch, 63.0);
-        assert_eq!(soviet_gdi.power_bar_x, 5.0);
-        assert_eq!((soviet_gdi.radar_x, soviet_gdi.radar_y), (16.0, 1.0));
+        assert_eq!(soviet_gdi.place(Power), [5.0, 227.0]);
+        assert_eq!(soviet_gdi.place(Minimap), [16.0, 1.0]);
 
         let allied_nod =
             SidebarChromeLayoutSpec::for_theme_and_positions(SidebarTheme::Allied, false);
         assert_eq!(allied_nod.theme, SidebarTheme::Allied);
-        assert_eq!(allied_nod.tab_x, 20.0);
-        assert_eq!(allied_nod.tab_pitch, 32.0);
+        assert_eq!(allied_nod.place(Tabs), [20.0, 39.0]);
+        assert_eq!(allied_nod.place(Defenses), [32.0, 0.0]);
         assert_eq!(allied_nod.cameo_column_pitch, 64.0);
-        assert_eq!(allied_nod.power_bar_x, 0.0);
+        assert_eq!(allied_nod.place(Power), [0.0, 227.0]);
         // Both arms of Init_For_House write MapAreaX 16 (`0x00652F13`).
-        assert_eq!((allied_nod.radar_x, allied_nod.radar_y), (16.0, 1.0));
+        assert_eq!(allied_nod.place(Minimap), [16.0, 1.0]);
         // The 140-wide clip starts 13 px into the 168-wide housing, not
         // centred at 14.
         assert_eq!(allied_nod.radar_movie_origin(), [13.0, 0.0]);

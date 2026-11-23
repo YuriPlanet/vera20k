@@ -65,9 +65,11 @@ pub fn radar_minimap_rect(screen_w: f32) -> Rect {
 pub fn radar_minimap_rect_with_spec(screen_w: f32, spec: SidebarChromeLayoutSpec) -> Rect {
     // The aperture sits in the radar housing; the GDI/NOD tables move it,
     // which the spec carries.
+    let [radar_x, radar_y] = spec.place(SidebarPart::Radar);
+    let [x, y] = spec.place(SidebarPart::Minimap);
     Rect {
-        x: spec.sidebar_x(screen_w) + spec.radar_housing_x + spec.radar_x,
-        y: spec.radar_housing_y + spec.radar_y,
+        x: spec.sidebar_x(screen_w) + radar_x + x,
+        y: radar_y + y,
         w: spec.radar_width,
         h: spec.radar_height,
     }
@@ -261,12 +263,24 @@ impl SidebarLayout {
         let [x, y] = spec.place(part);
         match part.panel() {
             None => [self.sidebar_x + x, y],
-            Some(SidebarPart::Cameos) => [self.strip_x + x, self.cameo_grid_bottom + y],
+            Some(SidebarPart::Cameos) => [
+                self.sidebar_x + spec.place(SidebarPart::Cameos)[0] + x,
+                self.cameo_grid_bottom + y,
+            ],
             Some(panel) => {
                 let [panel_x, panel_y] = self.origin(spec, panel);
                 [panel_x + x, panel_y + y]
             }
         }
+    }
+
+    /// The top-left corner of the cameo grid's first picture: the strip's
+    /// corner and the cameo inset.
+    pub fn grid_origin(&self, spec: &SidebarChromeLayoutSpec) -> [f32; 2] {
+        [
+            self.origin(spec, SidebarPart::Cameos)[0] + spec.cameo_inset_x,
+            self.cameo_grid_top + spec.cameo_inset_y,
+        ]
     }
 }
 
@@ -300,20 +314,7 @@ impl SidebarView {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SidebarLayout {
     pub sidebar_x: f32,
-    /// CREDITS.SHP plate.
-    pub credits_x: f32,
-    pub credits_y: f32,
-    /// TOP.SHP strip.
-    pub top_x: f32,
-    pub top_y: f32,
-    /// Radar housing.
-    pub radar_x: f32,
-    pub radar_y: f32,
-    pub side1_x: f32,
-    pub side1_y: f32,
-    pub tabs_y: f32,
-    /// Left edge of the SIDE2 rows, SIDE3 and ADDON.
-    pub strip_x: f32,
+    /// The top and the bottom of the cameo strip's rows.
     pub cameo_grid_top: f32,
     pub cameo_grid_bottom: f32,
     pub side3_y: f32,
@@ -437,27 +438,17 @@ pub(crate) fn compute_layout_with_spec(
     // the same way: footer 26, or 18 when Scenario +0x34B8 (the side) is set,
     // plus 7, which the table carries as one height.
     let row_height = (spec.cameo_row_height as i32).max(1);
-    let rows = ((screen_h as i32 - spec.strip_y as i32 - spec.strip_footer as i32) / row_height)
-        .max(0) as usize;
-    let sidebar_x = spec.sidebar_x(screen_w);
+    let strip_y = spec.place(SidebarPart::Cameos)[1];
+    let rows = ((screen_h as i32 - strip_y as i32 - spec.strip_footer as i32) / row_height).max(0)
+        as usize;
     SidebarLayout {
-        sidebar_x,
-        credits_x: sidebar_x + spec.credits_x,
-        credits_y: spec.credits_y,
-        top_x: sidebar_x + spec.top_x,
-        top_y: spec.top_y,
-        radar_x: sidebar_x + spec.radar_housing_x,
-        radar_y: spec.radar_housing_y,
-        side1_x: sidebar_x + spec.side1_x,
-        side1_y: spec.side1_y,
-        tabs_y: spec.side1_y + spec.tab_y,
-        strip_x: sidebar_x + spec.strip_x,
-        cameo_grid_top: spec.strip_y,
-        cameo_grid_bottom: spec.strip_y + (rows as i32 * row_height) as f32,
+        sidebar_x: spec.sidebar_x(screen_w),
+        cameo_grid_top: strip_y,
+        cameo_grid_bottom: strip_y + (rows as i32 * row_height) as f32,
         // Native 6A6C30 advances by the loaded SIDE2 canvas height. VERA's
         // columns shrink the row, so there SIDE3 follows the row's own
         // height instead; the original table sets both to the same 50.
-        side3_y: spec.strip_y
+        side3_y: strip_y
             + rows as f32
                 * if spec.cameo_columns > 2.0 {
                     row_height as f32
@@ -471,37 +462,14 @@ pub(crate) fn compute_layout_with_spec(
 /// Native PowerClass tooltip (`6403A0`). The 8-pixel hit width is distinct
 /// from POWERP's actual canvas width and the 3-pixel paint stride.
 pub fn power_bar_rect(layout: &SidebarLayout, spec: SidebarChromeLayoutSpec) -> Rect {
+    let [x, y] = layout.origin(&spec, SidebarPart::Power);
     Rect {
-        x: layout.sidebar_x + spec.power_bar_x,
-        y: spec.power_bar_y,
+        x,
+        y,
         w: 8.0,
         h: layout.cameo_grid_bottom - layout.cameo_grid_top,
     }
     .shown(spec.shows(SidebarPart::Power))
-}
-
-/// Native R-DN/R-UP anchors (`6ABD30`), with actual SHP canvas hit sizes.
-pub fn scroll_button_rects(
-    layout: &SidebarLayout,
-    spec: SidebarChromeLayoutSpec,
-    down_size: Option<[f32; 2]>,
-    up_size: Option<[f32; 2]>,
-) -> (Rect, Rect) {
-    let [dw, dh] = down_size.unwrap_or([0.0, 0.0]);
-    let [uw, uh] = up_size.unwrap_or([0.0, 0.0]);
-    let x = layout.strip_x + spec.scroll_x;
-    let y = layout.cameo_grid_bottom + spec.scroll_y;
-    let shown = spec.shows(SidebarPart::Cameos);
-    (
-        Rect { x, y, w: dw, h: dh }.shown(shown),
-        Rect {
-            x: x + spec.scroll_pitch,
-            y,
-            w: uw,
-            h: uh,
-        }
-        .shown(shown),
-    )
 }
 
 /// Forward cameo presses to the live Super or Factory click decision.

@@ -108,36 +108,14 @@ const fn size(
     }
 }
 
-const NUMBERS: [NumberKey; 39] = [
+const NUMBERS: [NumberKey; 13] = [
     // The battlefield and the bar take what the sidebar leaves. Its width
     // counts on the left or the right edge, its height on the top or the
     // bottom; `Rest` is the other one, the screen's own.
     size("Side", "Width", 16, |spec| &mut spec.sidebar_width),
     size("Side", "Height", 16, |spec| &mut spec.side_height),
-    place("Credits", "X", |spec| &mut spec.credits_x),
-    place("Credits", "Y", |spec| &mut spec.credits_y),
-    place("Money", "X", |spec| &mut spec.money_x),
-    place("Money", "Y", |spec| &mut spec.money_y),
-    place("Top", "X", |spec| &mut spec.top_x),
-    place("Top", "Y", |spec| &mut spec.top_y),
-    place("Diplomacy", "X", |spec| &mut spec.top_buttons[0][0]),
-    place("Diplomacy", "Y", |spec| &mut spec.top_buttons[0][1]),
-    place("Options", "X", |spec| &mut spec.top_buttons[1][0]),
-    place("Options", "Y", |spec| &mut spec.top_buttons[1][1]),
-    place("Radar", "X", |spec| &mut spec.radar_housing_x),
-    place("Radar", "Y", |spec| &mut spec.radar_housing_y),
-    place("Minimap", "X", |spec| &mut spec.radar_x),
-    place("Minimap", "Y", |spec| &mut spec.radar_y),
     size("Minimap", "Width", 1, |spec| &mut spec.radar_width),
     size("Minimap", "Height", 1, |spec| &mut spec.radar_height),
-    place("Middle", "X", |spec| &mut spec.side1_x),
-    place("Middle", "Y", |spec| &mut spec.side1_y),
-    place("Repair", "X", |spec| &mut spec.repair_x),
-    place("Repair", "Y", |spec| &mut spec.repair_y),
-    place("Sell", "X", |spec| &mut spec.sell_x),
-    place("Sell", "Y", |spec| &mut spec.sell_y),
-    place("Cameos", "X", |spec| &mut spec.strip_x),
-    place("Cameos", "Y", |spec| &mut spec.strip_y),
     // Each visible cameo is a gadget, so a row stays a row.
     NumberKey {
         node: "Cameos",
@@ -154,16 +132,9 @@ const NUMBERS: [NumberKey; 39] = [
     // The row height divides the strip into rows.
     size("Cameos", "RowHeight", 16, |spec| &mut spec.cameo_row_height),
     size("Cameos", "Footer", 0, |spec| &mut spec.strip_footer),
-    place("ScrollDown", "X", |spec| &mut spec.scroll_x),
-    place("ScrollDown", "Y", |spec| &mut spec.scroll_y),
-    place("Power", "X", |spec| &mut spec.power_bar_x),
-    place("Power", "Y", |spec| &mut spec.power_bar_y),
     // The rows the bar's tiles take, one picture each.
     size("Power", "Step", 1, |spec| &mut spec.power_bar_tile_height),
 ];
-
-/// The four tabs, in the tab buttons' order.
-const TABS: [&str; 4] = ["Buildings", "Defenses", "Infantry", "Vehicles"];
 
 /// The four tabs' names for a cameo grid's `Tab=`, in the tabs' order.
 const GRID_TABS: [&str; 4] = ["Building", "Defense", "Infantry", "Vehicle"];
@@ -318,10 +289,8 @@ impl std::fmt::Display for LayoutProblem {
 pub struct MatchLayout {
     /// Each read number of [`NUMBERS`], by its index there.
     numbers: Vec<(usize, f32)>,
-    /// Where the first tab sits in the middle panel, and the step to each
-    /// next one; the step between the two scroll buttons.
-    tabs: Option<[f32; 3]>,
-    scroll_step: Option<f32>,
+    /// Each part's `X` and `Y`, by `SidebarPart as usize`.
+    part_places: [[f32; 2]; 19],
     parts: [Option<SidebarPart>; 19],
     places: PanelPlaces,
     field: FieldLayout,
@@ -347,12 +316,7 @@ impl MatchLayout {
         for &(number, value) in &self.numbers {
             *(NUMBERS[number].slot)(spec) = value;
         }
-        if let Some([x, y, step]) = self.tabs {
-            (spec.tab_x, spec.tab_y, spec.tab_pitch) = (x, y, step);
-        }
-        if let Some(step) = self.scroll_step {
-            spec.scroll_pitch = step;
-        }
+        spec.part_places = self.part_places;
         spec.parts = self.parts;
         spec.places = self.places;
         spec.field = self.field;
@@ -751,18 +715,6 @@ impl<'a> Reader<'a> {
     fn number(&mut self, node: &str, key: &'static str, min: i32) -> Option<i32> {
         self.value(node, key, |text| number_in(text, min, FAR))
     }
-
-    /// Refuse a part's key as not yet readable: its last own value.
-    fn not_yet(&mut self, node: &str, key: &str) {
-        let section = self
-            .tree
-            .node(node)
-            .and_then(|node| node.values(key).iter().rev().find(|value| value.own))
-            .map(|value| value.section.clone());
-        if let Some(section) = section {
-            self.problem(&section, key, LayoutProblemKind::NotYet);
-        }
-    }
 }
 
 /// A key's value as a whole number: ReadInt's result, for text that is
@@ -880,7 +832,9 @@ fn read_layout(files: &[&IniFile], layout: &str, table: &str) -> (MatchLayout, V
             read.numbers.push((index, value as f32));
         }
     }
-    read_tabs(&mut reader, &mut read);
+    read.part_places = SidebarPart::STOCK_ORDER.map(|part| {
+        ["X", "Y"].map(|key| reader.number(part.name(), key, -FAR).unwrap_or_default() as f32)
+    });
     read_places(&mut reader, &mut read);
     read_field(&mut reader, &mut read.field);
     let mut listed: Vec<(ListedIn, String, String)> = Vec::new();
@@ -888,42 +842,6 @@ fn read_layout(files: &[&IniFile], layout: &str, table: &str) -> (MatchLayout, V
     read.added = read_added(&mut reader, listed).into();
     read_leftovers(&mut reader);
     (read, reader.problems)
-}
-
-/// The tabs: the first's place and the step to each next one, and the
-/// scroll buttons' step. Each tab is a part of its own; this version places
-/// them at one step from each other in a line.
-fn read_tabs(reader: &mut Reader, read: &mut MatchLayout) {
-    let at = |reader: &mut Reader, node: &str| {
-        [
-            reader.number(node, "X", -FAR).unwrap_or_default(),
-            reader.number(node, "Y", -FAR).unwrap_or_default(),
-        ]
-    };
-    let tabs = at(reader, "Tabs");
-    let places = TABS.map(|tab| at(reader, tab));
-    let step = places[1][0] - places[0][0];
-    for (index, tab) in TABS.iter().enumerate().skip(2) {
-        if places[index][0] != places[0][0] + index as i32 * step {
-            reader.not_yet(tab, "X");
-        }
-    }
-    for (index, tab) in TABS.iter().enumerate().skip(1) {
-        if places[index][1] != places[0][1] {
-            reader.not_yet(tab, "Y");
-        }
-    }
-    read.tabs = Some([
-        (tabs[0] + places[0][0]) as f32,
-        (tabs[1] + places[0][1]) as f32,
-        step as f32,
-    ]);
-    let down = at(reader, "ScrollDown");
-    let up = at(reader, "ScrollUp");
-    if up[1] != down[1] {
-        reader.not_yet("ScrollUp", "Y");
-    }
-    read.scroll_step = Some((up[0] - down[0]) as f32);
 }
 
 /// Where the sidebar and the bar sit: `[Side] Hold=` (any edge) and
@@ -1376,6 +1294,17 @@ mod tests {
         expected
     }
 
+    /// `spec` with each of `places` written over its part's place.
+    fn placed(
+        mut spec: SidebarChromeLayoutSpec,
+        places: &[(SidebarPart, [f32; 2])],
+    ) -> SidebarChromeLayoutSpec {
+        for &(part, place) in places {
+            spec.part_places[part as usize] = place;
+        }
+        spec
+    }
+
     /// The side's sidebar at 800x600 with `layout` over its original table.
     fn sidebar(
         theme: SidebarTheme,
@@ -1456,13 +1385,7 @@ mod tests {
         // A side without a line takes `Default=`; no file changes nothing.
         let (plain, _) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
         let stock = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
-        assert_eq!(
-            plain,
-            SidebarChromeLayoutSpec {
-                power_bar_x: 9.0,
-                ..stock
-            }
-        );
+        assert_eq!(plain, placed(stock, &[(SidebarPart::Power, [9.0, 227.0])]));
         assert!(
             MatchLayoutFile::none()
                 .for_side(Some("GDI"), true)
@@ -1503,8 +1426,6 @@ mod tests {
                 ("[Broken.Cameos] CellHeight", NotANumber),
                 ("[Broken.Cameos] Columns", Clamped { used: 1 }),
                 ("[Broken.Clock]", UnknownPart),
-                // The tabs stand one step apart in a line.
-                ("[Broken.Infantry] X", NotYet),
                 ("[Broken.Sell] Base", MissingLayout),
                 ("[Layouts] Nod", MissingLayout),
                 ("[Round] Base", Loop),
@@ -1513,25 +1434,23 @@ mod tests {
 
         // The lines that could be read still apply; the rest stay original.
         let (spec, _) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
-        assert_eq!(
-            spec,
-            SidebarChromeLayoutSpec {
-                radar_height: 1.0,
-                cameo_row_height: 16.0,
-                cameo_columns: 1.0,
-                ..SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied)
-            }
-        );
+        let read = SidebarChromeLayoutSpec {
+            radar_height: 1.0,
+            cameo_row_height: 16.0,
+            cameo_columns: 1.0,
+            ..SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied)
+        };
+        assert_eq!(spec, placed(read, &[(SidebarPart::Infantry, [50.0, 0.0])]));
         // A missing layout leaves the side alone; a loop of bases still
         // starts from the table.
         assert!(file.for_side(Some("Nod"), false).is_none());
         let (spec, _) = sidebar(SidebarTheme::Yuri, file.for_side(Some("ThirdSide"), false));
         assert_eq!(
             spec,
-            SidebarChromeLayoutSpec {
-                radar_housing_y: 10.0,
-                ..SidebarChromeLayoutSpec::for_theme(SidebarTheme::Yuri)
-            }
+            placed(
+                SidebarChromeLayoutSpec::for_theme(SidebarTheme::Yuri),
+                &[(SidebarPart::Radar, [0.0, 10.0])]
+            )
         );
     }
 
@@ -1679,7 +1598,8 @@ mod tests {
         // edge, and its rows are the ones that fit in its own height.
         let (width, height) = frame.layout_screen();
         let layout = crate::ui::sidebar::compute_layout_with_spec(spec, width, height, 0);
-        assert_eq!((layout.sidebar_x, layout.strip_x), (0.0, 336.0));
+        assert_eq!(layout.sidebar_x, 0.0);
+        assert_eq!(layout.origin(&spec, SidebarPart::Cameos)[0], 336.0);
         assert_eq!(layout.side2_tile_count, (160 - 33) / 50);
         assert_eq!(spec.side_width(width), 800.0);
     }
@@ -1966,14 +1886,11 @@ mod tests {
             .unwrap()
             .apply_to_sidebar(&mut soviet);
         // The radar keeps the mod's X and takes the player's Y; the tabs
-        // keep the mod's step.
+        // keep the mod's places.
+        assert_eq!(soviet.place(SidebarPart::Radar), [4.0, 70.0]);
         assert_eq!(
-            (
-                soviet.radar_housing_x,
-                soviet.radar_housing_y,
-                soviet.tab_pitch
-            ),
-            (4.0, 70.0, 40.0)
+            SidebarPart::TABS.map(|tab| soviet.place(tab)[0]),
+            [0.0, 40.0, 80.0, 120.0]
         );
         let halt = &file.for_side(Some("Nod"), false).unwrap().added()[0];
         assert_eq!((halt.place.x, halt.place.y), (300, 20));
@@ -2040,8 +1957,9 @@ mod tests {
         let (width, height) = frame.layout_screen();
         let layout = crate::ui::sidebar::compute_layout_with_spec(spec, width, height, 0);
         assert_eq!(
-            (layout.radar_x, layout.side1_x, layout.strip_x),
-            (0.0, 168.0, 336.0)
+            [SidebarPart::Radar, SidebarPart::Middle, SidebarPart::Cameos]
+                .map(|part| layout.origin(&spec, part)[0]),
+            [0.0, 168.0, 336.0]
         );
         assert_eq!(layout.side2_tile_count, 2);
         // Two buttons and the match clock sit in the band's empty half.
@@ -2152,33 +2070,8 @@ mod tests {
             [
                 spec.sidebar_width,
                 spec.side_height,
-                spec.credits_x,
-                spec.credits_y,
-                spec.money_x,
-                spec.money_y,
-                spec.top_x,
-                spec.top_y,
-                spec.top_buttons[0][0],
-                spec.top_buttons[0][1],
-                spec.top_buttons[1][0],
-                spec.top_buttons[1][1],
-                spec.radar_housing_x,
-                spec.radar_housing_y,
-                spec.radar_x,
-                spec.radar_y,
                 spec.radar_width,
                 spec.radar_height,
-                spec.side1_x,
-                spec.side1_y,
-                spec.repair_x,
-                spec.repair_y,
-                spec.sell_x,
-                spec.sell_y,
-                spec.tab_x,
-                spec.tab_y,
-                spec.tab_pitch,
-                spec.strip_x,
-                spec.strip_y,
                 spec.cameo_columns,
                 spec.cameo_width,
                 spec.cameo_height,
@@ -2187,33 +2080,74 @@ mod tests {
                 spec.cameo_column_pitch,
                 spec.cameo_row_height,
                 spec.strip_footer,
-                spec.scroll_x,
-                spec.scroll_y,
-                spec.scroll_pitch,
-                spec.power_bar_x,
-                spec.power_bar_y,
                 spec.power_bar_tile_height,
                 spec.cameo_cell_source_width,
             ]
         };
         let gdi = [
-            168., 168., 0., 0., 0., 2., 0., 16., 11., 4., 83., 4., 0., 48., 16., 1., 140., 108.,
-            0., 158., 20., 8., 84., 8., 26., 39., 29., 0., 227., 2., 60., 48., 22., 1., 63., 50.,
-            33., 39., 7., 46., 5., 227., 3., 63.,
+            168., 168., 140., 108., 2., 60., 48., 22., 1., 63., 50., 33., 3., 63.,
         ];
         let nod = [
-            168., 168., 0., 0., 0., 2., 0., 16., 14., 5., 86., 5., 0., 48., 16., 1., 140., 108.,
-            0., 158., 33., 7., 85., 7., 20., 39., 32., 0., 227., 2., 60., 48., 22., 1., 64., 50.,
-            25., 39., 7., 45., 0., 227., 3., 64.,
+            168., 168., 140., 108., 2., 60., 48., 22., 1., 64., 50., 25., 3., 64.,
+        ];
+        // Each part's place, in `SidebarPart::STOCK_ORDER`.
+        let gdi_places = [
+            [0., 0.],
+            [0., 2.],
+            [0., 16.],
+            [11., 4.],
+            [83., 4.],
+            [0., 48.],
+            [16., 1.],
+            [0., 158.],
+            [20., 8.],
+            [84., 8.],
+            [26., 39.],
+            [0., 0.],
+            [29., 0.],
+            [58., 0.],
+            [87., 0.],
+            [0., 227.],
+            [39., 7.],
+            [85., 7.],
+            [5., 227.],
+        ];
+        let nod_places = [
+            [0., 0.],
+            [0., 2.],
+            [0., 16.],
+            [14., 5.],
+            [86., 5.],
+            [0., 48.],
+            [16., 1.],
+            [0., 158.],
+            [33., 7.],
+            [85., 7.],
+            [20., 39.],
+            [0., 0.],
+            [32., 0.],
+            [64., 0.],
+            [96., 0.],
+            [0., 227.],
+            [39., 7.],
+            [84., 7.],
+            [0., 227.],
         ];
         for theme in [
             SidebarTheme::Allied,
             SidebarTheme::Soviet,
             SidebarTheme::Yuri,
         ] {
-            for (gdi_positions, expected) in [(true, gdi), (false, nod)] {
+            for (gdi_positions, expected, places) in
+                [(true, gdi, gdi_places), (false, nod, nod_places)]
+            {
                 let spec = SidebarChromeLayoutSpec::for_theme_and_positions(theme, gdi_positions);
                 assert_eq!(numbers(spec), expected, "{theme:?} {gdi_positions}");
+                assert_eq!(
+                    SidebarPart::STOCK_ORDER.map(|part| spec.place(part)),
+                    places,
+                    "{theme:?} {gdi_positions}"
+                );
                 assert_eq!(spec.parts, SidebarPart::STOCK_ORDER.map(Some));
                 assert_eq!(spec.places, PanelPlaces::ORIGINAL);
                 assert_eq!(spec.field, FieldLayout::ORIGINAL);
@@ -2239,14 +2173,9 @@ mod tests {
         // The child's own Y over the parent's, and the parent's Repair. Sell,
         // whose base is Repair, has its own place.
         assert_eq!(
-            (
-                spec.radar_housing_y,
-                spec.repair_x,
-                spec.repair_y,
-                spec.sell_x,
-                spec.sell_y
-            ),
-            (70.0, 1.0, 12.0, 84.0, 8.0)
+            [SidebarPart::Radar, SidebarPart::Repair, SidebarPart::Sell]
+                .map(|part| spec.place(part)),
+            [[0.0, 70.0], [1.0, 12.0], [84.0, 8.0]]
         );
         let added = file.for_side(Some("GDI"), true).unwrap().added();
         assert_eq!(
