@@ -194,10 +194,7 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
     let spec = presentation.sidebar_layout_spec;
     let frame = state.sidebar_frame();
     let scale = frame.scale();
-    let to_frame = |x: f32, y: f32, w: f32, h: f32| {
-        let rect = frame.rect_to_frame(Rect { x, y, w, h });
-        [rect.x, rect.y, rect.w, rect.h].map(|v| v.round() as i32)
-    };
+    let to_frame = |x: f32, y: f32, w: f32, h: f32| frame.rect_to_frame_px(Rect { x, y, w, h });
     let mut out = Vec::new();
 
     // Every part of the sidebar that draws: a button or a tab where the view

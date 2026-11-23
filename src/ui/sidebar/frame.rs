@@ -541,6 +541,17 @@ impl SidebarFrame {
         }
     }
 
+    /// [`Self::rect_to_frame`] rounded to whole frame pixels, as
+    /// `x, y, width, height`: where hit tests and tips take it.
+    pub fn rect_to_frame_px(self, rect: Rect) -> [i32; 4] {
+        whole_pixels(self.rect_to_frame(rect))
+    }
+
+    /// [`Self::bar_rect_to_frame`] rounded the same way.
+    pub fn bar_rect_to_frame_px(self, rect: Rect) -> [i32; 4] {
+        whole_pixels(self.bar_rect_to_frame(rect))
+    }
+
     /// A rect of the bar's, in layout space, in frame pixels.
     pub fn bar_rect_to_frame(self, rect: Rect) -> Rect {
         let scale = self.scale();
@@ -572,6 +583,11 @@ impl SidebarFrame {
         let y = (y as f32 + 0.5) / scale;
         (x.floor() as i32, y.floor() as i32)
     }
+}
+
+/// A frame-pixel rect rounded to whole pixels.
+fn whole_pixels(rect: Rect) -> [i32; 4] {
+    [rect.x, rect.y, rect.w, rect.h].map(|v| v.round() as i32)
 }
 
 #[cfg(all(test, tests_ui))]

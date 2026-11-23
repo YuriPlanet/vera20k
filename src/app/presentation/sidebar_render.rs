@@ -928,15 +928,15 @@ pub(crate) fn minimap_object_click_position(state: &AppState, id: u64) -> Option
     let rect = active_minimap_screen_rect(state);
     let minimap = state.match_state.match_presentation.minimap.as_ref()?;
     let (x, y) = minimap.native_object_click_point_in_rect(id, [rect.x, rect.y, rect.w, rect.h])?;
-    let frame = state
+    let [x, y, ..] = state
         .sidebar_frame()
-        .rect_to_frame(crate::ui::sidebar::Rect {
+        .rect_to_frame_px(crate::ui::sidebar::Rect {
             x,
             y,
             w: 1.0,
             h: 1.0,
         });
-    Some([frame.x.round() as u32, frame.y.round() as u32])
+    Some([x.max(0) as u32, y.max(0) as u32])
 }
 
 pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {

@@ -320,22 +320,14 @@ pub(crate) fn click_rect(state: &AppState, placed: &Placed) -> [i32; 4] {
     let [x, y, width, height] = placed.rect;
     match placed.holder {
         Holder::Field | Holder::Group(_) => placed.rect,
-        Holder::Side => {
-            let rect = state
-                .sidebar_frame()
-                .rect_to_frame(crate::ui::sidebar::Rect {
-                    x: x as f32,
-                    y: y as f32,
-                    w: width as f32,
-                    h: height as f32,
-                });
-            [
-                rect.x.round() as i32,
-                rect.y.round() as i32,
-                rect.w.round() as i32,
-                rect.h.round() as i32,
-            ]
-        }
+        Holder::Side => state
+            .sidebar_frame()
+            .rect_to_frame_px(crate::ui::sidebar::Rect {
+                x: x as f32,
+                y: y as f32,
+                w: width as f32,
+                h: height as f32,
+            }),
     }
 }
 

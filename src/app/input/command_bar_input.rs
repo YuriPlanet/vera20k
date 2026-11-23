@@ -77,7 +77,10 @@ fn sync_prepared(
         if let Some(gadget) = gadgets.list.get_mut(handle) {
             gadget.is_disabled = rect.is_none();
             gadget.rect = rect
-                .map(|rect| frame_rect_px(frame.bar_rect_to_frame(rect)))
+                .map(|rect| {
+                    let [x, y, w, h] = frame.bar_rect_to_frame_px(rect);
+                    GadgetRect::new(x, y, w, h)
+                })
                 .unwrap_or(GadgetRect::new(0, 0, 0, 0));
             if command == 11 {
                 gadget.id = if closed { 0xF1 } else { 0xF0 };
