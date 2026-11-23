@@ -1228,7 +1228,7 @@ impl Simulation {
             return Ok(None);
         }
         let raised = DriveCoord {
-            z: coords.z.max(query_ground(&map.cells, coords)?),
+            z: coords.z.max(query_ground(&map.cells, coords)),
             ..coords
         };
         // Foot4D785F..4D7896: row6 with the Rules gate off joins Aircraft's
@@ -1578,7 +1578,7 @@ fn clicked_coordinate(
 /// Foot What_Action's object coordinate (`0x004DDEE7..0x004DDF41`).
 fn grounded_coordinate(cells: &NativeCellQuery<'_>, x: i32, y: i32) -> Result<DriveCoord, String> {
     let mut point = DriveCoord { x, y, z: 0 };
-    point.z = query_ground(cells, point)?;
+    point.z = query_ground(cells, point);
     //4DE242/4DE38C are separate Map calls after the height query.
     if cells.flags(cells.lookup_world(point.x, point.y)) & 0x100 != 0 {
         point.z = point.z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
@@ -1690,7 +1690,7 @@ fn resolve_foot_object_click(
         y: point.y,
         z: 0,
     };
-    centre.z = query_ground(cells, centre)?;
+    centre.z = query_ground(cells, centre);
     let shrouded = crate::sim::vision::coordinate_is_shrouded(cells, centre, &open)?;
     let own_zone = Some((source, source_bridge));
     let nearby = |zone_source, require_burrowable| {

@@ -379,7 +379,7 @@ pub(crate) fn rally_line_coords(
         return None;
     }
     let mut target = target_get_coords(entity.archive_target()?, sim, Some(cells))?;
-    let ground = query_ground_height(cells, target).ok()?;
+    let ground = query_ground_height(cells, target);
     target.z = ground.wrapping_add(
         if cells.flags(cells.lookup_world(target.x, target.y)) & 0x100 != 0 {
             crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
@@ -432,7 +432,6 @@ pub(crate) fn action_line_endpoints(
         && cells.flags(cells.lookup_world(end.x, end.y)) & 0x100 != 0
     {
         end.z = query_ground_height(cells, end)
-            .ok()?
             .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
     }
     let start = object_location(entity, terrain);

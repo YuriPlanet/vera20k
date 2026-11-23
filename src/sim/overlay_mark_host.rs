@@ -461,8 +461,7 @@ impl OverlayCellAnimGround {
                 y: request.location[1],
                 z: request.location[2],
             },
-        )
-        .unwrap_or(0);
+        );
         Self {
             z,
             cell: match request.cell {

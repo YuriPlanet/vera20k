@@ -231,7 +231,7 @@ pub fn object_height_in_query(
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> i32 {
     let ground = cells
-        .and_then(|cells| super::ground_pose::query_ground_height(cells, coord).ok())
+        .map(|cells| super::ground_pose::query_ground_height(cells, coord))
         .unwrap_or(0);
     super::ground_pose::height_at_z(coord.z, ground, on_bridge)
 }

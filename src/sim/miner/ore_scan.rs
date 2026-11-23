@@ -417,7 +417,7 @@ fn is_cell_harvestable(
             y: centre.y,
             z: 0,
         };
-        point.z = ground_pose::query_ground_height(&cells, point).ok()?;
+        point.z = ground_pose::query_ground_height(&cells, point);
         if crate::sim::vision::point_is_shrouded(&sim.fog, &cells, viewer, point) {
             return None;
         }

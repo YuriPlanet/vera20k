@@ -40,7 +40,7 @@ pub(crate) fn pose(
     let coord = [(x / 256) as i16, (y / 256) as i16];
     let cell = lookup(coord);
     let floor =
-        crate::util::lepton::ground_height_leptons(cell.level as u8, cell.ramp, x, y).ok()?;
+        crate::util::lepton::ground_height_leptons_clamped(cell.level as u8, cell.ramp, x, y);
     let height = crate::sim::movement::ground_pose::height_at_z(z, floor, context.on_bridge);
     //414775..4147EC checks the neighboring bridge segment as well as the
     //current Cell's bridge flag. It uses the Cell's stored coordinate.

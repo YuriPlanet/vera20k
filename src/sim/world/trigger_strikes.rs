@@ -209,8 +209,7 @@ impl Simulation {
             y: centre.y,
             z: 0,
         };
-        location.z = query_ground_height(&cells, location)
-            .expect("direct strike ground query requires a supported native slope");
+        location.z = query_ground_height(&cells, location);
         if cells.flags(cells.lookup(cell)) & 0x100 != 0 {
             location.z = location.z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
         }

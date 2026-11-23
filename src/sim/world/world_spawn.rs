@@ -554,19 +554,13 @@ impl Simulation {
                         requested.z = i32::from(z as i8)
                             .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS);
                         if let Some(terrain) = resolved_terrain.or(sim.resolved_terrain.as_ref()) {
-                            match crate::sim::movement::ground_pose::query_ground_height(
+                            let ground = crate::sim::movement::ground_pose::query_ground_height(
                                 &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
                                 requested,
-                            ) {
-                                Ok(ground) => {
-                                    requested.z = ground.wrapping_add(
-                                        crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
-                                    );
-                                }
-                                // Unsupported slope identities retain the prior
-                                // coarse adapter; no native height claim for them.
-                                Err(cause) => log::warn!("authored Unit HIGH height: {cause}"),
-                            }
+                            );
+                            requested.z = ground.wrapping_add(
+                                crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
+                            );
                         }
                     }
                     // LOW supplies Z0 (743408..743431); ObjectType747EB0 then

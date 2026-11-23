@@ -206,6 +206,34 @@ pub fn ground_height_leptons(
     )
 }
 
+/// The ground height of a cell whose slope byte is outside the native table.
+///
+/// The native slope table holds 21 records (`0..=20`); gamemd indexes it with
+/// the raw Cell slope byte, so a larger byte reads past the table and the
+/// native game has no defined answer there. VERA's own choice, the one the
+/// map build already makes for such a tile (`merge_tmp_metadata`,
+/// `MAX_TMP_RAMP_TYPE`): the cell is flat ground at its own level. Every
+/// writer of a Cell slope byte clamps it into the table first, so this only
+/// decides the answer for a byte that reached the engine another way.
+///
+/// World XY in leptons (256 per cell) in, world Z in leptons out, the same
+/// frame and units as [`ground_height_leptons`].
+pub fn ground_height_leptons_clamped(level_byte: u8, slope: u8, world_x: i32, world_y: i32) -> i32 {
+    match ground_height_leptons(level_byte, slope, world_x, world_y) {
+        Ok(height) => height,
+        Err(UnsupportedGroundSlope(_)) => ground_base_leptons(level_byte, GROUND_LEVEL_HEIGHT_LEPTONS),
+    }
+}
+
+/// The level-only ground height: the signed Cell level in 104-lepton world Z,
+/// chopped toward zero exactly as `CellClass::ComputeGroundHeightAtCoord`
+/// chops it.
+fn ground_base_leptons(level_byte: u8, level_height: i32) -> i32 {
+    let signed_level = i32::from(level_byte as i8);
+    let level_numerator = signed_level.wrapping_mul(level_height).wrapping_mul(256);
+    level_numerator.wrapping_add(128) / 256
+}
+
 fn ground_height_with_level_height(
     level_byte: u8,
     slope: u8,
@@ -214,13 +242,10 @@ fn ground_height_with_level_height(
     level_height: i32,
     records: &[(i32, i32, i32, i32, i32); 21],
 ) -> Result<i32, UnsupportedGroundSlope> {
-    let signed_level = i32::from(level_byte as i8);
-    let level_numerator = signed_level.wrapping_mul(level_height).wrapping_mul(256);
-    let base = level_numerator.wrapping_add(128) / 256;
+    let base = ground_base_leptons(level_byte, level_height);
     if slope == 0 {
         return Ok(base);
-    }
-    let Some(&(coefficient_x, coefficient_y, bias_a, maximum, bias_b)) =
+    }    let Some(&(coefficient_x, coefficient_y, bias_a, maximum, bias_b)) =
         records.get(slope as usize)
     else {
         return Err(UnsupportedGroundSlope(slope));
@@ -479,6 +504,30 @@ mod tests {
         assert_eq!(
             ground_height_leptons(0, 21, 0, 0),
             Err(UnsupportedGroundSlope(21))
+        );
+    }
+
+    /// The clamped accessor is the one policy every reader of a cell's ground
+    /// uses: every slope the native table holds keeps the strict answer, and a
+    /// byte past the table reads as flat ground at the cell's own level.
+    #[test]
+    fn ground_height_clamped_reads_flat_ground_outside_the_native_table() {
+        for slope in 0..=20u8 {
+            assert_eq!(
+                ground_height_leptons_clamped(2, slope, 64, 192),
+                ground_height_leptons(2, slope, 64, 192).expect("a slope the native table holds"),
+                "slope {slope}",
+            );
+        }
+        assert_eq!(
+            ground_height_leptons_clamped(2, 21, 64, 192),
+            208,
+            "a byte past the table is flat ground at the cell's own level",
+        );
+        assert_eq!(
+            ground_height_leptons_clamped(0xff, 255, 64, 192),
+            -103,
+            "the signed level still sign-extends",
         );
     }
 

@@ -124,7 +124,7 @@ pub(crate) fn hover_move_to(
     //514DE5..514E26: ground height, plus the deck on a structural cell.
     let z = terrain.map_or(coord.z, |terrain| {
         let cells = NativeCellQuery::canonical(terrain);
-        let ground = ground_pose::query_ground_height(&cells, coord).unwrap_or(coord.z);
+        let ground = ground_pose::query_ground_height(&cells, coord);
         let structural = cells.flags(cells.lookup_world(coord.x, coord.y)) & 0x100 != 0;
         ground.wrapping_add(if structural {
             BRIDGE_DECK_HEIGHT_LEPTONS
@@ -643,9 +643,9 @@ impl Simulation {
                         let at = ground_pose::position_world_coord(&entity.position);
                         let cell = cells.lookup_world(at.x, at.y);
                         cells.land_type(cell) == 2
-                            && ground_pose::query_ground_height(&cells, at).is_ok_and(|floor| {
-                                at.z < floor.wrapping_add(GROUND_LEVEL_HEIGHT_LEPTONS)
-                            })
+                            && at.z
+                                < ground_pose::query_ground_height(&cells, at)
+                                    .wrapping_add(GROUND_LEVEL_HEIGHT_LEPTONS)
                     })
             });
         if drop {
@@ -717,8 +717,8 @@ impl Simulation {
             let cells = NativeCellQuery::canonical(terrain);
             path_word(entity, 0).is_some_and(|direction| {
                 let ahead = super::super::track_head::offset_head(location, direction);
-                let ground = |at: DriveCoord| ground_pose::query_ground_height(&cells, at).ok();
-                matches!((ground(ahead), ground(location)), (Some(next), Some(here)) if next > here)
+                let ground = |at: DriveCoord| ground_pose::query_ground_height(&cells, at);
+                ground(ahead) > ground(location)
             })
         });
         let powered = entity
@@ -951,8 +951,7 @@ impl Simulation {
             y: cell.1 * 256 + 128,
             z: 0,
         };
-        let ground = ground_pose::query_ground_height(&cells, centre)
-            .map_err(|cause| self.hover_error(id, cause))?;
+        let ground = ground_pose::query_ground_height(&cells, centre);
         let layer = if location.z > ground + 3 * GROUND_LEVEL_HEIGHT_LEPTONS {
             super::super::locomotor::MovementLayer::Bridge
         } else {
@@ -1179,8 +1178,7 @@ impl Simulation {
             y: i32::from(cell.1) * 256 + 128,
             z: 0,
         };
-        let ground = ground_pose::query_ground_height(&cells, head)
-            .map_err(|cause| self.hover_error(id, cause))?;
+        let ground = ground_pose::query_ground_height(&cells, head);
         head.z = if ground + 3 * GROUND_LEVEL_HEIGHT_LEPTONS <= location.z {
             ground + BRIDGE_DECK_HEIGHT_LEPTONS
         } else {

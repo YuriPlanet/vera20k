@@ -545,7 +545,7 @@ impl Simulation {
                 .map_or((0, false), |terrain| {
                     let cells = NativeCellQuery::canonical(terrain);
                     let ground =
-                        super::ground_pose::query_ground_height(&cells, coord).unwrap_or(0);
+                        super::ground_pose::query_ground_height(&cells, coord);
                     let cell = cells.lookup_world(coord.x, coord.y);
                     (ground, cells.flags(cell) & CELL_FLAG_BRIDGE != 0)
                 });

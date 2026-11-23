@@ -2847,15 +2847,14 @@ pub(crate) fn projectile_ground_z(
     } else {
         shared_cell_dummy.stamp_coord(coord.x / 256, coord.y / 256);
         let snapshot = shared_cell_dummy.snapshot();
-        crate::util::lepton::ground_height_leptons(
+        crate::util::lepton::ground_height_leptons_clamped(
             snapshot.level as u8,
             snapshot.slope_type,
             coord.x,
             coord.y,
         )
-        .map_err(|error| format!("{error:?}"))
     };
-    ground.expect("projectile ground probe requires a supported CellClass slope")
+    ground
 }
 
 /// BulletType virtual +6C @ 0x0046C4F0, called by ObjectUnlimbo5F4F88
@@ -3357,6 +3356,117 @@ mod tests {
                 })
                 .collect(),
         )
+    }
+
+    /// A slope byte past the native 21-record table reaches a cell only from a
+    /// source the map build does not clamp: the map build stores a tile's ramp
+    /// byte above 20 as flat ground and the saved Cell restore rejects one, so
+    /// such a byte is a cell's own value from somewhere else.
+    ///
+    /// The projectile's ground probe reads that cell as flat ground at the
+    /// cell's own level instead of panicking, in the mapped and the mapless
+    /// path alike.
+    #[test]
+    fn an_unsupported_slope_byte_reads_flat_ground_instead_of_panicking() {
+        let mut terrain = flat_32_by_32();
+        {
+            let cell = &mut terrain.cells_mut_for_test()[10 * 32 + 10];
+            cell.level = 2;
+            cell.slope_type = 21;
+        }
+        let dummy = terrain.shared_cell_dummy();
+        let world_x = 10 * 256 + 128;
+        let world_y = 10 * 256 + 128;
+
+        assert_eq!(
+            projectile_ground_z(
+                Some(&terrain),
+                &dummy,
+                ProjectileCoord::new(world_x, world_y, 0)
+            ),
+            208,
+            "flat ground at the cell's own level",
+        );
+
+        // A cell past the map edge is the shared fallback cell, whose own flat
+        // level 0 answers the probe.
+        assert_eq!(
+            projectile_ground_z(
+                Some(&terrain),
+                &dummy,
+                ProjectileCoord::new(40 * 256 + 128, 40 * 256 + 128, 0)
+            ),
+            0,
+        );
+
+        // The mapless path stamps and reads the shared dummy: a slope byte
+        // past the table is flat ground there too.
+        dummy.set_level_slope(2, 21);
+        assert_eq!(
+            projectile_ground_z(None, &dummy, ProjectileCoord::new(world_x, world_y, 0)),
+            208,
+        );
+    }
+
+    /// One cell, one answer: the projectile probe, the range check, the object
+    /// ground Z and the movement slope factor read the same height for a cell
+    /// whose slope byte is past the native table.
+    #[test]
+    fn every_ground_reader_answers_the_same_height_for_an_unsupported_slope_byte() {
+        let mut terrain = flat_32_by_32();
+        {
+            let cell = &mut terrain.cells_mut_for_test()[10 * 32 + 10];
+            cell.level = 2;
+            cell.slope_type = 21;
+        }
+        let dummy = terrain.shared_cell_dummy();
+        let world_x = 10 * 256 + 128;
+        let world_y = 10 * 256 + 128;
+
+        // The projectile's ground probe.
+        assert_eq!(
+            projectile_ground_z(
+                Some(&terrain),
+                &dummy,
+                ProjectileCoord::new(world_x, world_y, 0)
+            ),
+            208,
+        );
+
+        // The range check keeps the target's Z.
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(&terrain);
+        assert_eq!(
+            crate::sim::combat::in_range::native_ground_target_z(world_x, world_y, &cells),
+            208,
+        );
+
+        // An object without an exact coordinate stands on the same ground.
+        let entity = crate::sim::game_entity::GameEntity::test_default(1, "MTNK", "Test", 10, 10);
+        assert_eq!(
+            crate::sim::movement::ground_pose::object_ground_z_leptons(&entity, Some(&terrain)),
+            208,
+        );
+
+        // The movement factor sees the climb into that cell: the mover's own
+        // cell is flat ground, the destination is two levels up.
+        let flat = flat_32_by_32();
+        let factor = |grid: &ResolvedTerrainGrid| {
+            crate::sim::pathfinding::terrain_speed::fresh_track_speed_fraction(
+                crate::rules::locomotor_type::SpeedType::Track,
+                (9 * 256 + 128, 10 * 256 + 128),
+                (10, 10),
+                None,
+                grid,
+                &crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+                false,
+            )
+        };
+        assert_ne!(
+            factor(&terrain),
+            factor(&flat),
+            "the destination's height decides the uphill factor",
+        );
+        assert_ne!(f64::from_bits(factor(&terrain).bits()), 1.0);
     }
 
     /// A cell off the map is the shared fallback CellClass that

@@ -766,8 +766,7 @@ impl Simulation {
                     DriveCoord::from(cell_center(radial.into(), 0))
                 };
                 let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref().unwrap());
-                point.z = in_range::native_ground_target_z(point.x, point.y, &cells)
-                    .ok_or("Approach candidate surface failed")? as i32;
+                point.z = in_range::native_ground_target_z(point.x, point.y, &cells) as i32;
                 if !self.approach_accepts(
                     id,
                     point,

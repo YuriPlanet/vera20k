@@ -337,7 +337,7 @@ fn cell_own_coords(
     Some(crate::sim::components::DriveCoord {
         x: point.x,
         y: point.y,
-        z: ground_height_leptons(level, slope, point.x, point.y).ok()?,
+        z: ground_height_leptons_clamped(level, slope, point.x, point.y),
     })
 }
 

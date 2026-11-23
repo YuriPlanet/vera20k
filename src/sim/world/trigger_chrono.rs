@@ -83,7 +83,7 @@ impl Simulation {
             //class ChronoWarpTo adds the structural bridge height later.
             let [x, y] = crate::sim::cell_kernel::native_cell_own_xy(identity, &cells);
             let mut coord = DriveCoord { x, y, z: 0 };
-            coord.z = crate::sim::movement::ground_pose::query_ground_height(&cells, coord)?;
+            coord.z = crate::sim::movement::ground_pose::query_ground_height(&cells, coord);
             if infantry {
                 //50D93B passes priority0/false/false to original481180.
                 //Its existing owner pays any sub-cell RNG, even if WarpTo

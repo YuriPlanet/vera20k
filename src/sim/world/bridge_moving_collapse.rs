@@ -42,9 +42,7 @@ pub(super) fn apply(
         // the selected Cell's own ground fields are not a substitute.
         let [x, y] = crate::sim::cell_kernel::native_cell_own_xy(selected, &cells);
         let point = DriveCoord { x, y, z: 0 };
-        let Ok(z) = crate::sim::movement::ground_pose::query_ground_height(&cells, point) else {
-            return; // Unsupported raw slope, not an invented fallback height.
-        };
+        let z = crate::sim::movement::ground_pose::query_ground_height(&cells, point);
         (
             selected,
             DriveCoord {

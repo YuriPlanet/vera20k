@@ -28,12 +28,7 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
                 (snapshot.level as u8, snapshot.slope_type)
             }
         };
-        crate::util::lepton::ground_height_leptons(level, slope, coord.x, coord.y).unwrap_or_else(
-            |_| {
-                log::warn!("Bounce ground slope {slope} outside native comparison domain");
-                0
-            },
-        )
+        crate::util::lepton::ground_height_leptons_clamped(level, slope, coord.x, coord.y)
     }
 
     fn selected_is_bridge(&self, cell: &Self::Cell) -> bool {

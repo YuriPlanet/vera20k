@@ -27,7 +27,7 @@ fn check_row(input: &Value, row: &Value, terrain: &ResolvedTerrainGrid) {
         xyz[2].as_i64().unwrap() as i32,
     );
     let (ground, structural) =
-        super::super::foot_depth::floor_probe(terrain, coord.x, coord.y).unwrap();
+        super::super::foot_depth::floor_probe(terrain, coord.x, coord.y);
     let actual = geometry(
         coord,
         ground,

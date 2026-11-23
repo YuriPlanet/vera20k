@@ -207,8 +207,8 @@ impl BridgeOccupantHost for Occupants<'_, '_> {
                 (c.level as u8, c.slope_type)
             }
         };
-        let z = crate::util::lepton::ground_height_leptons(level, slope, xy[0], xy[1])
-            .map_err(|e| format!("bridge occupant ground slope: {e:?}"))?;
+        let z =
+            crate::util::lepton::ground_height_leptons_clamped(level, slope, xy[0], xy[1]);
         Ok([xy[0], xy[1], z])
     }
     fn is_at_coord(&mut self, member: Member, probe: [i32; 3]) -> Result<bool, String> {

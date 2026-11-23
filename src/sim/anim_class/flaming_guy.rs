@@ -238,8 +238,7 @@ impl Simulation {
             if moved && let Some(terrain) = self.resolved_terrain.as_ref() {
                 let cells = NativeCellQuery::canonical(terrain);
                 let old_z = coord.z;
-                let ground =
-                    query_ground_height(&cells, point(coord)).expect("native runner ground slope");
+                let ground = query_ground_height(&cells, point(coord));
                 coord.z = ground.wrapping_add(
                     if old_z > ground.wrapping_add(2 * GROUND_LEVEL_HEIGHT_LEPTONS) {
                         BRIDGE_DECK_HEIGHT_LEPTONS
@@ -248,8 +247,7 @@ impl Simulation {
                     },
                 );
                 if !state.fall.falling() {
-                    let ground = query_ground_height(&cells, point(coord))
-                        .expect("native runner ground slope");
+                    let ground = query_ground_height(&cells, point(coord));
                     if coord.z >= ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS) {
                         let cell = cells.lookup_world(coord.x, coord.y);
                         let position = cells.coord(cell);
@@ -300,7 +298,6 @@ impl Simulation {
                 .as_ref()
                 .map(|terrain| {
                     query_ground_height(&NativeCellQuery::canonical(terrain), point(coord))
-                        .expect("native falling runner ground slope")
                 })
                 .unwrap_or(0);
             let landed = coord.z <= ground;
