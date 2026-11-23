@@ -351,6 +351,14 @@ their existing constructor-zero path; active-retail EMP producer reachability
 is not inferred from this shared native consumer. The separate DeathFrame virtual
 override remains outside the ordinary live-ground chain.
 
+An EMP'd `Deployer=` infantryman over itself answers NoDeploy at the head of its
+What_Action (InfantryClass_GetActionOnObject_EMP 10053DB0, hook `0x51E3B0`), online
+or not and before the Deactivated hook (`0x51E440`):
+`ares_emp_deployer_refuses_itself` gives the cursor, the stock one since no Ares
+`Cursor.*` hook is reached, and the click dispatches it
+(`ares_head_hook_selection_click`), so the click orders him nothing and keeps the
+selection. The deploy key asks CanDeploySlashUnload, not What_Action.
+
 ## Reproducible evidence and bounds
 
 The installed DLL SHA256 is pinned by the producer and corpus. The exact

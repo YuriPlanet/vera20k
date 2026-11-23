@@ -94,7 +94,7 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   single per-class What_Action entry; they keep their stock rungs, whose
   orders the receiver filter already withholds; when the cursor owner is
   Deactivated, its answer decides the whole release, so no object receives
-  an order (`ares_deactivated_selection_click`). SelectBestObjectForAction
+  an order (`ares_head_hook_selection_click`). SelectBestObjectForAction
   ranks an EMPed object 1.
 - The heal arms: a Unit's (1004E5A0, hook 0x73FDBD) replaces the stock arm
   in `Simulation::unit_repair_action`, an Infantryman's (1004E2E0, hook

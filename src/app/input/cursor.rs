@@ -933,8 +933,19 @@ pub(super) fn capability_cursor_for_hover(
 ) -> CursorFeedbackKind {
     use super::context_order::OrderModifier;
     use crate::map::entities::EntityCategory;
-    // Ares hooks at the head of each class What_Action over an object: a
-    // Deactivated cursor owner answers GetDeactivatedAction alone.
+    // Ares hooks at the head of each class What_Action over an object: an
+    // EMP'd deployer answers NoDeploy over himself, and a Deactivated cursor
+    // owner answers GetDeactivatedAction alone.
+    if let (Some(actor), Some(rules)) = (best_id, rules)
+        && super::context_order::ares_emp_deployer_refuses_itself(
+            sim,
+            rules,
+            actor,
+            hover.stable_id,
+        )
+    {
+        return CursorFeedbackKind::NoDeploy;
+    }
     if let (Some(actor), Some(rules)) = (best_id, rules)
         && let Some(action) = super::context_order::ares_deactivated_action(
             sim,

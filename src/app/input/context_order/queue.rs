@@ -3,16 +3,16 @@
 
 use super::{
     AttackAction, AttackDispatch, BuildingClick, InfantryC4Action, ObjectKeyAction, OrderModifier,
-    ares_deactivated_selection_click, armed_action_with, attack_branch_orders,
-    building_click_orders, building_selection_click, cell_guard_area_action_with,
-    cell_harvest_order, cursor_owner, disarm_bomb_engineers, engineer_capture_orders, entry_orders,
-    finish_order, friendly_bomb_ivans, garrison_entry_orders, infantry_arm_attacks_with,
-    infantry_c4_action_with, infiltrator_capture_orders, locked_move_cells, lone_self_foot_release,
-    lone_self_healer_guard, move_click_command, object_action_answers_friendly,
-    object_attack_click_command_with, object_click_release, object_key_action_with,
-    object_key_target, projected_order_selection, push_move_flash, resolve_order_modifiers,
-    selection_can_attack_move, self_answers_no_deploy, self_click_command, self_detonates,
-    terrain_forced, unit_repair_branch_orders, vehicle_capture_action,
+    ares_head_hook_selection_click, armed_action_with, attack_branch_orders, building_click_orders,
+    building_selection_click, cell_guard_area_action_with, cell_harvest_order, cursor_owner,
+    disarm_bomb_engineers, engineer_capture_orders, entry_orders, finish_order,
+    friendly_bomb_ivans, garrison_entry_orders, infantry_arm_attacks_with, infantry_c4_action_with,
+    infiltrator_capture_orders, locked_move_cells, lone_self_foot_release, lone_self_healer_guard,
+    move_click_command, object_action_answers_friendly, object_attack_click_command_with,
+    object_click_release, object_key_action_with, object_key_target, projected_order_selection,
+    push_move_flash, resolve_order_modifiers, selection_can_attack_move, self_answers_no_deploy,
+    self_click_command, self_detonates, terrain_forced, unit_repair_branch_orders,
+    vehicle_capture_action,
 };
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner;
@@ -386,7 +386,7 @@ pub(crate) fn try_queue_context_order(
             _ => order_mode,
         };
 
-        if let Some(release) = ares_deactivated_selection_click(
+        if let Some(release) = ares_head_hook_selection_click(
             sim,
             &resources.rules,
             &current_objects,
@@ -405,7 +405,33 @@ pub(crate) fn try_queue_context_order(
                     }
                     finish_order(state, queued, None, rally_announce, None)
                 }
+                // An EMP'd deployer's NoDeploy over himself: each other
+                // receiver's ClickedAction asks its own What_Action over
+                // him, as over any selected object; his own is NoDeploy
+                // again, which orders nothing.
                 Ok(LeftRelease::Dispatch) => {
+                    if let Some(target) = hover.as_ref() {
+                        queued.extend(
+                            selected_units
+                                .iter()
+                                .filter(|&&id| id != target.stable_id)
+                                .filter_map(|&id| {
+                                    object_attack_click_command_with(
+                                        sim,
+                                        &control,
+                                        &resources.rules,
+                                        overlay_registry,
+                                        owner_id,
+                                        order_mode,
+                                        modifier,
+                                        force_move_key,
+                                        id,
+                                        target.stable_id,
+                                    )
+                                })
+                                .map(|order| CommandEnvelope::new(owner_id, execute_tick, order)),
+                        );
+                    }
                     finish_order(state, queued, speaker_id, rally_announce, None)
                 }
                 Ok(LeftRelease::Nothing) => true,

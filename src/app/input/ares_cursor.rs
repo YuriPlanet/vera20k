@@ -478,6 +478,21 @@ pub(crate) fn what_action_entry(
     let Some(actor) = cursors_of(actor_id) else {
         return overrides;
     };
+    // Ares' EMP deployer hook returns at Infantry What_Action's entry
+    // (`0x0051E3B0`), before the Techno What_Action that holds these hooks.
+    if hover_object
+        .and_then(HoverObject::techno)
+        .is_some_and(|hover| {
+            crate::app::input::context_order::ares_emp_deployer_refuses_itself(
+                sim,
+                rules,
+                actor_id,
+                hover.stable_id,
+            )
+        })
+    {
+        return overrides;
+    }
     overrides.set_cursor(actor.move_, action::MOVE);
     overrides.set_cursor(actor.no_move, action::NO_MOVE);
     let Some(target_id) = hover_object

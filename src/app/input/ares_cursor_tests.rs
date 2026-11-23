@@ -120,6 +120,32 @@ fn cursor_keys_name_the_tactical_cursors() {
     assert_eq!(sim.state_hash(), before);
 }
 
+/// Ares' EMP deployer hook (`0x0051E3B0`) returns before the Techno
+/// What_Action whose entry hooks write the table (`0x7000CD`), so an EMP'd
+/// GI over himself shows the stock NoDeploy, not his `Cursor.NoDeploy`.
+#[test]
+fn an_emped_deployer_shows_the_stock_no_deploy() {
+    let patch = "[MouseCursors]\nStill=110,1,0,63,1\n[E1]\nCursor.NoDeploy=Still\n";
+    let Some((mut sim, rules)) = scene(patch) else {
+        return;
+    };
+    let gi = sim
+        .spawn_object("E1", "Local", 12, 5, 0, &rules)
+        .expect("GI");
+    sim.resolve_type_handles(&rules);
+    sim.entity_mut_for_test(gi)
+        .unwrap()
+        .set_emp_remaining_for_test(150);
+    let selected = [gi];
+    let hover = crate::app::input::entity_pick::hover_object_by_id(&sim, gi, "Local");
+    let (kind, table) = query(&sim, &rules, &selected).selection_action((12, 5), hover);
+    assert_eq!(kind, Some(CursorFeedbackKind::NoDeploy));
+    assert_eq!(
+        tactical(kind.unwrap(), &table, 1, Some(&rules)),
+        CursorFeedbackKind::NoDeploy
+    );
+}
+
 /// `0x653CA6`: the radar keeps an overridden action only when its cursor has
 /// radar frames, so the tank's Move without them leaves no radar action,
 /// while its out-of-range cursor with them draws its radar set.

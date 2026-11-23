@@ -130,14 +130,49 @@ pub(in crate::app::input) fn ares_deactivated_action(
     })
 }
 
-/// The left release when the selection's cursor owner
-/// ([`crate::app::input::cursor::select_best_for_action`]) is Deactivated:
-/// DetermineAction takes its action for the whole selection (`0x00692634`,
-/// `0x00692655`), which is [`ares_deactivated_action`] over an object and 0
-/// over a Cell (`Simulation::cell_move_action`). Detonate is the caller's;
-/// the other two reach [`left_release`], so no object receives an order.
-/// None without Ares.
-pub(super) fn ares_deactivated_selection_click(
+/// Ares 3.0 InfantryClass_GetActionOnObject_EMP (Ares.dll `10053DB0`, hook
+/// at InfantryClass::What_Action_OnObject's entry `0x0051E3B0`, resuming at
+/// its return `0x0051F187`): an Infantryman whose type is `Deployer=`
+/// (`+0xEC8`) answers NoDeploy (0x1E) over itself while under EMP (vt+0x37C),
+/// whatever the selection and keys. It precedes every other rung: Ares'
+/// Deactivated hook (`0x0051E440`, [`ares_deactivated_action`]), the healer
+/// self arm, the bomb and Techno's self rung. False without Ares.
+pub(in crate::app::input) fn ares_emp_deployer_refuses_itself(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    target: u64,
+) -> bool {
+    rules.ares()
+        && actor == target
+        && sim.entities().get(actor).is_some_and(|entity| {
+            entity.category() == EntityCategory::Infantry
+                && entity.is_under_emp()
+                && sim
+                    .interner()
+                    .object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| object.deployer)
+        })
+}
+
+/// The left release when an Ares hook at the head of the selection's cursor
+/// owner's What_Action answers
+/// ([`crate::app::input::cursor::select_best_for_action`]): DetermineAction
+/// takes the owner's action for the whole selection (`0x00692634`,
+/// `0x00692655`).
+/// - An EMP'd deployer over itself answers NoDeploy
+///   ([`ares_emp_deployer_refuses_itself`]), which dispatches
+///   ([`LeftRelease::Dispatch`], `0x004ABE88`), so the click selects nothing.
+/// - A Deactivated owner answers [`ares_deactivated_action`] over an object
+///   and 0 over a Cell (`Simulation::cell_move_action`). Detonate is the
+///   caller's; the other two reach [`left_release`], so no object receives
+///   an order.
+///
+/// None without Ares. Residual: the click asks Shift's ToggleSelect before
+/// this, while these hooks precede Techno's Shift rung (`0x00700107`), so a
+/// Shift click here toggles the target where gamemd takes the hook's
+/// answer; the cursor asks them in native order.
+pub(super) fn ares_head_hook_selection_click(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     current_objects: &[u64],
@@ -164,6 +199,9 @@ pub(super) fn ares_deactivated_selection_click(
             .is_some_and(|best| best.deactivated.is_offline())
             .then_some(Ok(LeftRelease::Nothing));
     };
+    if ares_emp_deployer_refuses_itself(sim, rules, best, target.stable_id) {
+        return Some(Ok(LeftRelease::Dispatch));
+    }
     Some(
         match ares_deactivated_action(sim, rules, current_objects, best, target.stable_id)? {
             AresDeactivatedAction::Detonate => Err(target.stable_id),
