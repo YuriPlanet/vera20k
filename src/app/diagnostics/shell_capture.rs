@@ -2601,11 +2601,9 @@ impl ShellCaptureSession {
         if self.is_entry_sequence() {
             return Ok(false);
         }
-        if self
-            .campaign_score
-            .as_ref()
-            .is_some_and(score::CampaignScoreCapture::is_animation_sequence)
-        {
+        // The campaign page's stills are selected after its render
+        // ([`Self::should_capture_after_render`]).
+        if self.campaign_score.is_some() {
             return Ok(false);
         }
 
@@ -2620,27 +2618,27 @@ impl ShellCaptureSession {
         Ok(ready)
     }
 
-    /// Animation samples are selected after the production renderer has
-    /// polled and drawn its page-local SCRA frame, so the stored index matches
-    /// the final swapchain bytes submitted for readback.
+    /// The campaign page's stills (the animation samples and the steady
+    /// still) are selected after the production renderer has polled and drawn
+    /// its page-local SCRA frame, so the index checked matches the final
+    /// swapchain bytes submitted for readback.
     pub(crate) fn should_capture_after_render(
         &mut self,
         state: &AppState,
         rendered: PresentedShell,
     ) -> Result<bool> {
-        let Some(capture) = self
-            .campaign_score
-            .as_mut()
-            .filter(|capture| capture.is_animation_sequence())
-        else {
+        let Some(capture) = self.campaign_score.as_mut() else {
             return Ok(false);
         };
         ensure!(
             !self.readback_started,
-            "campaign animation sequence requested overlapping readbacks"
+            "campaign score capture requested overlapping readbacks"
         );
-        let should_capture =
-            capture.should_capture_animation_frame(state, rendered, self.frames_seen)?;
+        let should_capture = if capture.is_animation_sequence() {
+            capture.should_capture_animation_frame(state, rendered, self.frames_seen)?
+        } else {
+            capture.should_capture_steady_frame(state)?
+        };
         self.readback_started = should_capture;
         Ok(should_capture)
     }
