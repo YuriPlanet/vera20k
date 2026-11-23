@@ -92,7 +92,7 @@ impl ListMetrics {
 /// including callbacks outside the arrows. Release61D2D3..61D310 kills capture.
 /// Geometry remains the shared owner of pointer admission and thumb projection.
 #[derive(Debug, Clone, Default)]
-pub struct ListScrollInteraction {
+pub(crate) struct ListScrollInteraction {
     captured: Option<ListScrollPart>,
     hovered: Option<ListScrollPart>,
     repeat_at: Option<UiMs>,
@@ -162,10 +162,6 @@ impl ListScrollInteraction {
     /// The part a press holds until the release.
     pub(crate) fn captured_part(&self) -> Option<ListScrollPart> {
         self.captured
-    }
-    /// Whether a press holds the scrollbar's capture, until the release.
-    pub fn captured(&self) -> bool {
-        self.captured.is_some()
     }
     pub fn cancel(&mut self) {
         *self = Self::default();
@@ -348,7 +344,7 @@ pub fn list_box_geometry(
 /// Shared 0061C890..0061C8AA scrollbar placement. Both list boxes and
 /// ComboDropWin create the same 0061C690 child; its range is the maximum
 /// top index, not the item count. The paint origin includes the one-pixel inset.
-pub fn scrollbar_thumb_y(
+pub(crate) fn scrollbar_thumb_y(
     bar: RectPx,
     thumb_h: i32,
     top: usize,
@@ -368,7 +364,7 @@ pub fn scrollbar_thumb_y(
 /// Native reads the pointer in window coordinates (before the paint inset),
 /// recenters the thumb on every drag update, and truncates signed division.
 /// The down event inside the thumb only captures; callers invoke this on move.
-pub fn scrollbar_top_at_pointer(
+pub(crate) fn scrollbar_top_at_pointer(
     bar: RectPx,
     thumb_h: i32,
     max_top: usize,

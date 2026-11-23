@@ -182,7 +182,7 @@ impl ShellScale {
     /// The base-space point a scaled device point came from: the point
     /// form of [`Self::base_rect`]. A cursor mapped through it lets pointer
     /// arithmetic run on the authored pixels the paint path used.
-    pub fn base_point(self, x: i32, y: i32) -> (i32, i32) {
+    pub(crate) fn base_point(self, x: i32, y: i32) -> (i32, i32) {
         let origin = self.dialog_rect();
         let factor = self.factor();
         let back = |offset: i32| (offset as f32 / factor).round() as i32;

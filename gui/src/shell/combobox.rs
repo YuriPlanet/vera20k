@@ -120,7 +120,7 @@ impl ComboPopup {
             .then(|| self.first + ((y - self.rect.y) / self.row_height) as usize)
             .filter(|row| *row < self.first + self.visible_rows)
     }
-    pub fn track_hot_row(&self, hot_row: &mut Option<usize>, x: i32, y: i32) {
+    pub(crate) fn track_hot_row(&self, hot_row: &mut Option<usize>, x: i32, y: i32) {
         // 60E262 retains the previous hot row after leaving the row content.
         if let Some(row) = self.row_at(x, y) {
             *hot_row = Some(row);
