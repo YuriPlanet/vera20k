@@ -1,7 +1,9 @@
-//! Sidebar sprite instance builders — slots, chrome, cameos, text, and placeholders.
+//! Sidebar drawing — chrome, cameos, the observer strip and the texts.
 //!
-//! Builds the per-frame SpriteInstance vectors for each sidebar layer:
-//! background rectangles, chrome art, cameo icons, text labels, progress bars.
+//! The chrome, the observer strip and every text (the cameos' labels, the
+//! observer strip's and the money counter) are nodes of retained trees
+//! ([`PictureHud`], [`TextHud`]); the cameos, their clocks and strips are
+//! built as instance vectors.
 //!
 //! Split from `presentation::sidebar_render` to keep files under 400 lines.
 //!
@@ -257,8 +259,6 @@ fn push_chrome(
     push_chrome_sized(pictures, entry, x, y, entry.pixel_size, depth, camera_offset);
 }
 
-/// A chrome picture at its canvas size into a plain instance list, for the
-/// observer's strip, which draws among the cameos.
 /// One piece over `size` at `(x, y)` of the layout space; its node's rect
 /// is the whole pixels it covers there.
 fn push_chrome_sized(
