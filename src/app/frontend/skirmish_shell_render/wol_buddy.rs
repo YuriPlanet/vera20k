@@ -5,7 +5,7 @@
 //! compositor draws them, and the group box, over its own backdrop and
 //! chrome.
 
-use super::gui_paint::{ButtonArt, CellRow, GuiStyle, Picture, child_ids_except, paint_gui_ids};
+use super::gui_paint::{ButtonArt, CellRow, GuiStyle, Picture, paint_gui_styled};
 use super::wol_lobby::{WolLobbyPaint, row_rgb};
 use crate::app::AppState;
 use crate::render::main_menu_shell_chrome::WolPageArt;
@@ -29,30 +29,35 @@ pub(crate) fn paint_wol_buddy_children(
     // observer image's eye.
     let controller = &state.frontend.shell_controller;
     let gui = controller.gui();
-    let root = controller.root_in(DIALOG);
-    let node = |id: u16| root.and_then(|root| gui.find_id(root, id.into()));
-    if let Some(root) = root {
-        let refresh_pressed = node(REFRESH).is_some_and(|refresh| gui.shows_pressed(refresh));
-        let art_of = |id: i32| (id == i32::from(REFRESH)).then_some(ButtonArt::Image);
-        let pressed_of = |id: i32| (id == i32::from(REFRESH)).then_some(refresh_pressed);
-        let picture_of = |id: i32| match u16::try_from(id).ok()? {
-            REFRESH => Some(Picture::Icon {
-                released: REFRESH_FACES.0,
-                pressed: REFRESH_FACES.1,
-            }),
-            OBSERVER_IMAGE => Some(Picture::Observer { on: ui.observer }),
-            _ => None,
-        };
-        let style = GuiStyle {
-            art,
-            art_of: Some(&art_of),
-            pressed_of: Some(&pressed_of),
-            picture_of: Some(&picture_of),
-            ..GuiStyle::default()
-        };
-        // The list after the rest.
-        let ids = child_ids_except(gui, root, &[LIST]);
-        let widgets = paint_gui_ids(state, gui, root, ids, scale, style);
+    // The page's Refresh and list, found when its tree was built.
+    let Some(nodes) = controller
+        .root_in(DIALOG)
+        .and_then(|root| ui.nodes(gui, root))
+    else {
+        return paint;
+    };
+    let refresh_pressed = nodes.refresh.is_some_and(|refresh| gui.shows_pressed(refresh));
+    let art_of = |id: i32| (id == i32::from(REFRESH)).then_some(ButtonArt::Image);
+    let pressed_of = |id: i32| (id == i32::from(REFRESH)).then_some(refresh_pressed);
+    let picture_of = |id: i32| match u16::try_from(id).ok()? {
+        REFRESH => Some(Picture::Icon {
+            released: REFRESH_FACES.0,
+            pressed: REFRESH_FACES.1,
+        }),
+        OBSERVER_IMAGE => Some(Picture::Observer { on: ui.observer }),
+        _ => None,
+    };
+    let style = GuiStyle {
+        art,
+        art_of: Some(&art_of),
+        pressed_of: Some(&pressed_of),
+        picture_of: Some(&picture_of),
+        ..GuiStyle::default()
+    };
+    // The root's children in tree order, the list after the rest.
+    let children = gui.tree().children(nodes.root).unwrap_or_default();
+    for child in children.iter().filter(|child| **child != nodes.list) {
+        let widgets = paint_gui_styled(state, gui, *child, scale, &[], style);
         paint.controls.extend(widgets.controls);
         paint.icons.extend(widgets.icons);
         paint.texts.extend(widgets.texts);
@@ -60,33 +65,29 @@ pub(crate) fn paint_wol_buddy_children(
 
     // The list over its widget, each row's cells the page's: only the rows
     // the list shows are filled.
-    if let Some(root) = root {
-        let list = node(LIST);
-        let top = list.and_then(|list| gui.list_view(list)).map_or(0, |view| view.top);
-        let shown = list
-            .and_then(|list| gui.list_geometry(list))
-            .map_or(0, |geometry| geometry.visible_rows);
-        let cells_of = |id: i32| {
-            (id == i32::from(LIST)).then(|| {
-                let rows = ui.rows.iter().enumerate();
-                rows.map(|(index, row)| match (top..top + shown).contains(&index) {
-                    true => buddy_cells(row),
-                    false => CellRow::default(),
-                })
-                .collect()
+    let list = nodes.list;
+    let top = gui.list_view(list).map_or(0, |view| view.top);
+    let shown = gui.list_geometry(list).map_or(0, |geometry| geometry.visible_rows);
+    let cells_of = |id: i32| {
+        (id == i32::from(LIST)).then(|| {
+            let rows = ui.rows.iter().enumerate();
+            rows.map(|(index, row)| match (top..top + shown).contains(&index) {
+                true => buddy_cells(row),
+                false => CellRow::default(),
             })
-        };
-        let style = GuiStyle {
-            cells_of: Some(&cells_of),
-            art,
-            control_lists: true,
-            ..Default::default()
-        };
-        let list = paint_gui_ids(state, gui, root, [LIST], scale, style);
-        paint.controls.extend(list.controls);
-        paint.texts.extend(list.texts);
-        paint.icons.extend(list.icons);
-    }
+            .collect()
+        })
+    };
+    let style = GuiStyle {
+        cells_of: Some(&cells_of),
+        art,
+        control_lists: true,
+        ..Default::default()
+    };
+    let list = paint_gui_styled(state, gui, list, scale, &[], style);
+    paint.controls.extend(list.controls);
+    paint.texts.extend(list.texts);
+    paint.icons.extend(list.icons);
     paint
 }
 

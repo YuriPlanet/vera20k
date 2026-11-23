@@ -637,18 +637,6 @@ pub(crate) fn paint_gui_styled(
     }
 }
 
-/// The ids of `root`'s children in tree order but `skip` (a box the host
-/// paints as its own art, such as an observer image).
-pub(crate) fn child_ids_except(gui: &Gui, root: NodeId, skip: &[u16]) -> Vec<u16> {
-    gui.tree()
-        .children(root)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|node| u16::try_from(gui.id_of(*node)?).ok())
-        .filter(|id| !skip.contains(id))
-        .collect()
-}
-
 /// The widgets of `ids` under `root` in that order rather than the tree's
 /// (a screen whose paint order is not its hit order), each with its own
 /// subtree.
