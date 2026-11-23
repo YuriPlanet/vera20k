@@ -834,12 +834,10 @@ pub(crate) fn paint_gui_into(
                     None => None,
                 };
                 // The owner-draw list `0x00618D40` over its dialog's art.
-                let Some(view) = gui.list_view(node) else {
+                let (Some(view), Some(geometry)) = (gui.list_view(node), gui.list_geometry(node))
+                else {
                     continue;
                 };
-                let mut metrics = vera20k_gui::shell::list::ListMetrics::scaled(scale);
-                metrics.row_h = int(gui, node, Prop::RowHeight, metrics.row_h);
-                let geometry = view.geometry(rect, metrics);
                 let selected = view
                     .selected
                     .filter(|_| !flag(gui, node, Prop::NoSelectionFill, false));

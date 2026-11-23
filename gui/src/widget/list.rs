@@ -61,10 +61,21 @@ pub struct ListView {
     pub pressed: Option<ListScrollPart>,
 }
 
-impl ListView {
-    /// The list's geometry on its paint surface `list` (its `Rect`).
-    pub fn geometry(&self, list: Rect, metrics: ListMetrics) -> ShellListGeometry {
-        ShellListGeometry::new(list, self.rows, self.top, metrics)
+/// The node's list metrics at `scale`: the scaled defaults, on its own
+/// `RowHeight` when set.
+fn metrics_of(n: &Node, scale: ShellScale) -> ListMetrics {
+    let mut metrics = ListMetrics::scaled(scale);
+    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
+        metrics.row_h = (*row_h).max(1);
+    }
+    metrics
+}
+
+/// The rows its owner shows at once (`VisibleRows`); none fits the window.
+fn visible_rows_of(n: &Node) -> Option<usize> {
+    match n.props.get(&Prop::VisibleRows) {
+        Some(Value::Int(rows)) => usize::try_from(*rows).ok(),
+        _ => None,
     }
 }
 
@@ -97,11 +108,8 @@ fn with_list<R>(
     f: impl FnOnce(&mut ListState, Rect, ListMetrics, &mut Vec<UiEvent>) -> R,
 ) -> Option<R> {
     let rect = ctx.tree.screen_rect(node).ok()?;
-    let mut metrics = ListMetrics::scaled(ctx.scale);
     let n = ctx.tree.node_mut(node).ok()?;
-    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
-        metrics.row_h = (*row_h).max(1);
-    }
+    let metrics = metrics_of(n, ctx.scale);
     let count = row_count(n);
     let top = n.int_prop(Prop::Top, 0).max(0) as usize;
     let selected = usize::try_from(n.int_prop(Prop::Selected, -1)).ok();
@@ -112,10 +120,7 @@ fn with_list<R>(
     state.rows = count;
     state.top = top;
     state.selected = selected;
-    state.visible_rows = match n.props.get(&Prop::VisibleRows) {
-        Some(Value::Int(rows)) => usize::try_from(*rows).ok(),
-        _ => None,
-    };
+    state.visible_rows = visible_rows_of(n);
     let result = f(&mut state, rect, metrics, ctx.events);
     let (new_top, new_selected) = (state.top, state.selected);
     let n = ctx.tree.node_mut(node).ok()?;
@@ -138,20 +143,13 @@ fn with_list<R>(
 pub(crate) fn geometry(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<ShellListGeometry> {
     let rect = tree.screen_rect(node).ok()?;
     let n = tree.node(node).ok()?;
-    let mut metrics = ListMetrics::scaled(scale);
-    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
-        metrics.row_h = (*row_h).max(1);
-    }
     let state = ListState {
         rows: row_count(n),
         top: n.int_prop(Prop::Top, 0).max(0) as usize,
-        visible_rows: match n.props.get(&Prop::VisibleRows) {
-            Some(Value::Int(rows)) => usize::try_from(*rows).ok(),
-            _ => None,
-        },
+        visible_rows: visible_rows_of(n),
         ..ListState::default()
     };
-    Some(state.geometry(rect, metrics))
+    Some(state.geometry(rect, metrics_of(n, scale)))
 }
 
 /// A transcript's new row count (the shell's line adder `0x005E29A0`):
@@ -163,13 +161,9 @@ pub(crate) fn geometry(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<S
 pub(crate) fn log_rows(tree: &mut Tree, node: NodeId, scale: ShellScale, rows: usize, dropped: usize) {
     let Ok(rect) = tree.screen_rect(node) else { return };
     let Ok(n) = tree.node_mut(node) else { return };
-    let mut metrics = ListMetrics::scaled(scale);
-    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
-        metrics.row_h = (*row_h).max(1);
-    }
     let visible = match n.props.get(&Prop::VisibleRows) {
         Some(Value::Int(v)) => usize::try_from(*v).unwrap_or(0),
-        _ => ShellListGeometry::new(rect, 0, 0, metrics).visible_rows,
+        _ => ShellListGeometry::new(rect, 0, 0, metrics_of(n, scale)).visible_rows,
     };
     let top = match n.props.get(&Prop::Top) {
         Some(Value::Int(top)) => Some(usize::try_from(*top).unwrap_or(0)),
