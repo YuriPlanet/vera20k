@@ -16,6 +16,8 @@
 
 #[cfg(test)]
 mod contract_tests;
+#[cfg(test)]
+mod client_bridge_tests;
 mod input;
 mod layout;
 mod paint;
