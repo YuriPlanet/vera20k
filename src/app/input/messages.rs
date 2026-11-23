@@ -1386,18 +1386,6 @@ fn message_rows(
         .collect()
 }
 
-/// The rows of `list` drawn through a fresh tree, for the tests.
-#[cfg(test)]
-fn message_instances(
-    font: &crate::render::bit_font::BitFont,
-    list: &crate::ui::messages::MessageList,
-    composition: Option<&[u16]>,
-    camera_offset: [f32; 2],
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
-    let rows = message_rows(font, list, composition);
-    draw_message_rows(font, &rows, camera_offset, &mut TextHud::default())
-}
-
 /// The rows as a box node and a label node of `hud` each: the box one pixel
 /// out around the text, behind its own glyphs (box depth 0.00023, text
 /// 0.00022, the tooltip lane's ordering). Returns the boxes and the glyphs.
@@ -1440,6 +1428,17 @@ fn draw_message_rows(
 #[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
+
+    /// The rows of `list` drawn through a fresh tree.
+    fn message_instances(
+        font: &crate::render::bit_font::BitFont,
+        list: &crate::ui::messages::MessageList,
+        composition: Option<&[u16]>,
+        camera_offset: [f32; 2],
+    ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+        let rows = message_rows(font, list, composition);
+        draw_message_rows(font, &rows, camera_offset, &mut TextHud::default())
+    }
 
     #[test]
     fn movie_subtitle_rows_keep_native_duration_and_literal_text() {
