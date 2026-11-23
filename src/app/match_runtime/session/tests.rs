@@ -1179,6 +1179,7 @@ fn cooperative_country_refresh_can_keep_the_ai_rows() {
             start_position: crate::skirmish_launch::LaunchStartPosition::Auto,
             team: crate::skirmish_launch::LaunchTeam::None,
             difficulty: crate::skirmish_launch::AiDifficulty::Easy,
+            bot: None,
         });
     launch.ai_player_count = 1;
     session
@@ -1303,6 +1304,7 @@ fn a_player_may_share_a_players_start_but_not_an_ais() {
             start_position: Position(1),
             team: crate::skirmish_launch::LaunchTeam::None,
             difficulty: crate::skirmish_launch::AiDifficulty::Hard,
+            bot: None,
         });
     let inactive = [super::NetworkAiOptions {
         difficulty: -1,

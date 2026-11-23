@@ -2936,3 +2936,22 @@ fn seat_actions_and_ai_teams_go_through_the_rows() {
     });
     assert!(shell.opponents.iter().all(|opponent| !opponent.is_active()));
 }
+
+/// VERA: the AI type combo offers the Vanguard bot, and picking it
+/// launches that slot as a Normal computer row the bot plays.
+#[test]
+fn ai_type_combo_offers_vanguard_and_launches_it() {
+    let mut shell = SkirmishShellState::default();
+    shell.player_name = "Commander".to_string();
+    let maps = [test_map_entry("first.mmx")];
+    let id = SkirmishComboId::AiType(0);
+    let item = SkirmishComboItem::AiType(SkirmishAiRowType::Vanguard);
+    assert!(combo_items(&shell, &maps, id).contains(&item));
+    apply_combo_selection_for_test(&mut shell, id, item);
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), false).expect("session");
+    assert_eq!(session.opponents[0].difficulty, AiDifficulty::Normal);
+    assert_eq!(
+        session.opponents[0].bot,
+        crate::sim::bot::kind_by_name("vanguard")
+    );
+}

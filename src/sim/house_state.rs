@@ -1219,6 +1219,12 @@ impl HouseState {
         self.player_control = controlled;
     }
 
+    /// *(VERA)* A launch computer House a Rust bot plays (`sim::bot`): human
+    /// for every rule, without PlayerControl.
+    pub(crate) fn make_human(&mut self) {
+        self.is_human = true;
+    }
+
     /// `68AD0C/68AD18`: the campaign's selected House becomes human
     /// (`+0x1EC`) and player-controlled (`+0x1ED`).
     pub(crate) fn make_campaign_player(&mut self) {

@@ -500,6 +500,7 @@ impl MatchSession {
                 start_position: defaults.start_position,
                 team: defaults.team,
                 difficulty,
+                bot: None,
             });
             launch.opponents.sort_by_key(|ai| ai.raw_slot_index);
         } else {

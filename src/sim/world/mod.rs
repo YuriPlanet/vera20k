@@ -1075,6 +1075,9 @@ pub struct Simulation {
     /// Serialized map trigger state, initialized and mutated by trigger_runtime.
     /// Remains installed while actions call other Simulation mechanisms.
     pub(crate) trigger_runtime: TriggerRuntime,
+    /// VERA: the Rust bots playing Houses (`sim::bot`).
+    #[serde(default)]
+    pub(crate) house_bots: crate::sim::bot::BotHost,
 }
 
 #[cfg(any(test, feature = "test-support"))]

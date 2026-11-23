@@ -604,6 +604,8 @@ impl Simulation {
             Err(cursor) => return Ok(FrameTailResult::OutcomeWait(cursor)),
         };
         self.issue_generated_frame_commands(generated);
+        // VERA: the Rust bots play after the Houses' own AI (`sim::bot`).
+        frame.spawned_entities |= self.run_house_bots(rules, overlay_registry, effects);
         // MainTick55DD9B -> PlanMgr637550 publishes Logic-generated plan
         // events before Queue_AI's CRC and network exchange, even if it waits.
         self.publish_planning_commands();

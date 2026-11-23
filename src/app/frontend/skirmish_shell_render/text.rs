@@ -372,13 +372,7 @@ pub(super) fn build_shell_text_draws(
 pub(crate) fn skirmish_labels(state: &AppState) -> crate::ui::skirmish_shell::page::SkirmishLabels {
     use crate::skirmish_launch::{NATIVE_TEAMS, SKIRMISH_MAX_SLOT_COUNT};
     let shell = &state.frontend.skirmish_shell_state;
-    let ai = [
-        SkirmishAiRowType::None,
-        SkirmishAiRowType::Easy,
-        SkirmishAiRowType::Normal,
-        SkirmishAiRowType::Hard,
-    ]
-    .map(SkirmishComboItem::AiType);
+    let ai = SkirmishAiRowType::ALL.map(SkirmishComboItem::AiType);
     let starts = std::iter::once(LaunchStartPosition::Auto)
         .chain((0..SKIRMISH_MAX_SLOT_COUNT as u8).map(LaunchStartPosition::Position))
         .map(SkirmishComboItem::Start);

@@ -72,15 +72,10 @@ pub fn combo_items(
     id: SkirmishComboId,
 ) -> Vec<SkirmishComboItem> {
     match id {
-        SkirmishComboId::AiType(_) => [
-            SkirmishAiRowType::None,
-            SkirmishAiRowType::Easy,
-            SkirmishAiRowType::Normal,
-            SkirmishAiRowType::Hard,
-        ]
-        .into_iter()
-        .map(SkirmishComboItem::AiType)
-        .collect(),
+        SkirmishComboId::AiType(_) => SkirmishAiRowType::ALL
+            .into_iter()
+            .map(SkirmishComboItem::AiType)
+            .collect(),
         SkirmishComboId::Side(_) => state.country_catalog.items().to_vec(),
         SkirmishComboId::Color(row) => available_color_choices(
             state.lobby_colors,

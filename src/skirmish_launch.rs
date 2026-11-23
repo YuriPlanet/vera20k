@@ -820,6 +820,13 @@ pub struct SkirmishAiSlot {
     pub start_position: LaunchStartPosition,
     pub team: LaunchTeam,
     pub difficulty: AiDifficulty,
+    /// *(VERA)* A Rust bot ([`crate::sim::bot`]) plays this slot instead of
+    /// the stock AI: the House is created as a computer House of
+    /// `difficulty` (name, colour, start) and handed to the bot before
+    /// Post_Map_Init's computer money (`Simulation::install_launch_bot`).
+    /// Left out when `None`, so a launch without bots keeps its bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<crate::sim::bot::BotKind>,
 }
 
 impl SkirmishAiSlot {
@@ -1716,6 +1723,7 @@ mod tests {
                         start_position: LaunchStartPosition::Auto,
                         team: LaunchTeam::None,
                         difficulty: AiDifficulty::Easy,
+                        bot: None,
                     }
                 })
                 .collect();
@@ -1983,6 +1991,7 @@ mod tests {
                     start_position: LaunchStartPosition::Auto,
                     team: LaunchTeam::None,
                     difficulty: AiDifficulty::Easy,
+                    bot: None,
                 },
                 SkirmishAiSlot {
                     raw_slot_index: 2,
@@ -1993,6 +2002,7 @@ mod tests {
                     start_position: LaunchStartPosition::Auto,
                     team: LaunchTeam::None,
                     difficulty: AiDifficulty::Easy,
+                    bot: None,
                 },
             ],
             SkirmishLaunchOptions::default(),

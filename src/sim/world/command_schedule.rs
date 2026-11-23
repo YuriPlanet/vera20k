@@ -716,7 +716,7 @@ impl Simulation {
 
     /// VERA-only: one command and its spawn-refresh report: a Deploy whose MCV left
     /// the store or carries the `TerminalLifetime` dying mark counts as a spawn.
-    fn apply_one_due_command(
+    pub(crate) fn apply_one_due_command(
         &mut self,
         sender: Option<i8>,
         cmd: &CommandEnvelope,

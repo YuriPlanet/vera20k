@@ -238,6 +238,7 @@ mod tests {
                 start_position: LaunchStartPosition::Auto,
                 team: LaunchTeam::None,
                 difficulty: Default::default(),
+                bot: None,
             }],
             SkirmishLaunchOptions::default(),
         )
@@ -1412,6 +1413,7 @@ mod tests {
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::Team(1),
             difficulty: Default::default(),
+            bot: None,
         });
         let slots = normalized_launch_slots(&session);
         let policy = crate::sim::scenario_session::ScenarioGameMode::Skirmish
@@ -1448,6 +1450,7 @@ mod tests {
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
             difficulty: Default::default(),
+            bot: None,
         });
         let slots = normalized_launch_slots(&session);
 
@@ -1785,6 +1788,7 @@ mod tests {
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
             difficulty: Default::default(),
+            bot: None,
         });
         let starts = test_launch_starts();
         let mut expected_rng = SimRng::new(8);

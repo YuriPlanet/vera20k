@@ -54,6 +54,7 @@ pub(super) fn test_launch_session(country: LaunchCountry) -> SkirmishLaunchSessi
             start_position: LaunchStartPosition::Position(1),
             team: LaunchTeam::None,
             difficulty: AiDifficulty::Easy,
+            bot: None,
         }],
         SkirmishLaunchOptions::default(),
     )

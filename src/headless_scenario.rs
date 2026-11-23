@@ -80,6 +80,7 @@ pub fn battle_session(
                 start_position: LaunchStartPosition::Auto,
                 team: LaunchTeam::None,
                 difficulty,
+                bot: None,
             })
             .collect(),
         SkirmishLaunchOptions::default(),
@@ -119,6 +120,7 @@ impl HeadlessScenario {
             handle: None,
             difficulty: crate::sim::house_state::HouseDifficulty::Normal,
             commander: None,
+            bot: None,
         };
         let runtime = &mut self.runtime;
         crate::sim::scenario_bootstrap::populate_launch_houses(

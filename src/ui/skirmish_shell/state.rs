@@ -50,8 +50,8 @@ pub use random_map_setup::{
     setup_combo_items,
 };
 pub use saved_seed_browser::{
-    SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserRow, SavedSeedBrowserState,
-    SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
+    SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserRow, SavedSeedBrowserState, SavedSeedOutcome,
+    SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
 pub use team_menus::{
@@ -203,28 +203,52 @@ pub enum SkirmishAiRowType {
     Easy,
     Normal,
     Hard,
+    /// *(VERA)* The Vanguard Rust bot ([`crate::sim::bot`]) plays this slot
+    /// instead of the stock AI.
+    Vanguard,
 }
 
 impl SkirmishAiRowType {
+    /// The rows the AI type combobox offers, in order.
+    pub const ALL: [Self; 5] = [
+        Self::None,
+        Self::Easy,
+        Self::Normal,
+        Self::Hard,
+        Self::Vanguard,
+    ];
+
     pub const fn item_data(self) -> i32 {
         match self {
             Self::None => -1,
             Self::Easy => 2,
             Self::Normal => 1,
             Self::Hard => 0,
+            // Past gamemd's 0..2 difficulty rows.
+            Self::Vanguard => 3,
         }
     }
 
     pub const fn is_active(self) -> bool {
-        matches!(self, Self::Easy | Self::Normal | Self::Hard)
+        !matches!(self, Self::None)
     }
 
+    /// The stock difficulty the slot's House is created with; a bot's House
+    /// is a Normal computer House until the bot takes it.
     pub const fn difficulty(self) -> Option<AiDifficulty> {
         match self {
             Self::None => None,
             Self::Easy => Some(AiDifficulty::Easy),
-            Self::Normal => Some(AiDifficulty::Normal),
+            Self::Normal | Self::Vanguard => Some(AiDifficulty::Normal),
             Self::Hard => Some(AiDifficulty::Hard),
+        }
+    }
+
+    /// The Rust bot that plays this slot, if any.
+    pub fn bot(self) -> Option<crate::sim::bot::BotKind> {
+        match self {
+            Self::Vanguard => crate::sim::bot::kind_by_name("vanguard"),
+            _ => None,
         }
     }
 
@@ -234,6 +258,7 @@ impl SkirmishAiRowType {
             Self::Easy => ("GUI:AIEasy", "Easy"),
             Self::Normal => ("GUI:AINormal", "Normal"),
             Self::Hard => ("GUI:AIHard", "Hard"),
+            Self::Vanguard => ("VERA:AIVanguard", "Vanguard"),
         }
     }
 }

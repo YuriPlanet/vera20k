@@ -37,6 +37,16 @@
 //! launch's local house sits the match out, as in the match scenario, and no
 //! command is issued. `--ticks` defaults to 9000, ten minutes of game time.
 //!
+//! `--bot NAME` (skirmish only) hands the first computer row to a Rust bot
+//! (`sim::bot`), as the Skirmish page's Vanguard row does; `--ai
+//! easy|normal|hard` sets the other rows' difficulty, `--countries` the rows'
+//! countries in order (indices into America..Yuri, 0..9) and `--crates` turns
+//! the lobby's Crates option on. The run reports each House's defeat, stops
+//! once one House is left and prints every House's worth (the cost of what
+//! it owns) at the end:
+//! `sim-bench --map Tower.mmx --scenario skirmish --computers 2 --bot vanguard
+//! --ai hard --countries 8,2 --client-timing --ticks 162000`.
+//!
 //! `--watchers N` (skirmish only) plays the match VERA's room starts when
 //! everyone in it watches while only AI play: the launch seats N watching
 //! humans ahead of the computer houses and loads the map as a LAN game, so
@@ -136,7 +146,9 @@ use vera20k_core::sim::movement::PathBatchStats;
 use vera20k_core::sim::runtime::SimRuntime;
 use vera20k_core::sim::scenario_bootstrap::MatchLaunchDescriptor;
 use vera20k_core::sim::scenario_session::ScenarioGameMode;
-use vera20k_core::skirmish_launch::{NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchSession};
+use vera20k_core::skirmish_launch::{
+    AiDifficulty, LaunchCountry, NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchSession,
+};
 
 use sim_bench_match::MatchScenario;
 
@@ -177,6 +189,10 @@ struct Args {
     frame_profile: bool,
     lan: bool,
     watchers: usize,
+    bot: Option<vera20k_core::sim::bot::BotKind>,
+    ai: Option<AiDifficulty>,
+    countries: Vec<LaunchCountry>,
+    crates: bool,
     frame_hashes: Option<PathBuf>,
     client_timing: bool,
     presentation_frame: bool,
@@ -225,6 +241,10 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         frame_profile: false,
         lan: false,
         watchers: 0,
+        bot: None,
+        ai: None,
+        countries: Vec::new(),
+        crates: false,
         frame_hashes: None,
         client_timing: false,
         presentation_frame: false,
@@ -284,6 +304,33 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--frame-profile" => args.frame_profile = true,
             "--lan" => args.lan = true,
             "--watchers" => args.watchers = number(value()?)? as usize,
+            "--bot" => {
+                let name = value()?;
+                args.bot = Some(vera20k_core::sim::bot::kind_by_name(&name).ok_or(format!(
+                    "unknown bot {name}; known: {}",
+                    vera20k_core::sim::bot::kind_names().join(", ")
+                ))?);
+            }
+            "--ai" => {
+                args.ai = Some(match value()?.as_str() {
+                    "easy" => AiDifficulty::Easy,
+                    "normal" => AiDifficulty::Normal,
+                    "hard" | "brutal" => AiDifficulty::Hard,
+                    other => return Err(format!("--ai easy|normal|hard, not {other}")),
+                })
+            }
+            "--countries" => {
+                args.countries = value()?
+                    .split(',')
+                    .map(|raw| {
+                        raw.parse::<usize>()
+                            .ok()
+                            .and_then(|index| LaunchCountry::ALL.get(index).copied())
+                            .ok_or(format!("--countries takes indices 0..9, not {raw}"))
+                    })
+                    .collect::<Result<_, _>>()?
+            }
+            "--crates" => args.crates = true,
             "--frame-hashes" => args.frame_hashes = Some(PathBuf::from(value()?)),
             "--client-timing" => args.client_timing = true,
             "--serial-scans" => args.serial_scans = true,
@@ -311,6 +358,10 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
     }
     if args.houses.is_some_and(|houses| houses < 2) || args.types.is_empty() {
         return Err("need at least two houses and one unit type".to_string());
+    }
+    let lineup = args.bot.is_some() || args.ai.is_some() || !args.countries.is_empty();
+    if (lineup || args.crates) && args.scenario != ScenarioKind::Skirmish {
+        return Err("--bot, --ai, --countries and --crates are skirmish options".to_string());
     }
     if args.watchers > 0 {
         if args.scenario != ScenarioKind::Skirmish {
@@ -602,7 +653,9 @@ impl Watch {
             };
             if house.is_defeated() && !self.defeated.contains(&owner) {
                 self.defeated.push(owner);
-                let kind = if house.is_human() {
+                let kind = if let Some(bot) = sim.house_bots().kind_of(owner) {
+                    bot.info().name
+                } else if house.is_human() {
                     "watcher"
                 } else {
                     "computer"
@@ -610,21 +663,68 @@ impl Watch {
                 println!("tick={tick} defeated {} ({kind})", sim.resolve(owner));
             }
         }
-        if !self.decided && sim.network_match_winners().is_some() {
+        let left: Vec<_> = sim
+            .houses()
+            .order()
+            .iter()
+            .filter(|owner| {
+                sim.houses()
+                    .get(owner)
+                    .is_some_and(|house| !house.is_defeated() && !house.multiplay_passive())
+            })
+            .map(|owner| sim.resolve(*owner))
+            .collect();
+        // Offline (`--bot`) the match is decided once one House is left.
+        if !self.decided && (sim.network_match_winners().is_some() || left.len() <= 1) {
             self.decided = true;
-            let left: Vec<_> = sim
-                .houses()
-                .order()
-                .iter()
-                .filter(|owner| {
-                    sim.houses()
-                        .get(owner)
-                        .is_some_and(|house| !house.is_defeated() && !house.multiplay_passive())
-                })
-                .map(|owner| sim.resolve(*owner))
-                .collect();
             println!("tick={tick} match decided, left: {}", left.join(", "));
         }
+    }
+}
+
+/// The skirmish scenario's launch: the roster's computer rows, with
+/// `--bot`, `--ai`, `--countries` and `--crates` applied.
+fn skirmish_session(args: &Args, computers: usize) -> SkirmishLaunchSession {
+    let mut session = battle_session(&args.map, &sim_bench_match::COMPUTER_ROSTER[..computers]);
+    for (index, row) in session.opponents.iter_mut().enumerate() {
+        if let Some(difficulty) = args.ai {
+            row.difficulty = difficulty;
+        }
+        if let Some(&country) = args.countries.get(index) {
+            row.country = country;
+        }
+    }
+    if let Some(row) = session.opponents.first_mut() {
+        row.bot = args.bot;
+    }
+    session.options.crates = args.crates;
+    session
+}
+
+/// `--bot`: every playing House's worth at the end, the cost of the objects
+/// it owns, so a match the tick limit cut off can be judged.
+fn print_worth(runtime: &SimRuntime) {
+    let sim = &runtime.simulation;
+    let rules = &runtime.resources.rules;
+    for &owner in sim.houses().order() {
+        let Some(house) = sim.houses().get(&owner) else {
+            continue;
+        };
+        if house.multiplay_passive() {
+            continue;
+        }
+        let worth: i64 = sim
+            .entities()
+            .values()
+            .filter(|e| e.is_alive() && !e.in_limbo() && e.owner() == owner)
+            .filter_map(|e| rules.object(sim.resolve(e.type_ref())))
+            .map(|t| i64::from(t.cost.max(0)))
+            .sum();
+        println!(
+            "worth {} {worth}{}",
+            sim.resolve(owner),
+            if house.is_defeated() { " defeated" } else { "" }
+        );
     }
 }
 
@@ -892,6 +992,7 @@ fn main() -> Result<(), String> {
                  [--types E1,E2,MTNK,HTNK] [--order-spread 30] [--return-at T] (march) \
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
                  [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
+                 [--bot NAME] [--ai easy|normal|hard] [--countries 8,2] [--crates] (skirmish) \
                  [--client-timing] \
                  [--state-isolation-report <new.json> --prior-map <map> \
                  --isolation-mode lan|wol --isolation-humans 1|2]"
@@ -937,7 +1038,7 @@ fn main() -> Result<(), String> {
             &args.ra2_dir,
             &args.map,
             args.seed,
-            battle_session(&args.map, &sim_bench_match::COMPUTER_ROSTER[..computers]),
+            skirmish_session(&args, computers),
         )?,
     };
     if !args.serial_paths {
@@ -1033,7 +1134,7 @@ fn main() -> Result<(), String> {
             keep_frame: args.presentation_frame,
             frame: None,
             paths: PathTotals::default(),
-            watch: (args.watchers > 0).then(Watch::default),
+            watch: (args.watchers > 0 || args.bot.is_some()).then(Watch::default),
         };
         let (measured, frames) = run_frames(
             &mut bench,
@@ -1080,6 +1181,9 @@ fn main() -> Result<(), String> {
     frames?;
     csv_written?;
     frame_hashes_written?;
+    if args.bot.is_some() {
+        print_worth(runtime);
+    }
     let final_hash = runtime.simulation.state_hash();
     println!("final_hash={final_hash:016x}");
     let (asleep, counted) = runtime.simulation.idle_sleep_counts();

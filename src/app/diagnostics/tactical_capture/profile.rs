@@ -584,6 +584,7 @@ impl TacticalCaptureProfile {
                     start_position: LaunchStartPosition::Position(slot.start_position),
                     team: launch_team(slot.team),
                     difficulty: AiDifficulty::Easy,
+                    bot: None,
                 })
                 .collect(),
             self.launch.options.to_launch_options(),

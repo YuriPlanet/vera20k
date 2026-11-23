@@ -157,6 +157,12 @@ impl CaptureManagerState {
         i32::try_from(self.nodes.len()).unwrap_or(i32::MAX)
     }
 
+    /// `+0x40` `InfiniteMindControl=` (a Mastermind): it overloads past
+    /// [`Self::max_control`].
+    pub fn is_infinite(&self) -> bool {
+        self.infinite
+    }
+
     /// `+0x3C MaxControlNodes`, the native display maximum.
     pub fn max_control(&self) -> i32 {
         self.max_control

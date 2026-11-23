@@ -50,6 +50,9 @@ pub struct NormalizedSkirmishSlot {
     /// (native behaviour, no clips) or to `none`, and
     /// [`crate::rules::personality::personality_for_house`] does the rest.
     pub commander: Option<String>,
+    /// *(VERA)* The Rust bot that plays this computer slot
+    /// ([`crate::skirmish_launch::SkirmishAiSlot::bot`]).
+    pub bot: Option<crate::sim::bot::BotKind>,
 }
 
 /// One human controlling a launch House.
@@ -821,6 +824,7 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
             handle: Some(human.name.clone()),
             difficulty: HouseDifficulty::Normal,
             commander: None,
+            bot: None,
         });
     }
     for (leader, controller) in members {
@@ -845,6 +849,7 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
             difficulty: HouseDifficulty::from_native(opponent.difficulty.as_i32())
                 .expect("native AI difficulty"),
             commander: None,
+            bot: opponent.bot,
         });
     }
     slots
@@ -1034,6 +1039,9 @@ pub fn populate_launch_houses(
             }
         }
         sim.houses.register(house);
+        if let Some(kind) = slot.bot {
+            sim.install_launch_bot(name_id, kind);
+        }
     }
 }
 

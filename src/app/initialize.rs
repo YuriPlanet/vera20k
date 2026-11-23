@@ -1665,6 +1665,7 @@ mod tests {
                     start_position: LaunchStartPosition::Position(1),
                     team: LaunchTeam::None,
                     difficulty: AiDifficulty::Easy,
+                    bot: None,
                 });
                 session.set_recorded_house_roster_for_test(
                     PreFillHouseRoster::from_compact_skirmish(1),

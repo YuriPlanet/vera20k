@@ -837,6 +837,7 @@ fn host_options(
             start_position: choices.start_position,
             team: choices.team,
             difficulty: decoded_difficulty(ai.difficulty)?,
+            bot: None,
         });
     }
     launch.ai_player_count = opponents.len() as i32;
