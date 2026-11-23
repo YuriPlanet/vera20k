@@ -3291,9 +3291,7 @@ pub(super) fn selected_move_with_mouse(
         }
     }
     point_at_ground(state, chosen.context("empty ground for mass Move")?)?;
-    for edge in [ElementState::Pressed, ElementState::Released] {
-        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-    }
+    left_click_timed(state);
     Ok(())
 }
 
@@ -3683,9 +3681,7 @@ fn click_entity(state: &mut AppState, id: u64) -> Result<()> {
             .get(id)
             .map(|entity| entity.position)
     );
-    for edge in [ElementState::Pressed, ElementState::Released] {
-        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-    }
+    left_click_timed(state);
     Ok(())
 }
 
