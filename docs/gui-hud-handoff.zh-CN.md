@@ -5,29 +5,29 @@
 ## 1. 现状
 
 库已审查修复；引擎里迁到 gui 的有：性能面板、mod 在 `veraui.ini` 中加的按钮和文字、命令栏、侧边栏面板、单位与建筑血条、
-超武计时器、聊天与系统消息、提示框、结算横幅。每项都与它替换的旧代码逐位对比过，旧绘制已删。侧边栏的模型已从视图中拆出（SidebarModel）。
+超武计时器、聊天与系统消息、提示框、结算横幅、布局编辑覆盖层、小地图（宿主区域）、状态点、单格状态标记、Phobos 护盾条。每项都与它替换的旧代码逐位对比过，旧绘制已删。侧边栏的模型已从视图中拆出（SidebarModel）。
 
 | 项 | 值 |
 |---|---|
 | 分支 | `feature/gui-hud-foundation` |
 | 工作树 | `/Volumes/扩展盘/vera20k-build/worktrees/gui-hud` |
 | 基点 | 上游 main `257abddce`，未合入新的 main |
-| 最后一个代码提交 | `0a5d32ee2` |
+| 最后一个代码提交 | `cf4b746a2` |
 | 推送、PR | 都没有；英文草稿 `/Volumes/扩展盘/vera20k-build/tmp/gui-hud-pr.md`（只写到 11-22 的内容） |
 
 素材：原创机械金属风的界面素材在 `/Volumes/扩展盘/vera20k-build/tmp/gui-art/dist/final/expandmd97.mix`，与原版文件尺寸、帧数、编号一致，
 放进游戏目录即替换，删掉即还原；引擎读取逻辑未改。
 
-## 2. 按计划逐期对照（估计整体约 45%）
+## 2. 按计划逐期对照（估计整体约 55%）
 
 | 期 | 已做 | 未做 |
 |---|---|---|
 | 0 基线 | 5000 对象 CPU 基准、wasm32 检查、逐项新旧对比；地图观察截图做端到端对照 | 固定的截图与输入回放基线、GPU 基准 |
 | 1 底座 | 库修复、渲染适配器、SidebarModel、消息与计时器的绘制副作用移到 update | 重绘闸门接 revision（推迟，见下） |
 | 2 试点 | 命令栏走节点树，血条走状态模板（5000 单位 p95 0.19 ms），公开接口验收测试 `gui/src/hud/client_bridge_tests.rs` | — |
-| 3A | 计时器、消息、提示框、结算横幅 | 局内对话框剩余手绘控件、布局编辑覆盖层 |
-| 3B | 侧边栏面板（2-5 列、veraui.ini 布局）、mod 部件 | 小地图框、veraui.ini 解析结果输出为节点树、编辑器 |
-| 3C | 血条（底框与血量格） | 等级、护盾、弹药/载员/驻军点、编队号、自愈、数字显示、标签、飘字 |
+| 3A | 计时器、消息、提示框、结算横幅、布局编辑覆盖层 | 局内对话框的手绘绘制（盘点见下；用户 11-23 定为最后做） |
+| 3B | 侧边栏面板（2-5 列、veraui.ini 布局）、mod 部件、小地图作为 External 节点 | 内置部件按 veraui.ini 名字命名（计划放到 3C 后） |
+| 3C | 血条；状态点（`scale.*` 格位模板）；炸弹钟、扳手、断电、等级、自愈、护盾底框（`status.*`）；护盾条（`shield.*`） | 编队号、建筑状态文字、Phobos 数字显示、信标标签、飘字、对话气泡 |
 | 4 | 每项已删旧绘制 | 接口文档、全量点击回归 |
 
 用户 2026-11-23 的决定：
@@ -36,6 +36,10 @@
   几何已只有一份。将来外部 ui.wasm 的按钮按 mod 按钮的方式登记成 gadget 即可（那时加通用的“HUD 节点 → gadget”桥）。
 - 建造栏的图标、进度遮罩、变暗遮罩、文字底条不再包一层节点树：只是原样转交实例，没有结构收益，反而每帧多开销。
 - 性能取舍（例如只给屏幕附近的对象抓状态条数据）先找用户权衡，不擅自改。
+- 代码量：本分支引擎净增约 2000 行（保留原版精确算式 + 节点树一层）。用户 11-23 定：先按逐字节一致把 3C 做完，
+  减量（删对话框手绘、把位置交给树的布局并放宽到“察觉不到”）最后统一做。
+- 局内对话框盘点（11-23）：输入与命中已全部走 gui（`DialogController`），绘制多为手工推实例；暂停菜单约 100 行、声音约 125、
+  外交约 100、键位约 475、连接约 95、消息框约 170、计分页数百行；`gui_paint.rs` 缺侧边按钮样式、Image、Bar、分组框。
 - 重绘闸门接 revision 推迟：迁过来的节点树都是每次绘制时从状态推出的视图，闸门已按这些状态判断（计时器闪烁截止、消息逐字显示等），
   加 revision 不改变行为。等外部模块能直接改树时再接，届时它就是调用者。
 
@@ -43,11 +47,11 @@
 
 | 文件 | 内容 |
 |---|---|
-| `gui/src/hud/` | 库；本轮新增 `world.rs` 的 `Element::Pips`（格数由数值的 max 决定） |
+| `gui/src/hud/` | 库；本轮新增 `Element::Pips`（格数由 max 决定）、`Element::Slots` 与 `ObjectView::slots`（宿主给格号、代码、上抬） |
 | `src/render/hud_paint.rs` | 适配器；`NodeDraw` 可带深度、宿主算好的整条实例、逐字显示的标签 |
 | `src/app/presentation/picture_hud.rs` | 图片节点树：命令栏、侧边栏面板 |
 | `src/app/presentation/text_hud.rs` | 底框加文字的节点树：计时器、消息、提示框、横幅文字 |
-| `src/app/presentation/health_templates.rs` | 内置血条模板与按原版浮点步骤定位 |
+| `src/app/presentation/health_templates.rs` | 全部内置状态模板（血条、状态点、单格标记、护盾）与按原版浮点步骤定位 |
 | `src/app/sidebar_projection.rs` | `SidebarModel`（模拟与存档读的部分）与视图 `SidebarProjectionState` |
 | `src/app/presentation/super_timers.rs`、`src/app/input/messages.rs` | update 与只读绘制分开 |
 
@@ -65,6 +69,12 @@
 | 提示框新旧对比 | 60,000 组、1,596,635 个四边形逐字节一致（换行、固定角落、任意色调、有无底框） |
 | 横幅文字新旧对比 | 40,000 组、419,409 个字形逐字节一致 |
 | 公开接口验收 | 外部来源建按钮面板、收右键点击和命令名、提交血条模板、按来源卸载：通过 |
+| 布局编辑覆盖层新旧对比 | 50,000 组、613,073 个四边形逐字节一致 |
+| 状态点新旧对比 | 60,000 组、1,110,518 个点逐位一致（含上抬 3 像素的弹药行；首版漏了它，由零售 GPU 测试抓到） |
+| 护盾新旧对比 | 80,000 组、4,153,666 个格逐位一致（含 -0.0 锚点） |
+| 单格标记 | 单元测试 + 零售 GPU 状态测试（等级、扳手、炸弹钟、自愈）；带与不带 phobos 的界面测试 |
+| 小地图 | 雷达开着的铁幕、核弹截图与改前逐像素一致 |
+| 5000 单位血条 | 模板数增到 13 个后 p95 0.204 ms |
 | 带零售素材与 GPU 的测试 | 命令栏截图对照、侧边栏 8 项、血条与缩放等状态条 15 项通过；两项文字标签测试因本机是中文版 `ra2md.csf` 而失败，与改动无关 |
 | 地图观察截图 | 盟军/苏军建造放置局、铁幕与核弹计时器局：与改动前逐像素一致，只有两个矿石闪光像素在任意两次运行间都会变 |
 | 客户端全部库测试 | 只有 `architecture_guards::production_dependency_edges` 失败，报的是本分支没改的 `ui/*` 文件 |
@@ -96,6 +106,8 @@ run test -p vera20k --lib -- app::presentation:: app::input:: app::sidebar_proje
 | `gui-hud-message-parity.rs`（`message_parity`） | `src/app/input/messages.rs` | `tests_app_input_d_z` |
 | `gui-hud-tooltip-parity.rs`（`tooltip_parity`） | `src/app/input/tooltips.rs` | `tests_app_input_d_z` |
 | `gui-hud-banner-parity.rs`（`banner_parity`） | `src/app/presentation/outcome_banner.rs` | `tests_app_presentation` |
+| `gui-hud-layout-edit-parity.rs`（`edit_parity`） | `src/app/input/layout_edit.rs` | `tests_app_input_d_z` |
+| `gui-hud-scale-parity.rs`（`scale_parity`）、`gui-hud-shield-parity.rs`（`shield_parity`） | `src/app/presentation/health_templates.rs` | `tests_app_presentation` |
 
 挂钩写法：`#[cfg(all(test, tests_app_presentation))] #[path = "/Volumes/扩展盘/vera20k-build/tmp/<文件>"] mod <模块名>;`，
 用 `run test -p vera20k --release --lib -- <模块路径> --nocapture` 跑。
@@ -125,9 +137,9 @@ run test -p vera20k --lib -- app::presentation:: app::input:: app::sidebar_proje
 
 ## 9. 后续任务
 
-1. 3A：局内对话框剩余手绘控件、布局编辑覆盖层。
-2. 3B：小地图框、veraui.ini 输出为节点树、编辑器。
-3. 3C：等级、护盾、各类点、编队号、标签、飘字。
+1. 3C 文字类：编队号、建筑状态文字、Phobos 数字显示（按族一棵 TextHud，按对象记件数再切回各对象状态条）、信标标签、飘字、对话气泡。
+2. 内置部件按 veraui.ini 名字命名（外部模块按名字找到、隐藏、换皮）。
+3. 减量：局内对话框改按节点树绘制；把已迁部件的位置交给树的布局（验收放宽到“察觉不到”，需逐部件截图对照）。
 4. 接口文档；全量点击回归；接外部模块时接重绘闸门 revision。
 5. 单独修 Tab 崩溃；合入最新 main；提 PR（须用户同意）。
 
