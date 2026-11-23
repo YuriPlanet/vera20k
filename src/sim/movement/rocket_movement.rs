@@ -32,7 +32,7 @@ use crate::rules::missile_spawn::{MissileSpawnParams, RocketTypeExt};
 use crate::sim::components::DriveCoord;
 use crate::sim::timer::CdTimer;
 use crate::util::direction_tables::{facing16_between, native_atan_from_table};
-use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, lepton_to_cell_packed};
+use crate::util::lepton::lepton_to_cell_packed;
 use crate::util::native_trig::facing_step_world_xy;
 use crate::util::native_x87::{
     MaskedX87Chop53 as M, MaskedX87Ordering, MaskedX87Value, NativeF32Bits, NativeF64Bits,
@@ -262,7 +262,7 @@ pub(crate) trait RocketHost {
     /// The owner's cell (GetCell, vtable `+0x1BC` -> `0x005F6960`): its own
     /// GetCoords Z (`0x00486840`) when it carries a structural bridge
     /// (`+0x140 & 0x100`), else `None`.
-    fn structural_bridge_floor(&self) -> Option<i32>;
+    fn structural_bridge_floor_and_deck(&self) -> Option<(i32, i32)>;
     /// Detonate's explosion: `SelectAnim @ 0x0048A4F0(damage, warhead, land,
     /// &coord)` with the land of the cell holding `coord`, then
     /// `new AnimClass(type, &coord, 0, 1, 0x2600, -15, 0)`.
@@ -648,9 +648,9 @@ fn predicted_impact(
     ));
     let floor = rocket.destination.z;
     let impact = nose <= floor
-        || host.structural_bridge_floor().is_some_and(|cell_floor| {
-            cell_floor == floor && nose <= floor.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS)
-        })
+        || host
+            .structural_bridge_floor_and_deck()
+            .is_some_and(|(cell_floor, deck)| cell_floor == floor && nose <= deck)
         || host.height() <= 0;
     if impact {
         detonate(rocket, block, ext, host);
@@ -877,13 +877,19 @@ mod tests {
             self.events
                 .push(json!(["aux_sound", self.input["aux_sound"], coord]));
         }
-        fn structural_bridge_floor(&self) -> Option<i32> {
+        fn structural_bridge_floor_and_deck(&self) -> Option<(i32, i32)> {
             let (x, y) = cell_of(self.location);
             self.input["bridge_cells"]
                 .as_array()
                 .expect("bridge cells")
                 .contains(&json!([x, y]))
-                .then(|| int(&self.input["bridge_floor"]) as i32)
+                .then(|| {
+                    let floor = int(&self.input["bridge_floor"]) as i32;
+                    (
+                        floor,
+                        floor.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
+                    )
+                })
         }
         fn explosion(&mut self, damage: i32, warhead: &str, coord: [i32; 3]) {
             let (x, y) = cell_of(coord);

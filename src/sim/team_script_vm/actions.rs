@@ -454,7 +454,11 @@ impl Simulation {
                     let cell = cells.lookup_world(coord.x, coord.y);
                     let on_bridge = cells.flags(cell) & 0x100 != 0
                         || cells.flags(cells.lookup_world(coord.x, coord.y)) & 0x400 != 0;
-                    let z = crate::sim::movement::ground_pose::z_at_height(ground, 0, on_bridge);
+                    let z = if on_bridge {
+                        crate::sim::movement::ground_pose::deck_surface_z(&cells, cell, ground)
+                    } else {
+                        ground
+                    };
                     self.publish_trigger_effects(vec![
                         crate::sim::trigger_runtime::TriggerEffect::CameraAtCoord {
                             coord: [coord.x, coord.y, z],

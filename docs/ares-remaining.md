@@ -43,9 +43,7 @@ first; the Ares part is then small. None of them is reachable with retail YR dat
 
 | Ares feature (keys, hooks) | Needs this stock gamemd logic | Retail |
 |---|---|---|
-| `NoSelfGuardArea` (0x51E748) | The healer's self-GuardArea arm of the infantry input ladder (0x51E710..0x51E748) | Healers never self-guard |
 | Gate placement selling walls (0x440709, 100156F0) | The hook's wall test in BuildingClass::Unlimbo's Gate arm; the stock arm is ported with the stock wall ids | A mod `Wall=` overlay stays under a gate |
-| Tunnel entry by an absorber click (0x44351A, 100172F0) | The absorber click that sends radio 0x10 | Ares tunnels are mod-only |
 
 Stock gap found in passing, with no Ares dependency: Generate_Starting_Units (0x5D6D80)
 stops for every later house when one house has no starting-unit candidates; VERA skips
@@ -94,6 +92,11 @@ Input rungs
 ([ares-techno-hooks.md](ares-techno-hooks.md),
 [ares-building-house-hooks.md](ares-building-house-hooks.md)):
 - an Ivan entering an allied Grinder without Ctrl (`0x51EB48`; VERA answers IvanBomb);
+- a healer infantryman's stock heal rows other than its self GuardArea: 0x3B over a
+  non-allied object (`0x51E797`), the stock Heal without Ares (`0x51E73C`), a healing
+  Engineer under Ctrl over itself (`0x51E6B4`; VERA answers GuardArea);
+- an EMP'd `Deployer=yes` infantryman over itself answers NoDeploy (Infantry What_Action
+  head `0x51E3B0`, Ares.dll `10053DB0`); VERA does not port this hook;
 - the structure and defense tab hotkeys, the cameo click and the ready-building strip
   asking for a usable factory (`0x535DB6`, `0x535E76`, `0x6AB312`, `0x6A9822`);
 - `SuperGapRadiusInCells` multiples of 256: the stock What_Action (`0x004472AA`)

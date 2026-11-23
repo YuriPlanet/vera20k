@@ -170,6 +170,10 @@ impl Position {
         path_grid: Option<&PathGrid>,
     ) {
         let world_xy = position_world_xy(self);
+        if on_bridge && let Some(deck) = corrected_deck_z_at_xy(world_xy, terrain) {
+            self.put_z(deck.wrapping_add(height));
+            return;
+        }
         let ground = ground_at(world_xy, terrain, path_grid).unwrap_or(Ok(0));
         if let Some(ground) = supported_ground(ground, world_xy) {
             self.put_z(z_at_height(ground, height, on_bridge));
@@ -183,6 +187,23 @@ impl Position {
     /// places Z at height 0.
     pub(crate) fn store_cell_level(&mut self, cell_level: u8, on_bridge: bool) {
         self.z = super::movement_bridge::stored_level(cell_level, on_bridge);
+    }
+
+    /// [`Self::store_cell_level`] for a cell that may carry a fixed
+    /// high-bridge deck (`deck`, in whole levels): an OnBridge object stands
+    /// at that deck, not at the cell's own ground plus four. Every mover that
+    /// enters a cell stores its level through this, so the level agrees with
+    /// the Z [`Self::set_height`] gives.
+    pub(crate) fn store_cell_level_on_deck(
+        &mut self,
+        cell_level: u8,
+        on_bridge: bool,
+        deck: Option<i16>,
+    ) {
+        match deck.filter(|_| on_bridge) {
+            Some(deck) => self.store_cell_level(deck as u8, false),
+            None => self.store_cell_level(cell_level, on_bridge),
+        }
     }
 
     /// SetLocation of `coord` ([`Self::put_location`]) with the level its Z
@@ -331,9 +352,42 @@ impl Simulation {
 /// simulation callbacks use the canonical retained Dummy and its lookup order.
 pub fn query_ground_height(cells: &NativeCellQuery<'_>, point: DriveCoord) -> Result<i32, String> {
     let cell = cells.lookup_world(point.x, point.y);
+    ground_height_in_cell(cells, cell, point)
+}
+
+fn ground_height_in_cell(
+    cells: &NativeCellQuery<'_>,
+    cell: NativeCellIdentity,
+    point: DriveCoord,
+) -> Result<i32, String> {
     let (level, slope) = cells.ground_fields(cell);
     ground_height_leptons(level, slope, point.x, point.y)
         .map_err(|error| format!("native ground query: {error:?}"))
+}
+
+/// Surface Z in leptons for a caller that already knows its layer. Keep the
+/// Map578080 lookup and its Dummy identity even on a corrected bridge.
+pub fn query_surface_z(
+    cells: &NativeCellQuery<'_>,
+    point: DriveCoord,
+    on_bridge: bool,
+) -> Result<i32, String> {
+    let cell = cells.lookup_world(point.x, point.y);
+    if on_bridge && let Some(deck) = corrected_deck_z(cells.terrain(), cell) {
+        return Ok(deck);
+    }
+    let ground = ground_height_in_cell(cells, cell, point)?;
+    Ok(z_at_height(ground, 0, on_bridge))
+}
+
+/// Deck Z for a caller that samples ground before its separate bridge lookup
+/// (e.g. FootClass click input at 0x004DE242).
+pub(crate) fn deck_surface_z(
+    cells: &NativeCellQuery<'_>,
+    cell: NativeCellIdentity,
+    ground: i32,
+) -> i32 {
+    corrected_deck_z(cells.terrain(), cell).unwrap_or_else(|| z_at_height(ground, 0, true))
 }
 
 /// Object+1BC receiver5F6960 performs two Map565730 lookups from physical
@@ -352,6 +406,9 @@ pub(crate) fn query_object_cell_height(
     on_bridge: bool,
 ) -> i32 {
     let cell = query_object_cell(cells, physical);
+    if on_bridge && let Some(deck) = cells.terrain().corrected_high_bridge_deck_at(cell) {
+        return i32::from(deck);
+    }
     i32::from(cells.ground_fields(cell).0 as i8) + if on_bridge { 4 } else { 0 }
 }
 
@@ -364,9 +421,12 @@ pub(crate) fn terrain_projection_differs(cells: &NativeCellQuery<'_>, [x, y]: [i
         i32::from(crate::util::lepton::lepton_to_cell_packed(x)),
         i32::from(crate::util::lepton::lepton_to_cell_packed(y)),
     );
-    crate::sim::find_nearby_cell::project_world_coordinate_with_lookup(x, y, |cx, cy| {
-        cells.projection_view(cx, cy)
-    }) != cell
+    crate::sim::find_nearby_cell::project_world_coordinate_with_terrain(
+        x,
+        y,
+        Some(cells.terrain()),
+        |cx, cy| cells.projection_view(cx, cy),
+    ) != cell
 }
 
 /// The terrain exit that the Event IDLE (`0x004C752A..0x004C7577`) and
@@ -406,15 +466,55 @@ pub(crate) fn navigation_should_be_on_bridge(
     if in_tube {
         return Ok(false);
     }
-    let head_ground = query_ground_height(cells, navigation)?;
-    let current_ground = query_ground_height(cells, current)?;
+    let head_cell = cells.lookup_world(navigation.x, navigation.y);
+    let head_ground = ground_height_in_cell(cells, head_cell, navigation)?;
+    let current_cell = cells.lookup_world(current.x, current.y);
+    let current_ground = ground_height_in_cell(cells, current_cell, current)?;
     if !on_bridge && current_ground.wrapping_sub(head_ground) > 3 * GROUND_LEVEL_HEIGHT_LEPTONS {
         return Ok(cells.flags(cells.lookup_world(navigation.x, navigation.y)) & 0x100 != 0);
     }
     if on_bridge && head_ground.wrapping_sub(current_ground) > 3 * GROUND_LEVEL_HEIGHT_LEPTONS {
-        return Ok(false);
+        // Object5F6A70's ground rise also fires between two cells of a flat
+        // span over a depression. Keep the deck layer for a corrected span.
+        return Ok(adjacent_matching_bridge_decks(
+            cells,
+            current_cell,
+            head_cell,
+        ));
     }
     Ok(on_bridge)
+}
+
+fn adjacent_matching_bridge_decks(
+    cells: &NativeCellQuery<'_>,
+    current: NativeCellIdentity,
+    head: NativeCellIdentity,
+) -> bool {
+    use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+
+    let terrain = cells.terrain();
+    let current_deck = terrain.corrected_high_bridge_deck_at(current);
+    let head_deck = terrain.corrected_high_bridge_deck_at(head);
+    if current_deck.is_none() && head_deck.is_none() {
+        return false;
+    }
+    if !matches!(
+        (current, head),
+        (NativeCellIdentity::Real(_), NativeCellIdentity::Real(_))
+    ) || cells.flags(current) & BRIDGE_FLAG_STRUCTURAL == 0
+        || cells.flags(head) & BRIDGE_FLAG_STRUCTURAL == 0
+    {
+        return false;
+    }
+    let (x, y) = cells.coord(current);
+    let (hx, hy) = cells.coord(head);
+    let stock_deck = |cell| {
+        i16::from(cells.ground_fields(cell).0 as i8)
+            + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16
+    };
+    x.abs_diff(hx).max(y.abs_diff(hy)) == 1
+        && current_deck.unwrap_or_else(|| stock_deck(current))
+            == head_deck.unwrap_or_else(|| stock_deck(head))
 }
 
 /// The world XY of an object's Location (`ObjectClass+0x9C`, `+0xA0`) from
@@ -533,6 +633,11 @@ pub(crate) fn object_ground_z_leptons(
     terrain: Option<&ResolvedTerrainGrid>,
 ) -> i32 {
     let [x, y] = position_world_xy(&entity.position);
+    if entity.on_bridge()
+        && let Some(deck) = corrected_deck_z_at_xy([x, y], terrain)
+    {
+        return deck;
+    }
     terrain
         .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
         .and_then(|cell| ground_height_leptons(cell.level, cell.slope_type, x, y).ok())
@@ -824,8 +929,29 @@ pub(crate) fn ground_surface_z_at(
     terrain: Option<&ResolvedTerrainGrid>,
     path_grid: Option<&PathGrid>,
 ) -> Option<i32> {
+    if on_bridge && let Some(deck) = corrected_deck_z_at_xy(world_xy, terrain) {
+        return Some(deck);
+    }
     let ground = supported_ground(ground_at(world_xy, terrain, path_grid)?, world_xy)?;
     Some(z_at_height(ground, 0, on_bridge))
+}
+
+fn corrected_deck_z_at_xy(
+    world_xy: [i32; 2],
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> Option<i32> {
+    let [x, y] = world_xy;
+    let packed = crate::util::lepton::lepton_to_cell_packed;
+    let terrain = terrain?;
+    let index = terrain.native_fixed_cell_index(packed(x), packed(y))?;
+    corrected_deck_z(terrain, NativeCellIdentity::Real(index))
+}
+
+/// Retained live high-bridge Z for a caller that already resolved its Cell.
+pub fn corrected_deck_z(terrain: &ResolvedTerrainGrid, cell: NativeCellIdentity) -> Option<i32> {
+    terrain
+        .corrected_high_bridge_deck_at(cell)
+        .map(|level| i32::from(level) * GROUND_LEVEL_HEIGHT_LEPTONS)
 }
 
 /// `ObjectClass::SetHeight @ 0x005F5FA0`'s Z for a sampled ground: the

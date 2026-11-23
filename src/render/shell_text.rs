@@ -82,7 +82,9 @@ fn to_native_rect(rect: TextRect, scale: f32) -> TextRect {
 
 /// How far `text` squeezes to fit `native` (VERA's own; see the module doc).
 fn squeeze(font: &BitFont, text: &str, native: TextRect, flags: ShellAlign) -> Fit {
-    if flags.contains(ShellAlign::PANEL_FACE) {
+    if flags.contains(ShellAlign::SINGLE_LINE) {
+        font.fit_line(text, native.w)
+    } else if flags.contains(ShellAlign::PANEL_FACE) {
         let face = font.fit_line(text, native.w.min(RIGHT_PANEL_FACE_W));
         font.fitted(face, |font| font.fit_box(text, native.w, native.h))
     } else {
@@ -143,10 +145,23 @@ fn layout_in_rect(
             scissor,
         };
     }
+    let single_line = flags.contains(ShellAlign::SINGLE_LINE);
+    let text = if single_line {
+        text.split('\n').next().unwrap_or_default()
+    } else {
+        text
+    };
     let native = to_native_rect(rect, scale);
     let fit = squeeze(font, text, native, flags);
     let instances = font.fitted(fit, |font| {
-        let layout = font.wrap_layout(text, native.w);
+        // Bound the draw with the scissor, but do not wrap a caption which
+        // still has to be cut off after the tightest horizontal fit.
+        let wrap_w = if single_line {
+            native.w.max(font.text_width(text))
+        } else {
+            native.w
+        };
+        let layout = font.wrap_layout(text, wrap_w);
         let base_x = native.x as f32;
         let mut line_y = native.y as f32;
         if flags.contains(ShellAlign::V_CENTER) {
@@ -476,6 +491,68 @@ mod tests {
             squeeze(&font, "[Öþţîöñš ~~~~]", rect, ShellAlign::BUTTON_CAPTION),
             Fit::NONE
         );
+    }
+
+    #[test]
+    fn art_caption_uses_its_own_width_without_wrapping() {
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let rect = TextRect {
+            x: 659,
+            y: 60,
+            w: 114,
+            h: 41,
+        };
+        // Find a natural caption whose exact width exceeds the old legacy cap.
+        let text = (1..30)
+            .flat_map(|wide| {
+                (0..20).map(move |narrow| format!("{}{}", "Ṁ".repeat(wide), "î".repeat(narrow)))
+            })
+            .find(|text| (111..=114).contains(&font.text_width(text)))
+            .expect("the fixture needs a width in the newly available range");
+        assert_eq!(squeeze(&font, &text, rect, ShellAlign::ART_CAPTION), Fit::NONE);
+        assert_ne!(squeeze(&font, &text, rect, ShellAlign::PANEL_TITLE), Fit::NONE);
+
+        let long = "动画及制作人员读取已保存游戏".repeat(3);
+        let draw = |text| {
+            draw_in_rect(
+                &font,
+                text,
+                rect,
+                [1.0; 3],
+                ShellAlign::ART_CAPTION,
+                [0.0; 2],
+                0.5,
+            )
+        };
+        let one = draw(&long);
+        assert!(!one.instances.is_empty());
+        assert_same_quads(
+            &one.instances,
+            &draw(&format!("{long}\n第二行")).instances,
+            "no second line",
+        );
+    }
+
+    #[test]
+    fn translated_column_captions_fit_the_shared_width() {
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let rect = TextRect {
+            x: 664,
+            y: 330,
+            w: crate::ui::shell::geom::FAMILY_CAPTION_W as u32,
+            h: 41,
+        };
+        let align = ShellAlign::ART_CAPTION | ShellAlign::V_CENTER;
+        for text in ["动画及制作人员", "读取已保存游戏"] {
+            let fitted = squeeze(&font, text, rect, align);
+            assert!(font.fitted(fitted, |font| font.text_width(text)) <= rect.w);
+            let actual = draw_in_rect(&font, text, rect, [1.0; 3], align, [0.0; 2], 0.5);
+            assert_eq!(actual.instances.len(), text.chars().count());
+            assert!(actual.instances.iter().all(|glyph| {
+                glyph.position[0] >= rect.x as f32
+                    && glyph.position[0] + glyph.size[0] <= (rect.x + rect.w as i32) as f32
+            }), "{text}");
+        }
     }
 
     /// A word too long for its line is squeezed before it splits; Chinese

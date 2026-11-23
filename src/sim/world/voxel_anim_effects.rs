@@ -259,13 +259,7 @@ impl Simulation {
         let impact = debris.bounce().position_leptons();
         let kind = rules.voxel_anim_type(type_id);
         let water = self.bounce_cell_is_water(location, rules);
-        let ground = crate::sim::projectile::projectile_ground_z(
-            self.resolved_terrain.as_ref(),
-            &self.effective_shared_cell_dummy(),
-            ProjectileCoord::new(location.x, location.y, location.z),
-        );
-        let above =
-            location.z >= ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        let above = location.z >= self.bounce_landing_deck_z(location);
         if water && !above {
             if kind.is_meteor {
                 //74A035..099: the last SplashList entry at Location+5.

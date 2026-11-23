@@ -17,8 +17,8 @@ use std::collections::BTreeSet;
 #[path = "bridge_damage_dispatch.rs"]
 mod damage_dispatch;
 pub(crate) use damage_dispatch::BridgeDamageDrivers;
-use damage_dispatch::LiveCells;
 pub(super) use damage_dispatch::PendingBridgeCells;
+use damage_dispatch::{LiveCells, PendingBridgeCell};
 
 #[path = "bridge_moving_collapse.rs"]
 mod moving_collapse;
@@ -753,7 +753,8 @@ fn step_axis_by(pos: (u16, u16), axis: Axis, delta: i32) -> Option<(u16, u16)> {
     }
 }
 
-/// Complete ground receivers before the deck pass and debris RNG.
+/// Test entry for an already-cleared cell using the ordinary probe.
+#[cfg(test)]
 pub(super) fn blow_up_bridge_cell_fallout(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -762,6 +763,27 @@ pub(super) fn blow_up_bridge_cell_fallout(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: &mut FrameEffects<'_>,
 ) {
+    publish_bridge_cell_fallout(
+        sim,
+        rules,
+        PendingBridgeCell {
+            point: (rx as i16, ry as i16),
+            corrected_deck_level: None,
+        },
+        overlay_registry,
+        frame_effects,
+    );
+}
+
+/// Complete ground receivers before the deck pass and debris RNG.
+fn publish_bridge_cell_fallout(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    collapse: PendingBridgeCell,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    frame_effects: &mut FrameEffects<'_>,
+) {
+    let (rx, ry) = (collapse.point.0 as u16, collapse.point.1 as u16);
     kill_ground_occupants_at(sim, rules, rx, ry, overlay_registry, frame_effects);
     drop_in_bridge_deck_entities(
         sim,
@@ -772,10 +794,10 @@ pub(super) fn blow_up_bridge_cell_fallout(
     //47DDD5..47DE2B publishes after ground/deck receivers, before debris
     //draws/constructors. Direct callers also leave pending entries for save;
     //only Map587180 owns the clear/consume bracket.
-    sim.pending_bridge_collapses.append((rx as i16, ry as i16));
+    sim.pending_bridge_collapses.append(collapse);
     let mut one_cell = BTreeSet::new();
     one_cell.insert((rx, ry));
-    spawn_bridge_debris(sim, rules, &one_cell);
+    spawn_bridge_debris(sim, rules, &one_cell, collapse.corrected_deck_level);
 }
 
 /// `CellClass::BlowUpBridge @ 0x0047DDAE`: every ground occupant takes
@@ -826,7 +848,12 @@ pub(crate) fn publish_bridge_navigation(sim: &mut Simulation, rules: &RuleSet) {
 /// CellClass::BlowUpBridge47DD70 after its ground/deck receiver passes.
 /// Constructor/Start completes before the sibling explosion's delay/index
 /// draws. Native comparisons: tools/spatial_oracle/bridge_debris_producer.
-fn spawn_bridge_debris(sim: &mut Simulation, rules: &RuleSet, cells: &BTreeSet<(u16, u16)>) {
+fn spawn_bridge_debris(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    cells: &BTreeSet<(u16, u16)>,
+    retained_deck_level: Option<i16>,
+) {
     let explosion_count = sim.bridge_explosions.len() as u32;
     let metallic_count = sim.metallic_debris.len() as u32;
     if explosion_count == 0 {
@@ -846,7 +873,10 @@ fn spawn_bridge_debris(sim: &mut Simulation, rules: &RuleSet, cells: &BTreeSet<(
             .as_ref()
             .map(|terrain| terrain.collapse_animation_level(rx as i16, ry as i16))
             .unwrap_or(0);
-        let z = i32::from(level) * LEPTONS_PER_LEVEL as i32 + BRIDGE_DECK_HEIGHT_LEPTONS;
+        let z = retained_deck_level.map_or_else(
+            || i32::from(level) * LEPTONS_PER_LEVEL as i32 + BRIDGE_DECK_HEIGHT_LEPTONS,
+            |deck| i32::from(deck) * LEPTONS_PER_LEVEL as i32,
+        );
         let coord = bridge_jittered_coord(sim.bridge_rng(), (rx as i16, ry as i16), z);
         let metallic_draw = sim
             .bridge_rng()
@@ -1556,7 +1586,7 @@ mod tests {
         let mut cells = BTreeSet::new();
         cells.insert((5, 5));
         cells.insert((4, 5));
-        spawn_bridge_debris(&mut sim, &rules, &cells);
+        spawn_bridge_debris(&mut sim, &rules, &cells, None);
 
         assert_eq!(
             sim.scenario_rng.state(),

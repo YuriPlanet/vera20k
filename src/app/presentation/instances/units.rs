@@ -290,6 +290,10 @@ fn unit_shadow_slope(
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     entity: &crate::app::presentation::frame::ObjectRecord,
 ) -> u8 {
+    // A shadow on the high deck follows its level surface.
+    if entity.on_bridge() {
+        return 0;
+    }
     let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     clamp_slope_for_render(cells.map_or(0, |cells| cells.ground_fields(cells.lookup_world(x, y)).1))
 }
@@ -313,7 +317,7 @@ fn unit_render_slope_state(
     if let Some(slope_state) = locomotor_render_slope_state(entity, display_binary_frame) {
         return slope_state;
     }
-    if entity.category() == EntityCategory::Aircraft {
+    if entity.on_bridge() || entity.category() == EntityCategory::Aircraft {
         return UnitRenderSlopeState::Stable(0);
     }
     let kind = entity

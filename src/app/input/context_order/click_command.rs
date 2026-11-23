@@ -41,6 +41,32 @@ pub(in crate::app::input) fn selection_can_attack_move(
         .all(|&sid| entity_can_attack_move(sim, rules, sid))
 }
 
+/// Foot ClickedAction_Object's AreaGuard case (`0x004D7543`) for a GuardArea
+/// over an object: Ctrl+Alt's guard rung, or a healer infantryman over
+/// itself, which Infantry's ClickedAction (`0x0051F190`) hands on
+/// unchanged. A berserk receiver is refused at its head (`0x004D74E0`);
+/// the case asks IsActive (vt+0x9C, `0x007010D0`) and vt+0xA0 and orders
+/// nothing without them, so an unarmed member of a group stays put;
+/// otherwise Area Guard on the object.
+pub(super) fn object_guard_command(
+    sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    receiver: u64,
+    target_id: u64,
+) -> Option<Command> {
+    (!sim
+        .entities()
+        .get(receiver)
+        .is_some_and(|entity| entity.berserk.is_active())
+        && sim.local_techno_is_active_with(control, receiver, rules)
+        && sim.local_techno_controllable_with(control, receiver, rules))
+    .then_some(Command::Guard {
+        entity_id: receiver,
+        target: Some(TargetKind::Entity(target_id)),
+    })
+}
+
 /// What Techno What_Action_OnObject's key rungs answer
 /// (`0x00700006..0x00700217`), for the cursor and the click alike, as
 /// Foot's shroud rung leaves them.
@@ -423,6 +449,11 @@ pub(super) fn object_attack_click_command_with(
             destination,
         ))
     };
+    // A healer's GuardArea over itself replaces its key answers
+    // ([`crate::sim::world::Simulation::infantry_healer_guards_itself`]).
+    if target_id == attacker_id && sim.infantry_healer_guards_itself(control, attacker_id, rules) {
+        return object_guard_command(sim, control, rules, attacker_id, target_id);
+    }
     // The receiver's own key rungs ([`object_key_action`]) come before its
     // attack rung: Ctrl+Alt's guard rung, else Alt's Move, which Foot's
     // shroud rung may make NoMove. Shift's ToggleSelect belongs to the
@@ -442,16 +473,8 @@ pub(super) fn object_attack_click_command_with(
         )
     };
     match key_action {
-        // Foot ClickedAction_Object's AreaGuard case (`0x004D7543`) asks
-        // IsActive (vt+0x9C, `0x007010D0`) first and orders nothing
-        // without it, so an unarmed member of the group stays put.
         Some(ObjectKeyAction::GuardArea) => {
-            return sim
-                .local_techno_is_active_with(control, attacker_id, rules)
-                .then_some(Command::Guard {
-                    entity_id: attacker_id,
-                    target: Some(TargetKind::Entity(target_id)),
-                });
+            return object_guard_command(sim, control, rules, attacker_id, target_id);
         }
         Some(ObjectKeyAction::NoMove) => {
             return move_near(crate::sim::world::MoveAction::NoMove);

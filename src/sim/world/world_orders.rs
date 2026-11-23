@@ -780,8 +780,8 @@ impl Simulation {
     /// key is held, when the Verses of the weapon it would pick is above 0
     /// for the target's armor (`0x0051E739`). Infantry ClickedAction
     /// (`0x0051F190`) turns Heal into Attack. None goes on with the stock
-    /// rows; the infantryman itself takes the stock self arm at `0x0051E748`,
-    /// which VERA does not port.
+    /// rows; the infantryman itself takes the stock self arm at `0x0051E748`
+    /// ([`Self::infantry_healer_guards_itself`]).
     pub fn ares_infantry_heal_action(
         &self,
         actor_id: u64,
@@ -835,6 +835,41 @@ impl Simulation {
         Some(AresHeal {
             organic: target_type.organic || target.category() == EntityCategory::Infantry,
         })
+    }
+
+    /// `InfantryClass::What_Action_OnObject`'s healer self arm: a human
+    /// player's Infantryman whose `GetWeaponDamageValue(-1)` is negative
+    /// (`0x0051E6D8..0x0051E6F6`) answers GuardArea (0x1A, `0x0051E748`) over
+    /// itself, which its own house's ally test (`0x004F9A90`) admits. Foot's
+    /// What_Action has answered before it, so the arm replaces a self,
+    /// Detonate or key answer; only Shift's ToggleSelect (`0x0051E453`) and
+    /// the Engineer prefixes return first. Ares' heal hook
+    /// (`0x0051E710`, Ares.dll `1004E2E0`) jumps to the same return for the
+    /// infantryman itself, and `NoSelfGuardArea=yes` (hook `0x0051E748`,
+    /// `10049710`) skips it to the rows after the heal arm (`0x0051E7A6`).
+    /// No retail infantryman heals, so only a mod's healers reach it.
+    pub fn infantry_healer_guards_itself(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(actor) = self.substrate.entities.get(actor_id) else {
+            return false;
+        };
+        let Some(actor_type) = self.object_type(actor.type_ref(), rules) else {
+            return false;
+        };
+        actor.category() == EntityCategory::Infantry
+            && control.can_order(actor.owner())
+            && combat::combat_weapon::weapon_damage_value(
+                actor,
+                actor_type,
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+            ) < 0
+            && !(rules.ares() && actor_type.techno_combat().no_self_guard_area())
     }
 
     /// `UnitClass::What_Action_OnObject`'s building arm

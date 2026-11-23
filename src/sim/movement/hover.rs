@@ -51,7 +51,10 @@ pub fn hover_draw_slope(
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     angles: [f32; 2],
 ) -> u8 {
-    if crate::map::voxel_pose::voxel_tilt_applies(angles) || hover_is_powered(entity, cells) {
+    if entity.on_bridge()
+        || crate::map::voxel_pose::voxel_tilt_applies(angles)
+        || hover_is_powered(entity, cells)
+    {
         return 0;
     }
     let [x, y] = super::ground_pose::position_world_xy(&entity.position);

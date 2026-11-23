@@ -3,6 +3,7 @@ use crate::ui::main_menu_dialogs::options::{
     HAS_GRAPHICS_API, HAS_HD_MAP_PREVIEWS, HAS_RA2_MODE, HAS_VSYNC,
 };
 use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
+use crate::ui::shell::sound::{SoundSlider, launcher_volume_rects};
 use LauncherCheckboxId as Check;
 use LauncherComboId as Combo;
 use LauncherTrackbarId as Slider;
@@ -78,11 +79,15 @@ pub(super) fn controls(
             check(&mut row, Check::ShowHidden, x, 390);
             slider(&mut row, Slider::Scroll, right, 344, 181);
             section(&mut row, Category::Audio, 448);
-            for (i, id) in [Slider::Score, Slider::Sound, Slider::Voice]
-                .into_iter()
-                .enumerate()
+            for (channel, id) in
+                SoundSlider::ALL
+                    .into_iter()
+                    .zip([Slider::Score, Slider::Sound, Slider::Voice])
             {
-                slider(&mut row, id, 124 + i as i32 * 154, 482, 129);
+                let setting = Setting::Slider(id);
+                let (caption, track) = launcher_volume_rects(channel);
+                row(Control::Label(PageLabel::Caption(setting)), caption);
+                row(Control::Setting(setting), track);
             }
         }
         Category::Enhancements => {

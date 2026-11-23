@@ -629,7 +629,8 @@ impl ProcessAssets {
                 .then(|| self.changed_tiles(assets).digest.clone())
                 .flatten(),
         );
-        let mut bytes = b"VERA20k rules agreement v1\0".to_vec();
+        // v2 includes the independent high-bridge deck calculation.
+        let mut bytes = b"VERA20k rules agreement v2\0".to_vec();
         // VERA: the Options switches played, which the digested sources
         // leave out; none adds nothing.
         if let Some(crc) = rules.personal_rules_compatibility_crc() {

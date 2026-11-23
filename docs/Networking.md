@@ -617,12 +617,11 @@ participants and reapplies it for a late Type3 only in the same admission epoch 
 revision (`app::lan_service::options`).
 
 The build agreement identifies the envelope revision through the existing
-source-derived build identity. Mixed builds are refused at join with reason 8.
-The guest also reads the agreement before decoding the options body, so it can show
-`VERA:LanHostBuildDiffers` even for the earlier layout. An invalid room update uses
-`VERA:LanOptionsInvalid` and ends that setup. After a rollback, two games running
-the earlier build exchange its earlier layout. The lobby, relay, and VS31
-fragment framing keep their existing formats.
+source-derived build identity. Mixed builds are refused at join with reason 8, so a
+guest reads options only from its own build. An invalid room update, one that names
+another build included, uses `VERA:LanOptionsInvalid` and ends that setup. After a
+rollback, two games running the earlier build exchange its earlier layout. The
+lobby, relay, and VS31 fragment framing keep their existing formats.
 
 When a room member visits the public lobby and joins another game, the client
 asks the lobby to admit them directly. A wrong password, a full room or a
@@ -743,9 +742,10 @@ refuses options naming them, so the room cannot start until those players leave 
 public lobby or the host leaves the room, and a visitor who joins the public lobby again
 is listed twice. Roll the lobby back past this only when no room has a visitor. The
 public lobby lists a stranded visitor until this lobby is back and they leave the room
-or sign out; it then also drops an entry whose session is gone.
+or sign out; an entry whose session ended under the older lobby stays listed until
+the store is fixed.
 
-Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
+Games 0.3.2 to 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
 plays or the Teams count changed. Current games neither offer it nor send it. A current
 guest reads and ignores it in such a host's room, which cannot start anyway, since the
@@ -822,8 +822,8 @@ in a release), which the hash already covers; they are refused as any other buil
 
 - LAN: the host denies a join from another build (reason 8), and the guest sees Request
   denied and "VERA20k build or enabled gameplay features differ." (`VERA:LanBuildDiffers`).
-  A guest that receives the host's options from another build says so in the room's chat
-  (`VERA:LanHostBuildDiffers`) and does not start.
+  The guest checks the host's build in the join's answer as well, so no room holds two
+  builds.
 - Online: the sign-in names the version (`Vera-Build`), and every `ready` and `map_status`
   carries it. The lobby hides rooms and matches of another build, or of another version
   where a game names no build, and starts a match only when every player's is equal

@@ -1,6 +1,7 @@
 //! Walk75C240 retained head and Infantry5217C0/521850 raw subcell leaves.
 //! The raw bits and mark-time house are canonical; no later occupancy rebuild
 //! reconstructs the history from the path or a changed terrain layer.
+use super::ground_pose;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::sim::{
     components::DriveCoord,
@@ -16,15 +17,15 @@ pub(crate) fn selected_head(
     input_ground_z: i32,
     bridge: bool,
 ) -> DriveCoord {
+    head_at_surface(input, slot, ground_pose::z_at_height(input_ground_z, 0, bridge))
+}
+
+fn head_at_surface(input: DriveCoord, slot: u8, z: i32) -> DriveCoord {
     let (x, y) = crate::util::lepton::subcell_offset(slot);
     DriveCoord {
         x: (input.x & !255).wrapping_add(x),
         y: (input.y & !255).wrapping_add(y),
-        z: input_ground_z.wrapping_add(if bridge {
-            crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-        } else {
-            0
-        }),
+        z,
     }
 }
 
@@ -44,9 +45,8 @@ pub(crate) fn raw_at(
         .map_or(RawCellKey::Real(cell.0, cell.1), |(t, c)| {
             RawCellKey::from_native(t, c)
         });
-    let ground =
-        super::ground_pose::ground_surface_z_at([coord.x, coord.y], false, terrain, fallback)
-            .unwrap_or(coord.z);
+    let deck_surface = ground_pose::ground_surface_z_at([coord.x, coord.y], true, terrain, fallback)
+        .unwrap_or_else(|| ground_pose::z_at_height(coord.z, 0, true));
     let structural = terrain.zip(identity).map_or_else(
         || {
             fallback
@@ -55,8 +55,7 @@ pub(crate) fn raw_at(
         },
         |(t, c)| t.native_cell_flags(c) & 0x100 != 0,
     );
-    let deck = coord.z >= ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
-        && (!put || structural);
+    let deck = coord.z >= deck_surface && (!put || structural);
     let mask = infantry_raw_occupation_mask(
         SimFixed::from_num(coord.x % 256),
         SimFixed::from_num(coord.y % 256),
@@ -1035,12 +1034,13 @@ pub(super) fn select_step_head_at(
         priority |= slave_priority;
     }
     //75C4C8 reloads input Cell after the complete priority corridor.
-    let (structural, raw_key) = terrain.map_or_else(
+    let (structural, raw_key, corrected_deck) = terrain.map_or_else(
         || {
             (
                 grid.and_then(|g| g.cell(next.0, next.1))
                     .is_some_and(|c| c.bridge_structural),
                 RawCellKey::Real(next.0, next.1),
+                None,
             )
         },
         |t| {
@@ -1048,14 +1048,29 @@ pub(super) fn select_step_head_at(
             (
                 t.native_cell_flags(selected) & 0x100 != 0,
                 RawCellKey::from_native(t, selected),
+                ground_pose::corrected_deck_z(t, selected),
             )
         },
     );
-    let bridge = structural
-        && current.z
-            > super::ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
-                .unwrap_or(current.z)
-                .wrapping_add(312);
+    let sample_ground = || {
+        ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
+            .unwrap_or(current.z)
+    };
+    let bridge = structural && {
+        let ground = sample_ground();
+        if let Some(deck) = corrected_deck {
+            // Walk75C4C8's stock threshold assumes a four-level gap. Follow
+            // the nearer surface of a corrected Cell and retain the current
+            // layer when the elevations are equally close.
+            match current.z.abs_diff(deck).cmp(&current.z.abs_diff(ground)) {
+                std::cmp::Ordering::Less => true,
+                std::cmp::Ordering::Equal => entity.on_bridge(),
+                std::cmp::Ordering::Greater => false,
+            }
+        } else {
+            current.z > ground.wrapping_add(312)
+        }
+    };
     let layer = if bridge {
         MovementLayer::Bridge
     } else {
@@ -1079,9 +1094,11 @@ pub(super) fn select_step_head_at(
         raw_at(raw, owner, current, true, terrain, grid);
         return StepHead::Done(false);
     };
-    let ground = super::ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
-        .unwrap_or(current.z);
-    let head = selected_head(input, slot, ground, bridge);
+    let head = if let Some(deck) = corrected_deck.filter(|_| bridge) {
+        head_at_surface(input, slot, deck)
+    } else {
+        selected_head(input, slot, sample_ground(), bridge)
+    };
     let Some(loco) = entities.get_mut(id).and_then(|e| e.locomotor.as_mut()) else {
         return StepHead::Done(false);
     };

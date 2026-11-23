@@ -212,11 +212,8 @@ pub(super) fn spawn_cell_anim(
 /// MapClass lookup (`cell_grid`), as Launch reads the cell it looked up.
 fn deck_coords(sim: &Simulation, (x, y): (u16, u16)) -> [i32; 3] {
     let ground = crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), x, y);
-    let mut coords = [ground.x, ground.y, ground.z];
-    if cell_grid::cell_has_bridge_flag(sim, x as i16, y as i16) {
-        coords[2] = coords[2].wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
-    coords
+    let z = cell_grid::bridge_adjusted_z(sim, x as i16, y as i16, ground.z);
+    [ground.x, ground.y, z]
 }
 
 /// `AnimClass::AnimClass @ 0x00421EA0` with the superweapons' row `(type,

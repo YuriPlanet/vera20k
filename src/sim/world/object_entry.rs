@@ -266,6 +266,10 @@ impl PreludeCells for PreludeReads<'_> {
         self.kept(cell, |facts| facts.flags)
             .unwrap_or_else(|| self.query.flags(cell))
     }
+
+    fn corrected_deck(&self, cell: Cell) -> Option<i32> {
+        self.query.corrected_deck(cell)
+    }
 }
 
 /// `HouseClass::Is_Ally_ByObject @ 0x004F9A90` / `Is_Ally`: `asker`'s own
@@ -1061,7 +1065,11 @@ fn full_foot_entry<'a>(
             return Ok(7);
         }
         //51C0AE reloads the target level after the first neighbor lookup.
-        if infantry && height.wrapping_sub(i32::from(target.level(live))) > 4 {
+        let corrected_deck = cells.corrected_deck(cell);
+        if infantry
+            && corrected_deck.is_none()
+            && height.wrapping_sub(i32::from(target.level(live))) > 4
+        {
             return Ok(0);
         }
         if !adjust_height_and_list(
@@ -1078,7 +1086,7 @@ fn full_foot_entry<'a>(
         //of the object list plane modified by4D9C60. Keep both authorities.
         if height != -1
             && target.flags(live) & 0x100 != 0
-            && height == i32::from(target.level(live)) + 4
+            && height == corrected_deck.unwrap_or_else(|| i32::from(target.level(live)) + 4)
         {
             (bits, owner) = target.deck_raw(live);
             vehicle_occupied = bits & 0x20 != 0;

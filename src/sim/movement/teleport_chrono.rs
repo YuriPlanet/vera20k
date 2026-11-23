@@ -169,10 +169,9 @@ impl Simulation {
             .as_ref()
             .ok_or("ChronoWarpTo needs map cells")?;
         let cells = NativeCellQuery::canonical(terrain);
-        if cells.flags(cells.lookup_world(coord.x, coord.y)) & CELL_FLAG_BRIDGE != 0 {
-            coord.z = coord
-                .z
-                .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        let cell_at_coord = cells.lookup_world(coord.x, coord.y);
+        if cells.flags(cell_at_coord) & CELL_FLAG_BRIDGE != 0 {
+            coord.z = super::ground_pose::deck_surface_z(&cells, cell_at_coord, coord.z);
         }
         if category == EntityCategory::Unit {
             self.locomotor_mark_all_occupation_bits(id, false, rules.ares_form());
@@ -539,26 +538,25 @@ impl Simulation {
                 false,
                 rules.ares_form(),
             );
-            let (ground, bridge) = self
+            let (ground, deck) = self
                 .resolved_terrain
                 .as_ref()
-                .map_or((0, false), |terrain| {
+                .map_or((0, None), |terrain| {
                     let cells = NativeCellQuery::canonical(terrain);
                     let ground =
                         super::ground_pose::query_ground_height(&cells, coord).unwrap_or(0);
                     let cell = cells.lookup_world(coord.x, coord.y);
-                    (ground, cells.flags(cell) & CELL_FLAG_BRIDGE != 0)
+                    let deck = (cells.flags(cell) & CELL_FLAG_BRIDGE != 0)
+                        .then(|| super::ground_pose::deck_surface_z(&cells, cell, ground));
+                    (ground, deck)
                 });
             let Some(entity) = self.substrate.entities.get_mut(id) else {
                 return false;
             };
-            let on_bridge = bridge && !entity.on_bridge();
+            let deck = if entity.on_bridge() { None } else { deck };
+            let on_bridge = deck.is_some();
             entity.on_bridge.store(on_bridge);
-            let z = if on_bridge {
-                ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
-            } else {
-                ground
-            };
+            let z = deck.unwrap_or(ground);
             let marked = DriveCoord {
                 x: coord.x,
                 y: coord.y,

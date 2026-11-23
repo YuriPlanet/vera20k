@@ -559,15 +559,19 @@ fn initial_search_heights(
     start: &PathCell,
     start_layer: MovementLayer,
     goal: &PathCell,
+    corrected_decks: [Option<i16>; 2],
 ) -> (i16, i16) {
     (
-        start.signed_level()
-            + if start_layer == MovementLayer::Bridge {
-                4
-            } else {
-                0
-            },
-        goal.signed_level() + if goal.has_structural_bridge() { 4 } else { 0 },
+        if start_layer == MovementLayer::Bridge {
+            corrected_decks[0].unwrap_or_else(|| start.signed_level() + 4)
+        } else {
+            start.signed_level()
+        },
+        if goal.has_structural_bridge() {
+            corrected_decks[1].unwrap_or_else(|| goal.signed_level() + 4)
+        } else {
+            goal.signed_level()
+        },
     )
 }
 
@@ -583,6 +587,7 @@ pub(crate) fn compute_node_height(
     parent_height: i16,
     parent_cell: Option<&PathCell>,
     neighbor_cell: &PathCell,
+    corrected_decks: [Option<i16>; 2],
 ) -> i16 {
     let Some(parent_cell) = parent_cell else {
         return parent_height;
@@ -591,12 +596,17 @@ pub(crate) fn compute_node_height(
     if !neighbor_cell.has_structural_bridge() {
         return ground;
     }
-    let deck = if parent_cell.has_structural_bridge() {
-        parent_height == parent_cell.signed_level() + 4
+    let deck_height = corrected_decks[1].unwrap_or(ground + 4);
+    let source_is_deck = parent_cell.has_structural_bridge()
+        && parent_height == corrected_decks[0].unwrap_or_else(|| parent_cell.signed_level() + 4);
+    let use_deck = if corrected_decks[1].is_some() {
+        parent_height == deck_height && (!parent_cell.has_structural_bridge() || source_is_deck)
+    } else if parent_cell.has_structural_bridge() {
+        source_is_deck
     } else {
         (2..=4).contains(&(parent_height - ground))
     };
-    ground + if deck { 4 } else { 0 }
+    if use_deck { deck_height } else { ground }
 }
 
 fn encode_from(cell_idx: usize, on_bridge: bool) -> u32 {
@@ -644,6 +654,7 @@ fn neighbour_test(
     direction: usize,
     height: i16,
     goal: (u16, u16),
+    terrain: Option<&ResolvedTerrainGrid>,
 ) -> (bool, bool) {
     let (dx, dy) = DIRECTION_DELTAS[direction];
     let (x, y) = (i32::from(cell.0) + dx, i32::from(cell.1) + dy);
@@ -659,7 +670,12 @@ fn neighbour_test(
     // waits on the planes that make it.
     let ground_closed = ground.contains(index);
     let bridge_closed = bridge.contains(index);
-    let use_bridge = grid.selects_bridge_list_at(index, height);
+    let use_bridge = grid.selects_bridge_list_at(
+        index,
+        height,
+        if inside { terrain } else { None },
+        (x as u16, y as u16),
+    );
     let closed = if use_bridge {
         bridge_closed
     } else {
@@ -680,11 +696,13 @@ fn expansion_neighbours(
     cell: (u16, u16),
     height: i16,
     goal: (u16, u16),
+    terrain: Option<&ResolvedTerrainGrid>,
 ) -> (u8, u8) {
     let mut asked = 0;
     let mut bridge_lists = 0;
     for direction in 0..DIRECTION_DELTAS.len() {
-        let (ask, use_bridge) = neighbour_test(grid, ground, bridge, cell, direction, height, goal);
+        let (ask, use_bridge) =
+            neighbour_test(grid, ground, bridge, cell, direction, height, goal, terrain);
         asked |= u8::from(ask) << direction;
         bridge_lists |= u8::from(use_bridge) << direction;
     }
@@ -949,16 +967,30 @@ fn astar_search_along_route(
     // Residual: the Aircraft (WhatAmI 2) arms at 0x00429AF9/0x00429B2A, which
     // keep the plain level at both ends, are not ported; no Aircraft reaches
     // FootClass::Find_Path, this search's one production caller.
-    let (mut start_height, goal_height) =
-        initial_search_heights(start_cell, start_layer, goal_cell);
+    let corrected_deck = |coord, cell: &PathCell| {
+        if !cell.has_structural_bridge() {
+            return None;
+        }
+        options
+            .resolved_terrain?
+            .corrected_high_bridge_deck_level(coord)
+    };
+    let start_deck = corrected_deck(start, start_cell);
+    let (mut start_height, goal_height) = initial_search_heights(
+        start_cell,
+        start_layer,
+        goal_cell,
+        [start_deck, corrected_deck(goal, goal_cell)],
+    );
     // AStar_main_loop 0x00429B64..0x00429BB0: Location.Z / LevelHeight is
     // compared with the OnBridge-adjusted start; a structural rail may add
-    // four more levels even when the Foot's OnBridge byte was clear.
+    // four more levels even when the Foot's OnBridge byte was clear. A fixed
+    // deck is the level that rail stands at.
     let train = options.foot_entry.train_pose();
-    if start_cell.has_structural_bridge()
-        && train.is_some_and(|pose| pose.level.abs_diff(i32::from(start_height)) > 2)
-    {
-        start_height += 4;
+    let train_on_rail = start_cell.has_structural_bridge()
+        && train.is_some_and(|pose| pose.level.abs_diff(i32::from(start_height)) > 2);
+    if train_on_rail {
+        start_height = start_deck.unwrap_or(start_height + 4);
     }
     if options.hierarchy_gate.is_some()
         && let Some(progress) = progress.as_deref_mut()
@@ -1001,14 +1033,19 @@ fn astar_search_along_route(
         } = *ws;
 
         let start_idx = start.1 as usize * w + start.0 as usize;
-        // The start stamp compares just the two levels (0x00429C3B).
-        let start_on_bridge = start_height > start_cell.signed_level();
+        // The start stamp compares just the two levels (0x00429C3B). A fixed
+        // deck can sit at the ground's level, so there the layer decides.
+        let start_on_bridge = if start_deck.is_some() {
+            start_layer == MovementLayer::Bridge || train_on_rail
+        } else {
+            start_height > start_cell.signed_level()
+        };
         // Close-on-generation: gamemd stamps a (cell, layer) closed at the
         // moment a node is created for it and freezes its g there. The start
         // node is created before the loop, so it is stamped here, with g 0.
         let start_descriptor = PathDescriptor {
             parent: u32::MAX,
-            height: compute_node_height(start_height, None, start_cell),
+            height: compute_node_height(start_height, None, start_cell, [None; 2]),
             g: 0.0,
         };
         if start_on_bridge {
@@ -1109,8 +1146,15 @@ fn astar_search_along_route(
             // Nothing a neighbour below does changes another's test: the one
             // closed bit it sets is its own, and the planes and the current
             // height stay as they are.
-            let (mut asked, bridge_lists) =
-                expansion_neighbours(grid, ground, bridge, (cx, cy), current.height, goal);
+            let (mut asked, bridge_lists) = expansion_neighbours(
+                grid,
+                ground,
+                bridge,
+                (cx, cy),
+                current.height,
+                goal,
+                options.resolved_terrain,
+            );
             let interior = interior_cells.is_some_and(|cells| cells.contains((cx, cy)));
             let compass = std::iter::from_fn(|| {
                 if asked == 0 {
@@ -1140,7 +1184,8 @@ fn astar_search_along_route(
                             (cx, cy),
                             dir_index,
                             current.height,
-                            goal
+                            goal,
+                            options.resolved_terrain,
                         ) == (true, neighbor_use_bridge),
                     "an earlier neighbour changed the test of direction {dir_index}"
                 );
@@ -1168,8 +1213,15 @@ fn astar_search_along_route(
                 let neighbor_cell = grid.cell(nx, ny).unwrap_or(&DEFAULT_BLOCKED_CELL);
 
                 // Compute what height the NEW node carries forward (separate computation)
-                let neighbor_height =
-                    compute_node_height(current.height, Some(cur_cell), neighbor_cell);
+                let neighbor_height = compute_node_height(
+                    current.height,
+                    Some(cur_cell),
+                    neighbor_cell,
+                    [
+                        corrected_deck((cx, cy), cur_cell),
+                        corrected_deck((nx, ny), neighbor_cell),
+                    ],
+                );
 
                 // Original429E54..429EAF exempts structural deck candidates
                 // from the ordinary zone comparison. The signed-height/list
@@ -1671,11 +1723,22 @@ impl PathGrid {
     /// from `path_height` ([`is_at_bridge_level`]), from the kept planes:
     /// the level is read only for a structural cell. A cell past the grid
     /// reads as the default blocked cell does.
-    fn selects_bridge_list_at(&self, index: usize, path_height: i16) -> bool {
+    fn selects_bridge_list_at(
+        &self,
+        index: usize,
+        path_height: i16,
+        terrain: Option<&ResolvedTerrainGrid>,
+        coord: (u16, u16),
+    ) -> bool {
         let structural = self
             .bridge_structural
             .get(index / 64)
             .is_some_and(|word| word >> (index % 64) & 1 != 0);
+        if structural
+            && let Some(deck) = terrain.and_then(|t| t.corrected_high_bridge_deck_level(coord))
+        {
+            return path_height == deck;
+        }
         let selected = structural
             && selects_bridge_list(path_height, (true, self.ground_levels[index] as i8 as i16));
         debug_assert_eq!(
