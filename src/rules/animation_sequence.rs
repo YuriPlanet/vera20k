@@ -374,6 +374,18 @@ impl Default for FootBodyCadence {
 }
 
 impl SequenceSet {
+    /// Fields hashed by the v0.3.8 through v0.4.0 player-save writers, in
+    /// their original derive(Hash) order. SHP firing frames were added later.
+    pub(super) fn v0_4_0_hash_fields(&self) -> impl std::hash::Hash + '_ {
+        (
+            &self.sequences,
+            &self.infantry_actions,
+            &self.shp_vehicle_cadence,
+            &self.shp_vehicle_death,
+            &self.shp_vehicle_turret,
+        )
+    }
+
     /// Create an empty SequenceSet.
     pub fn new() -> Self {
         Self {

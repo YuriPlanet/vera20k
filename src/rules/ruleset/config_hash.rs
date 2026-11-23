@@ -9,6 +9,11 @@ use crate::util::native_x87::NativeF64Bits;
 
 use super::{RuleSet, default_fog_rate, default_shroud_rate};
 
+enum ConfigHashFormat {
+    Current,
+    V040,
+}
+
 impl RuleSet {
     /// Compatibility identity for processed rules plus the resolved animation,
     /// effect-frame, terrain-spawner frame, smudge-selection, projectile
@@ -19,6 +24,25 @@ impl RuleSet {
     /// it across platforms, so it folds with the portable
     /// [`StateHasher`](crate::util::state_hasher::StateHasher).
     pub fn simulation_config_hash(&self) -> u64 {
+        self.config_hash(ConfigHashFormat::Current)
+    }
+
+    /// Check a player save against the bound rules, returning the current
+    /// digest for diagnostics on mismatch. A converted save still carries
+    /// the digest its original writer computed.
+    pub fn check_player_save_config_hash(&self, saved: u64) -> Result<(), u64> {
+        let current = self.simulation_config_hash();
+        if saved == current
+            || (!self.animation_sequences.is_empty()
+                && saved == self.config_hash(ConfigHashFormat::V040))
+        {
+            Ok(())
+        } else {
+            Err(current)
+        }
+    }
+
+    fn config_hash(&self, format: ConfigHashFormat) -> u64 {
         let mut hasher = crate::util::state_hasher::StateHasher::new();
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
@@ -1509,7 +1533,15 @@ impl RuleSet {
         self.general.weather_con_clouds.hash(&mut hasher);
         self.general.weather_con_bolts.hash(&mut hasher);
         self.bridge_rules.explosions.hash(&mut hasher);
-        self.animation_sequences.hash(&mut hasher);
+        match format {
+            ConfigHashFormat::Current => self.animation_sequences.hash(&mut hasher),
+            ConfigHashFormat::V040 => self
+                .animation_sequences
+                .iter()
+                .map(|(name, set)| (name, set.v0_4_0_hash_fields()))
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher),
+        }
         self.unit_shp_read_states.hash(&mut hasher);
         self.effect_assets.hash(&mut hasher);
         self.voxel_assets.hash(&mut hasher);
@@ -1795,4 +1827,38 @@ impl RuleSet {
             .collect::<BTreeMap<_, _>>()
             .hash(hasher);
     }
+}
+
+#[cfg(all(test, tests_rules_o_z))]
+#[test]
+fn historical_save_digest_still_checks_preexisting_shp_frames() {
+    use crate::rules::animation_sequence::{ShpVehicleFireFrames, ShpVehicleTurret};
+    use crate::rules::ini_parser::IniFile;
+
+    let mut rules = RuleSet::from_ini(&IniFile::from_str("[VehicleTypes]\n0=TANK\n")).unwrap();
+    rules.animation_sequences.entry("TANK".into()).or_default();
+    let saved = rules.config_hash(ConfigHashFormat::V040);
+    let before_firing_frames = rules.simulation_config_hash();
+    rules
+        .animation_sequences
+        .get_mut("TANK")
+        .unwrap()
+        .set_shp_vehicle_fire(ShpVehicleFireFrames::new(12, 4));
+    assert_ne!(rules.simulation_config_hash(), before_firing_frames);
+    assert_ne!(rules.simulation_config_hash(), saved);
+    assert_eq!(rules.check_player_save_config_hash(saved), Ok(()));
+
+    // Turret frames were already part of the released digest.
+    rules
+        .animation_sequences
+        .get_mut("TANK")
+        .unwrap()
+        .set_shp_vehicle_turret(ShpVehicleTurret {
+            start_frame: 32,
+            facings: 32,
+        });
+    assert_eq!(
+        rules.check_player_save_config_hash(saved),
+        Err(rules.simulation_config_hash())
+    );
 }

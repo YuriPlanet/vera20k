@@ -32,6 +32,7 @@ released_saves! {
 
 const TUNNEL_FIXTURE: &str = "v0.3.9-tunnel";
 const ALPHA_FIXTURE: &str = "v0.4.0-alpha";
+const SEQUENCE_FIXTURE: &str = "v0.4.0-sequence";
 
 #[test]
 fn every_frozen_save_has_a_load_case() {
@@ -46,7 +47,7 @@ fn every_frozen_save_has_a_load_case() {
     let cases: BTreeSet<_> = RELEASES
         .iter()
         .copied()
-        .chain([TUNNEL_FIXTURE, ALPHA_FIXTURE])
+        .chain([TUNNEL_FIXTURE, ALPHA_FIXTURE, SEQUENCE_FIXTURE])
         .map(str::to_owned)
         .collect();
     assert_eq!(
@@ -212,6 +213,31 @@ fn resume_and_save_again(release: &str, layout: u32, mode: ScenarioGameMode) {
             assert_eq!(sim.session().game_options().game_speed, 4, "{release}");
         },
     );
+}
+
+#[test]
+fn released_animation_sequence_rules_resume_and_save_with_the_current_hash() {
+    crate::test_fixture::on_game_stack(|| {
+        let saved_hash = GameSnapshot::read_metadata(&fixture(SEQUENCE_FIXTURE))
+            .unwrap()
+            .rules_hash;
+        exercise(
+            SEQUENCE_FIXTURE,
+            0x9BB2_0D64,
+            |runtime| {
+                let rules = &runtime.resources.rules;
+                assert!(rules.animation_sequence("POST").is_some());
+                assert_ne!(saved_hash, rules.simulation_config_hash());
+                let commands = runtime.simulation.take_due_commands();
+                assert_eq!(commands.len(), 1);
+                runtime.advance_frame_for_tooling(&commands, 67).unwrap();
+            },
+            |sim| {
+                assert_eq!(sim.session().tick(), 92);
+                assert_eq!(sim.session().game_options().game_speed, 4);
+            },
+        );
+    });
 }
 
 #[test]

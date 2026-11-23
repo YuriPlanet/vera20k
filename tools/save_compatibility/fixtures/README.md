@@ -15,6 +15,7 @@ and executes the saved command before it accepts the fixture.
 | `v0.3.9-tunnel.sav` | `e553406e4` | `tunnel` |
 | `v0.4.0.sav` | `fee2773ca` | `skirmish` |
 | `v0.4.0-alpha.sav` | `fee2773ca` | `alpha` |
+| `v0.4.0-sequence.sav` | `fee2773ca` | `sequence` |
 | `main-eb05f451e.sav` | `eb05f451e` (pre-release) | `skirmish` |
 
 The ordinary worlds use `compat.map`, a flat 3×3 terrain and an authored
@@ -27,6 +28,12 @@ changes. The alpha scenario gives the two APCs the authored one-pixel
 `COMPATGLOW.SHP` in a 3×3 canvas. The v0.4.0 Unlimbo path creates both glows,
 and pointer expiry disables one before the writer runs. The historical reader
 restores both and removes the expired glow on the next tick.
+
+The sequence scenario registers one building, `POST`. Its idle animation adds
+a real entry to the rules animation catalog. v0.4.0 hashed that catalog before
+the SHP firing layout became part of each entry. The desktop test loads the
+historical digest, executes the queued command, saves with the current digest
+and reloads the result.
 
 To reproduce a fixture, create a detached worktree at its writer commit. Run
 the following from that worktree with your current checkout available at

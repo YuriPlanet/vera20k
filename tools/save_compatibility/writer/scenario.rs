@@ -38,6 +38,19 @@ pub const STANDARD: Scenario = Scenario {
     verify: |_, _| {},
 };
 
+pub const SEQUENCES: Scenario = Scenario {
+    ini: "[Map]\nTheater=TEMPERATE\n[Basic]\nName=Compatibility\n\
+          [BuildingTypes]\n0=POST\n[POST]\nStrength=100\n",
+    populate: |_, rules, _| {
+        assert!(rules.animation_sequence("POST").is_some());
+        println!(
+            "historical rules hash {:016x}",
+            rules.simulation_config_hash()
+        );
+    },
+    ..STANDARD
+};
+
 pub fn write_world(
     mut sim: Simulation,
     template: ResolvedTerrainGrid,
@@ -194,7 +207,7 @@ pub fn write_world(
         .write_all(&bytes)
         .unwrap();
 }
-pub fn write(path: &std::path::Path, campaign: bool) {
+pub fn write(path: &std::path::Path, campaign: bool, scenario: Scenario) {
     write_world(
         Simulation::with_seed(17),
         crate::map::resolved_terrain::test_flat_ground_grid(3),
@@ -204,6 +217,6 @@ pub fn write(path: &std::path::Path, campaign: bool) {
         } else {
             ScenarioGameMode::Skirmish
         },
-        STANDARD,
+        scenario,
     );
 }

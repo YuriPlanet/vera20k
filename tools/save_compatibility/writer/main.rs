@@ -36,13 +36,14 @@ fn write_fixture() {
     assert!(!path.exists(), "choose a new output file");
     let mode = args
         .next()
-        .expect("supply skirmish, campaign, tunnel, or alpha");
+        .expect("supply skirmish, campaign, tunnel, alpha, or sequence");
     match mode.to_str() {
-        Some("campaign") => writer::write(path, true),
-        Some("skirmish") => writer::write(path, false),
+        Some("campaign") => writer::write(path, true, writer::STANDARD),
+        Some("skirmish") => writer::write(path, false, writer::STANDARD),
+        Some("sequence") => writer::write(path, false, writer::SEQUENCES),
         Some("tunnel") => write_tunnel(path),
         Some("alpha") => write_alpha(path),
-        _ => panic!("supply skirmish, campaign, tunnel, or alpha"),
+        _ => panic!("supply skirmish, campaign, tunnel, alpha, or sequence"),
     }
     println!("layout {:#010X}", sim::snapshot::traced_snapshot_layout());
 }
