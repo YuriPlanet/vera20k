@@ -738,6 +738,11 @@ pub struct Simulation {
     /// gameplay state; saves occur at frame boundaries.
     #[serde(skip)]
     mission_spawned_entities: bool,
+    /// An ice run's Recalc_Ice changed land this frame; the frame tail
+    /// rebuilds the zones once (`ice`, docs/ts-ice.md). Derived frame
+    /// output, like `mission_spawned_entities`.
+    #[serde(skip)]
+    ice_zones_stale: bool,
     /// The shared ownership chokepoint's report, drained into the tick's
     /// `ownership_changed`, including changes outside the live object pass.
     /// Not saved or hashed.

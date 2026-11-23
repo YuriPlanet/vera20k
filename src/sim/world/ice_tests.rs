@@ -130,6 +130,26 @@ fn heavy_units_crack_then_break_the_ice_and_what_stood_there_sinks() {
     );
 }
 
+/// VERA deviation (docs/ts-ice.md): a heavy hull on open water breaks
+/// nothing, though the water and the ice beside it make a breakable
+/// footprint.
+#[test]
+fn a_heavy_unit_on_open_water_breaks_no_ice() {
+    let rules = rules();
+    let mut sim = snow(true);
+    sim.resolved_terrain
+        .as_mut()
+        .unwrap()
+        .set_ice_tile((5, 5), TILES.water, true);
+    place(&mut sim, 1, "HEAVY", (5, 5));
+    let rng = sim.scenario_rng.native_state_hex();
+    arrive(&mut sim, &rules, 1);
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+    assert_eq!(tile(&sim, (5, 5)).0, TILES.water);
+    assert_eq!(tile(&sim, (6, 4)).0, TILES.ice[0]);
+    assert!(!sim.substrate.entities.get(1).unwrap().sinking.is_active());
+}
+
 #[test]
 fn cracked_ice_freezes_once_its_solidify_frame_has_passed() {
     let rules = rules();

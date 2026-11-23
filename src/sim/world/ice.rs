@@ -639,6 +639,14 @@ impl Simulation {
     /// centre, else one reaching `IceCrackingWeight=` cracks it. When the
     /// ice broke the unit sinks (Unit+0x1F4, Stun) whatever its
     /// MovementZone, and Recalc_Ice runs.
+    ///
+    /// VERA deviation: Firestorm cracks and breaks from whatever cell the
+    /// unit reached, so a heavy enough ship or hovercraft would turn open
+    /// water into broken ice and go under. Here only a unit on ice (offsets
+    /// 0..=0x10, the only Ice land the theater patch leaves an ice family)
+    /// does. Firestorm reaches no other case: its only unit at
+    /// `IceBreakingWeight=` is a ground unit, and none that can leave Ice
+    /// land reaches `IceCrackingWeight=`.
     pub(crate) fn unit_arrival_ice(
         &mut self,
         id: u64,
@@ -659,6 +667,9 @@ impl Simulation {
             return;
         };
         let cell = (entity.position.rx(), entity.position.ry());
+        if !tiles.is_smoothed_family(self.ice_tile((cell.0 as i16, cell.1 as i16))) {
+            return;
+        }
         let ice = &rules.general.ice;
         let mut run = IceRun::new(tiles);
         let broke = if weight >= ice.breaking_weight {
@@ -721,11 +732,17 @@ impl Simulation {
         self.publish_ice_run(run, rules, registry);
     }
 
-    /// Publish one run: the overlay land each Recalc reset, navigation (the
-    /// zones too after Recalc_Ice; otherwise the path view alone, as
-    /// gamemd's pathfinder reads cells live), the radar and tactical
-    /// redraw of each changed tile, and each changed or recalculated cell
-    /// for the save. Ice tiles keep their cell's level, so lighting stays.
+    /// Publish one run: the overlay land each Recalc reset, the path view
+    /// of each recalculated cell (gamemd's pathfinder reads cells live),
+    /// the radar and tactical redraw of each changed tile, and each changed
+    /// or recalculated cell for the save. Ice tiles keep their cell's
+    /// level, so lighting stays.
+    ///
+    /// Sim-scale deviation: Recalc_Ice rebuilds the zones (0x514a70) at
+    /// once, each time ice breaks; here the frame tail rebuilds them once
+    /// (`finalize_frame_overlays_and_navigation`), so a frame with many
+    /// breaks pays one rebuild. Until then the path view already holds the
+    /// new land; only zone connectivity lags, within the frame.
     fn publish_ice_run(
         &mut self,
         run: IceRun,
@@ -744,11 +761,8 @@ impl Simulation {
                 crate::sim::overlay_grid::recalc_overlay_passability(grid, terrain, registry, x, y);
             }
         }
-        if run.zones {
-            self.rebuild_dynamic_navigation(rules);
-        } else {
-            self.publish_recalculated_cells(rules, &run.recalced);
-        }
+        self.publish_recalculated_cells(rules, &run.recalced);
+        self.ice_zones_stale |= run.zones;
         for &cell in &run.changed {
             self.dirty_cells.mark_radar([cell]);
             self.dirty_cells.mark_tactical_once(cell);

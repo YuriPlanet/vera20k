@@ -215,6 +215,7 @@ impl Simulation {
             lifecycle_outputs: FrameChannel::default(),
             unit_voice_visit_interest: Default::default(),
             mission_spawned_entities: false,
+            ice_zones_stale: false,
             ownership_changed_since_output: false,
             frame_overlay_updates: Vec::new(),
             frame_overlay_removals: Vec::new(),

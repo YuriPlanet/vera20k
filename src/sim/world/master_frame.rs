@@ -1314,10 +1314,11 @@ impl Simulation {
             .trigger_effects
             .iter()
             .any(|effect| matches!(effect, TriggerEffect::BridgeStateChanged));
+        let ice_zones_stale = std::mem::take(&mut self.ice_zones_stale);
         self.frame_overlay_updates = self.finalize_frame_overlays_and_navigation(
             rules,
             overlay_registry,
-            bridge_state_changed,
+            bridge_state_changed || ice_zones_stale,
             destroyed_structure || spawned_entities,
         );
         profile_phase!(OVERLAYS);
