@@ -187,3 +187,34 @@ test('blocked IndexedDB still registers capture for manual download', async () =
     assert.equal(f.download.download, 'replay_tick5_123.json');
     assert.deepEqual(new Uint8Array(await f.blobs.at(-1).arrayBuffer()), new Uint8Array([42]));
 });
+
+test('a stopped engine hides the frozen canvas and asks for a reload', () => {
+    const f = fixture();
+    f.api.onLifecycle({type: 'engine-error', error: 'The simulation worker stopped'});
+    assert.equal(f.canvas.hidden, true);
+    assert.equal(f.stopped.hidden, false);
+    assert.match(f.stoppedText.textContent, /Reload the page/);
+});
+
+test('a worker failure keeps its cause after the terminal engine event', () => {
+    const f = fixture();
+    f.api.onLifecycle({type: 'worker-stopped', fatal: true, message: 'The simulation stopped on a worker'});
+    f.api.onLifecycle({type: 'engine-error', error: 'generic engine failure'});
+    assert.equal(f.canvas.hidden, true);
+    assert.equal(f.stopped.hidden, false);
+    assert.match(f.stoppedText.textContent, /simulation worker stopped during a tick.*Reload the page/);
+});
+
+test('an idle worker failure keeps its notice through later status updates', async () => {
+    const f = fixture();
+    f.api.setStarted();
+    f.api.onLifecycle({type: 'worker-stopped', fatal: false, message: 'The simulation worker stopped.'});
+    f.api.show('A new match started');
+    assert.equal(f.canvas.hidden, false);
+    assert.equal(f.stopped.hidden, true);
+    assert.equal(f.workerNotice.hidden, false);
+    assert.match(f.workerNotice.textContent, /simulation worker stopped.*Reload the page/);
+    assert.equal(f.hud.textContent, 'A new match started');
+    await f.api.finishExit();
+    assert.equal(f.workerNotice.hidden, true);
+});
