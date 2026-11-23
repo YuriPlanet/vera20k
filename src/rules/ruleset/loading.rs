@@ -24,7 +24,7 @@ use crate::rules::tiberium_type::TiberiumTypeRegistry;
 use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
 use crate::rules::warhead_type::WarheadType;
 use crate::rules::weapon_type::WeaponType;
-use crate::util::lookup_hash::LookupMap;
+use crate::util::lookup_hash::{LookupMap, LookupSet};
 
 use super::{
     AI_BASE_SPACING_LIMIT, BridgeRules, CategoryIndex, CountryIdx, CountryRules, ElevationModel,
@@ -71,6 +71,14 @@ impl RuleSet {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_ra2_for_test(&mut self, ra2: bool) {
         self.apply_ra2(ra2);
+    /// The handle of the object of `category` whose stored ID is exactly `id`.
+    ///
+    /// Registry construction keeps one slot per category and ASCII
+    /// case-insensitive ID. Projection binds exact-case state only when its
+    /// spelling matches the object stored in that slot.
+    fn object_handle_by_id(&self, category: ObjectCategory, id: &str) -> Option<TypeHandle> {
+        self.type_handle_in_category(category, id)
+            .filter(|&handle| self.object_by_handle(handle).id == id)
     }
 
     fn project(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
@@ -90,10 +98,7 @@ impl RuleSet {
         }
         for (category, id, tech_level) in processed.techno_type_states() {
             let key = (category, id.to_ascii_uppercase());
-            let object = rules
-                .object_category_index
-                .get(category, id)
-                .filter(|handle| rules.object_by_handle(*handle).id == id);
+            let object = rules.object_handle_by_id(category, id);
             if let Some(object) = object {
                 // TechnoType+634 is retained typed state, not a merged INI
                 // default: reached ReadINI714570 and outgoing106 handoff.
@@ -113,18 +118,13 @@ impl RuleSet {
                 .or_insert(slot);
         }
         for (category, id, coefficients) in processed.techno_threat_coefficients() {
-            if let Some(handle) = rules.object_category_index.get(category, id)
-                && rules.object_by_handle(handle).id == id
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, id) {
                 rules.object_list[handle.0 as usize].project_threat_coefficients(coefficients);
             }
         }
         for (category, name, slots) in processed.weapon_slot_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.turret_count = slots.turret_count();
                 object.weapon_count = slots.weapon_count();
                 object.weapon_list = slots.base();
@@ -137,20 +137,14 @@ impl RuleSet {
         // the final merged section.
         #[cfg(feature = "phobos")]
         for (category, name, insignia) in processed.techno_insignia_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.phobos_insignia = insignia.clone();
             }
         }
         for (category, name, insignia) in processed.techno_ares_insignia_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.ares_insignia = insignia.clone();
             }
         }
@@ -260,11 +254,8 @@ impl RuleSet {
             curtain_modifiers,
         ) in processed.ares_techno_states()
         {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.bind_ares_techno_rules(
                     emp,
                     abilities,
@@ -459,182 +450,125 @@ impl RuleSet {
             rules.weapon_array.push((weapon.id.to_owned(), unambiguous));
         }
         for (name, speed_type) in processed.unit_speed_type_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Vehicle && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Vehicle, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.speed_type = speed_type;
             }
         }
         for (category, name, airstrike) in processed.airstrike_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.airstrike = airstrike.clone();
             }
         }
         for (category, name, recoil) in processed.recoil_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.recoil = recoil;
             }
         }
         for (category, name, segments) in processed.radial_fire_segments_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.radial_fire_segments = segments;
             }
         }
         for (category, name, offset) in processed.lepton_mind_control_offset_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.lepton_mind_control_offset = offset;
             }
         }
         for (category, name, prerequisite, prerequisite_override) in processed.prerequisite_states()
         {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.prerequisite = prerequisite.to_vec();
                 object.prerequisite_override = prerequisite_override.to_vec();
             }
         }
         for (category, name, gunner_turrets) in processed.gunner_turret_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.gunner = gunner_turrets.is_gunner();
                 object.gunner_turrets = gunner_turrets.clone();
             }
         }
         for (category, name, is_gattling, stages) in processed.gattling_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.is_gattling = is_gattling;
                 object.gattling_stages = *stages;
             }
         }
         if crate::rules::ares_switch::ares_way() {
             for (category, name, state) in processed.factory_owner_states() {
-                if let Some(object) = rules
-                    .object_list
-                    .iter_mut()
-                    .find(|object| object.category == category && object.id == name)
-                {
+                if let Some(handle) = rules.object_handle_by_id(category, name) {
+                    let object = &mut rules.object_list[handle.0 as usize];
                     object.project_factory_owners(state);
                 }
             }
             for (name, state) in processed.explicit_factory_states() {
-                if let Some(object) = rules
-                    .object_list
-                    .iter_mut()
-                    .find(|object| object.category == ObjectCategory::Building && object.id == name)
-                {
+                if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Building, name) {
+                    let object = &mut rules.object_list[handle.0 as usize];
                     object.project_explicit_factory(state);
                 }
             }
         }
         for (category, name, references, image, crush_sound) in processed.techno_reference_states()
         {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.project_image_state(image);
                 object.crush_sound = crush_sound.map(str::to_owned);
                 references.apply_to(object);
             }
         }
         for (name, trailer) in processed.aircraft_trailer_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Aircraft && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Aircraft, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.project_aircraft_trailer(trailer);
             }
         }
         for (category, name, shadow_index) in processed.voxel_shadow_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == category && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(category, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.set_voxel_shadow_index(shadow_index);
             }
         }
         for (name, pips) in processed.infantry_pip_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Infantry, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.project_infantry_pips(pips);
             }
         }
         for (name, civilian) in processed.infantry_civilian_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Infantry, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.civilian = civilian;
             }
         }
         for (name, sparks) in processed.infantry_damage_spark_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Infantry, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.damage_sparks = sparks;
             }
         }
         for (name, art) in processed.infantry_art_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Infantry, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.project_infantry_art(art);
             }
         }
         for (name, bank) in processed.infantry_sequence_banks() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Infantry, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.project_infantry_sequence_bank(bank);
             }
         }
         for (name, flags) in processed.infantry_infiltration_states() {
-            if let Some(object) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Infantry, name) {
+                let object = &mut rules.object_list[handle.0 as usize];
                 object.project_infantry_infiltration(flags);
             }
         }
@@ -667,20 +601,14 @@ impl RuleSet {
         // owner retained +EF0 across reached rules passes and exact ART reads.
         // Projection receives its result; RULES Foundation is not an input.
         for (name, config) in processed.secret_lab_states() {
-            if let Some(building) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Building && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Building, name) {
+                let building = &mut rules.object_list[handle.0 as usize];
                 building.set_secret_lab(config.clone());
             }
         }
         for (name, foundation_id) in processed.building_foundation_geometries() {
-            if let Some(building) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Building && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Building, name) {
+                let building = &mut rules.object_list[handle.0 as usize];
                 building.foundation = foundation_id.clone();
                 building.base_reservation_spacing = building
                     .base_reservation_writer_eligible()
@@ -719,56 +647,38 @@ impl RuleSet {
             }
         }
         for (name, flag) in processed.building_spotlight_flags() {
-            if let Some(building) = rules
-                .object_list
-                .iter_mut()
-                .find(|o| o.category == ObjectCategory::Building && o.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Building, name) {
+                let building = &mut rules.object_list[handle.0 as usize];
                 building.has_spotlight = flag;
             }
         }
         for (name, light) in processed.building_light_states() {
-            if let Some(building) = rules
-                .object_list
-                .iter_mut()
-                .find(|o| o.category == ObjectCategory::Building && o.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Building, name) {
+                let building = &mut rules.object_list[handle.0 as usize];
                 building.project_building_light(light);
             }
         }
         for (name, upgrade) in processed.building_upgrade_states() {
-            if let Some(building) = rules
-                .object_list
-                .iter_mut()
-                .find(|o| o.category == ObjectCategory::Building && o.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Building, name) {
+                let building = &mut rules.object_list[handle.0 as usize];
                 building.project_building_upgrade(upgrade.clone());
             }
         }
         for (name, extra_power) in processed.building_extra_power_states() {
-            if let Some(building) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Building && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Building, name) {
+                let building = &mut rules.object_list[handle.0 as usize];
                 building.extra_power = extra_power;
             }
         }
         for (name, offset) in processed.building_target_coord_offsets() {
-            if let Some(building) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Building && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Building, name) {
+                let building = &mut rules.object_list[handle.0 as usize];
                 building.set_target_coord_offset(offset);
             }
         }
         for (name, location1, location2) in processed.building_half_damage_smoke_locations() {
-            if let Some(building) = rules
-                .object_list
-                .iter_mut()
-                .find(|object| object.category == ObjectCategory::Building && object.id == name)
-            {
+            if let Some(handle) = rules.object_handle_by_id(ObjectCategory::Building, name) {
+                let building = &mut rules.object_list[handle.0 as usize];
                 building.set_half_damage_smoke_locations(location1, location2);
             }
         }
@@ -813,10 +723,8 @@ impl RuleSet {
                     .insert(name.to_ascii_uppercase(), availability);
             }
             for (name, gathering) in processed.ore_gathering_states() {
-                if let Some(unit) = rules.object_list.iter_mut().find(|object| {
-                    object.category == ObjectCategory::Vehicle
-                        && object.id.eq_ignore_ascii_case(name)
-                }) {
+                if let Some(handle) = rules.type_handle_in_category(ObjectCategory::Vehicle, name) {
+                    let unit = &mut rules.object_list[handle.0 as usize];
                     unit.project_ore_gathering(gathering);
                 }
             }
@@ -832,10 +740,9 @@ impl RuleSet {
                 }
             }
             for (name, supers) in processed.additional_super_weapon_states() {
-                if let Some(building) = rules.object_list.iter_mut().find(|object| {
-                    object.category == ObjectCategory::Building
-                        && object.id.eq_ignore_ascii_case(name)
-                }) {
+                if let Some(handle) = rules.type_handle_in_category(ObjectCategory::Building, name)
+                {
+                    let building = &mut rules.object_list[handle.0 as usize];
                     building.project_additional_super_weapons(supers);
                 }
             }
@@ -1780,7 +1687,9 @@ impl RuleSet {
         // the processor's whole Warhead family: the [Warheads] values and
         // every reference-driven allocation, weapons' warheads and the
         // [Radiation] RadSiteWarhead included.
-        let warhead_ids: HashSet<String> = parse_registry(ini, "Warheads").into_iter().collect();
+        // Assign handles in projected registry order. Iterating a RandomState
+        // HashSet here could give two loads of the same rules different handles.
+        let warhead_ids = parse_registry(ini, "Warheads");
         let mut warheads: LookupMap<String, WarheadHandle> = LookupMap::default();
         let mut warhead_types: Vec<WarheadType> = Vec::new();
         for warhead_id in &warhead_ids {
@@ -1801,13 +1710,18 @@ impl RuleSet {
         // Step 4: Collect projectile IDs referenced by weapons and parse them.
         let mut projectiles: LookupMap<String, ProjectileHandle> = LookupMap::default();
         let mut projectile_types: Vec<ProjectileType> = Vec::new();
-        let mut projectile_ids: HashSet<String> = HashSet::new();
+        // Assign handles in first weapon-reference order. The set only drops
+        // repeated references and never determines the iteration order.
+        let mut projectile_ids = Vec::new();
+        let mut seen_projectile_ids = LookupSet::default();
         for weapon in &weapon_types {
-            if let Some(ref proj_id) = weapon.projectile {
-                projectile_ids.insert(proj_id.clone());
+            if let Some(proj_id) = weapon.projectile.as_deref()
+                && seen_projectile_ids.insert(proj_id)
+            {
+                projectile_ids.push(proj_id);
             }
         }
-        for proj_id in &projectile_ids {
+        for proj_id in projectile_ids {
             if let Some(section) = ini.section(proj_id) {
                 // Find-or-allocate by canonical section name (see warheads above).
                 // Stock rulesmd references [InvisibleLow] as both "InvisibleLow"
@@ -2332,5 +2246,87 @@ impl RuleSet {
         self.side_indices = projection.side_indices;
         self.country_sides = projection.country_sides;
         self.project_house_masks();
+    }
+}
+
+#[cfg(all(test, tests_rules_o_z))]
+mod tests {
+    use super::*;
+    use crate::rules::foundation::Foundation;
+
+    #[test]
+    fn a_shared_name_keeps_building_foundation_in_its_own_category() {
+        let ini = IniFile::from_str(
+            "[VehicleTypes]\n0=Shared\n1=SHARED\n[BuildingTypes]\n0=Shared\n\
+             [Shared]\nStrength=100\n",
+        );
+        let art = IniFile::from_str("[Shared]\nFoundation=2x2\n");
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("the rules read");
+        let vehicle = rules
+            .object_in_category(ObjectCategory::Vehicle, "Shared")
+            .expect("the vehicle reads");
+        let building = rules
+            .object_in_category(ObjectCategory::Building, "Shared")
+            .expect("the building reads");
+        assert_eq!(rules.object_count(), 2);
+        assert_eq!(vehicle.foundation, Foundation::default());
+        assert_eq!(building.foundation, Foundation::from("2x2"));
+    }
+
+    #[test]
+    fn warhead_handles_follow_the_registry_order() {
+        const COUNT: usize = 12;
+        let mut text = String::from("[Warheads]\n");
+        for index in 0..COUNT {
+            text.push_str(&format!("{index}=Head{}\n", COUNT - index));
+        }
+        for number in 1..=COUNT {
+            text.push_str(&format!("[Head{number}]\nVerses=100%\n"));
+        }
+        let ini = IniFile::from_str(&text);
+        let first = RuleSet::from_ini(&ini).expect("the rules read");
+        let second = RuleSet::from_ini(&ini).expect("the rules read");
+        for index in 0..COUNT {
+            let name = format!("Head{}", COUNT - index);
+            let first_handle = first.warhead_handle(&name).expect("the warhead reads");
+            let second_handle = second.warhead_handle(&name).expect("the warhead reads");
+            assert_eq!(first_handle, second_handle, "{name} across loads");
+            assert_eq!(first_handle.0 as usize, index, "{name} in registry order");
+        }
+    }
+
+    #[test]
+    fn projectile_handles_follow_the_weapons_that_name_them() {
+        const COUNT: usize = 12;
+        let mut text = String::from("[VehicleTypes]\n");
+        for index in 0..=COUNT {
+            text.push_str(&format!("{index}=Unit{index}\n"));
+        }
+        for index in 0..COUNT {
+            let number = COUNT - index;
+            text.push_str(&format!(
+                "[Unit{index}]\nPrimary=Weapon{index}\n\
+                 [Weapon{index}]\nDamage=10\nProjectile=Proj{number}\n\
+                 [Proj{number}]\nAA=yes\n",
+            ));
+        }
+        text.push_str(&format!(
+            "[Unit{COUNT}]\nPrimary=Repeat\n[Repeat]\nDamage=10\nProjectile=Proj{COUNT}\n",
+        ));
+        let ini = IniFile::from_str(&text);
+        let first = RuleSet::from_ini(&ini).expect("the rules read");
+        let second = RuleSet::from_ini(&ini).expect("the rules read");
+        for index in 0..COUNT {
+            let name = format!("Proj{}", COUNT - index);
+            let first_handle = first
+                .projectile_handle(&name)
+                .expect("the projectile reads");
+            let second_handle = second
+                .projectile_handle(&name)
+                .expect("the projectile reads");
+            assert_eq!(first_handle, second_handle, "{name} across loads");
+            assert_eq!(first_handle.0 as usize, index, "{name} in weapon order");
+        }
+        assert_eq!(first.projectile_types.len(), COUNT);
     }
 }
