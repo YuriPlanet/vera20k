@@ -328,6 +328,15 @@ impl SidebarGadgetState {
         self.place_beacon_mode_on = false;
     }
 
+    /// `DisplayClass::Init_Clear @ 0x004A88C0` writes the Repair, Sell and
+    /// Power bytes to zero (`0x004A88EB`, `0x004A88FD`, `0x004A8903`) for a
+    /// new scenario; the Beacon byte (+0x11B4) is not among them.
+    pub(crate) fn clear_for_new_scenario(&mut self) {
+        self.repair_mode_on = false;
+        self.sell_mode_on = false;
+        self.power_mode_on = false;
+    }
+
     pub fn new() -> Self {
         Self::default()
     }

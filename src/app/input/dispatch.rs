@@ -87,7 +87,6 @@ use selection::{
     reconcile_selection_order_for_sim, resolve_selection_mutation, selection_membership_committed,
     selection_voice_recipients,
 };
-#[cfg(test)]
 pub(super) use sidebar::local_has_manageable_building;
 #[cfg(test)]
 pub(crate) use sidebar::wheel_action;

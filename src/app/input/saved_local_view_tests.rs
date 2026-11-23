@@ -362,20 +362,21 @@ fn capture_prunes_departed_references_but_preserves_saved_idle_follow() {
 /// therefore replaces an outgoing armed mode even when Options was opened
 /// without canceling it.
 #[test]
-fn idle_saved_view_replaces_outgoing_superweapon_targeting_and_repair() {
+fn idle_saved_view_replaces_outgoing_superweapon_targeting_repair_and_power() {
     let (sim, rules, source) = fixture();
     let saved = serialized_capture(&source, &sim, &rules);
     let mut outgoing = MatchInputState::new(Default::default());
     outgoing.targeting_mode = Some(TargetingMode::SuperWeapon("OutgoingSuper".into()));
     let mut sidebar = SidebarGadgetState::new();
     sidebar.repair_mode_on = true;
+    sidebar.power_mode_on = true;
 
     PreparedSavedLocalView::new(saved, &sim, &rules)
         .unwrap()
         .commit_into(&mut outgoing, &mut sidebar);
 
     assert_eq!(outgoing.targeting_mode, None);
-    assert!(!sidebar.repair_mode_on && !sidebar.sell_mode_on);
+    assert!(!sidebar.repair_mode_on && !sidebar.sell_mode_on && !sidebar.power_mode_on);
 }
 
 /// MouseLoad swizzles the incoming placement object/type at 5BE101/5BE112.

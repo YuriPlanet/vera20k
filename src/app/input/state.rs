@@ -166,6 +166,10 @@ impl PreparedSavedLocalView {
         input.planning.reset();
         sidebar.repair_mode_on = modes.repair;
         sidebar.sell_mode_on = modes.sell;
+        // The raw Display load restores Power (+0x11B2) too; VERA's save has
+        // no power byte (the residual in sim::snapshot::saved_local_view), so
+        // the outgoing world's mode ends here.
+        sidebar.power_mode_on = false;
         sidebar.command_bar_closed = modes.command_bar_closed;
         input.targeting_mode = self.targeting;
         input.skirmish_spawn = None;
