@@ -3,7 +3,6 @@
 //! Contains NewEdit chrome, checkboxes, trackbars, combo faces,
 //! and ComboDropWin popup sprite construction.
 
-use crate::app::loading::init::MapMenuEntry;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_text::{self, ShellTextDraw};
@@ -13,9 +12,8 @@ use crate::render::skirmish_shell_chrome::{
 use crate::rules::ruleset::RuleSet;
 use crate::ui::shell::geom::{ShellAlign, ShellScale};
 use crate::ui::skirmish_shell::{
-    DropdownScrollbarPart, RectPx, SkirmishShellLayout, SkirmishShellState,
-    checkbox_icon_rect, combo_arrow_rect, combo_face_rect, combo_swatch_rect,
-    opponent_scroll_geometry,
+    DropdownScrollbarPart, RectPx, checkbox_icon_rect, combo_arrow_rect, combo_face_rect,
+    combo_swatch_rect,
 };
 use vera20k_gui::shell::trackbar::{PLAQUE_RESERVE, THUMB_W};
 
@@ -709,35 +707,11 @@ pub(super) fn paint_control(
     }
 }
 
-/// VERA's scrollbar beside the computer rows of a map with more than eight
-/// starts: the shared list's frame and scrollbar.
-pub(super) fn push_opponent_scrollbar_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    layout: &SkirmishShellLayout,
-    shell: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    // The arrow its gui List draws pushed.
-    pressed: Option<vera20k_gui::shell::list::ListScrollPart>,
-) {
-    if let Some(geometry) = opponent_scroll_geometry(layout, shell, maps) {
-        super::list::paint_list(
-            out,
-            atlas,
-            geometry,
-            shell.first_opponent,
-            None,
-            pressed,
-            false,
-            layout.scale,
-        );
-    }
-}
-
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::render::skirmish_shell_chrome::{TRACKBAR_FRAMES, trackbar_frame_slot};
+    use crate::ui::skirmish_shell::SkirmishShellState;
     use vera20k_gui::shell::list::ListMetrics;
 
     #[test]
