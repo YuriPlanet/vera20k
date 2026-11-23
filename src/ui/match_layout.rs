@@ -320,7 +320,13 @@ impl MatchLayout {
     /// pictures are `theme`: `Key@Side`, else `Key`. For what the parts'
     /// own code reads once a file is loaded (`STOCK_KEYS`), not every frame.
     pub fn text(&self, part: SidebarPart, key: &str, theme: SidebarTheme) -> Option<&str> {
-        self.tree.node(part.name())?.text_for(key, theme as usize)
+        self.node_text(part.name(), key, theme)
+    }
+
+    /// [`Self::text`] of the part named `node`, for a part that is no
+    /// [`SidebarPart`], the command bar's `Bar`.
+    pub fn node_text(&self, node: &str, key: &str, theme: SidebarTheme) -> Option<&str> {
+        self.tree.node(node)?.text_for(key, theme as usize)
     }
 
     /// The colour a `Color=` value names for the side whose pictures are
@@ -2438,7 +2444,7 @@ mod tests {
             piece("Credits", "Art", "credits.shp", None, 1),
             piece("Diplomacy", "Art", "diplobtn.shp", None, 2),
             piece("Options", "Art", "optbtn.shp", None, 2),
-            piece("Radar", "Art", "radar.shp", None, 1),
+            piece("Radar", "Art", "radar.shp", Some("sidebar.pal"), 1),
             piece("Repair", "Art", "repair.shp", None, 5),
             piece("Sell", "Art", "sell.shp", None, 5),
             piece("Vehicles", "Art", "tab03.shp", None, 5),
