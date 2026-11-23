@@ -34,6 +34,16 @@ compares TechLevels signed (HouseExt::GetTypeToProduce 100216A0, hooks
 ignored outside campaigns (10023FB0, 0x504796). A construction yard's queue
 update also refreshes the defense strip (10025100, 0x509140).
 
+A player's finished building waits for a powered factory. Its cameo shows
+Ready only while its `FindFactory(1, 1)` finds one, and otherwise draws as
+still building (100251D0, 0x6A9822). The structure and defense tab hotkeys
+ask `FindFactory(0, 1)` (10025150, 10025130; 0x535DB6, 0x535E76), so they
+place nothing without one. A cameo click asks
+`HouseExt::FindFactory(owner, type, 0, 1, 0, 1)` (10025170, 0x6AB312).
+When only factories without power or deactivated fit, the click ends with no
+abandon and no EVA. When none fits at all, it gives the stock abandon and
+"unable to comply".
+
 With `AllowParallelAIQueues=no` a computer house starts production in one
 factory building per category (buildings, infantry, vehicles, ships,
 aircraft) at a time: the first to try claims the house's slot, even when too
@@ -102,8 +112,7 @@ cites each hook.
   (0x449716) and the ICBM crate's Ares Nuke type (0x6CEEB0): dormant on
   retail data.
 - Presentation and input: `Message.SilosNeeded`
-  (0x4F8C23), the ready-building and hotkey factory lookups (0x6A9822,
-  0x6AB312, 0x535DB6, 0x535E76), the Money SW tooltip (0x6A932B),
+  (0x4F8C23), the Money SW tooltip (0x6A932B),
   the observer strip (0x6AA0CA, 0x6AA164),
   the amphibious water sound (0x51D799) and the bullet anim's
   MakeInfantryOwner outside Phobos (0x469C4E).
@@ -241,10 +250,10 @@ DLL removed are not listed.
 | `4CA07A` | FactoryClass_AbandonProduction | `10024EE0` | ported: any factory's abandoned product frees its slot (`factory_lifecycle::settle_abandoned`) |
 | `509140` | HouseClass_Update_Factories_Queues | `10025100` | ported: the BuildingType update also refreshes the Combat (defense) queue (`update_factory_queue`); the sidebar redraw flag is presentation |
 | `50B370` | HouseClass_ShouldDisableCameo | `10024F80` | ported: replaces CheckBuildLimit for every caller (BuildLimitRemaining less the queue, the held object counted once, the AirportBound limit going on to BuildLimit, a usable factory) |
-| `535DB6` | SetStructureTabCommandClass_Execute_Power | `10025150` | residual: structure-tab hotkey asks a powered factory (input) |
-| `535E76` | SetDefenseTabCommandClass_Execute_Power | `10025130` | residual: defense-tab hotkey asks a powered factory (input) |
-| `6A9822` | StripClass_Draw_Power | `100251D0` | residual: a ready building shows ready only with a factory to place from (sidebar) |
-| `6AB312` | SidebarClass_ProcessCameoClick_Power | `10025170` | residual: cameo click factory lookup through HouseExt::FindFactory (input) |
+| `535DB6` | SetStructureTabCommandClass_Execute_Power | `10025150` | ported: the structure-tab hotkey asks a powered factory (`dispatch::ready_tab_factory`) |
+| `535E76` | SetDefenseTabCommandClass_Execute_Power | `10025130` | ported: the defense-tab hotkey asks a powered factory (`dispatch::ready_tab_factory`) |
+| `6A9822` | StripClass_Draw_Power | `100251D0` | ported: a finished building shows Ready only while `FindFactory(1, 1)` finds a powered factory (`SidebarProjectionState::factory_statuses`) |
+| `6AB312` | SidebarClass_ProcessCameoClick_Power | `10025170` | ported: the cameo click asks `HouseExt::FindFactory(owner, type, 0, 1, 0, 1)` and ends silently with only unpowered factories (`dispatch::ready_cameo_factory`, `production::ares_object_factory`) |
 
 ### House/Hooks.Academy.cpp
 

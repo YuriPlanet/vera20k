@@ -90,8 +90,6 @@ data.
 Input rungs
 ([ares-techno-hooks.md](ares-techno-hooks.md),
 [ares-building-house-hooks.md](ares-building-house-hooks.md)):
-- the structure and defense tab hotkeys, the cameo click and the ready-building strip
-  asking for a usable factory (`0x535DB6`, `0x535E76`, `0x6AB312`, `0x6A9822`);
 - `SuperGapRadiusInCells` multiples of 256: the stock What_Action (`0x004472AA`)
   reads the char, VERA the int.
 

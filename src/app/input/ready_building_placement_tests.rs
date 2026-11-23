@@ -157,16 +157,25 @@ fn roundtrip_fixture_save(fixture: &mut Fixture, label: &str) {
 }
 
 fn paid_ready_fixture() -> Option<Fixture> {
+    paid_ready_fixture_from(
+        crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")?,
+    )
+}
+
+fn paid_ready_fixture_from(
+    retail: crate::rules::retail_ini_fixture::RetailBattleRules,
+) -> Option<Fixture> {
     let Fixture {
         mut sim,
         rules,
         owner,
         input,
         mut projection,
-    } = stock_base_fixture(
+    } = stock_base_fixture_from_retail(
         "Americans",
         &[("GACNST", 4), ("GAPOWR", 11), ("GAPILE", 18)],
         false,
+        retail,
     )?;
 
     let options = production::all_build_options_for_owner(&sim, &rules, "Americans");
@@ -578,6 +587,81 @@ fn ready_product(fixture: &Fixture, name: &str) -> u64 {
         fixture.sim.interner().get(name).unwrap(),
     )
     .expect("completed product identity remains owned by its House factory")
+}
+
+/// Ares asks a powered factory for a finished building: with the
+/// Construction Yard off line, the strip draws the Power Plant as still
+/// building (StripClass_Draw_Power, Ares.dll `100251D0`, hook `0x006A9822`),
+/// the structure tab hotkey finds no factory (`10025150`, hook `0x00535DB6`),
+/// and a cameo click ends without an abandon or EVA (`10025170`, hook
+/// `0x006AB312`). Without Ares all three keep the Yard.
+#[test]
+fn ares_ready_buildings_wait_for_a_powered_construction_yard() {
+    let ready = |fixture: &Fixture| {
+        let power_plant = fixture.sim.interner().get("GAPOWR").unwrap();
+        fixture
+            .projection
+            .factory_statuses(&fixture.sim, &fixture.rules, fixture.owner)
+            .iter()
+            .find(|status| status.type_id == power_plant)
+            .is_some_and(|status| status.is_ready)
+    };
+    let take_yard_offline = |fixture: &mut Fixture| {
+        let product = ready_product(fixture, "GAPOWR");
+        let yard =
+            production::object_find_factory(&fixture.sim, &fixture.rules, product, false, false)
+                .unwrap();
+        fixture
+            .sim
+            .entity_mut_for_test(yard)
+            .unwrap()
+            .set_building_online_for_test(false);
+        (product, yard)
+    };
+
+    let Some(mut stock) = paid_ready_fixture() else {
+        return;
+    };
+    let (product, yard) = take_yard_offline(&mut stock);
+    assert!(ready(&stock));
+    assert_eq!(
+        crate::app::input::dispatch::ready_tab_factory(&stock.sim, &stock.rules, product),
+        Some(yard)
+    );
+    assert_eq!(
+        crate::app::input::dispatch::ready_cameo_factory(&stock.sim, &stock.rules, product),
+        Some(Some(yard))
+    );
+
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str("[General]\nTogglePowerAllowed=yes\n"),
+    ) else {
+        return;
+    };
+    let mut ares = paid_ready_fixture_from(retail).unwrap();
+    assert!(ares.rules.ares_form());
+    assert!(ready(&ares));
+    let (product, yard) = take_yard_offline(&mut ares);
+    assert!(!ready(&ares));
+    assert_eq!(
+        crate::app::input::dispatch::ready_tab_factory(&ares.sim, &ares.rules, product),
+        None
+    );
+    assert_eq!(
+        crate::app::input::dispatch::ready_cameo_factory(&ares.sim, &ares.rules, product),
+        None
+    );
+    ares.sim
+        .entity_mut_for_test(yard)
+        .unwrap()
+        .set_building_online_for_test(true);
+    assert!(ready(&ares));
+    assert_eq!(
+        crate::app::input::dispatch::ready_cameo_factory(&ares.sim, &ares.rules, product),
+        Some(Some(yard))
+    );
 }
 
 fn submit_ready_building(
@@ -1845,7 +1929,7 @@ fn assert_old_infantry_cameo_released(fixture: &mut Fixture, order: u64) {
     assert!(
         fixture
             .projection
-            .factory_statuses(&fixture.sim, fixture.owner)
+            .factory_statuses(&fixture.sim, &fixture.rules, fixture.owner)
             .iter()
             .all(|status| status.type_id != old_type),
         "the old cameo must not draw the successor's clock or Hold"

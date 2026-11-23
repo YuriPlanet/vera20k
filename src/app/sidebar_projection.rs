@@ -689,7 +689,7 @@ impl SidebarProjectionState {
                 CameoId::SuperWeapon(_) => None,
             })
             .collect();
-        let statuses = self.factory_statuses(sim, owner);
+        let statuses = self.factory_statuses(sim, rules, owner);
         // StripDraw6A95C8..6A95E9 scans the whole retained strip, including
         // offscreen entries. Draw6A978C gates only BuildingType cameos; the
         // other strips permit queueing. Derive the dispatched request from
@@ -954,12 +954,16 @@ impl SidebarProjectionState {
 
     /// StripDraw6A9812/6A9822/6A985D/6A9E9C reads each entry's linked
     /// Factory and retained request for Ready, stage and Hold. Input resolves
-    /// these same handles and request records.
+    /// these same handles and request records. With Ares a finished building
+    /// is Ready only while its own `FindFactory(1, 1)` finds a powered
+    /// factory (StripClass_Draw_Power, Ares.dll `100251D0`, hook
+    /// `0x006A9822`); otherwise it draws as still building.
     /// Sources: tools/sidebar_oracle/cameo_order.md (retained rearm) and
     /// pending_production.json (request/clock instructions and controls).
     pub(crate) fn factory_statuses(
         &self,
         sim: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
         owner: InternedId,
     ) -> Vec<crate::ui::sidebar::CameoFactoryStatus> {
         let Some((local_owner, strips)) = self.cameos.as_ref() else {
@@ -983,7 +987,22 @@ impl SidebarProjectionState {
                 }
                 let is_ready = factory
                     .as_ref()
-                    .is_some_and(|factory| factory.complete_object().is_some());
+                    .and_then(|factory| factory.complete_object())
+                    .is_some_and(|object| {
+                        let building = |id| {
+                            sim.entities().get(id).is_some_and(|o| {
+                                o.category() == crate::map::entities::EntityCategory::Structure
+                            })
+                        };
+                        !rules.ares_form()
+                            || object.entity_id.is_none_or(|id| {
+                                !building(id)
+                                    || crate::sim::production::object_find_factory(
+                                        sim, rules, id, true, true,
+                                    )
+                                    .is_some()
+                            })
+                    });
                 let predicted = self.cameo_strips().request_stage(id).unwrap_or(0);
                 let progress = match factory.as_ref() {
                     Some(factory) if !is_ready && request == Some(CameoRequestState::Started) => {
