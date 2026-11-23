@@ -245,6 +245,22 @@ fn on_frame_has_a_whole_budget_after_events_spend_from_it() {
 }
 
 #[test]
+fn a_spent_frame_budget_still_delivers_one_batch() {
+    let Some((mut scene, victim)) = bound_scene(&trigger_def(&[])) else {
+        return;
+    };
+    hit(&mut scene, victim, 10);
+    // ProductionAllowed spent the frame's budget before the module phase.
+    let frame = scene.sim().session.binary_frame();
+    let slot = &mut scene.runtime.simulation.ext_modules.slots[0];
+    let budget = slot.frame_budget;
+    slot.charge_frame_ops(frame, budget);
+    scene.tick();
+    assert_eq!(received(&scene), 1);
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+}
+
+#[test]
 fn a_filter_clause_holds_back_a_hit_it_rejects() {
     let Some((mut scene, victim)) = bound_scene(&trigger_def(&[health_below_30_percent()])) else {
         return;
