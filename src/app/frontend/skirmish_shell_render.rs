@@ -203,7 +203,6 @@ fn push_panel_chrome(
 
 fn build_skirmish_shell_instances(
     atlas: &SkirmishShellChromeAtlas,
-    font: &BitFont,
     layout: &SkirmishShellLayout,
     choose_map_layout: Option<&ChooseMapModalLayout>,
     // The seed browser covers `0x105`.
@@ -212,7 +211,6 @@ fn build_skirmish_shell_instances(
     // VERA's Setups page covers `0x102`.
     setups_layout: bool,
     shell: &SkirmishShellState,
-    search_display: &str,
     maps: &[MapMenuEntry],
     wave: Option<&ShellFrameWave>,
     leaving: bool,
@@ -257,7 +255,7 @@ fn build_skirmish_shell_instances(
                 push_random_map_setup_modal_control_instances(&mut instances, atlas, setup_layout, modal, advanced_bar);
             }
         } else {
-            let interior = push_choose_map_background_instances(
+            push_choose_map_background_instances(
                 &mut instances,
                 atlas,
                 layout,
@@ -272,10 +270,7 @@ fn build_skirmish_shell_instances(
                 push_choose_map_modal_control_instances(
                     &mut instances,
                     atlas,
-                    font,
                     choose_map_layout,
-                    interior,
-                    search_display,
                     wave.is_none(),
                 );
             }
@@ -423,13 +418,6 @@ fn render_skirmish_shell_with_atlas(
         .choose_map_modal
         .as_ref()
         .map(|_| crate::app::frontend::shell_layout::choose_map_layout(state));
-    let search_display = state
-        .frontend
-        .skirmish_shell_state
-        .choose_map_modal
-        .as_ref()
-        .map(|modal| text::map_search_display(state, &modal.search))
-        .unwrap_or_default();
     // `0x105` and the seed browser each replace the page beneath them, and both
     // the sprite pass and the text pass need the same rects: one layout per page
     // per frame, from the same seam the input handlers read.
@@ -641,14 +629,12 @@ fn render_skirmish_shell_with_atlas(
     } else {
         build_skirmish_shell_instances(
             atlas,
-            &state.renderer.bit_font,
             &layout,
             choose_map_layout.as_ref(),
             seed_layout.is_some(),
             setup_layout,
             setups_layout.is_some(),
             &state.frontend.skirmish_shell_state,
-            &search_display,
             state.frontend.scenario_catalog.shell_maps(),
             wave.as_ref(),
             leaving,

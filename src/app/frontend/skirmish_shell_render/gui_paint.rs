@@ -307,6 +307,17 @@ pub(crate) struct GuiStyle<'a> {
     /// A text that reveals as a kind-1 static does by its `Id` (a heading),
     /// in place of its colour.
     pub(crate) reveal_of: Option<&'a dyn Fn(i32) -> Option<PathAReveal>>,
+    /// An edit's hint by its `Id` while it shows nothing (the host's word),
+    /// with its left inset in base pixels: drawn in the edit's rect less
+    /// that inset, vertically centred in the style's colour, after the
+    /// edit's own paint (VERA's search boxes).
+    pub(crate) hint_of: Option<&'a dyn Fn(i32) -> Option<(String, i32)>>,
+    /// Framed edits (`TextInset`) paint as VERA's search lines
+    /// ([`push_search_line`]) rather than as NewEdits.
+    pub(crate) search_lines: bool,
+    /// A list's message by its `Id` while it holds no rows (why it is
+    /// empty), wrapped down the list from its first row.
+    pub(crate) empty_of: Option<&'a dyn Fn(i32) -> Option<String>>,
 }
 
 impl Default for GuiStyle<'_> {
@@ -333,6 +344,9 @@ impl Default for GuiStyle<'_> {
             frame_of: None,
             dim_disabled_checkboxes: false,
             reveal_of: None,
+            hint_of: None,
+            search_lines: false,
+            empty_of: None,
         }
     }
 }
@@ -879,6 +893,23 @@ pub(crate) fn paint_gui_into(
                         scale,
                     ),
                 }
+                // An empty list's message from its first row's text start
+                // (two pixels in, grown with the page) to its content's end.
+                let empty = (view.rows == 0 && !covered)
+                    .then(|| style.empty_of.zip(id(node)))
+                    .flatten()
+                    .and_then(|(empty_of, id)| empty_of(id));
+                if let Some(empty) = empty {
+                    let row = geometry.row(0);
+                    let left = (2.0 * scale.factor()).round() as i32;
+                    let content = geometry.content;
+                    let h = content.y + content.h - row.y;
+                    let at = RectPx::new(row.x + left, row.y, row.w - left, h);
+                    let rgb = style.rgb;
+                    paint
+                        .texts
+                        .push(text(state, &empty, at, ShellAlign::NONE, glyph, rgb, depth));
+                }
                 if let Some(cells) = cells {
                     let rows = cells.into_iter().skip(view.top).take(geometry.visible_rows);
                     for (visible, row) in rows.enumerate() {
@@ -916,10 +947,10 @@ pub(crate) fn paint_gui_into(
                 }
             }
             // NewEdit `0x00614B30` as `push_new_edit` paints it, or framed in
-            // its rect with a `TextInset` field; the open IME composition
-            // shows in the focused one, a whole-text selection fills behind it.
-            // An edit with no area (the Choose Map search line, which the
-            // host paints itself) draws nothing.
+            // its rect with a `TextInset` field (or as a search line); the
+            // open IME composition shows in the focused one, a whole-text
+            // selection fills behind it; the host's hint follows. An edit
+            // with no area draws nothing.
             NodeKind::Edit if rect.w <= 0 || rect.h <= 0 => {}
             NodeKind::Edit => {
                 let Some(atlas) = atlas else { continue };
@@ -935,6 +966,37 @@ pub(crate) fn paint_gui_into(
                 };
                 edit.focused |= style.caret_of.is_some() && caret;
                 let rgb = text_rgb(gui, node, true, style.rgb, None);
+                let hint = style
+                    .hint_of
+                    .zip(id(node))
+                    .and_then(|(hint_of, id)| hint_of(id));
+                let hint = hint.filter(|_| !covered).map(|(hint, x)| {
+                    let at = scale.derive_rect(rect, |r| RectPx::new(r.x + x, r.y, r.w - x, r.h));
+                    text(state, &hint, at, ShellAlign::V_CENTER, glyph, rgb, depth)
+                });
+                if style.search_lines
+                    && let Ok(Some(Value::Rect(text_inset))) = gui.get(node, Prop::TextInset)
+                {
+                    // The host's text (with its own composition), else the edit's.
+                    let shown = match style.text_of.zip(id(node)).and_then(|(f, id)| f(id)) {
+                        Some(shown) => shown,
+                        None => edit.painted_text(),
+                    };
+                    let line = SearchLine {
+                        rect,
+                        inset: *text_inset,
+                        fill: style.edit_fill,
+                        look: TextLook {
+                            align: ShellAlign::V_CENTER,
+                            glyph,
+                            rgb,
+                        },
+                    };
+                    let shown = Some(shown.as_str()).filter(|_| !covered);
+                    push_search_line(paint, font, atlas, line, shown, scale);
+                    paint.texts.extend(hint);
+                    continue;
+                }
                 let Some(field) = inset(gui, node, rect, scale) else {
                     let (out, texts) = (&mut paint.controls, &mut paint.texts);
                     super::controls::push_new_edit(
@@ -950,6 +1012,7 @@ pub(crate) fn paint_gui_into(
                         depth,
                         scale,
                     );
+                    paint.texts.extend(hint);
                     continue;
                 };
                 if let Some(fill) = style.edit_fill {
@@ -979,6 +1042,7 @@ pub(crate) fn paint_gui_into(
                     (caret && !selected, rgb, depth),
                     scale,
                 );
+                paint.texts.extend(hint);
             }
             NodeKind::Text => {
                 if let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) {
@@ -1189,6 +1253,90 @@ pub(crate) fn push_bar(
     let fill = bar::fill_rect(rect, look.percent);
     let depth = SHELL_CONTROL_DEPTH - 0.00001;
     super::chrome::push_solid_rect_px(out, white, fill, look.fill, depth);
+}
+
+/// A search line's caret width, in base pixels, as a NewEdit's.
+pub(crate) const SEARCH_CARET_W: i32 = 2;
+
+/// A search line ([`GuiStyle::search_lines`]): its rect, its `TextInset`
+/// (base pixels), the fill no art backs and its text's look.
+#[derive(Clone, Copy)]
+pub(crate) struct SearchLine {
+    pub(crate) rect: RectPx,
+    pub(crate) inset: RectPx,
+    pub(crate) fill: Option<[f32; 3]>,
+    pub(crate) look: TextLook,
+}
+
+/// The end of `shown` a search line on `rect` (less `inset`, base pixels)
+/// shows with the caret after it, and the caret's rect on the window: a
+/// long text scrolls its start out of the field. Widths are 800x600
+/// numbers.
+pub(crate) fn search_line_tail<'a>(
+    font: &BitFont,
+    shown: &'a str,
+    rect: RectPx,
+    inset: RectPx,
+    scale: ShellScale,
+) -> (&'a str, RectPx) {
+    let base = scale.base_rect(rect);
+    let field = RectPx::new(
+        base.x + inset.x,
+        base.y + inset.y,
+        base.w - inset.x - inset.w,
+        base.h - inset.y - inset.h,
+    );
+    let room = field.w - SEARCH_CARET_W;
+    let mut tail = shown;
+    let width = loop {
+        let width = font.text_width(tail) as i32;
+        let mut chars = tail.chars();
+        if width <= room || chars.next().is_none() {
+            break width;
+        }
+        tail = chars.as_str();
+    };
+    let caret = RectPx::new(field.x + width, field.y + 2, SEARCH_CARET_W, field.h - 4);
+    (tail, scale.scale_rect(caret))
+}
+
+/// VERA's search line on `line.rect`: the fill when no art backs it, the
+/// list's two frame rings round it, and the text (`shown`, none under an
+/// overlay) from the inset's left, its tail kept in the field with a steady
+/// caret after it while it holds any: the line has no focus to lose. The
+/// inset's right edge only bounds the tail.
+fn push_search_line(
+    paint: &mut GuiPaint,
+    font: &BitFont,
+    atlas: &SkirmishShellChromeAtlas,
+    line: SearchLine,
+    shown: Option<&str>,
+    scale: ShellScale,
+) {
+    let SearchLine { rect, inset, fill, look } = line;
+    let depth = SHELL_CONTROL_DEPTH;
+    if let Some(fill) = fill {
+        super::chrome::push_solid_rect(&mut paint.controls, atlas, rect, fill, depth);
+    }
+    super::list::paint_list_frame(&mut paint.controls, atlas, rect);
+    let Some(shown) = shown.filter(|shown| !shown.is_empty()) else {
+        return;
+    };
+    let (tail, caret) = search_line_tail(font, shown, rect, inset, scale);
+    super::chrome::push_solid_rect(&mut paint.controls, atlas, caret, look.rgb, depth);
+    let field = scale.derive_rect(rect, |r| {
+        RectPx::new(r.x + inset.x, r.y + inset.y, r.w - inset.x, r.h - inset.y - inset.h)
+    });
+    paint.texts.push(shell_text::draw_in_rect_scaled(
+        font,
+        tail,
+        rect_to_text_rect(field),
+        look.rgb,
+        look.align,
+        [0.0; 2],
+        SHELL_CONTROL_TEXT_DEPTH,
+        look.glyph,
+    ));
 }
 
 /// A multi-cell row on `row`: its fill, then its cells' texts and pictures.
