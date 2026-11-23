@@ -62,6 +62,14 @@ pub struct InfantryRuntime {
     /// Infantry Mission_Move restart `0x00520FF1` and save/load `0x00521D0F`.
     #[serde(default)]
     cell_entry_blocked: bool,
+    /// The Tiberian Sun web timer, Firestorm 2.0 InfantryClass `+0x370`
+    /// (ctor `0x004D1F50`: Delay 0, expired), kept as the frame it runs out:
+    /// a web never pauses, so its start plus its delay is all its readers
+    /// need, and the record stays under its size ceiling. Only a `Webby=`
+    /// warhead sets it ([`Self::renew_web`]); its remainder holds the man
+    /// ([`GameEntity::is_immobilized`](crate::sim::game_entity::GameEntity::is_immobilized)).
+    /// Zero, which a save written without it decodes to, has run out.
+    web: i32,
 }
 
 impl Default for InfantryRuntime {
@@ -98,6 +106,35 @@ impl InfantryRuntime {
     /// `+0x6DC`, the failed-path receiver's Can_Enter_Cell answer.
     pub fn cell_entry_blocked(&self) -> bool {
         self.cell_entry_blocked
+    }
+
+    /// The web timer's remainder at `frame`, the value Firestorm 2.0 inlines
+    /// at every reader of InfantryClass `+0x370`; 0 when not webbed.
+    pub fn web_remaining(&self, frame: i32) -> i32 {
+        self.web.wrapping_sub(frame).max(0)
+    }
+
+    /// Firestorm 2.0's fresh-web test, inlined in `Evaluate_Object`
+    /// (`0x0062D583..0x0062D5B6`) and `UnitClass::Firing_AI`
+    /// (`0x0064E81D..0x0064E851`): more is left of the web than a quarter of
+    /// the attacker's warhead `WebDuration=` (signed, toward zero).
+    pub(crate) fn web_outlasts_quarter(&self, frame: i32, web_duration: i32) -> bool {
+        self.web_remaining(frame) > web_duration / 4
+    }
+
+    /// The frame the web runs out (0 before any web), for the world hash.
+    pub(crate) fn web_end(&self) -> i32 {
+        self.web
+    }
+
+    /// Firestorm 2.0 `InfantryClass::Take_Damage` `0x004D2420..0x004D2476`:
+    /// a new web of `duration` frames restarts the timer only when the
+    /// current remainder is not longer (`rem <= new`); otherwise the old one
+    /// is kept.
+    pub(crate) fn renew_web(&mut self, frame: i32, duration: i32) {
+        if self.web_remaining(frame) <= duration {
+            self.web = frame.wrapping_add(duration);
+        }
     }
 
     /// Do_Action's Down.
@@ -147,6 +184,7 @@ impl InfantryRuntime {
             is_prone: false,
             idle_action_timer: MissionTimer::default(),
             cell_entry_blocked: false,
+            web: 0,
         }
     }
 }
@@ -286,6 +324,65 @@ fn repeated_fear_add(
 }
 
 impl crate::sim::world::Simulation {
+    /// Firestorm 2.0 `InfantryClass::Take_Damage` 0x004D2380, its web arm
+    /// (`0x004D23D1..0x004D24A0`), after the prone head: a `Webby=` warhead
+    /// webs an infantryman whose type is not `IsWebImmune=`. In order:
+    /// - one Scenario call for `-WebDurationVariation..=WebDurationVariation`
+    ///   (`0x004D2410`, Scenario `+0x218`), made even when the web is not
+    ///   renewed;
+    /// - the web timer restarts at `WebDuration` plus that, unclamped, unless
+    ///   more is left ([`InfantryRuntime::renew_web`]);
+    /// - a forced Struggle that starts at a random stage (`0x004D2493`,
+    ///   vt+0x3C0); its answer is ignored.
+    ///
+    /// Answers whether it webbed him, which makes the hit's damage 0, so the
+    /// rest of the receiver does nothing (`0x004D24D4`). Not ported: the tag's
+    /// TEvent 53 (Paralyzed, `0x0061E6D0`), whose number is another event in
+    /// gamemd.
+    pub(crate) fn infantry_take_web(
+        &mut self,
+        id: u64,
+        web: &crate::rules::warhead_type::WarheadWeb,
+        rules: &crate::rules::ruleset::RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        let Some(target) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        // VERA's receivers can find a man killed earlier in the same batch;
+        // Firestorm's callers reach only one above zero strength
+        // (`0x004467D6`), and a forced Struggle must not replace his death.
+        if target.infantry.is_none()
+            || target.health.current() <= 0
+            || self
+                .interner
+                .object_type(target.type_ref(), rules)
+                .is_none_or(|object| object.is_web_immune)
+        {
+            return false;
+        }
+        let variation = web.duration_variation;
+        let extra = self
+            .scenario_rng
+            .next_range_i32_inclusive(variation.wrapping_neg(), variation);
+        let duration = web.duration.wrapping_add(extra);
+        let frame = self.session.binary_frame() as i32;
+        if let Some(infantry) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|target| target.infantry.as_mut())
+        {
+            infantry.renew_web(frame, duration);
+        }
+        let struggle = crate::sim::movement::infantry_action::DO_STRUGGLE;
+        if let Err(cause) = self.infantry_do_action_random_start(id, struggle, true, rules, effects)
+        {
+            log::debug!("infantry {id} Struggle: {cause}");
+        }
+        true
+    }
+
     /// gamemd.exe `InfantryClass__Fear_Decay_Handler @ 0x005200B0`, called by InfantryAI at
     /// 51BF0B after Foot Process and before FireAtTarget5206B0/sequencer520AE0.
     /// Caller owns survival/warped admission. Returns the existing NULL Scatter

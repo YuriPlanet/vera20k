@@ -70,6 +70,8 @@ impl Simulation {
     }
 }
 
+/// SystemAI62E6D0, and Firestorm 2.0 `ParticleSystemClass::AI_Web`
+/// 0x005A7170, whose two walks are the same ([`super::web`]).
 pub(super) fn tick_system(
     sim: &mut Simulation,
     rules: &RuleSet,

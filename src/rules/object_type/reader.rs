@@ -1164,6 +1164,8 @@ impl ObjectType {
             stupid_hunt: section.read_bool("StupidHunt", false),
             default_to_guard_area: section.read_bool("DefaultToGuardArea", false),
             cyborg: section.read_bool("Cyborg", false),
+            is_web_immune: category == ObjectCategory::Infantry
+                && section.read_bool("IsWebImmune", false),
             damage_sparks: false,
             use_own_name: category == ObjectCategory::Infantry
                 && section.read_bool("UseOwnName", false),

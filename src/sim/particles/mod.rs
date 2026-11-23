@@ -37,6 +37,7 @@ pub mod spark_spawn;
 pub mod spark_world;
 pub mod spawn;
 pub mod system_ai;
+pub mod web;
 pub mod wind;
 
 #[cfg(all(test, tests_sim_p_s))]
@@ -319,7 +320,11 @@ impl Particle {
     pub fn draw_frame(&self, kind: &ParticleType) -> i32 {
         let state = i32::from(self.animation_state as i8);
         match kind.behaves_like {
-            ParticleBehavesLike::Gas | ParticleBehavesLike::Smoke => state,
+            // Firestorm 2.0 `ParticleClass::Get_Image_Data` 0x005A4D80 (its
+            // table at 0x005A4E60) gives a Web particle its state too.
+            ParticleBehavesLike::Gas | ParticleBehavesLike::Smoke | ParticleBehavesLike::Web => {
+                state
+            }
             ParticleBehavesLike::Fire => {
                 let project = |point: IVec3| {
                     let (x, y) = crate::util::lepton::project_absolute_lepton_xy(point.x, point.y);

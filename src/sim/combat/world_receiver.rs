@@ -1506,6 +1506,28 @@ fn commit_entity(
             &world.interner,
             world.resolved_terrain.as_ref(),
         );
+        // Firestorm 2.0 `InfantryClass::Take_Damage` 0x004D2380: after the
+        // prone head, a Webby warhead webs the man and zeroes the damage, and
+        // the zero-damage receivers below it return at once (`0x004D24D4`).
+        if let Some(web) = world
+            .interner
+            .warhead_type(prepared_event.warhead_ref, rules)
+            .and_then(|warhead| warhead.webby())
+            .copied()
+        {
+            if world.infantry_take_web(target_id, &web, rules, run.effects()) {
+                caller_damage.write(world, rules, 0);
+                break 'receiver;
+            }
+            // The zero hits a web gives everything else do nothing in
+            // Firestorm: `TechnoClass::Take_Damage` skips its defence math
+            // for damage not above 0 (`0x006325D6`) and `ObjectClass::
+            // Take_Damage` returns at once for 0 (`0x00585EE4`). gamemd's
+            // receiver below would floor it to 1 (`0x007019D8`).
+            if prepared_event.damage == 0 {
+                break 'receiver;
+            }
+        }
         let event = &prepared_event;
         caller_damage.write(world, rules, event.damage);
         // FootClass::ReceiveDamage 0x004D7330..0x004D7413 runs its parasite
@@ -4107,6 +4129,15 @@ fn emit_detonation_receivers<'r>(
             let current = world.projectiles.current_detonation(*detonation);
             let detonation = &current;
 
+            // Firestorm 2.0 `BulletClass::Detonate` 0x004465B0: a Webby
+            // warhead webs the cells around it instead of calling
+            // `Explosion_Damage` (0x00446632..0x0044663A); the anim tail
+            // (0x00446856) still follows.
+            if let Some(web) = warhead.webby() {
+                emit_web_receivers(world, rules, detonation, warhead, web, out);
+                return (None, false);
+            }
+
             // `0x00469A69..0x00469A75`: the bullet's live Owner's house;
             // Phobos keeps `BulletExt::FirerHouse` once the owner is gone.
             let source_house = detonation_source_house(world, detonation);
@@ -4172,6 +4203,137 @@ fn emit_detonation_receivers<'r>(
                 run.effects(),
             );
             (None, false)
+        }
+    }
+}
+
+/// Firestorm 2.0 `BulletClass::Detonate` 0x004465B0, the Webby branch
+/// (`0x00446640..0x00446838`), in place of area damage:
+/// - The centre cell is the bullet's Center_Coord over 256, toward zero
+///   (`0x0044665F..0x0044668E`); the cells within `WebRadius` of it
+///   (`dx*dx + dy*dy <= r*r`, signed 32-bit) are visited row by row, rows
+///   (`dy`) outer (`0x00446693..0x00446832`).
+/// - A cell whose centre (`Cell_Coord` `0x00456B10`: the ground height there)
+///   lies within three levels of the impact's Z (`0x00446693`, `0x0044674D`)
+///   gives its ground objects (`+0x70`); any other gives its bridge-deck
+///   objects (`+0x74`) at the deck height (`0x0045C4A0`, four levels over a
+///   bridge cell).
+/// - Each visited cell gets the warhead's `Particle=` system with one held
+///   particle at that point (`0x00446779..0x004467BC`), occupied or not.
+/// - Each object of the list that is active, on the map and above zero
+///   strength (`0x004467C5..0x004467DB`) takes `Take_Damage(0, 0, warhead,
+///   no source)` (`0x00446803`); the Infantry receiver's web arm does the
+///   rest ([`Simulation::infantry_take_web`]).
+///
+/// Residuals: off-map cells are skipped (Firestorm visits its dummy cell
+/// and spawns the particle system there); the receivers commit after the
+/// whole loop rather than between its particle systems, which draw from
+/// their own stream; Firestorm passes no house to the particle system and
+/// a null `Particle=` still reaches its spawn call (`0x004467BC`), which VERA
+/// skips; Terrain objects in the list, which take no damage at 0, are not
+/// called.
+fn emit_web_receivers(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    detonation: &ProjectileDetonation,
+    warhead: &WarheadType,
+    web: &crate::rules::warhead_type::WarheadWeb,
+    out: &mut CombatEmit,
+) {
+    use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
+    let radius = web.radius;
+    let reach = radius.wrapping_mul(radius);
+    let center = bullet_location(world, detonation).0;
+    let (cx, cy) = (center.x / 256, center.y / 256);
+    // `0x00446693`: three times the level height.
+    let z_band = 3 * GROUND_LEVEL_HEIGHT_LEPTONS;
+    let particle_type = warhead
+        .particle_system
+        .as_deref()
+        .and_then(|name| rules.ps_type_id_by_name(name));
+    let (width, height) = world
+        .resolved_terrain
+        .as_ref()
+        .map_or((u16::MAX, u16::MAX), |terrain| {
+            (terrain.width(), terrain.height())
+        });
+    // Only on-map cells are visited, so a huge WebRadius from outside data
+    // costs no more than the map; r*r wraps as Firestorm's imul does.
+    let rows = radius.wrapping_neg().max(-cy)..=radius.min(i32::from(height) - 1 - cy);
+    for dy in rows {
+        let columns = radius.wrapping_neg().max(-cx)..=radius.min(i32::from(width) - 1 - cx);
+        for dx in columns {
+            if dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) > reach {
+                continue;
+            }
+            let (rx, ry) = ((cx + dx) as u16, (cy + dy) as u16);
+            let mut coord = crate::sim::components::DriveCoord::cell(rx, ry, 0);
+            let mut deck = false;
+            if let Some(terrain) = world.resolved_terrain.as_ref() {
+                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                let Some(index) = terrain.native_fixed_cell_index(rx as i16, ry as i16) else {
+                    continue;
+                };
+                let cell = crate::map::cell_index::NativeCellIdentity::Real(index);
+                coord.z = crate::sim::movement::ground_pose::query_ground_height(&cells, coord)
+                    .unwrap_or(0);
+                if coord.z.wrapping_sub(detonation.impact.z).wrapping_abs() >= z_band {
+                    deck = true;
+                    if cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0 {
+                        coord.z = crate::sim::movement::ground_pose::deck_surface_z(
+                            &cells, cell, coord.z,
+                        );
+                    }
+                }
+            } else if coord.z.wrapping_sub(detonation.impact.z).wrapping_abs() >= z_band {
+                deck = true;
+                coord.z += BRIDGE_DECK_HEIGHT_LEPTONS;
+            }
+            let point = glam::IVec3::new(coord.x, coord.y, coord.z);
+            if let Some(type_id) = particle_type
+                && let Some(system) = world.spawn_particle_system(
+                    type_id,
+                    point,
+                    None,
+                    None,
+                    glam::IVec3::ZERO,
+                    None,
+                    rules,
+                )
+            {
+                world.spawn_particle_in_system(system, point, point, rules);
+            }
+            let layer = if deck {
+                crate::sim::movement::locomotor::MovementLayer::Bridge
+            } else {
+                crate::sim::movement::locomotor::MovementLayer::Ground
+            };
+            let Some(occupants) = world.substrate.occupancy.get(rx, ry) else {
+                continue;
+            };
+            for id in occupants.snapshot_layer(layer) {
+                if world.substrate.entities.get(id).is_some_and(|object| {
+                    object.is_object_alive()
+                        && !object.lifecycle.in_limbo()
+                        && object.health.current() > 0
+                }) {
+                    out.damage_events
+                        .push(combat_aoe::AreaDamageReceiver::Entity(
+                            EntityDamageEvent::direct_receiver(
+                                id,
+                                0,
+                                0,
+                                RAD_NO_ATTACKER,
+                                None,
+                                detonation.payload.warhead,
+                                ReceiverCallFlags {
+                                    ignore_defenses: false,
+                                    arg6: false,
+                                },
+                            ),
+                        ));
+                }
+            }
         }
     }
 }
