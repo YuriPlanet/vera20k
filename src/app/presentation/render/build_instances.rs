@@ -1575,6 +1575,8 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     let mut chrome_hud = std::mem::take(
         &mut state.match_state.match_presentation.sidebar_chrome_hud,
     );
+    // Taken before the frame's view, which borrows the state.
+    let mut huds = std::mem::take(&mut state.match_state.match_presentation.sidebar_huds);
     let view = current_sidebar_view(state);
     let mut chrome = view
         .map(|v| build_sidebar_chrome_instances(state, v, &mut chrome_hud))
@@ -1609,14 +1611,14 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         .map(|v| build_sidebar_cameo_instances(state, v, status_labels))
         .unwrap_or_default();
     #[cfg(feature = "phobos")]
-    let sw_sidebar = view
-        .map(|_| {
-            crate::app::presentation::sw_sidebar_build::build(state, status_labels, ready_tint)
-        })
-        .unwrap_or_default();
+    let sw_sidebar = crate::app::presentation::sw_sidebar_build::build(
+        state,
+        &mut huds.sw,
+        view.is_some(),
+        status_labels,
+        ready_tint,
+    );
     state.match_state.match_presentation.sidebar_chrome_hud = chrome_hud;
-    // Taken before the frame's view, which borrows the state.
-    let mut huds = std::mem::take(&mut state.match_state.match_presentation.sidebar_huds);
     // The column's text, at the window's pixels wherever it is drawn.
     let frame_raster = state.renderer.bit_font.set_raster(
         crate::app::presentation::sidebar_surface::column_text(state)

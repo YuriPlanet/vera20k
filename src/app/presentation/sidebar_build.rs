@@ -636,25 +636,34 @@ fn hovered_cameo_slot(
 /// and column lie inside the rectangle. StripDraw6A9AF8 draws the hovered
 /// 60x48 cameo slot with it; Phobos `SWButtonClass::Draw` uses the same rect.
 pub(crate) fn push_rect_outline(out: &mut Vec<SpriteInstance>, rect: Rect, tint: [f32; 3]) {
-    let border = 1.0;
-    for (x, y, w, h) in [
-        (rect.x, rect.y, rect.w, border),
-        (rect.x, rect.y + rect.h - border, rect.w, border),
-        (rect.x, rect.y, border, rect.h),
-        (rect.x + rect.w - border, rect.y, border, rect.h),
-    ] {
+    for [x, y, w, h] in rect_outline_edges(rect) {
         out.push(SpriteInstance {
             position: [x, y],
             size: [w, h],
             uv_origin: [0.0, 0.0],
             uv_size: [1.0, 1.0],
-            depth: 0.00044,
+            depth: OUTLINE_DEPTH,
             tint,
             alpha: 1.0,
             ..Default::default()
         });
     }
 }
+
+/// The hover outline's four one-pixel edges as `x, y, width, height`: top,
+/// bottom, left and right ([`push_rect_outline`]).
+pub(crate) fn rect_outline_edges(rect: Rect) -> [[f32; 4]; 4] {
+    let border = 1.0;
+    [
+        [rect.x, rect.y, rect.w, border],
+        [rect.x, rect.y + rect.h - border, rect.w, border],
+        [rect.x, rect.y, border, rect.h],
+        [rect.x + rect.w - border, rect.y, border, rect.h],
+    ]
+}
+
+/// The hover outline's depth.
+pub(crate) const OUTLINE_DEPTH: f32 = 0.00044;
 
 /// Original shape point is the cameo top-left; the caller clips at +60/+48
 /// (StripDraw6A99C3..6A99E0). Do not fit the stock75x52 DARKEN canvas into
@@ -955,6 +964,9 @@ pub(crate) struct SidebarHuds {
     pub(crate) queue: TextHud,
     /// The Ready and superweapon labels, drawn before the clock.
     pub(crate) label: TextHud,
+    /// Phobos's superweapon column.
+    #[cfg(feature = "phobos")]
+    pub(crate) sw: crate::app::presentation::sw_sidebar_build::SwSidebarHuds,
 }
 
 /// The cameos' labels as the frame's next texts of `huds`, each tree in the
