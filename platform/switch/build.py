@@ -28,7 +28,7 @@ WGPU_ARCHIVES = {
     "wgpu-core-deps-windows-linux-android": "7586165fd5f6d881cb9ce4bb71f40d6caab2c0f1837e3fc1d9788a197fb6004f",
 }
 DEFAULT_CLIENT_ASSETS = ROOT / "target/emulator/master-xdg-data/eden/sdmc/game"
-CLIENT_VERSION = "0.0.2"
+CLIENT_VERSION = "0.0.3"
 # NACP application title shown in the Switch menu (Yuri's Revenge build).
 CLIENT_TITLE = "尤里的复仇"
 PROFILE_FEATURES = "horizon-frame-profile,telemetry"

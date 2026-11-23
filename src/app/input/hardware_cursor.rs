@@ -28,9 +28,19 @@ use crate::app::AppState;
 use crate::app::types::CursorId;
 use crate::render::cursor_atlas::OsCursorImage;
 
-/// Android and the browser have no cursor plane this reaches.
-const WINDOW_SYSTEM_DRAWS_CURSORS: bool =
-    cfg!(not(any(target_os = "android", target_arch = "wasm32")));
+/// Horizon's winit backend accepts cursor images but leaves them undrawn.
+/// Android and the browser also draw game cursors in the frame.
+const WINDOW_SYSTEM_DRAWS_CURSORS: bool = cfg!(not(any(
+    target_os = "android",
+    target_os = "horizon",
+    target_arch = "wasm32"
+)));
+
+#[cfg(target_os = "horizon")]
+const _: () = assert!(
+    !WINDOW_SYSTEM_DRAWS_CURSORS,
+    "Horizon winit does not draw window-system cursors"
+);
 
 #[cfg(target_os = "macos")]
 type Image = super::mac_pointer::MacCursor;
@@ -221,6 +231,11 @@ fn make_image(event_loop: &ActiveEventLoop, image: &OsCursorImage, _backing: f64
 }
 
 fn apply(state: &mut AppState, next: Shown) {
+    if cfg!(target_os = "horizon") {
+        // The backend cannot display even the system arrow. Keep the cursor
+        // off the OS plane so pointer motion can request a regular redraw.
+        return;
+    }
     let cursor = &mut state.platform.hardware_cursor;
     let previous = std::mem::replace(&mut cursor.shown, next);
     #[cfg(target_os = "macos")]

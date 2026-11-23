@@ -1,7 +1,7 @@
 # VERA20k Switch 移植
 
 这是原生 Horizon / 大气层移植入口，使用独立 Cargo workspace 构建。
-当前分支为 `feature/yuris-wgpu30`，Switch 客户端版本为 `0.0.2`。本分支也调整了共享
+当前分支为 `feature/yuris-wgpu30`，Switch 客户端版本为 `0.0.3`。本分支也调整了共享
 渲染代码及桌面依赖；Horizon 专用依赖补丁通过生成的 Switch Cargo 配置启用。
 
 客户端包含菜单、战役、遭遇战、音频和账号 SaveData 支持，仍处于实验阶段。
@@ -28,7 +28,7 @@ python3 build.py --client
 ```
 
 NSP 命名格式为 `dist/ver20k-Yuris-Revenge-v<VERSION>.nsp`，
-本版产物为 `dist/ver20k-Yuris-Revenge-v0.0.2.nsp`，标题 ID
+本版产物为 `dist/ver20k-Yuris-Revenge-v0.0.3.nsp`，标题 ID
 `0100f52556454000`。运行日志在客体 `sdmc:/switch/vera20k/logs/client.log`，
 错误结果在 `sdmc:/switch/vera20k/client.last-error.txt`。资源优先从包内 RomFS
 读取，配置和日志目录为
