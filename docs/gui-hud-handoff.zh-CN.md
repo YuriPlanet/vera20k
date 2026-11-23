@@ -12,7 +12,7 @@
 | 分支 | `feature/gui-hud-foundation` |
 | 工作树 | `/Volumes/扩展盘/vera20k-build/worktrees/gui-hud` |
 | 基点 | 上游 main `257abddce`，未合入新的 main |
-| 最后一个代码提交 | `4f5d5115d` |
+| 最后一个代码提交 | `08823ed19` |
 | 推送、PR | 都没有；英文草稿 `/Volumes/扩展盘/vera20k-build/tmp/gui-hud-pr.md`（只写到 11-22 的内容） |
 
 素材：原创机械金属风的界面素材在 `/Volumes/扩展盘/vera20k-build/tmp/gui-art/dist/final/expandmd97.mix`，与原版文件尺寸、帧数、编号一致，
@@ -139,7 +139,8 @@ run test -p vera20k --lib -- app::presentation:: app::input:: app::sidebar_proje
 
 ## 9. 后续任务
 
-1. 内置部件按 veraui.ini 名字命名（外部模块按名字找到、隐藏、换皮）。
+1. 已完成：内置部件按 veraui.ini 键名成为命名节点（侧边栏 12 个部件、CommandBar、Timers、Messages、Banner、小地图 `minimap`），
+   部件下挂其图块，隐藏部件即整组隐藏；侧边栏树有无部件节点每帧都约 7.0-7.2 µs（旧直接写法 0.7-0.9 µs）。
 2. 可选：GPU 基准（一帧各段 CPU/GPU 耗时）；计时数字都是 CPU 准备实例的时间，不是 GPU。
 3. 减量：局内对话框改按节点树绘制；把已迁部件的位置交给树的布局（验收放宽到“察觉不到”，需逐部件截图对照）。
 4. 接口文档；全量点击回归；接外部模块时接重绘闸门 revision。
