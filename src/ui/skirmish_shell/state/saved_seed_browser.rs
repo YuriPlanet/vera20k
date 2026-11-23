@@ -30,6 +30,10 @@ pub const LOAD: u16 = 0x7501;
 pub const DELETE: u16 = 0x7502;
 pub const YES: u16 = 1;
 pub const NO: u16 = 2;
+/// The heading `0x694` and the prompt static `0x40C`, which only the
+/// active-game browser shows ([`SavedSeedBrowserState::statics`]).
+pub const TITLE: u16 = 0x694;
+pub const PROMPT: u16 = 0x40C;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SavedSeedOutcome<I = SavedSeedFile> {
@@ -123,6 +127,10 @@ pub struct SavedSeedBrowserState<I = SavedSeedFile> {
     pub prompt: Option<SavedSeedPrompt<I>>,
     /// The browser's widgets and, while `prompt` is up, the box's buttons.
     pub ui: DialogController,
+    /// Its heading and prompt statics show: the active-game browser's
+    /// (`0x00558F8A`'s hide condition is false there). The pre-match
+    /// browsers keep them hidden.
+    pub statics: bool,
     current_description: SeedDescription,
 }
 
@@ -157,8 +165,11 @@ impl SavedSeedBrowserState<SavedSeedFile> {
 
 /// The browser's widgets in hit order (the edit and list before the column),
 /// the buttons with their captions, the edit framed in its rect. Load's
-/// carry their status help (`0x006040B0`).
+/// carry their status help (`0x006040B0`). First, the heading and the
+/// prompt, in their aligns (both `lowstylebits1`: `0x00615A81` puts the
+/// prompt top and centred), hidden until a browser shows them.
 fn spec(mode: SavedSeedMode) -> NodeSpec {
+    use crate::ui::shell::geom::ShellAlign;
     use crate::ui::shell::saved_games::{LOAD_LIST_HELP_KEY, LOAD_SAVED_GAME_PAGE as PAGE};
     let help = |node: NodeSpec, key| match mode {
         SavedSeedMode::Load => node.tooltip(key),
@@ -178,7 +189,18 @@ fn spec(mode: SavedSeedMode) -> NodeSpec {
         .with(Prop::MaxLen, limit)
         .with(Prop::TextInset, inset);
     let action = button((ACTION, mode.action_label().0));
+    let statics = [
+        (TITLE, ShellAlign::PANEL_TITLE),
+        (PROMPT, ShellAlign::H_CENTER),
+    ]
+    .map(|(id, align)| {
+        NodeSpec::new(NodeKind::Text)
+            .id(id.into())
+            .with(Prop::Align, Value::Int(i32::from(align.0)))
+            .with(Prop::Visible, Value::Bool(false))
+    });
     NodeSpec::new(NodeKind::Dialog)
+        .children(statics)
         .child(edit)
         .child(help(list, LOAD_LIST_HELP_KEY))
         .child(help(action, PAGE.stacked[0].tooltip_key))
@@ -418,6 +440,7 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
             entries: rows,
             prompt: None,
             ui,
+            statics: false,
             current_description,
         };
         result.set_list(selected, top);

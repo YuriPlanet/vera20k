@@ -4,7 +4,7 @@
 
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::ui::skirmish_shell::saved_seed_browser::{
-    ACTION, BACK, BROWSER_DIALOG, DELETE, EDIT, LIST, LOAD, NO, PROMPT_DIALOG, YES,
+    ACTION, BACK, BROWSER_DIALOG, DELETE, EDIT, LIST, LOAD, NO, PROMPT, PROMPT_DIALOG, TITLE, YES,
 };
 use crate::ui::skirmish_shell::{
     SavedSeedBrowserState, SavedSeedLayout, SavedSeedMode, SavedSeedOutcome,
@@ -41,6 +41,7 @@ fn sync<I: Clone + PartialEq>(
         .as_ref()
         .map(|prompt| prompt.layout(extent.0, extent.1));
     let rows = Value::Int(browser.entries.len() as i32);
+    let statics = browser.statics;
     let ui = &mut browser.ui;
     ui.set_scale_in(BROWSER_DIALOG, layout.scale);
     ui.set_prop(BROWSER_DIALOG, LIST, Prop::RowCount, rows);
@@ -55,6 +56,8 @@ fn sync<I: Clone + PartialEq>(
             LOAD => layout.load,
             DELETE => layout.delete,
             BACK => Some(layout.back),
+            TITLE => statics.then_some(layout.title),
+            PROMPT => statics.then_some(layout.prompt),
             _ => None,
         });
     }
