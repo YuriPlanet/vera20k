@@ -19,24 +19,21 @@ use crate::app::frontend::shell_pass::{
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
-    ButtonArt, FrameArt, GuiPaint, GuiStyle, paint_gui_ids, paint_gui_styled,
+    ButtonArt, FrameArt, GuiPaint, GuiStyle, Picture, paint_gui_ids, paint_gui_styled,
 };
 use crate::app::frontend::skirmish_shell_render::{BoxLook, paint_shell_box};
 use crate::app::frontend::skirmish_shell_render::WolLobbyPaint;
 use crate::app::shell_wol::WolPage;
 use crate::render::shell_paint::{
-    self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, push_entry_scaled,
+    self, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, push_entry_scaled,
 };
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::ShellAlign;
-use crate::ui::shell::geom::{RectPx, centred_in_window};
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::menu_page::{MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::slide::PanelArt;
 use crate::ui::shell::sound::SHELL_SOUND_PAGE;
 use crate::ui::wol_shell::{WOL_LOBBY_TITLE_KEY, WOL_WELCOME_DIALOG};
-
-/// Icon and group-box children sit over the background, under the text.
-const CHILD_DEPTH: f32 = CHROME_DEPTH - 0.00002;
 
 const BOX_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDepths {
     background: 0.00050,
@@ -450,18 +447,24 @@ pub(crate) fn render_wol_page(
         }
         None => Vec::new(),
     };
-    if let Some(Body::Welcome(layout)) = body.filter(|_| children) {
-        let icons = art.iter().flat_map(|art| &art.icons);
-        for (file, window) in layout.icons() {
-            let Some((_, entry)) = icons.clone().find(|(name, _)| name == file) else {
-                continue;
-            };
-            let (w, h) = entry.native_size();
-            let (x, y) = centred_in_window(scale.base_rect(window), w, h);
-            push_entry_scaled(&mut icon_sprites, *entry, x, y, scale, CHILD_DEPTH);
-        }
-        welcome_texts =
-            Some(crate::app::shell_wol::leaf::paint(state, WOL_WELCOME_DIALOG, scale).texts);
+    // The glossary's icons and the page's texts from its widgets.
+    if let (Some(Body::Welcome(_)), Some(root)) = (
+        body.filter(|_| children),
+        controller.root_in(WOL_WELCOME_DIALOG),
+    ) {
+        let picture_of = |id: i32| {
+            let icon = crate::ui::wol_shell::WOL_ICONS.iter();
+            let mut icon = icon.filter(|icon| i32::from(icon.id) == id);
+            icon.next().map(|icon| Picture::Glyph(icon.file))
+        };
+        let style = GuiStyle {
+            art,
+            picture_of: Some(&picture_of),
+            ..Default::default()
+        };
+        let welcome = paint_gui_styled(state, controller.gui(), root, scale, &[], style);
+        icon_sprites = welcome.icons;
+        welcome_texts = Some(welcome.texts);
     }
     let shown = body.filter(|_| children);
     let buddy_page = crate::app::shell_wol::buddy::page(state);

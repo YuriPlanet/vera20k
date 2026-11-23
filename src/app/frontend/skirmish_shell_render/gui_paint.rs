@@ -327,6 +327,11 @@ pub(crate) enum Picture {
     /// The LAN observer image, on or off, clipped and centred: a checkbox
     /// that shows as it (the lobbies' and buddy list's eye).
     Observer { on: bool },
+    /// A kind-2 icon static's PCX on the page art ([`GuiStyle::art`]),
+    /// centred in the node, or at its left or top on an axis it outgrows
+    /// ([`centred_in_window`]), at its size grown with the page, on
+    /// [`GuiPaint::icons`] (WOL welcome's glossary).
+    Glyph(&'static str),
 }
 
 /// Share the right-panel heading's text width while keeping the retail
@@ -841,7 +846,7 @@ pub(crate) fn paint_gui_into(
                         match (picture, style.art) {
                             (Some(Picture::Icon { released, pressed: down }), Some(art)) => {
                                 let face = if pressed { down } else { released };
-                                push_page_icon(&mut paint.icons, art, face, rect, scale);
+                                push_page_icon(&mut paint.icons, art, face, rect, false, scale);
                             }
                             (Some(Picture::Icon { .. }), None) | (None, _) => {}
                             (Some(picture), _) => {
@@ -1382,6 +1387,10 @@ pub(crate) fn paint_gui_into(
                     .picture_of
                     .zip(id(node))
                     .and_then(|(picture_of, id)| picture_of(id));
+                if let (Some(Picture::Glyph(file)), Some(art)) = (host, style.art) {
+                    push_page_icon(&mut paint.icons, art, file, rect, true, scale);
+                    continue;
+                }
                 if let Some(picture) = host {
                     push_picture(&mut paint.controls, atlas, picture, rect, false, scale);
                     continue;
@@ -1656,7 +1665,7 @@ fn push_picture(
             }
         }
         // On the page art: [`push_page_icon`].
-        Picture::Icon { .. } => {}
+        Picture::Icon { .. } | Picture::Glyph(_) => {}
         Picture::Emote => {
             let (Some(released), pressed_art) = atlas.wol_emote_images() else {
                 return;
@@ -1677,13 +1686,15 @@ fn push_picture(
     }
 }
 
-/// [`Picture::Icon`]'s `face` from the page art, centred on `rect` in base
-/// pixels at its size grown with the page.
+/// [`Picture::Icon`]'s or [`Picture::Glyph`]'s `face` from the page art,
+/// centred on `rect` in base pixels at its size grown with the page; held
+/// to the rect's left and top where it outgrows it while `held`.
 fn push_page_icon(
     out: &mut Vec<SpriteInstance>,
     art: &WolPageArt,
     face: &str,
     rect: RectPx,
+    held: bool,
     scale: ShellScale,
 ) {
     let Some((_, entry)) = art.icons.iter().find(|(name, _)| name == face) else {
@@ -1691,7 +1702,11 @@ fn push_page_icon(
     };
     let (w, h) = entry.native_size();
     let base = scale.base_rect(rect);
-    let [x, y] = scale.scale_point([base.x + (base.w - w) / 2, base.y + (base.h - h) / 2]);
+    let (x, y) = match held {
+        true => crate::ui::shell::geom::centred_in_window(base, w, h),
+        false => (base.x + (base.w - w) / 2, base.y + (base.h - h) / 2),
+    };
+    let [x, y] = scale.scale_point([x, y]);
     shell_paint::push_entry_grown(out, *entry, x, y, scale, SHELL_CONTROL_DEPTH - 0.00003);
 }
 
