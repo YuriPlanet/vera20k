@@ -620,15 +620,11 @@ pub(crate) struct SidebarCameoInstances {
 /// reads it only for a filled slot and ignores it while input is locked
 /// (`[0xA8ED9C]`, 6A9734).
 fn hovered_cameo_slot(
-    gadgets: &crate::app::input::gadget_input::InGameGadgets,
+    hovered: Option<usize>,
     entry_count: usize,
     input_locked: bool,
 ) -> Option<usize> {
-    let hovered = gadgets.focus.hovered?;
-    let slot = gadgets
-        .cameos
-        .iter()
-        .position(|&handle| handle == hovered)?;
+    let slot = hovered?;
     (slot < entry_count && !input_locked).then_some(slot)
 }
 
@@ -723,7 +719,7 @@ pub(crate) fn build_sidebar_cameo_instances(
         chrome.map(|a| a.gclock_frames.as_slice()).unwrap_or(&[]);
     let mut hover = Vec::new();
     let hovered_slot = hovered_cameo_slot(
-        &state.match_state.match_presentation.in_game_gadgets,
+        crate::app::input::chrome_input::hovered_cameo(state),
         view.items.len(),
         crate::app::input::campaign_input::is_locked(state),
     );
@@ -1098,17 +1094,14 @@ mod tests {
 
     #[test]
     fn hover_outline_marks_only_a_filled_slot_while_input_is_unlocked() {
-        use crate::ui::gadget::GadgetHandle;
-        let mut gadgets = crate::app::input::gadget_input::InGameGadgets::new();
-        gadgets.cameos = vec![GadgetHandle(7), GadgetHandle(8), GadgetHandle(9)];
-        gadgets.focus.hovered = Some(GadgetHandle(8));
-        assert_eq!(hovered_cameo_slot(&gadgets, 2, false), Some(1));
+        // The chrome hovers the second cameo of the pool.
+        assert_eq!(hovered_cameo_slot(Some(1), 2, false), Some(1));
         // 6A9727: a pooled select button past EntryCount draws nothing.
-        assert_eq!(hovered_cameo_slot(&gadgets, 1, false), None);
+        assert_eq!(hovered_cameo_slot(Some(1), 1, false), None);
         // 6A9734: the input lock hides the outline but keeps the hover.
-        assert_eq!(hovered_cameo_slot(&gadgets, 2, true), None);
-        gadgets.focus.hovered = Some(GadgetHandle(3));
-        assert_eq!(hovered_cameo_slot(&gadgets, 3, false), None);
+        assert_eq!(hovered_cameo_slot(Some(1), 2, true), None);
+        // A hover on no cameo marks none.
+        assert_eq!(hovered_cameo_slot(None, 3, false), None);
     }
 
     #[test]

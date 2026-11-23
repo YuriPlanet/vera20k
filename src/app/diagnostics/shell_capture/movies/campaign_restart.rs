@@ -472,9 +472,9 @@ impl RestartCapture {
     }
 
     /// A physical left press and release on the sidebar's 0xF2 tab, through
-    /// the in-game gadget list.
+    /// the match's chrome.
     fn click_briefing_tab(state: &mut AppState, route: &mut Vec<Value>, frame: u32) -> Result<()> {
-        use crate::app::input::gadget_input;
+        use crate::app::input::chrome_input;
         let view = crate::app::presentation::sidebar_render::current_sidebar_view(state)
             .context("no sidebar view")?;
         let rect = state
@@ -484,7 +484,7 @@ impl RestartCapture {
         state.match_state.input.cursor_x = point[0];
         state.match_state.input.cursor_y = point[1];
         for pressed in [true, false] {
-            gadget_input::handle_mouse_button_event(
+            chrome_input::mouse_button(
                 state,
                 winit::event::MouseButton::Left,
                 pressed,

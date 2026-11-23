@@ -432,7 +432,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 .is_some_and(|rules| rules.sw_sidebar.toggle_key_enabled)
                 && crate::app::presentation::sw_sidebar::toggle(state)
             {
-                crate::app::input::sw_sidebar::play_main_button_sound(state);
+                crate::app::input::chrome_input::play_gui_main_button_sound(state);
                 crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
             }
         }

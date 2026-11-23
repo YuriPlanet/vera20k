@@ -446,15 +446,12 @@ impl App {
             // repair/sell (handle_options_hotkey). A release that arrives
             // while the overlay owns the mouse never reaches the tactical
             // body, so anything still armed here would stay latched for the
-            // rest of the match: tactical capture freezes edge auto-scroll,
-            // an active minimap press swallows every cursor move, and a stale
-            // gadget sticky capture eats the next click.
+            // rest of the match: tactical capture freezes edge auto-scroll
+            // and an active minimap press swallows every cursor move. The
+            // chrome's capture went with `dialog_ui` above; its pushed looks
+            // go here.
             state.match_state.input.cancel_tactical_drag();
-            state
-                .match_state
-                .match_presentation
-                .in_game_gadgets
-                .cancel_pointer_capture();
+            crate::app::input::chrome_input::cancel(state);
         }
         if next == InGameMenuState::Menu {
             state.match_state.match_presentation.pause_menu_has_saves =

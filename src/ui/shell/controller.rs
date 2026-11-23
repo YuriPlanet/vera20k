@@ -305,6 +305,16 @@ impl DialogController {
         consumed
     }
 
+    /// A pointer message for the chrome layer under the stack, with the
+    /// chrome's events: none while a dialog is up, which owns the pointer.
+    pub fn chrome_input(&mut self, event: InputEvent) -> Option<(vera20k_gui::InputResult, Vec<UiEvent>)> {
+        if !self.stack.is_empty() || self.gui.chrome().is_none() {
+            return None;
+        }
+        let result = self.gui.input(event, self.now());
+        Some((result, self.gui.drain_events()))
+    }
+
     /// Widget timers (list scroll repeat); the next deadline.
     pub fn poll(&mut self) -> Option<Instant> {
         let next = self.gui.poll(self.now());

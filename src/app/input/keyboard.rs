@@ -537,7 +537,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 }
 
 pub(crate) fn wheel(state: &mut AppState, lines: f32) {
-    let Some(layout) = layout(state) else {
+    // A dialog's wheel goes to its hovered list; the point is the pointer's.
+    let Some((layout, (x, y))) = layout_and_pointer(state) else {
         return;
     };
     let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {
@@ -550,7 +551,7 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) {
         false => (lines * 3.0) as i32,
     };
     dialog.ui.set_scale(layout.scale);
-    dialog.ui.on_input(vera20k_gui::InputEvent::Wheel { lines });
+    dialog.ui.on_input(vera20k_gui::InputEvent::Wheel { lines, x, y });
     let events = dialog.ui.drain_events();
     let events = crate::ui::shell::page::page_events(dialog.ui.gui(), events);
     apply(state, events);

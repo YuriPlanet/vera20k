@@ -27,7 +27,6 @@ pub(crate) struct SwSidebarState {
     pub(crate) required_significance: i32,
     /// `ToggleSWButtonClass::Action` switches on release, after a left press
     /// on the toggle.
-    pub(crate) toggle_pressed: bool,
     pub(crate) layout: SwSidebarLayout,
     pub(crate) entries: Vec<SwSidebarRuntimeEntry>,
 }
@@ -37,7 +36,6 @@ impl Default for SwSidebarState {
         Self {
             ui: SuperWeaponSidebarUi::default(),
             required_significance: 0,
-            toggle_pressed: false,
             layout: SwSidebarLayout::default(),
             entries: Vec::new(),
         }
@@ -48,20 +46,9 @@ impl SwSidebarState {
     pub(crate) fn configure(&mut self, ui: SuperWeaponSidebarUi, required_significance: i32) {
         self.ui = ui;
         self.required_significance = required_significance;
-        self.toggle_pressed = false;
         self.layout = SwSidebarLayout::default();
         self.entries.clear();
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SwSidebarHit {
-    Toggle,
-    SuperWeapon {
-        type_id: String,
-        column: usize,
-        column_button: usize,
-    },
 }
 
 /// `1u << HouseClass::CurrentPlayer->Type->ArrayIndex` in AddButton and
@@ -287,44 +274,6 @@ pub(crate) fn toggle_art(
         })
 }
 
-/// Hit test in unscaled layout coordinates. Columns are inert while collapsed;
-/// only the toggle remains clickable (`ToggleSWButtonClass::Action`).
-pub(crate) fn hit_test(state: &AppState, x: f32, y: f32) -> Option<SwSidebarHit> {
-    let presentation = &state.match_state.match_presentation;
-    hit_test_state(
-        &presentation.sw_sidebar,
-        presentation.sidebar_projection.model.sw_sidebar_expanded(),
-        x,
-        y,
-    )
-}
-
-pub(crate) fn hit_test_state(
-    sw: &SwSidebarState,
-    expanded: bool,
-    x: f32,
-    y: f32,
-) -> Option<SwSidebarHit> {
-    if !sw.ui.enabled {
-        return None;
-    }
-    if sw.layout.toggle.is_some_and(|rect| rect.contains(x, y)) {
-        return Some(SwSidebarHit::Toggle);
-    }
-    if !expanded {
-        return None;
-    }
-    sw.entries.iter().find_map(|entry| {
-        entry
-            .rect
-            .contains(x, y)
-            .then(|| SwSidebarHit::SuperWeapon {
-                type_id: entry.type_id.clone(),
-                column: entry.column,
-                column_button: entry.column_button,
-            })
-    })
-}
 
 /// Entry used by a positional hotkey (`FireTacticalSW1..10`): only the first
 /// column, positions 0..9.
@@ -345,42 +294,15 @@ pub(crate) fn hovered_entry_rect(state: &AppState) -> Option<Rect> {
     if !sw.ui.enabled || !expanded(state) {
         return None;
     }
-    let (x, y) = state.match_state.input.cursor_px();
-    sw.entries
-        .iter()
-        .find(|entry| entry.rect.contains(x as f32, y as f32))
-        .map(|entry| entry.rect)
+    // The chrome's hover (`SWButtonClass::OnMouseEnter`).
+    let index = crate::app::input::chrome_input::hovered_sw_button(state)?;
+    sw.entries.get(index).map(|entry| entry.rect)
 }
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
-
-    fn entry(type_id: &str, rect: Rect) -> SwSidebarRuntimeEntry {
-        SwSidebarRuntimeEntry {
-            type_id: type_id.to_string(),
-            rect,
-            column: 0,
-            column_button: 0,
-            view: SuperWeaponView {
-                type_id: InternedId::default(),
-                use_ai_targeting: false,
-                display_name: type_id.to_string(),
-                progress: 0.0,
-                display: Default::default(),
-                is_ready: false,
-                is_online: false,
-                should_flash_tab: false,
-                can_fire: false,
-                can_afford: false,
-                constraints_blocked: false,
-                ares_refusal: None,
-                ready_shots: 0,
-                ares_show_cameo: true,
-            },
-        }
-    }
 
     const SIDEBAR_RULES: &str = "[Countries]\n0=Americans\n1=Russians\n\
         [Americans]\nName=Americans\n[Russians]\nName=Russians\n\
@@ -515,39 +437,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hit_test_respects_the_collapsed_state_and_toggle() {
-        let mut sw = SwSidebarState {
-            ui: SuperWeaponSidebarUi {
-                enabled: true,
-                ..SuperWeaponSidebarUi::default()
-            },
-            entries: vec![entry(
-                "SW",
-                Rect {
-                    x: 10.0,
-                    y: 20.0,
-                    w: 60.0,
-                    h: 48.0,
-                },
-            )],
-            ..SwSidebarState::default()
-        };
-        assert_eq!(
-            hit_test_state(&sw, true, 15.0, 25.0),
-            Some(SwSidebarHit::SuperWeapon {
-                type_id: "SW".to_string(),
-                column: 0,
-                column_button: 0
-            })
-        );
-        assert_eq!(hit_test_state(&sw, false, 15.0, 25.0), None);
-        sw.layout.toggle = Some(Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 10.0,
-            h: 10.0,
-        });
-        assert_eq!(hit_test_state(&sw, true, 5.0, 5.0), Some(SwSidebarHit::Toggle));
-    }
 }

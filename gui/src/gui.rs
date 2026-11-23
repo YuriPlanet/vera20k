@@ -48,7 +48,9 @@ pub enum InputEvent {
     PointerUp { x: i32, y: i32, button: MouseButton },
     PointerMove { x: i32, y: i32 },
     /// Wheel notches, already converted by the host (§8.8); positive is up.
-    Wheel { lines: i32 },
+    /// A dialog's wheel goes to the hovered node; the chrome layer's to the
+    /// node at `x`, `y`.
+    Wheel { lines: i32, x: i32, y: i32 },
     Key(Key),
     /// Typed text for the focused `Edit` (IME commits included).
     Text(String),
@@ -57,11 +59,16 @@ pub enum InputEvent {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct InputResult {
     pub consumed: bool,
+    /// The chrome layer's `Passthrough` node that took the input, for the
+    /// host to handle (`consumed` is false then).
+    pub passthrough: Option<NodeId>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
     Activated { node: NodeId },
+    /// A chrome node that takes the right button activated by it.
+    RightActivated { node: NodeId },
     Hovered { node: NodeId, entered: bool },
     /// Checkbox (`Bool`) or Trackbar (`Int`). `final_` is false for the
     /// intermediate positions of a drag and true once the user lets go.
@@ -128,6 +135,9 @@ struct Pointer {
     last_down: Option<NodeId>,
     /// A press on a `Draggable` node, until the button comes up.
     drag: Option<Drag>,
+    /// Chrome: the captured button shows pressed, as the last move (or the
+    /// press) left the pointer in its rect.
+    look: bool,
 }
 
 /// A press on a `Draggable` node at `from`, carried once the pointer is
@@ -159,6 +169,28 @@ struct Dialog {
     /// Maps the dialog's device rects back to the authored base-size numbers
     /// the native widget arithmetic runs on.
     scale: ShellScale,
+    /// The chrome layer under the dialogs ([`Gui::push_chrome`]).
+    chrome: Option<Chrome>,
+}
+
+/// The chrome layer's hit rules.
+#[derive(Clone, Copy, Debug)]
+struct Chrome {
+    /// No node larger than this many px² hovers.
+    hover_seed_area: i64,
+}
+
+impl Dialog {
+    /// The pushed look: captured and still under the pointer (612B70); in
+    /// the chrome, captured with the pointer in its rect at the last move.
+    fn shows_pressed(&self, id: NodeId) -> bool {
+        let p = &self.pointer;
+        p.pressed == Some(id)
+            && match self.chrome {
+                Some(_) => p.look,
+                None => p.hovered == Some(id),
+            }
+    }
 }
 
 pub struct Gui {
@@ -224,8 +256,10 @@ impl Gui {
         let disables = prop == Prop::Enabled && value == Value::Bool(false);
         let hides = prop == Prop::Visible && value == Value::Bool(false);
         self.tree.set(id, prop, value)?;
+        // The chrome's holder keeps the pointer (a gadget list's sticky
+        // capture ignores the disabled byte).
         if disables {
-            for d in self.dialogs.iter_mut().filter(|d| d.pointer.pressed == Some(id)) {
+            for d in self.dialogs.iter_mut().filter(|d| d.chrome.is_none() && d.pointer.pressed == Some(id)) {
                 d.pointer.pressed = None;
                 d.pointer.dragging = false;
             }
@@ -269,8 +303,39 @@ impl Gui {
         }
         let id = DialogId(self.next_dialog);
         self.next_dialog += 1;
-        self.dialogs.push(Dialog { id, root, kind, pointer: Pointer::default(), scale: self.base_scale });
+        self.dialogs.push(Dialog { id, root, kind, pointer: Pointer::default(), scale: self.base_scale, chrome: None });
         Ok(id)
+    }
+
+    /// Pushes `root`, an existing `Dialog` node, as the chrome layer: the
+    /// host's own controls under every dialog. It takes the input only while
+    /// no dialog is over it, and its pointer rules are a retained gadget
+    /// list's ([`Self::input`]): no node larger than `hover_seed_area` px²
+    /// hovers. One chrome layer at a time.
+    pub fn push_chrome(&mut self, root: NodeId, hover_seed_area: i64) -> Result<DialogId, Refused> {
+        if self.tree.kind(root)? != NodeKind::Dialog {
+            return Err(Refused::WrongKind);
+        }
+        if self.chrome().is_some() {
+            return Err(Refused::Denied);
+        }
+        let id = DialogId(self.next_dialog);
+        self.next_dialog += 1;
+        let chrome = Some(Chrome { hover_seed_area });
+        self.dialogs.insert(0, Dialog { id, root, kind: DialogKind::Page, pointer: Pointer::default(), scale: self.base_scale, chrome });
+        Ok(id)
+    }
+
+    /// The chrome layer, while it stands.
+    pub fn chrome(&self) -> Option<DialogId> {
+        self.dialogs.first().filter(|d| d.chrome.is_some()).map(|d| d.id)
+    }
+
+    /// The node the chrome layer would hover at `x`, `y`: its smallest live
+    /// node there, none larger than its seed area.
+    pub fn chrome_hit(&self, x: i32, y: i32) -> Option<NodeId> {
+        let d = self.dialogs.first()?;
+        self.chrome_hover_at(d.root, x, y, d.chrome?.hover_seed_area)
     }
 
     /// Pops the dialog and removes its nodes.
@@ -280,9 +345,13 @@ impl Gui {
         self.remove(d.root)
     }
 
-    /// Moves the dialog to the top of the stack with its state.
+    /// Moves the dialog to the top of the stack with its state. The chrome
+    /// stays under the dialogs.
     pub fn raise_dialog(&mut self, id: DialogId) -> Result<(), Refused> {
         let pos = self.dialogs.iter().position(|d| d.id == id).ok_or(Refused::NotFound)?;
+        if self.dialogs[pos].chrome.is_some() {
+            return Err(Refused::Denied);
+        }
         let d = self.dialogs.remove(pos);
         self.dialogs.push(d);
         Ok(())
@@ -337,6 +406,7 @@ impl Gui {
         d.pointer.dragging = false;
         d.pointer.drag = None;
         d.pointer.hovered = None;
+        d.pointer.look = false;
         if let Some(popup) = d.pointer.popup {
             widget::combo::release_scroll(&mut self.tree, popup);
         }
@@ -368,10 +438,15 @@ impl Gui {
         self.top_pointer().hovered
     }
 
-    /// The pushed look: captured and still under the pointer (612B70).
+    /// The pushed look of the top dialog's `id`: captured and still under the
+    /// pointer (612B70).
     pub fn shows_pressed(&self, id: NodeId) -> bool {
-        let p = self.top_pointer();
-        p.pressed == Some(id) && p.hovered == Some(id)
+        self.dialogs.last().is_some_and(|d| d.shows_pressed(id))
+    }
+
+    /// [`Self::shows_pressed`] in dialog `dialog` (the chrome), on top or not.
+    pub fn shows_pressed_in(&self, dialog: DialogId, id: NodeId) -> bool {
+        self.dialog(dialog).is_some_and(|d| d.shows_pressed(id))
     }
 
     pub fn drain_events(&mut self) -> Vec<UiEvent> {
@@ -395,6 +470,17 @@ impl Gui {
     fn route(&mut self, event: InputEvent, now: UiMs) -> InputResult {
         let Some(top) = self.dialogs.last() else { return InputResult::default() };
         let (root, modal) = (top.root, top.kind == DialogKind::Modal);
+        if let Some(chrome) = top.chrome
+            && matches!(
+                event,
+                InputEvent::PointerDown { .. }
+                    | InputEvent::PointerUp { .. }
+                    | InputEvent::PointerMove { .. }
+                    | InputEvent::Wheel { .. }
+            )
+        {
+            return self.route_chrome(event, chrome.hover_seed_area);
+        }
         // A left press on a hovered label (`FocusTarget`) first gives its
         // edit the keys, as `set_focus` does: no event, the caret keeps its
         // blink phase. The press then goes on as any other.
@@ -414,7 +500,7 @@ impl Gui {
             match event {
                 InputEvent::PointerDown { x, y, button: MouseButton::Left } => {
                     self.with_ctx(now, |ctx| widget::combo::popup_press(ctx, popup, x, y));
-                    return InputResult { consumed: true };
+                    return InputResult { passthrough: None, consumed: true };
                 }
                 InputEvent::PointerMove { x, y } => {
                     self.with_ctx(now, |ctx| widget::combo::popup_move(ctx, popup, x, y));
@@ -423,29 +509,29 @@ impl Gui {
                     let covered = self.combo_drop_down(popup).is_some_and(|d| d.popup.rect.contains(x, y));
                     let over = self.hit(root, x, y).filter(|_| !covered);
                     self.set_hover(over);
-                    return InputResult { consumed: true };
+                    return InputResult { passthrough: None, consumed: true };
                 }
                 InputEvent::PointerUp { x, y, button: MouseButton::Left } => {
                     self.with_ctx(now, |ctx| widget::combo::popup_release(ctx, popup, x, y));
-                    return InputResult { consumed: true };
+                    return InputResult { passthrough: None, consumed: true };
                 }
                 // Escape closes the list (no cue) and goes no further; Enter
                 // picks its hot row, as `key_popup` does, and reaches no
                 // default button.
                 InputEvent::Key(Key::Escape) => {
                     self.close_popup();
-                    return InputResult { consumed: true };
+                    return InputResult { passthrough: None, consumed: true };
                 }
                 InputEvent::Key(Key::Enter) => {
                     self.with_ctx(now, |ctx| widget::combo::key(ctx, popup, Key::Enter));
-                    return InputResult { consumed: true };
+                    return InputResult { passthrough: None, consumed: true };
                 }
                 // A `WheelPicks` list steps its selection and closes silently.
-                InputEvent::Wheel { lines }
+                InputEvent::Wheel { lines, .. }
                     if self.tree.node(popup).is_ok_and(|n| n.bool_prop(Prop::WheelPicks, false)) =>
                 {
                     self.with_ctx(now, |ctx| widget::combo::wheel_pick(ctx, popup, lines));
-                    return InputResult { consumed: true };
+                    return InputResult { passthrough: None, consumed: true };
                 }
                 _ => {}
             }
@@ -461,7 +547,7 @@ impl Gui {
                             if self.top_mut().pointer.dragging {
                                 self.with_ctx(now, |ctx| widget::trackbar::drag(ctx, held, x));
                             }
-                            return InputResult { consumed: true };
+                            return InputResult { passthrough: None, consumed: true };
                         }
                         Ok(NodeKind::List) => {
                             self.with_ctx(now, |ctx| widget::list::drag(ctx, held, x, y));
@@ -473,14 +559,14 @@ impl Gui {
                             // It holds the pointer: the hover stays as the
                             // press left it until the release.
                             self.with_ctx(now, |ctx| widget::scrollbar::drag(ctx, held, y));
-                            return InputResult { consumed: true };
+                            return InputResult { passthrough: None, consumed: true };
                         }
                         _ => {}
                     }
                 }
                 let over = self.hit(root, x, y);
                 self.set_hover(over);
-                InputResult { consumed: over.is_some() || modal }
+                InputResult { passthrough: None, consumed: over.is_some() || modal }
             }
             InputEvent::PointerDown { x, y, button: MouseButton::Left } => {
                 if let (true, Ok(Some(Value::Rect(r)))) = (modal, self.tree.get(root, Prop::Rect))
@@ -499,7 +585,7 @@ impl Gui {
                 if let Some(n) = enabled {
                     self.press(n, x, y, now);
                 }
-                InputResult { consumed: over.is_some() || modal }
+                InputResult { passthrough: None, consumed: over.is_some() || modal }
             }
             InputEvent::PointerUp { x, y, button: MouseButton::Left } => {
                 let over = self.hit_at(root, x, y, true);
@@ -521,21 +607,21 @@ impl Gui {
                     let over = self.hit(root, x, y);
                     self.set_hover(over);
                 }
-                InputResult { consumed: held.is_some() || over.is_some() || modal }
+                InputResult { passthrough: None, consumed: held.is_some() || over.is_some() || modal }
             }
             InputEvent::PointerDown { .. } | InputEvent::PointerUp { .. } => {
-                InputResult { consumed: modal }
+                InputResult { passthrough: None, consumed: modal }
             }
-            InputEvent::Wheel { lines } => {
+            InputEvent::Wheel { lines, .. } => {
                 let target = self.top_pointer().hovered.filter(|n| self.tree.kind(*n) == Ok(NodeKind::List));
                 let scrolled = target
                     .is_some_and(|n| self.with_ctx(now, |ctx| widget::list::wheel(ctx, n, lines)));
-                InputResult { consumed: scrolled || modal }
+                InputResult { passthrough: None, consumed: scrolled || modal }
             }
             InputEvent::Key(key) => {
                 if let Some(f) = self.typing_focus().filter(|_| widget::is_edit_key(key)) {
                     if self.with_ctx(now, |ctx| widget::edit::key(ctx, f, key)) {
-                        return InputResult { consumed: true };
+                        return InputResult { passthrough: None, consumed: true };
                     }
                 }
                 self.key(key, now)
@@ -543,9 +629,9 @@ impl Gui {
             InputEvent::Text(text) => match self.typing_focus() {
                 Some(f) => {
                     self.with_ctx(now, |ctx| widget::edit::text(ctx, f, &text));
-                    InputResult { consumed: true }
+                    InputResult { passthrough: None, consumed: true }
                 }
-                None => InputResult { consumed: modal },
+                None => InputResult { passthrough: None, consumed: modal },
             },
         }
     }
@@ -1040,6 +1126,185 @@ impl Gui {
         self.dialogs.last_mut().expect("callers check for a top dialog")
     }
 
+    /// The chrome layer's pointer input: a retained gadget list's rules.
+    ///
+    /// - Hover: the smallest enabled node under the pointer, the later one
+    ///   on a tie, none larger than the layer's seed area.
+    /// - A press goes to the first enabled node in tree order under it that
+    ///   takes the button (`Buttons`): a `PressActivates` node activates at
+    ///   once, any other takes the capture, a `Passthrough` one for the host.
+    /// - The holder takes every button message, enabled or not, until the
+    ///   release of a button it takes; a release with no holder reaches only
+    ///   a catcher. An `Opaque` node swallows what it does not act on.
+    /// - A held button shows pressed while the last move (or the press) left
+    ///   the pointer in its rect, and its release activates it only then: a
+    ///   release off it with no move since still activates it, but toggles
+    ///   it only with the pointer inside.
+    fn route_chrome(&mut self, event: InputEvent, seed: i64) -> InputResult {
+        let root = self.top_mut().root;
+        match event {
+            InputEvent::PointerMove { x, y } => {
+                let over = self.chrome_hover_at(root, x, y, seed);
+                self.set_hover(over);
+                if let Some(held) = self.top_pointer().pressed {
+                    let inside = self.inside(held, x, y);
+                    self.top_mut().pointer.look = inside;
+                }
+                let consumed = over.is_some_and(|n| !self.chrome_flag(n, Prop::Passthrough));
+                InputResult { passthrough: None, consumed }
+            }
+            InputEvent::PointerDown { x, y, button } => {
+                let bit = button_bit(button);
+                if let Some(held) = self.top_pointer().pressed {
+                    // A press of a button the holder takes presses it again;
+                    // any other only follows the pointer.
+                    let look = self.takes(held, bit) || self.inside(held, x, y);
+                    self.top_mut().pointer.look = look;
+                    return self.held_result(held);
+                }
+                let at = |g: &Self, n| g.takes(n, bit) || g.chrome_flag(n, Prop::Opaque);
+                let Some(node) = self.chrome_at(root, x, y, at) else {
+                    return InputResult::default();
+                };
+                if !self.takes(node, bit) {
+                    // An `Opaque` node swallows a button it does not take.
+                    return InputResult { passthrough: None, consumed: true };
+                }
+                if self.chrome_flag(node, Prop::PressActivates) {
+                    self.activate_by(node, button);
+                    return InputResult { passthrough: None, consumed: true };
+                }
+                let pointer = &mut self.top_mut().pointer;
+                pointer.pressed = Some(node);
+                pointer.look = true;
+                if self.chrome_flag(node, Prop::Passthrough) {
+                    return InputResult { passthrough: Some(node), consumed: false };
+                }
+                self.events.push(UiEvent::Pressed { node });
+                InputResult { passthrough: None, consumed: true }
+            }
+            InputEvent::PointerUp { x, y, button } => {
+                let bit = button_bit(button);
+                let Some(held) = self.top_pointer().pressed else {
+                    let at = |g: &Self, n| {
+                        g.takes(n, bit) && g.chrome_flag(n, Prop::Passthrough) || g.chrome_flag(n, Prop::Opaque)
+                    };
+                    return match self.chrome_at(root, x, y, at) {
+                        Some(n) if self.chrome_flag(n, Prop::Passthrough) => {
+                            InputResult { passthrough: Some(n), consumed: false }
+                        }
+                        Some(_) => InputResult { passthrough: None, consumed: true },
+                        None => InputResult::default(),
+                    };
+                };
+                let result = self.held_result(held);
+                if !self.takes(held, bit) {
+                    let inside = self.inside(held, x, y);
+                    self.top_mut().pointer.look = inside;
+                    return result;
+                }
+                let pointer = &mut self.top_mut().pointer;
+                let look = std::mem::take(&mut pointer.look);
+                pointer.pressed = None;
+                if look && !self.chrome_flag(held, Prop::Passthrough) {
+                    if self.inside(held, x, y) {
+                        self.toggle_on_release(held);
+                    }
+                    self.activate_by(held, button);
+                }
+                result
+            }
+            InputEvent::Wheel { x, y, .. } => {
+                let node = self.chrome_at(root, x, y, |_, _| true);
+                match node.filter(|n| self.chrome_flag(*n, Prop::Passthrough)) {
+                    Some(n) => InputResult { passthrough: Some(n), consumed: false },
+                    None => InputResult { passthrough: None, consumed: node.is_some() },
+                }
+            }
+            InputEvent::Key(_) | InputEvent::Text(_) => InputResult::default(),
+        }
+    }
+
+    /// What the chrome's holder reports for an input it takes.
+    fn held_result(&self, held: NodeId) -> InputResult {
+        match self.chrome_flag(held, Prop::Passthrough) {
+            true => InputResult { passthrough: Some(held), consumed: false },
+            false => InputResult { passthrough: None, consumed: true },
+        }
+    }
+
+    fn chrome_flag(&self, node: NodeId, prop: Prop) -> bool {
+        self.tree.node(node).is_ok_and(|n| n.bool_prop(prop, false))
+    }
+
+    /// Whether chrome `node` takes the mouse button `bit` (`Buttons`).
+    fn takes(&self, node: NodeId, bit: i32) -> bool {
+        self.tree.node(node).is_ok_and(|n| n.int_prop(Prop::Buttons, 1) & bit != 0)
+    }
+
+    fn inside(&self, node: NodeId, x: i32, y: i32) -> bool {
+        self.tree.screen_hit_rect(node).is_ok_and(|r| r.contains(x, y))
+    }
+
+    /// A chrome node that can take the pointer: a shown, enabled button.
+    fn chrome_live(&self, node: NodeId, kind: NodeKind) -> bool {
+        kind == NodeKind::Button && self.tree.effective(node, Prop::Visible) && self.tree.effective(node, Prop::Enabled)
+    }
+
+    /// The first live chrome node under `root` in tree order at `x`, `y`
+    /// that `accept` takes.
+    fn chrome_at(&self, root: NodeId, x: i32, y: i32, accept: impl Fn(&Self, NodeId) -> bool) -> Option<NodeId> {
+        self.tree
+            .walk(root, &mut |id, kind| {
+                match self.chrome_live(id, kind) && self.inside(id, x, y) && accept(self, id) {
+                    true => ControlFlow::Break(id),
+                    false => ControlFlow::Continue(()),
+                }
+            })
+            .break_value()
+    }
+
+    /// The chrome's hover at `x`, `y`: the smallest live node there, the
+    /// later on a tie (a signed `<=`), seeded with `seed` so that none larger
+    /// wins.
+    fn chrome_hover_at(&self, root: NodeId, x: i32, y: i32, seed: i64) -> Option<NodeId> {
+        let mut best = None;
+        let mut best_area = seed;
+        let _ = self.tree.walk(root, &mut |id, kind| {
+            if self.chrome_live(id, kind)
+                && let Ok(r) = self.tree.screen_hit_rect(id)
+                && r.contains(x, y)
+            {
+                let area = i64::from(r.w) * i64::from(r.h);
+                if area <= best_area {
+                    best = Some(id);
+                    best_area = area;
+                }
+            }
+            ControlFlow::<()>::Continue(())
+        });
+        best
+    }
+
+    fn activate_by(&mut self, node: NodeId, button: MouseButton) {
+        self.events.push(match button {
+            MouseButton::Left => UiEvent::Activated { node },
+            MouseButton::Right => UiEvent::RightActivated { node },
+        });
+    }
+
+    /// A `ToggleOnRelease` button let go inside: `Toggled` flips (1) or
+    /// turns on (2).
+    fn toggle_on_release(&mut self, node: NodeId) {
+        let Ok(n) = self.tree.node(node) else { return };
+        let on = match n.int_prop(Prop::ToggleOnRelease, 0) {
+            1 => !n.bool_prop(Prop::Toggled, false),
+            2 => true,
+            _ => return,
+        };
+        let _ = self.tree.set(node, Prop::Toggled, Value::Bool(on));
+    }
+
     fn key(&mut self, key: Key, now: UiMs) -> InputResult {
         let Some(top) = self.dialogs.last() else { return InputResult::default() };
         let (root, modal) = (top.root, top.kind == DialogKind::Modal);
@@ -1047,9 +1312,9 @@ impl Gui {
             Key::Enter => Prop::Default,
             Key::Escape => Prop::Cancel,
             Key::Tab | Key::BackTab => {
-                return InputResult { consumed: self.tab(root, key == Key::BackTab, now) || modal };
+                return InputResult { passthrough: None, consumed: self.tab(root, key == Key::BackTab, now) || modal };
             }
-            _ => return InputResult { consumed: modal },
+            _ => return InputResult { passthrough: None, consumed: modal },
         };
         let target = self
             .tree
@@ -1064,9 +1329,9 @@ impl Gui {
         match target {
             Some(n) if self.tree.effective(n, Prop::Enabled) => {
                 self.activate(n);
-                InputResult { consumed: true }
+                InputResult { passthrough: None, consumed: true }
             }
-            _ => InputResult { consumed: modal },
+            _ => InputResult { passthrough: None, consumed: modal },
         }
     }
 
@@ -1166,6 +1431,14 @@ impl Gui {
                 ControlFlow::Continue(())
             })
             .break_value()
+    }
+}
+
+/// A mouse button as the chrome's `Buttons` bit.
+fn button_bit(button: MouseButton) -> i32 {
+    match button {
+        MouseButton::Left => 1,
+        MouseButton::Right => 2,
     }
 }
 

@@ -255,9 +255,9 @@ pub(crate) struct MatchPresentationState {
     /// `sidebar_gadgets::update_sidebar_gadget_state` on every pass;
     /// read each frame by the sidebar view builder to pick SHP frame indices.
     pub(crate) sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState,
-    /// In-game gadget substrate (study §6.1): retained sidebar button list +
-    /// capture/focus state + reusable tick output + the mouse-held record.
-    pub(crate) in_game_gadgets: crate::app::input::gadget_input::InGameGadgets,
+    /// The match's chrome nodes on `dialog_ui`'s chrome layer
+    /// (`input::chrome_input`).
+    pub(crate) in_game_chrome: crate::app::input::chrome_input::InGameChrome,
     /// Retained immutable sidebar view plus its per-owner animated credit state.
     /// Consumers read the snapshot; explicit transitions rebuild it.
     pub(crate) sidebar_projection: crate::app::sidebar_projection::SidebarProjectionState,

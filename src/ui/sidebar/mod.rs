@@ -489,9 +489,9 @@ pub(crate) fn hit_test_item(item: &SidebarItem, right_click: bool, shift: bool) 
 
 // `sidebar::hit_test` (the legacy press-path hit-test) was retired in A6: every
 // in-game surface — tabs/repair/sell/scroll (A1), cameos (A2) and tactical/minimap
-// (A3) — is now owned by the `app::input::gadget_input`
-// retained list (one order = hit + draw, R7 complete). `hit_test_item` (the cameo
-// click→action map) stays public for the driver.
+// (A3) — is now owned by the match's chrome (`app::input::chrome_input`, the
+// GUI's chrome layer). `hit_test_item` (the cameo click→action map) stays
+// public for it.
 
 #[cfg(all(test, tests_ui))]
 mod native_geometry_tests;

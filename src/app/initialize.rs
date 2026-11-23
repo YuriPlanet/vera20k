@@ -1144,7 +1144,7 @@ impl App {
                     power_bar_anim: crate::ui::sidebar::PowerBarAnimState::new(),
                     sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState::new(
                     ),
-                    in_game_gadgets: crate::app::input::gadget_input::InGameGadgets::new(),
+                    in_game_chrome: Default::default(),
                     sidebar_projection: Default::default(),
                     active_sidebar_tab: SidebarTab::default_active_tab(),
                     sidebar_layout_spec,

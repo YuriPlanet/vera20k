@@ -8,6 +8,8 @@
 extern crate self as vera20k_gui;
 
 #[cfg(test)]
+mod chrome_tests;
+#[cfg(test)]
 mod external_client_tests;
 
 pub mod gui;
