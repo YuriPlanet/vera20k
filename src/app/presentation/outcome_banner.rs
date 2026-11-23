@@ -408,12 +408,23 @@ pub(crate) fn visible_verdict(state: &AppState) -> Option<HouseOutcomeKind> {
 /// Tactical6D4E20 chooses shape first; centred white text is its missing-art
 /// branch. Its geometry follows the tactical viewport and is screen-fixed.
 /// The banner as nodes: its picture, or the result's text where no
-/// picture loaded.
-#[derive(Default)]
+/// picture loaded; either is the layout's part `Banner`.
 pub(crate) struct BannerHuds {
     picture: crate::app::presentation::picture_hud::PictureHud,
     text: crate::app::presentation::text_hud::TextHud,
 }
+
+impl Default for BannerHuds {
+    fn default() -> Self {
+        Self {
+            picture: Default::default(),
+            text: crate::app::presentation::text_hud::TextHud::named(BANNER),
+        }
+    }
+}
+
+/// The banner's `veraui.ini` key.
+const BANNER: &str = "Banner";
 
 impl BannerHuds {
     /// No banner this frame.
@@ -431,6 +442,7 @@ pub(crate) fn instances(
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     let quad = banner_quad(state, outcome_kind);
     huds.picture.begin();
+    huds.picture.part(BANNER);
     huds.text.begin();
     let font = &state.renderer.bit_font;
     let result = match quad {

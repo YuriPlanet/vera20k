@@ -23,6 +23,10 @@ use crate::render::hud_paint::{HudPaint, HudSpace, Material, NodeDraw};
 /// The pieces' tree, kept from frame to frame, and the lanes it draws.
 pub(crate) struct TextHud {
     hud: Hud,
+    /// The overlay's `veraui.ini` key, and the part node of that name every
+    /// piece goes into ([`Self::named`]).
+    name: Option<&'static str>,
+    part: Option<NodeId>,
     /// One node per box and text, in drawing order.
     nodes: Vec<(NodeKind, NodeId)>,
     /// How many of `nodes` this frame has reached.
@@ -38,6 +42,8 @@ impl Default for TextHud {
     fn default() -> Self {
         Self {
             hud: Hud::new(usize::MAX, InputPolicy::default()),
+            name: None,
+            part: None,
             nodes: Vec::new(),
             used: 0,
             laid_out: 0,
@@ -57,8 +63,27 @@ const SPACE: HudSpace = HudSpace {
 };
 
 impl TextHud {
+    /// An overlay that is one part of the layout, `name` its `veraui.ini`
+    /// key: every box and text is a child of the part node of that name, so
+    /// the part can be found and hidden or restyled as one. The part draws
+    /// nothing itself; its pieces keep their places and order.
+    pub(crate) fn named(name: &'static str) -> Self {
+        Self {
+            name: Some(name),
+            ..Self::default()
+        }
+    }
+
     /// Start a frame: the pieces added from here replace the last frame's.
     pub(crate) fn begin(&mut self) {
+        if let (Some(name), None) = (self.name, self.part)
+            && let Ok(part) = self
+                .hud
+                .create_root(Layer::Overlay, Origin::Host, NodeKind::Panel)
+        {
+            let _ = self.hud.set(part, Prop::Name, Value::Text(name.to_owned()));
+            self.part = Some(part);
+        }
         self.used = 0;
         self.draws.clear();
     }
@@ -188,10 +213,13 @@ impl TextHud {
             Some(&(of, node)) if of == kind => node,
             _ => {
                 self.forget_from(self.used);
-                let node = self
-                    .hud
-                    .create_root(Layer::Overlay, Origin::Host, kind)
-                    .ok()?;
+                let node = match self.part {
+                    Some(part) => self.hud.create(kind, part, Origin::Host).ok()?,
+                    None => self
+                        .hud
+                        .create_root(Layer::Overlay, Origin::Host, kind)
+                        .ok()?,
+                };
                 self.nodes.push((kind, node));
                 node
             }
@@ -209,6 +237,29 @@ impl TextHud {
             let _ = self.hud.remove(node);
         }
         self.nodes.truncate(kept);
+    }
+}
+
+#[cfg(all(test, tests_app_presentation))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_named_overlay_is_one_part_that_hides_as_one() {
+        let font = crate::render::bit_font::tests::make_test_font(&[(u16::from(b'a'), 6)], 4);
+        let mut hud = TextHud::named("Timers");
+        let frame = |hud: &mut TextHud| {
+            hud.begin();
+            hud.fill(Rect::new(0, 0, 4, 4), [0.5, 0.0], [4.0, 4.0], rgb([0; 3]), 0.0);
+            hud.text(Rect::new(1, 1, 6, 8), "a", [1.5, 1.0], rgb([255; 3]), None);
+            hud.finish(&font);
+            (hud.boxes().count(), hud.glyphs().count())
+        };
+        assert_eq!(frame(&mut hud), (1, 1));
+        let part = hud.hud.find(Origin::Host, "Timers").unwrap();
+        assert_eq!(frame(&mut hud), (1, 1), "a frame keeps the one part");
+        hud.hud.set(part, Prop::Visible, Value::Bool(false)).unwrap();
+        assert_eq!(frame(&mut hud), (0, 0));
     }
 }
 
