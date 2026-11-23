@@ -48,7 +48,10 @@ clients show in place of their "could not connect" text; other 503s mean the lob
 unavailable. Players already signed in keep their sessions.
 A client in the lobby, outside a match, whose event polls fail for about a minute tells
 its player the connection was lost and stops polling; its next sign-in logs the old
-session out first.
+session out first. A poll refused by a spent rate budget is not a failed poll: the lobby
+answered, so the client waits the `retry_after` it names and asks again, and its player
+is not told the connection was lost. After a few refusals in a row it says once that the
+lobby is limiting that connection, and keeps waiting as the lobby asks.
 The HTTP paths keep `/v1`. Sign-in requires `protocol:4`; any other value gets 426
 `upgrade_required`. Relay tickets are wire version 2 and relay datagrams envelope
 version 3, plain text under a per-hop 4-byte MAC (`services/relay/README.md`); lobby
@@ -613,6 +616,10 @@ short-lived ticket for the existing source/generation and the current shell curs
 This recovers an expired lobby event cursor without skipping gameplay: missed
 commands still come from the relay's complete journal. It shares the existing
 renewal action budget; it cannot create a membership or change match identity.
+A recovery that does not reach the lobby leaves the session as it was: the client
+asks again within seconds and tells its player that the lobby is not answering,
+rather than leaving the room still. A run of them counts as unanswered polls, so
+it ends the way any other unanswered run does.
 
 `POST /v1/admin/notice` is for operators, not players: its bearer is the
 deployment's `ADMIN_KEY`. Without a key of at least 32 characters it returns 404

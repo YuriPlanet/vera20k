@@ -100,7 +100,10 @@ impl Client {
             return Err(RequestFailure::Status(0));
         }
         if !(200..300).contains(&status) {
-            return Err(RequestFailure::answer(path, status, body.as_bytes()));
+            // The gateway forwards no headers, so the wait a rate-limited
+            // answer names comes from its body (docs/lobby-protocol.md "Rate
+            // limits").
+            return Err(RequestFailure::answer(path, status, body.as_bytes(), None));
         }
         serde_json::from_str(&body).map_err(|_| RequestFailure::Status(0))
     }

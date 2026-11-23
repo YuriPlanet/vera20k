@@ -436,6 +436,16 @@ const MAX_UPGRADE_MESSAGE_CHARS: usize = 160;
 // The failed polls, 2+4+8+16+30 s apart, after which a player outside a
 // match is told the lobby connection was lost: about a minute.
 const LOBBY_LOST_POLLS: u8 = 6;
+// How long a rate-limited request waits, as the lobby asks
+// (docs/lobby-protocol.md "Rate limits"). The lobby's answer is outside
+// data: at least a second, at most a minute.
+const MIN_RETRY_AFTER_SECS: u64 = 1;
+const MAX_RETRY_AFTER_SECS: u64 = 60;
+// What a rate-limited request waits when the lobby names no time.
+const DEFAULT_RETRY_AFTER_SECS: u64 = 5;
+// The rate-limited answers in a row the client absorbs before it tells its
+// player that the lobby is limiting this session.
+const RATE_LIMIT_REFUSALS: u8 = 3;
 
 /// What a game says about itself when it signs in, over either transport
 /// (docs/lobby-protocol.md "Sign-in headers"). It names its version here
@@ -460,6 +470,12 @@ fn sign_in_headers(changes: &str) -> [(&'static str, String); 7] {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RequestFailure {
     Status(u16),
+    /// 429 `rate_limited`: the lobby's rate budget for this player's network
+    /// is spent, with the wait until it refills (docs/lobby-protocol.md
+    /// "Rate limits"). A refusal of this request alone, not of the session.
+    RateLimited {
+        retry_after: Duration,
+    },
     /// A session nickname is in use (409), or belongs to an account
     /// (403, with its localized message). Neither error created a session.
     SessionNameInUse,
@@ -500,6 +516,27 @@ enum RequestFailure {
     },
 }
 
+/// What a failed request says about the session that made it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SessionOutcome {
+    /// The failure is answered: the session was retired, or its match's
+    /// event history was recovered. The caller reports no request failure.
+    Handled,
+    /// The session lives; the request failed for another reason.
+    Alive,
+    /// The lobby refused this request for a while: wait and ask again,
+    /// without counting the request as a failure.
+    RateLimited(Duration),
+}
+
+impl SessionOutcome {
+    /// Whether the failure is answered, so that the caller reports no
+    /// request failure of its own.
+    fn handled(self) -> bool {
+        matches!(self, Self::Handled)
+    }
+}
+
 /// What the shell hears when a sign-in gets no session. A 409 is the name
 /// in use (0x8004_0064, TXT_LOGIN_USED); code 0 is no usable answer,
 /// including a 401 or 403 without the lobby's code.
@@ -514,6 +551,7 @@ fn sign_in_failure(attempt: u64, failure: RequestFailure) -> Response {
         | RequestFailure::Maintenance(_)
         | RequestFailure::Full(_)
         | RequestFailure::Account { .. }
+        | RequestFailure::RateLimited { .. }
         | RequestFailure::Status(429)) => {
             let bad_credential = matches!(
                 error,
@@ -594,7 +632,10 @@ impl CommandFailure {
 }
 
 impl RequestFailure {
-    fn response(status: u16, bytes: &[u8]) -> Self {
+    /// An answer's own failure. `retry_after` is the answer's `Retry-After`
+    /// header, which a browser game's gateway does not forward: the body
+    /// carries the same wait.
+    fn response(status: u16, bytes: &[u8], retry_after: Option<&str>) -> Self {
         let value = serde_json::from_slice::<Value>(bytes).ok();
         let code = value
             .as_ref()
@@ -647,6 +688,12 @@ impl RequestFailure {
             Some(code @ "account_locked") if status == 429 => {
                 Self::account(status, Some(code), value.as_ref())
             }
+            // A spent rate budget: the request alone is refused, with the
+            // wait until the budget refills (docs/lobby-protocol.md "Rate
+            // limits").
+            Some("rate_limited") if status == 429 => Self::RateLimited {
+                retry_after: rate_limit_wait(value.as_ref(), retry_after),
+            },
             _ if status == 426 => Self::UpgradeRequired(plain_message(value.as_ref())),
             _ => Self::Status(status),
         }
@@ -659,7 +706,9 @@ impl RequestFailure {
     /// already online or reserved, while `name_claimed` is an account's name.
     /// Only these two replies let the game draw another guest name. A 401 on any path is the
     /// bearer the lobby no longer knows (`session_failed`).
-    fn answer(path: &str, status: u16, bytes: &[u8]) -> Self {
+    /// `retry_after` is the answer's `Retry-After` header, which a browser
+    /// game's gateway does not forward: the body carries the same wait.
+    fn answer(path: &str, status: u16, bytes: &[u8], retry_after: Option<&str>) -> Self {
         if status == 401 {
             return Self::Status(401);
         }
@@ -684,7 +733,7 @@ impl RequestFailure {
                 (429, Some("rate_limited")) | (503, Some("accounts_unavailable"))
             );
         if !path.starts_with("/v1/accounts/") && !sign_in {
-            return Self::response(status, bytes);
+            return Self::response(status, bytes, retry_after);
         }
         Self::account(status, code, value.as_ref())
     }
@@ -743,8 +792,54 @@ impl RequestFailure {
             Self::InvalidOptions => 400,
             Self::UpgradeRequired(_) => 426,
             Self::Maintenance(_) | Self::Full(_) => 503,
+            Self::RateLimited { .. } => 429,
             Self::Account { status, .. } => *status,
         }
+    }
+}
+
+/// The wait a rate-limited answer asks for: its `retry_after`, or the
+/// `Retry-After` header when the body carried none (docs/lobby-protocol.md
+/// "Rate limits"). Outside data: at least a second, at most a minute, so a
+/// broken lobby cannot hold the game still.
+fn rate_limit_wait(value: Option<&Value>, header: Option<&str>) -> Duration {
+    let asked = value
+        .and_then(|value| value["error"]["retry_after"].as_u64())
+        .or_else(|| header.and_then(|header| header.trim().parse().ok()));
+    Duration::from_secs(
+        asked
+            .unwrap_or(DEFAULT_RETRY_AFTER_SECS)
+            .clamp(MIN_RETRY_AFTER_SECS, MAX_RETRY_AFTER_SECS),
+    )
+}
+
+/// What a spent rate budget does to this session (docs/lobby-protocol.md
+/// "Rate limits"): the wait before the next request and the one line the
+/// player hears. The owner of that decision, in every build: a browser's
+/// gateway forwards no headers, but these rules read the same wait from the
+/// body.
+#[derive(Debug, Default)]
+struct RateLimit {
+    /// The refusals in a row, since the last answer the lobby accepted.
+    refusals: u8,
+    /// The player has heard about these refusals.
+    told: bool,
+}
+
+impl RateLimit {
+    /// A refusal: the wait before the next request, and whether the player
+    /// must hear that the lobby is limiting this session.
+    fn refused(&mut self, wait: Duration) -> (Duration, bool) {
+        self.refusals = self.refusals.saturating_add(1);
+        let tell = self.refusals > RATE_LIMIT_REFUSALS && !self.told;
+        self.told |= tell;
+        (wait, tell)
+    }
+
+    /// An answer the lobby accepted: the next refusal starts over.
+    fn accepted(&mut self) {
+        self.refusals = 0;
+        self.told = false;
     }
 }
 
@@ -777,6 +872,8 @@ struct Client {
     /// The lobby stopped answering and the player was told the connection
     /// was lost: no more polls; the next sign-in logs this bearer out first.
     abandoned: bool,
+    /// The lobby's spent rate budget, and what this session does about it.
+    rate_limit: RateLimit,
 }
 
 /// A watcher's renewal poll the match service refused for good: its match
@@ -836,6 +933,7 @@ impl Client {
             watching: false,
             watch_refused: false,
             abandoned: false,
+            rate_limit: RateLimit::default(),
         }
     }
 
@@ -887,6 +985,17 @@ impl Client {
             .map_err(|_| RequestFailure::Status(0))?;
         self.cursor = cursor;
         Ok(())
+    }
+
+    /// A rate-limited answer: the session lives, the caller waits as the
+    /// lobby says, and the player hears once that the lobby is limiting this
+    /// session. The decision is the owner's, in every build.
+    fn rate_limited(&mut self, retry_after: Duration, output: &Sender<Response>) -> SessionOutcome {
+        let (wait, tell) = self.rate_limit.refused(retry_after);
+        if tell {
+            let _ = output.send(Response::Failure("VERA:OnlineRateLimited"));
+        }
+        SessionOutcome::RateLimited(wait)
     }
 
     /// A stream frame or map upload reply can arrive after a newer batch.
@@ -969,6 +1078,13 @@ impl Client {
         };
         let mut response = response.map_err(|_| RequestFailure::Status(0))?;
         let status = response.status().as_u16();
+        // A rate-limited answer names its wait in a header as well as in its
+        // body (docs/lobby-protocol.md "Rate limits").
+        let retry_after = response
+            .headers()
+            .get("retry-after")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
         let mut bytes = Vec::new();
         response
             .body_mut()
@@ -980,7 +1096,12 @@ impl Client {
             return Err(RequestFailure::Status(0));
         }
         if !(200..300).contains(&status) {
-            return Err(RequestFailure::answer(path, status, &bytes));
+            return Err(RequestFailure::answer(
+                path,
+                status,
+                &bytes,
+                retry_after.as_deref(),
+            ));
         }
         serde_json::from_slice(&bytes).map_err(|_| RequestFailure::Status(0))
     }
@@ -1120,12 +1241,21 @@ macro_rules! serial_driver {
         }
     }
 
-    $($asynchronous)? fn session_failed(&mut self, error: RequestFailure, output: &Sender<Response>) -> bool {
+    $($asynchronous)? fn session_failed(
+        &mut self,
+        error: RequestFailure,
+        output: &Sender<Response>,
+    ) -> SessionOutcome {
         if let RequestFailure::UpgradeRequired(message) = error {
             // A 426 refuses this request alone: the session stays, and its
             // player hears once per sign-in that an update is needed.
             let _ = output.send(Response::Outdated { message });
-            return false;
+            return SessionOutcome::Alive;
+        }
+        if let RequestFailure::RateLimited { retry_after } = error {
+            // A spent rate budget refuses this request alone: the session
+            // stays, and the caller waits as the lobby says.
+            return self.rate_limited(retry_after, output);
         }
         if error == RequestFailure::LostCursor
             && let Some(match_id) = self.active_match.clone()
@@ -1133,14 +1263,27 @@ macro_rules! serial_driver {
             let recovered = platform_await!(self
                 .request(&format!("/v1/match/resume?match_id={match_id}"), None))
                 .and_then(|value| self.accept_match_resume(value, output));
-            // Shell event history is separate from the committed gameplay
-            // journal. Network failures keep the same bearer/identity/cursor
-            // until a matching active-match recovery succeeds.
-            if !matches!(
-                recovered,
-                Err(RequestFailure::Status(401) | RequestFailure::AlreadyFinished)
-            ) {
-                return true;
+            match recovered {
+                // The match's event history is back: the session lives and its
+                // cursor advances.
+                Ok(()) => return SessionOutcome::Handled,
+                // The lobby refused: this session is gone (below).
+                Err(RequestFailure::Status(401) | RequestFailure::AlreadyFinished) => {}
+                // A 426 refuses this request alone: the session stays, and
+                // its player hears once per sign-in that an update is needed.
+                Err(RequestFailure::UpgradeRequired(message)) => {
+                    let _ = output.send(Response::Outdated { message });
+                    return SessionOutcome::Handled;
+                }
+                // The lobby refused this recovery for a while: ask again as
+                // it says, and count no failure.
+                Err(RequestFailure::RateLimited { retry_after }) => {
+                    return self.rate_limited(retry_after, output);
+                }
+                // The lobby did not answer. The session may live: keep its
+                // bearer, and let the caller ask again soon. Waiting a whole
+                // poll here would leave the room still.
+                Err(_) => return SessionOutcome::Alive,
             }
         }
         if matches!(
@@ -1165,9 +1308,9 @@ macro_rules! serial_driver {
             if self.token.take().is_some() {
                 let _ = output.send(Response::Offline);
             }
-            true
+            SessionOutcome::Handled
         } else {
-            false
+            SessionOutcome::Alive
         }
     }
 
@@ -1185,9 +1328,8 @@ macro_rules! serial_driver {
                 let _ = output.send(Response::Channels(channels));
             }
             Err(error) => {
-                if !platform_await!(self.session_failed(error, output))
-                    && !std::mem::replace(refresh_failed, true)
-                {
+                let outcome = platform_await!(self.session_failed(error, output));
+                if !outcome.handled() && !std::mem::replace(refresh_failed, true) {
                     let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
                 }
             }
@@ -1206,7 +1348,8 @@ macro_rules! serial_driver {
             Err(RequestFailure::Status(404)) => None,
             Err(error) => {
                 let outdated = matches!(error, RequestFailure::UpgradeRequired(_));
-                if !platform_await!(self.session_failed(error, output))
+                let outcome = platform_await!(self.session_failed(error, output));
+                if !outcome.handled()
                     && refused_options.is_none() && !outdated && self.token.is_some()
                 {
                     let _ = output.send(Response::WatchListFailed);
@@ -1225,6 +1368,8 @@ macro_rules! serial_driver {
     ) -> Duration {
         match result {
             Ok(()) => {
+                // The lobby answered: a spent rate budget is over.
+                self.rate_limit.accepted();
                 if *failed_polls > 0 {
                     let _ = output.send(Response::LobbyReachable);
                 }
@@ -1235,18 +1380,30 @@ macro_rules! serial_driver {
                     Duration::from_secs(1)
                 }
             }
-            Err(error) if platform_await!(self.session_failed(error.clone(), output)) => Duration::from_secs(30),
-            Err(_) => {
-                if *failed_polls == 0 {
-                    let _ = output.send(Response::LobbyUnreachable);
+            Err(error) => {
+                let outcome = platform_await!(self.session_failed(error, output));
+                match outcome {
+                    // The session is gone, or its match's history is back: ask
+                    // again later.
+                    SessionOutcome::Handled => Duration::from_secs(30),
+                    // The lobby refused this poll for a while: wait as it
+                    // says, and count no failed poll. The lobby answered; it
+                    // is not away.
+                    SessionOutcome::RateLimited(retry_after) => retry_after,
+                    // The poll failed: the outage machinery tells the player.
+                    SessionOutcome::Alive => {
+                        if *failed_polls == 0 {
+                            let _ = output.send(Response::LobbyUnreachable);
+                        }
+                        *failed_polls = failed_polls.saturating_add(1);
+                        // From about a minute on, each failed poll asks the shell,
+                        // which gives up (`Request::Abandon`) unless a match is on.
+                        if *failed_polls >= LOBBY_LOST_POLLS && !self.spawned && !self.abandoned {
+                            let _ = output.send(Response::LobbyLost);
+                        }
+                        Duration::from_secs((1u64 << (*failed_polls).min(5)).min(30))
+                    }
                 }
-                *failed_polls = failed_polls.saturating_add(1);
-                // From about a minute on, each failed poll asks the shell,
-                // which gives up (`Request::Abandon`) unless a match is on.
-                if *failed_polls >= LOBBY_LOST_POLLS && !self.spawned && !self.abandoned {
-                    let _ = output.send(Response::LobbyLost);
-                }
-                Duration::from_secs((1u64 << (*failed_polls).min(5)).min(30))
             }
         }
     }
@@ -1476,7 +1633,8 @@ macro_rules! serial_driver {
                         let _ = output.send(Response::CommandCompleted { id, operation });
                     }
                     Err(error)
-                        if !platform_await!(client.session_failed(error.clone(), &output)) && operation != "renew_relay" =>
+                        if !platform_await!(client.session_failed(error.clone(), &output)).handled()
+                            && operation != "renew_relay" =>
                     {
                         let _ = output.send(if operation == "start" {
                             Response::StartRejected {
@@ -1692,7 +1850,7 @@ mod tests {
         use crate::app::shell_wol::lobby::watch_refusal_key;
         let refusal = |code: &str| {
             let body = format!(r#"{{"error":{{"code":"{code}"}}}}"#);
-            let failure = RequestFailure::response(409, body.as_bytes());
+            let failure = RequestFailure::response(409, body.as_bytes(), None);
             watch_refusal_key(failure.command_failure("watch").wol_code())
         };
         assert_eq!(refusal("unknown_match"), "VERA:WatchUnknownMatch");
@@ -1710,27 +1868,31 @@ mod tests {
         let wrong_key = RequestFailure::response(
             403,
             br#"{"error":{"code":"room_password","message":"untrusted text"}}"#,
+            None,
         );
         assert_eq!(
             wrong_key.command_failure("join"),
             CommandFailure::Rejected(0x8004_0071)
         );
-        let kept_out = RequestFailure::response(403, br#"{"error":{"code":"room_kept_out"}}"#);
+        let kept_out =
+            RequestFailure::response(403, br#"{"error":{"code":"room_kept_out"}}"#, None);
         assert_eq!(
             kept_out.command_failure("join"),
             CommandFailure::Rejected(crate::app::shell_wol::lobby::KEPT_OUT_JOIN_ERROR)
         );
-        let taken = RequestFailure::response(409, br#"{"error":{"code":"name_unavailable"}}"#);
+        let taken =
+            RequestFailure::response(409, br#"{"error":{"code":"name_unavailable"}}"#, None);
         assert_eq!(
             taken.command_failure("create"),
             CommandFailure::Rejected(crate::app::shell_wol::lobby::ROOM_NAME_TAKEN)
         );
-        let full = RequestFailure::response(409, br#"{"error":{"code":"room_full"}}"#);
+        let full = RequestFailure::response(409, br#"{"error":{"code":"room_full"}}"#, None);
         assert_eq!(
             full.command_failure("join"),
             CommandFailure::Rejected(0x8004_006E)
         );
-        let missing = RequestFailure::response(409, br#"{"error":{"code":"room_unavailable"}}"#);
+        let missing =
+            RequestFailure::response(409, br#"{"error":{"code":"room_unavailable"}}"#, None);
         assert_eq!(
             missing.command_failure("join"),
             CommandFailure::Rejected(0x8004_0070)
@@ -1739,7 +1901,8 @@ mod tests {
             RequestFailure::Status(503).command_failure("finish"),
             CommandFailure::Retryable
         );
-        let finished = RequestFailure::response(409, br#"{"error":{"code":"unknown_match"}}"#);
+        let finished =
+            RequestFailure::response(409, br#"{"error":{"code":"unknown_match"}}"#, None);
         assert_eq!(
             finished.command_failure("finish"),
             CommandFailure::AlreadyFinished
@@ -1750,25 +1913,27 @@ mod tests {
         );
         // A command the player's own running match blocks; only `watch`
         // says why.
-        let playing = RequestFailure::response(409, br#"{"error":{"code":"match_active"}}"#);
+        let playing = RequestFailure::response(409, br#"{"error":{"code":"match_active"}}"#, None);
         assert_eq!(
             playing.command_failure("join"),
             CommandFailure::Rejected(0x8000_4005)
         );
         // Options a lobby cannot take, apart from a player who has left.
-        let options = RequestFailure::response(400, br#"{"error":{"code":"invalid_options"}}"#);
+        let options =
+            RequestFailure::response(400, br#"{"error":{"code":"invalid_options"}}"#, None);
         assert_eq!(
             options.command_failure("options"),
             CommandFailure::InvalidOptions
         );
-        let left = RequestFailure::response(409, br#"{"error":{"code":"player_not_in_room"}}"#);
+        let left =
+            RequestFailure::response(409, br#"{"error":{"code":"player_not_in_room"}}"#, None);
         assert_eq!(
             left.command_failure("options"),
             CommandFailure::Rejected(0x8000_4005)
         );
         // Settings that moved on while a status for the older ones was on
         // its way: the room says nothing and answers the newer ones.
-        let stale = RequestFailure::response(409, br#"{"error":{"code":"stale_revision"}}"#);
+        let stale = RequestFailure::response(409, br#"{"error":{"code":"stale_revision"}}"#, None);
         assert_eq!(
             stale.command_failure("map_status"),
             CommandFailure::StaleRevision
@@ -2263,8 +2428,139 @@ mod tests {
         client.poll_finished(Err(RequestFailure::Status(401)), &mut failures, &output);
         assert!(client.token.is_none());
         assert!(matches!(input.try_recv(), Ok(Response::Offline)));
-        assert!(client.session_failed(RequestFailure::Status(401), &output));
+        assert!(
+            client
+                .session_failed(RequestFailure::Status(401), &output)
+                .handled()
+        );
         assert!(input.try_recv().is_err());
+    }
+
+    /// A rate-limited answer is not an outage: the lobby answered, and its
+    /// budget refills in the time it names. The poll waits that long and
+    /// counts no failure, so the player is neither told the lobby is away
+    /// nor left with a lost connection. A run of them says so once.
+    #[test]
+    fn a_rate_limited_poll_waits_as_the_lobby_says() {
+        let (output, input) = std::sync::mpsc::channel();
+        let mut client = signed_in_client(19);
+        let mut failures = 0;
+        let refused = RequestFailure::answer(
+            "/v1/events",
+            429,
+            br#"{"error":{"code":"rate_limited","retry_after":7}}"#,
+            None,
+        );
+        assert_eq!(
+            client.poll_finished(Err(refused.clone()), &mut failures, &output),
+            Duration::from_secs(7)
+        );
+        assert_eq!(failures, 0);
+        assert!(client.token.is_some());
+        assert!(
+            input.try_iter().all(|response| !matches!(
+                response,
+                Response::LobbyUnreachable | Response::LobbyLost
+            ))
+        );
+        // The wait is the lobby's, within bounds: outside data sets no timer.
+        let absurd = RequestFailure::answer(
+            "/v1/events",
+            429,
+            br#"{"error":{"code":"rate_limited","retry_after":100000}}"#,
+            None,
+        );
+        assert_eq!(
+            client.poll_finished(Err(absurd), &mut failures, &output),
+            Duration::from_secs(MAX_RETRY_AFTER_SECS)
+        );
+        assert_eq!(failures, 0);
+        // A run of refusals: the player hears once that the lobby is
+        // limiting this session, and the session still lives.
+        for _ in 0..=RATE_LIMIT_REFUSALS {
+            client.poll_finished(Err(refused.clone()), &mut failures, &output);
+        }
+        assert!(matches!(
+            input.try_recv(),
+            Ok(Response::Failure("VERA:OnlineRateLimited"))
+        ));
+        assert!(input.try_recv().is_err());
+        assert_eq!(failures, 0);
+        assert!(client.token.is_some());
+    }
+
+    /// A rate-limited answer names the wait until its budget refills in its
+    /// `Retry-After` header as well as in its body
+    /// (docs/lobby-protocol.md "Rate limits").
+    #[test]
+    fn a_rate_limited_answer_names_its_wait_in_the_header() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let lobby = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let (mut request, mut chunk) = (Vec::new(), [0; 1024]);
+            while !request.windows(6).any(|bytes| bytes == b"events") {
+                let read = stream.read(&mut chunk).unwrap();
+                assert_ne!(read, 0, "the request ended early");
+                request.extend_from_slice(&chunk[..read]);
+            }
+            let body = br#"{"error":{"code":"rate_limited"}}"#;
+            write!(
+                stream,
+                "HTTP/1.1 429 X\r\nRetry-After: 12\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
+            stream.write_all(body).unwrap();
+        });
+        let mut client = signed_in_client(19);
+        client.agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build()
+            .into();
+        client.base = format!("http://{address}");
+        assert_eq!(
+            client.request("/v1/events?after=19", None),
+            Err(RequestFailure::RateLimited {
+                retry_after: Duration::from_secs(12)
+            })
+        );
+        lobby.join().unwrap();
+    }
+
+    /// A recovery that never reaches the lobby leaves the match's event
+    /// history expired. The session lives, and the poll asks again soon: a
+    /// whole poll's wait would leave the room still and say nothing.
+    #[test]
+    fn a_failed_resume_retries_soon_and_tells_the_player() {
+        const MATCH: &str = "11111111-1111-1111-1111-111111111111";
+        let (address, lobby) = one_request_lobby(
+            |request| request.windows(6).any(|bytes| bytes == b"resume"),
+            b"HTTP/1.1 500 X\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+        );
+        let (output, input) = std::sync::mpsc::channel();
+        let mut client = signed_in_client(19);
+        client.agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .build()
+            .into();
+        client.base = format!("http://{address}");
+        client.active_match = Some(MATCH.to_owned());
+        let mut failures = 0;
+        assert_eq!(
+            client.poll_finished(Err(RequestFailure::LostCursor), &mut failures, &output),
+            Duration::from_secs(2)
+        );
+        // The player hears that the lobby is not answering.
+        assert!(matches!(input.try_recv(), Ok(Response::LobbyUnreachable)));
+        // The session lives: the lobby may answer the next poll.
+        assert!(client.token.is_some());
+        assert_eq!(client.cursor, 19);
+        lobby.join().unwrap();
     }
 
     #[test]
@@ -2409,22 +2705,28 @@ mod tests {
         let conflict = RequestFailure::response(
             409,
             br#"{"error":{"code":"map_pending","message":"Wait for the map."}}"#,
+            None,
         );
-        assert!(!client.session_failed(conflict, &output));
+        assert!(!client.session_failed(conflict, &output).handled());
         assert!(client.token.is_some());
         let expired = RequestFailure::response(
             409,
             br#"{"error":{"code":"history_expired","message":"Sign in again."}}"#,
+            None,
         );
         client.poll_finished(Err(expired.clone()), &mut 0, &output);
         assert!(client.token.is_none());
         assert_eq!(client.cursor, 19);
         assert!(matches!(input.try_recv(), Ok(Response::Offline)));
-        assert!(client.session_failed(expired, &output));
-        assert!(client.session_failed(RequestFailure::Status(401), &output));
+        assert!(client.session_failed(expired, &output).handled());
+        assert!(
+            client
+                .session_failed(RequestFailure::Status(401), &output)
+                .handled()
+        );
         assert!(input.try_recv().is_err());
         assert_eq!(
-            RequestFailure::response(409, br#"{"error":{"code":"invalid_cursor"}}"#),
+            RequestFailure::response(409, br#"{"error":{"code":"invalid_cursor"}}"#, None),
             RequestFailure::LostCursor
         );
     }
@@ -2439,6 +2741,7 @@ mod tests {
             json!({"error":{"code":"network_full","message":reason}})
                 .to_string()
                 .as_bytes(),
+            None,
         );
         assert_eq!(full, RequestFailure::Full(Some(reason.into())));
         assert_eq!(sign_in_refusal(full), reason);
@@ -2452,7 +2755,7 @@ mod tests {
     #[test]
     fn a_sign_in_name_in_use_is_not_a_failed_connection() {
         let taken = br#"{"error":{"code":"name_unavailable","message":"That player name is already in use. Choose another username."}}"#;
-        let failure = RequestFailure::answer("/v1/sessions", 409, taken);
+        let failure = RequestFailure::answer("/v1/sessions", 409, taken, None);
         assert!(matches!(
             sign_in_failure(7, failure),
             Response::LoginFailed {
@@ -2461,7 +2764,7 @@ mod tests {
             }
         ));
         assert_eq!(
-            RequestFailure::answer("/v1/commands", 409, taken).command_failure("create"),
+            RequestFailure::answer("/v1/commands", 409, taken, None).command_failure("create"),
             CommandFailure::Rejected(crate::app::shell_wol::lobby::ROOM_NAME_TAKEN)
         );
     }
@@ -2472,7 +2775,7 @@ mod tests {
     fn an_uncoded_sign_in_refusal_is_a_failed_connection() {
         for status in [401, 403] {
             assert!(matches!(
-                sign_in_failure(7, RequestFailure::answer("/v1/sessions", status, b"")),
+                sign_in_failure(7, RequestFailure::answer("/v1/sessions", status, b"", None)),
                 Response::LoginFailed {
                     attempt: 7,
                     code: 0
@@ -2516,6 +2819,7 @@ mod tests {
             "/v1/accounts/delete",
             400,
             br#"{"error":{"code":"invalid_request"}}"#,
+            None,
         );
         assert_eq!(
             account_result(&email, Err(legacy)),
@@ -2531,6 +2835,7 @@ mod tests {
         let wrong = RequestFailure::response(
             403,
             refusal("wrong_password", "Sign in again with your password.").as_bytes(),
+            None,
         );
         assert_eq!(
             wrong,
@@ -2541,7 +2846,7 @@ mod tests {
                 message: "Sign in again with your password.".into(),
             }
         );
-        let deleted = RequestFailure::response(404, br#"{"error":{"code":"no_account"}}"#);
+        let deleted = RequestFailure::response(404, br#"{"error":{"code":"no_account"}}"#, None);
         assert!(matches!(
             deleted,
             RequestFailure::Account {
@@ -2549,7 +2854,7 @@ mod tests {
                 ..
             }
         ));
-        let claimed = RequestFailure::response(403, br#"{"error":{"code":"name_claimed"}}"#);
+        let claimed = RequestFailure::response(403, br#"{"error":{"code":"name_claimed"}}"#, None);
         assert!(!matches!(
             claimed,
             RequestFailure::Account {
@@ -2562,6 +2867,7 @@ mod tests {
             "/v1/accounts/register",
             409,
             refusal("name_unavailable", "That name is taken.").as_bytes(),
+            None,
         );
         assert_eq!(sign_in_refusal(taken), "That name is taken.");
         let network = refusal(
@@ -2572,17 +2878,20 @@ mod tests {
             sign_in_refusal(RequestFailure::answer(
                 "/v1/sessions",
                 429,
-                network.as_bytes()
+                network.as_bytes(),
+                None
             )),
             "Too many wrong passwords from your network."
         );
         assert_eq!(
-            RequestFailure::answer("/v1/maps", 429, network.as_bytes()),
-            RequestFailure::Status(429)
+            RequestFailure::answer("/v1/maps", 429, network.as_bytes(), None),
+            RequestFailure::RateLimited {
+                retry_after: Duration::from_secs(DEFAULT_RETRY_AFTER_SECS)
+            }
         );
         // A bearer the lobby no longer knows, on an account path too.
         assert_eq!(
-            RequestFailure::answer("/v1/accounts/register", 401, b""),
+            RequestFailure::answer("/v1/accounts/register", 401, b"", None),
             RequestFailure::Status(401)
         );
     }
@@ -2680,7 +2989,7 @@ mod tests {
         let reason = "Online play needs VERA20k 0.3.0 or newer.";
         let refused = |message: &str| {
             let body = json!({"error":{"code":"upgrade_required","message":message}});
-            RequestFailure::response(426, body.to_string().as_bytes())
+            RequestFailure::response(426, body.to_string().as_bytes(), None)
         };
         let longest = "x".repeat(MAX_UPGRADE_MESSAGE_CHARS);
         assert_eq!(
@@ -2692,24 +3001,25 @@ mod tests {
             assert_eq!(refused(unusable), RequestFailure::UpgradeRequired(None));
         }
         assert_eq!(
-            RequestFailure::response(426, b"not json"),
+            RequestFailure::response(426, b"not json", None),
             RequestFailure::UpgradeRequired(None)
         );
         assert_eq!(
             RequestFailure::response(
                 503,
-                br#"{"error":{"code":"maintenance","message":"Back at 20:30 UTC."}}"#
+                br#"{"error":{"code":"maintenance","message":"Back at 20:30 UTC."}}"#,
+                None
             ),
             RequestFailure::Maintenance(Some("Back at 20:30 UTC.".into()))
         );
         assert_eq!(
-            RequestFailure::response(503, br#"{"error":{"code":"service_unavailable"}}"#),
+            RequestFailure::response(503, br#"{"error":{"code":"service_unavailable"}}"#, None),
             RequestFailure::Status(503)
         );
 
         let (output, input) = std::sync::mpsc::channel();
         let mut client = signed_in_client(19);
-        assert!(!client.session_failed(refused(reason), &output));
+        assert!(!client.session_failed(refused(reason), &output).handled());
         assert!(client.token.is_some());
         assert!(matches!(
             input.try_recv(),

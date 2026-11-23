@@ -281,6 +281,22 @@ succeeds. A room-list reply cannot clear that warning. A lobby from before
 watching still answers 404 and leaves an empty watch list. Older games
 keep their previous refresh messages.
 
+A spent rate budget refuses one request with 429 `rate_limited` and the wait
+until the budget refills, not the session. The client waits that long, asks
+again, and its player stays in the room; after a few refusals in a row the
+player hears once that the lobby is limiting this connection. A released game
+counts the same refusal as a failed poll, so in a mixed room the older client
+may end its own session while the newer one waits, and the room itself keeps
+its rules. After a lobby rollback a refusal that names no `rate_limited` code
+is answered as it was before, and a lobby that names no wait leaves the client
+with its own short wait.
+
+A match whose event history expired is recovered from the lobby
+([lobby protocol](lobby-protocol.md)). A recovery that does not reach the
+lobby does not leave the room waiting for one that will not come: the client
+asks again within seconds, tells its player that the lobby is not answering,
+and counts the run like any other unanswered poll.
+
 The online lobby's Options page has a Translate Chat Into list: Off, or one of 14
 languages, saved as `[VERA] TranslateChat=`, and under it a Translate in Matches box, on
 by default and saved as `[VERA] TranslateMatches=`. With a language chosen, other
