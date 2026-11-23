@@ -3,12 +3,15 @@
 
 use super::poll_maps;
 use super::{
-    Chat, LiveService, RoomAgreement, StartDataMismatch, WolServiceEvent, begin_start,
-    cancel_pending, canonical_options, decode, decode_relay_grant, decode_watch_grant, end_room,
-    enter_timed_start, fail_start, fail_watch, lobby_names, lobby_says_outdated, local_agreement,
-    local_map_status, maps, notice, prepare_watch, relay_uuid, service_event, wire,
+    Chat, LiveService, OptionsAdmission, RoomAgreement, StartDataMismatch, WolServiceEvent,
+    begin_start, cancel_pending, canonical_options, decode, decode_relay_grant, decode_watch_grant,
+    end_room, enter_timed_start, fail_start, fail_watch, lobby_names, lobby_says_outdated,
+    local_agreement, local_map_status, maps, notice, prepare_watch, relay_uuid, service_event,
+    wire,
 };
 use crate::app::AppState;
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::shell_network_setup::NetworkSetupEvent;
 use crate::app::shell_wol::DecodedRelayGrant;
 use crate::i18n::tr;
 use crate::util::time::Instant;
@@ -17,6 +20,140 @@ use base64::Engine;
 use serde::Deserialize;
 use serde_json::Value;
 use std::net::SocketAddrV4;
+
+/// The host's room could not be admitted: this game keeps the revision it
+/// had, and the player is told that the room's settings did not apply.
+#[derive(Debug, thiserror::Error)]
+#[error("the host's room could not be admitted: {source}")]
+pub(super) struct RoomNotAdmitted {
+    #[source]
+    source: anyhow::Error,
+}
+
+/// The host's roster and the setup events its options make: the room's
+/// admission of the players the host named. The setup events are made
+/// first, so a roster that does not name this game is refused before the
+/// session takes the host's order.
+pub(super) fn admit_roster(
+    session: &mut MatchSession,
+    options: wire::Options,
+    local: &str,
+) -> Result<Vec<NetworkSetupEvent>> {
+    let names = options
+        .launch
+        .humans
+        .iter()
+        .map(|human| human.name.clone())
+        .collect::<Vec<_>>();
+    let events = options.into_setup_events(local).inspect_err(|_| {
+        log::warn!("Online host options had no admitted local player");
+    })?;
+    session
+        .canonicalize_online_roster(&names)
+        .inspect_err(|_| {
+            log::warn!("Online host options roster was not admitted");
+        })?;
+    Ok(events)
+}
+
+/// The host's options admitted for this game: the roster the host names
+/// and the setup his options make, with the values the room derives from
+/// them. The setup is admitted on a copy of the session, as the LAN host
+/// room admits its options, and the copy is kept only when the admission
+/// held: a refused options event leaves the session exactly as it was.
+fn admit_room_options(
+    state: &mut AppState,
+    room: &mut LiveService,
+    revision: u64,
+    options: wire::Options,
+    local: &str,
+) -> Result<OptionsAdmission> {
+    let mut original = state.match_state.session.clone();
+    std::mem::swap(&mut state.match_state.session, &mut original);
+    let admitted = admit_room_setup(state, room, revision, options, local);
+    if admitted.is_err() {
+        // The admission did not hold: the session this game had is the
+        // one it keeps.
+        std::mem::swap(&mut state.match_state.session, &mut original);
+    }
+    admitted
+}
+
+/// The roster the host names and the setup his options make, applied to
+/// the session this game holds.
+fn admit_room_setup(
+    state: &mut AppState,
+    room: &mut LiveService,
+    revision: u64,
+    mut options: wire::Options,
+    local: &str,
+) -> Result<OptionsAdmission> {
+    let changed = room.options_changed(revision);
+    let authored = options.campaign.is_some();
+    let generated = options.random_map.clone();
+    let host = state.match_state.session.host();
+    // VERA: Quick Match plays the original game, whatever rules its host
+    // sends.
+    if !host && super::lobby::quick_match_runner(state) {
+        options.launch.options.host_rules = Default::default();
+    }
+    let events = if host {
+        Vec::new()
+    } else {
+        // The host's roster and the setup his options make: a guest takes
+        // them, a host published them.
+        admit_roster(&mut state.match_state.session, options, local)?
+    };
+    // The room's agreement is retired once the options are admitted: a
+    // refused admission leaves the readiness it had.
+    if changed {
+        crate::app::shell_network_setup::invalidate_network_agreement(state)?;
+    }
+    for event in events {
+        crate::app::shell_network_setup::service_event(state, event).inspect_err(|_| {
+            log::warn!("Online host setup was not admitted");
+        })?;
+    }
+    if authored {
+        maps::cancel(state, room);
+    } else {
+        maps::received_options(state, room, generated)?;
+        // VERA: a guest checks the map these options name before
+        // reporting on it, or one that has it reports 0 first and the
+        // host's room says it lacks the map. The host's own upload
+        // still waits for the poll, after the lobby's `map_available`.
+        if !state.match_state.session.host() {
+            poll_maps(state, room);
+        }
+    }
+    // The owner is ready without a guest Accept button, but still proves its
+    // own local map and rules to the same server admission gate.
+    let agreement = local_agreement(state, revision)?;
+    let status = local_map_status(state, room);
+    Ok(OptionsAdmission {
+        agreement,
+        status,
+        host: state.match_state.session.host(),
+    })
+}
+
+/// The room is told that this game could not take the host's options, so
+/// the host knows why this player never readies up. It is said once for a
+/// revision: the lobby may repeat an options event.
+fn tell_room_of_the_refusal(state: &mut AppState, room: &mut LiveService, revision: u64) {
+    if room.refused_options == Some(revision) {
+        return;
+    }
+    room.refused_options = Some(revision);
+    let text = tr("VERA:RoomSettingsNotTaken");
+    super::requests::send_chat(
+        room,
+        state.frontend.wol.as_ref(),
+        crate::ui::wol_chat::WolChatLine::Say(text.encode_utf16().collect()),
+        Vec::new(),
+        false,
+    );
+}
 
 /// Whether a spawn.ini `[Relay] Ticket` is a watch ticket (docs/spawn.md
 /// "Watching"): the relay protocol's own parser decides, not a version byte
@@ -273,85 +410,41 @@ pub(super) fn apply_event(
             service_event(state, WolServiceEvent::UserLeft(name));
         }
         "options" => {
-            let mut p: wire::OptionsEvent = decode(payload).inspect_err(|_| {
+            let p: wire::OptionsEvent = decode(payload).inspect_err(|_| {
                 log::warn!("Online host options could not be decoded");
             })?;
             if p.revision < service.revision {
                 return Ok(());
             }
-            let changed = p.revision != service.revision || service.room.accepted_options.is_none();
             let canonical = canonical_options(&p.options)?;
-            if let Some(start) = service.start_preparation.as_mut()
-                && !start.accept_options(p.revision, &canonical)
-                && start.revision.is_some()
-            {
+            let revision = p.revision;
+            // The room admits the host's options before it commits to
+            // them: a refused admission leaves the room at the revision
+            // it had, so the host's next options are admitted again
+            // instead of taken for an echo of the ones that failed.
+            let admitted = service.admit_options(revision, &canonical, move |room| {
+                admit_room_options(state, room, revision, p.options, &local)
+            });
+            if let Err(source) = admitted {
+                // The room is told once for this revision, so the host
+                // knows why this player never readies up.
+                if !state.match_state.session.host() {
+                    tell_room_of_the_refusal(state, service, revision);
+                }
+                return Err(RoomNotAdmitted { source });
+            }
+            // The start this room prepares with is these options, or it is
+            // abandoned: a room that took them cannot start with the ones
+            // it left.
+            let mut abandons_start = false;
+            if let Some(start) = service.start_preparation.as_mut() {
+                abandons_start =
+                    !start.accept_options(revision, &canonical) && start.revision.is_some();
+            }
+            if abandons_start {
                 service.start_preparation = None;
                 fail_start(state, &tr("VERA:SettingsChangedWhileStarting"));
             }
-            service.revision = p.revision;
-            if service
-                .room
-                .pending_choices
-                .as_ref()
-                .is_some_and(|choices| choices.answered_by(&canonical))
-            {
-                service.room.pending_choices = None;
-            }
-            service.room.accepted_options = Some(canonical);
-            let authored = p.options.campaign.is_some();
-            if changed {
-                service.room.last_ready_request = None;
-                crate::app::shell_network_setup::invalidate_network_agreement(state)?;
-            }
-            let generated = p.options.random_map.clone();
-            if !state.match_state.session.host() {
-                // VERA: Quick Match plays the original game, whatever rules
-                // its host sends.
-                if super::lobby::quick_match_runner(state) {
-                    p.options.launch.options.host_rules = Default::default();
-                }
-                let names = p
-                    .options
-                    .launch
-                    .humans
-                    .iter()
-                    .map(|human| human.name.clone())
-                    .collect::<Vec<_>>();
-                state
-                    .match_state
-                    .session
-                    .canonicalize_online_roster(&names)
-                    .inspect_err(|_| {
-                        log::warn!("Online host options roster was not admitted");
-                    })?;
-                let events = p.options.into_setup_events(&local).inspect_err(|_| {
-                    log::warn!("Online host options had no admitted local player");
-                })?;
-                for event in events {
-                    crate::app::shell_network_setup::service_event(state, event).inspect_err(
-                        |_| {
-                            log::warn!("Online host setup was not admitted");
-                        },
-                    )?;
-                }
-            }
-            if authored {
-                maps::cancel(state, service);
-            } else {
-                maps::received_options(state, service, generated)?;
-                // VERA: a guest checks the map these options name before
-                // reporting on it, or one that has it reports 0 first and the
-                // host's room says it lacks the map. The host's own upload
-                // still waits for the poll, after the lobby's `map_available`.
-                if !state.match_state.session.host() {
-                    poll_maps(state, service);
-                }
-            }
-            // The owner is ready without a guest Accept button, but still proves its
-            // own local map and rules to the same server admission gate.
-            let agreement = local_agreement(state, service.revision)?;
-            let status = local_map_status(state, service);
-            service.publish_options_agreement(agreement, status, state.match_state.session.host());
         }
         "choices" => {
             #[derive(Deserialize)]

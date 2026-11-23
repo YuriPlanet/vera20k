@@ -1947,3 +1947,143 @@ fn online_exit_finishes_a_late_committed_start_and_bounds_worker_shutdown() {
     drop(output);
     assert!(cleanup.poll(now + EXIT_CLEANUP_TIMEOUT).is_none());
 }
+
+/// This game's own seat in a room the host published: the guest of a
+/// two-player setup, with the roster the host named.
+fn guest_session(
+    launch: crate::skirmish_launch::SkirmishLaunchSession,
+) -> crate::app::match_runtime::session::MatchSession {
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};
+    let mut session = MatchSession::default();
+    session.enter_network(NetworkReturnContext::Wol);
+    session
+        .accept_network_setup(launch, false, None, false)
+        .unwrap();
+    session
+}
+
+
+/// The host's options as the cooperative room published them.
+fn cooperative_options() -> wire::Options {
+    serde_json::from_value(
+        crate::test_fixture::json("tests/fixtures/lobby/options.json")["rooms"]["cooperative"].clone(),
+    )
+    .unwrap()
+}
+
+/// A room that cannot admit the host's options keeps the revision it
+/// had: the host's roster names a player this game is not, and the room
+/// must not take options it never admitted.
+#[test]
+fn a_refused_room_admission_keeps_the_rooms_revision() {
+    let (mut service, input, _) = control_service(None);
+    service.revision = 3;
+    let accepted = json!({"launch": {"local_player_index": 1}});
+    service.room.accepted_options = Some(accepted.clone());
+    let mut options = cooperative_options();
+    let mut launch = options.launch.clone();
+    launch.local_player_index = 1;
+    let mut session = guest_session(launch);
+    // The host's roster names a player this game is not.
+    options.launch.humans[1].name = "Stranger".into();
+    let canonical = json!({"launch": {"local_player_index": 1}});
+    let error = service
+        .admit_options(5, &canonical, |_| {
+            events::admit_roster(&mut session, options, "Player1").map(|_| OptionsAdmission {
+                agreement: json!({}),
+                status: 0,
+                host: false,
+            })
+        })
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("roster"),
+        "the refusal names the roster: {error:#}"
+    );
+    assert_eq!(service.revision, 3, "the room kept its revision");
+    assert_eq!(
+        service.room.accepted_options,
+        Some(accepted),
+        "the room kept the options it accepted"
+    );
+    assert!(
+        input.try_recv().is_err(),
+        "a refused admission publishes no agreement"
+    );
+    // The room admits a later options event at that revision again.
+    assert!(service.options_changed(5));
+}
+
+/// A refused options event leaves the session as it was: the host's
+/// options carried an authored campaign with the stock Co-op data, which
+/// is refused before the session takes the host's order of the players.
+#[test]
+fn a_refused_admission_leaves_the_session_as_it_was() {
+    let mut options = cooperative_options();
+    // The host named the room's players in another order.
+    options.launch.humans.swap(0, 1);
+    // ... and carried an authored campaign with the stock Co-op data.
+    options.campaign = Some(
+        serde_json::from_value(json!({
+            "series": "Yuri's Revenge",
+            "stage": "1",
+            "manifest_sha256": "",
+            "map_sha256": "",
+            "effective_map_digest": "",
+            "attempt": 0,
+            "player_limit": 2,
+            "difficulty": 0,
+            "playing_sources": [],
+            "carry_over": {
+                "globals": null,
+                "countdown_frames": null,
+                "map_stage": null,
+                "houses": []
+            }
+        }))
+        .unwrap(),
+    );
+    let mut launch = options.launch.clone();
+    launch.local_player_index = 1;
+    let mut session = guest_session(launch);
+    let error = events::admit_roster(&mut session, options, "Player1").unwrap_err();
+    assert!(
+        error.to_string().contains("Co-op"),
+        "the refusal names the stock Co-op data: {error:#}"
+    );
+    // The session keeps the roster and the seat it had.
+    let launch = session.network_setup().unwrap();
+    assert_eq!(launch.humans[0].name, "Player0");
+    assert_eq!(launch.humans[1].name, "Player1");
+    assert_eq!(launch.local_player_index, 1);
+}
+
+/// A room that admits the host's options takes their revision and
+/// reports its map status for it.
+#[test]
+fn an_admitted_room_commits_its_revision_and_publishes_its_agreement() {
+    let (mut service, input, _) = control_service(None);
+    service.revision = 3;
+    let canonical = json!({"launch": {"local_player_index": 1}});
+    let agreement = json!({"revision": 5, "rules_digest": "rules"});
+    service
+        .admit_options(5, &canonical, |_| {
+            Ok(OptionsAdmission {
+                agreement: agreement.clone(),
+                status: 1,
+                host: false,
+            })
+        })
+        .unwrap();
+    assert_eq!(service.revision, 5);
+    assert_eq!(service.room.accepted_options, Some(canonical));
+    let http::Request::Command {
+        operation, payload, ..
+    } = input.try_recv().unwrap()
+    else {
+        panic!("expected the map status");
+    };
+    assert_eq!(operation, "map_status");
+    assert_eq!(payload["revision"], json!(5));
+    assert_eq!(payload["status"], json!(1));
+}
