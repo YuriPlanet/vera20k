@@ -86,6 +86,9 @@ pub(crate) struct CellRow {
     /// `(x, PCX)`, centred vertically.
     pub(crate) icons: Vec<(i32, &'static str)>,
     pub(crate) filled: bool,
+    /// The texts' `x` and `w` are window pixels into the row rather than
+    /// base pixels grown with the page (the Mods list's).
+    pub(crate) window: bool,
 }
 
 impl CellRow {
@@ -1837,11 +1840,16 @@ fn paint_cells(
         );
     }
     let glyph = style.text_factor.unwrap_or(scale.factor());
+    let window = cells.window;
     for (x, w, value, align, rgb) in cells.texts.into_iter().filter(|_| !covered) {
-        let at = scale.derive_rect(row, |row| {
+        let cell = |row: RectPx| {
             let w = if w > 0 { w } else { row.w - x - 2 };
             RectPx::new(row.x + x, row.y, w, row.h)
-        });
+        };
+        let at = match window {
+            true => cell(row),
+            false => scale.derive_rect(row, cell),
+        };
         let depth = SHELL_CONTROL_TEXT_DEPTH;
         paint
             .texts

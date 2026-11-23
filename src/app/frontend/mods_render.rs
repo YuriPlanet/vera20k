@@ -10,13 +10,14 @@ use crate::app::AppState;
 use crate::app::frontend::menu_page_render::{
     FamilyFrame, encode_family_page, family_art_ready, page_panel_state, page_tree,
 };
-use crate::app::frontend::movies_credits_render::{family_list_hovered, paint_family_list};
+use crate::app::frontend::movies_credits_render::family_list_hovered;
+use crate::app::frontend::skirmish_shell_render::gui_paint::{CellRow, GuiStyle, paint_gui_styled};
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::mods::Listed;
 use crate::render::shell_paint::{PaintLabel, SHELL_TEXT_RGB_ENABLED};
 use crate::ui::main_menu_shell::RectPx;
 use crate::ui::mods_shell::{self, ModsLayout, PAGE};
-use crate::ui::movies_credits_shell::family_list_selected;
+use crate::ui::movies_credits_shell::{family_list_selected, find_family_list};
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::menu_page;
 
@@ -109,11 +110,51 @@ pub(crate) fn render_mods_page(
         .on(state, dialog, &tree);
     frame.backdrop = true;
     let mods = &state.frontend.mods;
+    let controller = &state.frontend.shell_controller;
+    let gui = controller.gui();
     if let Some(page) = mods.page.as_ref().filter(|_| !leaving)
-        && let Some((sprites, geometry, view)) =
-            paint_family_list(state, dialog, scale)
+        && let Some(node) = find_family_list(controller, dialog)
+        && let (Some(geometry), Some(view)) = (gui.list_geometry(node), gui.list_view(node))
     {
-        frame.over.controls.extend(sprites);
+        // The list over its widget, its rows the mods' names, the one in use
+        // marked at the row's right: only the rows it shows are named. The
+        // row's text keeps two pixels from either end.
+        let shown = view.top..view.top + geometry.visible_rows;
+        let text_w = geometry.row(0).w - 2 * ROW_TEXT_INSET;
+        let in_use = crate::i18n::tr("VERA:ModInUse");
+        let cells_of = |id: i32| {
+            (id == mods_shell::LIST_ID).then(|| {
+                let rows = page.iter().enumerate();
+                rows.map(|(index, listed)| {
+                    let mut row = CellRow {
+                        window: true,
+                        ..CellRow::default()
+                    };
+                    if !shown.contains(&index) {
+                        return row;
+                    }
+                    let (x, rgb) = (ROW_TEXT_INSET, SHELL_TEXT_RGB_ENABLED);
+                    if mods.in_use(listed) {
+                        // The name keeps the row's left three quarters.
+                        let name_w = text_w * 3 / 4;
+                        row.text(x, name_w, &listed.title(), ShellAlign::NONE, rgb);
+                        let rest = text_w - name_w;
+                        row.text(x + name_w, rest, &in_use, ShellAlign::H_RIGHT, rgb);
+                    } else {
+                        row.text(x, text_w, &listed.title(), ShellAlign::NONE, rgb);
+                    }
+                    row
+                })
+                .collect()
+            })
+        };
+        let style = GuiStyle {
+            cells_of: Some(&cells_of),
+            ..Default::default()
+        };
+        frame
+            .over
+            .extend(paint_gui_styled(state, gui, node, scale, &[], style));
         frame.list_boxes.push((layout.list, geometry.scrollbar));
         frame.list_boxes.push((layout.details, None));
         if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
@@ -125,35 +166,6 @@ pub(crate) fn render_mods_page(
             );
         }
         let labels = &mut frame.labels;
-        for (visible, index) in (view.top..page.len())
-            .take(geometry.visible_rows)
-            .enumerate()
-        {
-            let row = geometry.row(visible);
-            let text = RectPx::new(
-                row.x + ROW_TEXT_INSET,
-                row.y,
-                row.w - 2 * ROW_TEXT_INSET,
-                row.h,
-            );
-            let listed = &page[index];
-            if mods.in_use(listed) {
-                // The name keeps the row's left three quarters.
-                let name_w = text.w * 3 / 4;
-                labels.push(label(
-                    listed.title(),
-                    RectPx::new(text.x, text.y, name_w, text.h),
-                    ShellAlign::NONE,
-                ));
-                labels.push(label(
-                    crate::i18n::tr("VERA:ModInUse"),
-                    RectPx::new(text.x + name_w, text.y, text.w - name_w, text.h),
-                    ShellAlign::H_RIGHT,
-                ));
-            } else {
-                labels.push(label(listed.title(), text, ShellAlign::NONE));
-            }
-        }
         // An empty Mods folder: where a mod goes, across the empty rows under No
         // mod, one row down.
         if let Some(hint) = crate::app::mods::none_installed_hint(page) {

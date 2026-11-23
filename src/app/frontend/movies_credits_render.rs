@@ -9,7 +9,6 @@ use crate::app::frontend::menu_page_render::{
 };
 use crate::app::frontend::shell_pass::{ShellComposition, TexturedDraw, encode_shell_pass};
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::render::batch::SpriteInstance;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
     GuiStyle, paint_gui_ids, paint_gui_styled,
 };
@@ -19,8 +18,6 @@ use crate::ui::movies_credits_shell::{
     FAMILY_LIST_ID, MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT, MOVIE_LIST_TOOLTIP_KEY,
     find_family_list, movie_list_nodes,
 };
-use crate::ui::shell::descriptor::DialogResourceId;
-use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::menu_page;
 use vera20k_gui::ListView;
 use vera20k_gui::shell::list::ShellListGeometry;
@@ -46,23 +43,6 @@ pub(crate) fn family_list_hovered(
     controller.top_id() == Some(dialog)
         && find_family_list(controller, dialog)
             .is_some_and(|node| controller.gui().hovered() == Some(node))
-}
-
-/// The family page `dialog`'s list (`0x00619230` over the parent
-/// background), its geometry and view; the rows' text is the host's.
-pub(crate) fn paint_family_list(
-    state: &AppState,
-    dialog: DialogResourceId,
-    scale: ShellScale,
-) -> Option<(Vec<SpriteInstance>, ShellListGeometry, ListView)> {
-    let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
-    let (geometry, view) = family_list_view(state, dialog)?;
-    let (top, selected, pressed) = (view.top, view.selected, view.pressed);
-    let mut out = Vec::new();
-    crate::app::frontend::skirmish_shell_render::paint_list(
-        &mut out, atlas, geometry, top, selected, pressed, false, scale,
-    );
-    Some((out, geometry, view))
 }
 
 /// Hover help of dialog `0x129` for its status line `0x695`.

@@ -1767,7 +1767,7 @@ mod connection;
 pub(crate) use connection::{connection_shell_drawable, render_connection_shell};
 
 mod list;
-pub(crate) use list::{paint_list, paint_list_frame};
+pub(crate) use list::paint_list_frame;
 
 mod sound;
 pub(crate) use sound::render_sound_shell;

@@ -26,6 +26,11 @@ pub(crate) const TITLE_KEY: &str = "VERA:Mods";
 pub(crate) const BUTTON_HELP_KEY: &str = "VERA:ModsHelp";
 /// The caption over the list, and the list's status help.
 pub(crate) const PROMPT_KEY: &str = "VERA:ModsPrompt";
+/// The list's host id, past the dialog's 16-bit control ids as the movie
+/// list's ([`crate::ui::movies_credits_shell::FAMILY_LIST_ID`]): the rect
+/// sync leaves its window alone and no press names it; the painter finds its
+/// rows by it.
+pub(crate) const LIST_ID: i32 = 0x1_0001;
 
 /// The mod actions in the right column, Back on the bottom row.
 pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
