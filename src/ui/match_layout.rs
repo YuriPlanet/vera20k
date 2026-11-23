@@ -1465,7 +1465,7 @@ mod tests {
     use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
     use crate::ui::sidebar::{
         SidebarFrame, SidebarTab, SidebarTheme, SidebarView, build_sidebar_view_with_spec,
-        power_bar_rect, radar_minimap_rect_with_spec,
+        power_bar_rect,
     };
 
     /// `count` buildings to offer, each a cameo of the Building strip.
@@ -1583,7 +1583,7 @@ mod tests {
         assert_eq!(view.repair_button.rect.y, 177.0);
         assert_eq!((view.tabs[0].rect.x, view.tabs[0].rect.y), (652.0, 209.0));
         assert_eq!(view.tabs[1].rect.x, 692.0);
-        let radar = radar_minimap_rect_with_spec(800.0, spec);
+        let radar = view.layout.minimap_rect(&spec);
         // MapX and MapWidth are the file's; y keeps every side's MapAreaY 49
         // (`RadarClass::One_Time @ 0x00652CF0`).
         assert_eq!(
@@ -1699,8 +1699,8 @@ mod tests {
         assert_eq!(view.tabs, stock.tabs);
         assert_eq!(view.scroll_down_button.rect, stock.scroll_down_button.rect);
         assert_eq!(
-            radar_minimap_rect_with_spec(800.0, spec),
-            radar_minimap_rect_with_spec(800.0, stock_spec)
+            view.layout.minimap_rect(&spec),
+            stock.layout.minimap_rect(&stock_spec)
         );
         for left_out in [
             view.repair_button.rect,
@@ -1779,7 +1779,7 @@ mod tests {
         // The sidebar's parts follow it to the left edge, and the battlefield
         // starts beside it and under the bar.
         assert_eq!((view.panel_rect.x, view.tabs[0].rect.x), (0.0, 26.0));
-        assert_eq!(radar_minimap_rect_with_spec(800.0, spec).x, 16.0);
+        assert_eq!(view.layout.minimap_rect(&spec).x, 16.0);
         assert_eq!(frame.tactical_rect(), (168, 32, 632, 568));
 
         // A floating sidebar and no bar leave the battlefield the whole frame.

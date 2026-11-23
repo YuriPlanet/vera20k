@@ -1711,10 +1711,13 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // Preserve the pixels actually drawn online for a possible pre-due loss.
     // This is display history, separate from ongoing internal minimap updates.
     // The radar housing's corner, where `build_radar_anim_instance` draws it.
-    let spec = state.match_state.match_presentation.sidebar_layout_spec;
-    let [radar_x, radar_y] = spec.place(crate::ui::sidebar::SidebarPart::Radar);
+    let [radar_x, radar_y] = crate::app::presentation::sidebar_render::current_sidebar_layout(state)
+        .origin(
+            &state.match_state.match_presentation.sidebar_layout_spec,
+            crate::ui::sidebar::SidebarPart::Radar,
+        );
     let origin = [
-        state.match_state.input.camera_x + state.sidebar_frame().layout_left() + radar_x,
+        state.match_state.input.camera_x + radar_x,
         state.match_state.input.camera_y + radar_y,
     ];
     let presentation = &mut state.match_state.match_presentation;
@@ -1792,13 +1795,12 @@ fn build_radar_anim_instance(state: &AppState) -> Vec<SpriteInstance> {
         None => return Vec::new(),
     };
 
-    let (sw, sh) = state.sidebar_frame().layout_screen();
     let spec = state.match_state.match_presentation.sidebar_layout_spec;
     if !spec.shows(crate::ui::sidebar::SidebarPart::Radar) {
         return Vec::new();
     }
-    let layout = crate::ui::sidebar::compute_layout_with_spec(spec, sw, sh, 0);
-    let [x, y] = layout.origin(&spec, crate::ui::sidebar::SidebarPart::Radar);
+    let [x, y] = crate::app::presentation::sidebar_render::current_sidebar_layout(state)
+        .origin(&spec, crate::ui::sidebar::SidebarPart::Radar);
 
     vec![SpriteInstance {
         position: [

@@ -37,6 +37,24 @@ pub(crate) fn current_sidebar_view(state: &AppState) -> Option<&SidebarView> {
         .view()
 }
 
+/// Where the sidebar's parts sit: the retained view's layout, or, before a
+/// view is built (or while the world has no local player), the layout the
+/// view is built with, from the same table and frame.
+pub(crate) fn current_sidebar_layout(state: &AppState) -> sidebar::SidebarLayout {
+    match current_sidebar_view(state) {
+        Some(view) => view.layout,
+        None => {
+            let (screen_w, screen_h) = state.sidebar_frame().layout_screen();
+            sidebar::compute_layout_with_spec(
+                state.match_state.match_presentation.sidebar_layout_spec,
+                screen_w,
+                screen_h,
+                0,
+            )
+        }
+    }
+}
+
 /// The money the credits counter counts toward: `CreditsClass::AI @
 /// 0x004A2600` reads the player's Available_Money and shows a balance at or
 /// below zero as 0 (`0x004A2687..0x004A2698`).
@@ -1019,13 +1037,13 @@ fn sidebar_cursor_centre(state: &AppState) -> (f32, f32) {
 /// The radar aperture in the sidebar's layout space. Input regions take it in
 /// frame pixels through [`crate::ui::sidebar::SidebarFrame::rect_to_frame`].
 pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar::Rect {
-    let (sw, sh) = state.sidebar_frame().layout_screen();
     if current_sidebar_chrome(state).is_some() {
-        crate::ui::sidebar::radar_minimap_rect_with_spec(
-            sw,
-            state.match_state.match_presentation.sidebar_layout_spec,
-        )
+        current_sidebar_layout(state)
+            .minimap_rect(&state.match_state.match_presentation.sidebar_layout_spec)
     } else {
+        // Archives without any sidebar art (`build_sidebar_chrome_set`'s
+        // `None`) still draw the map, in the battlefield's corner.
+        let (_, sh) = state.sidebar_frame().layout_screen();
         let (x, y, w, h) = crate::render::radar::minimap::default_minimap_rect(sh);
         crate::ui::sidebar::Rect { x, y, w, h }
     }

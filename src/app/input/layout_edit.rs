@@ -219,7 +219,10 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
             PartKind::Button | PartKind::Tab => view
                 .and_then(|view| view.button(part))
                 .map(|(rect, _)| [rect.x, rect.y, rect.w, rect.h]),
-            PartKind::Minimap => Some([x, y, spec.radar_width, spec.radar_height]),
+            PartKind::Minimap => {
+                let map = layout.minimap_rect(&spec);
+                Some([map.x, map.y, map.w, map.h])
+            }
             PartKind::CameoGrid => size(part, ArtKey::RowArt).map(|[w, _]| {
                 let h = layout.cameo_grid_bottom - layout.cameo_grid_top;
                 [x, layout.cameo_grid_top, w, h]

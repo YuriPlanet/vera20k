@@ -57,25 +57,6 @@ impl Rect {
     }
 }
 
-#[cfg(test)]
-pub fn radar_minimap_rect(screen_w: f32) -> Rect {
-    radar_minimap_rect_with_spec(screen_w, SidebarChromeLayoutSpec::stock())
-}
-
-pub fn radar_minimap_rect_with_spec(screen_w: f32, spec: SidebarChromeLayoutSpec) -> Rect {
-    // The aperture sits in the radar housing; the GDI/NOD tables move it,
-    // which the spec carries.
-    let [radar_x, radar_y] = spec.place(SidebarPart::Radar);
-    let [x, y] = spec.place(SidebarPart::Minimap);
-    Rect {
-        x: spec.sidebar_x(screen_w) + radar_x + x,
-        y: radar_y + y,
-        w: spec.radar_width,
-        h: spec.radar_height,
-    }
-    .shown(spec.shows(SidebarPart::Radar))
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SidebarTab {
     Building,
@@ -272,6 +253,21 @@ impl SidebarLayout {
                 [panel_x + x, panel_y + y]
             }
         }
+    }
+
+    /// The radar's map picture: the minimap's corner in the radar housing,
+    /// which the GDI/NOD tables move, and the aperture's size
+    /// (`RadarClass::One_Time @ 0x00652CF0`). Empty for a layout without the
+    /// radar.
+    pub fn minimap_rect(&self, spec: &SidebarChromeLayoutSpec) -> Rect {
+        let [x, y] = self.origin(spec, SidebarPart::Minimap);
+        Rect {
+            x,
+            y,
+            w: spec.radar_width,
+            h: spec.radar_height,
+        }
+        .shown(spec.shows(SidebarPart::Radar))
     }
 
     /// The top-left corner of the cameo grid's first picture: the strip's
