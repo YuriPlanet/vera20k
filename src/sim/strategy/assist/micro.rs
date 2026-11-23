@@ -317,33 +317,20 @@ pub(super) fn run(
                 if !super::orders::admits(rules, obs, item.entity_id, &Goal::Attack { target }) {
                     continue;
                 }
-                if !brain.tracked.admits(
-                    tick,
-                    item.entity_id,
-                    TrackedKind::Attack,
-                    Some(target),
-                    Some(cell),
-                ) {
-                    continue;
-                }
-                brain.tracked.record(
-                    tick,
-                    item.entity_id,
-                    TrackedKind::Attack,
-                    Some(target),
-                    Some(cell),
-                );
-                issue(
-                    brain,
+                if super::orders::issue_tracked(
+                    &mut brain.tracked,
+                    brain.trace,
                     out,
                     rules,
                     obs,
                     item.entity_id,
+                    TrackedKind::Attack,
+                    Some(target),
+                    Some(cell),
                     Goal::Attack { target },
-                    item.reach,
-                    item.deployed,
-                );
-                issued += 1;
+                ) {
+                    issued += 1;
+                }
             }
             // Go at what pays for the enemy's army. An army too small to take
             // a base is not an army that should be standing in its own yard:
@@ -371,33 +358,20 @@ pub(super) fn run(
                 // Attack-move, not attack: the walk is the point, and what
                 // stands in the way on the way is dealt with by the engage
                 // branch above.
-                if !brain.tracked.admits(
-                    tick,
-                    item.entity_id,
-                    TrackedKind::AttackMove,
-                    None,
-                    Some(cell),
-                ) {
-                    continue;
-                }
-                brain.tracked.record(
-                    tick,
-                    item.entity_id,
-                    TrackedKind::AttackMove,
-                    None,
-                    Some(cell),
-                );
-                issue(
-                    brain,
+                if super::orders::issue_tracked(
+                    &mut brain.tracked,
+                    brain.trace,
                     out,
                     rules,
                     obs,
                     item.entity_id,
+                    TrackedKind::AttackMove,
+                    None,
+                    Some(cell),
                     Goal::AttackMove { cell },
-                    item.reach,
-                    item.deployed,
-                );
-                issued += 1;
+                ) {
+                    issued += 1;
+                }
             }
             // A scout is sent to look, not to fight: a walk, so it does not
             // stop to bite every tank it passes on the way to the map.
@@ -429,26 +403,20 @@ pub(super) fn run(
                 }) else {
                     continue;
                 };
-                if !brain
-                    .tracked
-                    .admits(tick, item.entity_id, TrackedKind::Move, None, Some(cell))
-                {
-                    continue;
-                }
-                brain
-                    .tracked
-                    .record(tick, item.entity_id, TrackedKind::Move, None, Some(cell));
-                issue(
-                    brain,
+                if super::orders::issue_tracked(
+                    &mut brain.tracked,
+                    brain.trace,
                     out,
                     rules,
                     obs,
                     item.entity_id,
+                    TrackedKind::Move,
+                    None,
+                    Some(cell),
                     Goal::Move { cell },
-                    item.reach,
-                    item.deployed,
-                );
-                issued += 1;
+                ) {
+                    issued += 1;
+                }
             }
         }
     }

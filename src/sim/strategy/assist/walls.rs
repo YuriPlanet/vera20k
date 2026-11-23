@@ -367,7 +367,7 @@ fn blocked_cells(rules: &RuleSet, obs: &Observation<'_>) -> BTreeSet<(u16, u16)>
         .own_entities()
         .map(|entity| (entity.cell, entity.type_id))
         .chain(
-            obs.enemy_entities()
+            obs.visible_enemy_entities()
                 .map(|entity| (entity.cell, entity.type_id)),
         )
     {

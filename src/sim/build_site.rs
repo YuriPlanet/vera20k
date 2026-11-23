@@ -30,6 +30,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::{CellObjectMember, RawCellKey};
 use crate::sim::world::{FrameEffects, Simulation};
+use std::collections::BTreeSet;
 
 /// CellClass+0x140 bit tested beside `0x400` by both the overlay and the
 /// terrain arms: a high bridge over the cell.
@@ -65,21 +66,42 @@ pub(crate) fn building_speed_type(ty: &ObjectType) -> Option<SpeedType> {
 /// clears the bits its track holds, the next Cell of a driving unit
 /// included. The test reads that state instead of writing it.
 pub struct LiftedUnit {
-    id: u64,
-    /// Cells whose ground-plane vehicle bit the lift clears.
-    ground_cells: Vec<(u16, u16)>,
+    /// Every entity temporarily lifted for this read-only placement probe.
+    ids: BTreeSet<u64>,
+    /// Cells whose ground-plane vehicle bit one of the lifts clears.
+    ground_cells: BTreeSet<(u16, u16)>,
 }
 
 impl LiftedUnit {
     pub fn read(sim: &Simulation, id: u64) -> Self {
-        let ground_cells = sim
-            .unit_mark_up_raw_cleared(id)
-            .into_iter()
-            .chain(sim.locomotor_occupation_cleared(id))
+        Self::read_many(sim, std::iter::once(id))
+    }
+
+    /// Read the placement state with several own mobile units lifted together.
+    ///
+    /// This is deliberately a read-only probe: it does not issue Scatter or
+    /// mutate occupancy. Callers must prove every id is an eligible unit they
+    /// are allowed to move before asking whether the combined footprint fits.
+    pub fn read_many(
+        sim: &Simulation,
+        ids: impl IntoIterator<Item = u64>,
+    ) -> Self {
+        let ids: BTreeSet<u64> = ids.into_iter().collect();
+        let ground_cells = ids
+            .iter()
+            .flat_map(|&id| {
+                sim.unit_mark_up_raw_cleared(id)
+                    .into_iter()
+                    .chain(sim.locomotor_occupation_cleared(id))
+            })
             .filter(|&(_, layer)| layer != MovementLayer::Bridge)
             .map(|(at, _)| at)
             .collect();
-        Self { id, ground_cells }
+        Self { ids, ground_cells }
+    }
+
+    fn lifts(&self, id: u64) -> bool {
+        self.ids.contains(&id)
     }
 
     fn clears_ground(&self, cell: (u16, u16)) -> bool {
@@ -97,8 +119,8 @@ impl LiftedUnit {
 /// type, which needs one clear cell (`0x00716260..0x00716280`).
 /// Simulation callers use the canonical lookup (`None`); presentation carries
 /// its isolated query through this same walk and every nested Cell decision.
-/// `lifted` reads the map as it stands while that Unit is lifted for the
-/// test ([`LiftedUnit`]).
+/// `lifted` reads the map as it stands while one or more own mobile units are
+/// lifted for the test ([`LiftedUnit`]).
 pub fn can_place_building_at(
     sim: &Simulation,
     rules: &RuleSet,
@@ -349,12 +371,14 @@ fn objects_admit(
     house: Option<InternedId>,
     lifted: Option<&LiftedUnit>,
 ) -> bool {
-    let lifted_id = lifted.map(|lifted| lifted.id);
     let members: Vec<CellObjectMember> = match cell {
         NativeCellIdentity::Real(index) => {
             let cell = &terrain.cells()[index];
             sim.cell_objects((cell.rx, cell.ry), MovementLayer::Ground)
-                .filter(|member| Some(*member) != lifted_id.map(CellObjectMember::Entity))
+                .filter(|member| match member {
+                    CellObjectMember::Entity(id) => !lifted.is_some_and(|lifted| lifted.lifts(*id)),
+                    _ => true,
+                })
                 .collect()
         }
         // The shared dummy carries no object list.
@@ -397,12 +421,22 @@ fn objects_admit(
             .copied();
         let blocker = aircraft
             .or_else(|| {
-                let NativeCellIdentity::Real(index) = cell else {
-                    return None;
-                };
-                let cell = &terrain.cells()[index];
-                sim.nearest_cell_object((cell.rx, cell.ry), MovementLayer::Ground, lifted_id)
-                    .map(CellObjectMember::Entity)
+                // Same nearest-object scoring as CellClass47C3D0, but applied
+                // to the already filtered ground list. A one-id exclusion loop
+                // can alternate forever between two lifted infantry sharing
+                // a cell; the complete filtered candidate list cannot.
+                crate::sim::cell_kernel::nearest_eligible_in_order(
+                    crate::sim::cell_kernel::CellQueryPoint { x: 0, y: 0 },
+                    members.iter().filter_map(|member| {
+                        let CellObjectMember::Entity(id) = *member else {
+                            return None;
+                        };
+                        let entity = sim.substrate.entities.get(id)?;
+                        let [x, y] =
+                            crate::sim::movement::ground_pose::object_center_xy(entity);
+                        Some((id, true, crate::sim::cell_kernel::CellQueryPoint { x, y }))
+                    }),
+                ).map(CellObjectMember::Entity)
             })
             .or_else(|| members.iter().find(|member| is_terrain(member)).copied());
         match blocker {

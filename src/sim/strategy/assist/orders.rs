@@ -65,7 +65,7 @@ mod common;
 
 /// The admission half, re-exported so every caller keeps the path it had.
 pub(in crate::sim::strategy::assist) use common::{
-    admits, already_attacking, issue, on_map, ordered_this_frame, reachable,
+    admits, already_attacking, issue, issue_tracked, on_map, ordered_this_frame, reachable,
 };
 
 /// How many new unit orders one frame may carry. The board drops everything
@@ -139,7 +139,15 @@ pub(super) fn captures(
     {
         return;
     }
-    let engineer_targets: Vec<EnemyEntity> = obs.capturable_buildings(rules).collect();
+    // Neutral structures are public map objectives (v2 requirement). Enemy
+    // buildings are not: an enemy-owned factory in unexplored fog cannot be
+    // chosen for an engineer simply because the native list knows it exists.
+    let engineer_targets: Vec<EnemyEntity> = obs.capturable_buildings(rules)
+        .filter(|target| {
+            !obs.is_hostile(target.entity_id)
+                || obs.is_cell_visible(target.cell.0, target.cell.1)
+        })
+        .collect();
     // Book the captures that landed since the last look. A building that was
     // capturable and is not any more either changed hands or was destroyed, and
     // the house owning it now is what tells the two apart. Pairing the two
@@ -170,11 +178,11 @@ pub(super) fn captures(
     // the enemy's yard is near, and the engineer that goes for it is a 500-credit
     // gift. Buildings do not guard anything, so only units count as pressure.
     let hostile: BTreeSet<u64> = obs
-        .enemy_entities()
+        .visible_enemy_entities()
         .map(|entity| entity.entity_id)
         .collect();
     let guards: Vec<(u16, u16)> = obs
-        .enemy_entities()
+        .visible_enemy_entities()
         .filter(|entity| {
             obs.object_type(rules, entity.type_id)
                 .is_some_and(|ty| ty.category != ObjectCategory::Building)
@@ -186,7 +194,7 @@ pub(super) fn captures(
     // clearance says: the engineer that went *through* a construction yard to
     // reach a neutral derrick was reading a straight line that said "clear".
     let structures: Vec<(u16, u16)> = obs
-        .enemy_entities()
+        .visible_enemy_entities()
         .filter(|entity| {
             obs.object_type(rules, entity.type_id)
                 .is_some_and(|ty| ty.category == ObjectCategory::Building)
@@ -200,7 +208,7 @@ pub(super) fn captures(
     // mind-controls is on the list for the worse reason — a spy that is taken is
     // a spy the enemy now owns.
     let watchers: Vec<(u16, u16)> = obs
-        .enemy_entities()
+        .visible_enemy_entities()
         .filter(|entity| {
             obs.object_type(rules, entity.type_id).is_some_and(|ty| {
                 super::census::Traits::of(rules, ty).scout || mind_controls(rules, ty)
@@ -210,6 +218,7 @@ pub(super) fn captures(
         .collect();
     let spy_targets: Vec<(EnemyEntity, u8)> = obs
         .spyable_buildings(rules)
+        .filter(|target| obs.is_cell_visible(target.cell.0, target.cell.1))
         .filter_map(|target| {
             let ty = obs.object_type(rules, target.type_id)?;
             // A class the house has already unlocked is not worth a second spy:
@@ -305,7 +314,9 @@ pub(super) fn captures(
         let Some(target) = chosen else {
             continue;
         };
-        // The walk is re-decided as it goes, not committed for the whole term.
+        // Capture safety applies to *new* and continuing walks alike. After
+        // a dangerous walk is aborted, the next frame must not immediately
+        // send the same engineer into the same tank again.
         //
         // `TrackedKind::Capture`'s window is 300 frames — the length of a walk
         // across the map. An engineer that stepped out towards a clear derrick
@@ -319,49 +330,33 @@ pub(super) fn captures(
         // [`CAPTURE_RECHECK_FRAMES`]. Gating the whole check on that modulus was
         // measured and fired zero times in four matches: it is one frame in
         // thirty, so the gate was reading the clock rather than the ground.
-        if brain.tracked.is_claimed(tick, unit.entity_id) {
-            let close = guards.iter().any(|cell| {
-                squared_distance(*cell, unit.cell) <= CAPTURE_CLEAR_CELLS * CAPTURE_CLEAR_CELLS
-            });
-            let crossed = tick % CAPTURE_RECHECK_FRAMES == 0
-                && path_crosses(&guards, unit.cell, target.cell, PATH_CLEAR_CELLS);
-            if close || crossed {
-                brain.tracked.void(unit.entity_id, TrackedKind::Capture);
-                log::debug!(
-                    "auto play: engineer {} drops the walk, the ground turned bad",
-                    unit.entity_id
-                );
-                continue;
-            }
+        let close = guards.iter().any(|cell| {
+            squared_distance(*cell, unit.cell) <= CAPTURE_CLEAR_CELLS * CAPTURE_CLEAR_CELLS
+        });
+        let crossed = tick % CAPTURE_RECHECK_FRAMES == 0
+            && path_crosses(&guards, unit.cell, target.cell, PATH_CLEAR_CELLS);
+        if close || crossed {
+            brain.tracked.void(unit.entity_id, TrackedKind::Capture);
+            // The walk is no longer safe: it is an abort, not a
+            // temporary dodge that should later restore Capture. Clear
+            // its strategic primary so a bodyguard also stands down.
+            brain.tracked.forget_primary(unit.entity_id);
+            log::debug!(
+                "auto play: engineer {} drops the walk, the ground turned bad",
+                unit.entity_id
+            );
+            continue;
         }
-        // L4: it has been told to take this building, and the walk is not
-        // over, so it is not told again.
-        if !brain.tracked.admits(
-            tick,
-            unit.entity_id,
-            TrackedKind::Capture,
-            Some(target.entity_id),
-            Some(target.cell),
+        // Reserve this unit only if its capture click passed the map, actor
+        // and frame arbiter. A failed click is not a successful spy errand.
+        if !issue_tracked(
+            &mut brain.tracked, brain.trace, out, rules, obs,
+            unit.entity_id, TrackedKind::Capture,
+            Some(target.entity_id), Some(target.cell),
+            Goal::Capture { target: target.entity_id },
         ) {
             continue;
         }
-        brain.tracked.record(
-            tick,
-            unit.entity_id,
-            TrackedKind::Capture,
-            Some(target.entity_id),
-            Some(target.cell),
-        );
-        issue(
-            brain,
-            out,
-            rules,
-            obs,
-            unit.entity_id,
-            Goal::Capture {
-                target: target.entity_id,
-            },
-        );
         // A spy that walks into a barracks, a war factory or a lab has bought
         // the unlock, and the walk is not worth repeating. Remember which class
         // this one was sent to: the unit is consumed on arrival, so its
@@ -420,7 +415,7 @@ pub(super) fn suicide_errand(
         .collect();
     // The enemy's structures, which is what a one-shot body is worth spending on.
     let targets: Vec<EnemyEntity> = obs
-        .enemy_entities()
+        .visible_enemy_entities()
         .filter(|enemy| {
             obs.object_type(rules, enemy.type_id)
                 .is_some_and(|ty| ty.category == ObjectCategory::Building)
@@ -479,31 +474,20 @@ pub(super) fn suicide_errand(
         let Some((target, target_cell)) = chosen else {
             continue;
         };
-        if !brain.tracked.admits(
-            tick,
-            unit.entity_id,
-            TrackedKind::Attack,
-            Some(target),
-            None,
-        ) {
-            continue;
-        }
-        brain.tracked.record(
-            tick,
-            unit.entity_id,
-            TrackedKind::Attack,
-            Some(target),
-            None,
-        );
-        // Out of reach it walks; in reach the world fires the bomb on the next
-        // frame the gun is ready, and the unit is consumed by its own attack.
-        let goal = if super::advance::cell_distance(unit.cell, target_cell) <= reach {
-            Goal::Attack { target }
+        // Out of reach it marches; in range it fires its one shot. Track
+        // the goal kind actually issued so an L2 rejection can roll it back.
+        let in_reach = super::advance::cell_distance(unit.cell, target_cell) <= reach;
+        let (kind, goal) = if in_reach {
+            (TrackedKind::Attack, Goal::Attack { target })
         } else {
-            Goal::AttackMove { cell: target_cell }
+            (TrackedKind::AttackMove, Goal::AttackMove { cell: target_cell })
         };
-        issue(brain, out, rules, obs, unit.entity_id, goal);
-        issued += 1;
+        if issue_tracked(
+            &mut brain.tracked, brain.trace, out, rules, obs,
+            unit.entity_id, kind, Some(target), Some(target_cell), goal,
+        ) {
+            issued += 1;
+        }
     }
 }
 
@@ -556,7 +540,9 @@ pub(super) fn pack_captured_yard(
         let Some(ty) = obs.object_type(rules, unit.type_id) else {
             continue;
         };
-        if !ty.construction_yard {
+        if !ty.construction_yard || obs.owned_by_hand(unit.entity_id) {
+            // A grouped yard belongs to the player in non-group mode (and
+            // vice versa). Do not mark an undelivered pack as committed.
             continue;
         }
         // A yard standing among the house's *other* buildings is the base, not a
@@ -568,6 +554,17 @@ pub(super) fn pack_captured_yard(
                 && squared_distance(*cell, unit.cell) <= HOME_REACH_CELLS * HOME_REACH_CELLS
         });
         if in_the_base {
+            continue;
+        }
+        // Distance is not evidence of danger. A captured enemy yard is now
+        // our forward base when the surrounding enemy has been cleared; the
+        // old unconditional pack and the second-yard deployer undid each
+        // other after their shared cooldown, creating an endless MCV walk.
+        let attackers = brain.census.enemies.iter().filter(|enemy| {
+            obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+                && squared_distance(enemy.cell, unit.cell) <= 14 * 14
+        }).count();
+        if !should_pack_captured_yard(unit.health_permille, attackers) {
             continue;
         }
         if !obs.can_repack_yard(rules, unit.entity_id) {
@@ -598,6 +595,13 @@ pub(super) fn pack_captured_yard(
         });
         issued += 1;
     }
+}
+
+/// Packing is an emergency salvage action, not ordinary exploration.
+/// A single passing scout is not a reason to uproot a forward base; we
+/// require both material damage and more than one visible attacker.
+fn should_pack_captured_yard(health_permille: u16, attackers: usize) -> bool {
+    health_permille <= 600 && attackers >= 2
 }
 
 /// Send an engineer into a `BridgeRepairHut=` whose span is down.
@@ -644,31 +648,13 @@ pub(super) fn bridges(
         let Some(target) = nearest_site(&huts, unit.cell) else {
             continue;
         };
-        if !brain.tracked.admits(
-            tick,
-            unit.entity_id,
-            TrackedKind::Capture,
-            Some(target),
-            None,
-        ) {
-            continue;
-        }
-        brain.tracked.record(
-            tick,
-            unit.entity_id,
-            TrackedKind::Capture,
-            Some(target),
-            None,
-        );
-        issue(
-            brain,
-            out,
-            rules,
-            obs,
-            unit.entity_id,
+        if issue_tracked(
+            &mut brain.tracked, brain.trace, out, rules, obs,
+            unit.entity_id, TrackedKind::Capture, Some(target), None,
             Goal::Capture { target },
-        );
-        issued += 1;
+        ) {
+            issued += 1;
+        }
     }
 }
 
@@ -749,31 +735,11 @@ pub(super) fn garrison(
         // The garrison is the one that had no memory at all: it was told to
         // walk into the same building every frame, and a unit being told to
         // enter what it is already entering is a unit that never arrives.
-        if !brain.tracked.admits(
-            tick,
-            unit.entity_id,
-            TrackedKind::Capture,
-            Some(billet.building_id),
-            Some(billet.cell),
-        ) {
-            continue;
-        }
-        brain.tracked.record(
-            tick,
-            unit.entity_id,
-            TrackedKind::Capture,
-            Some(billet.building_id),
-            Some(billet.cell),
-        );
-        if issue(
-            brain,
-            out,
-            rules,
-            obs,
-            unit.entity_id,
-            Goal::Capture {
-                target: billet.building_id,
-            },
+        if issue_tracked(
+            &mut brain.tracked, brain.trace, out, rules, obs,
+            unit.entity_id, TrackedKind::Capture,
+            Some(billet.building_id), Some(billet.cell),
+            Goal::Capture { target: billet.building_id },
         ) {
             issued += 1;
             garrisoned += 1;
@@ -1308,7 +1274,7 @@ pub(super) fn harvesters(
     let tick = obs.tick();
     let harvest = MissionId::from_known(MissionType::Harvest);
     let unload = MissionId::from_known(MissionType::Unload);
-    let idle: Vec<(u64, (u16, u16))> = brain
+    let idle: Vec<(u64, (u16, u16), crate::sim::intern::InternedId)> = brain
         .census
         .units
         .iter()
@@ -1320,35 +1286,23 @@ pub(super) fn harvesters(
                 && unit.mission != harvest
                 && unit.mission != unload
         })
-        .map(|unit| (unit.entity_id, unit.cell))
+        .map(|unit| (unit.entity_id, unit.cell, unit.type_id))
         .collect();
-    // Where the ore actually is, read on a term: the field does not move and a
-    // scan of the ring around the base is not free.
-    let extent = obs.map_extent();
+    // The spending decision already surveyed the same ore and counted its
+    // density. One snapshot for purchase and dispatch, not two stale answers.
     let anchor = brain.census.base_cell;
-    if let Some(home) = anchor {
-        let stale = brain
-            .ore_scan
-            .as_ref()
-            .is_none_or(|(read_at, _)| read_at.saturating_add(super::ore::SCAN_TERM) <= tick);
-        if stale {
-            let cells = super::ore::cells_near(rules, obs, home, extent);
-            brain.ore_scan = Some((tick, cells));
-        }
-    }
-    let fields: &[(u16, u16)] = brain
-        .ore_scan
-        .as_ref()
-        .map(|(_, cells)| cells.as_slice())
+    let fields: &[(u16, u16)] = brain.ore_scan.as_ref()
+        .map(|survey| survey.fields.as_slice())
         .unwrap_or(&[]);
     // What the trucks must not be sent into. Ore inside an enemy base is the
     // wishlist's "the harvester walks into the enemy base to mine": the field is
     // real and the trip is a donation.
     let space = super::terrain::Space::read(obs, rules, &brain.census.home_cells, anchor);
-    for (id, cell) in idle {
+    for (id, cell, type_id) in idle {
         if ordered_this_frame(out, id) {
             continue;
         }
+        let zone = obs.object_type(rules, type_id).map(|ty| ty.movement_zone);
         // The best field is the nearest ore the house may work: close, and not
         // under an enemy gun. Standing on ore already is its own answer, and the
         // cell the unit holds is the one field the scan can prove it is on.
@@ -1360,7 +1314,8 @@ pub(super) fn harvesters(
                 &fields
                     .iter()
                     .copied()
-                    .filter(|field| space.ground_at(*field).buildable())
+                    .filter(|field| space.ground_at(*field).buildable()
+                        && zone.is_none_or(|zone| obs.can_reach(zone, cell, *field)))
                     .collect::<Vec<_>>(),
             )
         };
@@ -1377,7 +1332,7 @@ pub(super) fn harvesters(
         {
             continue;
         }
-        if issue(brain, out, rules, obs, id, Goal::Harvest { cell }) {
+        if issue(brain, out, rules, obs, id, Goal::Harvest { cell: target }) {
             brain
                 .tracked
                 .record(tick, id, TrackedKind::Harvest, None, None);
@@ -1393,12 +1348,12 @@ pub(super) fn harvesters(
 /// taken back. Inside it the same building is worth keeping and garrisoning.
 const HOLDLESS_CELLS: i32 = 36;
 
-/// How hurt a building may be before it is sold, in permille.
-///
-/// A captured plant at a sliver of health is a repair bill the house pays under
-/// fire; the refund is most of what it cost and the ground is not worth the
-/// wrench.
-const HOLDLESS_HEALTH: i32 = 250;
+/// A passive refund is not a defense. Never sell a remote or weak building
+/// solely because it is far from the first base: a captured refinery or lab
+/// can be the entire reason this house is still alive. Only a building that
+/// is nearly destroyed *during a currently visible attack* may be considered.
+const HOLDLESS_HEALTH: u16 = 120;
+const SALE_THREAT_CELLS: i32 = 10;
 
 /// Sell the buildings this house cannot hold.
 ///
@@ -1437,7 +1392,10 @@ pub(super) fn sell_hard_to_hold(
         let Some(ty) = obs.object_type(rules, unit.type_id) else {
             continue;
         };
-        if ty.category != ObjectCategory::Building || buildable.contains(&unit.type_id) {
+        if ty.category != ObjectCategory::Building
+            || buildable.contains(&unit.type_id)
+            || obs.owned_by_hand(unit.entity_id)
+        {
             continue;
         }
         // A sale the world did not show is not a sale that is about to happen.
@@ -1473,30 +1431,35 @@ pub(super) fn sell_hard_to_hold(
             continue;
         }
         let far = squared_distance(home, unit.cell) > HOLDLESS_CELLS * HOLDLESS_CELLS;
-        let hurt = unit.health_permille <= HOLDLESS_HEALTH as u16;
-        // "Exposed" alone is not a reason. A building inside the house's own
-        // walls is defensible while an enemy is at the gate, and selling it then
-        // is the windfall the enemy was after. Only a building that is also out
-        // of reach counts, and it still has to be far or hurt to go.
-        let abandoned = far && !space.ground_at(unit.cell).buildable();
-        if !(far || hurt) {
+        let hurt = unit.health_permille <= HOLDLESS_HEALTH;
+        let threatened = brain.census.enemies.iter().any(|enemy| {
+            obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+                && squared_distance(enemy.cell, unit.cell)
+                    <= SALE_THREAT_CELLS * SALE_THREAT_CELLS
+        });
+        // The build-list membership is not capture provenance. Be maximally
+        // conservative: never liquidate a source of money, power, production,
+        // radar, tech or a Construction Yard, even if it came from the enemy.
+        // A distant, unthreatened trophy is an asset, not a hostage.
+        let strategic = ty.build_const_eligible()
+            || ty.construction_yard
+            || ty.refinery
+            || ty.produce_cash_amount != 0
+            || ty.factory_type().is_some()
+            || ty.unit_repair
+            || ty.ore_purifier
+            || ty.cloning
+            || ty.factory_plant
+            || ty.power > 0
+            || ty.radar
+            || ty.spy_sat
+            || ty.super_weapon.is_some()
+            || ty.super_weapon2.is_some()
+            || super::build::earns_its_keep(rules, ty);
+        if !may_sell_captured(far, hurt, threatened, strategic) {
             continue;
         }
-        // A captured yard is not sold, it is packed. It is the one building that
-        // is worth more as a unit: the maker drives home and becomes a second
-        // base, while the refund is a fraction of what a second yard is worth.
-        if ty.build_const_eligible() {
-            log::info!(
-                "auto play: pack the captured yard {} at {:?} for the drive home",
-                ty.id,
-                unit.cell
-            );
-            out.intent(Intent::UndeployBuilding {
-                entity_id: unit.entity_id,
-            });
-            brain.sale_at = tick.saturating_add(SALE_GAP_FRAMES);
-            return;
-        }
+        let abandoned = !space.ground_at(unit.cell).buildable();
         log::info!(
             "auto play: sell {} at {:?} (far={far} hurt={hurt} abandoned={abandoned})",
             ty.id,
@@ -1511,6 +1474,13 @@ pub(super) fn sell_hard_to_hold(
         brain.sale_at = tick.saturating_add(SALE_GAP_FRAMES);
         return;
     }
+}
+
+/// Sale requires all positive evidence: distant, dying, under direct enemy
+/// attack, and not important to continued play. It never fires from a stale
+/// strategic memory or simply from the absence of friendly units nearby.
+fn may_sell_captured(far: bool, dying: bool, threatened: bool, strategic: bool) -> bool {
+    far && dying && threatened && !strategic
 }
 
 /// How many frames between two sales.
@@ -1798,6 +1768,11 @@ pub(super) fn repairs(
     for entity_id in hurt {
         if issued >= FORCE_ORDERS_PER_FRAME {
             break;
+        }
+        if obs.owned_by_hand(entity_id) {
+            // A denied wrench is a toggle that never happened. Leave the
+            // repair cooldown untouched until this building enters scope.
+            continue;
         }
         // The memory has a term. A click that was refused — the budget, the
         // domain, the gate — leaves nothing behind, and a house that remembers
@@ -2161,34 +2136,14 @@ fn board_idle(
             continue;
         };
         let soldier_id = soldier.entity_id;
-        if !brain.tracked.admits(
-            tick,
-            soldier_id,
-            TrackedKind::Enter,
-            Some(carrier),
-            Some(cell),
-        ) {
-            continue;
-        }
-        brain.tracked.record(
-            tick,
-            soldier_id,
-            TrackedKind::Enter,
-            Some(carrier),
-            Some(cell),
-        );
-        log::debug!("auto play: {soldier_id} boards {carrier} at {cell:?}");
-        if issue(
-            brain,
-            out,
-            rules,
-            obs,
-            soldier_id,
+        if issue_tracked(
+            &mut brain.tracked, brain.trace, out, rules, obs,
+            soldier_id, TrackedKind::Enter, Some(carrier), Some(cell),
             Goal::Enter { target: carrier },
         ) {
+            log::debug!("auto play: {soldier_id} boards {carrier} at {cell:?}");
             return true;
         }
-        brain.tracked.void(soldier_id, TrackedKind::Enter);
     }
     false
 }
@@ -2238,10 +2193,10 @@ mod transport_tests {
 /// table: the enemy's Construction Yard when one stands, otherwise the first
 /// enemy structure.
 ///
-/// Only powers aimed at an enemy cell are fired. The Iron Curtain, the Force
-/// Shield and the Chrono pair are spent on the house's *own* units and
-/// buildings, and firing them at the enemy burns the charge for nothing; they
-/// belong to a defensive decision this brain does not make yet.
+/// Enemy-targeting powers strike remembered hostile structures; support
+/// powers pick a relevant friendly target only when a current threat exists.
+/// Two-click Chronosphere transportation remains disabled until source and
+/// destination can be committed as one recoverable mission.
 pub(super) fn supers(
     brain: &mut AssistBrain,
     rules: &RuleSet,
@@ -2273,7 +2228,7 @@ pub(super) fn supers(
         let Some(super_weapon) = rules.super_weapon(name) else {
             continue;
         };
-        if !spent_on_the_enemy(super_weapon.kind) {
+        if !auto_power_supported(super_weapon.kind) {
             continue;
         }
         // Where it lands is the power's own answer, not one cell for all of
@@ -2311,6 +2266,10 @@ enum Aim {
     Rally,
     /// Where the house cannot see: a spy plane, a psychic reveal.
     Recon,
+    /// An important building is actually under attack now.
+    Shield,
+    /// A fighting vehicle is in the middle of a current battle.
+    Curtain,
 }
 
 /// What a power is for, by its kind: `Type=` in the rules.
@@ -2320,6 +2279,8 @@ fn aim_of(kind: SuperWeaponKind) -> Aim {
         | SuperWeaponKind::AmerParaDrop
         | SuperWeaponKind::UnitDelivery => Aim::Rally,
         SuperWeaponKind::SpyPlane | SuperWeaponKind::PsychicReveal => Aim::Recon,
+        SuperWeaponKind::ForceShield => Aim::Shield,
+        SuperWeaponKind::IronCurtain => Aim::Curtain,
         _ => Aim::Enemy,
     }
 }
@@ -2343,11 +2304,90 @@ fn landing_cell(
             .find(|unit| unit.traits.combat)
             .map(|unit| unit.cell)
             .or(brain.census.base_cell),
-        // What the house cannot see. The shroud has no projection yet, so this
-        // is the enemy's base for now — the one place worth looking — and it
-        // belongs to the exploration layer when that has a target source.
-        Aim::Recon => enemy_structure_cell(brain, rules, obs),
+        // Enemy structures are already known; reveal a *new* part of the map
+        // first. The fog is this player's own information, not all entities.
+        Aim::Recon => recon_cell(obs, brain.census.base_cell)
+            .or_else(|| enemy_structure_cell(brain, rules, obs)),
+        Aim::Shield => threatened_building(obs, rules),
+        Aim::Curtain => engaged_vehicle(brain, rules, obs),
     }
+}
+
+/// Only single-click powers with a safe, currently meaningful target are
+/// autonomous. Chronosphere/ChronoWarp need a paired source/destination
+/// transaction, so firing either as a single click would consume the charge.
+fn auto_power_supported(kind: SuperWeaponKind) -> bool {
+    spent_on_the_enemy(kind)
+        || matches!(kind, SuperWeaponKind::ForceShield | SuperWeaponKind::IronCurtain)
+}
+
+/// Pick one still-shrouded *walkable* sample, farthest from home. Spy planes
+/// need not be driven there, but using real terrain avoids repeatedly
+/// revealing the padded fog outside the map. Stable integer ordering avoids
+/// replay divergence and no live enemy coordinates are read through fog.
+fn recon_cell(obs: &Observation<'_>, home: Option<(u16, u16)>) -> Option<(u16, u16)> {
+    let (width, height) = obs.map_extent();
+    let home = home.unwrap_or((width / 2, height / 2));
+    let mut best: Option<(i32, (u16, u16))> = None;
+    for y in (0..height).step_by(8) {
+        for x in (0..width).step_by(8) {
+            if obs.is_cell_revealed(x, y) || !obs.is_ground_walkable(x, y) {
+                continue;
+            }
+            let cell = (x, y);
+            let score = squared_distance(home, cell);
+            if best.is_none_or(|(value, current)| (score, cell) > (value, current)) {
+                best = Some((score, cell));
+            }
+        }
+    }
+    best.map(|(_, cell)| cell)
+}
+
+/// The Force Shield goes over the threatened *structure*, never an arbitrary
+/// empty base location or an enemy. Otherwise it stays charged.
+fn threatened_building(obs: &Observation<'_>, rules: &RuleSet) -> Option<(u16, u16)> {
+    obs.own_entities()
+        .filter_map(|entity| {
+            let ty = obs.object_type(rules, entity.type_id)?;
+            if ty.category != ObjectCategory::Building {
+                return None;
+            }
+            let distance = obs.visible_enemy_entities()
+                .map(|enemy| squared_distance(entity.cell, enemy.cell))
+                .min()?;
+            (distance <= 12 * 12).then_some((
+                (ty.construction_yard, ty.refinery, ty.power > 0, -distance),
+                entity.cell,
+            ))
+        })
+        .max_by_key(|(weight, cell)| (*weight, *cell))
+        .map(|(_, cell)| cell)
+}
+
+/// The Iron Curtain is for a combat vehicle actually facing an enemy. With
+/// no battle in progress there is no reason to burn its charge on a tank in
+/// the garage. Exclude MCVs, transports and workers via census role traits.
+fn engaged_vehicle(
+    brain: &AssistBrain,
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+) -> Option<(u16, u16)> {
+    brain.census.units.iter()
+        .filter(|unit| unit.orderable && unit.traits.combat)
+        .filter(|unit| obs.object_type(rules, unit.type_id)
+            .is_some_and(|ty| ty.category == ObjectCategory::Vehicle))
+        .filter_map(|unit| {
+            let distance = obs.visible_enemy_entities()
+                .map(|enemy| squared_distance(unit.cell, enemy.cell))
+                .min()?;
+            (distance <= 10 * 10).then_some((
+                (unit.points, -(unit.health_permille as i32), -distance),
+                unit.cell,
+            ))
+        })
+        .max_by_key(|(weight, cell)| (*weight, *cell))
+        .map(|(_, cell)| cell)
 }
 
 /// Whether a power is aimed at an enemy cell rather than held for the house's

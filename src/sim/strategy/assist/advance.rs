@@ -477,7 +477,15 @@ pub(super) fn advance(
     // A search is not a fight: there is nothing to weigh the army against, and
     // the march is the point.
     let searching = target.entity_id == 0;
-    if !mopping_up && !searching && !super::squads::outguns(&brain.census, rules, obs, target.cell)
+    // A fist is what actually crosses the map, not the units holding home.
+    // Never count the garrison or a harasser as support for a target they will
+    // not arrive at. Use the *same* fighter list used to issue this push.
+    let committed_points = fighters.iter().fold(0i32, |total, unit| {
+        total.saturating_add(unit.points)
+    });
+    if !mopping_up
+        && !searching
+        && !super::squads::outguns(&brain.census, rules, obs, target.cell, committed_points)
     {
         // The same commit window as the gates above: `outguns` weighs the army
         // against whatever stands around this frame's target, so a target the
@@ -653,18 +661,11 @@ pub(super) fn advance(
             {
                 continue;
             }
-            brain
-                .tracked
-                .record(tick, unit.entity_id, kind, None, Some(target_cell));
-            if !super::orders::issue(
-                brain,
-                out,
-                rules,
-                obs,
-                unit.entity_id,
+            if !super::orders::issue_tracked(
+                &mut brain.tracked, brain.trace, out, rules, obs, unit.entity_id,
+                kind, None, Some(target_cell),
                 Goal::AttackMove { cell: target_cell },
             ) {
-                brain.tracked.void(unit.entity_id, kind);
                 continue;
             }
             issued += 1;
@@ -682,14 +683,11 @@ pub(super) fn advance(
             ) {
                 continue;
             }
-            brain.tracked.record(
-                tick,
-                unit.entity_id,
-                super::tracked::TrackedKind::Guard,
-                None,
-                None,
-            );
-            if super::orders::issue(brain, out, rules, obs, unit.entity_id, Goal::Guard) {
+            if super::orders::issue_tracked(
+                &mut brain.tracked, brain.trace, out, rules, obs,
+                unit.entity_id, super::tracked::TrackedKind::Guard,
+                None, None, Goal::Guard,
+            ) {
                 issued += 1;
             }
             continue;
@@ -733,19 +731,13 @@ pub(super) fn advance(
         ) {
             continue;
         }
-        brain.tracked.record(
-            tick,
-            unit.entity_id,
-            kind,
-            Some(target.entity_id),
-            Some(target.cell),
-        );
         // An order the click refuses is not an order: it must not be counted
-        // against the frame's eight, and it must not be remembered as if it had
-        // been given. Eight refusals a frame is eight orders the house never
-        // gave, and a record of one holds the unit for its whole term.
-        if !super::orders::issue(brain, out, rules, obs, unit.entity_id, goal) {
-            brain.tracked.void(unit.entity_id, kind);
+        // against the frame's eight and must not overwrite a standing primary.
+        // `issue_tracked` both arbitrates and remembers the accepted goal.
+        if !super::orders::issue_tracked(
+            &mut brain.tracked, brain.trace, out, rules, obs, unit.entity_id,
+            kind, Some(target.entity_id), Some(target.cell), goal,
+        ) {
             refused += 1;
             if super::trace_enabled("AUTOPLAY_TRACE_REFUSE") && tick % 600 == 0 {
                 let dx = i32::from(unit.cell.0) - i32::from(target_cell.0);

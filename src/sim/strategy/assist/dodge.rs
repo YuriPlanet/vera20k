@@ -159,7 +159,6 @@ pub(super) fn run(
     obs: &Observation<'_>,
     out: &mut Outbox,
 ) {
-    let tick = obs.tick();
     let mut by_target: BTreeMap<u64, Vec<Shell>> = BTreeMap::new();
     // Guided shots, kept apart: a step does not make one miss, so a walker
     // takes the hit, but an airframe that leaves the launcher's range or the
@@ -251,21 +250,16 @@ pub(super) fn run(
         if !can_clear(cells, speed, deadline, REACTION_FRAMES) {
             continue;
         }
-        if !brain
-            .tracked
-            .admits(tick, unit.entity_id, TrackedKind::Dodge, None, Some(target))
-        {
-            continue;
-        }
-        brain
-            .tracked
-            .record(tick, unit.entity_id, TrackedKind::Dodge, None, Some(target));
-        super::orders::issue(
-            brain,
+        super::orders::issue_tracked(
+            &mut brain.tracked,
+            brain.trace,
             out,
             rules,
             obs,
             unit.entity_id,
+            TrackedKind::Dodge,
+            None,
+            Some(target),
             Goal::Move { cell: target },
         );
     }

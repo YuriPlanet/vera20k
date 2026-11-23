@@ -1502,20 +1502,13 @@ const AUTO_PLAY_POLICY_SEED: u64 = 0x5EED_2_1;
 /// place it, keep the harvesters coming. `docs/autoplay.md` carries the scope
 /// and the residuals.
 fn toggle_auto_play(state: &mut AppState) {
-    // All or nothing: any switch off means the key turns the whole thing on,
-    // and a host with everything on is what the key turns off. A player who
-    // has taken one half back and presses the master key wants the whole
-    // thing running, not the whole thing stopped.
-    let all_on = state
-        .match_state
-        .auto_play
-        .as_ref()
-        .is_some_and(|host| {
-            let domains = host.domains();
-            domains.production && domains.forces && domains.abilities
-        });
-    if all_on {
-        state.match_state.auto_play = None;
+    if let Some(host) = state.match_state.auto_play.as_mut() {
+        let mut domains = host.domains();
+        domains.toggle_master();
+        // Keep the session, its scope and its task history while paused.
+        // Dropping the host would reset the fifth key and all three work
+        // switches when the player presses Global again.
+        host.set_domains(domains);
     } else {
         install_auto_play(state, crate::sim::control::board::AutoPlayDomains::ALL);
     }
@@ -1560,52 +1553,38 @@ fn install_auto_play(
     true
 }
 
-/// One switch's key, so the base, the army and the abilities are three
-/// independent decisions, and the scope is a fourth: it decides *which* objects
-/// the other three drive, so it can be flipped without touching what they do.
-///
-/// With no host running it installs one with that switch alone on; with one
-/// running it flips that switch; and with every switch off it takes the host
-/// down, so the keys never leave a host driving nothing. Turning a switch off
-/// stops new commands of that kind while orders already given keep running, so
-/// a player can take the troops back without the units dropping their work.
+/// Four distinct choices: three work domains and a pure *player group*
+/// scope switch. Pressing the fifth key while paused creates a paused session
+/// with the new scope: no production/forces/ability domain is enabled by it.
+/// A paused host remains alive so Global can restore the three domains without
+/// forgetting the fifth key or resetting the strategy's state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AutoPlaySwitch {
     Production,
     Forces,
     Abilities,
-    Squads,
+    GroupScope,
 }
 
 fn toggle_auto_play_switch(state: &mut AppState, switch: AutoPlaySwitch) {
-    let Some(mut host) = state.match_state.auto_play.take() else {
+    if state.match_state.auto_play.is_none() {
         let mut domains = crate::sim::control::board::AutoPlayDomains::NONE;
         match switch {
             AutoPlaySwitch::Production => domains.production = true,
             AutoPlaySwitch::Forces => domains.forces = true,
             AutoPlaySwitch::Abilities => domains.abilities = true,
-            // The scope has no meaning with nothing running, so the first press
-            // starts the whole hand and narrows it in one go rather than
-            // installing a host that drives nothing.
-            AutoPlaySwitch::Squads => {
-                domains = crate::sim::control::board::AutoPlayDomains::ALL;
-                domains.squads_only = true;
-            }
+            AutoPlaySwitch::GroupScope => domains.grouped_only = true,
         }
         install_auto_play(state, domains);
-        post_auto_play_state(state);
-        return;
-    };
-    let mut domains = host.domains();
-    match switch {
-        AutoPlaySwitch::Production => domains.production = !domains.production,
-        AutoPlaySwitch::Forces => domains.forces = !domains.forces,
-        AutoPlaySwitch::Abilities => domains.abilities = !domains.abilities,
-        AutoPlaySwitch::Squads => domains.squads_only = !domains.squads_only,
-    }
-    if domains.any() {
+    } else if let Some(host) = state.match_state.auto_play.as_mut() {
+        let mut domains = host.domains();
+        match switch {
+            AutoPlaySwitch::Production => domains.production = !domains.production,
+            AutoPlaySwitch::Forces => domains.forces = !domains.forces,
+            AutoPlaySwitch::Abilities => domains.abilities = !domains.abilities,
+            AutoPlaySwitch::GroupScope => domains.grouped_only = !domains.grouped_only,
+        }
         host.set_domains(domains);
-        state.match_state.auto_play = Some(host);
     }
     post_auto_play_state(state);
 }
@@ -1615,10 +1594,10 @@ fn toggle_auto_play_switch(state: &mut AppState, switch: AutoPlaySwitch) {
 fn post_auto_play_state(state: &mut AppState) {
     let message = match state.match_state.auto_play.as_ref() {
         Some(host) => {
-            let scope = if host.domains().squads_only {
-                ", squads only"
+            let scope = if host.domains().grouped_only {
+                ", grouped only"
             } else {
-                ""
+                ", ungrouped only"
             };
             format!(
                 "Auto play: {} ({}){}",

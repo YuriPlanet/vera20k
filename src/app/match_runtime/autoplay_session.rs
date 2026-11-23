@@ -53,7 +53,7 @@ impl AutoplaySession {
         self.host.owner()
     }
 
-    /// The objects the player has taken back.
+    /// The members of the player's numbered control groups, not the AI roster.
     pub(crate) fn take_back(&mut self, taken: BTreeSet<u64>) {
         self.host.take_back(taken);
     }
@@ -69,16 +69,15 @@ impl AutoplaySession {
         rules: &RuleSet,
         projection: &mut SidebarProjectionState,
     ) -> Vec<Command> {
-        // The player's own units: a unit in one of the player's control groups
-        // stays under the player's hand. Read from the sim, where an assignment
-        // lands, so a group assigned in this frame's commands counts before
-        // auto play steps.
-        let player_owned: BTreeSet<u64> = sim
+        // Read the player's control groups from the projected simulation.
+        // The fifth key decides whether these members or the complement are
+        // eligible; a group assigned this frame is visible before brain.step.
+        let player_groups: BTreeSet<u64> = sim
             .projected_control_groups()
             .into_iter()
             .flatten()
             .collect();
-        self.host.take_back(player_owned);
+        self.host.take_back(player_groups);
 
         let issued = self.host.step(sim, rules);
         let owner = self.host.owner();

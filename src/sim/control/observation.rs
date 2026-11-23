@@ -27,12 +27,11 @@
 //!   navigation projection. It is derived from terrain and blocking objects,
 //!   and it says nothing about whether a cell is currently occupied: use it
 //!   for reachability, not for occupancy.
-//! - `owned_by_hand` reads the objects the local player has taken back — the
-//!   members of the player's control groups, which live in the local view and
-//!   reach this projection through the board (`with_player_groups`) — and the
+//! - `owned_by_hand` applies the fifth-key scope to player control groups
+//!   passed through the board (`with_control_scope`), and also respects the
 //!   `TeamClass` scripts of this house. Neither is simulation state the sim
-//!   owns: a control group is a promise about a unit the player made, so it
-//!   belongs to the player's view, and it is handed in rather than stored.
+//!   owns: a control group lives in the player's view, and its membership is
+//!   handed in rather than stored.
 //!
 //! Everything here is integer-valued and iterates in storage order, so a
 //! decision built on it stays deterministic.
@@ -71,6 +70,15 @@ pub struct Observation<'a> {
     /// the board each frame. The board's gate refuses a command that names
     /// one, and a policy that can see them refuses to propose one.
     player_kept: &'a BTreeSet<u64>,
+    /// Whether the AI may drive *only* the player-control-group members.
+    /// False is the original "exclude manually grouped units" behavior.
+    grouped_only: bool,
+    /// The board's independent work gates. A strategy can plan only actions it
+    /// is permitted to attempt; in particular, site clearing must not issue
+    /// `Scatter` through Forces when the player disabled Production.
+    production_enabled: bool,
+    forces_enabled: bool,
+    abilities_enabled: bool,
 }
 
 /// What [`Observation::player_kept`] is for a house with no player behind it:
@@ -172,6 +180,10 @@ impl<'a> Observation<'a> {
             sim,
             house,
             player_kept: &NO_PLAYER_GROUPS,
+            grouped_only: false,
+            production_enabled: true,
+            forces_enabled: true,
+            abilities_enabled: true,
         }
     }
 
@@ -185,6 +197,36 @@ impl<'a> Observation<'a> {
     pub fn with_player_groups(mut self, groups: &'a BTreeSet<u64>) -> Self {
         self.player_kept = groups;
         self
+    }
+
+    /// Apply the player's fifth-key scope to the strategy's observation.
+    /// The brain must not plan with units L2 will later discard; otherwise
+    /// its army counts and task assignments disagree with command admission.
+    pub fn with_control_scope(mut self, groups: &'a BTreeSet<u64>, grouped_only: bool) -> Self {
+        self.player_kept = groups;
+        self.grouped_only = grouped_only;
+        self
+    }
+
+    /// Let the strategy observe the independent work switches before making
+    /// stateful plans. Headless and test observations default to all three enabled.
+    pub fn with_work_scope(mut self, production: bool, forces: bool, abilities: bool) -> Self {
+        self.production_enabled = production;
+        self.forces_enabled = forces;
+        self.abilities_enabled = abilities;
+        self
+    }
+
+    pub fn production_enabled(&self) -> bool {
+        self.production_enabled
+    }
+
+    pub fn forces_enabled(&self) -> bool {
+        self.forces_enabled
+    }
+
+    pub fn abilities_enabled(&self) -> bool {
+        self.abilities_enabled
     }
 
     /// The house this view is scoped to; the owner every issued command takes.
@@ -1331,8 +1373,9 @@ impl<'a> Observation<'a> {
     /// Whether `HouseClass::Place_Production` would accept `ty` with its
     /// top-left cell here: the sidebar's build-area adjacency and the
     /// building's own `CanPlaceAt` clear-to-build, the two predicates that
-    /// Unlimbo asks again after the click. Read-only; walls need the overlay
-    /// registry and so are not admitted here.
+    /// Unlimbo asks again after the click. Read-only, and passes the same
+    /// overlay registry as native placement so gates and fences are judged
+    /// consistently at planning and execution time.
     pub(crate) fn placement_admits(
         &self,
         rules: &RuleSet,
@@ -1350,12 +1393,78 @@ impl<'a> Observation<'a> {
         ) && crate::sim::build_site::can_place_building_at(
             self.sim,
             rules,
-            None,
+            Some(rules.overlay_registry()),
             ty,
             (rx as i16, ry as i16),
             Some(self.house),
             None,
             None,
+        )
+    }
+
+    /// Whether the exact same player placement would be admitted after
+    /// *this one own mobile unit* leaves the footprint. This is a read-only
+    /// lifted-unit probe; it does not bypass enemy objects, structures,
+    /// overlays, map bounds, or ordinary build-area adjacency.
+    pub(crate) fn placement_admits_after_unit_leaves(
+        &self,
+        rules: &RuleSet,
+        ty: &ObjectType,
+        rx: u16,
+        ry: u16,
+        actor: u64,
+    ) -> bool {
+        let Some(unit) = self.sim.entities().get(actor) else { return false; };
+        if unit.owner() != self.house || self.owned_by_hand(actor) {
+            return false;
+        }
+        if !matches!(unit.category(), EntityCategory::Infantry | EntityCategory::Unit) {
+            return false;
+        }
+        if !crate::sim::production::is_within_build_area(
+            self.sim, rules, self.sim.interner().resolve(self.house), ty, rx, ry,
+        ) {
+            return false;
+        }
+        let lifted = crate::sim::build_site::LiftedUnit::read(self.sim, actor);
+        crate::sim::build_site::can_place_building_at(
+            self.sim, rules, Some(rules.overlay_registry()), ty, (rx as i16, ry as i16),
+            Some(self.house), None, Some(&lifted),
+        )
+    }
+
+    /// Whether the exact same player placement would be admitted after all
+    /// supplied own mobile units leave the footprint. The combined lift is a
+    /// read-only probe; it does not mutate occupancy or bypass any other gate.
+    pub(crate) fn placement_admits_after_units_leave(
+        &self,
+        rules: &RuleSet,
+        ty: &ObjectType,
+        rx: u16,
+        ry: u16,
+        actors: &[u64],
+    ) -> bool {
+        if actors.is_empty() {
+            return false;
+        }
+        for &actor in actors {
+            let Some(unit) = self.sim.entities().get(actor) else { return false; };
+            if unit.owner() != self.house || self.owned_by_hand(actor) {
+                return false;
+            }
+            if !matches!(unit.category(), EntityCategory::Infantry | EntityCategory::Unit) {
+                return false;
+            }
+        }
+        if !crate::sim::production::is_within_build_area(
+            self.sim, rules, self.sim.interner().resolve(self.house), ty, rx, ry,
+        ) {
+            return false;
+        }
+        let lifted = crate::sim::build_site::LiftedUnit::read_many(self.sim, actors.iter().copied());
+        crate::sim::build_site::can_place_building_at(
+            self.sim, rules, Some(rules.overlay_registry()), ty, (rx as i16, ry as i16),
+            Some(self.house), None, Some(&lifted),
         )
     }
 
@@ -1377,7 +1486,7 @@ impl<'a> Observation<'a> {
         crate::sim::build_site::can_place_building_at(
             self.sim,
             rules,
-            None,
+            Some(rules.overlay_registry()),
             ty,
             (rx as i16, ry as i16),
             Some(self.house),
@@ -1438,13 +1547,11 @@ impl<'a> Observation<'a> {
         )
     }
 
-    /// Whether a hand other than this policy already owns `entity_id`, so the
-    /// policy orders it nothing at all: a unit in one of the player's control
-    /// groups, or a unit a `TeamClass` script of this house has recruited.
+    /// Whether `entity_id` falls outside the fifth-key player group scope,
+    /// or is already driven by a native `TeamClass` script of this house.
     ///
-    /// Both are owners the policy would otherwise fight. A control group is a
-    /// promise that the unit is still where the player put it, and the local
-    /// view keeps it. A team's script owns its members: `team_script_vm`'s
+    /// The two player-group modes are exact complements. A team's script
+    /// owns its members: `team_script_vm`'s
     /// pass has no house gate, so a policy-driven house's teams run like any
     /// other's — recruit the house's units and drive them.
     ///
@@ -1454,7 +1561,8 @@ impl<'a> Observation<'a> {
     /// orders and hold its own place in the push while doing neither. Every
     /// place the policy picks a unit to order asks this first.
     pub fn owned_by_hand(&self, entity_id: u64) -> bool {
-        self.player_kept.contains(&entity_id) || self.team_has_member(entity_id)
+        (self.player_kept.contains(&entity_id) != self.grouped_only)
+            || self.team_has_member(entity_id)
     }
 
     /// Whether a team of this house has recruited `entity_id`.
@@ -1641,6 +1749,18 @@ impl<'a> Observation<'a> {
             .overlay_grid
             .as_ref()
             .and_then(|grid| grid.cell(rx, ry).overlay_id)
+    }
+
+    /// The native OverlayData byte for an existing overlay, if any.
+    ///
+    /// For a tiberium overlay this is the remaining growth/density stage
+    /// (0..=11 in retail). The flag is checked by the caller against the rules;
+    /// unlike `ore_cells`, this returns the raw stage for every overlay kind.
+    /// Policies must also apply their own fog/visibility rule before treating
+    /// the stage as current knowledge.
+    pub fn overlay_data_at(&self, rx: u16, ry: u16) -> Option<u8> {
+        let cell = self.sim.overlay_grid.as_ref()?.cell(rx, ry);
+        cell.overlay_id.map(|_| cell.overlay_data)
     }
 
     /// The overlay standing on the cell, wall or not.

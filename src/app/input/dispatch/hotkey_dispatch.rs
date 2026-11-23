@@ -408,7 +408,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             super::toggle_auto_play_switch(state, super::AutoPlaySwitch::Abilities)
         }
         HotkeyCommand::ToggleAutoPlaySquads => {
-            super::toggle_auto_play_switch(state, super::AutoPlaySwitch::Squads)
+            super::toggle_auto_play_switch(state, super::AutoPlaySwitch::GroupScope)
         }
         HotkeyCommand::ScatterObject => queue_scatter_for_selected(state),
         HotkeyCommand::AllToCheer => queue_house_cheer(state),

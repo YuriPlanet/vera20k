@@ -958,8 +958,8 @@ const AUTOPLAY_COMMANDS: [CommandMetadata; 5] = [
         "VERA:AutoPlayAbilitiesDesc",
         None
     ),
-    // The scope key: the same three halves, narrowed to the objects standing
-    // in the brain's teams.
+    // The fifth key is a pure scope state: only player-number-group members
+    // versus only non-grouped units. It never changes the three work switches.
     command!(
         HotkeyCommand::ToggleAutoPlaySquads,
         "AutoPlaySquads",

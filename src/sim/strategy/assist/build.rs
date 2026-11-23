@@ -44,19 +44,95 @@ use super::AssistBrain;
 use super::census::Census;
 use super::plan::{self, Budget, Item};
 
-/// How many harvesters one refinery keeps busy.
-///
-/// The rules' own `HarvestersPerRefinery=` is not the answer: the trip out and
-/// back is most of a harvester's life, and a bay unloads one at a time, so a
-/// fourth one queues. Two was measured against three on Death.mmx over three
-/// seeds (tools.autoplay_check, 36000 ticks): three does not change the winner
-/// (won at 35276 instead of 32491, own 158 against 144) and it transforms the
-/// seed that used to end 106 to 52 -- own 147, enemy 10, army 82 against 55.
-/// What it costs is the third seed, 128/61 to 126/70. Two harvesters a bay is
-/// the floor the field feeds; three is what the bays in the ground under them
-/// can actually take, and the house that runs nine harvesters on three bays is
-/// the one that stops being starved.
-pub(super) const HARVESTERS_PER_REFINERY: usize = 3;
+/// Retry after two seconds of movement/search time. A finished structure
+/// remains paid for: congestion is not a reason to AbandonProduction.
+const SITE_RETRY_FRAMES: u64 = 30;
+/// The board suppresses identical intents for 15 frames. Do not advance to
+/// the next site every frame while the previous placement has not had time
+/// to execute. The next probe is one frame past the board's deduplication.
+const SITE_PLACEMENT_SETTLE_FRAMES: u64 =
+    crate::sim::control::board::INTENT_ISSUE_COOLDOWN + 1;
+/// A congested foundation needs actual movement, not an immediate second
+/// placement click. Retry Scatter at a slower cadence; abandon a stalled
+/// candidate after twelve seconds, without discarding the completed product.
+const SITE_CLEAR_RETRY_FRAMES: u64 = 30;
+const SITE_CLEAR_TIMEOUT_FRAMES: u64 = 180;
+/// Clear a building site ahead of ordinary movement, but not ahead of
+/// dodging, kiting or fighting for the unit's life.
+const SITE_CLEAR_RANK: u8 = 5;
+/// Re-probe an impossible site after ten seconds, or sooner when normal
+/// placement candidates are available again during a ready-product retry.
+const SITE_PREFLIGHT_RETRY_FRAMES: u64 = 150;
+
+/// The lifecycle of a *paid-for*, ready building. Waiting, clearing and
+/// command delivery are different facts: the world does not move because the
+/// brain submitted a click. One per building type, cleaned up when the ready
+/// product disappears. This state survives frame boundaries and domain toggles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) enum SitePhase {
+    #[default]
+    Search,
+    /// A candidate was found but our mobile units must leave its foundation.
+    Clearing { cell: (u16, u16), since: u64 },
+    /// One placement Intent entered L3; wait for the finished item to vanish
+    /// before inferring failure and trying a *different* candidate.
+    AwaitingPlacement { cell: (u16, u16) },
+    /// No candidate is legal yet. A future MCV, wall removal or unit move can
+    /// make an old map buildable; a ready product is never automatically sold.
+    WaitingForSpace,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct SiteJob {
+    attempt: u32,
+    retry_at: u64,
+    phase: SitePhase,
+}
+
+impl SiteJob {
+    fn ready(&self, now: u64) -> bool {
+        now >= self.retry_at
+    }
+
+    fn submitted(&mut self, cell: (u16, u16), now: u64) {
+        self.phase = SitePhase::AwaitingPlacement { cell };
+        self.retry_at = now.saturating_add(SITE_PLACEMENT_SETTLE_FRAMES);
+    }
+
+    /// L2 rejected the click before it reached the simulation: its site has
+    /// *not* failed. Repeat that candidate after a short budget backoff.
+    pub(super) fn refused(&mut self, cell: (u16, u16), now: u64) {
+        if matches!(self.phase, SitePhase::AwaitingPlacement { cell: proposed } if proposed == cell) {
+            self.phase = SitePhase::Search;
+            self.retry_at = now.saturating_add(SITE_PLACEMENT_SETTLE_FRAMES);
+        }
+    }
+
+    fn advance(&mut self, now: u64) {
+        self.attempt = (self.attempt + 1) % PLACEMENT_ATTEMPTS;
+        self.phase = SitePhase::Search;
+        self.retry_at = if self.attempt == 0 {
+            now.saturating_add(SITE_RETRY_FRAMES)
+        } else {
+            now
+        };
+    }
+
+    fn clear(&mut self, cell: (u16, u16), now: u64) {
+        self.phase = SitePhase::Clearing { cell, since: now };
+        self.retry_at = now.saturating_add(SITE_CLEAR_RETRY_FRAMES);
+    }
+
+    fn retried_clear(&mut self, now: u64) {
+        self.retry_at = now.saturating_add(SITE_CLEAR_RETRY_FRAMES);
+    }
+
+    fn no_space(&mut self, now: u64) {
+        self.attempt = 0;
+        self.phase = SitePhase::WaitingForSpace;
+        self.retry_at = now.saturating_add(SITE_PREFLIGHT_RETRY_FRAMES);
+    }
+}
 
 /// One frame's base spending: take what is finished out of the yard and start
 /// the next structure. The production lines are
@@ -68,6 +144,11 @@ pub(super) fn spend(
     budget: &Budget,
     out: &mut Outbox,
 ) {
+    // A player who disabled Production did not authorize the building planner
+    // to borrow Forces and Scatter the player's tanks while the yard is off.
+    if !obs.production_enabled() {
+        return;
+    }
     place_finished(brain, rules, obs, out);
     build_next(brain, rules, obs, budget, out);
     // After the structure decision, because `build_next` is the owner that
@@ -75,147 +156,146 @@ pub(super) fn spend(
     hold_for_a_second_base(brain, rules, obs, budget);
 }
 
-/// Place the structures the yard has finished: the click a player makes on
-/// the build area after the cameo turns done.
-///
-/// A finished building waits for a cell, and until it gets one it holds its
-/// category — the yard starts nothing else. The attempt counter is what moves
-/// the sweep past a cell the gate admits but the receiver refuses.
+/// Send a building-clear request through the same ranked order arbiter as the
+/// combat layers. The unit may still take a more urgent dodge or engagement.
+/// Scatter is a Forces action, never a side effect of a production-only toggle.
+fn scatter_blockers(obs: &Observation<'_>, out: &mut Outbox, blockers: &[u64]) {
+    if !obs.forces_enabled() {
+        return;
+    }
+    for &unit in blockers {
+        if !obs.owned_by_hand(unit) {
+            out.want(unit, SITE_CLEAR_RANK, Goal::Scatter);
+        }
+    }
+}
+
+/// A ready building has one long-lived site job, not 64 unrelated guesses.
+/// Candidate advancement is only after a previously submitted placement has
+/// had a whole board deduplication term to execute, or a blocked site became
+/// ineligible. A rejected L2 request does not consume a candidate.
 fn place_finished(
     brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
 ) {
-    // The ring the wall plan fills, kept clear of foundations: a barracks or a
-    // refinery dropped on it is a hole in the wall that nothing can close
-    // afterwards, because a wall is an overlay and cannot be built on the cell
-    // a building stands on.
+    // Keep the factory's original priority order (Building vs Defense), not
+    // an id-sorted set: whichever finished first has the first placement turn.
+    let waiting = brain.census.ready.clone();
+    brain.site_jobs.retain(|id, _| waiting.contains(id));
     let reserved = wall_ring(rules, obs);
-    let mut waiting: Vec<InternedId> = Vec::new();
-    for type_id in brain.census.ready.clone() {
-        waiting.push(type_id);
+    for type_id in waiting {
         if !out.intents.is_empty() {
+            break;
+        }
+        let now = obs.tick();
+        let mut job = brain.site_jobs.get(&type_id).copied().unwrap_or_default();
+        // We also check clearing sites while their Scatter timer runs: the
+        // blocker may have moved away only a few frames after the click.
+        if !job.ready(now) && !matches!(job.phase, SitePhase::Clearing { .. }) {
             continue;
         }
-        let attempt = brain.site_attempts.get(&type_id).copied().unwrap_or(0);
-        // A wall segment goes where the wall plan says, not where the outward
-        // sweep would put it: the cell is the whole decision, and a sweep that
-        // answered it would fill the first gap it found instead of closing the
-        // ring around a building worth walling.
-        let planned = obs
+        let is_wall = obs.object_type(rules, type_id).is_some_and(|ty| ty.wall);
+        let space = (!is_wall).then(|| super::terrain::Space::read(
+            obs, rules, &brain.census.home_cells, brain.census.base_cell,
+        ));
+        let allowed = |cell| space.as_ref().is_none_or(|space| space.ground_at(cell).buildable());
+        let placement = Placement::new(obs, rules).reserving(reserved.clone());
+
+        match job.phase {
+            SitePhase::AwaitingPlacement { cell } => {
+                // Still in the ready list after the settle window means the
+                // last click did not place it; the next distinct site may.
+                log::debug!("auto play: ready {} still waiting after placement at {cell:?}", type_id);
+                job.advance(now);
+            }
+            SitePhase::Clearing { cell, since } => {
+                let blockers = own_units_on_foundation(obs, rules, type_id, cell);
+                if blockers.is_empty() {
+                    if obs.object_type(rules, type_id).is_some_and(|ty| {
+                        allowed(cell) && obs.placement_admits(rules, ty, cell.0, cell.1)
+                    }) {
+                        out.intent(Intent::PlaceBuilding { type_id, cell });
+                        job.submitted(cell, now);
+                    } else {
+                        // The obstacle was not just our unit, or another
+                        // building consumed the space while it was moving.
+                        job.advance(now);
+                    }
+                } else if blockers.iter().any(|&unit| obs.owned_by_hand(unit))
+                    || now.saturating_sub(since) >= SITE_CLEAR_TIMEOUT_FRAMES
+                {
+                    // The player has taken a blocker back, or the mover never
+                    // left. Respect ownership and try another footprint.
+                    job.advance(now);
+                } else if job.ready(now) {
+                    scatter_blockers(obs, out, &blockers);
+                    job.retried_clear(now);
+                }
+                brain.site_jobs.insert(type_id, job);
+                continue;
+            }
+            SitePhase::WaitingForSpace | SitePhase::Search => {}
+        }
+        if !job.ready(now) {
+            brain.site_jobs.insert(type_id, job);
+            continue;
+        }
+        job.phase = SitePhase::Search;
+        let attempt = job.attempt;
+        // Walls follow the ring plan only on the first attempt: a failed
+        // special site must not shadow every subsequent generic alternative.
+        let planned = (attempt == 0).then(|| obs
             .object_type(rules, type_id)
             .filter(|ty| ty.wall)
             .and_then(|_| super::walls::next_segment(brain, rules, obs))
             .map(|segment| {
-                // The one line that says whether the ring is where the plan
-                // thinks it is: the cell, and how many cells of gap it closes.
                 log::info!(
                     "auto play: wall segment at {:?}, {} standing, closes {} cells",
-                    segment.cell,
-                    segment.standing,
-                    segment.fill
+                    segment.cell, segment.standing, segment.fill
                 );
                 segment.cell
-            });
-        // A ready building that cannot be placed holds its factory's queue: the
-        // next thing that factory makes waits behind it forever. Refusing to
-        // place the wall was therefore a worse bug than placing it off the ring
-        // — the defense queue stopped, and no pillbox came out again. The plan
-        // has first refusal; when it has no segment the sweep answers, and the
-        // warning says which happened.
-        if planned.is_none() && obs.object_type(rules, type_id).is_some_and(|ty| ty.wall) {
-            log::warn!(
-                "auto play: wall plan has no segment for {type_id}; the outgoing sweep places it, which may sit off the ring"
-            );
-        }
-        let Some(cell) = planned.or_else(|| {
-            Placement::new(obs, rules)
-                .reserving(reserved.clone())
-                .cell_for(type_id, attempt)
-        }) else {
-            // The sweep has to move on even when it finds nothing: retrying the
-            // same attempt every frame is the placement loop that holds the
-            // queue. Once every attempt has failed the type is left to the yard
-            // and the queue is allowed to start the next structure.
-            let next = (attempt + 1) % PLACEMENT_ATTEMPTS;
-            brain.site_attempts.insert(type_id, next);
-            if next == 0 {
-                brain.stranded_sites.insert(type_id);
-                // Skipping the type is not enough: a house that cannot place
-                // what its factory built holds the whole category behind it,
-                // and no pillbox comes out while a wall waits for a cell.
-                // `FactoryClass::AbandonProduction` (`0x004C9FF0`) is the
-                // native exit — it settles the held object the way a sale
-                // does and drops the factory — and it is the only thing that
-                // frees the slot. Emitted once, when the last attempt fails.
-                out.intent(Intent::CancelProduction { type_id, all: true });
-                log::warn!(
-                    "auto play: no cell for {} after {PLACEMENT_ATTEMPTS} tries; abandoning the build",
-                    obs.object_type(rules, type_id)
-                        .map_or("?", |ty| ty.id.as_str())
-                );
-            } else {
+            })).flatten();
+        let cell = planned.or_else(|| placement.cell_for_where(type_id, attempt, &allowed));
+        let Some(cell) = cell else {
+            if obs.forces_enabled()
+                && let Some((blocked, units)) = placement.site_blocked_by_own_units(type_id, &allowed)
+            {
                 log::info!(
-                    "auto play: no cell for {} (attempt {attempt})",
-                    obs.object_type(rules, type_id)
-                        .map_or("?", |ty| ty.id.as_str())
+                    "auto play: site {blocked:?} for {type_id} blocked by {} owned units; clearing before placement",
+                    units.len()
+                );
+                scatter_blockers(obs, out, &units);
+                job.clear(blocked, now);
+            } else {
+                job.no_space(now);
+                log::warn!(
+                    "auto play: no site for {}; retaining finished structure for later survey",
+                    obs.object_type(rules, type_id).map_or("?", |ty| ty.id.as_str())
                 );
             }
+            brain.site_jobs.insert(type_id, job);
             continue;
         };
-        brain.stranded_sites.remove(&type_id);
-        // A structure that is worth more than the wall around it does not go
-        // where the enemy's guns already reach: the wishlist's "important
-        // buildings must not stand at the very front". A wall segment is
-        // exempt — it is placed by its own plan, and the ring it closes is
-        // drawn around buildings the house already has.
-        //
-        // The reading is `terrain::Space`, the same vocabulary `expand` uses
-        // for a second base, so "the front" means one thing in this brain.
-        let is_wall = obs.object_type(rules, type_id).is_some_and(|ty| ty.wall);
-        if !is_wall {
-            let space = super::terrain::Space::read(
-                obs,
-                rules,
-                &brain.census.home_cells,
-                brain.census.base_cell,
-            );
-            if !space.ground_at(cell).buildable() {
-                let next = (attempt + 1) % PLACEMENT_ATTEMPTS;
-                brain.site_attempts.insert(type_id, next);
-                log::info!(
-                    "auto play: {} refused {cell:?}, the enemy's reach is there (attempt {attempt})",
-                    obs.object_type(rules, type_id)
-                        .map_or("?", |ty| ty.id.as_str())
-                );
-                continue;
+        let blockers = own_units_on_foundation(obs, rules, type_id, cell);
+        if !blockers.is_empty() {
+            if blockers.iter().all(|&unit| !obs.owned_by_hand(unit)) && obs.forces_enabled() {
+                scatter_blockers(obs, out, &blockers);
+                job.clear(cell, now);
+            } else {
+                // A player-group unit (or a production-only host) cannot be
+                // displaced by an AI building job. Look for another site.
+                job.advance(now);
             }
+        } else {
+            log::debug!("auto play: place {} at {cell:?} (attempt {attempt})",
+                obs.object_type(rules, type_id).map_or("?", |ty| ty.id.as_str()));
+            out.intent(Intent::PlaceBuilding { type_id, cell });
+            job.submitted(cell, now);
         }
-        // Clear the foundation before asking to build on it. The house's own
-        // tanks standing there would make the placement refuse, and they are
-        // the house's to move — the player's equivalent click is a band-box and
-        // a scatter. One order per unit, and the placement goes out in the same
-        // frame: the simulation judges the site when the command executes, by
-        // which time the scatter has already been admitted.
-        for unit in own_units_on_foundation(obs, rules, type_id, cell) {
-            log::info!(
-                "auto play: {unit} stands on the foundation for {} at {cell:?}; scattering it",
-                obs.object_type(rules, type_id)
-                    .map_or("?", |ty| ty.id.as_str())
-            );
-            out.order(unit, Goal::Scatter);
-        }
-        log::debug!(
-            "auto play: place {} at {cell:?} (attempt {attempt})",
-            obs.object_type(rules, type_id)
-                .map_or("?", |ty| ty.id.as_str())
-        );
-        out.intent(Intent::PlaceBuilding { type_id, cell });
-        let next = (attempt + 1) % PLACEMENT_ATTEMPTS;
-        brain.site_attempts.insert(type_id, next);
+        brain.site_jobs.insert(type_id, job);
     }
-    brain.site_attempts.retain(|id, _| waiting.contains(id));
 }
 
 /// The house's own ground units standing on the foundation a building of
@@ -320,7 +400,7 @@ fn harvester_reserve(rules: &RuleSet, obs: &Observation<'_>, census: &Census) ->
 /// Without them the harvester reserve blocked the whole tree for as long as
 /// the house was short a harvester, which is how a house reached the end of a
 /// match with no lab and no aircraft it could build.
-fn earns_its_keep(rules: &RuleSet, ty: &ObjectType) -> bool {
+pub(super) fn earns_its_keep(rules: &RuleSet, ty: &ObjectType) -> bool {
     [
         &rules.build_power_types,
         &rules.build_refinery_types,
@@ -348,7 +428,13 @@ fn build_next(
     // line's work, so it delays no structure and the plan is not held back by
     // it. The gates inside are the wallet's (a wall is worth a production slot
     // only while the house has money), the line's own, and the base's size.
-    if super::walls::queue_segment(brain, rules, obs, budget.free, out) {
+    if brain.census.refineries > 0
+        && brain.census.harvesters > 0
+        && brain.director.permits_build(Item::Defense)
+        && !brain.director.protecting_base()
+        && brain.director.objective() != super::strategy::Objective::ExpandOre
+        && super::walls::queue_segment(brain, rules, obs, budget.free, out)
+    {
         return;
     }
     // A structure the yard has finished and not yet put down is *owned*: it is
@@ -358,22 +444,18 @@ fn build_next(
     // its cell, and then the yard built both.
     let building = brain.census.line(ProductionCategory::Building);
     let defense = brain.census.line(ProductionCategory::Defense);
-    // A stranded type is one the map has no cell for: it still occupies the
-    // factory, but it must not hold the whole queue behind it.
+    // A finished structure still belongs to its queue. Never declare a
+    // genuinely busy line free just because the structure has no site yet.
     let building_busy = building.product.is_some()
         || building.queued > 0
-        || building
-            .ready
-            .is_some_and(|id| !brain.stranded_sites.contains(&id));
+        || building.ready.is_some();
     // The Defense line is busy while it is *working*, not only while it holds
     // a finished piece: a tower in production answered the list every frame
     // for the whole of its build — measured in a real match, 114 pillboxes
     // queued in 110 frames once the midgame wallet stayed above their price.
     let defense_busy = defense.product.is_some()
         || defense.queued > 0
-        || defense
-            .ready
-            .is_some_and(|id| !brain.stranded_sites.contains(&id));
+        || defense.ready.is_some();
     // The two strips are two factories, and retail builds both at once: the
     // Buildings line and the Defense line have separate queues and separate
     // products. Requiring *both* to be idle before either may be queued was the
@@ -385,12 +467,13 @@ fn build_next(
     }
     let tick = obs.tick();
     let held = brain.plan_hold.filter(|(_, until)| tick < *until);
-    let Some(chosen) = next_building(
+    let Some(chosen) = next_building_for(
         rules,
         obs,
         &brain.census,
         budget,
         held.map(|(step, _)| step),
+        |item| brain.director.permits_build(item),
     ) else {
         return;
     };
@@ -473,6 +556,15 @@ fn build_next(
     // factories did not commit went into one more soldier. A second bay is not
     // more army, it is the income the rest of the list is paced by.
     brain.yard_reserve = match chosen.item {
+        // An emergency is not financed from "whatever credits the factories
+        // leave over". The *whole available wallet* is committed until the
+        // first bay, power plant or miner-making factory can be purchased.
+        // Holding only (price - free) let cheap units repeatedly reset the
+        // saving, so a stranded house never reached its missing prerequisite.
+        Item::Refinery if brain.census.refineries == 0 => budget.free.max(0),
+        Item::Power | Item::Weapons if brain.director.recovering_income() => {
+            budget.free.max(0)
+        }
         Item::Aircraft | Item::Radar | Item::Tech | Item::Superweapon => {
             price.saturating_sub(budget.free).max(0)
         }
@@ -490,6 +582,33 @@ fn build_next(
     // money the second harvester needed.
     if !earns_its_keep(rules, ty) && harvester_reserve(rules, obs, &brain.census) > 0 {
         return;
+    }
+    // Prevent the worst placement deadlock before paying for a building.
+    // A waiting build cannot be replaced by another of the same category:
+    // unlike a retry, this guard is checked once *before* the queue starts.
+    if !ty.wall {
+        if brain.site_preflight_after.get(&type_id)
+            .is_some_and(|&at| obs.tick() < at)
+        {
+            return;
+        }
+        let space = super::terrain::Space::read(
+            obs, rules, &brain.census.home_cells, brain.census.base_cell,
+        );
+        let site = Placement::new(obs, rules)
+            .reserving(wall_ring(rules, obs))
+            .cell_for_where(type_id, 0, |cell| space.ground_at(cell).buildable());
+        if site.is_none() {
+            brain.site_preflight_after.insert(
+                type_id, obs.tick().saturating_add(SITE_PREFLIGHT_RETRY_FRAMES),
+            );
+            log::warn!(
+                "auto play: no legal site for {}; deferring purchase, not wasting completed production",
+                ty.id
+            );
+            return;
+        }
+        brain.site_preflight_after.remove(&type_id);
     }
     // Info, not debug: one line per structure is a handful a match, and it is
     // the only record of *why* the yard started what it did — the opening's
@@ -572,21 +691,19 @@ fn next_building<'r>(
     budget: &Budget,
     held: Option<usize>,
 ) -> Option<plan::Chosen<'r>> {
-    // A house with no tower at all builds one before anything else: the gate
-    // that holds the army home waits for a tower to stand, and with seven
-    // houses attacking the plan's Defense step sat behind a refinery that kept
-    // being rebuilt instead — measured, a 1v7 held its army in the yard for
-    // the whole match because `base_defended` was false in 24 of 59 samples.
-    if !base_defended(rules, obs, census) {
-        if let Some((ty, type_id)) = defense_building(rules, obs, census) {
-            return Some(plan::Chosen {
-                step: None,
-                item: Item::Defense,
-                ty,
-                type_id,
-            });
-        }
-    }
+    next_building_for(rules, obs, census, budget, held, |_| true)
+}
+
+fn next_building_for<'r>(
+    rules: &'r RuleSet,
+    obs: &Observation<'_>,
+    census: &Census,
+    budget: &Budget,
+    held: Option<usize>,
+    admits: impl Fn(Item) -> bool,
+) -> Option<plan::Chosen<'r>> {
+    // Power is a prerequisite and an outage disables the economy. A plant
+    // that is already paid for is counted by `power_short` below.
     // A brownout is the one state that stops everything else: production
     // runs at a crawl and the defenses go offline. Whatever else the base
     // wants, a plant comes first, and it comes first even when nothing else
@@ -601,7 +718,50 @@ fn next_building<'r>(
             });
         }
     }
-    let chosen = match plan::answer(rules, obs, census, budget, held) {
+    // Disaster recovery outranks the ordinary tech/defense list. In
+    // particular, a surviving radar or lab is not a reason to leave the
+    // base without its last refinery. `CanBuild` still enforces prerequisites
+    // (a missing power plant may have to be built first).
+    if census.refineries == 0 {
+        if let Some((ty, type_id)) = first_buildable(rules, obs, &rules.build_refinery_types) {
+            return Some(plan::Chosen {
+                step: None,
+                item: Item::Refinery,
+                ty,
+                type_id,
+            });
+        }
+    }
+    // With an unloading bay but no harvesters and no war factory, replacing
+    // the vehicle factory is the prerequisite to earning money again. It
+    // outranks the ordinary tech list and the first-defense temptation.
+    if census.harvesters == 0 && census.refineries > 0
+        && count_in(obs, rules, census, &rules.build_weapons_types) == 0
+    {
+        if let Some((ty, type_id)) = first_buildable(rules, obs, &rules.build_weapons_types) {
+            return Some(plan::Chosen {
+                step: None, item: Item::Weapons, ty, type_id,
+            });
+        }
+    }
+    // One emergency tower may be justified when the base is actually under
+    // attack, but not before its refinery exists or when the enemy is remote.
+    // Normal defense steps remain in the ordered plan for the later economy.
+    if census.refineries > 0
+        && census.harvesters > 0
+        && !base_defended(rules, obs, census)
+        && census.base_cell.is_some_and(|home| census.enemies_near(home, 16) > 0)
+    {
+        if let Some((ty, type_id)) = defense_building(rules, obs, census) {
+            return Some(plan::Chosen {
+                step: None,
+                item: Item::Defense,
+                ty,
+                type_id,
+            });
+        }
+    }
+    let chosen = match plan::answer_where(rules, obs, census, budget, held, admits) {
         Some(found) => found,
         // Nothing the base wants is buildable yet, and the house has no plant:
         // `Power=` plants are the prerequisite most structures hang off in the
@@ -897,7 +1057,14 @@ pub(super) fn defense_building<'r>(
     // which is what a push is made of; then range, which is how much of the
     // base it covers without moving. Cost only breaks a tie, so a cheaper tower
     // that does the same job is preferred.
-    candidates.into_iter().max_by_key(|(ty, _)| {
+    candidates.into_iter()
+        .filter(|(ty, _)| {
+            let armed = armament(rules, ty);
+            // Never fill the defense ring with an unarmed dummy, or a
+            // dedicated AA launcher while nothing in the known war can fly.
+            armed.range > 0 && (armed.anti_ground || (enemy_air && armed.anti_air))
+        })
+        .max_by_key(|(ty, _)| {
         let armed = armament(rules, ty);
         (
             armed.anti_ground && armed.anti_air,
@@ -1306,6 +1473,114 @@ mod tests {
         census
     }
 
+    /// A placement click does not mean an object has appeared. The job must
+    /// keep its candidate while the native queue and 15-frame L2 dedupe run,
+    /// then move on only when the ready product is still present.
+    #[test]
+    fn site_job_waits_for_place_feedback_before_advancing() {
+        let mut job = SiteJob::default();
+        job.submitted((18, 22), 100);
+        assert!(matches!(job.phase, SitePhase::AwaitingPlacement { cell: (18, 22) }));
+        assert!(!job.ready(115));
+        assert_eq!(job.attempt, 0, "no candidate is skipped by a new frame");
+        assert!(job.ready(116));
+        job.advance(116);
+        assert_eq!(job.attempt, 1, "a tried location is not retried immediately");
+        assert!(matches!(job.phase, SitePhase::Search));
+    }
+
+    /// A full command budget or native admission failure means the cell was
+    /// never attempted. L2 tells the brain; only that exact queued cell may
+    /// be reset, not an older refusal after the mission changed target.
+    #[test]
+    fn l2_refusal_keeps_the_same_building_site() {
+        let ty = InternedId::from_index(22);
+        let mut brain = AssistBrain::new(0xA17);
+        brain.last_tick = 100;
+        let mut job = SiteJob::default();
+        job.submitted((18, 22), 100);
+        brain.site_jobs.insert(ty, job);
+        <AssistBrain as crate::sim::control::brain::Brain>::intents_refused(
+            &mut brain,
+            &[Intent::PlaceBuilding { type_id: ty, cell: (99, 99) }],
+        );
+        assert!(matches!(brain.site_jobs[&ty].phase, SitePhase::AwaitingPlacement { .. }),
+            "a stale refusal must not touch a newer mission");
+        <AssistBrain as crate::sim::control::brain::Brain>::intents_refused(
+            &mut brain,
+            &[Intent::PlaceBuilding { type_id: ty, cell: (18, 22) }],
+        );
+        let job = brain.site_jobs[&ty];
+        assert_eq!(job.attempt, 0, "the rejected location was not tried");
+        assert!(matches!(job.phase, SitePhase::Search));
+        assert!(!job.ready(115), "a budget rejection must not cause a storm");
+        assert!(job.ready(116));
+    }
+
+    /// Repeated Scatter requests cannot consume a whole match. The job keeps
+    /// one foundation while clearing, then chooses a different one if the
+    /// blocker has made no progress after the timeout. It never refunds the
+    /// finished product.
+    #[test]
+    fn site_job_clearing_has_a_bound_and_preserves_the_ready_product() {
+        let mut job = SiteJob::default();
+        job.clear((21, 24), 100);
+        assert!(!job.ready(129));
+        assert!(job.ready(130));
+        job.retried_clear(130);
+        assert!(matches!(job.phase, SitePhase::Clearing { cell: (21, 24), since: 100 }));
+        assert!(!job.ready(159));
+        job.advance(280);
+        assert_eq!(job.attempt, 1);
+        assert!(matches!(job.phase, SitePhase::Search));
+        job.no_space(300);
+        assert!(matches!(job.phase, SitePhase::WaitingForSpace));
+        assert!(!job.ready(449));
+        assert!(job.ready(450));
+    }
+
+    /// Moving a tank out of a foundation is a separate Forces operation.
+    /// Production-only never obtains permission to move any unit, even though
+    /// the building itself may be ready to place.
+    #[test]
+    fn production_only_site_clearing_never_scatter_orders_units() {
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(""))
+            .expect("synthetic rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xC1EA);
+        let owner = sim.interner.intern("Americans");
+        let obs = Observation::new(&sim, owner).with_work_scope(true, false, false);
+        let mut out = Outbox::default();
+        scatter_blockers(&obs, &mut out, &[77, 78]);
+        assert!(out.orders.is_empty(), "site clearing cannot bypass Forces OFF");
+        assert!(out.intents.is_empty(), "clearing must not synthesize a house click");
+    }
+
+    /// Congestion or a temporarily absent build area must never destroy a
+    /// *completed and already-paid-for* structure. Without a construction
+    /// yard there are no candidate anchors at all, so this is a reliable
+    /// no-site regression without guessing about native placement geometry.
+    #[test]
+    fn a_finished_structure_without_any_site_waits_instead_of_cancelling() {
+        let Some((mut sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        let plant = sim.interner.get("GAPOWR").expect("power plant type");
+        let mut brain = AssistBrain::new(0xA17);
+        brain.census.ready.push(plant);
+        let obs = Observation::new(&sim, owner);
+        let mut out = Outbox::default();
+        place_finished(&mut brain, &rules, &obs, &mut out);
+        assert!(out.intents.is_empty(),
+            "no room is a pause, never a refund or a new building");
+        assert!(!out.intents.iter().any(|intent| matches!(intent,
+            Intent::CancelProduction { .. }
+        )));
+        assert!(brain.site_jobs.get(&plant).is_some_and(|job| job.retry_at > obs.tick()),
+            "the completed plant is retained for a scheduled retry");
+        assert_eq!(brain.census.ready, vec![plant]);
+    }
+
     /// The opening is the plant, then the barracks, then the income, then the
     /// tech: power is what every other structure's `Prerequisite=` asks for, the
     /// barracks is the cheaper production building and the one the engineer and
@@ -1571,6 +1846,58 @@ mod tests {
             "the yard is holding a plant, not asking for a second: {:?}",
             out.intents
         );
+    }
+
+    /// Losing the *last* refinery is an emergency even when advanced tech and
+    /// barracks still stand. A passive defense tower cannot precede recovery.
+    #[test]
+    fn a_base_without_a_refinery_rebuilds_income_before_defenses() {
+        let Some((mut sim, rules)) = arena(0xB17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        for (name, rx, ry) in [
+            ("GACNST", 8u16, 8u16),
+            ("GAPOWR", 16, 8),
+            ("GAPILE", 8, 16),
+            ("GAWEAP", 16, 16),
+        ] {
+            sim.spawn_object(name, "Americans", rx, ry, 255, &rules)
+                .unwrap_or_else(|| panic!("spawn {name}"));
+        }
+        let census = ledger(&rules, &sim, owner);
+        assert_eq!(census.refineries, 0);
+        let obs = Observation::new(&sim, owner);
+        let budget = plan::budget(&rules, &obs, &census, Some(0));
+        let chosen = next_building(&rules, &obs, &census, &budget, None)
+            .expect("refinery can be rebuilt");
+        assert_eq!(chosen.item, Item::Refinery,
+            "income restoration must outrank a first turret");
+    }
+
+    /// A surviving refinery with no miner and no vehicle factory needs the
+    /// factory that makes miners *before* the normal tech or turret plan.
+    #[test]
+    fn zero_harvesters_without_a_war_factory_rebuilds_the_miner_line() {
+        let Some((mut sim, rules)) = arena(0xC17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        for (name, x, y) in [
+            ("GACNST", 8_u16, 8_u16),
+            ("GAPOWR", 16, 8),
+            ("GAREFN", 8, 16),
+        ] {
+            sim.spawn_object(name, "Americans", x, y, 255, &rules)
+                .unwrap_or_else(|| panic!("spawn {name}"));
+        }
+        let census = ledger(&rules, &sim, owner);
+        assert_eq!(census.harvesters, 0);
+        let obs = Observation::new(&sim, owner);
+        let budget = plan::budget(&rules, &obs, &census, Some(0));
+        let chosen = next_building(&rules, &obs, &census, &budget, None)
+            .expect("a war factory can restart the mine supply");
+        assert_eq!(chosen.item, Item::Weapons);
     }
 
     /// The tech buildings are not what the harvester reserve is holding money

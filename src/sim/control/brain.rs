@@ -117,9 +117,9 @@ impl Outbox {
     ///
     /// Called once, after every pass has had its say and before the frame's
     /// orders are applied. The survivors keep the order they were asked in.
-    /// Returns the orders a stronger ask replaced: those callers recorded an
-    /// intent for an order that never left, and the brain has to hear about it
-    /// or the unit waits out a term for an order the engine never saw.
+    /// Returns replaced asks for diagnostics. They are *not* L2 refusals:
+    /// the winning ask is already in the outbox and should own the tracker.
+    /// A rejected winner is reported separately after command admission.
     pub fn resolve(&mut self) -> Vec<(u64, Goal)> {
         if self.wants.is_empty() {
             return Vec::new();
@@ -262,19 +262,18 @@ pub trait Brain {
     /// that keeps no memory has nothing to forget.
     fn orders_refused(&mut self, _refused: &[(u64, Goal)]) {}
 
-    /// The objects the brain has put into a standing formation, when it keeps
-    /// one. `None` is a brain with no roster, and the scope key that asks for
-    /// this changes nothing for it — a brain that puts every object it drives
-    /// in a team has nothing to narrow.
-    ///
-    /// The set is rebuilt each frame rather than held: the board asks once, the
-    /// same frame the orders are filtered, so a brain never has to say when its
-    /// roster went stale.
-    fn squad_members(
-        &mut self,
-        _rules: &RuleSet,
-        _obs: &Observation<'_>,
-    ) -> Option<std::collections::BTreeSet<u64>> {
-        None
+    /// House-level intents rejected by L2 *before* joining the native command
+    /// queue. A waiting building may keep its candidate instead of skipping
+    /// it as though a placement had been attempted. This is not a native
+    /// execution-result callback: accepted placements can still fail later.
+    fn intents_refused(&mut self, _refused: &[Intent]) {}
+
+    /// L2 deliberately suppressed an order due to a temporary scope change.
+    /// No native command was rejected, so a brain may discard the intent
+    /// without the backoff it applies to an actual admission failure.
+    fn orders_suppressed(&mut self, suppressed: &[(u64, Goal)]) {
+        self.orders_refused(suppressed);
     }
+
+
 }

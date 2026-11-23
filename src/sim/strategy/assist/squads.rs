@@ -129,13 +129,13 @@ pub(super) fn outguns(
     rules: &RuleSet,
     obs: &Observation<'_>,
     cell: (u16, u16),
+    committed_points: i32,
 ) -> bool {
     let theirs = census.enemy_points(rules, obs, cell, PUSH_MEET_CELLS);
     if theirs == 0 {
         return true;
     }
-    let ours = census.army_points();
-    ours.saturating_mul(1_000) >= theirs.saturating_mul(PUSH_SUPERIORITY_PERMILLE)
+    committed_points.saturating_mul(1_000) >= theirs.saturating_mul(PUSH_SUPERIORITY_PERMILLE)
 }
 
 /// Whether the fight around `cell` is one the house is winning: there is
@@ -158,7 +158,11 @@ pub(super) fn winning_fight(
     if theirs == 0 {
         return false;
     }
-    let ours = census.army_points();
+    let reach = PUSH_MEET_CELLS.saturating_mul(PUSH_MEET_CELLS);
+    let ours = census.units.iter()
+        .filter(|unit| unit.orderable && unit.points > 0)
+        .filter(|unit| squared_distance(unit.cell, cell) <= reach)
+        .fold(0i32, |total, unit| total.saturating_add(unit.points));
     ours.saturating_mul(1_000) >= theirs.saturating_mul(permille)
 }
 
@@ -277,6 +281,14 @@ impl Squads {
             .find(|squad| squad.role == Role::Defend)
             .filter(|squad| squad.locked(tick))
             .and_then(|squad| squad.target);
+        // Retain living members in their old jobs on a peaceful regroup.
+        // Re-sorting from scratch by a moving unit's current distance made a
+        // defender turn into a harasser and a harasser join the push every
+        // 300 frames. An urgent raid still recruits the nearest troops first.
+        let old_defend = self.squad(Role::Defend)
+            .map(|squad| squad.members.clone()).unwrap_or_default();
+        let old_harass = self.squad(Role::Harass)
+            .map(|squad| squad.members.clone()).unwrap_or_default();
         self.formed_at = Some(tick);
         self.squads.clear();
 
@@ -366,7 +378,8 @@ impl Squads {
                     .facts(unit.type_id)
                     .is_some_and(|facts| facts.category == ObjectCategory::Infantry);
                 let distance = anchor.map_or(0, |cell| squared_distance(unit.cell, cell));
-                (!infantry, distance, unit.entity_id)
+                (raid.is_none() && !old_defend.contains(&unit.entity_id),
+                 !infantry, distance, unit.entity_id)
             });
             let members: BTreeSet<u64> = nearest
                 .into_iter()
@@ -412,6 +425,7 @@ impl Squads {
                 .collect();
             nearest.sort_by_key(|unit| {
                 (
+                    !old_harass.contains(&unit.entity_id),
                     squared_distance(unit.cell, enemy_anchor(census)),
                     unit.entity_id,
                 )
@@ -525,6 +539,27 @@ mod tests {
                 ..Default::default()
             },
         }
+    }
+
+    #[test]
+    fn peaceful_regroup_preserves_existing_garrison_when_new_troops_arrive() {
+        let mut census = Census::default();
+        census.base_cell = Some((20, 20));
+        for id in 0..9u64 {
+            census.units.push(unit(id, (30 + id as u16, 30)));
+        }
+        census.fighters = 9;
+        let mut squads = Squads::new();
+        squads.regroup(0, &census);
+        let before = squads.squad(Role::Defend).expect("garrison").members.clone();
+        assert_eq!(before.len(), 3);
+        // A new recruit is nearer than the original defenders, but it should
+        // reinforce the attack roster rather than retask three walking guards.
+        census.units.push(unit(10, (21, 21)));
+        census.fighters += 1;
+        squads.regroup(REGROUP_FRAMES, &census);
+        let after = &squads.squad(Role::Defend).expect("garrison").members;
+        assert_eq!(&before, after);
     }
 
     /// A hostile in the base calls some of the army home — and only some,
@@ -847,7 +882,7 @@ mod tests {
             census.army_points()
         );
         assert!(
-            !outguns(&census, &rules, &obs, (26, 26)),
+            !outguns(&census, &rules, &obs, (26, 26), census.army_points()),
             "two tanks do not outfight five: ours={} theirs={}",
             census.army_points(),
             census.enemy_points(&rules, &obs, (26, 26), PUSH_MEET_CELLS)
@@ -867,7 +902,7 @@ mod tests {
         let census = ledger(&rules, &sim, owner);
         let obs = Observation::new(&sim, owner);
         assert!(
-            outguns(&census, &rules, &obs, (26, 26)),
+            outguns(&census, &rules, &obs, (26, 26), census.army_points()),
             "nothing stands there: theirs={}",
             census.enemy_points(&rules, &obs, (26, 26), PUSH_MEET_CELLS)
         );

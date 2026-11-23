@@ -102,7 +102,32 @@ pub(super) fn fill_lines(
     // What the yard is saving for is not the lines' money: it decided on a
     // structure, and paying for it is what "decided" means. Taken here, once,
     // so no line below can spend it.
-    let budget = budget.reserving(brain.yard_reserve);
+    let mut budget = budget.reserving(brain.yard_reserve);
+    // A house with a standing yard but no unloading bay must save its wallet
+    // for the first refinery. The barracks' cheap infantry purchases could
+    // otherwise keep its credits below the refinery's price indefinitely.
+    // This never applies to recovering a *lost yard*: an existing factory
+    // must still be permitted to buy the replacement MCV.
+    if brain.director.recovering_income()
+        && brain.census.yards > 0
+        && brain.census.refineries == 0
+        && !brain.director.under_attack_now()
+    {
+        return;
+    }
+    // The first miner is a hard dependency of every future purchase. Save
+    // for its *actual rules price* and give the vehicle line first refusal;
+    // otherwise an infantry-short opening can buy one cheap soldier every
+    // frame and never accumulate the miner's price.
+    let last_miner_needed = brain.director.recovering_income()
+        && brain.census.refineries > 0
+        && brain.census.harvesters == 0;
+    if last_miner_needed
+        && let Some((ty, _)) = build::harvester(rules, obs)
+        && budget.free < obs.cost_of(rules, ty)
+    {
+        return;
+    }
     // The infantry floor decides who gets the wallet first when it is thin: a
     // house below its share of infantry spends on the barracks before it
     // spends on the war factory.
@@ -194,7 +219,14 @@ pub(super) fn fill_lines(
             a_soldier_would_reset_the_saving,
         );
     }
-    let order = if infantry_short {
+    let order = if last_miner_needed {
+        [
+            ProductionCategory::Vehicle,
+            ProductionCategory::Infantry,
+            ProductionCategory::Aircraft,
+            ProductionCategory::Ship,
+        ]
+    } else if infantry_short {
         [
             ProductionCategory::Infantry,
             ProductionCategory::Vehicle,
@@ -242,19 +274,16 @@ pub(super) fn fill_lines(
             infantry_short,
             vehicle_floor,
         );
-        // A capturer the line starts is booked against the ledger here, at the
-        // one place a unit is actually queued: a `product_for` that returned a
-        // type the wallet could not pay for books nothing, because
-        // `queue_unit` is the same test.
-        if let Some((ty, _)) = wanted
-            && budget.free >= obs.cost_of(rules, ty)
-        {
+        // Only a request the shared ledger accepted counts as purchased.
+        // The local budget is mutable: each category sees the credits already
+        // promised to every earlier category *and* to the yard this frame.
+        let queued = queue_unit(rules, obs, &mut budget, out, wanted);
+        if queued && let Some((ty, _)) = wanted {
             let traits = census::Traits::of(rules, ty);
             if traits.engineer || traits.spy {
                 brain.engineers.note_bought(obs.tick());
             }
         }
-        queue_unit(rules, obs, &budget, out, wanted);
     }
 }
 
@@ -436,18 +465,38 @@ fn product_for<'r>(
     // that asks for an engineer or a spy is answered here — no ranking over
     // combat weights can ask for those at all. It is unchecked (§ the reader),
     // so the wallet is this caller's guard.
-    if let Some(found) = chosen_product(rules, obs, category, budget.free) {
+    // Recover the construction yard before any native product preference:
+    // without a yard the economy cannot replace buildings at all. A lost
+    // yard is a different job from buying an optional second MCV and must
+    // never be blocked by the strategic expansion gate.
+    if category == ProductionCategory::Vehicle
+        && !super::expand::yard_stands(&brain.census)
+        && !super::expand::owns_yard_maker(&brain.census)
+        && let Some(maker) = super::expand::yard_maker(rules, obs)
+    {
+        return Some(maker);
+    }
+    // Restore the *last* harvester before satisfying native team wishes.
+    // A chosen combat vehicle can be cheaper and would otherwise keep the
+    // wallet below the price of the sole miner that restores future income.
+    if category == ProductionCategory::Vehicle
+        && brain.director.recovering_income()
+        && brain.census.refineries > 0
+        && brain.census.harvesters == 0
+        && let Some(found) = build::harvester(rules, obs)
+    {
         return Some(found);
+    }
+    if let Some(found) = chosen_product(rules, obs, category, budget.free) {
+        let traits = census::Traits::of(rules, found.0);
+        if !(brain.director.protecting_base() || brain.director.recovering_income())
+            || !(traits.engineer || traits.spy)
+        {
+            return Some(found);
+        }
     }
 
     if category == ProductionCategory::Vehicle {
-        // A yard maker comes first while the house has neither a yard nor one
-        // on the field — everything else the base builds is gated on it.
-        let needs_maker = !super::expand::yard_stands(&brain.census)
-            && !super::expand::owns_yard_maker(&brain.census);
-        if needs_maker && let Some(maker) = super::expand::yard_maker(rules, obs) {
-            return Some(maker);
-        }
         // A maker bought while the yard stands is for a second base, not for the
         // one that stands. The war factory spends one cycle on it, and it walks
         // out and deploys where the house has ground of its own
@@ -493,6 +542,8 @@ fn product_for<'r>(
     // outright and refuses a spy for carrying no weapon. Correctly: neither is
     // what the fist is made of. So the want is stated here, in numbers.
     if category == ProductionCategory::Infantry
+        && !brain.director.protecting_base()
+        && !brain.director.recovering_income()
         && let Some(found) = tool(rules, obs, &brain.census, budget.free, &brain.engineers)
     {
         return Some(found);
@@ -764,23 +815,25 @@ fn has_aircraft_factory(rules: &RuleSet, obs: &Observation<'_>) -> bool {
 fn queue_unit(
     rules: &RuleSet,
     obs: &Observation<'_>,
-    budget: &Budget,
+    budget: &mut Budget,
     out: &mut Outbox,
     wanted: Option<(&ObjectType, InternedId)>,
-) {
+) -> bool {
     let Some((ty, type_id)) = wanted else {
-        return;
+        return false;
     };
-    if budget.free < obs.cost_of(rules, ty) {
-        return;
+    let cost = obs.cost_of(rules, ty);
+    if !budget.try_commit(cost) {
+        return false;
     }
     log::debug!(
-        "auto play: unit {} at {} (credits {})",
+        "auto play: unit {} at {} (credits remaining {})",
         ty.id,
-        obs.cost_of(rules, ty),
+        cost,
         budget.free
     );
     out.intent(Intent::QueueProduction { type_id });
+    true
 }
 
 #[cfg(all(test, tests_sim_p_s))]
@@ -808,6 +861,74 @@ mod tests {
             &Observation::new(sim, owner),
         );
         census
+    }
+
+    /// The production line must really obey the strategic income-recovery
+    /// directive, not only show it in the log. A cheap soldier may not take
+    /// the credits reserved for the house's *last* miner.
+    #[test]
+    fn the_last_miner_is_queued_before_any_new_soldier() {
+        let Some((mut sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        for (name, cell) in [
+            ("GACNST", (8_u16, 8_u16)),
+            ("GAPOWR", (12, 8)),
+            ("GAREFN", (16, 8)),
+            ("GAWEAP", (8, 16)),
+            ("GAPILE", (16, 16)),
+        ] {
+            sim.spawn_object(name, "Americans", cell.0, cell.1, 255, &rules)
+                .unwrap_or_else(|| panic!("spawn {name}"));
+        }
+        sim.houses.get_mut(&owner).unwrap().economy_mut()
+            .set_credits_for_test(3_000);
+        let mut brain = AssistBrain::new(0xA17);
+        brain.census = ledger(&rules, &sim, owner);
+        assert_eq!(brain.census.harvesters, 0);
+        let obs = Observation::new(&sim, owner);
+        brain.director.observe(obs.tick(), super::super::strategy::Signals {
+            yards: 1, refineries: 1, harvesters: 0, ..Default::default()
+        });
+        let budget = Budget { free: 3_000, committed: 0, income: None };
+        let mut out = Outbox::default();
+        fill_lines(&mut brain, &rules, &obs, &budget, &mut out);
+        let first = out.intents.iter().find_map(|intent| match intent {
+            Intent::QueueProduction { type_id } => Some(sim.interner().resolve(*type_id)),
+            _ => None,
+        });
+        assert_eq!(first, Some("CMIN"),
+            "the war factory buys income before the infantry line spends it: {:?}", out.intents);
+    }
+
+    #[test]
+    fn the_last_miner_saves_money_instead_of_spending_on_infantry() {
+        let Some((mut sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        for (name, cell) in [
+            ("GACNST", (8_u16, 8_u16)),
+            ("GAPOWR", (12, 8)),
+            ("GAREFN", (16, 8)),
+            ("GAWEAP", (8, 16)),
+            ("GAPILE", (16, 16)),
+        ] {
+            sim.spawn_object(name, "Americans", cell.0, cell.1, 255, &rules)
+                .unwrap_or_else(|| panic!("spawn {name}"));
+        }
+        let mut brain = AssistBrain::new(0xA17);
+        brain.census = ledger(&rules, &sim, owner);
+        let obs = Observation::new(&sim, owner);
+        brain.director.observe(obs.tick(), super::super::strategy::Signals {
+            yards: 1, refineries: 1, harvesters: 0, ..Default::default()
+        });
+        let budget = Budget { free: 250, committed: 0, income: None };
+        let mut out = Outbox::default();
+        fill_lines(&mut brain, &rules, &obs, &budget, &mut out);
+        assert!(out.intents.iter().all(|intent| !matches!(intent, Intent::QueueProduction { .. })),
+            "when the last miner cannot be bought, retain the wallet instead: {:?}", out.intents);
     }
 
     /// The barracks is a line that fires. Before the floor, an army with no

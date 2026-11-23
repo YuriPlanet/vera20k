@@ -44,15 +44,16 @@ impl AutoPlayHost {
         self.board.set_domains(domains);
     }
 
-    /// The objects the player has taken back, by stable id.
+    /// The player's control-group members, by stable id. The fifth key decides
+    /// whether these members or the ungrouped units are automated.
     pub fn excluded(&self) -> &std::collections::BTreeSet<u64> {
         self.board.excluded()
     }
 
-    /// The player takes these back: a control group is a promise that the unit
-    /// stays where the player put it, so auto play orders none of these.
-    pub fn take_back(&mut self, taken: std::collections::BTreeSet<u64>) {
-        self.board.take_back(taken);
+    /// Update membership of the player's numbered control groups. The board
+    /// alone selects the eligible half according to its fifth-key scope.
+    pub fn take_back(&mut self, groups: std::collections::BTreeSet<u64>) {
+        self.board.take_back(groups);
     }
 
     /// The house every issued command is stamped with. Not necessarily the

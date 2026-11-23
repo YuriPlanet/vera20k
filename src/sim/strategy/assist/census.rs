@@ -553,6 +553,12 @@ pub(super) struct Census {
     pub(super) enemy_structures: usize,
     pub(super) harvesters: usize,
     pub(super) refineries: usize,
+    /// Live bays, not captured construction yards: ore is counted against the
+    /// ground that can unload it. Includes captured/multi-national refineries.
+    pub(super) refinery_cells: Vec<(u16, u16)>,
+    /// The slow ore survey's goals. `None` is an unsurveyed test/initial state,
+    /// not proof that an empty map contains ore.
+    pub(super) ore_targets: Option<super::ore::Targets>,
     pub(super) yards: usize,
     pub(super) yard_makers: usize,
     /// Units that fight, harvesters and engineers aside: the ones the house
@@ -578,12 +584,6 @@ pub(super) struct Census {
 }
 
 impl Census {
-    /// Whether every bay has the harvesters it wants
-    /// ([`super::build::HARVESTERS_PER_REFINERY`]).
-    ///
-    /// One owner for the measure the reserve, the tree's gate and the vehicle
-    /// line all read: three copies of the comparison is three chances for the
-    /// house to call itself short in one place and served in another.
     /// The `UnitRepair=` bay a hurt unit at `from` should walk to.
     ///
     /// The nearest one, with the entity id breaking ties so the choice is the
@@ -596,8 +596,17 @@ impl Census {
             .min_by_key(|(cell, entity)| (super::squared_distance(*cell, from), *entity))
     }
 
+    /// Whether the house has already bought the trucks its reachable ore
+    /// supports. An unknown survey retains the legacy opening guard for
+    /// isolated unit tests; a live brain refreshes the survey before spending.
+    ///
+    /// A single ore-based target is shared by the budget, building tree and
+    /// vehicle line so none silently reverts to the old fixed bay ratio.
     pub(super) fn harvesters_served(&self) -> bool {
-        self.harvesters >= super::build::HARVESTERS_PER_REFINERY * self.refineries.max(1)
+        self.harvesters >= self.ore_targets.map_or(
+            super::ore::HARVESTERS_PER_BAY * self.refineries.max(1),
+            |targets| targets.harvesters,
+        )
     }
 
     /// Whether the house should be defending what it holds rather than looking
@@ -731,6 +740,8 @@ impl Census {
         self.base_cell = None;
         self.yard_cells.clear();
         self.repair_sites.clear();
+        self.refinery_cells.clear();
+        self.ore_targets = None;
         self.ready.clear();
         self.harvesters = 0;
         self.refineries = 0;
@@ -774,6 +785,7 @@ impl Census {
             }
             if traits.refinery {
                 self.refineries += 1;
+                self.refinery_cells.push(entity.cell);
             }
             if traits.yard {
                 self.yards += 1;
@@ -891,34 +903,39 @@ impl Census {
             self.ready.push(building.type_id);
         }
 
-        for enemy in obs.enemy_entities() {
+        self.enemies.extend(obs.enemy_entities());
+        self.recount_enemies(rules, obs);
+        // Nobody's buildings are not threats and not targets of their own;
+        // they are what the army finds in its way, and they are collected here
+        // so no layer has to scan the map for them again.
+        self.neutrals.extend(obs.neutral_structures());
+    }
+
+    /// Recount every enemy-derived decision input from this frame's *known*
+    /// enemies. `refresh` initially fills the native list; the honest brain
+    /// swaps it for visible sightings + stale last-seen cells and calls this
+    /// again. No threat or strike-site tally can retain omniscient facts.
+    pub(super) fn recount_enemies(&mut self, rules: &RuleSet, obs: &Observation<'_>) {
+        self.threat = [0; ROLES.len()];
+        self.enemy_strike_sites = 0;
+        self.enemy_structures = 0;
+        for enemy in &self.enemies {
             let Some(ty) = obs.object_type(rules, enemy.type_id) else {
                 continue;
             };
-            // A building is ground the army stands on, not a threat it has to
-            // be composed against, and a spawn child is a round already in the
-            // air (`[V3ROCKET] Spawned=yes`).
             if ty.category != ObjectCategory::Building
                 && !ty.spawned
                 && let Some(role) = counter(ty)
             {
                 self.threat[role.index()] += 1;
             }
-            // The strike sites are the one enemy building count that changes a
-            // posture: a base that can be erased from across the map cannot be
-            // out-waited, and a base that cannot is worth defending.
             if ty.category == ObjectCategory::Building {
                 self.enemy_structures += 1;
                 if super::build::grants_a_strike(rules, ty) {
                     self.enemy_strike_sites += 1;
                 }
             }
-            self.enemies.push(enemy);
         }
-        // Nobody's buildings are not threats and not targets of their own;
-        // they are what the army finds in its way, and they are collected here
-        // so no layer has to scan the map for them again.
-        self.neutrals.extend(obs.neutral_structures());
     }
 
     /// The neutral building standing on `cell`, if one does.

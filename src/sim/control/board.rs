@@ -48,30 +48,21 @@ const MOBILE_CATEGORIES: [ProductionCategory; 4] = [
     ProductionCategory::Ship,
 ];
 
-/// Which part of the work the player lets auto play do.
+/// Three independent work switches plus a *separate* player-control-group scope.
 ///
-/// Three switches and one master key: the base, the troops, and the abilities
-/// (a paradrop, a spy plane, a missile). Each key flips its own switch, so a
-/// player can keep the base growing while commanding the troops, hand the
-/// troops over and take building back, or keep the superweapons for themselves
-/// while everything else runs. Turning one off stops new commands of that kind;
-/// it never undoes what was already issued or queued.
+/// Global toggles all three work switches together, preserving `grouped_only`.
+/// The fifth hotkey alternates "only non-grouped" / "only grouped" without
+/// changing any work switch. A production queue or superweapon is house-wide;
+/// the scope affects only requests that name one or more controllable actors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AutoPlayDomains {
-    /// Production, building and placement: the base's own work.
     pub production: bool,
-    /// Unit orders and managed routines: what the army does.
     pub forces: bool,
-    /// Abilities: the superweapon launches, a paradrop and a spy plane among
-    /// them. Their own switch because a player who wants the army but not the
-    /// missile is not asking for half an army.
     pub abilities: bool,
-    /// The scope key, which is not a fourth kind of work: it narrows the three
-    /// above to the objects the brain has put in a standing formation. Off,
-    /// every object the brain drives is ordinary; on, only the ones in a squad
-    /// are. It is separate from the three because a player who wants the army
-    /// but not the builders does not want them in a different order.
-    pub squads_only: bool,
+    /// `false`: drive only units outside the player's 0–9 control groups.
+    /// `true`: drive only units that belong to those groups. These are the
+    /// *player's* groups, never `AssistBrain`'s tactical `Squads` roster.
+    pub grouped_only: bool,
 }
 
 impl AutoPlayDomains {
@@ -79,22 +70,35 @@ impl AutoPlayDomains {
         production: true,
         forces: true,
         abilities: true,
-        squads_only: false,
+        grouped_only: false,
     };
 
     pub const NONE: Self = Self {
         production: false,
         forces: false,
         abilities: false,
-        squads_only: false,
+        grouped_only: false,
     };
 
-    /// Whether any switch is on: a host with none is a host driving nothing.
     pub const fn any(&self) -> bool {
         self.production || self.forces || self.abilities
     }
 
-    /// Whether a command of this kind may leave the board now.
+    /// Master key: all three work switches on if any is off, otherwise all
+    /// three off. This must *never* reset the scope key.
+    pub fn toggle_master(&mut self) {
+        let next = !(self.production && self.forces && self.abilities);
+        self.production = next;
+        self.forces = next;
+        self.abilities = next;
+    }
+
+    /// An actor-scoped command can only touch the selected kind of player
+    /// control group. House-scoped construction and powers remain eligible.
+    pub fn admits_actor(&self, actor: u64, player_groups: &BTreeSet<u64>) -> bool {
+        player_groups.contains(&actor) == self.grouped_only
+    }
+
     pub fn admits(&self, command: &Command) -> bool {
         if belongs_to_production(command) {
             self.production
@@ -105,7 +109,6 @@ impl AutoPlayDomains {
         }
     }
 
-    /// The switches as a player-facing phrase, for the message line.
     pub fn describe(&self) -> String {
         let mut on: Vec<&str> = Vec::new();
         if self.production {
@@ -162,6 +165,40 @@ fn belongs_to_production(command: &Command) -> bool {
     )
 }
 
+/// The fifth key gates object-scoped *intents, direct commands, orders and
+/// managed attachments*. Production queues and house powers name no actor and
+/// are therefore unaffected by group membership. Return policy-suppressed
+/// orders without calling the native rejection/backoff path.
+fn filter_group_scope(
+    out: &mut Outbox,
+    domains: AutoPlayDomains,
+    player_groups: &BTreeSet<u64>,
+) -> Vec<(u64, Goal)> {
+    let mut suppressed = Vec::new();
+    out.orders.retain(|order| {
+        if domains.admits_actor(order.actor, player_groups) {
+            true
+        } else {
+            suppressed.push((order.actor, order.goal));
+            false
+        }
+    });
+    out.attachments
+        .retain(|request| domains.admits_actor(request.actor, player_groups));
+    out.intents.retain(|intent| {
+        actor_of(&intent.clone().command())
+            .is_none_or(|actor| domains.admits_actor(actor, player_groups))
+    });
+    out.commands.retain_mut(|command| {
+        if let Command::SetRally { producer_ids, .. } = command {
+            producer_ids.retain(|actor| domains.admits_actor(*actor, player_groups));
+            return !producer_ids.is_empty();
+        }
+        actor_of(command).is_none_or(|actor| domains.admits_actor(actor, player_groups))
+    });
+    suppressed
+}
+
 /// Drives one brain and one house.
 pub struct ControlBoard {
     brain: Box<dyn Brain>,
@@ -169,11 +206,9 @@ pub struct ControlBoard {
     domains: AutoPlayDomains,
     budget: Budget,
     micro: MicroTable,
-    /// Objects the player has taken back. One of these is the player's to
-    /// command: a control group is a promise that the unit will still be
-    /// where the player put it, so this board orders it nothing at all and
-    /// leaves any order it already had alone.
-    excluded: BTreeSet<u64>,
+    /// Current members of the player's 0–9 control groups. The scope key
+    /// chooses whether these or their complement are eligible for automation.
+    player_groups: BTreeSet<u64>,
     /// Commands the gate dropped, and orders the funnel called not-ready.
     /// Diagnostics: the queue is the authority, not these counts.
     rejected: usize,
@@ -197,7 +232,7 @@ pub struct ControlBoard {
 ///
 /// One term: long enough for the state to move, short enough that a request
 /// held back for a passing reason is not lost.
-const INTENT_ISSUE_COOLDOWN: u64 = 15;
+pub(crate) const INTENT_ISSUE_COOLDOWN: u64 = 15;
 /// How long the same order to the same object is held before the board lets it
 /// through again, in frames.
 ///
@@ -215,7 +250,7 @@ impl ControlBoard {
             owner,
             domains: AutoPlayDomains::ALL,
             budget: Budget::new(max_commands_per_frame),
-            excluded: BTreeSet::new(),
+            player_groups: BTreeSet::new(),
             micro: MicroTable::default(),
             rejected: 0,
             not_ready: 0,
@@ -235,24 +270,31 @@ impl ControlBoard {
         self.domains
     }
 
-    /// Flip the switches. A kind turned off from here on issues nothing more of
-    /// its own; what is already queued in the simulation keeps running.
+    /// Changing scope is a policy handover: detach routines that are no
+    /// longer in scope, so a paused retreat cannot fire after the user takes
+    /// the unit back or changes the control-group filter.
     pub fn set_domains(&mut self, domains: AutoPlayDomains) {
         self.domains = domains;
+        self.retain_managed_scope();
     }
 
-    /// The objects the player has taken back, by stable id.
+    /// Current player control-group membership (not an AI tactical squad).
     pub fn excluded(&self) -> &BTreeSet<u64> {
-        &self.excluded
+        &self.player_groups
     }
 
-    /// The player takes these back: a control group is a promise that the unit
-    /// stays where the player put it, so the board orders none of these and
-    /// leaves any order it already had alone. The set is the player's whole
-    /// current one, not an addition — a group released this frame is the
-    /// board's to command again.
-    pub fn take_back(&mut self, taken: BTreeSet<u64>) {
-        self.excluded = taken;
+    /// Set the full projected group membership for this frame. Historical
+    /// callers call this `take_back`: the scope key now decides whether the
+    /// grouped units are *handed back* or *handed to the AI*.
+    pub fn take_back(&mut self, groups: BTreeSet<u64>) {
+        self.player_groups = groups;
+        self.retain_managed_scope();
+    }
+
+    fn retain_managed_scope(&mut self) {
+        let domains = self.domains;
+        let groups = &self.player_groups;
+        self.micro.retain_scope(|actor| domains.admits_actor(actor, groups));
     }
 
     /// The brain driving the house, for diagnostics.
@@ -281,7 +323,9 @@ impl ControlBoard {
         params: MicroParams,
         post: Option<(u16, u16)>,
     ) -> bool {
-        self.micro.attach(entity, kind, params, post)
+        self.domains.forces
+            && self.domains.admits_actor(entity, &self.player_groups)
+            && self.micro.attach(entity, kind, params, post)
     }
 
     /// Return an object to the brain's direct orders.
@@ -297,7 +341,7 @@ impl ControlBoard {
     /// (`Select6AB0C9..6AB94D`), so the client mirrors the same presentation
     /// writes for these orders. The queue stays the authority for the frame.
     pub fn step(&mut self, sim: &mut Simulation, rules: &RuleSet) -> Vec<Command> {
-        if sim.session().input_locked() {
+        if sim.session().input_locked() || !self.domains.any() {
             return Vec::new();
         }
         let owner = self.owner;
@@ -312,23 +356,18 @@ impl ControlBoard {
         // 1. Decisions.
         let mut out = Outbox::default();
         {
-            let obs = Observation::new(sim, owner).with_player_groups(&self.excluded);
+            let obs = Observation::new(sim, owner)
+                .with_control_scope(&self.player_groups, self.domains.grouped_only)
+                .with_work_scope(self.domains.production, self.domains.forces, self.domains.abilities);
             self.brain.think(rules, &obs, &mut out);
-            // The scope key. The brain says who is standing in a formation and
-            // the board drops the orders aimed at everything else: a house whose
-            // builders the player has kept, whose army the brain still drives,
-            // is the difference between taking the troops back and taking the
-            // whole match back. A brain with no roster answers `None` and the
-            // scope changes nothing, so a second brain is not silently broken
-            // by a key it does not understand.
-            if self.domains.squads_only {
-                if let Some(members) = self.brain.squad_members(rules, &obs) {
-                    out.orders.retain(|order| members.contains(&order.actor));
-                }
-            }
+        }
+        let suppressed = filter_group_scope(&mut out, self.domains, &self.player_groups);
+        if !suppressed.is_empty() {
+            self.brain.orders_suppressed(&suppressed);
         }
         let tick = sim.session().tick();
         let mut asked: Vec<Intent> = Vec::new();
+        let mut refused_intents: Vec<Intent> = Vec::new();
         for intent in out.intents {
             // The same request again inside one term is the brain asking for a
             // state it has already asked for: the yard is already making that
@@ -341,8 +380,14 @@ impl ControlBoard {
                 continue;
             }
             let command = intent.clone().command();
-            self.admit(sim, rules, &owner_name, command, &mut issued);
-            asked.push(intent);
+            if self.admit(sim, rules, &owner_name, command, &mut issued) {
+                asked.push(intent);
+            } else {
+                refused_intents.push(intent);
+            }
+        }
+        if !refused_intents.is_empty() {
+            self.brain.intents_refused(&refused_intents);
         }
         for intent in asked {
             self.recent_intents.push((intent, tick));
@@ -354,9 +399,11 @@ impl ControlBoard {
         // order the brain also asked for this frame is dropped by the
         // `is_managed` guard rather than issued and then overwritten.
         for request in out.attachments {
-            if self.excluded.contains(&request.actor) {
+            if !self.domains.forces
+                || !self.domains.admits_actor(request.actor, &self.player_groups)
+            {
                 log::debug!(
-                    "auto play: refused, the player owns {} (attach {})",
+                    "auto play: refused by force/scope switch {} (attach {})",
                     request.actor,
                     request.kind.name()
                 );
@@ -426,18 +473,24 @@ impl ControlBoard {
         // 2. Delivery: take what the factories have finished out of them. A
         // factory keeps its product until the house takes it, so a build that
         // is never taken leaves the category busy for good.
-        for category in MOBILE_CATEGORIES {
-            let finished = Observation::new(sim, owner)
-                .finished_product(category)
-                .is_some();
-            if finished {
-                self.admit(
-                    sim,
-                    rules,
-                    &owner_name,
-                    Command::PlaceProducedMobile { category },
-                    &mut issued,
-                );
+        // Delivery is also production. If the player disabled that domain,
+        // leave held mobile products in their factories instead of retrying
+        // a gate-rejected PlaceProducedMobile every tick (and inflating the
+        // rejection counter while combat/abilities continue to run).
+        if self.domains.production {
+            for category in MOBILE_CATEGORIES {
+                let finished = Observation::new(sim, owner)
+                    .finished_product(category)
+                    .is_some();
+                if finished {
+                    self.admit(
+                        sim,
+                        rules,
+                        &owner_name,
+                        Command::PlaceProducedMobile { category },
+                        &mut issued,
+                    );
+                }
             }
         }
 
@@ -452,13 +505,15 @@ impl ControlBoard {
         // from the screen, and only these four counts tell them apart.
         if execute_tick % 600 == 0 {
             log::info!(
-                "auto play: tick={execute_tick} owner={owner_name} production={} forces={} queued={} rejected={} not_ready={} excluded={}",
+                "auto play: tick={execute_tick} owner={owner_name} production={} forces={} abilities={} grouped_only={} queued={} rejected={} not_ready={} player_group_members={}",
                 self.domains.production,
                 self.domains.forces,
+                self.domains.abilities,
+                self.domains.grouped_only,
                 issued.len(),
                 self.rejected,
                 self.not_ready,
-                self.excluded.len()
+                self.player_groups.len()
             );
         }
         issued
@@ -494,6 +549,9 @@ impl ControlBoard {
         {
             let threats = ThreatView::new(sim, owner);
             for &entity in &ids {
+                if !self.domains.admits_actor(entity, &self.player_groups) {
+                    continue;
+                }
                 if let Some(step) = self.micro.step_one(entity, sim, rules, &threats) {
                     steps.push((entity, step));
                 }
@@ -609,10 +667,23 @@ impl ControlBoard {
             self.rejected += 1;
             return false;
         }
-        // The player's own objects: a unit in a control group stays under the
-        // player's hand, whatever half of the work is switched on.
-        if actor_of(&command).is_some_and(|actor| self.excluded.contains(&actor)) {
-            log::debug!("auto play: refused, the player owns {command:?}");
+        // The fifth switch is a pure scope filter. It applies to an actor
+        // regardless of whether the requested work belongs to Forces or
+        // Production, including multi-producer rally commands. House-wide
+        // queues and powers name no actor and pass this filter unchanged.
+        let scoped = match &command {
+            Command::SetRally { producer_ids, .. } => {
+                !producer_ids.is_empty()
+                    && producer_ids.iter().all(|id| {
+                        self.domains.admits_actor(*id, &self.player_groups)
+                    })
+            }
+            _ => actor_of(&command).is_none_or(|actor| {
+                self.domains.admits_actor(actor, &self.player_groups)
+            }),
+        };
+        if !scoped {
+            log::debug!("auto play: refused by the player group scope {command:?}");
             self.rejected += 1;
             return false;
         }
@@ -784,6 +855,90 @@ fn actor_of(command: &Command) -> Option<u64> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn non_group_scope_filters_all_unit_issuers_but_keeps_production() {
+        let mut out = Outbox::default();
+        out.order(7, Goal::Move { cell: (12, 12) });
+        out.order(8, Goal::Move { cell: (13, 12) });
+        out.attach(7, MicroKind::Retreat, MicroParams::default(), None);
+        out.attach(8, MicroKind::Retreat, MicroParams::default(), None);
+        out.command(Command::Stop { entity_id: 7 });
+        out.command(Command::Stop { entity_id: 8 });
+        out.intent(Intent::QueueProduction {
+            type_id: InternedId::from_index(0),
+        });
+        let suppressed = filter_group_scope(&mut out, AutoPlayDomains::ALL, &BTreeSet::from([8]));
+        assert_eq!(suppressed, vec![(8, Goal::Move { cell: (13, 12) })]);
+        assert_eq!(out.orders.len(), 1);
+        assert_eq!(out.attachments.len(), 1);
+        assert_eq!(out.commands.len(), 1);
+        assert_eq!(out.intents.len(), 1);
+        assert_eq!(out.orders[0].actor, 7);
+        assert_eq!(out.attachments[0].actor, 7);
+    }
+
+    /// The fifth switch is not part of Global: even a paused board remembers
+    /// which side of the player's control groups will be driven next time.
+    #[test]
+    fn master_switch_preserves_fifth_key_and_resets_three_domains_together() {
+        let mut domains = AutoPlayDomains::ALL;
+        domains.grouped_only = true;
+        domains.toggle_master();
+        assert_eq!(domains, AutoPlayDomains { grouped_only: true, ..AutoPlayDomains::NONE });
+        domains.toggle_master();
+        assert_eq!(domains, AutoPlayDomains { grouped_only: true, ..AutoPlayDomains::ALL });
+        domains.production = false;
+        domains.abilities = false;
+        domains.toggle_master();
+        assert_eq!(domains, AutoPlayDomains { grouped_only: true, ..AutoPlayDomains::ALL });
+        domains.grouped_only = false;
+        assert!(domains.production && domains.forces && domains.abilities);
+    }
+
+    /// A player's numbered control group is the **only** eligible force when
+    /// the fifth switch selects groups. Actor-scoped production (selling a
+    /// factory) also obeys that scope; house-wide queues and powers do not.
+    #[test]
+    fn group_only_scope_filters_intents_orders_attachments_and_rally_producers() {
+        let type_id = InternedId::from_index(0);
+        let mut out = Outbox::default();
+        out.order(7, Goal::Move { cell: (12, 12) });
+        out.order(8, Goal::Move { cell: (13, 12) });
+        out.attach(7, MicroKind::Retreat, MicroParams::default(), None);
+        out.attach(8, MicroKind::Retreat, MicroParams::default(), None);
+        out.command(Command::Stop { entity_id: 7 });
+        out.command(Command::Stop { entity_id: 8 });
+        out.command(Command::SetRally { rx: 14, ry: 14, producer_ids: vec![7, 8] });
+        out.intent(Intent::SellBuilding { entity_id: 7 });
+        out.intent(Intent::SellBuilding { entity_id: 8 });
+        out.intent(Intent::QueueProduction { type_id });
+        out.intent(Intent::LaunchSuperWeapon { sw_type_id: type_id, cell: (14, 14) });
+        let mut domains = AutoPlayDomains::ALL;
+        domains.grouped_only = true;
+        let suppressed = filter_group_scope(&mut out, domains, &BTreeSet::from([8]));
+        assert_eq!(suppressed, vec![(7, Goal::Move { cell: (12, 12) })]);
+        assert_eq!(out.orders.len(), 1);
+        assert_eq!(out.orders[0].actor, 8);
+        assert_eq!(out.attachments.len(), 1);
+        assert_eq!(out.attachments[0].actor, 8);
+        assert_eq!(out.intents.len(), 3, "sell 8, house production, house power");
+        assert!(!out.intents.contains(&Intent::SellBuilding { entity_id: 7 }));
+        assert!(out.intents.contains(&Intent::SellBuilding { entity_id: 8 }));
+        assert_eq!(out.commands.len(), 2, "stop 8 and filtered rally");
+        assert!(out.commands.iter().any(|command| matches!(command,
+            Command::SetRally { producer_ids, .. } if producer_ids.as_slice() == [8]
+        )));
+    }
+
+    #[test]
+    fn empty_player_group_is_not_a_reason_to_enable_fifth_key_forces() {
+        let mut group_only = AutoPlayDomains::ALL;
+        group_only.grouped_only = true;
+        assert!(!group_only.admits_actor(10, &BTreeSet::new()));
+        assert!(AutoPlayDomains::ALL.admits_actor(10, &BTreeSet::new()));
+        assert!(group_only.admits(&Command::QueueProduction { type_id: InternedId::from_index(0) }));
+    }
+
     fn arena() -> Option<(Simulation, RuleSet)> {
         let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
@@ -849,7 +1004,7 @@ mod tests {
         };
 
         let abilities_only = AutoPlayDomains {
-            squads_only: false,
+            grouped_only: false,
             production: false,
             forces: false,
             abilities: true,
@@ -862,7 +1017,7 @@ mod tests {
         assert!(!abilities_only.admits(&queue), "and not the base's");
 
         let forces_only = AutoPlayDomains {
-            squads_only: false,
+            grouped_only: false,
             production: false,
             forces: true,
             abilities: false,
@@ -874,7 +1029,7 @@ mod tests {
         );
 
         let build_only = AutoPlayDomains {
-            squads_only: false,
+            grouped_only: false,
             production: true,
             forces: false,
             abilities: false,

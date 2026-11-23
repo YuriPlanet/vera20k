@@ -113,6 +113,12 @@ impl MicroTable {
         self.entries.remove(&entity)
     }
 
+    /// A scope switch is a hard handover, not a refused order. Drop any
+    /// routine whose actor the player's selected group mode no longer admits.
+    pub fn retain_scope(&mut self, mut admitted: impl FnMut(u64) -> bool) {
+        self.entries.retain(|&actor, _| admitted(actor));
+    }
+
     /// Drop the entries whose object may no longer be driven by a routine.
     ///
     /// Called once per frame, before stepping. Returns the ids it dropped, so

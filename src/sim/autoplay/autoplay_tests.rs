@@ -385,6 +385,30 @@ fn the_board_leaves_the_players_own_units_alone() {
     );
 }
 
+#[test]
+fn grouped_only_drives_the_players_control_group_and_never_ungrouped_units() {
+    let Some((mut sim, rules)) = arena(0xA17) else {
+        return;
+    };
+    let grouped = sim
+        .spawn_object("MTNK", "Americans", 16, 16, 64, &rules)
+        .expect("one grouped tank");
+    let ungrouped = sim
+        .spawn_object("MTNK", "Americans", 20, 20, 64, &rules)
+        .expect("one ungrouped tank");
+    let mut host = host(&mut sim, vec![
+        (0, Command::Stop { entity_id: grouped }),
+        (0, Command::Stop { entity_id: ungrouped }),
+    ]);
+    host.take_back([grouped].into_iter().collect());
+    let mut domains = AutoPlayDomains::ALL;
+    domains.grouped_only = true;
+    host.set_domains(domains);
+    let issued = host.step(&mut sim, &rules);
+    assert_eq!(issued, vec![Command::Stop { entity_id: grouped }],
+        "the fifth key only changes actor ownership, not domain switches");
+}
+
 /// The gate is the second line, not the first: a policy that only ever gets
 /// refused spends the frame's budget on the player's units and then believes
 /// for `ORDER_REFRESH_FRAMES` that it has sent them. It has to see them.
@@ -607,7 +631,7 @@ fn the_two_switches_split_building_from_troops() {
     // Forces off: the base keeps building, the troops are the player's again.
     let mut host = AutoPlayHost::new(Box::new(script()), owner, usize::MAX);
     host.set_domains(crate::sim::autoplay::AutoPlayDomains {
-        squads_only: false,
+        grouped_only: false,
         production: true,
         forces: false,
         abilities: false,
@@ -631,7 +655,7 @@ fn the_two_switches_split_building_from_troops() {
     // Production off: the troops may still be ordered, the base is the player's.
     let mut host = AutoPlayHost::new(Box::new(script()), owner, usize::MAX);
     host.set_domains(crate::sim::autoplay::AutoPlayDomains {
-        squads_only: false,
+        grouped_only: false,
         production: false,
         forces: true,
         abilities: false,
@@ -1235,7 +1259,7 @@ fn the_forces_switch_stops_managed_stepping() {
         .expect("a Russian tank");
     let mut host = retail_host(&mut sim, 7);
     host.set_domains(AutoPlayDomains {
-        squads_only: false,
+        grouped_only: false,
         production: true,
         forces: false,
         abilities: false,
@@ -1550,6 +1574,74 @@ fn a_full_queue_refuses_the_order_without_reporting_it_as_issued() {
     assert_eq!(host.step(&mut sim, &rules), [power]);
     assert_eq!(refused.get(), Some((tank, goal)));
     assert_eq!(host.rejected(), 1);
+}
+
+/// The brain sees the same independent domain switches as the board's
+/// command gate. Its building task must never infer that enabled production
+/// implicitly enables the unit commands needed to clear a footprint.
+#[test]
+fn work_switches_are_projected_without_changing_player_group_scope() {
+    let (mut sim, _) = synthetic_arena(0xC1EA);
+    let owner = american(&mut sim);
+    let grouped_id = 42_u64;
+    let members = std::collections::BTreeSet::from([grouped_id]);
+    let obs = Observation::new(&sim, owner)
+        .with_control_scope(&members, true)
+        .with_work_scope(true, false, true);
+    assert!(obs.production_enabled());
+    assert!(!obs.forces_enabled());
+    assert!(obs.abilities_enabled());
+    assert!(!obs.owned_by_hand(grouped_id),
+        "a player-numbered-group member is admitted by group-only scope");
+    assert!(obs.owned_by_hand(43),
+        "a non-grouped object is outside group-only scope");
+    let paused = Observation::new(&sim, owner)
+        .with_control_scope(&members, true)
+        .with_work_scope(false, false, false);
+    assert!(!paused.production_enabled());
+    assert!(!paused.forces_enabled());
+    assert!(!paused.abilities_enabled());
+    assert!(!paused.owned_by_hand(grouped_id),
+        "the global work gate must not reset the fifth-key scope");
+}
+
+/// A request rejected by L2 did not reach the native queue and must not
+/// enter the board's 15-frame accepted-intent dedupe. The brain hears every
+/// rejection and can retry its *same* building site when the budget recovers.
+#[test]
+fn rejected_house_intents_are_reported_without_ghost_deduplication() {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    struct Placer {
+        ty: InternedId,
+        rejections: Rc<Cell<usize>>,
+    }
+    impl Brain for Placer {
+        fn name(&self) -> &'static str { "unfunded-placer" }
+        fn think(&mut self, _: &RuleSet, _: &Observation<'_>, out: &mut Outbox) {
+            out.intent(crate::sim::control::intent::Intent::PlaceBuilding {
+                type_id: self.ty, cell: (14, 14),
+            });
+        }
+        fn intents_refused(&mut self, refused: &[crate::sim::control::intent::Intent]) {
+            self.rejections.set(self.rejections.get() + refused.len());
+        }
+    }
+
+    let (mut sim, rules) = synthetic_arena(0xA17);
+    let owner = american(&mut sim);
+    let ty = sim.interner.intern("GAPOWR");
+    let count = Rc::new(Cell::new(0));
+    let mut host = AutoPlayHost::new(Box::new(Placer {
+        ty, rejections: Rc::clone(&count),
+    }), owner, 0); // Zero available commands, even for house intents.
+    for _ in 0..3 {
+        assert!(host.step(&mut sim, &rules).is_empty());
+        sim.advance_tick(&[], Some(&rules), None, None, 33);
+    }
+    assert_eq!(count.get(), 3,
+        "each native-gate rejection has feedback and may retry next tick");
 }
 
 /// A brain with one house request it asks for again every frame.

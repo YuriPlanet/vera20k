@@ -127,6 +127,19 @@ pub(super) struct Budget {
 }
 
 impl Budget {
+    /// Reserve an *accepted* new queue request against this frame's shared
+    /// wallet. A building, soldier, aircraft and vehicle all see the same
+    /// available credits; production itself charges later, so without this
+    /// ledger each idle line can independently spend the entire snapshot.
+    pub(super) fn try_commit(&mut self, cost: i32) -> bool {
+        if cost < 0 || self.free < cost {
+            return false;
+        }
+        self.free = self.free.saturating_sub(cost);
+        self.committed = self.committed.saturating_add(cost);
+        true
+    }
+
     /// The same budget with `credits` held back.
     ///
     /// The yard reserves what it is saving for ([`super::build`]), and a
@@ -156,7 +169,16 @@ pub(super) fn budget(
     // ceiling on what one unit may cost — is answering about money the house is
     // actually free to spend. One owner, so a caller cannot reserve money in
     // one place and spend it in another.
-    let held = super::economy::reserve(rules, obs, income);
+    // Do not reserve a tank's price while the income chain is broken. With
+    // the last refinery gone, the old one-vehicle floor could keep the free
+    // wallet below the refinery price forever, even if the house had enough
+    // actual credits to rebuild it. The same applies after the last harvester
+    // is lost: its replacement must outrank the normal fighting reserve.
+    let held = if census.refineries == 0 || census.harvesters == 0 {
+        0
+    } else {
+        super::economy::reserve(rules, obs, income)
+    };
     Budget {
         committed,
         free: obs
@@ -222,8 +244,7 @@ pub(super) enum Item {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Gate {
     Always,
-    /// The bays have the harvesters that keep them busy
-    /// ([`build::HARVESTERS_PER_REFINERY`]): a second bay before the first
+    /// The bays have the harvesters that reachable ore supports: a second bay before the first
     /// one's harvesters is a bay with nothing to unload.
     HarvestersServed,
     /// The free wallet is past this. Throughput and tech are luxuries the base
@@ -443,6 +464,20 @@ pub(super) fn answer<'r>(
     budget: &Budget,
     held: Option<usize>,
 ) -> Option<Chosen<'r>> {
+    answer_where(rules, obs, census, budget, held, |_| true)
+}
+
+/// The same ordered, hold-aware plan with a long-lived strategic purchase
+/// policy. Filter *before* picking: skipping an unaffordable luxury after
+/// choosing it would hide useful refinery, factory and defensive steps below.
+pub(super) fn answer_where<'r>(
+    rules: &'r RuleSet,
+    obs: &Observation<'_>,
+    census: &Census,
+    budget: &Budget,
+    held: Option<usize>,
+    admits: impl Fn(Item) -> bool,
+) -> Option<Chosen<'r>> {
     // A held entry that is no longer short, or that the house can no longer
     // build, falls through to the list: the hold is a promise to save for
     // something, not a promise to wait for something that is already there.
@@ -451,6 +486,9 @@ pub(super) fn answer<'r>(
     // that the gate has closed with the wallet that opened it.
     if let Some(step) = held
         && let Some(entry) = STEPS.get(step)
+        && admits(entry.item)
+        && (census.refineries > 0 && census.harvesters > 0
+            || matches!(entry.item, Item::Power | Item::Refinery | Item::Weapons | Item::Barracks))
         && owned(rules, obs, census, entry.item) < want(entry, census)
         && let Some((ty, type_id)) = pick(rules, obs, census, entry.item)
     {
@@ -464,6 +502,7 @@ pub(super) fn answer<'r>(
     STEPS
         .iter()
         .enumerate()
+        .filter(|(_, step)| admits(step.item))
         .filter(|(_, step)| open(step.gate, rules, obs, census, budget))
         .filter(|(_, step)| owned(rules, obs, census, step.item) < want(step, census))
         .find_map(|(step, entry)| {
@@ -487,7 +526,18 @@ pub(super) fn answer<'r>(
 /// not move. Every twelve hostiles the house can see is one more tower.
 fn want(step: &Step, census: &Census) -> usize {
     match step.item {
-        Item::Defense => step.want + census.enemies.len() / 12,
+        // A tower budget scales with the productive base, not the tech it
+        // used to have. With a single working refinery two towers are enough;
+        // six may make sense once three bays feed the army. If the last bay or
+        // harvester dies, stop asking for nonessential defenses entirely.
+        Item::Defense if census.refineries == 0 || census.harvesters == 0 => 0,
+        Item::Defense => (census.refineries.saturating_mul(2)).min(step.want)
+            + census.enemies.len() / 12,
+        // The opening refinery is always wanted. Every additional bay must
+        // have enough known, reachable ore to pay for its unloading capacity.
+        Item::Refinery => census.ore_targets.map_or(step.want, |ore| {
+            if step.want == 1 { 1 } else { ore.refineries }
+        }),
         _ => step.want,
     }
 }
@@ -572,6 +622,15 @@ fn open(
     census: &Census,
     budget: &Budget,
 ) -> bool {
+    // Once a built refinery has been destroyed, stop investing in radar,
+    // factories and defenses until there is a way to earn again. This only
+    // narrows nonessential gates, and the recovery path above can still buy
+    // the prerequisite plant and the refinery itself.
+    if (census.refineries == 0 || census.harvesters == 0)
+        && !matches!(gate, Gate::Always)
+    {
+        return false;
+    }
     match gate {
         Gate::Always => true,
         Gate::HarvestersServed => census.harvesters_served(),
@@ -663,6 +722,21 @@ fn pick<'r>(
 mod tests {
     use super::*;
 
+    #[test]
+    fn tower_quota_tracks_operational_income_not_just_war_size() {
+        let step = STEPS.iter().find(|step| step.item == Item::Defense)
+            .expect("a defense step exists");
+        let mut census = Census::default();
+        assert_eq!(want(step, &census), 0);
+        census.refineries = 1;
+        census.harvesters = 1;
+        assert_eq!(want(step, &census), 2);
+        census.refineries = 3;
+        assert_eq!(want(step, &census), step.want);
+        census.harvesters = 0;
+        assert_eq!(want(step, &census), 0);
+    }
+
     use crate::sim::world::Simulation;
 
     /// The retail rival arena: real object types, from the repository's own
@@ -673,6 +747,17 @@ mod tests {
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         Some((sim, rules))
+    }
+
+    #[test]
+    fn same_frame_queues_cannot_commit_one_wallet_twice() {
+        let mut budget = Budget { committed: 0, free: 1_000, income: None };
+        assert!(budget.try_commit(800), "first factory may use the wallet");
+        assert!(!budget.try_commit(800), "second factory may not reuse the same 800");
+        assert_eq!(budget.free, 200);
+        assert_eq!(budget.committed, 800);
+        assert!(budget.try_commit(200));
+        assert!(!budget.try_commit(1));
     }
 
     /// Two samples ten seconds apart, ten credits earned in between: that is

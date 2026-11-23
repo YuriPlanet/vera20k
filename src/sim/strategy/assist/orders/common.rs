@@ -76,38 +76,42 @@ pub(in crate::sim::strategy::assist) fn admits(
 ) -> bool {
     match *goal {
         Goal::Attack { target } => {
+            // A remembered position may be searched by AttackMove, but an
+            // entity-id Attack is a click on a currently visible object.
             obs.is_hostile(target)
+                && obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target)
                 && obs.can_engage(rules, unit, target)
                 && obs.can_hurt(rules, unit, target)
         }
-        Goal::Capture { target } => obs.can_take_building(rules, unit, target),
+        Goal::Capture { target } => {
+            (!obs.is_hostile(target)
+                || obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target))
+                && obs.can_take_building(rules, unit, target)
+        }
+        Goal::MoveToObject { target } | Goal::Enter { target }
+            if obs.is_hostile(target) => {
+                obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target)
+            }
         _ => true,
     }
 }
 
-/// Order `goal` for `unit`, if its target is one the unit can act on.
+/// Issue a request with its *proposed* priority, without changing the tracker.
 ///
-/// The one door every pass in this tree uses, so a step cannot hand out what
-/// the engine will refuse. `false` when the target is not one the unit can act
-/// on: nothing is ordered, nothing is recorded, and the caller is free to pick
-/// another target or leave the unit alone.
-pub(in crate::sim::strategy::assist) fn issue(
-    brain: &AssistBrain,
+/// The world and the frame arbiter may both reject a proposed order. The
+/// tracker must only claim the unit after this function says the outbox took
+/// it; otherwise a scout can wait out a 450-frame Move for a walk that never
+/// left the brain. This is also why rank is supplied by the proposed kind:
+/// reading the old record would give the new request the wrong priority.
+fn issue_at_rank(
+    trace: Option<u64>,
+    rank: u8,
     out: &mut Outbox,
     rules: &RuleSet,
     obs: &Observation<'_>,
     unit: u64,
     goal: Goal,
 ) -> bool {
-    // One order per unit per frame, and it is the strongest ask that stands:
-    // the outbox keeps the best rank each object was asked for, so a pass
-    // cannot take an object from a stronger one merely by running later. The
-    // rank is the intent the caller recorded for this unit — the same ladder
-    // `Tracker::admits` uses across frames, so both axes answer alike.
-    let rank = brain
-        .tracked
-        .rank_of(obs.tick(), unit)
-        .unwrap_or(crate::sim::control::brain::ORDINARY_RANK);
     // The map is the other thing a goal can be wrong about, and neither the
     // funnel nor `Funnel::prepare` looks at it: `Command::Move` to a cell past
     // the edge is accepted, the nav target is never reached, and the unit
@@ -177,7 +181,7 @@ pub(in crate::sim::strategy::assist) fn issue(
         return false;
     }
     let taken = out.want(unit, rank, goal);
-    if brain.trace == Some(unit) {
+    if trace == Some(unit) {
         log::info!(
             "trace {unit}: {} {} (rank {rank}, taken {taken})",
             format!("{goal:?}"),
@@ -185,6 +189,58 @@ pub(in crate::sim::strategy::assist) fn issue(
         );
     }
     taken
+}
+
+/// Issue an order whose caller already recorded its intent. Kept for the
+/// older steps while they migrate to [`issue_tracked`].
+pub(in crate::sim::strategy::assist) fn issue(
+    brain: &AssistBrain,
+    out: &mut Outbox,
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+    unit: u64,
+    goal: Goal,
+) -> bool {
+    let rank = brain
+        .tracked
+        .rank_of(obs.tick(), unit)
+        .unwrap_or(crate::sim::control::brain::ORDINARY_RANK);
+    issue_at_rank(brain.trace, rank, out, rules, obs, unit, goal)
+}
+
+/// Check and issue a tracked order as one transaction: a failed ask cannot
+/// replace a standing intent, and cannot claim a unit for an order the engine
+/// will never see. The frame may still reject the accepted ask later; in that
+/// case L2 calls `Brain::orders_refused` to release it with a short cooldown.
+pub(in crate::sim::strategy::assist) fn issue_tracked(
+    tracker: &mut super::super::tracked::Tracker,
+    trace: Option<u64>,
+    out: &mut Outbox,
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+    unit: u64,
+    kind: super::super::tracked::TrackedKind,
+    target: Option<u64>,
+    cell: Option<(u16, u16)>,
+    goal: Goal,
+) -> bool {
+    let tick = obs.tick();
+    if !tracker.admits(tick, unit, kind, target, cell) {
+        return false;
+    }
+    if !issue_at_rank(
+        trace,
+        super::super::tracked::rank(kind),
+        out,
+        rules,
+        obs,
+        unit,
+        goal,
+    ) {
+        return false;
+    }
+    tracker.record_goal(tick, unit, kind, target, cell, goal);
+    true
 }
 
 /// Whether the walker can get to `cell` at all.
@@ -246,4 +302,86 @@ pub(in crate::sim::strategy::assist) fn on_map(cell: (u16, u16), extent: (u16, u
 /// Whether `cell` is on this map: the extent the projection reports.
 fn cell_in_bounds(obs: &Observation<'_>, cell: (u16, u16)) -> bool {
     on_map(cell, obs.map_extent())
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod tests {
+    use super::*;
+    use super::super::super::tracked::{TrackedKind, Tracker};
+
+    fn arena() -> Option<(crate::sim::world::Simulation, RuleSet)> {
+        let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()?;
+        let sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+        Some((sim, rules))
+    }
+
+    /// A bad scout destination is not an order, and must not hold the dog
+    /// idle for `Move`'s 450-frame term. A legal post can be chosen instead.
+    #[test]
+    fn a_rejected_scout_walk_does_not_claim_its_unit() {
+        let Some((sim, rules)) = arena() else { return };
+        let owner = sim.houses().keys().next().copied().expect("a house");
+        let obs = Observation::new(&sim, owner);
+        assert!(obs.map_extent().0 > 0, "the fixture has real map bounds");
+        let mut tracker = Tracker::new();
+        let mut out = Outbox::default();
+        let outside = (u16::MAX, u16::MAX);
+        assert!(!issue_tracked(
+            &mut tracker, None, &mut out, &rules, &obs, 7,
+            TrackedKind::Move, None, Some(outside), Goal::Move { cell: outside },
+        ));
+        assert!(!tracker.is_claimed(obs.tick(), 7));
+        assert!(out.orders.is_empty());
+        assert!(issue_tracked(
+            &mut tracker, None, &mut out, &rules, &obs, 7,
+            TrackedKind::Guard, None, None, Goal::Guard,
+        ));
+        assert!(tracker.stands(obs.tick(), 7, &[TrackedKind::Guard]));
+    }
+
+    /// Only a successful replacement may change the tracker. Even if a
+    /// proposed dodge ranks above a standing guard, a rejected cell goal
+    /// cannot erase the guard or give the unit an imaginary dodge.
+    #[test]
+    fn a_rejected_high_priority_request_preserves_the_old_intent() {
+        let Some((sim, rules)) = arena() else { return };
+        let owner = sim.houses().keys().next().copied().expect("a house");
+        let obs = Observation::new(&sim, owner);
+        let mut tracker = Tracker::new();
+        let mut out = Outbox::default();
+        tracker.record(obs.tick(), 7, TrackedKind::Guard, None, None);
+        let outside = (u16::MAX, u16::MAX);
+        assert!(!issue_tracked(
+            &mut tracker, None, &mut out, &rules, &obs, 7,
+            TrackedKind::Dodge, None, Some(outside), Goal::Move { cell: outside },
+        ));
+        assert!(tracker.stands(obs.tick(), 7, &[TrackedKind::Guard]));
+        assert!(!tracker.stands(obs.tick(), 7, &[TrackedKind::Dodge]));
+        assert!(out.orders.is_empty());
+    }
+
+    /// Rejection can happen after validity checks too: if the frame already
+    /// holds a stronger ask, a weaker ask must not overwrite the tracker.
+    #[test]
+    fn a_superseded_ask_does_not_leave_a_ghost_intent() {
+        let Some((sim, rules)) = arena() else { return };
+        let owner = sim.houses().keys().next().copied().expect("a house");
+        let obs = Observation::new(&sim, owner);
+        let mut tracker = Tracker::new();
+        let mut out = Outbox::default();
+        let emergency = (4, 4);
+        assert!(out.want(
+            7,
+            super::super::super::tracked::rank(TrackedKind::Dodge),
+            Goal::Move { cell: emergency },
+        ));
+        assert!(!issue_tracked(
+            &mut tracker, None, &mut out, &rules, &obs, 7,
+            TrackedKind::Guard, None, None, Goal::Guard,
+        ));
+        assert!(!tracker.is_claimed(obs.tick(), 7));
+        out.resolve();
+        assert_eq!(out.orders.len(), 1);
+        assert_eq!(out.orders[0].goal, Goal::Move { cell: emergency });
+    }
 }

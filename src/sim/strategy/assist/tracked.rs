@@ -130,7 +130,7 @@ const REFUSED_FRAMES: u64 = 30;
 ///   before it walks anywhere.
 /// - A breach outranks a detour: the wall it is shooting is the way through.
 /// - The march is the weakest order a unit takes, and a guard weaker still.
-fn rank(kind: TrackedKind) -> u8 {
+pub(in crate::sim::strategy::assist) fn rank(kind: TrackedKind) -> u8 {
     match kind {
         TrackedKind::Dodge => 0,
         TrackedKind::Kite => 1,
@@ -150,6 +150,12 @@ fn rank(kind: TrackedKind) -> u8 {
 }
 
 impl TrackedKind {
+    /// Whether this intent is a re-evaluated tactical override rather than a
+    /// persistent strategic assignment.
+    pub(super) fn temporary(self) -> bool {
+        matches!(self, Self::Dodge | Self::Kite | Self::Engage | Self::Avoid | Self::Breach)
+    }
+
     /// How long the intent stands before it may be issued again, in frames.
     ///
     /// Each is how long the object needs for the command to be *done* rather
@@ -177,6 +183,20 @@ impl TrackedKind {
             Self::Enter | Self::Capture => 300,
             Self::Move | Self::Attack | Self::AttackMove | Self::Guard | Self::Harvest => 450,
         }
+    }
+}
+
+/// Only goals with repeatable, non-toggle semantics may be restored.
+pub(super) fn primary_kind(goal: Goal) -> Option<TrackedKind> {
+    match goal {
+        Goal::Move { .. } => Some(TrackedKind::Move),
+        Goal::AttackMove { .. } => Some(TrackedKind::AttackMove),
+        Goal::Attack { .. } => Some(TrackedKind::Attack),
+        Goal::Capture { .. } => Some(TrackedKind::Capture),
+        Goal::Enter { .. } => Some(TrackedKind::Enter),
+        Goal::Harvest { .. } => Some(TrackedKind::Harvest),
+        Goal::Guard | Goal::GuardAt { .. } => Some(TrackedKind::Guard),
+        _ => None,
     }
 }
 
@@ -209,10 +229,39 @@ pub(super) struct UnitRuntime {
 /// walk alternated between two samples.
 const REISSUE_CELLS: i32 = 3;
 
+/// A long-term goal suspended by a short-lived tactical intervention.
+///
+/// We retain only the latest tactical interruption. Tactical maneuvers are
+/// recomputed from the current battlefield rather than replayed as stale cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct PausedMission {
+    pub(super) kind: TrackedKind,
+    pub(super) cell: Option<(u16, u16)>,
+    pub(super) at: u64,
+    pub(super) retries: u8,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RestoreRequest {
+    goal: Goal,
+    paused: PausedMission,
+    at: u64,
+}
+
 /// Every unit's standing intent, and the units a routine is busy with.
 #[derive(Debug, Default)]
 pub(super) struct Tracker {
     intents: BTreeMap<u64, UnitRuntime>,
+    /// The standing strategic order beneath temporary tactical overrides.
+    ///
+    /// Dodge, kite, engage, avoidance and breach may replace the engine's
+    /// current mission for a short interval. They must not erase the mission
+    /// the unit was assigned before that intervention.
+    primary: BTreeMap<u64, Goal>,
+    /// Units whose primary objective was interrupted by a tactical action.
+    paused: BTreeMap<u64, PausedMission>,
+    /// Requests awaiting the control board's same-frame accept/refuse result.
+    restoring: BTreeMap<u64, RestoreRequest>,
     /// Units a managed routine owns, and the frame it hands them back on. A
     /// routine is its object's only issuer, so the layers above ask here before
     /// they tell one anything.
@@ -227,6 +276,9 @@ impl Tracker {
     pub(super) fn new() -> Self {
         Self {
             intents: BTreeMap::new(),
+            primary: BTreeMap::new(),
+            paused: BTreeMap::new(),
+            restoring: BTreeMap::new(),
             held: BTreeMap::new(),
             refused: BTreeMap::new(),
         }
@@ -274,6 +326,18 @@ impl Tracker {
         moved(tracked.cell, cell)
     }
 
+    /// An engineer's first Capture click is provisional until L2 has had a
+    /// chance to reject it at the end of the frame. An escort must not be
+    /// mobilized just because an unconfirmed L3 request exists.
+    pub(super) fn confirmed_capture(&self, now: u64, unit: u64, target: u64) -> bool {
+        self.intents.get(&unit).is_some_and(|intent| {
+            intent.kind == TrackedKind::Capture
+                && intent.target == Some(target)
+                && intent.issued_at < now
+                && now < intent.until
+        })
+    }
+
     /// Whether anyone at all still has a live `kind` intent on `target`.
     ///
     /// The reverse of `admits`, for the orders that are about a *place* rather
@@ -295,6 +359,95 @@ impl Tracker {
                 && tracked.target == Some(target)
                 && now < tracked.until
         })
+    }
+
+    /// Save a replayable primary goal only after an admitted request.
+    ///
+    /// A new strategic mission supersedes its predecessor. Dodge, Kite, Engage,
+    /// Avoid and Breach suspend rather than overwrite it. One-shot commands
+    /// (especially Deploy) are never replayed when their original intent ends.
+    pub(super) fn record_goal(
+        &mut self,
+        now: u64,
+        unit: u64,
+        kind: TrackedKind,
+        target: Option<u64>,
+        cell: Option<(u16, u16)>,
+        goal: Goal,
+    ) {
+        self.record(now, unit, kind, target, cell);
+        if !kind.temporary() && primary_kind(goal) == Some(kind) {
+            self.primary.insert(unit, goal);
+        }
+    }
+
+    /// Read the last standing goal, excluding temporary tactical movement.
+    pub(super) fn primary_goal(&self, unit: u64) -> Option<Goal> {
+        self.primary.get(&unit).copied()
+    }
+
+    /// Only an interrupted goal whose tactical commitment has expired is a
+    /// resume candidate. A managed routine always keeps exclusive ownership.
+    pub(super) fn pending_resume(&self, now: u64, unit: u64) -> Option<(Goal, PausedMission)> {
+        let paused = *self.paused.get(&unit)?;
+        if self.held(now, unit) {
+            return None;
+        }
+        if self.intents.get(&unit).is_some_and(|active| {
+            active.kind.temporary() && now < active.until
+        }) {
+            return None;
+        }
+        self.primary_goal(unit).map(|goal| (goal, paused))
+    }
+
+    /// A native order already doing the primary job does not need replay.
+    pub(super) fn complete_resume(&mut self, unit: u64) {
+        self.paused.remove(&unit);
+    }
+
+    /// Mark a primary resubmission that passed L3, but may yet be refused by L2.
+    pub(super) fn restore_requested(
+        &mut self,
+        now: u64,
+        unit: u64,
+        goal: Goal,
+        paused: PausedMission,
+    ) {
+        self.restoring.insert(unit, RestoreRequest { goal, paused, at: now });
+    }
+
+    /// A L2 rejection must not erase the suspended goal or start a retry storm.
+    /// After repeated rejection hand the actor back to ordinary planning.
+    pub(super) fn restore_refused(&mut self, now: u64, unit: u64, goal: Goal) -> bool {
+        let Some(request) = self.restoring.remove(&unit) else { return false };
+        if request.goal != goal || request.at != now {
+            // Unrelated feedback must not roll back a newer request.
+            self.restoring.insert(unit, request);
+            return false;
+        }
+        if request.paused.retries >= 2 {
+            self.forget_primary(unit);
+            return true;
+        }
+        let mut paused = request.paused;
+        paused.at = now;
+        paused.retries += 1;
+        self.paused.insert(unit, paused);
+        true
+    }
+
+    /// L2 has reported every refusal from the previous tick; the rest were
+    /// accepted and must not retain a phantom pending-ack marker.
+    pub(super) fn expire_restore_feedback(&mut self, now: u64) {
+        self.restoring.retain(|_, request| request.at >= now);
+    }
+
+    /// Release all standing strategic state when the actor leaves automation.
+    pub(super) fn forget_primary(&mut self, unit: u64) {
+        self.primary.remove(&unit);
+        self.paused.remove(&unit);
+        self.restoring.remove(&unit);
     }
 
     /// Drop an intent the world does not show.
@@ -357,6 +510,18 @@ impl Tracker {
         // A command that was taken is no longer refused: clear the term so a
         // later refusal starts a fresh one.
         self.refused.remove(&(unit, kind));
+        if kind.temporary() {
+            if self.primary.contains_key(&unit) {
+                let retries = self.paused.get(&unit).map_or(0, |held| held.retries);
+                self.paused.insert(unit, PausedMission {
+                    kind, cell, at: now, retries,
+                });
+            }
+        } else {
+            // Legacy callers still record before issuing and have no Goal to
+            // save. Their new strategic decision supersedes stale recovery.
+            self.forget_primary(unit);
+        }
         self.intents.insert(
             unit,
             UnitRuntime {
@@ -388,6 +553,9 @@ impl Tracker {
             .map(|id| (*id, self.intents.get(id).map(|tracked| tracked.kind)))
             .collect();
         self.intents.retain(|id, _| live.contains(id));
+        self.primary.retain(|id, _| live.contains(id));
+        self.paused.retain(|id, _| live.contains(id));
+        self.restoring.retain(|id, _| live.contains(id));
         self.held.retain(|id, _| live.contains(id));
         self.refused.retain(|(id, _), _| live.contains(id));
         dropped
@@ -458,12 +626,13 @@ impl Tracker {
 
 /// The intents a goal may have been recorded under.
 ///
-/// One goal can be two kinds, because the same click is issued by two steps for
-/// two reasons: `Goal::Attack` is `Engage` from the micro layer — what this
-/// unit shoots *now* — and `Attack` from the defensive one, what its squad is
-/// aimed at. A refusal names only the goal, so the caller tries the set and
-/// [`Tracker::void`] drops the one that actually matches; a set is not a second
-/// rule, it is the ambiguity the vocabulary already has.
+/// A goal's possible tracked origins, for the board's refused orders.
+///
+/// Move can mean a scout march, a kite/dodge/avoidance step, or a crush;
+/// Attack can mean a micro engagement or a squad attack. The caller must
+/// intersect these possible kinds with the unit's *actual live* intent:
+/// refusing all possible origins would suppress emergency behaviours that
+/// never tried to issue a command at all.
 pub(super) fn kinds_for(goal: Goal) -> &'static [TrackedKind] {
     match goal {
         Goal::Attack { .. } => &[TrackedKind::Engage, TrackedKind::Attack],
@@ -473,6 +642,8 @@ pub(super) fn kinds_for(goal: Goal) -> &'static [TrackedKind] {
             TrackedKind::Dodge,
             TrackedKind::Kite,
             TrackedKind::Avoid,
+            // A tank crush is a Move click made by the Engage pilot.
+            TrackedKind::Engage,
         ],
         Goal::Guard | Goal::GuardAt { .. } => &[TrackedKind::Guard],
         Goal::Capture { .. } => &[TrackedKind::Capture],
@@ -612,4 +783,116 @@ mod tests {
         // And it expires on its own term.
         assert!(breach.admits(90, 7, TrackedKind::Avoid, None, Some((11, 10))));
     }
+    /// A tactical response replaces the active engine order without erasing
+    /// the strategic destination that should be resumed afterwards.
+    #[test]
+    fn temporary_overrides_preserve_the_primary_mission() {
+        let mut tracker = Tracker::new();
+        let primary = crate::sim::control::Goal::AttackMove { cell: (40, 22) };
+        tracker.record_goal(
+            0, 7, TrackedKind::AttackMove, None, Some((40, 22)), primary,
+        );
+        tracker.record_goal(
+            5, 7, TrackedKind::Dodge, None, Some((12, 10)),
+            crate::sim::control::Goal::Move { cell: (12, 10) },
+        );
+        assert_eq!(tracker.primary_goal(7), Some(primary));
+
+        let replacement = crate::sim::control::Goal::Attack { target: 91 };
+        tracker.record_goal(
+            20, 7, TrackedKind::Attack, Some(91), None, replacement,
+        );
+        assert_eq!(
+            tracker.primary_goal(7),
+            Some(replacement),
+            "a new strategic order replaces the old primary"
+        );
+    }
+
+    /// Two tactical interventions are *re-evaluated*, never stacked as old
+    /// movement coordinates. The latest dodge keeps the primary suspended
+    /// even after the preceding kite term has elapsed.
+    #[test]
+    fn nested_overrides_wait_for_the_latest_intervention() {
+        let mut tracker = Tracker::new();
+        let mission = Goal::AttackMove { cell: (60, 40) };
+        tracker.record_goal(
+            0, 7, TrackedKind::AttackMove, None, Some((60, 40)), mission,
+        );
+        tracker.record_goal(
+            10, 7, TrackedKind::Kite, None, Some((12, 10)),
+            Goal::Move { cell: (12, 10) },
+        );
+        tracker.record_goal(
+            20, 7, TrackedKind::Dodge, None, Some((13, 10)),
+            Goal::Move { cell: (13, 10) },
+        );
+        assert!(tracker.pending_resume(31, 7).is_none());
+        assert_eq!(tracker.pending_resume(32, 7).map(|(goal, _)| goal), Some(mission));
+        assert_eq!(tracker.primary_goal(7), Some(mission));
+        // A legacy strategic order supersedes the pending resume; it carries
+        // no Goal, so replaying the previous plan after it would be unsafe.
+        tracker.record(33, 7, TrackedKind::Guard, None, None);
+        assert!(tracker.pending_resume(33, 7).is_none());
+        assert_eq!(tracker.primary_goal(7), None);
+    }
+
+    /// The board can refuse a restore after L3 admitted it. Retry only the
+    /// saved primary, with the rejected kind's cooldown; repeated refusals
+    /// eventually give normal planners a chance to choose a different goal.
+    #[test]
+    fn a_refused_restore_retries_then_abandons_without_a_command_storm() {
+        let mut tracker = Tracker::new();
+        let mission = Goal::Move { cell: (40, 40) };
+        tracker.record_goal(
+            0, 7, TrackedKind::Move, None, Some((40, 40)), mission,
+        );
+        tracker.record_goal(
+            10, 7, TrackedKind::Dodge, None, Some((11, 11)),
+            Goal::Move { cell: (11, 11) },
+        );
+        for (at, retry) in [(22, 1), (54, 2), (86, 3)] {
+            let (_, paused) = tracker.pending_resume(at, 7).expect("paused primary");
+            tracker.record_goal(
+                at, 7, TrackedKind::Move, None, Some((40, 40)), mission,
+            );
+            tracker.restore_requested(at, 7, mission, paused);
+            tracker.void(7, TrackedKind::Move);
+            tracker.refuse(at, 7, TrackedKind::Move);
+            tracker.restore_refused(at, 7, mission);
+            assert!(
+                !tracker.admits(at + 1, 7, TrackedKind::Move, None, Some((40, 40))),
+                "L2 rejection {retry} must be throttled"
+            );
+        }
+        assert!(tracker.pending_resume(87, 7).is_none());
+        assert_eq!(tracker.primary_goal(7), None);
+    }
+
+    /// Recoverable orders are deliberately narrower than arbitrary clicks:
+    /// D toggles, Scatter and Stop cannot be safely replayed.
+    #[test]
+    fn one_shot_goals_are_never_stored_as_primary_missions() {
+        let mut tracker = Tracker::new();
+        tracker.record_goal(0, 7, TrackedKind::Deploy, None, None, Goal::Deploy);
+        assert_eq!(tracker.primary_goal(7), None);
+        tracker.record_goal(5, 7, TrackedKind::Dodge, None, Some((12, 12)),
+            Goal::Move { cell: (12, 12) });
+        assert!(tracker.pending_resume(30, 7).is_none());
+    }
+
+    /// Removing a unit or handing it back to the player must not leave a stale
+    /// strategic order that can be resumed when that id is seen again.
+    #[test]
+    fn primary_missions_are_forgotten_with_their_actor() {
+        let mut tracker = Tracker::new();
+        tracker.record_goal(
+            0, 7, TrackedKind::Move, None, Some((30, 30)),
+            crate::sim::control::Goal::Move { cell: (30, 30) },
+        );
+        tracker.forget_primary(7);
+        assert_eq!(tracker.primary_goal(7), None);
+    }
+
+
 }

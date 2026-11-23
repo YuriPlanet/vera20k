@@ -199,7 +199,6 @@ pub(super) fn run(
     obs: &Observation<'_>,
     out: &mut Outbox,
 ) {
-    let tick = obs.tick();
     let mut index = ThreatIndex::default();
     let mut enemy_cell: BTreeMap<u64, ((u16, u16), i32)> = BTreeMap::new();
     // The enemies whose weapons do not shoot but board: a terror drone's jaw
@@ -253,24 +252,17 @@ pub(super) fn run(
                 .copied()
                 .collect();
             if !danger.is_empty() {
-                if let Some(step) = flee_step(unit.cell, &danger, obs)
-                    && brain.tracked.admits(
-                        tick,
-                        unit.entity_id,
-                        TrackedKind::Kite,
-                        None,
-                        Some(step),
-                    )
-                {
-                    brain
-                        .tracked
-                        .record(tick, unit.entity_id, TrackedKind::Kite, None, Some(step));
-                    super::orders::issue(
-                        brain,
+                if let Some(step) = flee_step(unit.cell, &danger, obs) {
+                    super::orders::issue_tracked(
+                        &mut brain.tracked,
+                        brain.trace,
                         out,
                         rules,
                         obs,
                         unit.entity_id,
+                        TrackedKind::Kite,
+                        None,
+                        Some(step),
                         Goal::Move { cell: step },
                     );
                 }
@@ -328,28 +320,16 @@ pub(super) fn run(
             if chebyshev(unit.cell, target_cell) <= mine {
                 continue;
             }
-            if !brain.tracked.admits(
-                tick,
-                unit.entity_id,
-                TrackedKind::Kite,
-                Some(target_id),
-                None,
-            ) {
-                continue;
-            }
-            brain.tracked.record(
-                tick,
-                unit.entity_id,
-                TrackedKind::Kite,
-                Some(target_id),
-                None,
-            );
-            super::orders::issue(
-                brain,
+            super::orders::issue_tracked(
+                &mut brain.tracked,
+                brain.trace,
                 out,
                 rules,
                 obs,
                 unit.entity_id,
+                TrackedKind::Kite,
+                Some(target_id),
+                None,
                 Goal::Attack { target: target_id },
             );
             continue;
@@ -374,21 +354,16 @@ pub(super) fn run(
         // The step and the return trip keep separate tracked records — the
         // target of one is a unit id and of the other a cell — so they cannot
         // block each other in the same term.
-        if !brain
-            .tracked
-            .admits(tick, unit.entity_id, TrackedKind::Kite, None, Some(step))
-        {
-            continue;
-        }
-        brain
-            .tracked
-            .record(tick, unit.entity_id, TrackedKind::Kite, None, Some(step));
-        super::orders::issue(
-            brain,
+        super::orders::issue_tracked(
+            &mut brain.tracked,
+            brain.trace,
             out,
             rules,
             obs,
             unit.entity_id,
+            TrackedKind::Kite,
+            None,
+            Some(step),
             Goal::Move { cell: step },
         );
     }

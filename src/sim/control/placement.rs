@@ -327,54 +327,117 @@ impl<'a, 'b> Placement<'a, 'b> {
         false
     }
 
-    /// The cell to place `type_id` at, `attempt`-th admissible candidate.
+    /// The `attempt`-th *different* site that meets the native gate.
     ///
-    /// The native site wins when the placement gate admits it; otherwise the
-    /// outward sweep answers.
+    /// The native search is allowed only on attempt zero: it frequently
+    /// returns the same cell until a completed product leaves the factory.
+    /// Previously every retry chose it again, then abandoned the build after
+    /// 64 supposedly different attempts. Subsequent attempts enumerate the
+    /// sweep with the native candidate excluded, so no site repeats.
     pub fn cell_for(&self, type_id: InternedId, attempt: u32) -> Option<(u16, u16)> {
+        self.cell_for_where(type_id, attempt, |_| true)
+    }
+
+    /// As `cell_for`, but with a caller's policy constraint (e.g. keeping a
+    /// fragile structure behind the threat line) applied *during selection*.
+    /// Rejecting an unsafe candidate only after the sweep selected it used to
+    /// spend a whole retry on the same unsafe native cell.
+    pub fn cell_for_where(
+        &self,
+        type_id: InternedId,
+        attempt: u32,
+        allowed: impl Fn((u16, u16)) -> bool,
+    ) -> Option<(u16, u16)> {
         let ty = self.obs.object_type(self.rules, type_id)?;
         let foundation = ty.foundation.dimensions();
         let crowd = self.crowd();
-        if let Some(cell) = self.native_site(ty)
-            && self.obs.placement_admits(self.rules, ty, cell.0, cell.1)
-        {
-            // `FindBaseBuildingSite` answers what the plan wants built *next*,
-            // not how far it has to stand from the last foundation: its cell
-            // goes through the same legality gate the sweep uses. Without this
-            // the native path placed the barracks on the yard's doorstep and
-            // the sweep's gap rule never ran — the site was answered upstream.
-            // A wall is an overlay, not a building: it *belongs* against a
-            // foundation, and holding it to the building gap pushed every
-            // segment one cell further out than the wall plan asked for.
-            if !ty.wall && self.too_close(cell, foundation, &crowd) {
-                log::info!(
-                    "auto play: native site for {} at {cell:?} refused: it leaves no lane to the building beside it",
-                    ty.id
-                );
-            } else {
-                log::info!(
-                    "auto play: site for {} from the native search at {cell:?}",
-                    ty.id
-                );
+        let native = self.native_site(ty).filter(|&cell| {
+            allowed(cell)
+                && self.obs.placement_admits(self.rules, ty, cell.0, cell.1)
+                && (ty.wall || !self.too_close(cell, foundation, &crowd))
+        });
+        if attempt == 0 {
+            if let Some(cell) = native {
+                log::info!("auto play: site for {} from native search at {cell:?}", ty.id);
                 return Some(cell);
             }
         }
-        let cell = self.sweep(ty, attempt);
+        let index = if native.is_some() {
+            attempt.checked_sub(1)?
+        } else {
+            attempt
+        };
+        let site = self.sweep_where(ty, index, native, &allowed);
         if trace_enabled("AUTOPLAY_TRACE_SITE") {
-            let near = cell.and_then(|cell| {
-                self.obs
-                    .ore_cells(self.rules)
-                    .iter()
-                    .map(|ore| cell_distance(cell, *ore))
-                    .min()
+            let near = site.and_then(|cell| {
+                self.obs.ore_cells(self.rules)
+                    .iter().map(|ore| cell_distance(cell, *ore)).min()
             });
-            log::info!("site trace: type={} cell={cell:?} ore={near:?}", ty.id);
+            log::info!("site trace: type={} cell={site:?} ore={near:?}", ty.id);
         }
         log::info!(
-            "auto play: site for {} from the sweep at {cell:?} (attempt {attempt})",
+            "auto play: site for {} from sweep at {site:?} (attempt {attempt})",
             ty.id
         );
-        cell
+        site
+    }
+
+    /// An eligible structure could be placed if all own mobile units currently
+    /// standing on the candidate foundation left it. Called only after the
+    /// ordinary search has no available site. The combined lifted-unit probe
+    /// proves that clearing exactly these blockers is sufficient; it does not
+    /// scatter unrelated units or assume that moving one blocker is enough.
+    pub fn site_blocked_by_own_units(
+        &self,
+        type_id: InternedId,
+        allowed: impl Fn((u16, u16)) -> bool,
+    ) -> Option<((u16, u16), Vec<u64>)> {
+        let ty = self.obs.object_type(self.rules, type_id)?;
+        if ty.wall {
+            return None;
+        }
+        let (width, height) = ty.foundation.dimensions();
+        let crowd = self.crowd();
+        let units: Vec<_> = self.obs.own_entities()
+            .filter(|unit| unit.orderable && !self.obs.owned_by_hand(unit.entity_id))
+            .filter(|unit| self.obs.object_type(self.rules, unit.type_id).is_some_and(|kind| {
+                matches!(kind.category, ObjectCategory::Infantry | ObjectCategory::Vehicle)
+            }))
+            .collect();
+        for anchor in self.anchors() {
+            for ring in 1..=PLACEMENT_SCAN_RADIUS {
+                for dy in -ring..=ring {
+                    for dx in -ring..=ring {
+                        if dx.abs().max(dy.abs()) != ring { continue; }
+                        let (Some(rx), Some(ry)) = (
+                            u16::try_from(i32::from(anchor.0) + dx).ok(),
+                            u16::try_from(i32::from(anchor.1) + dy).ok(),
+                        ) else { continue; };
+                        if !allowed((rx, ry))
+                            || self.too_close((rx, ry), (width, height), &crowd)
+                        {
+                            continue;
+                        }
+                        let occupying: Vec<_> = units.iter().filter(|unit| {
+                            i32::from(unit.cell.0) >= i32::from(rx)
+                                && i32::from(unit.cell.0) < i32::from(rx) + i32::from(width)
+                                && i32::from(unit.cell.1) >= i32::from(ry)
+                                && i32::from(unit.cell.1) < i32::from(ry) + i32::from(height)
+                        }).collect();
+                        if occupying.is_empty() { continue; }
+                        let blockers: Vec<u64> = occupying.iter()
+                            .map(|unit| unit.entity_id)
+                            .collect();
+                        if self.obs.placement_admits_after_units_leave(
+                            self.rules, ty, rx, ry, &blockers,
+                        ) {
+                            return Some(((rx, ry), blockers));
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// `HouseClass::FindBaseBuildingSite` for the ordinary branch. `None` when
@@ -417,6 +480,16 @@ impl<'a, 'b> Placement<'a, 'b> {
     /// Deterministic: the anchor order, the ring order and the sort keys are
     /// all fixed, and no collection with a random iteration order is involved.
     fn sweep(&self, ty: &ObjectType, attempt: u32) -> Option<(u16, u16)> {
+        self.sweep_where(ty, attempt, None, &|_| true)
+    }
+
+    fn sweep_where(
+        &self,
+        ty: &ObjectType,
+        attempt: u32,
+        skip: Option<(u16, u16)>,
+        allowed: &impl Fn((u16, u16)) -> bool,
+    ) -> Option<(u16, u16)> {
         let blocked = self.occupied_cells();
         let anchors = self.anchors();
         let foundation = ty.foundation.dimensions();
@@ -440,6 +513,8 @@ impl<'a, 'b> Placement<'a, 'b> {
                             continue;
                         };
                         if !seen.insert((rx, ry))
+                            || skip == Some((rx, ry))
+                            || !allowed((rx, ry))
                             || !self.obs.placement_admits(self.rules, ty, rx, ry)
                         {
                             continue;
@@ -457,36 +532,29 @@ impl<'a, 'b> Placement<'a, 'b> {
                 }
             }
         }
-        // The base stays where it is: only the first rings are considered, so a
-        // roomier cell across the map cannot outrank a tighter one beside the
-        // yard. Within that window the roomiest cell wins — a foundation wedged
-        // into a one-cell gap between two others walls the base in, and a yard
-        // with no lane out is a yard that feeds nothing.
-        let Some(nearest) = admitted.iter().map(|candidate| candidate.ring).min() else {
+        // Reject cramped foundations *before* defining the near-base window.
+        // Previously the closest few rings might consist solely of sites too
+        // close to the yard. Taking a window around those bad candidates then
+        // dropped every actually legal site farther out and the AI reported
+        // "no cell" (or packed a new building into the only remaining lane).
+        // If no legal site exists in the whole scan, keep the old emergency
+        // fallback: a tight but native-valid position beats a permanently
+        // blocked finished production line.
+        let legal = admitted.iter().filter(|site| !site.too_close).count();
+        if legal > 0 {
+            admitted.retain(|site| !site.too_close);
+        } else if !admitted.is_empty() {
+            log::warn!(
+                "placement: no site keeps {} cells from another building for {}; \
+                 {} native-valid tight candidates, trying the closest",
+                BUILDING_GAP_CELLS, ty.id, admitted.len()
+            );
+        }
+        let Some(nearest) = admitted.iter().map(|site| site.ring).min() else {
             return None;
         };
         let window = nearest + PLACEMENT_WINDOW_RINGS;
-        admitted.retain(|candidate| candidate.ring <= window);
-        // The gap is a rule, not a preference: a foundation that leaves no lane
-        // between itself and its neighbour is refused the way a cell on top of
-        // a building is. What is left is logged when nothing legal remains,
-        // because a base that cannot place anything looks exactly like a base
-        // that is not trying to.
-        let legal = admitted
-            .iter()
-            .filter(|candidate| !candidate.too_close)
-            .count();
-        if legal == 0 {
-            log::warn!(
-                "placement: no site keeps {} cells from another building for {}; \
-                 {} candidates refused, falling back to the closest fit",
-                BUILDING_GAP_CELLS,
-                ty.id,
-                admitted.len()
-            );
-        } else {
-            admitted.retain(|candidate| !candidate.too_close);
-        }
+        admitted.retain(|site| site.ring <= window);
         if ty.protect_with_wall {
             self.keep_safe_side(&mut admitted, &anchors);
         }
@@ -605,7 +673,7 @@ impl<'a, 'b> Placement<'a, 'b> {
         );
         let enemy = self
             .obs
-            .enemy_entities()
+            .visible_enemy_entities()
             .map(|entity| entity.cell)
             .min_by_key(|cell| cell_distance(*cell, centre))?;
         Some((
@@ -659,7 +727,7 @@ impl<'a, 'b> Placement<'a, 'b> {
             .map(|entity| (entity.cell, entity.type_id))
             .chain(
                 self.obs
-                    .enemy_entities()
+                    .visible_enemy_entities()
                     .map(|entity| (entity.cell, entity.type_id)),
             )
         {
@@ -786,5 +854,38 @@ mod tests {
             !covers(&ring, kept, (fw, fh)),
             "the ring is kept for the wall: {kept:?}"
         );
+    }
+
+    /// The native builder can answer the same site on every probe until the
+    /// building has actually been placed. A second attempt must therefore
+    /// address a different legal foundation, never repeat the first cell.
+    #[test]
+    fn a_rejected_site_advances_to_a_distinct_candidate() {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[BuildingTypes]\n0=GACNST\n1=GAPOWR\n\
+             [GACNST]\nStrength=1500\nFoundation=3x3\nBaseNormal=yes\nAdjacent=4\n\
+             [GAPOWR]\nStrength=500\nFoundation=2x2\nBaseNormal=yes\nAdjacent=4\n",
+        );
+        let art = crate::rules::ini_parser::IniFile::from_str(
+            "[GACNST]\nFoundation=3x3\n[GAPOWR]\nFoundation=2x2\n",
+        );
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
+            .expect("placement fixture");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.intern("Americans");
+        sim.spawn_object("GACNST", "Americans", 14, 14, 255, &rules)
+            .expect("a construction yard");
+        let obs = Observation::new(&sim, owner);
+        let ty = obs.type_id("GAPOWR").expect("the power plant type");
+        let placement = Placement::new(&obs, &rules);
+        let first = placement.cell_for(ty, 0).expect("the first site");
+        let second = placement.cell_for(ty, 1).expect("a second site");
+        assert_ne!(first, second, "each attempt must really try another cell");
+        assert!(obs.placement_admits(&rules, rules.object("GAPOWR").unwrap(), second.0, second.1));
+        let filtered = placement.cell_for_where(ty, 0, |cell| cell != first)
+            .expect("a policy-filtered alternative");
+        assert_ne!(filtered, first, "a policy cannot reselect an ineligible native site");
     }
 }

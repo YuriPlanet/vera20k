@@ -347,9 +347,10 @@ pub(super) fn deploy_yard_maker(
         // The one guard the pack also runs: a yard the house only just packed
         // home is inside its term, and deploying it again is the round trip the
         // commitment exists to stop.
-        if !yard_committed(brain, obs.tick(), entity_id) {
+        if !yard_committed(brain, obs.tick(), entity_id)
+            && super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy)
+        {
             brain.yard_commit.insert(entity_id, obs.tick());
-            super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy);
         }
         return;
     }
@@ -357,10 +358,10 @@ pub(super) fn deploy_yard_maker(
         return;
     };
     // The sweep's cells are the sidebar's own build area, so the maker ends up
-    // on base ground the way a player would put it. `site_attempts` is what
+    // on base ground the way a player would put it. `maker_site_attempts` is what
     // moves past a cell that cannot be used, the same memory a waiting
     // structure uses.
-    let attempt = brain.site_attempts.get(&yard_id).copied().unwrap_or(0);
+    let attempt = brain.maker_site_attempts.get(&yard_id).copied().unwrap_or(0);
     match Placement::new(obs, rules).cell_for(yard_id, attempt) {
         Some(target) if target != cell => {
             super::orders::issue(
@@ -404,7 +405,7 @@ pub(super) fn deploy_yard_maker(
                 }
                 None => {
                     let next = (attempt + 1) % PLACEMENT_ATTEMPTS;
-                    brain.site_attempts.insert(yard_id, next);
+                    brain.maker_site_attempts.insert(yard_id, next);
                     // Walled in on every side: the counter alone is what left a
                     // maker standing for a whole match. There is nowhere to
                     // deploy here, so the maker goes back to the base it still
@@ -547,10 +548,9 @@ const FAR_ORE_FRAMES: u64 = 600;
 /// A whole-map walk, so it is only reached when the yard cap is already met —
 /// that is, on the frames a house with two bases is deciding whether a third is
 /// worth 2500 credits. Not a per-frame question.
-fn far_ore(rules: &RuleSet, obs: &Observation<'_>, home: (u16, u16)) -> bool {
-    obs.ore_cells(rules)
-        .into_iter()
-        .any(|cell| super::squared_distance(cell, home) > FAR_ORE_CELLS * FAR_ORE_CELLS)
+fn far_ore(known: &std::collections::BTreeMap<(u16, u16), u8>, home: (u16, u16)) -> bool {
+    known.keys()
+        .any(|cell| super::squared_distance(*cell, home) > FAR_ORE_CELLS * FAR_ORE_CELLS)
 }
 
 /// Whether a second base is wanted at all, ignoring the wallet.
@@ -566,6 +566,11 @@ pub(super) fn expansion_is_worth_saving_for(
     rules: &RuleSet,
     obs: &Observation<'_>,
 ) -> bool {
+    // An optional second yard must have strategic permission. This is not
+    // the lost-yard recovery path, which still buys its MCV unconditionally.
+    if !brain.director.may_expand() {
+        return false;
+    }
     if !yard_stands(&brain.census) || owns_yard_maker(&brain.census) {
         return false;
     }
@@ -584,7 +589,7 @@ pub(super) fn expansion_is_worth_saving_for(
         let Some(home) = brain.census.base_cell else {
             return false;
         };
-        if !far_ore(rules, obs, home) {
+        if !far_ore(&brain.ore_known, home) {
             return false;
         }
     }
@@ -658,22 +663,26 @@ fn deploy_second_yard(
     // that, but a maker that stopped running one cell later must not deploy
     // there anyway: that is the wishlist's "占领敌方MCV 收缩后又原地展开".
     let space = super::terrain::Space::read(obs, rules, &brain.census.home_cells, Some(home));
-    if cell_distance(cell, home) >= EXPAND_MIN_CELLS
+    // The selected ore-side plot, not merely "somewhere ten cells from home",
+    // owns the deploy decision. An MCV that stops short of its target used to
+    // unfold at the first legal roadside cell and later get packed again.
+    let selected = expansion_site(brain, rules, obs, yard, Some(entity_id));
+    if at_selected_site(cell, selected)
+        && cell_distance(cell, home) >= EXPAND_MIN_CELLS
         && space.ground_at(cell).buildable()
         && obs.deploy_site_admits(rules, entity_id, yard)
     {
-        // Same term as the no-yard branch: a maker that just packed home stands
-        // on the base's own ground, which is far enough away to qualify here.
-        if !yard_committed(brain, obs.tick(), entity_id) {
+        if !yard_committed(brain, obs.tick(), entity_id)
+            && super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy)
+        {
             brain.yard_commit.insert(entity_id, obs.tick());
-            super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy);
         }
         return;
     }
     // The cell the house decided on: a patch of ground a second yard fits on,
     // away from the first base. The same probe the purchase gate asked, so the
     // maker walks to ground the house already knows about.
-    let Some(target) = expansion_site(brain, rules, obs, yard, Some(entity_id)) else {
+    let Some(target) = selected else {
         // No ground for a second yard. The maker still has to leave the
         // factory: a vehicle standing in the doorway holds the whole vehicle
         // line, so "nowhere to expand" must not mean "stand where it was made"
@@ -730,6 +739,12 @@ fn deploy_second_yard(
     }
 }
 
+/// A roadside cell is not an expansion site. Keep the selected site stable
+/// across movement and only unfold after arriving within placement tolerance.
+fn at_selected_site(cell: (u16, u16), site: Option<(u16, u16)>) -> bool {
+    site.is_some_and(|site| cell_distance(cell, site) <= 2)
+}
+
 /// The nearest cell a second yard may be deployed on: away from the house's own
 /// base, on ground a unit can stand on, and a cell a yard of this type fits on.
 ///
@@ -749,9 +764,18 @@ pub(super) fn expansion_site(
     // The deploy's own answer for this cell. With a maker on the field the
     // question is asked with the maker's body lifted -- the deploy lifts it
     // -- and without one the ground has to be clear of everything.
-    let admits = |cell: (u16, u16)| match maker {
-        Some(id) => obs.deploy_admits_at(rules, id, yard, cell),
-        None => obs.clear_for_deploy(rules, yard, cell),
+    let maker_position = maker.and_then(|id| {
+        brain.census.units.iter().find(|unit| unit.entity_id == id).and_then(|unit| {
+            let ty = obs.object_type(rules, unit.type_id)?;
+            Some((unit.cell, ty.movement_zone))
+        })
+    });
+    let admits = |cell: (u16, u16)| {
+        let reachable = maker_position.is_none_or(|(from, zone)| obs.can_reach(zone, from, cell));
+        reachable && match maker {
+            Some(id) => obs.deploy_admits_at(rules, id, yard, cell),
+            None => obs.clear_for_deploy(rules, yard, cell),
+        }
     };
     // A cached answer is used while it still holds: the probe walks the
     // map's ground, and a maker that re-aims on every probe spends the match
@@ -766,8 +790,18 @@ pub(super) fn expansion_site(
         brain.expansion_probe = Some((tick, None));
         return None;
     };
+    // An MCV already on the map may outlive the distant ore that justified
+    // its purchase. Never turn that into permission to deploy at a random
+    // roadside fallback: hold the maker at a safe rally point until the
+    // player has actually discovered another distant field.
+    if brain.director.initialized()
+        && expansion_aim(&brain.ore_known, home, &brain.census.home_cells).is_none()
+    {
+        brain.expansion_probe = Some((tick, None));
+        return None;
+    }
     let found = search_expansion_site(
-        rules,
+        &brain.ore_known,
         obs,
         home,
         &brain.census.home_cells,
@@ -810,7 +844,7 @@ fn is_a_second_base_cell(home_cells: &[(u16, u16)], cell: (u16, u16)) -> bool {
 /// definition, so asking the placement question answered No for every cell
 /// and the maker stood where the factory put it.
 fn search_expansion_site(
-    rules: &RuleSet,
+    known_ore: &std::collections::BTreeMap<(u16, u16), u8>,
     obs: &Observation<'_>,
     home: (u16, u16),
     home_cells: &[(u16, u16)],
@@ -818,7 +852,7 @@ fn search_expansion_site(
     admits: &dyn Fn((u16, u16)) -> bool,
     space: &super::terrain::Space,
 ) -> Option<(u16, u16)> {
-    let aim = expansion_aim(rules, obs, home, home_cells);
+    let aim = expansion_aim(known_ore, home, home_cells);
     if let Some(ore) = aim
         && let Some(cell) = search_rings_from(obs, home_cells, ore, EXPAND_ORE_RING, admits, space)
     {
@@ -835,13 +869,14 @@ fn search_expansion_site(
 /// [`EXPAND_MIN_CELLS`] of every yard is the test, which is the same line the
 /// site itself has to clear.
 fn expansion_aim(
-    rules: &RuleSet,
-    obs: &Observation<'_>,
+    known_ore: &std::collections::BTreeMap<(u16, u16), u8>,
     home: (u16, u16),
     home_cells: &[(u16, u16)],
 ) -> Option<(u16, u16)> {
-    obs.ore_cells(rules)
-        .into_iter()
+    // The overlay grid knows hidden deposits. An honest player only knows
+    // cells seen while visible; use the same last-seen survey as miner buying.
+    known_ore.keys()
+        .copied()
         .filter(|cell| is_a_second_base_cell(home_cells, *cell))
         .min_by_key(|cell| (cell_distance(*cell, home), *cell))
 }
@@ -977,6 +1012,13 @@ fn missing_prerequisite<'r>(
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_mcv_does_not_unfold_on_an_arbitrary_roadside_cell() {
+        assert!(!at_selected_site((20, 20), None));
+        assert!(!at_selected_site((20, 20), Some((41, 42))));
+        assert!(at_selected_site((40, 41), Some((41, 42))));
+    }
     use crate::sim::arena_fixture;
     use crate::sim::strategy::assist::AssistBrain;
     use crate::sim::world::Simulation;
@@ -1375,9 +1417,17 @@ mod tests {
         let obs = Observation::new(&sim, owner);
         let mut brain = AssistBrain::new(0xA17);
         brain.rebuild_census(&rules, &obs);
+        // Model a field that has genuinely been revealed to the player, not
+        // one discovered by reading the hidden overlay in the search pass.
+        let mut known = std::collections::BTreeMap::new();
+        for y in field.1..field.1 + 4 {
+            for x in field.0..field.0 + 4 {
+                known.insert((x, y), 0_u8);
+            }
+        }
 
-        // The aim is the ore, not the house's own ring.
-        let aim = expansion_aim(&rules, &obs, (12, 12), &[(12, 12)]);
+        // The aim is the known ore, not the house's own ring.
+        let aim = expansion_aim(&known, (12, 12), &[(12, 12)]);
         assert_eq!(
             aim.map(|cell| cell_distance(cell, field)),
             Some(0),
@@ -1390,7 +1440,7 @@ mod tests {
         // does not need a maker on the field.
         let yard_ty = obs.entity_type(&rules, yard).expect("the yard's own type");
         let found = search_expansion_site(
-            &rules,
+            &known,
             &obs,
             (12, 12),
             &[(12, 12)],
@@ -1412,5 +1462,18 @@ mod tests {
             cell_distance(found, (12, 12)) >= EXPAND_MIN_CELLS,
             "and still clear of the first base: {found:?}"
         );
+    }
+
+    #[test]
+    fn unknown_remote_ore_cannot_set_an_expansion_target() {
+        let hidden_field = (60_u16, 60_u16);
+        let known = std::collections::BTreeMap::new();
+        assert_eq!(expansion_aim(&known, (10, 10), &[(10, 10)]), None,
+            "a hidden deposit is not a strategic target");
+        let mut seen = known;
+        seen.insert(hidden_field, 4);
+        assert_eq!(expansion_aim(&seen, (10, 10), &[(10, 10)]), Some(hidden_field));
+        assert_eq!(expansion_aim(&seen, (10, 10), &[hidden_field]), None,
+            "the next base must not target its own existing field");
     }
 }

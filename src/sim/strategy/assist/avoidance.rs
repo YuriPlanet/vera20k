@@ -542,23 +542,26 @@ pub(super) fn run(
                 }
             }
             if let Some(cell) = around {
-                if !brain
-                    .tracked
-                    .admits(tick, unit.entity_id, TrackedKind::Avoid, None, Some(cell))
-                {
-                    continue;
-                }
-                brain
-                    .tracked
-                    .record(tick, unit.entity_id, TrackedKind::Avoid, None, Some(cell));
-                log::debug!(
-                    "auto play: avoid {} around the wall at {:?} by {:?}",
+                if super::orders::issue_tracked(
+                    &mut brain.tracked,
+                    brain.trace,
+                    out,
+                    rules,
+                    obs,
                     unit.entity_id,
-                    heading,
-                    cell
-                );
-                super::orders::issue(brain, out, rules, obs, unit.entity_id, Goal::Move { cell });
-                issued += 1;
+                    TrackedKind::Avoid,
+                    None,
+                    Some(cell),
+                    Goal::Move { cell },
+                ) {
+                    log::debug!(
+                        "auto play: avoid {} around the wall at {:?} by {:?}",
+                        unit.entity_id,
+                        heading,
+                        cell
+                    );
+                    issued += 1;
+                }
                 continue;
             }
             // Six cells either side and still closed: it is a ring or a wall,
@@ -707,25 +710,28 @@ pub(super) fn run(
         let Some(cell) = chosen else {
             continue;
         };
-        if !brain
-            .tracked
-            .admits(tick, unit.entity_id, TrackedKind::Avoid, None, Some(cell))
-        {
-            continue;
-        }
-        brain
-            .tracked
-            .record(tick, unit.entity_id, TrackedKind::Avoid, None, Some(cell));
-        log::debug!(
-            "auto play: avoid {} around {} by {:?} ({} vs {} hp)",
+        if super::orders::issue_tracked(
+            &mut brain.tracked,
+            brain.trace,
+            out,
+            rules,
+            obs,
             unit.entity_id,
-            blocker.entity_id,
-            cell,
-            ours,
-            theirs
-        );
-        super::orders::issue(brain, out, rules, obs, unit.entity_id, Goal::Move { cell });
-        issued += 1;
+            TrackedKind::Avoid,
+            None,
+            Some(cell),
+            Goal::Move { cell },
+        ) {
+            log::debug!(
+                "auto play: avoid {} around {} by {:?} ({} vs {} hp)",
+                unit.entity_id,
+                blocker.entity_id,
+                cell,
+                ours,
+                theirs
+            );
+            issued += 1;
+        }
     }
     if total > 0 {
         brain.avoid_cursor = (start + scanned) % total;

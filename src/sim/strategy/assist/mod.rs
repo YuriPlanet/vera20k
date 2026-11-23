@@ -125,14 +125,17 @@ pub(super) mod census;
 pub(super) mod composition;
 pub(super) mod dodge;
 pub(super) mod economy;
+pub(super) mod escort;
 pub(super) mod expand;
 pub(super) mod kite;
 pub(super) mod micro;
+pub(super) mod mission;
 pub(super) mod orders;
 pub(super) mod ore;
 pub(super) mod pilots;
 pub(super) mod plan;
 pub(super) mod squads;
+pub(super) mod strategy;
 pub(super) mod terrain;
 pub(super) mod threats;
 pub(super) mod tracked;
@@ -156,11 +159,6 @@ use tracked::Tracker;
 /// enough that a unit waiting at a corner or a bay is not re-tasked, short
 /// enough that a loop is broken before it is visible.
 const STUCK_FRAMES: u64 = 180;
-
-/// How far the house's own units are taken to see, in cells, until the
-/// projection carries each type's Sight=. Eight is a rifleman's sight rounded
-/// down to a cell grid.
-const SIGHT_CELLS: i32 = 8;
 
 /// The name the status line shows for a type, or `?` when the rules do not
 /// have it.
@@ -193,12 +191,6 @@ fn top_groups(units: Vec<(String, crate::sim::mission::MissionId)>) -> Vec<Strin
         .take(3)
         .map(|(count, name)| format!("{name}:{count}"))
         .collect()
-}
-
-/// A type's Sight value in whole cells: leptons divided by the 256 in a cell,
-/// never below one, so a type with a short sight still sees its own cell.
-fn sight_cells(leptons: i32) -> i32 {
-    (leptons / 256).max(1)
 }
 
 /// Drop a walk that is not moving, once; release it if the retry does not
@@ -293,14 +285,21 @@ pub struct AssistBrain {
     /// layer between "push there" and "walk here" — rebuilt from the ledger on
     /// its own term, so a dead unit simply is not in the next count.
     pub(super) squads: squads::Squads,
-    /// How far the placement sweep has moved for a structure waiting for a
-    /// cell, by type: a cell the gate admits but the receiver refuses must
-    /// not be asked for again.
-    pub(super) site_attempts: BTreeMap<InternedId, u32>,
-    /// Types the map has no cell for after every placement attempt. They stay
-    /// in the factory, but they must not hold the rest of the queue behind
-    /// them.
-    pub(super) stranded_sites: BTreeSet<InternedId>,
+    /// Persistent priorities shared by base, factories and expansion.
+    pub(super) director: strategy::Director,
+    /// Engineer-to-defender escort assignments; separate from player groups
+    /// and from the squads that decide who may be spared.
+    pub(super) escorts: BTreeMap<u64, escort::Escort>,
+    /// Per-ready-building placement mission. Keeps the same footprint during
+    /// clearing and awaits L2/native feedback before trying the next one.
+    pub(super) site_jobs: BTreeMap<InternedId, build::SiteJob>,
+    /// An MCV that cannot deploy in its current cell probes alternative yard
+    /// positions. Unlike a completed structure, this is a moving actor and
+    /// does not share the ready-production site's lifecycle.
+    pub(super) maker_site_attempts: BTreeMap<InternedId, u32>,
+    /// Queue-time preflight failed: do not buy a structure with no legal cell,
+    /// and do not rescan a dense base every frame just to discover that fact.
+    pub(super) site_preflight_after: BTreeMap<InternedId, u64>,
     /// The entry of the build list the house has decided on, as its index in
     /// [`plan::STEPS`], and the frame the decision may be re-made: the house
     /// saves for what it chose instead of spending the savings on whichever
@@ -425,7 +424,10 @@ pub struct AssistBrain {
     pub(super) spy_errand: std::collections::BTreeMap<u64, u8>,
     /// The ore cells near the base and the frame they were read on.
     /// A field does not move, so the scan stands for `ore::SCAN_TERM`.
-    pub(super) ore_scan: Option<(u64, Vec<(u16, u16)>)>,
+    pub(super) ore_scan: Option<ore::Survey>,
+    /// Last seen ore density per cell. Updates only on currently visible
+    /// cells, so depleted/growing ore behind fog is not omniscient knowledge.
+    ore_known: BTreeMap<(u16, u16), u8>,
     /// The structure the fist committed to, and the frame the commitment may be
     /// re-made: `(entity, until)`. Seven bases make "the nearest structure" a
     /// different answer every time the army moves, and an army that re-picks
@@ -481,12 +483,26 @@ pub struct AssistBrain {
     /// frame; the enemy list it replaces is the census's, which is omniscient.
     pub(super) perception: crate::sim::control::perception::Perception,
     /// Whether the brain acts on `perception` instead of the census's enemy
-    /// list, from `AUTOPLAY_HONEST`: off by default while the policy is moved
-    /// onto the picture a player has.
+    /// list. `AUTOPLAY_HONEST=1` is the default; `0` enables an omniscient
+    /// comparison baseline for diagnostics.
     honest: bool,
 }
 
 impl AssistBrain {
+    /// Finalize the frame's best order for each unit.
+    ///
+    /// The outbox replaces weaker asks only when a stronger one has already
+    /// been accepted. That replacement is *not* a rejection by the world: the
+    /// tracker already holds the winner, and `orders_refused` can only infer a
+    /// kind from a Goal. For two Move goals that would wrongly revoke Kite or
+    /// Dodge (both encode as Move), then cool the winner for 30 frames.
+    ///
+    /// Actual L2 admission failures are reported later by ControlBoard, and
+    /// those alone call `orders_refused`.
+    fn finish_orders(&mut self, out: &mut Outbox) {
+        out.resolve();
+    }
+
     /// `seed` seeds this brain's own generator. It must not be a simulation
     /// stream: the brain's draws are not part of the world's random sequence.
     pub fn new(seed: u64) -> Self {
@@ -494,8 +510,11 @@ impl AssistBrain {
             rng: SimRng::new(seed),
             tracked: Tracker::new(),
             squads: squads::Squads::new(),
-            site_attempts: BTreeMap::new(),
-            stranded_sites: BTreeSet::new(),
+            director: strategy::Director::default(),
+            escorts: BTreeMap::new(),
+            site_jobs: BTreeMap::new(),
+            maker_site_attempts: BTreeMap::new(),
+            site_preflight_after: BTreeMap::new(),
             plan_hold: None,
             wall_type: None,
             yard_reserve: 0,
@@ -519,6 +538,7 @@ impl AssistBrain {
             infiltrated: std::collections::BTreeSet::new(),
             spy_errand: std::collections::BTreeMap::new(),
             ore_scan: None,
+            ore_known: BTreeMap::new(),
             push_target: None,
             issued: [0; 5],
             last_tick: 0,
@@ -555,16 +575,68 @@ impl AssistBrain {
         }
         // The two halves are separate fields, so the ledger can be written
         // while the table it reads is borrowed.
-        let Self { census, roles, .. } = self;
+        let Self { census, roles, tracked, .. } = self;
         let Some(roles) = roles.as_ref() else {
             return;
         };
         census.refresh(roles, rules, obs);
+        // A unit handed to a player control group no longer belongs to this
+        // brain's strategic plan. Do not resurrect its old mission if the
+        // player later releases it back to automation.
+        for unit in census.units.iter().filter(|unit| unit.hand) {
+            tracked.forget_primary(unit.entity_id);
+        }
         // Where the army gathers is beside the base, not inside it: the anchor
         // is the yard's own cell and the yard has no lane into it.
         census.rally = census
             .base_cell
             .and_then(|anchor| census::rally_near(obs, anchor, &census.home_cells));
+    }
+
+    /// Survey the known ore once per term and whenever an unloading bay is
+    /// gained/lost. The same snapshot drives purchases and miner dispatch;
+    /// two independently refreshed ore scans were how production paid for a
+    /// field that miners had already given up on.
+    fn refresh_ore(&mut self, rules: &RuleSet, obs: &Observation<'_>) {
+        let mut anchors = self.census.refinery_cells.clone();
+        if anchors.is_empty() {
+            if let Some(home) = self.census.base_cell {
+                anchors.push(home);
+            }
+        }
+        anchors.sort_unstable();
+        let stale = self.ore_scan.as_ref().is_none_or(|scan| {
+            scan.at.saturating_add(ore::SCAN_TERM) <= obs.tick() || scan.anchors != anchors
+        });
+        if stale {
+            // The native overlay grid is omniscient. Update last-seen data
+            // only for visible ore, removing a depleted field only when this
+            // house actually sees its cell empty.
+            let seen: BTreeMap<(u16, u16), u8> = obs.ore_cells(rules).into_iter()
+                .filter(|cell| obs.is_cell_visible(cell.0, cell.1))
+                .filter_map(|cell| obs.overlay_data_at(cell.0, cell.1).map(|stage| (cell, stage)))
+                .collect();
+            self.ore_known.retain(|cell, _| {
+                !obs.is_cell_visible(cell.0, cell.1) || seen.contains_key(cell)
+            });
+            self.ore_known.extend(seen);
+            let zone = self.census.units.iter()
+                .find(|unit| unit.traits.harvester)
+                .and_then(|unit| obs.object_type(rules, unit.type_id))
+                .or_else(|| build::harvester(rules, obs).map(|(ty, _)| ty))
+                .map_or(crate::rules::locomotor_type::MovementZone::Crusher, |ty| ty.movement_zone);
+            self.ore_scan = Some(ore::Survey::read(
+                rules, obs, &self.census, anchors, zone, &self.ore_known,
+            ));
+        }
+        self.census.ore_targets = self.ore_scan.as_ref().map(|scan| scan.targets);
+        if trace_enabled("AUTOPLAY_TRACE_ORE") && obs.tick() % 600 == 0 {
+            if let Some(scan) = self.ore_scan.as_ref() {
+                log::info!("ore survey: cells={} stages={} haul={} target={:?} current={}/{}",
+                    scan.fields.len(), scan.stock, scan.mean_distance, scan.targets,
+                    self.census.harvesters, self.census.refineries);
+            }
+        }
     }
 
     /// Drop the movement and fight intents the object's own mission no longer
@@ -628,42 +700,27 @@ impl Brain for AssistBrain {
 
     fn think(&mut self, rules: &RuleSet, obs: &Observation<'_>, out: &mut Outbox) {
         self.last_tick = obs.tick();
+        self.tracked.expire_restore_feedback(obs.tick());
         // One pass over the house's objects and factories, before any decision
         // asks a question about them. Every step below reads this ledger rather
         // than walking the entity store again.
         self.income.sample(obs.tick(), obs.earned());
         self.rebuild_census(rules, obs);
+        self.refresh_ore(rules, obs);
         // The house's picture: what the shroud shows, plus what it remembers
         // having seen. With AUTOPLAY_HONEST set, that picture is what the
         // passes below act on; without it the census's omniscient list stays,
         // so the switch can be measured against the policy it is replacing.
-        let tick = obs.tick();
-        // Visibility for the house: ground it has explored, and the ring its
-        // own units stand in. The ring stands in for each type's Sight= until
-        // the projection carries it; without it the switch reads an
-        // unexplored map as an empty one and the house fights nobody.
-        let own: Vec<((u16, u16), i32)> = self
-            .census
-            .units
-            .iter()
-            .map(|unit| {
-                (
-                    unit.cell,
-                    obs.object_type(rules, unit.type_id)
-                        .map_or(SIGHT_CELLS, |ty| sight_cells(ty.sight)),
-                )
-            })
-            .collect();
-        let sight = |cell: (u16, u16)| {
-            obs.is_cell_revealed(cell.0, cell.1)
-                || own.iter().any(|(at, reach)| {
-                    i32::from(at.0.abs_diff(cell.0)).max(i32::from(at.1.abs_diff(cell.1))) <= *reach
-                })
-        };
+        // Only the native fog's *currently visible* objects refresh memory.
+        // `revealed` means explored once and leaks live enemy coordinates when
+        // an object moves through a previously explored but shrouded cell.
         self.perception
-            .observe(tick, self.census.enemies.iter().copied(), sight);
+            .observe(obs.tick(), obs.visible_enemy_entities(), |_| true);
         if self.honest {
             self.census.enemies = self.perception.enemies();
+            // The counter vector, structure counts and strike site counts must
+            // read the same picture as the army target selectors do.
+            self.census.recount_enemies(rules, obs);
         }
         // Before anything decides: an intent the object's own mission no longer
         // shows is an intent that did not take, and the layers below must be
@@ -672,6 +729,31 @@ impl Brain for AssistBrain {
         // What each unit is *for*, before anything decides what it does: the
         // membership is rebuilt on its own term, not every frame.
         self.squads.regroup(obs.tick(), &self.census);
+        let attack_members = self.squads.squad(squads::Role::Attack)
+            .map_or(0, |squad| squad.members.len());
+        let signals = strategy::Signals::read(
+            rules, obs, &self.census, attack_members,
+            &self.ore_known, self.income.per_minute(),
+        );
+        if let Some((from, to)) = self.director.observe(obs.tick(), signals) {
+            // A new strategic priority invalidates a *purchase promise*, not
+            // already-paid queues or unit missions. Do not keep saving for
+            // a lab or MCV after the refinery was destroyed or a raid began.
+            if matches!(to, strategy::Objective::RecoverYard
+                | strategy::Objective::RecoverIncome
+                | strategy::Objective::HoldBase)
+            {
+                self.plan_hold = None;
+                self.yard_reserve = 0;
+            }
+            log::info!(
+                "auto play: strategy {:?} -> {:?} at {} yard={} ref={} harv={} fighters={} attack={} visible_raid={} far_ore={} income={:?}",
+                from, to, obs.tick(), signals.yards, signals.refineries,
+                signals.harvesters, signals.fighters, signals.attack_members,
+                signals.raiders_visible, signals.far_ore_stock,
+                signals.income_per_minute,
+            );
+        }
         // What the wallet can still spend, and what the house earns: the two
         // numbers every step below is gated on, so they are read once.
         let budget = plan::budget(rules, obs, &self.census, self.income.per_minute());
@@ -699,7 +781,7 @@ impl Brain for AssistBrain {
                 .census
                 .enemies
                 .iter()
-                .filter(|enemy| obs.is_cell_revealed(enemy.cell.0, enemy.cell.1))
+                .filter(|enemy| obs.is_cell_visible(enemy.cell.0, enemy.cell.1))
                 .count();
             // What the army is made of, by name: "it still only makes IFVs"
             // and "it is all one tank" are questions about the roster, and
@@ -839,81 +921,68 @@ impl Brain for AssistBrain {
                 self.census.enemy_structures
             );
         }
-        expand::deploy_yard_maker(self, rules, obs, out);
-        build::spend(self, rules, obs, &budget, out);
-        // Units after the structures: the yard's next choice decides what the
-        // house can make, and the lines fill once nothing is waiting to be
-        // placed.
-        composition::fill_lines(self, rules, obs, &budget, out);
-        // A hurt unit is the retreat routine's before it is any order
-        // step's: the attach rides the same outbox as the orders below, and
-        // the control layer drops this brain's order for an object a routine
-        // has just taken.
-        orders::managed(self, rules, obs, obs.tick(), out);
-        // A building under fire is worth less than the next one the yard makes,
-        // and the wrench is the only thing that keeps it: it is a house-scoped
-        // click, so it is asked before the units take their frame.
-        orders::repairs(self, rules, obs, out);
-        // A charged power is worth more than any single order below: it is the
-        // one decision here that can take a base apart, and the button it fires
-        // through is the sidebar's, not a unit's.
-        orders::supers(self, rules, obs, out);
-        // Specialists first, in the order a bridge at home, a spy's target and a
-        // garrison matter more than another unit standing still; a unit takes
-        // one order a frame, so whoever asks first keeps it.
-        orders::bridges(self, rules, obs, out);
-        orders::captures(self, rules, obs, out);
-        // No errand for a unit whose weapon spends it. Measured: with the step
-        // in, Arena.mmx seed 10 read 25 own deaths against 13 and seed 42 read 12
-        // against 50; with it out, 7 against 23 and 2 against 52 — a fourfold
-        // swing on both. Whatever the step sends out, it is not coming back.
-        // A captured yard is a second base the enemy can shell where it stands,
-        // and its type cannot be sold. Pack it and drive it home instead.
-        orders::pack_captured_yard(self, rules, obs, out);
-        orders::garrison(self, rules, obs, out);
-        // A shell already in the air outranks every other unit decision: it is
-        // the only one whose whole window is a handful of frames, and a unit
-        // that is not there when it lands takes nothing. Everything below
-        // leaves a unit this pass ordered alone.
-        dodge::run(self, rules, obs, out);
-        // And the other half of the same micro: a unit that out-ranges what it
-        // is shooting at spends the reach only if it is not standing in the
-        // enemy's own — one step out while the gun reloads, back in to fire.
-        kite::run(self, rules, obs, out);
-        // What each unit shoots *this second*, before the march is decided: a
-        // hostile in reach outranks a walk towards a target, and this is the
-        // only layer that asks.
-        micro::run(self, rules, obs, out);
-        // And what it walks into: a walk towards a target the unit would lose
-        // against is re-aimed around it, after the fight in reach has had its
-        // say and before the march decides the same unit's destination.
-        avoidance::run(self, rules, obs, out);
-        // A house that is pushing owns its whole army for the frame; one that
-        // is not keeps holding its base.
-        if !advance::advance(self, rules, obs, out) {
-            orders::forces(self, rules, obs, out);
+        // A disabled work domain must not create a standing Tracker intent or
+        // side effects later discarded by L2. Keep the original pass order:
+        // that order has been tuned against winning fixed-seed replays.
+        // The fifth key only changes actor eligibility, never these switches.
+        if obs.production_enabled() {
+            expand::deploy_yard_maker(self, rules, obs, out);
+            build::spend(self, rules, obs, &budget, out);
+            // The yard's new QueueProduction is already a commitment this
+            // frame. Give the independent factory lines the remaining budget.
+            let yard_cost = out.intents.iter().filter_map(|intent| match intent {
+                crate::sim::control::intent::Intent::QueueProduction { type_id } =>
+                    obs.object_type(rules, *type_id).map(|ty| obs.cost_of(rules, ty)),
+                _ => None,
+            }).fold(0i32, |sum, price| sum.saturating_add(price.max(0)));
+            composition::fill_lines(self, rules, obs, &budget.reserving(yard_cost), out);
         }
-        // Harvesters are not combat units and no army layer takes them: a
-        // harvester that rolled out of a factory sits on its birth posture
-        // until something puts it on the ore.
-        orders::harvesters(self, rules, obs, out);
-        // A building the house holds but cannot make, and cannot hold: sell it.
-        orders::sell_hard_to_hold(self, rules, obs, out);
-        // A carrier with passengers takes them where the army is going and
-        // opens there: the Transport pilot dispatch.
-        orders::transports(self, rules, obs, out);
-        // Last of the orders that move a unit, because a crate is a bonus and
-        // not a job: only a scout no step above has spoken for walks to one.
-        orders::crates(self, rules, obs, out);
-        // Last, because it is a pose and not a destination: a soldier takes its
-        // deployed position where the orders above have left it, and the toggle
-        // is issued on the edge only.
-        orders::deploy(self, obs, out);
-        // Every pass has had its say: keep one order per object, the strongest
-        // ask, in the order the asks were made. The asks a stronger one
-        // replaced are refusals like any other — the caller that made them
-        // recorded an intent for an order the engine never saw, and leaving
-        // that record in place is the unit waiting out a term for nothing.
+        if obs.forces_enabled() {
+            orders::managed(self, rules, obs, obs.tick(), out);
+        }
+        if obs.production_enabled() {
+            orders::repairs(self, rules, obs, out);
+        }
+        if obs.abilities_enabled() {
+            orders::supers(self, rules, obs, out);
+        }
+        if obs.forces_enabled() {
+            orders::bridges(self, rules, obs, out);
+            orders::captures(self, rules, obs, out);
+        }
+        if obs.production_enabled() {
+            orders::pack_captured_yard(self, rules, obs, out);
+        }
+        if obs.forces_enabled() {
+            orders::garrison(self, rules, obs, out);
+            dodge::run(self, rules, obs, out);
+            kite::run(self, rules, obs, out);
+            micro::run(self, rules, obs, out);
+            avoidance::run(self, rules, obs, out);
+            // A capture can borrow one spare defender, without overruling
+            // emergency micro or the player's fifth-key scope.
+            escort::run(self, rules, obs, out);
+            // Tactical passes have first refusal. Restore a suspended primary
+            // only when the native mission has settled and no fresher tactical
+            // or specialist order already owns this unit's frame.
+            mission::resume(self, rules, obs, out);
+            if !advance::advance(self, rules, obs, out) {
+                orders::forces(self, rules, obs, out);
+            }
+            orders::harvesters(self, rules, obs, out);
+        }
+        if obs.production_enabled() {
+            orders::sell_hard_to_hold(self, rules, obs, out);
+        }
+        if obs.forces_enabled() {
+            orders::transports(self, rules, obs, out);
+            orders::crates(self, rules, obs, out);
+            orders::deploy(self, obs, out);
+        }
+        // Every pass has had its say: the strongest request for each actor
+        // survives. Losing requests are not L2 refusals: another accepted
+        // request owns that actor, and reporting the loser by Goal alone would
+        // revoke the winner's Tracker record (both may encode as Move).
         // What the army was told this frame, counted by kind: the census line
         // reports the totals, so "the army is standing in its yard" can be
         // told apart from "the army is being told to guard".
@@ -927,18 +996,40 @@ impl Brain for AssistBrain {
             };
             self.issued[slot] += 1;
         }
-        let replaced = out.resolve();
-        if !replaced.is_empty() {
-            self.orders_refused(&replaced);
+        self.finish_orders(out);
+    }
+
+    fn intents_refused(&mut self, refused: &[crate::sim::control::intent::Intent]) {
+        for intent in refused {
+            match intent {
+                crate::sim::control::intent::Intent::PlaceBuilding { type_id, cell } => {
+                    if let Some(job) = self.site_jobs.get_mut(type_id) {
+                        job.refused(*cell, self.last_tick);
+                    }
+                }
+                crate::sim::control::intent::Intent::LaunchSuperWeapon { sw_type_id, .. } => {
+                    // An L3 request is not an L2 acceptance. If command budget,
+                    // ownership or the ability gate refuses it, do not pretend
+                    // the power has been spent and suppress it for 600 frames.
+                    // Retrying instantly would flood the same gate, though.
+                    self.super_at.insert(*sw_type_id, self.last_tick.saturating_add(30));
+                }
+                _ => {}
+            }
         }
     }
 
-    fn squad_members(
-        &mut self,
-        _rules: &RuleSet,
-        _obs: &Observation<'_>,
-    ) -> Option<std::collections::BTreeSet<u64>> {
-        Some(self.squads.members())
+    fn orders_suppressed(&mut self, suppressed: &[(u64, Goal)]) {
+        for (actor, goal) in suppressed {
+            if let Some(kind) = self.tracked.live_kind(self.last_tick, *actor)
+                .filter(|kind| tracked::kinds_for(*goal).contains(kind))
+            {
+                self.tracked.void(*actor, kind);
+            }
+            // A player scope change is a hand-off, not a native rejection.
+            // Do not resurrect the old strategic mission on a later toggle.
+            self.tracked.forget_primary(*actor);
+        }
     }
 
     fn orders_refused(&mut self, refused: &[(u64, Goal)]) {
@@ -946,14 +1037,30 @@ impl Brain for AssistBrain {
             if self.trace == Some(*actor) {
                 log::info!("trace {actor}: {goal:?} refused by the world");
             }
-            for kind in tracked::kinds_for(*goal) {
-                // The record goes, so the intent itself can be decided again —
-                // but the refusal leaves a short term behind it. Without the
-                // term the layer re-decides from the unchanged world on the
-                // next frame and asks again, once per frame, for as long as the
-                // refusal stands.
-                self.tracked.void(*actor, *kind);
-                self.tracked.refuse(self.last_tick, *actor, *kind);
+            // A Goal is not a unique intent kind: Move can mean a scout
+            // march, a dodge, a kite or an avoidance step. Refuse only the
+            // live kind that actually issued this order, not every possible
+            // translation. Otherwise a rejected kite prevents an emergency
+            // dodge for another 30 frames, even though dodge did not fail.
+            let issued_kind = self
+                .tracked
+                .live_kind(self.last_tick, *actor)
+                .filter(|kind| tracked::kinds_for(*goal).contains(kind));
+            if let Some(kind) = issued_kind {
+                // The original order was not delivered. Clear its long term,
+                // but throttle this one kind against retry storms.
+                self.tracked.void(*actor, kind);
+                self.tracked.refuse(self.last_tick, *actor, kind);
+                let restoring = self.tracked.restore_refused(self.last_tick, *actor, *goal);
+                // An ordinary rejected strategic order was never accepted
+                // by L2, so it must not become a future resumable primary.
+                // Tactical failures (even a Kite Attack at the same target)
+                // must leave the old strategic objective untouched.
+                if !restoring && !kind.temporary()
+                    && self.tracked.primary_goal(*actor) == Some(*goal)
+                {
+                    self.tracked.forget_primary(*actor);
+                }
             }
         }
     }
@@ -1096,6 +1203,86 @@ mod tests {
                 .tracked
                 .admits(1, 8, tracked::TrackedKind::Capture, Some(9), Some((5, 5))),
             "another unit's capture walk is untouched"
+        );
+    }
+
+    /// A failed *new* primary order is not a long-term promise. An emergency
+    /// action that happens later must not revive an order L2 never accepted.
+    #[test]
+    fn a_rejected_primary_order_cannot_be_resumed_later() {
+        let mut brain = AssistBrain::new(0xA17);
+        brain.last_tick = 100;
+        let goal = Goal::Move { cell: (40, 40) };
+        brain.tracked.record_goal(
+            100, 7, TrackedKind::Move, None, Some((40, 40)), goal,
+        );
+        brain.orders_refused(&[(7, goal)]);
+        assert_eq!(brain.tracked.primary_goal(7), None);
+        assert!(
+            !brain.tracked.admits(101, 7, TrackedKind::Move, None, Some((40, 40))),
+            "a native refusal still receives its ordinary cooldown"
+        );
+    }
+
+    /// A failed tactical Move may have the same Goal as the primary Move. The
+    /// rejected Dodge must not discard the primary that it interrupted.
+    #[test]
+    fn a_rejected_dodge_keeps_its_standing_primary() {
+        let mut brain = AssistBrain::new(0xA17);
+        brain.last_tick = 100;
+        let goal = Goal::Move { cell: (40, 40) };
+        brain.tracked.record_goal(
+            90, 7, TrackedKind::Move, None, Some((40, 40)), goal,
+        );
+        brain.tracked.record_goal(
+            100, 7, TrackedKind::Dodge, None, Some((40, 40)), goal,
+        );
+        brain.orders_refused(&[(7, goal)]);
+        assert_eq!(brain.tracked.primary_goal(7), Some(goal));
+        assert!(brain.tracked.pending_resume(101, 7).is_some());
+    }
+
+    /// A losing Move and a winning Kite are both `Goal::Move`: reporting the
+    /// former as an L2 refusal would erase the latter and impose its cooldown.
+    /// A superseded ask is not a refused command; it was settled inside L3.
+    #[test]
+    fn the_superseded_march_does_not_cancel_the_winning_kite() {
+        let mut brain = AssistBrain::new(0xA17);
+        let mut out = Outbox::default();
+        brain.tracked.record(0, 7, TrackedKind::Move, None, Some((20, 20)));
+        assert!(out.want(7, tracked::rank(TrackedKind::Move), Goal::Move { cell: (20, 20) }));
+        brain.tracked.record(0, 7, TrackedKind::Kite, None, Some((11, 10)));
+        assert!(out.want(7, tracked::rank(TrackedKind::Kite), Goal::Move { cell: (11, 10) }));
+
+        brain.finish_orders(&mut out);
+        assert_eq!(out.orders.len(), 1);
+        assert_eq!(out.orders[0].goal, Goal::Move { cell: (11, 10) });
+        assert!(brain.tracked.stands(1, 7, &[TrackedKind::Kite]));
+        assert!(
+            brain.tracked.admits(16, 7, TrackedKind::Kite, None, Some((12, 10))),
+            "the winning kite is free after its own 15-frame term"
+        );
+    }
+
+    /// Goal::Move has four possible origins. A rejected kite request may
+    /// throttle Kite, but it must not throttle Dodge or the scout's Move.
+    #[test]
+    fn a_refused_kite_does_not_cool_down_unrelated_movement() {
+        let mut brain = AssistBrain::new(0xA17);
+        brain.last_tick = 100;
+        brain.tracked.record(100, 7, TrackedKind::Kite, None, Some((10, 11)));
+        brain.orders_refused(&[(7, Goal::Move { cell: (10, 11) })]);
+        assert!(
+            !brain.tracked.admits(101, 7, TrackedKind::Kite, None, Some((10, 11))),
+            "the rejected kite is held back"
+        );
+        assert!(
+            brain.tracked.admits(101, 7, TrackedKind::Dodge, None, Some((11, 11))),
+            "a shell dodge is still possible"
+        );
+        assert!(
+            brain.tracked.admits(101, 7, TrackedKind::Move, None, Some((12, 11))),
+            "the ordinary scout walk was never rejected"
         );
     }
 }

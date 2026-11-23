@@ -81,6 +81,15 @@ fn an_engineer_drops_the_walk_when_the_ground_turns_bad() {
         !brain.tracked.is_claimed(0, engineer),
         "and is dropped when one stands on it, rather than walked into: {derrick}"
     );
+    assert_eq!(brain.tracked.primary_goal(engineer), None,
+        "an aborted Capture cannot be resurrected by mission recovery");
+    // A fresh planning frame still sees the same hostile. An abort must not
+    // immediately turn into another Capture click just because the old
+    // tracker record was cleared.
+    let mut retry = Outbox::default();
+    captures(&mut brain, &rules, &Observation::new(&sim, owner), &mut retry);
+    assert!(!retry.orders.iter().any(|order| order.actor == engineer),
+        "unsafe ground must also block a *new* capture request");
 }
 
 /// The boarding half of Transport, end to end: an empty carrier with an
@@ -1781,4 +1790,55 @@ fn a_hurt_unit_walks_to_the_nearest_repair_bay() {
         Some(Goal::Enter { target: near }),
         "the hurt tank is sent into the bay it can reach"
     );
+}
+
+
+/// The old liquidation policy treated "captured 36 cells away" as "worthless",
+/// so the player would clear an enemy base only to watch its refinery disappear.
+#[test]
+fn remote_captured_structures_are_held_without_an_actual_attack() {
+    assert!(!may_sell_captured(true, false, false, false));
+    assert!(!may_sell_captured(true, true, false, false));
+    assert!(!may_sell_captured(false, true, true, false));
+    assert!(!may_sell_captured(true, true, true, true));
+    assert!(may_sell_captured(true, true, true, false),
+        "only a remote, dying, noncritical building in an active battle may be sold");
+}
+
+/// A power has a target kind, not merely a ready button. Our support powers
+/// must never receive an enemy coordinate; two-phase transport remains held.
+#[test]
+fn autonomous_power_targets_respect_their_actual_kind() {
+    assert_eq!(aim_of(SuperWeaponKind::ParaDrop), Aim::Rally);
+    assert_eq!(aim_of(SuperWeaponKind::SpyPlane), Aim::Recon);
+    assert_eq!(aim_of(SuperWeaponKind::IronCurtain), Aim::Curtain);
+    assert_eq!(aim_of(SuperWeaponKind::ForceShield), Aim::Shield);
+    assert!(auto_power_supported(SuperWeaponKind::IronCurtain));
+    assert!(auto_power_supported(SuperWeaponKind::ForceShield));
+    assert!(auto_power_supported(SuperWeaponKind::SpyPlane));
+    assert!(auto_power_supported(SuperWeaponKind::ParaDrop));
+    assert!(!auto_power_supported(SuperWeaponKind::ChronoSphere));
+    assert!(!auto_power_supported(SuperWeaponKind::ChronoWarp));
+}
+
+#[test]
+fn rejected_super_launch_has_short_retry_instead_of_long_silence() {
+    let sw = crate::sim::intern::InternedId::from_index(17);
+    let mut brain = AssistBrain::new(0xA17);
+    brain.last_tick = 120;
+    brain.super_at.insert(sw, 720);
+    <AssistBrain as crate::sim::control::brain::Brain>::intents_refused(
+        &mut brain,
+        &[Intent::LaunchSuperWeapon { sw_type_id: sw, cell: (22, 19) }],
+    );
+    assert_eq!(brain.super_at.get(&sw).copied(), Some(150));
+}
+
+
+#[test]
+fn a_captured_yard_stays_open_until_it_truly_needs_evacuation() {
+    assert!(!should_pack_captured_yard(1000, 0));
+    assert!(!should_pack_captured_yard(900, 4));
+    assert!(!should_pack_captured_yard(350, 1));
+    assert!(should_pack_captured_yard(450, 3));
 }
