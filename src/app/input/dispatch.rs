@@ -25,6 +25,7 @@ use crate::app::input::entity_pick::{
     pick_entity_at_point,
 };
 use crate::app::input::precedence::{ModalPage, modal_page};
+use crate::app::input::state::TacticalRelease;
 use crate::app::types::OrderMode;
 #[cfg(test)]
 use crate::sim::command::Command;
@@ -281,15 +282,17 @@ const TYPE_SELECT_TAP_ACTION_LINE_POLICY: SelectionActionLinePolicy =
 /// cannot bypass WhatAction: Ctrl+Shift cancels the selection modifier, and
 /// Shift over bare ground is still Move (Techno700706..70071B/700B03).
 /// The context owner returns a selection click for Shift over an object.
+/// `click` is the release's click point, or `None` when the release was not
+/// a click.
 fn route_click_action_before_type_select<T>(
-    action: SelectAction,
+    click: Option<(f32, f32)>,
     context_orders: bool,
     resolve_context_order: impl FnOnce(f32, f32) -> Option<T>,
 ) -> ClickActionRoute<T> {
     if !context_orders {
         return ClickActionRoute::Selection;
     }
-    let SelectAction::Click(sx, sy) = action else {
+    let Some((sx, sy)) = click else {
         return ClickActionRoute::Selection;
     };
     resolve_context_order(sx, sy)
@@ -618,33 +621,58 @@ fn tactical_left_up(state: &mut AppState) {
             state.match_state.input.cursor_y,
         )
     };
-    let mut action: SelectAction = state
+    // The gesture the drag owner reported, and the click the release
+    // carries. One value owns both facts: `BandBox_LeftUp` (0x004AB9B0)
+    // falls through to the click path when the band box caught no drawn
+    // object, but the gesture was a drag.
+    let shift = is_shift_held(state);
+    let type_select_held = state.match_state.input.type_select.held();
+    let mut release = match state
         .match_state
         .input
         .selection_state
-        .end_drag(release_point.0, release_point.1);
-    let band_release = matches!(action, SelectAction::BoxSelect(..));
-    if band_release {
+        .end_drag(release_point.0, release_point.1)
+    {
+        SelectAction::BoxSelect(min_x, min_y, max_x, max_y) => TacticalRelease::BandBox {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        },
+        SelectAction::Click(x, y) => chain_click_release(state, x, y, type_select_held, shift),
+        // BandBox_LeftUp 0x004AB9B0 does not early-return when nothing
+        // was armed: with the band flag clear it falls straight through
+        // to the action dispatch. So a release whose press never armed
+        // a drag -- because the shared capture byte was already held, or
+        // because a cursor mode swallowed the press -- is still an
+        // ordinary click at its own release point, not a no-op.
+        SelectAction::None => chain_click_release(
+            state,
+            release_point.0,
+            release_point.1,
+            type_select_held,
+            shift,
+        ),
+    };
+    if release.is_drag() {
+        // A band box is a drag, not a click. It never joins the
+        // double-click chain, and it discards the pair a previous click
+        // opened, so the next plain click starts a new chain.
+        state
+            .match_state
+            .input
+            .note_tactical_selection_release(release);
         // BandBox_LeftUp4ABCF0 -> StartTimer70D150 precedes the
         // empty-catch bail and click fallthrough. The old
         // selection therefore flashes even when the box is empty.
         // Evidence: tools/procedural_drawing_oracle/action_lines.
         apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
     }
-    // BandBox_LeftUp 0x004AB9B0 does not early-return when nothing
-    // was armed: with the band flag clear it falls straight through
-    // to the action dispatch. So a release whose press never armed
-    // a drag -- because the shared capture byte was already held, or
-    // because a cursor mode swallowed the press -- is still an
-    // ordinary click at its own release point, not a no-op.
-    if matches!(action, SelectAction::None) {
-        action = SelectAction::Click(release_point.0, release_point.1);
-    }
-    let shift = is_shift_held(state);
     // A band box that caught no drawn object leaves the selection
     // exactly as it was, and the release is handled as an ordinary
     // click at the release point — the native release only clears
-    // when something was inside the rectangle.
+    // when something was inside the rectangle. The gesture stays a
+    // drag: the double-click chain never sees it as a click.
     //
     // The whole empty/clear/fall-through block sits inside the
     // native "shift is not held" arm, and the fall-through flag is
@@ -652,7 +680,12 @@ fn tactical_left_up(state: &mut AppState) {
     // So a shift drag that catches nothing does nothing at all: it
     // must not walk the army to the release point.
     let mut band_preflight_order = None;
-    if let SelectAction::BoxSelect(min_x, min_y, max_x, max_y) = action
+    if let TacticalRelease::BandBox {
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+    } = release
         && !shift
     {
         let order =
@@ -662,12 +695,12 @@ fn tactical_left_up(state: &mut AppState) {
         if band_caught_drawn_object(state, &order, min_x, min_y, max_x, max_y) {
             band_preflight_order = Some(order);
         } else {
-            action = SelectAction::Click(release_point.0, release_point.1);
+            release = empty_band_drag_release(release_point);
         }
     }
     // A click over a beacon with nothing selected answers 0x3D
     // (0x006927C5); the release selects the beacon (0x004ABE88).
-    if let SelectAction::Click(sx, sy) = action
+    if let Some((sx, sy)) = release.click_point()
         && selection_empty
     {
         let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(state, sx, sy);
@@ -679,20 +712,19 @@ fn tactical_left_up(state: &mut AppState) {
     // TypeSelect modifies only actions that already resolved as
     // selection/toggle. Ground move, attack, and every other
     // context action keep their ordinary priority while T is held.
-    let type_select_held = state.match_state.input.type_select.held();
-    // A resolved context dispatch consumes the click even when its receiver
-    // admits no command. A release that answered Select or 0 takes the pick
-    // without Shift's toggle.
-    let pick_toggles = match route_click_action_before_type_select(
-        action,
-        left_click_can_issue_orders(state),
-        |sx, sy| {
-            Some(try_queue_context_order(
-                state,
-                ContextOrderTarget::ScreenPoint(sx, sy),
-                true,
-            ))
-        },
+    // `type_select_held` was read with the release, above.
+    if matches!(
+        route_click_action_before_type_select(
+            release.click_point(),
+            left_click_can_issue_orders(state),
+            |sx, sy| {
+                // A resolved context dispatch consumes the click
+                // even when its receiver admits no command.
+                try_queue_context_order(state, ContextOrderTarget::ScreenPoint(sx, sy), true)
+                    .then_some(())
+            },
+        ),
+        ClickActionRoute::ContextOrder(())
     ) {
         ClickActionRoute::ContextOrder(ContextClick::Consumed) => return,
         ClickActionRoute::ContextOrder(ContextClick::Select) => false,
@@ -705,21 +737,15 @@ fn tactical_left_up(state: &mut AppState) {
     // an armed attack-move keeps the click it already has and ends the chain,
     // so it never pairs with the next plain click. The chain records every
     // ordinary selection click, so the next one can pair with it.
-    if let SelectAction::Click(sx, sy) = action {
-        let ordinary = !type_select_held
-            && !shift
-            && !is_ctrl_held(state)
-            && !is_alt_held(state)
-            && state.match_state.input.queued_order_mode == OrderMode::Move;
-        let window_point = state
-            .tactical_zoom()
-            .map_or((sx, sy), |zoom| zoom.source_to_window(sx, sy));
-        let admitted = ordinary && state.persistence.options_profile.right_click_orders;
-        let double_click = state.match_state.input.note_tactical_selection_click(
-            admitted,
-            crate::util::time::Instant::now(),
-            (window_point.0.round() as i32, window_point.1.round() as i32),
-        );
+    //
+    // A band box is a drag, not a click. The empty-catch fall-through above
+    // keeps the drag in the release, so it never joins the chain and never
+    // pairs with the next plain click.
+    if let TacticalRelease::Click { x: sx, y: sy, .. } = release {
+        let double_click = state
+            .match_state
+            .input
+            .note_tactical_selection_release(release);
         if double_click && let Some(mutation) = double_click_type_select(state, sx, sy) {
             apply_selection_mutation(state, mutation, ORDINARY_SELECTION_VOICE_POLICY);
             apply_selection_action_line_policy(state, TYPE_SELECT_TAP_ACTION_LINE_POLICY);
@@ -753,8 +779,9 @@ fn tactical_left_up(state: &mut AppState) {
         } else {
             screen_order.as_slice()
         };
-        match action {
-            SelectAction::Click(sx, sy) => {
+        match release {
+            TacticalRelease::Click { x: sx, y: sy, .. }
+            | TacticalRelease::EmptyBandDrag { x: sx, y: sy } => {
                 // Native TacticalPick6DA380 reads the Display
                 // registrations in draw order after the projected click
                 // gate. The ScreenSelection list belongs to band/type
@@ -830,7 +857,12 @@ fn tactical_left_up(state: &mut AppState) {
                     );
                 }
             }
-            SelectAction::BoxSelect(min_x, min_y, max_x, max_y) => {
+            TacticalRelease::BandBox {
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            } => {
                 let fog_ref = if state.match_state.sandbox_full_visibility {
                     None
                 } else {
@@ -884,7 +916,6 @@ fn tactical_left_up(state: &mut AppState) {
                     );
                 }
             }
-            SelectAction::None => {}
         }
     }
     if let Some(mutation) = queued_selection {
@@ -902,9 +933,54 @@ fn tactical_left_up(state: &mut AppState) {
         }
         // Click-select4ABE83 starts separately. A band release
         // already started before its empty-catch decision above.
-        if !band_release {
+        if !release.is_drag() {
             apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
         }
+    }
+}
+
+/// The release of a band box that caught no drawn object.
+///
+/// `BandBox_LeftUp` (0x004AB9B0) falls through to the click path at the
+/// release point when the box caught nothing, but the gesture was a drag:
+/// the release keeps the drag, so the double-click chain never sees it as
+/// a click.
+fn empty_band_drag_release(release_point: (f32, f32)) -> TacticalRelease {
+    TacticalRelease::EmptyBandDrag {
+        x: release_point.0,
+        y: release_point.1,
+    }
+}
+
+/// The release of a plain click, with what the double-click chain needs to
+/// pair it.
+///
+/// The chain admits an ordinary selection click only: a held T, a modifier
+/// chord or an armed attack-move claims the click, and the `RightClickOrders`
+/// option carries the shortcut. `point` is in physical window pixels, the
+/// space the host's double-click rectangle is measured in.
+fn chain_click_release(
+    state: &AppState,
+    x: f32,
+    y: f32,
+    type_select_held: bool,
+    shift: bool,
+) -> TacticalRelease {
+    let ordinary = !type_select_held
+        && !shift
+        && !is_ctrl_held(state)
+        && !is_alt_held(state)
+        && state.match_state.input.queued_order_mode == OrderMode::Move;
+    let admitted = ordinary && state.persistence.options_profile.right_click_orders;
+    let window_point = state
+        .tactical_zoom()
+        .map_or((x, y), |zoom| zoom.source_to_window(x, y));
+    TacticalRelease::Click {
+        x,
+        y,
+        admitted,
+        now: crate::util::time::Instant::now(),
+        point: (window_point.0.round() as i32, window_point.1.round() as i32),
     }
 }
 
@@ -1175,6 +1251,8 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
 #[cfg(all(test, tests_app_input_d_z))]
 mod drag_tests {
     use super::clamp_tactical_drag_endpoint;
+    use super::empty_band_drag_release;
+    use crate::app::input::state::{MatchInputState, TacticalRelease};
     use crate::sim::selection::{SelectAction, SelectionState};
 
     #[test]
@@ -1204,6 +1282,49 @@ mod drag_tests {
             panic!("active drag must end as a box selection");
         };
         assert_eq!((min_x, min_y, max_x, max_y), (100.0, 100.0, 631.0, 567.0));
+    }
+
+    /// A band box over open ground is a drag, not a click: it never joins
+    /// the double-click chain, so the click after it selects the one object
+    /// under the cursor instead of every on-screen object of that type.
+    #[test]
+    fn an_empty_band_box_drag_does_not_seed_the_click_chain() {
+        let mut input = MatchInputState::new(Default::default());
+        let start = crate::util::time::Instant::now();
+        // The click lands where the empty box was released: that is the
+        // click the fall-through would have seeded the chain with.
+        let point = (200, 200);
+        let shortly = |millis| start + crate::util::time::Duration::from_millis(millis);
+        let click = |now| TacticalRelease::Click {
+            x: point.0 as f32,
+            y: point.1 as f32,
+            admitted: true,
+            now,
+            point,
+        };
+
+        // A drag over open ground arms the band box and releases it empty.
+        let mut selection = SelectionState::new();
+        selection.begin_drag(100.0, 100.0);
+        selection.update_drag(200.0, 200.0);
+        let SelectAction::BoxSelect(..) = selection.end_drag(200.0, 200.0) else {
+            panic!("an armed drag must end as a box selection");
+        };
+        // The empty-catch fall-through keeps the drag in the release, even
+        // though native still handles it as a click at the release point.
+        let release = empty_band_drag_release((200.0, 200.0));
+        assert!(release.is_drag());
+        assert!(
+            release.click_point().is_some(),
+            "native falls through to the click path"
+        );
+        // The drag joins no chain and discards the pair a click opened.
+        assert!(!input.note_tactical_selection_release(release));
+
+        // The click after the drag opens the chain: no type-select.
+        assert!(!input.note_tactical_selection_release(click(shortly(5))));
+        // Two plain clicks still pair.
+        assert!(input.note_tactical_selection_release(click(shortly(10))));
     }
 }
 
@@ -1362,25 +1483,21 @@ mod context_click_route_tests {
         // This boundary previously skipped the resolver for every raw Shift
         // click, including Ctrl+Shift attack-move and Shift ground Move.
         let mut resolved = 0;
-        let route =
-            route_click_action_before_type_select(SelectAction::Click(12.0, 34.0), true, |x, y| {
-                resolved += 1;
-                assert_eq!((x, y), (12.0, 34.0));
-                Some("admitted context action")
-            });
+        let route = route_click_action_before_type_select(Some((12.0, 34.0)), true, |x, y| {
+            resolved += 1;
+            assert_eq!((x, y), (12.0, 34.0));
+            Some("admitted context action")
+        });
         assert_eq!(resolved, 1);
         assert_eq!(
             route,
             ClickActionRoute::ContextOrder("admitted context action")
         );
-        let selection = route_click_action_before_type_select::<()>(
-            SelectAction::Click(12.0, 34.0),
-            true,
-            |_, _| None,
-        );
+        let selection =
+            route_click_action_before_type_select::<()>(Some((12.0, 34.0)), true, |_, _| None);
         assert_eq!(selection, ClickActionRoute::Selection);
         assert_eq!(
-            route_click_action_before_type_select::<()>(SelectAction::None, true, |_, _| panic!(
+            route_click_action_before_type_select::<()>(None, true, |_, _| panic!(
                 "a box/empty selection action is not a context click"
             )),
             ClickActionRoute::Selection
@@ -1390,11 +1507,9 @@ mod context_click_route_tests {
     #[test]
     fn right_click_orders_leave_an_ordinary_left_click_to_selection() {
         assert_eq!(
-            route_click_action_before_type_select::<()>(
-                SelectAction::Click(12.0, 34.0),
-                false,
-                |_, _| panic!("with Right-Click Orders a plain left click only selects"),
-            ),
+            route_click_action_before_type_select::<()>(Some((12.0, 34.0)), false, |_, _| panic!(
+                "with Right-Click Orders a plain left click only selects"
+            ),),
             ClickActionRoute::Selection
         );
     }

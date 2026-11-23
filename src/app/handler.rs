@@ -124,7 +124,7 @@ impl App {
         state.match_state.input.tactical_mouse.reset_on_focus_loss();
         state.match_state.input.selection_state.cancel_drag();
         // VERA right-click orders: a double-click cannot span a focus change.
-        state.match_state.input.last_selection_click = None;
+        state.match_state.input.clear_tactical_selection_chain();
         // VERA formation line: a line being drawn goes with the band box.
         state.match_state.input.formation_line.cancel();
         state.match_state.input.cancel_minimap_press();

@@ -337,7 +337,7 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         super::scenario_exit::scenario_exit_destination(
             state.match_state.session_mode(),
             outcome,
-            state.match_state.map_basic.skip_score.unwrap_or(false),
+            state.match_state.map_basic.skips_score(),
             cooperative,
             title,
             detail,

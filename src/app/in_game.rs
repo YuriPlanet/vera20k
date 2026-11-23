@@ -758,7 +758,9 @@ impl App {
             .is_some_and(|runtime| !runtime.simulation.session().uses_campaign_world())
             && state.match_state.live_network.is_none()
             && !crate::app::cooperative_round::applies(state)
-            && !state.match_state.map_basic.skip_score.unwrap_or(false);
+            && crate::app::match_runtime::scenario_exit::shows_score_page(
+                &state.match_state.map_basic,
+            );
         if !eligible {
             return None;
         }

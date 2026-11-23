@@ -186,7 +186,7 @@ impl PreparedSavedLocalView {
         input.last_control_group_press = None;
         // VERA right-click orders: the double-click chain must not pair a
         // click from before the load with one after it.
-        input.last_selection_click = None;
+        input.clear_tactical_selection_chain();
         input.build_repeat = Default::default();
         input.reset_cheer_clock();
     }
@@ -313,8 +313,12 @@ pub(crate) struct MatchInputState {
     /// VERA right-click orders: the last ordinary tactical selection click,
     /// for the modern-RTS double-click select-same-type-on-screen shortcut.
     /// Wall clock, never sim state; the host's double-click time and rectangle
-    /// decide the pair. Only an admitted selection click writes it.
-    pub(crate) last_selection_click: Option<(crate::util::time::Instant, i32, i32)>,
+    /// decide the pair. Only an admitted selection click records a pair, and
+    /// only the chain's owner writes the field.
+    ///
+    /// The chain's owner is [`MatchInputState::note_tactical_selection_release`];
+    /// the resets go through [`MatchInputState::clear_tactical_selection_chain`].
+    last_selection_click: Option<(crate::util::time::Instant, i32, i32)>,
     /// Types the local player builds endlessly (Ctrl + left click on a cameo).
     pub(crate) build_repeat: crate::app::input::build_repeat::BuildRepeat,
     /// The object the camera is following, i.e. `DisplayClass +0x11A0` behind
@@ -331,6 +335,62 @@ pub(crate) struct MatchInputState {
     pub(crate) building_placement_preview: Option<crate::sim::production::BuildingPlacementPreview>,
     pub(crate) foundation_latch: FoundationLatch,
     saved_building_placement: Option<SavedBuildingPlacement>,
+}
+
+/// A tactical release: the gesture the drag owner reported and the click
+/// the release carries.
+///
+/// One value owns both facts. `BandBox_LeftUp` (0x004AB9B0) falls through
+/// to the click path when the band box caught no drawn object, but the
+/// gesture was a drag: the click path takes the fall-through, the
+/// double-click chain never sees the drag as a click.
+#[derive(Clone, Copy)]
+pub(crate) enum TacticalRelease {
+    /// An ordinary click at the release point.
+    Click {
+        /// The click point in screen pixels.
+        x: f32,
+        y: f32,
+        /// Whether the chain admits the click. It does not when the option
+        /// is off, or when a held T, a modifier or an armed attack-move
+        /// claims the click.
+        admitted: bool,
+        /// When the click landed.
+        now: crate::util::time::Instant,
+        /// The click point in physical window pixels, the space the host's
+        /// double-click rectangle is measured in.
+        point: (i32, i32),
+    },
+    /// A band-box drag that caught no drawn object. Native handles the
+    /// release as an ordinary click at the release point; the gesture was a
+    /// drag, so it never joins the double-click chain.
+    EmptyBandDrag { x: f32, y: f32 },
+    /// A band-box drag, with the rectangle it drew.
+    BandBox {
+        min_x: f32,
+        min_y: f32,
+        max_x: f32,
+        max_y: f32,
+    },
+}
+
+impl TacticalRelease {
+    /// The click the native click path acts on: an ordinary click, or a band
+    /// box that caught nothing (native's fall-through).
+    pub(crate) fn click_point(&self) -> Option<(f32, f32)> {
+        match *self {
+            TacticalRelease::Click { x, y, .. } | TacticalRelease::EmptyBandDrag { x, y } => {
+                Some((x, y))
+            }
+            TacticalRelease::BandBox { .. } => None,
+        }
+    }
+
+    /// Whether the release was a drag. A band box is a drag even when it
+    /// caught nothing and native fell through to the click path.
+    pub(crate) fn is_drag(&self) -> bool {
+        !matches!(self, TacticalRelease::Click { .. })
+    }
 }
 
 /// `DisplayClass +0x1174`, kept here as the foundation's top-left Cell, and `+0x1181`,
@@ -517,31 +577,59 @@ impl MatchInputState {
         }
     }
 
-    /// Record one tactical selection click and answer whether it is the
-    /// second click of a double-click. The modern-RTS
-    /// select-same-type-on-screen shortcut is a VERA extension of
-    /// `RightClickOrders`: a click it does not admit (the option off, or a
-    /// click a held T, a modifier or an armed attack-move claims) discards the
-    /// chain, so it never pairs with the next plain click.
-    /// `point` is in physical window pixels, the space the host's double-click
-    /// rectangle is measured in.
-    pub(crate) fn note_tactical_selection_click(
-        &mut self,
-        admitted: bool,
-        now: crate::util::time::Instant,
-        point: (i32, i32),
-    ) -> bool {
-        if !admitted {
-            self.last_selection_click = None;
-            return false;
+    /// Record one tactical selection release and answer whether it is the
+    /// second click of a double-click.
+    ///
+    /// The modern-RTS select-same-type-on-screen shortcut is a VERA
+    /// extension of `RightClickOrders`: it rides on the option and on an
+    /// ordinary selection click only. A click it does not admit (the option
+    /// off, or a click a held T, a modifier or an armed attack-move claims)
+    /// discards the chain, so it never pairs with the next plain click. The
+    /// chain records every ordinary selection click, so the next one can
+    /// pair with it.
+    ///
+    /// A band-box release is a drag, not a click: it never joins the chain,
+    /// and it discards the pair a previous click opened, so the next plain
+    /// click starts a new chain. `BandBox_LeftUp` (0x004AB9B0) falls
+    /// through to the click path when the box caught nothing, but the
+    /// gesture was still a drag.
+    pub(crate) fn note_tactical_selection_release(&mut self, release: TacticalRelease) -> bool {
+        match release {
+            TacticalRelease::Click {
+                admitted,
+                now,
+                point,
+                ..
+            } => {
+                if !admitted {
+                    self.last_selection_click = None;
+                    return false;
+                }
+                crate::ui::shell::list::is_double_click(
+                    &mut self.last_selection_click,
+                    now,
+                    point.0,
+                    point.1,
+                    crate::ui::shell::controller::host_double_click_limits(),
+                )
+            }
+            // A band box is a drag, not a click: it never joins the chain,
+            // and it discards the pair a previous click opened, so the next
+            // plain click starts a new chain.
+            TacticalRelease::EmptyBandDrag { .. } | TacticalRelease::BandBox { .. } => {
+                self.last_selection_click = None;
+                false
+            }
         }
-        vera20k_gui::shell::list::is_double_click(
-            &mut self.last_selection_click,
-            now,
-            point.0,
-            point.1,
-            crate::ui::shell::controller::host_double_click_limits(),
-        )
+    }
+
+    /// Drop the double-click chain.
+    ///
+    /// The chain is wall-clock input state of one tactical view: a load, a
+    /// view change or a focus loss ends it, so a click from before cannot
+    /// pair with one after.
+    pub(crate) fn clear_tactical_selection_chain(&mut self) {
+        self.last_selection_click = None;
     }
 
     /// Record the cursor a drawn frame shows (`None` is the normal arrow).
@@ -906,7 +994,7 @@ impl MatchInputState {
         self.build_repeat = Default::default();
         self.skirmish_spawn = None;
         // The double-click chain belongs to the outgoing tactical view.
-        self.last_selection_click = None;
+        self.clear_tactical_selection_chain();
         self.targeting_mode = None;
         self.building_placement_preview = None;
         self.saved_building_placement = None;
@@ -1105,6 +1193,22 @@ mod house_cheer_retail_tests;
 mod double_click_tests {
     use super::*;
 
+    /// One plain selection click, as the chain sees it.
+    fn click(
+        input: &mut MatchInputState,
+        admitted: bool,
+        now: crate::util::time::Instant,
+        point: (i32, i32),
+    ) -> bool {
+        input.note_tactical_selection_release(TacticalRelease::Click {
+            x: point.0 as f32,
+            y: point.1 as f32,
+            admitted,
+            now,
+            point,
+        })
+    }
+
     /// The modern-RTS double-click is a `RightClickOrders` extension: with the
     /// option off, or after a click it does not admit, no chain accumulates,
     /// and a pair ends it so the next click starts over. Times and the point are far inside any host window.
@@ -1114,14 +1218,48 @@ mod double_click_tests {
         let start = crate::util::time::Instant::now();
         let point = (120, 80);
         let shortly = |millis| start + crate::util::time::Duration::from_millis(millis);
-        assert!(!input.note_tactical_selection_click(false, start, point));
-        assert!(!input.note_tactical_selection_click(false, shortly(5), point));
-        assert!(!input.note_tactical_selection_click(true, start, point));
-        assert!(input.note_tactical_selection_click(true, shortly(5), point));
-        assert!(!input.note_tactical_selection_click(true, shortly(10), point));
+        assert!(!click(&mut input, false, start, point));
+        assert!(!click(&mut input, false, shortly(5), point));
+        assert!(!click(&mut input, true, start, point));
+        assert!(click(&mut input, true, shortly(5), point));
+        assert!(!click(&mut input, true, shortly(10), point));
         // A Shift-click between two plain clicks ends the chain.
-        assert!(!input.note_tactical_selection_click(false, shortly(15), point));
-        assert!(!input.note_tactical_selection_click(true, shortly(20), point));
+        assert!(!click(&mut input, false, shortly(15), point));
+        assert!(!click(&mut input, true, shortly(20), point));
+    }
+
+    /// A band box is a drag, not a click: it never joins the chain, and it
+    /// discards the pair a previous click opened, so the click after it
+    /// selects only what is under the cursor.
+    #[test]
+    fn a_band_box_drag_never_joins_the_click_chain() {
+        let mut input = MatchInputState::new(Default::default());
+        let start = crate::util::time::Instant::now();
+        let point = (120, 80);
+        let shortly = |millis| start + crate::util::time::Duration::from_millis(millis);
+        // A plain click opens the chain.
+        assert!(!click(&mut input, true, start, point));
+        // The drag joins no chain and discards the open one. The empty box
+        // was released where the clicks land: that is the click native's
+        // fall-through would have made.
+        assert!(
+            !input.note_tactical_selection_release(TacticalRelease::EmptyBandDrag {
+                x: point.0 as f32,
+                y: point.1 as f32,
+            })
+        );
+        assert!(
+            !input.note_tactical_selection_release(TacticalRelease::BandBox {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 10.0,
+                max_y: 10.0,
+            })
+        );
+        // The click after the drag opens a new chain: no type-select.
+        assert!(!click(&mut input, true, shortly(5), point));
+        // Two plain clicks still pair.
+        assert!(click(&mut input, true, shortly(10), point));
     }
 }
 

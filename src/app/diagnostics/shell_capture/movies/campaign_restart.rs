@@ -390,7 +390,7 @@ impl RestartCapture {
                     .name(rules.movies().find_index(name))
                     .map(|name| WinMovieCheck {
                         name: name.to_owned(),
-                        skip_score: state.match_state.map_basic.skip_score.unwrap_or(false),
+                        skip_score: state.match_state.map_basic.skips_score(),
                         first_frame: None,
                         last_movie_frame: None,
                         returned_frame: None,
