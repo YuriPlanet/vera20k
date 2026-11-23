@@ -8,6 +8,7 @@
 //! paint their caption only; their owner-draw face is not traced.
 
 use super::gui_paint::{ButtonArt, CellRow, ComboArt, GuiStyle, HostRows, Picture};
+use crate::render::hud_paint::{HudPaint, Material};
 use super::{SHELL_CONTROL_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
@@ -200,8 +201,8 @@ pub(crate) fn paint_wol_lobby_children(
     let eye = (!modern).then_some(OBSERVER_IMAGE);
     for node in (faces.into_iter().chain(others).chain(eye)).filter_map(|id| ui.node(id)) {
         let widget = super::gui_paint::paint_gui_styled(state, ui.gui(), node, scale, &[], style);
-        paint.controls.extend(widget.controls);
-        paint.icons.extend(widget.icons);
+        paint.controls.extend(widget.lane(Material::Controls).copied());
+        paint.icons.extend(widget.lane(Material::Icons).copied());
         paint.texts.extend(widget.texts);
     }
     paint
@@ -445,9 +446,8 @@ pub(crate) fn paint_wol_lobby_popup(
         ]);
     let paint_ids =
         |ids| super::gui_paint::paint_gui_ids(state, ui.gui(), popup.root, ids, scale, style);
-    paint
-        .controls
-        .extend(paint_ids(sprites.collect::<Vec<_>>()).controls);
+    let widgets = paint_ids(sprites.collect::<Vec<_>>());
+    paint.controls.extend(widgets.lane(Material::Controls).copied());
     paint.texts = paint_ids(texts.collect::<Vec<_>>()).texts;
     paint
 }
@@ -479,7 +479,7 @@ pub(crate) fn paint_wol_player_card(
             picture_of: Some(&picture_of),
             ..GuiStyle::default()
         };
-        let mut statics = super::gui_paint::GuiPaint::default();
+        let mut statics = HudPaint::default();
         for &node in gui.tree().children(root).unwrap_or_default() {
             let id = gui.id_of(node).and_then(|id| u16::try_from(id).ok());
             if id.is_some_and(|id| id == CARD_BADGE || (CARD_CAPTIONS..=CARD_STATUS).contains(&id)) {
@@ -488,7 +488,7 @@ pub(crate) fn paint_wol_player_card(
                 );
             }
         }
-        paint.controls.extend(statics.controls);
+        paint.controls.extend(statics.lane(Material::Controls).copied());
         paint.texts = statics.texts;
     }
     // The buttons from the lobby's tree, with the card's captions.
@@ -506,7 +506,7 @@ pub(crate) fn paint_wol_player_card(
     for node in view.buttons.iter().filter_map(|(id, _)| lobby.ui.node(*id)) {
         let button =
             super::gui_paint::paint_gui_styled(state, lobby.ui.gui(), node, scale, &[], style);
-        paint.controls.extend(button.controls);
+        paint.controls.extend(button.lane(Material::Controls).copied());
         paint.texts.extend(button.texts);
     }
     paint
@@ -527,7 +527,7 @@ pub(crate) fn paint_wol_card_countries(state: &AppState, scale: ShellScale) -> W
     };
     let list = super::gui_paint::paint_gui_styled(state, ui.gui(), node, scale, &[], style);
     WolLobbyPaint {
-        controls: list.popup,
+        controls: list.lane(Material::Popup).copied().collect(),
         icons: Vec::new(),
         texts: list.popup_texts,
     }

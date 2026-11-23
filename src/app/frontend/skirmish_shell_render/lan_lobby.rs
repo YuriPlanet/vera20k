@@ -7,6 +7,7 @@ use super::in_game_shell::{
 };
 use super::SHELL_CONTROL_DEPTH;
 use crate::app::AppState;
+use crate::render::hud_paint::Material;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS, STATUS, TITLE};
@@ -51,7 +52,7 @@ fn paint_create_box(
     let style = super::gui_paint::GuiStyle::popup();
     let widgets =
         super::gui_paint::paint_gui_ids(state, controller.gui(), root, ids, layout.scale, style);
-    overlay.controls.extend(widgets.controls);
+    overlay.controls.extend(widgets.lane(Material::Controls).copied());
     overlay.texts.extend(widgets.texts);
 }
 
@@ -235,7 +236,7 @@ pub(crate) fn render_lan_lobby(
         };
         if let Some(root) = root {
             let paint = super::gui_paint::paint_gui_styled(state, gui, root, scale, &[], style);
-            controls.extend(paint.controls);
+            controls.extend(paint.lane(Material::Controls).copied());
             texts.extend(paint.texts);
         }
         if let (Some(notice), Some(parts)) = (notice.as_ref(), notice_parts.as_ref()) {

@@ -119,10 +119,7 @@ impl HudPaint {
         font: Option<&BitFont>,
         mut draw: impl FnMut(NodeId) -> NodeDraw,
     ) {
-        self.instances.clear();
-        self.runs.clear();
-        self.texts.clear();
-        self.popup_texts.clear();
+        self.clear();
         let mut commands = recycle(std::mem::take(&mut self.commands));
         hud.paint(&mut commands);
         for command in &commands {
@@ -206,6 +203,14 @@ impl HudPaint {
             self.extend_runs(material, start as u32..self.instances.len() as u32);
         }
         self.commands = recycle(commands);
+    }
+
+    /// Empties every lane and text list, keeping their buffers.
+    pub(crate) fn clear(&mut self) {
+        self.instances.clear();
+        self.runs.clear();
+        self.texts.clear();
+        self.popup_texts.clear();
     }
 
     pub(crate) fn instances(&self) -> &[SpriteInstance] {

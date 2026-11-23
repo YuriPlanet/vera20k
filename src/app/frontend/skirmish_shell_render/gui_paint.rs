@@ -42,6 +42,7 @@ use super::{
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::main_menu_shell_chrome::{MainMenuShellChromeEntry, WolPageArt};
 use crate::render::shell_paint::{self, ModalButton, ModalDepths};
 use crate::render::shell_text::{self, ShellTextDraw};
@@ -54,25 +55,6 @@ use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::sidebar::SidebarTheme;
 use vera20k_gui::shell::bar;
 use vera20k_gui::shell::trackbar::value_text_rect;
-
-/// Sprites (skirmish atlas), page-art pictures and texts of a dialog's
-/// widgets, and of an open combo drop-down over them.
-#[derive(Default)]
-pub(crate) struct GuiPaint {
-    pub(crate) controls: Vec<SpriteInstance>,
-    /// [`ButtonArt::Side`] buttons, on the sidebar atlas, under `controls`
-    /// (an in-game dialog's `art` lane).
-    pub(crate) side: Vec<SpriteInstance>,
-    /// [`ButtonArt::Column`] buttons, on the main-menu chrome.
-    pub(crate) column: Vec<SpriteInstance>,
-    /// [`CellRow`] pictures, on the style's page art.
-    pub(crate) icons: Vec<SpriteInstance>,
-    pub(crate) texts: Vec<ShellTextDraw>,
-    pub(crate) popup: Vec<SpriteInstance>,
-    pub(crate) popup_texts: Vec<ShellTextDraw>,
-    /// [`PageArt`] pictures, on the page's own art ([`GuiStyle::page_art_of`]).
-    pub(crate) page_art: Vec<SpriteInstance>,
-}
 
 /// A list's rows as the host keeps them: each row's text and packed
 /// `00BBGGRR` colour (`u32::MAX` for the node's own).
@@ -119,7 +101,7 @@ pub(crate) enum ButtonArt {
     /// Back).
     PanelType2,
     /// [`Self::Panel`] on a family page's column: the SDBTNANM art on the
-    /// main-menu chrome ([`GuiPaint::column`]), fitted right-anchored to the
+    /// main-menu chrome ([`Material::Column`]), fitted right-anchored to the
     /// cell, and the type-1 caption inset in the window rect.
     Column,
     /// Owner-draw type-3 buttons (MNBTTN), pushed under the pointer, with
@@ -137,7 +119,7 @@ pub(crate) enum ButtonArt {
     /// owner-draw face is not traced).
     Caption,
     /// The active-game shell's right-panel type-2 buttons (`0x00612B70`):
-    /// [`GuiStyle::side`]'s SIDEBTTN frame on [`GuiPaint::side`], pushed
+    /// [`GuiStyle::side`]'s SIDEBTTN frame on [`Material::Side`], pushed
     /// only while the press is held with the pointer still on it, lit while
     /// `Toggled`; the caption centred in the type-2 rect
     /// ([`button_text_rect`], pressed +2/+4) in
@@ -331,7 +313,7 @@ pub(crate) enum Picture {
     /// An image button's PCX faces on the page art ([`GuiStyle::art`]),
     /// the pressed one while pushed, centred on the node at their size
     /// grown with the page (a face larger than the node overhangs it
-    /// evenly), on [`GuiPaint::icons`] (the WOL lobby's and buddy list's).
+    /// evenly), on [`Material::Icons`] (the WOL lobby's and buddy list's).
     Icon {
         released: &'static str,
         pressed: &'static str,
@@ -343,7 +325,7 @@ pub(crate) enum Picture {
     /// centred in the node, or at its left or top on an axis it outgrows
     /// ([`crate::ui::shell::geom::centred_in_window`]), at its size grown
     /// with the page, on
-    /// [`GuiPaint::icons`] (WOL welcome's glossary).
+    /// [`Material::Icons`] (WOL welcome's glossary).
     Glyph(&'static str),
 }
 
@@ -466,7 +448,7 @@ pub(crate) struct GuiStyle<'a> {
     /// lines under a bullet).
     pub(crate) indent_of: Option<&'a dyn Fn(i32, usize) -> Option<i32>>,
     /// The picture an `Image` node shows from its page's own art by its
-    /// `Id` ([`PageArt`]), into [`GuiPaint::page_art`], before `picture_of`.
+    /// `Id` ([`PageArt`]), onto [`Material::PageArt`], before `picture_of`.
     pub(crate) page_art_of: Option<&'a dyn Fn(i32) -> Option<PageArt>>,
     /// A [`ButtonArt::ModalLit`] button shows MNBTTN's lit frame by its
     /// `Id` (the host's word: under the pointer, else holding the focus).
@@ -637,13 +619,13 @@ fn items(gui: &Gui, node: NodeId, prop: Prop) -> &[String] {
     }
 }
 
-/// The widgets under `root`, in tree order. Invisible subtrees are skipped.
+/// The widgets under `root`, in paint order. Invisible subtrees are skipped.
 pub(crate) fn paint_gui_children(
     state: &AppState,
     gui: &Gui,
     root: NodeId,
     scale: ShellScale,
-) -> GuiPaint {
+) -> HudPaint {
     paint_gui_styled(state, gui, root, scale, &[], GuiStyle::default())
 }
 
@@ -658,10 +640,25 @@ pub(crate) fn paint_gui_styled(
     scale: ShellScale,
     overlays: &[RectPx],
     style: GuiStyle<'_>,
-) -> GuiPaint {
-    match state.frontend.skirmish_shell_chrome.as_ref() {
-        Some(atlas) => paint_gui_with(state, atlas, gui, root, scale, overlays, style),
-        None => GuiPaint::default(),
+) -> HudPaint {
+    let mut paint = HudPaint::default();
+    paint_gui_styled_into(&mut paint, state, gui, root, scale, overlays, style);
+    paint
+}
+
+/// [`paint_gui_styled`] appended to `paint`'s lanes; nothing without the
+/// shell control art.
+pub(crate) fn paint_gui_styled_into(
+    paint: &mut HudPaint,
+    state: &AppState,
+    gui: &Gui,
+    root: NodeId,
+    scale: ShellScale,
+    overlays: &[RectPx],
+    style: GuiStyle<'_>,
+) {
+    if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
+        paint_gui_into(paint, state, Some(atlas), gui, root, scale, overlays, style);
     }
 }
 
@@ -675,28 +672,27 @@ pub(crate) fn paint_gui_ids(
     ids: impl IntoIterator<Item = u16>,
     scale: ShellScale,
     style: GuiStyle<'_>,
-) -> GuiPaint {
-    let mut paint = GuiPaint::default();
+) -> HudPaint {
+    let mut paint = HudPaint::default();
+    paint_gui_ids_into(&mut paint, state, gui, root, ids, scale, style);
+    paint
+}
+
+/// [`paint_gui_ids`] appended to `paint`'s lanes.
+pub(crate) fn paint_gui_ids_into(
+    paint: &mut HudPaint,
+    state: &AppState,
+    gui: &Gui,
+    root: NodeId,
+    ids: impl IntoIterator<Item = u16>,
+    scale: ShellScale,
+    style: GuiStyle<'_>,
+) {
     for node in ids
         .into_iter()
         .filter_map(|id| gui.find_id(root, id.into()))
     {
-        paint.extend(paint_gui_styled(state, gui, node, scale, &[], style));
-    }
-    paint
-}
-
-impl GuiPaint {
-    /// Appends `other`'s draws after this one's.
-    pub(crate) fn extend(&mut self, other: GuiPaint) {
-        self.controls.extend(other.controls);
-        self.side.extend(other.side);
-        self.column.extend(other.column);
-        self.icons.extend(other.icons);
-        self.texts.extend(other.texts);
-        self.popup.extend(other.popup);
-        self.popup_texts.extend(other.popup_texts);
-        self.page_art.extend(other.page_art);
+        paint_gui_styled_into(paint, state, gui, node, scale, &[], style);
     }
 }
 
@@ -710,8 +706,8 @@ pub(crate) fn paint_gui_with(
     scale: ShellScale,
     overlays: &[RectPx],
     style: GuiStyle<'_>,
-) -> GuiPaint {
-    let mut paint = GuiPaint::default();
+) -> HudPaint {
+    let mut paint = HudPaint::default();
     paint_gui_into(
         &mut paint,
         state,
@@ -725,14 +721,15 @@ pub(crate) fn paint_gui_with(
     paint
 }
 
-/// [`paint_gui_with`] appended to `paint`'s lanes, for a host that keeps
-/// its own (an in-game dialog's, [`super::in_game_shell::InGamePaint::nodes`]).
+/// [`paint_gui_with`] appended to `paint`'s lanes, after what is on them
+/// (a host that paints several subtrees into one, or keeps lanes of its
+/// own: an in-game dialog's, [`super::in_game_shell::InGamePaint::nodes`]).
 /// Without `atlas` (the shell control art not loaded) only what needs none
 /// paints: [`ButtonArt::Side`] and [`ButtonArt::Column`] buttons, captions
 /// and texts.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_gui_into(
-    paint: &mut GuiPaint,
+    paint: &mut HudPaint,
     state: &AppState,
     atlas: Option<&SkirmishShellChromeAtlas>,
     gui: &Gui,
@@ -789,7 +786,9 @@ pub(crate) fn paint_gui_into(
             .and_then(|(frame_of, id)| frame_of(id))
         {
             if frame == FrameArt::ListBar {
-                push_list_bar(&mut paint.controls, &chrome, gui, node, scale);
+                paint.draw(Material::Controls, |out, _| {
+                    push_list_bar(out, &chrome, gui, node, scale)
+                });
                 return;
             }
             let label = caption(node);
@@ -801,11 +800,12 @@ pub(crate) fn paint_gui_into(
                 glyph,
                 rgb: text_rgb(gui, node, enabled, style.rgb, None),
             };
-            let (controls, texts) = (&mut paint.controls, &mut paint.texts);
             let caption = label.as_deref().map(|label| (label, !covered));
-            push_frame(
-                controls, texts, font, white, rect, frame, caption, look, scale,
-            );
+            paint.draw(Material::Controls, |controls, texts| {
+                push_frame(
+                    controls, texts, font, white, rect, frame, caption, look, scale,
+                )
+            });
             return;
         }
         match kind {
@@ -831,8 +831,9 @@ pub(crate) fn paint_gui_into(
                         enabled,
                     };
                     let label = caption(node).filter(|_| !covered);
-                    let (art, texts) = (&mut paint.side, &mut paint.texts);
-                    push_side_button(art, texts, font, side, rect, label.as_deref(), look, glyph);
+                    paint.draw(Material::Side, |art, texts| {
+                        push_side_button(art, texts, font, side, rect, label.as_deref(), look, glyph)
+                    });
                     return;
                 }
                 match (art, atlas) {
@@ -847,9 +848,11 @@ pub(crate) fn paint_gui_into(
                             visual, !enabled,
                         );
                         let chrome = state.frontend.main_menu_shell_chrome.as_ref();
-                        paint.column.extend(chrome.and_then(|chrome| {
-                            shell_paint::column_button(chrome, rect, frame, SHELL_CONTROL_DEPTH)
-                        }));
+                        paint.draw(Material::Column, |out, _| {
+                            out.extend(chrome.and_then(|chrome| {
+                                shell_paint::column_button(chrome, rect, frame, SHELL_CONTROL_DEPTH)
+                            }))
+                        });
                     }
                     // A box's button: its art when there is any, its caption
                     // either way.
@@ -869,14 +872,16 @@ pub(crate) fn paint_gui_into(
                                 pressed,
                                 enabled,
                             };
-                            paint.controls.extend(shell_paint::paint_modal_sprites(
-                                None,
-                                super::type3_button_frames(atlas),
-                                rect,
-                                &[button],
-                                scale,
-                                look.depths,
-                            ));
+                            paint.draw(Material::Controls, |out, _| {
+                                out.extend(shell_paint::paint_modal_sprites(
+                                    None,
+                                    super::type3_button_frames(atlas),
+                                    rect,
+                                    &[button],
+                                    scale,
+                                    look.depths,
+                                ))
+                            });
                         }
                         let at = scale.derive_rect(rect, |r| {
                             crate::app::frontend::shell_pass::owner_draw_button_label_rect(
@@ -911,12 +916,15 @@ pub(crate) fn paint_gui_into(
                         match (picture, style.art) {
                             (Some(Picture::Icon { released, pressed: down }), Some(art)) => {
                                 let face = if pressed { down } else { released };
-                                push_page_icon(&mut paint.icons, art, face, rect, false, scale);
+                                paint.draw(Material::Icons, |out, _| {
+                                    push_page_icon(out, art, face, rect, false, scale)
+                                });
                             }
                             (Some(Picture::Icon { .. }), None) | (None, _) => {}
                             (Some(picture), _) => {
-                                let out = &mut paint.controls;
-                                push_picture(out, atlas, picture, rect, pressed, scale);
+                                paint.draw(Material::Controls, |out, _| {
+                                    push_picture(out, atlas, picture, rect, pressed, scale)
+                                });
                             }
                         }
                         return;
@@ -931,12 +939,9 @@ pub(crate) fn paint_gui_into(
                             frames.up = atlas.modal_button_mnbttn_frame2.or(frames.up);
                         }
                         if let Some(face) = frames.select(pressed, true) {
-                            super::chrome::push_entry(
-                                &mut paint.controls,
-                                face,
-                                rect,
-                                SHELL_CONTROL_DEPTH,
-                            );
+                            paint.draw(Material::Controls, |out, _| {
+                                super::chrome::push_entry(out, face, rect, SHELL_CONTROL_DEPTH)
+                            });
                         }
                         let Some(label) = caption(node).filter(|t| !covered && !t.is_empty())
                         else {
@@ -967,23 +972,28 @@ pub(crate) fn paint_gui_into(
                     (ButtonArt::CheckboxFace, Some(_)) => {
                         let checked = flag(gui, node, Prop::Toggled, false);
                         let control = ControlPaint::Checkbox { checked, rect };
-                        paint_control(&mut paint.controls, &chrome, control, scale);
+                        paint.draw(Material::Controls, |out, _| {
+                            paint_control(out, &chrome, control, scale)
+                        });
                     }
                     (
                         ButtonArt::Panel | ButtonArt::PanelCentred | ButtonArt::PanelType2,
                         Some(atlas),
                     ) => {
-                        super::chrome::push_right_panel_button_shp(
-                            &mut paint.controls,
-                            atlas,
-                            rect,
-                            vera20k_gui::shell::button::ButtonVisual {
-                                pressed,
-                                highlighted: flag(gui, node, Prop::Toggled, false),
-                            },
-                            !enabled,
-                            SHELL_CONTROL_DEPTH,
-                        )
+                        let visual = vera20k_gui::shell::button::ButtonVisual {
+                            pressed,
+                            highlighted: flag(gui, node, Prop::Toggled, false),
+                        };
+                        paint.draw(Material::Controls, |out, _| {
+                            super::chrome::push_right_panel_button_shp(
+                                out,
+                                atlas,
+                                rect,
+                                visual,
+                                !enabled,
+                                SHELL_CONTROL_DEPTH,
+                            )
+                        })
                     }
                     (
                         ButtonArt::Modal
@@ -1002,30 +1012,33 @@ pub(crate) fn paint_gui_into(
                             button: SHELL_CONTROL_DEPTH,
                             text: depth,
                         };
-                        paint.controls.extend(shell_paint::paint_modal_sprites(
-                            None,
-                            super::type3_button_frames(atlas),
-                            rect,
-                            &[button],
-                            scale,
-                            depths,
-                        ));
+                        paint.draw(Material::Controls, |out, _| {
+                            out.extend(shell_paint::paint_modal_sprites(
+                                None,
+                                super::type3_button_frames(atlas),
+                                rect,
+                                &[button],
+                                scale,
+                                depths,
+                            ))
+                        });
                     }
                     (ButtonArt::Plate, Some(atlas)) => {
-                        let out = &mut paint.controls;
-                        super::chrome::push_solid_rect(
-                            out,
-                            atlas,
-                            rect,
-                            SHELL_MODAL_PANEL_RGB,
-                            SHELL_CONTROL_DEPTH,
-                        );
-                        super::chrome::push_ownerdraw_two_pixel_bevel_frame(
-                            out,
-                            atlas,
-                            rect,
-                            SHELL_CONTROL_DEPTH,
-                        );
+                        paint.draw(Material::Controls, |out, _| {
+                            super::chrome::push_solid_rect(
+                                out,
+                                atlas,
+                                rect,
+                                SHELL_MODAL_PANEL_RGB,
+                                SHELL_CONTROL_DEPTH,
+                            );
+                            super::chrome::push_ownerdraw_two_pixel_bevel_frame(
+                                out,
+                                atlas,
+                                rect,
+                                SHELL_CONTROL_DEPTH,
+                            );
+                        });
                     }
                 }
                 let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) else {
@@ -1049,7 +1062,9 @@ pub(crate) fn paint_gui_into(
             NodeKind::Checkbox if style.picture_of.zip(id(node)).is_some_and(|(f, id)| f(id).is_some()) => {
                 let picture = style.picture_of.zip(id(node)).and_then(|(f, id)| f(id));
                 if let (Some(picture), Some(atlas)) = (picture, atlas) {
-                    push_picture(&mut paint.controls, atlas, picture, rect, false, scale);
+                    paint.draw(Material::Controls, |out, _| {
+                        push_picture(out, atlas, picture, rect, false, scale)
+                    });
                 }
             }
             NodeKind::Checkbox => {
@@ -1059,7 +1074,9 @@ pub(crate) fn paint_gui_into(
                     disabled: style.dim_disabled_checkboxes && !enabled,
                     rect,
                 };
-                paint_control(&mut paint.controls, &chrome, control, scale);
+                paint.draw(Material::Controls, |out, _| {
+                    paint_control(out, &chrome, control, scale)
+                });
                 if let Some(label) = caption(node).filter(|_| !covered) {
                     let at = crate::ui::skirmish_shell::checkbox_text_rect(rect, scale);
                     let rgb = text_rgb(gui, node, enabled, style.rgb, None);
@@ -1076,17 +1093,15 @@ pub(crate) fn paint_gui_into(
                     return;
                 };
                 let value = int(gui, node, Prop::Pos, range.min);
-                paint_control(
-                    &mut paint.controls,
-                    &chrome,
-                    ControlPaint::Trackbar {
-                        rect,
-                        thumb_left: range.thumb_left_in(value, rect, scale),
-                        plaque,
-                        disabled: !enabled,
-                    },
-                    scale,
-                );
+                let control = ControlPaint::Trackbar {
+                    rect,
+                    thumb_left: range.thumb_left_in(value, rect, scale),
+                    plaque,
+                    disabled: !enabled,
+                };
+                paint.draw(Material::Controls, |out, _| {
+                    paint_control(out, &chrome, control, scale)
+                });
                 if plaque && !covered {
                     // A disabled trackbar's value text takes [0xAC1CB4] (`0x0061E2B1`).
                     let rgb = text_rgb(
@@ -1131,13 +1146,14 @@ pub(crate) fn paint_gui_into(
                     .zip(id(node))
                     .and_then(|(rows_of, id)| rows_of(id));
                 if style.combos == ComboArt::Framed {
-                    let out = &mut paint.controls;
-                    super::chrome::push_ownerdraw_two_pixel_bevel_frame(
-                        out,
-                        atlas,
-                        rect,
-                        SHELL_CONTROL_DEPTH,
-                    );
+                    paint.draw(Material::Controls, |out, _| {
+                        super::chrome::push_ownerdraw_two_pixel_bevel_frame(
+                            out,
+                            atlas,
+                            rect,
+                            SHELL_CONTROL_DEPTH,
+                        )
+                    });
                 }
                 let face = (rect, !covered);
                 paint_combo(
@@ -1171,16 +1187,16 @@ pub(crate) fn paint_gui_into(
                 let selected = view
                     .selected
                     .filter(|_| !flag(gui, node, Prop::NoSelectionFill, false));
-                match style.control_lists {
+                paint.draw(Material::Controls, |out, _| match style.control_lists {
                     true => super::controls::list_view_controls(
-                        &mut paint.controls,
+                        out,
                         atlas,
                         geometry,
                         (selected, view.top, view.pressed),
                         scale,
                     ),
                     false => super::list::paint_list(
-                        &mut paint.controls,
+                        out,
                         atlas,
                         geometry,
                         view.top,
@@ -1189,7 +1205,7 @@ pub(crate) fn paint_gui_into(
                         style.solid_lists,
                         scale,
                     ),
-                }
+                });
                 // An empty list's message from its first row's text start
                 // (two pixels in, grown with the page) to its content's end.
                 let empty = (view.rows == 0 && !covered)
@@ -1291,15 +1307,17 @@ pub(crate) fn paint_gui_into(
                     .and_then(|(edit_face_of, id)| edit_face_of(id));
                 if face == Some(EditFace::ComboText) {
                     if caret {
-                        super::controls::push_new_edit_caret(
-                            &mut paint.controls,
-                            atlas,
-                            font,
-                            &edit,
-                            rect,
-                            super::SHELL_EDIT_CARET_DEPTH,
-                            scale,
-                        );
+                        paint.draw(Material::Controls, |out, _| {
+                            super::controls::push_new_edit_caret(
+                                out,
+                                atlas,
+                                font,
+                                &edit,
+                                rect,
+                                super::SHELL_EDIT_CARET_DEPTH,
+                                scale,
+                            )
+                        });
                     }
                     if !covered {
                         let shown = edit.painted_text();
@@ -1330,61 +1348,66 @@ pub(crate) fn paint_gui_into(
                         },
                     };
                     let shown = Some(shown.as_str()).filter(|_| !covered);
-                    push_search_line(paint, font, atlas, line, shown, scale);
+                    paint.draw(Material::Controls, |out, texts| {
+                        push_search_line(out, texts, font, atlas, line, shown, scale)
+                    });
                     paint.texts.extend(hint);
                     return;
                 }
                 let Some(field) = inset(gui, node, rect, scale) else {
-                    let (out, texts) = (&mut paint.controls, &mut paint.texts);
                     let painted = match style.edit_inset {
                         Some(px) => scale.derive_rect(rect, |r| {
                             RectPx::new(r.x + px, r.y + px, r.w - 2 * px, r.h - 2 * px)
                         }),
                         None => rect,
                     };
-                    super::controls::push_new_edit(
+                    paint.draw(Material::Controls, |out, texts| {
+                        super::controls::push_new_edit(
+                            out,
+                            texts,
+                            atlas,
+                            font,
+                            &edit,
+                            composition,
+                            painted,
+                            caret,
+                            rgb,
+                            depth,
+                            scale,
+                        )
+                    });
+                    paint.texts.extend(hint);
+                    return;
+                };
+                let selected = edit.focused && flag(gui, node, Prop::AllSelected, false);
+                paint.draw(Material::Controls, |out, texts| {
+                    if let Some(fill) = style.edit_fill {
+                        super::chrome::push_solid_rect(out, atlas, rect, fill, depth);
+                    }
+                    if selected {
+                        let width = font.text_width(&edit.painted_text()) as i32;
+                        let at = scale
+                            .derive_rect(field, |f| RectPx::new(f.x, f.y + 2, width, f.h - 4));
+                        super::chrome::push_solid_rect(
+                            out,
+                            atlas,
+                            at,
+                            OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+                            super::SHELL_EDIT_SELECTION_DEPTH,
+                        );
+                    }
+                    super::controls::push_framed_edit(
                         out,
                         texts,
                         atlas,
                         font,
                         &edit,
                         composition,
-                        painted,
-                        caret,
-                        rgb,
-                        depth,
+                        (rect, field),
+                        (caret && !selected, rgb, depth),
                         scale,
-                    );
-                    paint.texts.extend(hint);
-                    return;
-                };
-                if let Some(fill) = style.edit_fill {
-                    super::chrome::push_solid_rect(&mut paint.controls, atlas, rect, fill, depth);
-                }
-                let selected = edit.focused && flag(gui, node, Prop::AllSelected, false);
-                if selected {
-                    let width = font.text_width(&edit.painted_text()) as i32;
-                    let at =
-                        scale.derive_rect(field, |f| RectPx::new(f.x, f.y + 2, width, f.h - 4));
-                    super::chrome::push_solid_rect(
-                        &mut paint.controls,
-                        atlas,
-                        at,
-                        OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
-                        super::SHELL_EDIT_SELECTION_DEPTH,
-                    );
-                }
-                super::controls::push_framed_edit(
-                    &mut paint.controls,
-                    &mut paint.texts,
-                    atlas,
-                    font,
-                    &edit,
-                    composition,
-                    (rect, field),
-                    (caret && !selected, rgb, depth),
-                    scale,
-                );
+                    )
+                });
                 paint.texts.extend(hint);
             }
             // A text the host sizes: squeezed to its rect's width at that
@@ -1454,7 +1477,7 @@ pub(crate) fn paint_gui_into(
                     .zip(id(node))
                     .and_then(|(page_art_of, id)| page_art_of(id))
                 {
-                    push_page_art(&mut paint.page_art, art, rect, scale);
+                    paint.draw(Material::PageArt, |out, _| push_page_art(out, art, rect, scale));
                     return;
                 }
                 let Some(atlas) = atlas else { return };
@@ -1463,25 +1486,30 @@ pub(crate) fn paint_gui_into(
                     .zip(id(node))
                     .and_then(|(picture_of, id)| picture_of(id));
                 if let (Some(Picture::Glyph(file)), Some(art)) = (host, style.art) {
-                    push_page_icon(&mut paint.icons, art, file, rect, true, scale);
+                    paint.draw(Material::Icons, |out, _| {
+                        push_page_icon(out, art, file, rect, true, scale)
+                    });
                     return;
                 }
                 if let Some(picture) = host {
-                    push_picture(&mut paint.controls, atlas, picture, rect, false, scale);
+                    paint.draw(Material::Controls, |out, _| {
+                        push_picture(out, atlas, picture, rect, false, scale)
+                    });
                     return;
                 }
                 let Ok(Some(Value::Text(name))) = gui.get(node, Prop::Art) else {
                     return;
                 };
                 if let Some(entry) = atlas.lan_player_side(name) {
-                    let out = &mut paint.controls;
-                    super::chrome::push_flag_entry_clipped_centered(
-                        out,
-                        entry,
-                        rect,
-                        scale,
-                        SHELL_CONTROL_DEPTH,
-                    );
+                    paint.draw(Material::Controls, |out, _| {
+                        super::chrome::push_flag_entry_clipped_centered(
+                            out,
+                            entry,
+                            rect,
+                            scale,
+                            SHELL_CONTROL_DEPTH,
+                        )
+                    });
                 }
             }
             // A lone scrollbar (VERA's random-map Advanced pages): the
@@ -1494,7 +1522,9 @@ pub(crate) fn paint_gui_into(
                         thumb: view.thumb,
                         pressed_part: None,
                     };
-                    paint_control(&mut paint.controls, &chrome, control, scale);
+                    paint.draw(Material::Controls, |out, _| {
+                        paint_control(out, &chrome, control, scale)
+                    });
                 }
             }
             // A bar's one meaning (`vera20k_gui::shell::bar`): the outline
@@ -1507,7 +1537,7 @@ pub(crate) fn paint_gui_into(
                         .unwrap_or_else(|| bar::OUTLINE_RGB.map(|c| f32::from(c) / 255.0)),
                     fill: color(gui, node, Prop::Color).unwrap_or(style.rgb),
                 };
-                push_bar(&mut paint.controls, white, rect, look);
+                paint.draw(Material::Controls, |out, _| push_bar(out, white, rect, look));
             }
             _ => {}
         }
@@ -1763,7 +1793,7 @@ fn push_picture(
 
 /// A picture from a page's own art (not the shell control art) that an
 /// `Image` node shows ([`GuiStyle::page_art_of`]); the host draws
-/// [`GuiPaint::page_art`] with that art's texture.
+/// [`Material::PageArt`] with that art's texture.
 #[derive(Clone, Copy)]
 pub(crate) enum PageArt {
     /// A PCX static (`0x108`'s band bars): at its native size
@@ -1883,7 +1913,8 @@ pub(crate) fn search_line_tail<'a>(
 /// caret after it while it holds any: the line has no focus to lose. The
 /// inset's right edge only bounds the tail.
 fn push_search_line(
-    paint: &mut GuiPaint,
+    out: &mut Vec<SpriteInstance>,
+    texts: &mut Vec<ShellTextDraw>,
     font: &BitFont,
     atlas: &SkirmishShellChromeAtlas,
     line: SearchLine,
@@ -1893,18 +1924,18 @@ fn push_search_line(
     let SearchLine { rect, inset, fill, look } = line;
     let depth = SHELL_CONTROL_DEPTH;
     if let Some(fill) = fill {
-        super::chrome::push_solid_rect(&mut paint.controls, atlas, rect, fill, depth);
+        super::chrome::push_solid_rect(out, atlas, rect, fill, depth);
     }
-    super::list::paint_list_frame(&mut paint.controls, atlas, rect);
+    super::list::paint_list_frame(out, atlas, rect);
     let Some(shown) = shown.filter(|shown| !shown.is_empty()) else {
         return;
     };
     let (tail, caret) = search_line_tail(font, shown, rect, inset, scale);
-    super::chrome::push_solid_rect(&mut paint.controls, atlas, caret, look.rgb, depth);
+    super::chrome::push_solid_rect(out, atlas, caret, look.rgb, depth);
     let field = scale.derive_rect(rect, |r| {
         RectPx::new(r.x + inset.x, r.y + inset.y, r.w - inset.x, r.h - inset.y - inset.h)
     });
-    paint.texts.push(shell_text::draw_in_rect_scaled(
+    texts.push(shell_text::draw_in_rect_scaled(
         font,
         tail,
         rect_to_text_rect(field),
@@ -1918,7 +1949,7 @@ fn push_search_line(
 
 /// A multi-cell row on `row`: its fill, then its cells' texts and pictures.
 fn paint_cells(
-    paint: &mut GuiPaint,
+    paint: &mut HudPaint,
     state: &AppState,
     atlas: &SkirmishShellChromeAtlas,
     style: GuiStyle<'_>,
@@ -1928,13 +1959,15 @@ fn paint_cells(
     covered: bool,
 ) {
     if cells.filled {
-        super::chrome::push_solid_rect(
-            &mut paint.controls,
-            atlas,
-            row,
-            OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
-            SHELL_CONTROL_DEPTH - 0.00001,
-        );
+        paint.draw(Material::Controls, |out, _| {
+            super::chrome::push_solid_rect(
+                out,
+                atlas,
+                row,
+                OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+                SHELL_CONTROL_DEPTH - 0.00001,
+            )
+        });
     }
     let glyph = style.text_factor.unwrap_or(scale.factor());
     let window = cells.window;
@@ -1953,9 +1986,11 @@ fn paint_cells(
             .push(text(state, &value, at, align, glyph, rgb, depth));
     }
     if let Some(art) = style.art {
-        for (x, file) in cells.icons {
-            super::wol_lobby::push_icon(&mut paint.icons, art, file, row, x, scale);
-        }
+        paint.draw(Material::Icons, |out, _| {
+            for (x, file) in cells.icons {
+                super::wol_lobby::push_icon(out, art, file, row, x, scale);
+            }
+        });
     }
 }
 
@@ -1963,7 +1998,7 @@ fn paint_cells(
 /// text in `lit`'s colour, else `rgb`.
 #[allow(clippy::too_many_arguments)]
 fn push_cell(
-    paint: &mut GuiPaint,
+    paint: &mut HudPaint,
     state: &AppState,
     atlas: &SkirmishShellChromeAtlas,
     gui: &Gui,
@@ -1983,14 +2018,15 @@ fn push_cell(
                 12,
             )
         });
-        let out = &mut paint.controls;
-        super::chrome::push_solid_rect(out, atlas, chip, tint, SHELL_SWATCH_DEPTH);
-        if lit.is_some() {
-            let ring = scale.derive_rect(chip, |rect| {
-                RectPx::new(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2)
-            });
-            super::chrome::push_rect_outline(out, atlas, ring, rgb, SHELL_SWATCH_DEPTH);
-        }
+        paint.draw(Material::Controls, |out, _| {
+            super::chrome::push_solid_rect(out, atlas, chip, tint, SHELL_SWATCH_DEPTH);
+            if lit.is_some() {
+                let ring = scale.derive_rect(chip, |rect| {
+                    RectPx::new(rect.x - 1, rect.y - 1, rect.w + 2, rect.h + 2)
+                });
+                super::chrome::push_rect_outline(out, atlas, ring, rgb, SHELL_SWATCH_DEPTH);
+            }
+        });
         return;
     }
     if !caption {
@@ -2008,7 +2044,7 @@ fn push_cell(
 /// scale.
 #[allow(clippy::too_many_arguments)]
 fn paint_combo(
-    paint: &mut GuiPaint,
+    paint: &mut HudPaint,
     state: &AppState,
     atlas: &SkirmishShellChromeAtlas,
     gui: &Gui,
@@ -2045,17 +2081,15 @@ fn paint_combo(
             push_cell(paint, state, atlas, gui, node, face, look, style.rgb, scale);
         }
     } else if style.combos != ComboArt::Host {
-        paint_control(
-            &mut paint.controls,
-            &atlas.control_chrome(),
-            ControlPaint::Combo {
-                rect,
-                swatch: face_swatch,
-                open,
-                disabled: !enabled,
-            },
-            scale,
-        );
+        let control = ControlPaint::Combo {
+            rect,
+            swatch: face_swatch,
+            open,
+            disabled: !enabled,
+        };
+        paint.draw(Material::Controls, |out, _| {
+            paint_control(out, &atlas.control_chrome(), control, scale)
+        });
         // The host's caption, or `Text`, stands in for the selected row's.
         let host = (style.text_of.zip(gui.id_of(node))).and_then(|(text_of, id)| text_of(id));
         let face = match (&host, gui.get(node, Prop::Text).ok().flatten()) {
@@ -2106,13 +2140,15 @@ fn paint_combo(
             rows_rect.w + 4,
             rows_rect.h + 4,
         );
-        super::chrome::push_solid_rect(
-            &mut paint.popup,
-            atlas,
-            frame,
-            super::SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
-            SHELL_DROPDOWN_DEPTH,
-        );
+        paint.draw(Material::Popup, |out, _| {
+            super::chrome::push_solid_rect(
+                out,
+                atlas,
+                frame,
+                super::SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
+                SHELL_DROPDOWN_DEPTH,
+            )
+        });
         let row_h = vera20k_gui::shell::list::ListMetrics::combo(scale).row_h;
         let lit = drop_down.hot_row.or(selected);
         for (index, (item, _)) in rows.iter().enumerate() {
@@ -2123,13 +2159,15 @@ fn paint_combo(
                 row_h,
             );
             if lit == Some(index) {
-                super::chrome::push_solid_rect(
-                    &mut paint.popup,
-                    atlas,
-                    row,
-                    OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
-                    SHELL_DROPDOWN_DEPTH - 0.00001,
-                );
+                paint.draw(Material::Popup, |out, _| {
+                    super::chrome::push_solid_rect(
+                        out,
+                        atlas,
+                        row,
+                        OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+                        SHELL_DROPDOWN_DEPTH - 0.00001,
+                    )
+                });
             }
             paint.popup_texts.push(text(
                 state,
@@ -2141,40 +2179,48 @@ fn paint_combo(
                 SHELL_DROPDOWN_TEXT_DEPTH,
             ));
         }
-        super::chrome::push_ownerdraw_two_pixel_bevel_frame(
-            &mut paint.popup,
-            atlas,
-            frame,
-            SHELL_DROPDOWN_DEPTH - 0.00002,
-        );
+        paint.draw(Material::Popup, |out, _| {
+            super::chrome::push_ownerdraw_two_pixel_bevel_frame(
+                out,
+                atlas,
+                frame,
+                SHELL_DROPDOWN_DEPTH - 0.00002,
+            )
+        });
         return;
     }
     if style.combos == ComboArt::Framed {
         // `0x105`'s list is no `ComboDropWin`: a one-pixel outline, the
         // selection lit wherever the pointer is, its rows uncut.
         let depth = SHELL_DROPDOWN_DEPTH - 0.00015;
-        super::chrome::push_solid_rect(
-            &mut paint.popup,
-            atlas,
-            popup.rect,
-            super::SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
-            depth,
-        );
-        super::chrome::push_rect_outline(
-            &mut paint.popup,
-            atlas,
-            popup.rect,
-            super::OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
-            depth - 0.00001,
-        );
-        if let Some(row) = selected.and_then(|row| popup.row_rect(row)) {
+        paint.draw(Material::Popup, |out, _| {
             super::chrome::push_solid_rect(
-                &mut paint.popup,
+                out,
                 atlas,
-                row,
-                OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
-                depth - 0.00002,
-            );
+                popup.rect,
+                super::SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
+                depth,
+            )
+        });
+        paint.draw(Material::Popup, |out, _| {
+            super::chrome::push_rect_outline(
+                out,
+                atlas,
+                popup.rect,
+                super::OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
+                depth - 0.00001,
+            )
+        });
+        if let Some(row) = selected.and_then(|row| popup.row_rect(row)) {
+            paint.draw(Material::Popup, |out, _| {
+                super::chrome::push_solid_rect(
+                    out,
+                    atlas,
+                    row,
+                    OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+                    depth - 0.00002,
+                )
+            });
         }
         let left = crate::ui::skirmish_shell::COMBO_TEXT_LEFT_INSET as f32;
         let left = (left * scale.factor()).round() as i32;
@@ -2194,25 +2240,27 @@ fn paint_combo(
         }
         return;
     }
-    push_popup_instances(
-        &mut paint.popup,
-        atlas,
-        popup.rect,
-        drop_down.hot_row.and_then(|row| popup.row_rect(row)),
-        (popup.first..popup.first + popup.visible_rows).filter_map(|row| {
-            let at = scale.derive_rect(popup.row_rect(row)?, |r| {
-                RectPx::new(r.x + 2, r.y + 2, r.w - 4, r.h - 4)
-            });
-            Some((at, swatch(row)?))
-        }),
-        popup.scrollbar().zip(popup.thumb()).map(|(bar, thumb)| {
-            let wide = RectPx::new(bar.x, thumb.y, bar.w, thumb.h);
-            (bar, if style.skirmish_lists { wide } else { thumb })
-        }),
-        drop_down.pressed_part.map(dropdown_scroll_part),
-        scale,
-        SHELL_DROPDOWN_DEPTH - 0.00002,
-    );
+    paint.draw(Material::Popup, |out, _| {
+        push_popup_instances(
+            out,
+            atlas,
+            popup.rect,
+            drop_down.hot_row.and_then(|row| popup.row_rect(row)),
+            (popup.first..popup.first + popup.visible_rows).filter_map(|row| {
+                let at = scale.derive_rect(popup.row_rect(row)?, |r| {
+                    RectPx::new(r.x + 2, r.y + 2, r.w - 4, r.h - 4)
+                });
+                Some((at, swatch(row)?))
+            }),
+            popup.scrollbar().zip(popup.thumb()).map(|(bar, thumb)| {
+                let wide = RectPx::new(bar.x, thumb.y, bar.w, thumb.h);
+                (bar, if style.skirmish_lists { wide } else { thumb })
+            }),
+            drop_down.pressed_part.map(dropdown_scroll_part),
+            scale,
+            SHELL_DROPDOWN_DEPTH - 0.00002,
+        )
+    });
     // The rows fit the list in their own glyph size.
     let glyph = style.text_factor.unwrap_or(scale.factor());
     let fit = combo_dropdown_text_fit_width(popup.content(), scale) as f32 * scale.factor() / glyph;

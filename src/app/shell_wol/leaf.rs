@@ -233,7 +233,11 @@ pub(crate) fn status_key(state: &AppState, dialog: DialogResourceId) -> Option<&
 }
 
 /// The widgets under `dialog`'s root through the generic painter.
-pub(crate) fn paint(state: &AppState, dialog: DialogResourceId, scale: ShellScale) -> gui_paint::GuiPaint {
+pub(crate) fn paint(
+    state: &AppState,
+    dialog: DialogResourceId,
+    scale: ShellScale,
+) -> crate::render::hud_paint::HudPaint {
     let controller = &state.frontend.shell_controller;
     match controller.root_in(dialog) {
         Some(root) => gui_paint::paint_gui_children(state, controller.gui(), root, scale),

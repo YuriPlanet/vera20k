@@ -20,8 +20,9 @@ use crate::app::frontend::menu_page_render::{
 };
 use crate::app::frontend::score_shell_render::static_reveal;
 use crate::app::frontend::shell_pass::TexturedDraw;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
-    GuiPaint, GuiStyle, PageArt, paint_gui_into,
+    GuiStyle, PageArt, paint_gui_into,
 };
 use crate::render::shell_paint::{
     self, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, SHELL_TEXT_RGB_ENABLED,
@@ -180,12 +181,12 @@ pub(crate) fn render_campaign_score_page(
         Some((gui, root)) => Some((gui, *root)),
         None => (controller.root_in(dialog.id())).map(|root| (controller.gui(), root)),
     };
-    let mut paint = GuiPaint::default();
+    let mut paint = HudPaint::default();
     if let Some((gui, root)) = nodes {
         let scale = layout.page.scale;
         paint_gui_into(&mut paint, state, None, gui, root, scale, &[], style);
     }
-    let emblem = std::mem::take(&mut paint.page_art);
+    let emblem: Vec<_> = paint.lane(Material::PageArt).copied().collect();
 
     // The family compositor paints the right panel, the monitor, the column
     // or Continue with its caption; the heading and status line are this

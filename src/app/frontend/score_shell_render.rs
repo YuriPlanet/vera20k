@@ -23,9 +23,10 @@ use crate::app::frontend::menu_page_render::{
     FamilyFrame, encode_family_page, family_art_ready, page_panel_state, page_tree,
 };
 use crate::app::frontend::shell_pass::TexturedDraw;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
-    GuiPaint, GuiStyle, PageArt, paint_gui_into,
+    GuiStyle, PageArt, paint_gui_into,
 };
 use crate::render::shell_paint::{
     PARENT_BACKGROUND_DEPTH, SHELL_TEXT_RGB_ENABLED, push_entry_crop, push_entry_native,
@@ -178,7 +179,7 @@ pub(crate) fn render_score_page(
         Some((gui, root)) => Some((gui, *root)),
         None => controller.root_in(dialog).map(|root| (controller.gui(), root)),
     };
-    let mut paint = GuiPaint::default();
+    let mut paint = HudPaint::default();
     if let Some((gui, root)) = nodes {
         paint_gui_into(&mut paint, state, None, gui, root, scale, &[], style);
     }
@@ -220,7 +221,7 @@ pub(crate) fn render_score_page(
         }
     }
     // The bars over the shade, on the art's texture.
-    art_sprites.append(&mut paint.page_art);
+    art_sprites.extend(paint.lane(Material::PageArt).copied());
 
     // The shell pass draws in array order with depth off, so paint mode 1's
     // panel goes under the background. A country card (`[EndGameScreens]

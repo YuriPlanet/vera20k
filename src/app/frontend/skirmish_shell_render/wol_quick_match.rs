@@ -42,7 +42,7 @@ pub(crate) fn paint_wol_quick_match_children(
     };
     let paint = paint_gui_ids(state, gui, root, [CAPTION, TRANSCRIPT], layout.page.scale, style);
     WolLobbyPaint {
-        controls: paint.controls,
+        controls: paint.lane(crate::render::hud_paint::Material::Controls).copied().collect(),
         icons: Vec::new(),
         texts: paint.texts,
     }

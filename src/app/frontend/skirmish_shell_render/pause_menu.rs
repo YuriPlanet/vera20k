@@ -5,6 +5,7 @@ use super::gui_paint::{ButtonArt, FrameArt, GuiStyle};
 use super::in_game_shell::{self, InGamePaint};
 use super::launcher_options;
 use crate::app::AppState;
+use crate::render::hud_paint::Material;
 use crate::ui::shell::pause_menu::{
     FOOTER, INTERNET_CAPTIONS, INTERNET_GROUP, INTERNET_GROUP_LABEL, INTERNET_VALUES,
     InternetSlider, KEYBOARD_LABEL, PAUSE_MENU_FOOTER, PauseMenuButton, PauseMenuButtonState,
@@ -106,10 +107,11 @@ pub(crate) fn render_pause_menu_shell(
             let column = launcher_options::ColumnArt::Side(paint.side_buttons());
             let widgets =
                 launcher_options::paint_page(state, &page.dialog, page_layout.scale, column, &[]);
-            paint.art.extend(widgets.side);
-            paint.controls.extend(widgets.controls);
+            paint.art.extend(widgets.lane(Material::Side).copied());
+            paint.controls.extend(widgets.lane(Material::Controls).copied());
+            overlay.controls = widgets.lane(Material::Popup).copied().collect();
             paint.texts.extend(widgets.texts);
-            (overlay.controls, overlay.texts) = (widgets.popup, widgets.popup_texts);
+            overlay.texts = widgets.popup_texts;
         }
         // FF's group box, then each plaque trackbar with its caption and
         // value static (60B7A0), where its page shows them and the control

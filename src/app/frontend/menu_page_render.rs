@@ -24,8 +24,10 @@ use crate::app::frontend::shell_pass::{
 };
 use crate::app::frontend::shell_transition::{ColumnDraw, ShellSlideKind};
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
-    ButtonArt, GuiPaint, GuiStyle, paint_gui_ids,
+    ButtonArt, GuiStyle, paint_gui_ids,
 };
+use crate::render::batch::SpriteInstance;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint::{self, CURSOR_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED};
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
@@ -348,7 +350,7 @@ pub(crate) fn paint_panel_statics(
         reveal_of: Some(&reveal_of),
         ..Default::default()
     };
-    let mut paint = GuiPaint::default();
+    let mut paint = HudPaint::default();
     crate::app::frontend::skirmish_shell_render::gui_paint::paint_gui_into(
         &mut paint, state, None, gui, root, scale, &[], style,
     );
@@ -542,7 +544,7 @@ pub(crate) struct FamilyFrame<'a> {
     pub(crate) labels: Vec<PaintLabel<'a>>,
     /// Skirmish-atlas sprites over the buttons (a list, a prompt), with
     /// their text after all other text.
-    pub(crate) over: GuiPaint,
+    pub(crate) over: HudPaint,
     /// Whether this pass draws the cursor (a box painted over the page next
     /// draws it instead).
     pub(crate) cursor: bool,
@@ -568,7 +570,7 @@ impl<'a> FamilyFrame<'a> {
             under: Vec::new(),
             over_panel_art: Vec::new(),
             labels: Vec::new(),
-            over: GuiPaint::default(),
+            over: HudPaint::default(),
             cursor: true,
         }
     }
@@ -621,7 +623,7 @@ pub(crate) fn encode_family_page(
         under,
         over_panel_art,
         labels,
-        over,
+        mut over,
         cursor,
     } = frame;
     let (screen, scale) = (layout.screen, layout.scale);
@@ -655,7 +657,7 @@ pub(crate) fn encode_family_page(
         (Some(draws), _) => {
             let column = shell_paint::paint_slide_column(chrome, layout.right_panel, draws);
             panel_sprites.extend(column);
-            GuiPaint::default()
+            HudPaint::default()
         }
         (None, Some((gui, root))) => {
             let style = GuiStyle {
@@ -664,7 +666,7 @@ pub(crate) fn encode_family_page(
             };
             paint_gui_ids(state, gui, root, ids, scale, style)
         }
-        (None, None) => GuiPaint::default(),
+        (None, None) => HudPaint::default(),
     };
     let title = panel.title.map(|window| {
         let rect = layout.right_panel.family_title_caption(layout.title);
@@ -675,8 +677,15 @@ pub(crate) fn encode_family_page(
         shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
     let status = panel.status.map(PanelStatic::status);
     text.extend(paint_panel_statics(state, [title, status], scale));
-    widgets.extend(over);
-    text.extend(widgets.texts);
+    // The column's widgets, then what goes over them, lane by lane.
+    let lane = |material: Material| -> Vec<SpriteInstance> {
+        (widgets.lane(material).chain(over.lane(material)))
+            .copied()
+            .collect()
+    };
+    let (column, controls) = (lane(Material::Column), lane(Material::Controls));
+    text.append(&mut widgets.texts);
+    text.append(&mut over.texts);
     draws.push(TexturedDraw {
         texture: &chrome.texture,
         instances: panel_sprites,
@@ -684,11 +693,11 @@ pub(crate) fn encode_family_page(
     draws.extend(over_panel_art);
     draws.push(TexturedDraw {
         texture: &chrome.texture,
-        instances: widgets.column,
+        instances: column,
     });
     draws.push(TexturedDraw {
         texture: &atlas.texture,
-        instances: widgets.controls,
+        instances: controls,
     });
     encode_shell_pass(
         state,

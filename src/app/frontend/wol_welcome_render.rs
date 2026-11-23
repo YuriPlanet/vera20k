@@ -19,11 +19,12 @@ use crate::app::frontend::shell_pass::{
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
-    ButtonArt, FrameArt, GuiPaint, GuiStyle, Picture, paint_gui_ids, paint_gui_styled,
+    ButtonArt, FrameArt, GuiStyle, Picture, paint_gui_ids, paint_gui_into, paint_gui_styled,
 };
 use crate::app::frontend::skirmish_shell_render::{BoxLook, controller_tree, paint_shell_box};
 use crate::app::frontend::skirmish_shell_render::WolLobbyPaint;
 use crate::app::shell_wol::WolPage;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint::{
     self, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, push_entry_scaled,
 };
@@ -451,7 +452,9 @@ pub(crate) fn render_wol_page(
                 ..Default::default()
             };
             let gui = controller.gui();
-            paint_gui_ids(state, gui, root, ids.iter().copied(), scale, style).controls
+            let paint = paint_gui_ids(state, gui, root, ids.iter().copied(), scale, style);
+            let frames: Vec<_> = paint.lane(Material::Controls).copied().collect();
+            frames
         }
         None => Vec::new(),
     };
@@ -471,7 +474,7 @@ pub(crate) fn render_wol_page(
             ..Default::default()
         };
         let welcome = paint_gui_styled(state, controller.gui(), root, scale, &[], style);
-        icon_sprites = welcome.icons;
+        icon_sprites = welcome.lane(Material::Icons).copied().collect();
         welcome_texts = Some(welcome.texts);
     }
     let shown = body.filter(|_| children);
@@ -620,7 +623,7 @@ pub(crate) fn render_wol_page(
         (None, None) => Some(shell_paint::shuttered_column(page.right_panel)),
         (Some(_), None) => None,
     };
-    let mut buttons = GuiPaint::default();
+    let mut buttons = HudPaint::default();
     match (&painted, column) {
         (_, Some(draws)) => sprites.extend(shell_paint::paint_slide_column(
             chrome,
@@ -663,8 +666,10 @@ pub(crate) fn render_wol_page(
                     None => (controller.control(painted.dialog, id))
                         .map(|node| (controller.gui(), node)),
                 };
-                if let Some((gui, node)) = node {
-                    buttons.extend(paint_gui_styled(state, gui, node, scale, &[], style));
+                let atlas = state.frontend.skirmish_shell_chrome.as_ref();
+                if let (Some((gui, node)), Some(atlas)) = (node, atlas) {
+                    let atlas = Some(atlas);
+                    paint_gui_into(&mut buttons, state, atlas, gui, node, scale, &[], style);
                 }
             }
         }
@@ -732,7 +737,7 @@ pub(crate) fn render_wol_page(
     if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
         draws.push(TexturedDraw {
             texture: &atlas.texture,
-            instances: buttons.controls,
+            instances: buttons.lane(Material::Controls).copied().collect(),
         });
     }
     text.extend(buttons.texts);
@@ -740,9 +745,10 @@ pub(crate) fn render_wol_page(
     // its icons on the page art: a dialog over the page hides the glyphs
     // painted before it under it (`cover`), and the boxes hide a layer's
     // own (`own`).
-    let gui = |paint: GuiPaint| {
-        let (mut controls, mut texts) = (paint.controls, paint.texts);
-        controls.extend(paint.popup);
+    let gui = |paint: HudPaint| {
+        let lanes = paint.lane(Material::Controls).chain(paint.lane(Material::Popup));
+        let controls = lanes.copied().collect();
+        let mut texts = paint.texts;
         texts.extend(paint.popup_texts);
         WolLobbyPaint {
             controls,

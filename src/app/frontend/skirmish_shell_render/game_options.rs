@@ -6,6 +6,7 @@
 use super::SkirmishShellChromeAtlas;
 use super::chrome::type3_button_frames;
 use super::gui_paint::{ButtonArt, GuiStyle, paint_gui_with};
+use crate::render::hud_paint::Material;
 use super::text::button_label_color_for_disabled;
 use super::wol_lobby::POPUP_DEPTHS;
 use crate::app::AppState;
@@ -57,10 +58,10 @@ pub(super) fn push_game_options_box(
     };
     if let Some(ok) = ok {
         let ok = paint_gui_with(state, atlas, gui, ok, scale, &[], ok_style);
-        sprites.extend(ok.controls);
+        sprites.extend(ok.lane(Material::Controls).copied());
         texts.extend(ok.texts);
     }
     let widgets = paint_gui_with(state, atlas, gui, root, scale, &[], Default::default());
-    sprites.extend(widgets.controls);
+    sprites.extend(widgets.lane(Material::Controls).copied());
     texts.extend(widgets.texts);
 }
