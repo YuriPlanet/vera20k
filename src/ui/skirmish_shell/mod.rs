@@ -50,6 +50,7 @@ pub use state::{
     opponent_scroll_rows, pack_launch_session_without_start_validation, player_name_from_profile,
     player_row_visible, repair_teams_for_selected_mode,
     selected_combo_item, selected_combo_item_index, selected_player_rows, setup_combo_items,
+    start_skips_side_gates,
     starts_by_team, MenuPick, apply_seat_action, apply_team_colors, apply_team_preset,
     apply_team_starts, balance_teams_by_strength, team_start_seats, skirmish_session_options,
     status_help_key_for_choose_map_hover,

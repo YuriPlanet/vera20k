@@ -21,8 +21,8 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1049; the chain docs give 392 more a disposition
-  (ported elsewhere, equivalent, not applicable, skipped or residual); 7 are
+  removed). The engine source cites 1050; the chain docs give 392 more a disposition
+  (ported elsewhere, equivalent, not applicable, skipped or residual); 6 are
   untouched, listed at the end. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
   [Smaller gameplay residuals](#smaller-gameplay-residuals).
@@ -141,11 +141,10 @@ Resurrection's nine pairs) have no such pair.
   (`[Colors] Count` above 8). Ares' defaults match the engine. See
   [ares-sidebar-ui-hooks.md](ares-sidebar-ui-hooks.md).
 - The CSF loader hooks (Misc/CSFLoader.cpp) are deferred: CSF loading is handled separately.
-- The front-end hooks among the untouched ones below: skirmish alone
-  (`0x6AD0ED`), the skirmish MultiEngineer option, Ares' keyboard commands and the
-  uimd.ini settings. The DLL plumbing (checksums, save stream, copy protection,
-  log, swizzling, start and command line) is in
-  [ares-skipped-hooks.md](ares-skipped-hooks.md).
+- The front-end hooks among the untouched ones below: the skirmish MultiEngineer
+  option, Ares' keyboard commands and the uimd.ini settings. The DLL plumbing
+  (checksums, save stream, copy protection, log, swizzling, start and command
+  line) is in [ares-skipped-hooks.md](ares-skipped-hooks.md).
 - Overlay radar colours (OverlayTypeClass_GetRadarColor, `1006ACC0`, hook `0x5FED00`):
   Ares returns the OverlayType's `RadarColor` field where VERA reads the SHP frame
   header colour for the map preview. The rest of `Misc/RMG.cpp` is in
@@ -221,12 +220,11 @@ Retail INIs for retail tests: run the repo's `extract-ini` into `ini/` and set `
 
 ## Untouched hooks
 
-These 7 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
+These 6 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
 hook script above skips this page).
 
 | Hook | Ares.dll | Name | Source |
 |---|---|---|---|
-| `0x6AD0ED` | `10003AD0` | Ares_AllowSinglePlay | `Ares.cpp` |
 | `0x69801A` | `1006AF40` | Game_GetGameTypePrefs_MultiEngineer | `Misc/Skirmish.cpp` |
 | `0x699043` | `1006AF00` | GameMode_SaveGameSettings_MultiEngineer | `Misc/Skirmish.cpp` |
 | `0x6AEE6A` | `1006B070` | Skirmish_InitializeDialog_MultiEngineer | `Misc/Skirmish.cpp` |

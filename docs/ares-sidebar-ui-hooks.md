@@ -27,6 +27,12 @@ takes its Ares form, in every build, when Ares plays in the game
   its own count when ticked; a held build, a finished build and the structure strips
   keep their single event.
 
+- **Skirmish alone** (`Ares_AllowSinglePlay` 0x6AD0ED, Ares.dll 10003AD0): in a
+  front end Ares plays in, Start skips the "at least two players" and "more than
+  one team" gates after the capacity check, as `[VERA] SoloSkirmish=` does
+  (`start_skips_side_gates` in `src/ui/skirmish_shell/state/launch.rs`). The front
+  end's Rules decide, so a map whose own keys turn Ares on keeps the gates.
+
 ## Residuals
 
 - **R1, Ares campaign menu configuration.** Trigger: uimd.ini `[UISettings]`
