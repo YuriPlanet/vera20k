@@ -437,6 +437,7 @@ pub(super) fn settle_abandoned(
     if let Some(category) = category {
         refund_abandoned(sim, rules, owner_id, category, &abandoned);
     }
+    clear_abandoned_parallel_factory(sim, rules, holder, owner_id, abandoned.type_id);
     let category = category.map(ProductionCategory::object_category);
     // NPSE 2.0 AbandonProduction C33B50..C33B79 reads product Naval.
     let naval = sim
@@ -496,44 +497,40 @@ pub(super) fn abandon_production(
     owner: InternedId,
     effects: &mut FrameEffects<'_>,
 ) {
-    // Phobos `FactoryClass_AbandonProduction_Phobos 0x4CA07A` nulls the
-    // house's category pointer for a forbidden category or product, without
-    // checking which factory abandoned it.
-    clear_abandoned_parallel_factory(sim, rules, holder, owner);
     if let Some(abandoned) = sim.production.factories().pending_abandonment(holder) {
         settle_abandoned(sim, rules, owner, holder, abandoned, effects);
     }
     sim.production.edit_factories().remove_factory(holder);
 }
 
+/// `FactoryClass_AbandonProduction` at `0x4CA07A`, after the refund: the
+/// house's category pointer is nulled without checking which factory
+/// abandoned the object. Ares (`10024EE0`) does so for any factory and
+/// product, Phobos for a building's factory and a forbidden category or
+/// product.
 fn clear_abandoned_parallel_factory(
     sim: &mut Simulation,
     rules: &RuleSet,
     holder: FactoryHolder,
     owner: InternedId,
+    type_id: InternedId,
 ) {
-    let FactoryHolder::Building(_) = holder else {
-        return;
-    };
-    if !rules.parallel_ai_queues_act() {
+    let serial = rules.serial_ai_queues_act();
+    if !serial && !(matches!(holder, FactoryHolder::Building(_)) && rules.parallel_ai_queues_act())
+    {
         return;
     }
-    let product = sim
-        .production
-        .factories()
-        .pending_abandonment(holder)
-        .and_then(|abandoned| rules.object(sim.interner.resolve(abandoned.type_id)))
-        .map(|object| {
-            (
-                object.category,
-                object.naval,
-                object.forbid_parallel_ai_queues,
-            )
-        });
+    let product = sim.object_type(type_id, rules).map(|object| {
+        (
+            object.category,
+            object.naval,
+            object.forbid_parallel_ai_queues,
+        )
+    });
     let Some((category, naval, forbidden)) = product else {
         return;
     };
-    if !forbidden && !rules.parallel_ai_queues().forbids_category(category, naval) {
+    if !serial && !forbidden && !rules.parallel_ai_queues().forbids_category(category, naval) {
         return;
     }
     let slot = crate::sim::ai_base_building::AiFactorySlot::for_product(category, naval);
