@@ -2,8 +2,8 @@
 //! area, the Move / object / attack click payloads, cell harvest and the move flash.
 
 use super::{
-    AttackAction, InfantryAttackAction, OrderModifier, attack_action_with,
-    infantry_attack_action_with, ivan_cannot_bomb, shrouded_object_action,
+    AttackAction, InfantryAttackAction, OrderModifier, attack_action_with, ctrl_forces_attack_rung,
+    healer_guards_itself, infantry_attack_action_with, ivan_cannot_bomb, shrouded_object_action,
 };
 use crate::app::input::entity_pick::{HoverObject, HoverTargetKindWithId};
 use crate::app::types::{HoverTargetKind, OrderMode};
@@ -64,6 +64,36 @@ pub(super) fn object_guard_command(
     .then_some(Command::Guard {
         entity_id: receiver,
         target: Some(TargetKind::Entity(target_id)),
+    })
+}
+
+/// Foot ClickedAction_Object's case 0x3B (`0x004D74E0`), a healer
+/// infantryman's AttackSupport over an object
+/// ([`crate::sim::world::InfantryHealAction::AttackSupport`]): Area Guard on
+/// the healer itself when the Damage of its GetWeapon(0) (vt+0x3F8) heals,
+/// else Guard on itself. The case asks neither IsActive nor vt+0xA0.
+///
+/// RESIDUAL: VERA sends no Guard order, so a healer whose Secondary heals
+/// and whose Primary does not orders nothing. Only a mod's healers reach it.
+pub(super) fn attack_support_command(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    receiver: u64,
+) -> Option<Command> {
+    let entity = sim.entities().get(receiver)?;
+    let object = sim.interner().object_type(entity.type_ref(), rules)?;
+    crate::sim::combat::combat_weapon::get_weapon(
+        entity,
+        object,
+        0,
+        sim.entities(),
+        rules,
+        sim.interner(),
+    )
+    .is_some_and(|weapon| weapon.damage < 0)
+    .then_some(Command::Guard {
+        entity_id: receiver,
+        target: Some(TargetKind::Entity(receiver)),
     })
 }
 
@@ -449,11 +479,6 @@ pub(super) fn object_attack_click_command_with(
             destination,
         ))
     };
-    // A healer's GuardArea over itself replaces its key answers
-    // ([`crate::sim::world::Simulation::infantry_healer_guards_itself`]).
-    if target_id == attacker_id && sim.infantry_healer_guards_itself(control, attacker_id, rules) {
-        return object_guard_command(sim, control, rules, attacker_id, target_id);
-    }
     // The receiver's own key rungs ([`object_key_action`]) come before its
     // attack rung: Ctrl+Alt's guard rung, else Alt's Move, which Foot's
     // shroud rung may make NoMove. Shift's ToggleSelect belongs to the
@@ -472,6 +497,19 @@ pub(super) fn object_attack_click_command_with(
             force_move_key,
         )
     };
+    // A healer's GuardArea over itself replaces its key answers
+    // ([`healer_guards_itself`]).
+    if target_id == attacker_id
+        && healer_guards_itself(
+            sim,
+            control,
+            rules,
+            attacker_id,
+            ctrl_forces_attack_rung(modifier, key_action),
+        )
+    {
+        return object_guard_command(sim, control, rules, attacker_id, target_id);
+    }
     match key_action {
         Some(ObjectKeyAction::GuardArea) => {
             return object_guard_command(sim, control, rules, attacker_id, target_id);
@@ -509,11 +547,13 @@ pub(super) fn object_attack_click_command_with(
             return move_near(crate::sim::world::MoveAction::NoMove);
         }
         AttackAction::Move => return move_near(crate::sim::world::MoveAction::Move),
+        AttackAction::AttackSupport => return attack_support_command(sim, rules, attacker_id),
         AttackAction::Select
         | AttackAction::None
         | AttackAction::Rally
-        | AttackAction::GuardArea
-        | AttackAction::AttackSupport => return None,
+        | AttackAction::GuardArea => {
+            return None;
+        }
     }
     match infantry_attack_action_with(sim, control, rules, attacker_id, target_id) {
         Some(InfantryAttackAction::NoMove) => {

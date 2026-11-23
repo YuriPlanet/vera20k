@@ -92,9 +92,9 @@ Input rungs
 ([ares-techno-hooks.md](ares-techno-hooks.md),
 [ares-building-house-hooks.md](ares-building-house-hooks.md)):
 - an Ivan entering an allied Grinder without Ctrl (`0x51EB48`; VERA answers IvanBomb);
-- a healer infantryman's stock heal rows other than its self GuardArea: 0x3B over a
-  non-allied object (`0x51E797`), the stock Heal without Ares (`0x51E73C`), a healing
-  Engineer under Ctrl over itself (`0x51E6B4`; VERA answers GuardArea);
+- a healer infantryman whose weapon 0 does not heal over a non-allied object (Foot's
+  Guard on itself, `0x4D74E0`; VERA orders nothing), and any healer's Alt or Ctrl+Alt
+  over a Terrain object (`0x51E797`; VERA answers the key rungs);
 - Shift over an object when the cursor owner is Deactivated, or an EMP'd deployer over
   itself: the click answers Shift's ToggleSelect (`0x700107`) first, where the class
   What_Action hooks (`0x51E3B0`, `0x51E440`, `0x73FD5A`, `0x417CCB`, `0x447218`) answer

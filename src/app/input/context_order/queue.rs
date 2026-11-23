@@ -99,7 +99,9 @@ pub(super) fn left_release(
 /// and its What_Action base answers 0 whatever the modifiers (`0x006FFEC9`,
 /// cell `0x00700609`). The class rungs decide the rest:
 /// - Infantry: NoMove for a human owner (`0x0051F05E`), on the ground too
-///   unless `JumpJet=` (`0x0051FAAB`).
+///   unless `JumpJet=` (`0x0051FAAB`). A healer's heal arm comes first
+///   (`0x0051E6D8`), so a berserk healer infantryman may answer Select over
+///   an ally.
 /// - Unit: NoMove over an object (`0x007403EB`), 0 on the ground
 ///   (`0x007404B0`). A healer's repair arm still runs (`0x0073FD7C`), so a
 ///   berserk repair IFV may answer Select or Repair.
@@ -142,13 +144,23 @@ pub(super) fn berserk_selection_click(
     let action = if action_zero {
         ReleaseAction::Zero
     } else if hover.is_some_and(|target| {
-        sim.unit_repair_action(
-            best_id,
-            target.stable_id,
-            issuing_house,
-            crate::sim::world::HealArmKeys::default(),
-            rules,
-        ) == Some(crate::sim::world::UnitRepairAction::Select)
+        use super::HealerAction;
+        use crate::sim::world::{InfantryHealAction, UnitRepairAction};
+        matches!(
+            super::healer_object_action(
+                sim,
+                rules,
+                best_id,
+                target.stable_id,
+                issuing_house,
+                OrderModifier::Normal,
+                false,
+            ),
+            Some(
+                HealerAction::Unit(UnitRepairAction::Select)
+                    | HealerAction::Infantry(InfantryHealAction::Select)
+            )
+        )
     }) {
         ReleaseAction::Select
     } else {
@@ -470,6 +482,9 @@ pub(crate) fn try_queue_context_order(
             )
         });
         if let Some(repair_dispatch) = repair_dispatch {
+            if repair_dispatch.selects {
+                return false;
+            }
             consumed_attack_action |= repair_dispatch.consumed;
             queued.extend(
                 repair_dispatch
@@ -725,6 +740,7 @@ pub(crate) fn try_queue_context_order(
                 commands: Vec::new(),
                 consumed: false,
                 select_fallback: false,
+                selects: false,
             }
         };
         consumed_attack_action |= attack_dispatch.consumed;
