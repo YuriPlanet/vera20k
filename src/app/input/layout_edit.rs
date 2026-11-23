@@ -209,56 +209,40 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
             .and_then(|atlas| atlas.art(node, key, 0))
             .map_or(fallback, |entry| entry.pixel_size)
     };
-    let credits = size("Credits", "Art", [168.0, 16.0]);
-    let top = size("Top", "Art", [168.0, 32.0]);
-    let radar = size("Radar", "Art", [168.0, 110.0]);
-    let middle = size("Middle", "Art", [168.0, 69.0]);
-    let strip = size("Cameos", "RowArt", [168.0, 50.0]);
     let power = crate::ui::sidebar::power_bar_rect(&layout, spec);
-    let panels = [
-        (
-            SidebarPart::Credits,
-            [layout.credits_x, layout.credits_y, credits[0], credits[1]],
-            [spec.credits_x, spec.credits_y],
-        ),
-        (
-            SidebarPart::Top,
-            [layout.top_x, layout.top_y, top[0], top[1]],
-            [spec.top_x, spec.top_y],
-        ),
-        (
-            SidebarPart::Radar,
-            [layout.radar_x, layout.radar_y, radar[0], radar[1]],
-            [spec.radar_housing_x, spec.radar_housing_y],
-        ),
-        (
-            SidebarPart::Middle,
-            [layout.side1_x, layout.side1_y, middle[0], middle[1]],
-            [spec.side1_x, spec.side1_y],
-        ),
-        (
-            SidebarPart::Cameos,
-            [
-                layout.strip_x,
-                layout.cameo_grid_top,
-                strip[0],
-                layout.cameo_grid_bottom - layout.cameo_grid_top,
-            ],
-            [spec.strip_x, spec.strip_y],
-        ),
-        (
-            SidebarPart::Power,
+    for part in [
+        SidebarPart::Credits,
+        SidebarPart::Top,
+        SidebarPart::Radar,
+        SidebarPart::Middle,
+        SidebarPart::Cameos,
+        SidebarPart::Power,
+    ] {
+        let [x, y] = layout.origin(&spec, part);
+        let [x, y, w, h] = match part {
+            SidebarPart::Cameos => {
+                let w = size("Cameos", "RowArt", [168.0, 50.0])[0];
+                let h = layout.cameo_grid_bottom - layout.cameo_grid_top;
+                [x, layout.cameo_grid_top, w, h]
+            }
             // The bar is thin; its handle is wide enough to grab.
-            [power.x, power.y, power.w.max(12.0), power.h],
-            [spec.power_bar_x, spec.power_bar_y],
-        ),
-    ];
-    for (part, [x, y, w, h], xy) in panels {
+            SidebarPart::Power => [power.x, power.y, power.w.max(12.0), power.h],
+            _ => {
+                let height = match part {
+                    SidebarPart::Credits => 16.0,
+                    SidebarPart::Top => 32.0,
+                    SidebarPart::Radar => 110.0,
+                    _ => 69.0,
+                };
+                let [w, h] = size(part.name(), "Art", [168.0, height]);
+                [x, y, w, h]
+            }
+        };
         if spec.shows(part) && w > 0.0 && h > 0.0 {
             out.push(Target {
                 name: part.name().to_owned(),
                 rect: to_frame(x, y, w, h),
-                xy: xy.map(|v| v.round() as i32),
+                xy: spec.place(part).map(|v| v.round() as i32),
                 per_pixel: [1.0 / scale; 2],
             });
         }
@@ -684,10 +668,7 @@ mod tests {
             .for_side(Some("Nod"), false)
             .unwrap()
             .apply_to_sidebar(&mut soviet);
-        assert_eq!(
-            (soviet.radar_housing_x, soviet.radar_housing_y),
-            (12.0, 71.0)
-        );
+        assert_eq!(soviet.place(SidebarPart::Radar), [12.0, 71.0]);
         // A side with no layout gets the player's own, in the same file.
         let text = placed_in_text(&text, None, "GDI", "Timers", [5, 30]);
         let file = read(&text);

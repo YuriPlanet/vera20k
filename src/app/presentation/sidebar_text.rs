@@ -17,7 +17,7 @@
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarView};
+use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarPart, SidebarView};
 // Generic credit glyph generation is render-owned (F06); this module keeps
 // only the sidebar-view adapter below. Re-exported for existing callers.
 pub use crate::render::sidebar_text::{build_credits_instances, credits_tint};
@@ -43,8 +43,10 @@ pub fn build_sidebar_credits_instances(
     } else {
         crate::render::sidebar_text::format_credits(view.credits)
     };
+    let credits = spec.place(SidebarPart::Credits);
+    let money = spec.place(SidebarPart::Money);
     let plate = crate::ui::sidebar::Rect {
-        x: view.panel_rect.x + spec.credits_x,
+        x: view.panel_rect.x + credits[0],
         w: plate_width,
         ..view.panel_rect
     };
@@ -52,7 +54,7 @@ pub fn build_sidebar_credits_instances(
         font,
         &text,
         plate,
-        [spec.money_x, spec.credits_y + spec.money_y],
+        [money[0], credits[1] + money[1]],
         tint,
         camera_offset,
     )

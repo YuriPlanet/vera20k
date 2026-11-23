@@ -786,7 +786,7 @@ mod tests {
     #[test]
     fn current_profiles_match_compiled_native_geometry_and_reject_old_scale() {
         use crate::ui::sidebar::{
-            SidebarChromeLayoutSpec, SidebarTheme, compute_layout_with_spec,
+            SidebarChromeLayoutSpec, SidebarPart, SidebarTheme, compute_layout_with_spec,
             radar_minimap_rect_with_spec,
         };
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -813,7 +813,7 @@ mod tests {
             assert_eq!(
                 (
                     layout.sidebar_x,
-                    layout.side1_y,
+                    layout.origin(&spec, SidebarPart::Middle)[1],
                     layout.cameo_grid_top,
                     layout.side3_y,
                     layout.side2_tile_count

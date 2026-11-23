@@ -1681,11 +1681,10 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // This is display history, separate from ongoing internal minimap updates.
     // The radar housing's corner, where `build_radar_anim_instance` draws it.
     let spec = state.match_state.match_presentation.sidebar_layout_spec;
+    let [radar_x, radar_y] = spec.place(crate::ui::sidebar::SidebarPart::Radar);
     let origin = [
-        state.match_state.input.camera_x
-            + state.sidebar_frame().layout_left()
-            + spec.radar_housing_x,
-        state.match_state.input.camera_y + spec.radar_housing_y,
+        state.match_state.input.camera_x + state.sidebar_frame().layout_left() + radar_x,
+        state.match_state.input.camera_y + radar_y,
     ];
     let presentation = &mut state.match_state.match_presentation;
     if let (Some(radar), Some(mm)) = (
@@ -1768,11 +1767,12 @@ fn build_radar_anim_instance(state: &AppState) -> Vec<SpriteInstance> {
         return Vec::new();
     }
     let layout = crate::ui::sidebar::compute_layout_with_spec(spec, sw, sh, 0);
+    let [x, y] = layout.origin(&spec, crate::ui::sidebar::SidebarPart::Radar);
 
     vec![SpriteInstance {
         position: [
-            state.match_state.input.camera_x + layout.radar_x,
-            state.match_state.input.camera_y + layout.radar_y,
+            state.match_state.input.camera_x + x,
+            state.match_state.input.camera_y + y,
         ],
         size: [ra.width as f32, ra.height as f32],
         uv_origin: [0.0, 0.0],

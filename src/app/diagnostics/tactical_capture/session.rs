@@ -39,6 +39,7 @@ use crate::sim::command::Command;
 use crate::sim::house_state::HouseDifficulty;
 use crate::sim::production;
 use crate::ui::game_screen::GameScreen;
+use crate::ui::sidebar::SidebarPart;
 
 #[path = "map_observation.rs"]
 mod map_observation;
@@ -1089,6 +1090,8 @@ impl TacticalCaptureSession {
             [state.render_width(), state.render_height()],
         )?;
         let sidebar = drawn_sidebar.context("production render emitted no SidebarView")?;
+        let spec = state.match_state.match_presentation.sidebar_layout_spec;
+        let top_of = |part: SidebarPart| sidebar.layout.origin(&spec, part)[1];
         let panel_contains_aperture = aperture.x >= sidebar.panel_rect.x
             && aperture.y >= 0.0
             && aperture.x + aperture.w <= sidebar.panel_rect.x + sidebar.panel_rect.w
@@ -1203,9 +1206,9 @@ impl TacticalCaptureSession {
                     "low_power": sidebar.low_power,
                     "layout": {
                         "sidebar_x": sidebar.layout.sidebar_x,
-                        "radar_y": sidebar.layout.radar_y,
-                        "side1_y": sidebar.layout.side1_y,
-                        "tabs_y": sidebar.layout.tabs_y,
+                        "radar_y": top_of(SidebarPart::Radar),
+                        "side1_y": top_of(SidebarPart::Middle),
+                        "tabs_y": top_of(SidebarPart::Tabs),
                         "cameo_grid_top": sidebar.layout.cameo_grid_top,
                         "cameo_grid_bottom": sidebar.layout.cameo_grid_bottom,
                         "side3_y": sidebar.layout.side3_y,

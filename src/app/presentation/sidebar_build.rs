@@ -16,7 +16,7 @@ use crate::render::bit_font::{BitFont, Fit};
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
 use crate::ui::sidebar::power_bar_anim::PowerBarAnimState;
 use crate::ui::sidebar::{
-    Rect, SidebarChromeLayoutSpec, SidebarLayout, SidebarPart, SidebarTabButton, SidebarView,
+    PartKind, Rect, SidebarChromeLayoutSpec, SidebarLayout, SidebarPart, SidebarView,
 };
 
 #[path = "sidebar_command_bar.rs"]
@@ -40,7 +40,6 @@ pub(crate) fn build_sidebar_chrome_instances(
         state.match_state.match_presentation.sidebar_layout_spec,
         &view.layout,
         view,
-        &view.tabs,
         &state.match_state.match_presentation.power_bar_anim,
         [
             state.match_state.input.camera_x,
@@ -71,7 +70,6 @@ pub(crate) fn draw_sidebar_chrome(
     spec: SidebarChromeLayoutSpec,
     layout: &SidebarLayout,
     view: &SidebarView,
-    tabs: &[SidebarTabButton],
     power_bar_anim: &PowerBarAnimState,
     camera_offset: [f32; 2],
     static_radar_fallback: bool,
@@ -81,174 +79,53 @@ pub(crate) fn draw_sidebar_chrome(
     let d = 0.00048;
     let td = d - 0.00001;
     let btn_depth = d - 0.00002;
-    let button = |inst: &mut PictureHud, entry: Option<SidebarChromeEntry>, rect: Rect| {
-        if let Some(entry) = entry {
-            push_chrome(inst, entry, rect.x, rect.y, btn_depth, camera_offset);
-        }
-    };
-    // A button's frame, or its first frame when the MIX lacks that one.
-    let button_art = |node: &str, frame: usize| {
-        atlas
-            .art(node, "Art", frame)
-            .or_else(|| atlas.art(node, "Art", 0))
-    };
     // One part after another in the layout's order, so a later part lies over
     // an earlier one; a part the layout leaves out draws nothing.
     for part in spec.parts_in_order() {
         // Each part a named node of the tree, its pieces its children.
         inst.part(part.name());
-        match part {
-            // DrawCreditsSHPBackground 6D0E60.
-            SidebarPart::Credits => {
-                if let Some(credits) = atlas.art("Credits", "Art", 0) {
-                    push_chrome(
-                        inst,
-                        credits,
-                        layout.credits_x,
-                        layout.credits_y,
-                        d,
-                        camera_offset,
-                    );
+        match part.kind() {
+            // DrawCreditsSHPBackground 6D0E60, RadarClass::Draw 653100 and
+            // SIDE1: the first frame at the part's corner.
+            PartKind::Image => {
+                if let Some(entry) = atlas.art(part.name(), "Art", 0) {
+                    let [x, y] = layout.origin(&spec, part);
+                    push_chrome(inst, entry, x, y, d, camera_offset);
                 }
             }
-            // The credits number is text, drawn with the sidebar's labels.
-            SidebarPart::Money => {}
-            // RadarClass::Draw 653100.
-            SidebarPart::Top => {
-                if let Some(top) = atlas.art("Top", "Art", 0) {
-                    push_chrome(inst, top, layout.top_x, layout.top_y, d, camera_offset);
+            // 653010/653100: draw and hit-test use the same loaded SHP
+            // canvas. `shape_button_frame` (ShapeButtonClass::Draw
+            // 0x0069DEB0) picks the frame through SidebarGadgetState; the
+            // scroll pair's 3-frame convention (0 = idle, 1 = pressed,
+            // 2 = disabled) comes from SidebarGadgetState::scroll_*_frame.
+            // Every button but the top two falls back to its first frame when
+            // the MIX lacks the one asked for.
+            PartKind::Button | PartKind::Tab => {
+                let Some((rect, frame)) = view.button(part) else {
+                    continue;
+                };
+                let frame = usize::from(frame);
+                let top = matches!(part, SidebarPart::Diplomacy | SidebarPart::Options);
+                let entry = atlas
+                    .art(part.name(), "Art", frame)
+                    .or_else(|| atlas.art(part.name(), "Art", 0).filter(|_| !top));
+                let depth = if part.kind() == PartKind::Tab { td } else { btn_depth };
+                if let Some(entry) = entry {
+                    push_chrome(inst, entry, rect.x, rect.y, depth, camera_offset);
                 }
             }
-            // 653010/653100: draw and hit-test use the same loaded SHP canvas.
-            SidebarPart::Diplomacy | SidebarPart::Options => {
-                let top_button = &view.top_buttons[usize::from(part == SidebarPart::Options)];
-                let frame = top_button.frame_index as usize;
-                button(inst, atlas.art(part.name(), "Art", frame), top_button.rect);
-            }
-            SidebarPart::Radar => {
-                let radar = atlas.art("Radar", "Art", 0);
+            PartKind::Radar => {
+                let radar = atlas.art(part.name(), "Art", 0);
                 if let Some(radar) = radar.filter(|_| static_radar_fallback) {
-                    let (x, y) = (layout.radar_x, layout.radar_y);
+                    let [x, y] = layout.origin(&spec, part);
                     push_chrome(inst, radar, x, y, d, camera_offset);
                 }
             }
-            SidebarPart::Middle => {
-                if let Some(middle) = atlas.art("Middle", "Art", 0) {
-                    let (x, y) = (layout.side1_x, layout.side1_y);
-                    push_chrome(inst, middle, x, y, d, camera_offset);
-                }
+            PartKind::CameoGrid => {
+                draw_cameo_rows(inst, atlas, spec, layout, part, camera_offset, d);
             }
-            // `shape_button_frame` (ShapeButtonClass::Draw 0x0069DEB0) picks
-            // the frame through SidebarGadgetState::repair_frame / sell_frame.
-            SidebarPart::Repair => {
-                let repair = button_art("Repair", view.repair_button.frame_index as usize);
-                button(inst, repair, view.repair_button.rect);
-            }
-            SidebarPart::Sell => {
-                let sell = button_art("Sell", view.sell_button.frame_index as usize);
-                button(inst, sell, view.sell_button.rect);
-            }
-            SidebarPart::Tabs => {
-                for tab_btn in tabs {
-                    let name =
-                        ["Buildings", "Defenses", "Infantry", "Vehicles"][tab_btn.tab.tab_index()];
-                    if let Some(e) = button_art(name, tab_btn.frame_index as usize) {
-                        push_chrome(inst, e, tab_btn.rect.x, tab_btn.rect.y, td, camera_offset);
-                    }
-                }
-            }
-            SidebarPart::Cameos => {
-                // 6A6C30: row count is native capacity; pixel advance is
-                // SIDE2's loaded canvas height. SIDE3 and ADDON follow the
-                // last actual tile.
-                let cx = layout.strip_x;
-                let row_art = atlas.art("Cameos", "RowArt", 0);
-                if let Some(side2) = row_art.filter(|_| spec.columns() <= 2) {
-                    for row in 0..layout.side2_tile_count {
-                        let y = layout.cameo_grid_top + row as f32 * side2.pixel_size[1];
-                        push_chrome(inst, side2, cx, y, d, camera_offset);
-                    }
-                } else if let Some(side2) = row_art {
-                    // VERA's columns: SIDE2 paints the original's two button
-                    // frames, so a row of three to five repeats one of them
-                    // per cell, scaled with the cameo it holds, instead of
-                    // stretching the painted pair out of shape. The panel's
-                    // own edges keep their width, so the border runs unbroken
-                    // down the strip.
-                    let art = side2.pixel_size;
-                    let row_h = spec.cameo_row_height.max(1.0);
-                    let inset = spec.cameo_inset_x;
-                    let pitch = spec.cameo_column_pitch.max(1.0);
-                    let cell = spec
-                        .cameo_cell_source_width
-                        .min((art[0] - inset).max(1.0))
-                        .max(1.0);
-                    let rail = (art[0] - inset - 2.0 * cell).max(0.0);
-                    let cell_art = side2.columns(inset, cell);
-                    let left_edge = side2.columns(0.0, inset);
-                    let right_edge = side2.columns(art[0] - rail, rail);
-                    for row in 0..layout.side2_tile_count {
-                        let y = layout.cameo_grid_top + row as f32 * row_h;
-                        for col in 0..spec.columns() {
-                            push_chrome_sized(
-                                inst,
-                                cell_art,
-                                cx + inset + col as f32 * pitch,
-                                y,
-                                [pitch, row_h],
-                                d,
-                                camera_offset,
-                            );
-                        }
-                        push_chrome_sized(
-                            inst,
-                            left_edge,
-                            cx,
-                            y,
-                            [inset, row_h],
-                            d,
-                            camera_offset,
-                        );
-                        if rail > 0.0 {
-                            push_chrome_sized(
-                                inst,
-                                right_edge,
-                                cx + art[0] - rail,
-                                y,
-                                [rail, row_h],
-                                d,
-                                camera_offset,
-                            );
-                        }
-                    }
-                }
-                // SIDE3, then ADDON under it.
-                let mut y = layout.side3_y;
-                for key in ["EndArt", "FootArt"] {
-                    if let Some(entry) = atlas.art("Cameos", key, 0) {
-                        push_chrome(inst, entry, cx, y, d, camera_offset);
-                        y += entry.pixel_size[1];
-                    }
-                }
-                // Strip-scroll pair (R-DN +page left, R-UP -page right):
-                // 3-frame convention (0 = idle, 1 = pressed, 2 = disabled),
-                // selected by SidebarGadgetState::scroll_*_frame; the frame-0
-                // fallback only covers art missing from the MIX.
-                let down = button_art("ScrollDown", view.scroll_down_button.frame_index as usize);
-                button(inst, down, view.scroll_down_button.rect);
-                let up = button_art("ScrollUp", view.scroll_up_button.frame_index as usize);
-                button(inst, up, view.scroll_up_button.rect);
-            }
-            // Drawn with the part that holds them.
-            SidebarPart::Minimap
-            | SidebarPart::Buildings
-            | SidebarPart::Defenses
-            | SidebarPart::Infantry
-            | SidebarPart::Vehicles
-            | SidebarPart::ScrollDown
-            | SidebarPart::ScrollUp => {}
             // powerp.shp strips stacked from the top.
-            SidebarPart::Power => render_power_bar(
+            PartKind::PowerBar => render_power_bar(
                 inst,
                 atlas,
                 spec,
@@ -257,6 +134,69 @@ pub(crate) fn draw_sidebar_chrome(
                 camera_offset,
                 d,
             ),
+            // The credits number is text, drawn with the sidebar's labels;
+            // the map picture is drawn with the radar's.
+            PartKind::Text | PartKind::Minimap | PartKind::Panel => {}
+        }
+    }
+}
+
+/// The cameo strip's SIDE2 rows, then SIDE3 and ADDON under the last.
+///
+/// 6A6C30: row count is native capacity; pixel advance is SIDE2's loaded
+/// canvas height. SIDE3 and ADDON follow the last actual tile.
+fn draw_cameo_rows(
+    inst: &mut PictureHud,
+    atlas: &SidebarChromeAtlas,
+    spec: SidebarChromeLayoutSpec,
+    layout: &SidebarLayout,
+    part: SidebarPart,
+    camera_offset: [f32; 2],
+    d: f32,
+) {
+    let cx = layout.origin(&spec, part)[0];
+    let row_art = atlas.art(part.name(), "RowArt", 0);
+    if let Some(side2) = row_art.filter(|_| spec.columns() <= 2) {
+        for row in 0..layout.side2_tile_count {
+            let y = layout.cameo_grid_top + row as f32 * side2.pixel_size[1];
+            push_chrome(inst, side2, cx, y, d, camera_offset);
+        }
+    } else if let Some(side2) = row_art {
+        // VERA's columns: SIDE2 paints the original's two button frames, so
+        // a row of three to five repeats one of them per cell, scaled with
+        // the cameo it holds, instead of stretching the painted pair out of
+        // shape. The panel's own edges keep their width, so the border runs
+        // unbroken down the strip.
+        let art = side2.pixel_size;
+        let row_h = spec.cameo_row_height.max(1.0);
+        let inset = spec.cameo_inset_x;
+        let pitch = spec.cameo_column_pitch.max(1.0);
+        let cell = spec
+            .cameo_cell_source_width
+            .min((art[0] - inset).max(1.0))
+            .max(1.0);
+        let rail = (art[0] - inset - 2.0 * cell).max(0.0);
+        let cell_art = side2.columns(inset, cell);
+        let left_edge = side2.columns(0.0, inset);
+        let right_edge = side2.columns(art[0] - rail, rail);
+        for row in 0..layout.side2_tile_count {
+            let y = layout.cameo_grid_top + row as f32 * row_h;
+            for col in 0..spec.columns() {
+                let x = cx + inset + col as f32 * pitch;
+                push_chrome_sized(inst, cell_art, x, y, [pitch, row_h], d, camera_offset);
+            }
+            push_chrome_sized(inst, left_edge, cx, y, [inset, row_h], d, camera_offset);
+            if rail > 0.0 {
+                let x = cx + art[0] - rail;
+                push_chrome_sized(inst, right_edge, x, y, [rail, row_h], d, camera_offset);
+            }
+        }
+    }
+    let mut y = layout.side3_y;
+    for key in ["EndArt", "FootArt"] {
+        if let Some(entry) = atlas.art(part.name(), key, 0) {
+            push_chrome(inst, entry, cx, y, d, camera_offset);
+            y += entry.pixel_size[1];
         }
     }
 }
@@ -280,8 +220,7 @@ fn render_power_bar(
     camera_offset: [f32; 2],
     base_depth: f32,
 ) {
-    let bar_x: f32 = layout.sidebar_x + spec.power_bar_x;
-    let bar_top: f32 = spec.power_bar_y;
+    let [bar_x, bar_top] = layout.origin(&spec, SidebarPart::Power);
     let tile_h: f32 = spec.power_bar_tile_height;
 
     if tile_h <= 0.0 || anim.max_segments() <= 0 {
@@ -309,7 +248,7 @@ fn render_power_bar(
 /// 6A5090/6A5130 change row capacity on resize, never artwork scale.
 fn push_chrome(
     pictures: &mut PictureHud,
-    entry: crate::render::sidebar_chrome::SidebarChromeEntry,
+    entry: SidebarChromeEntry,
     x: f32,
     y: f32,
     depth: f32,
@@ -322,7 +261,7 @@ fn push_chrome(
 /// observer's strip, which draws among the cameos.
 fn push_chrome_instance(
     instances: &mut Vec<SpriteInstance>,
-    entry: crate::render::sidebar_chrome::SidebarChromeEntry,
+    entry: SidebarChromeEntry,
     x: f32,
     y: f32,
     depth: f32,
@@ -344,7 +283,7 @@ fn push_chrome_instance(
 /// is the whole pixels it covers there.
 fn push_chrome_sized(
     pictures: &mut PictureHud,
-    entry: crate::render::sidebar_chrome::SidebarChromeEntry,
+    entry: SidebarChromeEntry,
     x: f32,
     y: f32,
     size: [f32; 2],
