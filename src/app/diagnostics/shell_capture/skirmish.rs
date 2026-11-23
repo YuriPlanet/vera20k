@@ -567,15 +567,6 @@ impl SkirmishCapture {
                 == crate::ui::pause_menu::InGameMenuState::Keyboard
     }
 
-    /// A press and release at `point` through the chooser's production
-    /// handlers.
-    fn click_chooser(state: &mut AppState, point: (i32, i32)) {
-        state.match_state.input.cursor_x = point.0 as f32;
-        state.match_state.input.cursor_y = point.1 as f32;
-        App::handle_choose_map_modal_mouse_down(state);
-        App::handle_choose_map_modal_mouse_up(state);
-    }
-
     /// Track press above the map list's thumb (scrolls to the top), a press
     /// on the first row, then Use Map; the pointer returns to rest.
     fn press_use_map_on_first_map(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
@@ -595,11 +586,11 @@ impl SkirmishCapture {
         let bar = map_list(state)?
             .scrollbar
             .context("the map list needs a scrollbar")?;
-        Self::click_chooser(state, (bar.x + 10, bar.y + 24));
+        click_chooser(state, (bar.x + 10, bar.y + 24));
         let row = map_list(state)?.row(0);
-        Self::click_chooser(state, (row.x + 4, row.y + 4));
+        click_chooser(state, (row.x + 4, row.y + 4));
         let button = layout.rect(0x6C5);
-        Self::click_chooser(state, (button.x + button.w / 2, button.y + button.h / 2));
+        click_chooser(state, (button.x + button.w / 2, button.y + button.h / 2));
         state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
         state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
         ensure!(
@@ -1312,7 +1303,7 @@ impl SkirmishCapture {
                     }
                     Some(ChooserTarget::RandomMap(_)) if Self::chooser_settled(state) => {
                         // Through the chooser's production press and release.
-                        Self::click_chooser(state, CREATE_RANDOM_MAP_POINT);
+                        click_chooser(state, CREATE_RANDOM_MAP_POINT);
                         Self::set_pointer(state, self.rest_point());
                         ensure!(
                             state.frontend.shell_exit.is_some(),
@@ -1571,13 +1562,17 @@ impl SkirmishCapture {
                     // next tick opens B5 (the shell-started match has no
                     // exact-step owner); for B6 the same owner then presses
                     // and releases Abort and stops once B6 presents.
-                    use super::movies::abort_return::AbortReturnInput;
-                    self.menu_input = Some(AbortReturnInput::begin_live(
+                    use super::movies::abort_return::{AbortGoal, AbortReturnInput};
+                    self.menu_input = Some(AbortReturnInput::begin(
                         state,
                         &mut self.route,
                         frame,
-                        None,
-                        target != InGameMenuTarget::AbortConfirm,
+                        if target == InGameMenuTarget::AbortConfirm {
+                            AbortGoal::Choose(None)
+                        } else {
+                            AbortGoal::Menu
+                        },
+                        false,
                     )?);
                     self.phase = Phase::InGameMenu;
                 }
@@ -1633,24 +1628,6 @@ impl SkirmishCapture {
         Ok(())
     }
 
-    /// A press and release at `rect`'s centre through the in-game window
-    /// handler's pointer path.
-    fn click_in_game(
-        state: &mut AppState,
-        route: &mut Vec<Value>,
-        rect: crate::ui::shell::geom::RectPx,
-        step: &str,
-        frame: u32,
-    ) {
-        use winit::event::{ElementState, MouseButton};
-        let point = super::movies::set_window_pointer_to_rect_center(state, rect);
-        crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-        for edge in [ElementState::Pressed, ElementState::Released] {
-            crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-        }
-        route.push(json!({"frame": frame, "action": step, "dialog": 0xb5, "point": point}));
-    }
-
     /// Once B5 (or B6) has presented, open the target's dialog through its
     /// button, then rest the pointer at the neutral point through an ordinary
     /// move so no control keeps the hover; later frames count the settled
@@ -1688,7 +1665,10 @@ impl SkirmishCapture {
                     .page_column()
                     .first()
                     .context("B5 shows no Options button")?;
-                Self::click_in_game(state, &mut self.route, rect, "Options", frame);
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Options", "dialog": 0xb5, "point": point}),
+                );
                 ensure!(
                     state
                         .match_state
@@ -1704,7 +1684,10 @@ impl SkirmishCapture {
                     .context("Game Controls has no loaded page geometry")?
                     .button_rect(LauncherButton::InGameSound)
                     .context("Game Controls shows no Sound button")?;
-                Self::click_in_game(state, &mut self.route, rect, "Sound", frame);
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Sound", "dialog": 0xb5, "point": point}),
+                );
             }
             InGameMenuTarget::Keyboard => {
                 // The sidebar row under Options, or the page's own button
@@ -1717,7 +1700,10 @@ impl SkirmishCapture {
                         .and_then(|layout| layout.button_rect(LauncherButton::InGameKeyboard))
                         .context("B5 shows no Keyboard button")?,
                 };
-                Self::click_in_game(state, &mut self.route, rect, "Keyboard", frame);
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Keyboard", "dialog": 0xb5, "point": point}),
+                );
             }
         }
         ensure!(
@@ -2059,6 +2045,15 @@ mod tests {
             assert!(invalid.validate().is_err());
         }
     }
+}
+
+/// A press and release at `point` through the chooser's production
+/// handlers.
+pub(super) fn click_chooser(state: &mut AppState, point: (i32, i32)) {
+    state.match_state.input.cursor_x = point.0 as f32;
+    state.match_state.input.cursor_y = point.1 as f32;
+    App::handle_choose_map_modal_mouse_down(state);
+    App::handle_choose_map_modal_mouse_up(state);
 }
 
 /// Tab through the ordinary key edge: the binding lookup falls back to

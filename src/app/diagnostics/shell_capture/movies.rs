@@ -575,6 +575,10 @@ impl MoviesCapture {
                     state,
                     &mut self.route,
                     frame,
+                    abort_return::AbortGoal::Choose(Some(
+                        crate::ui::shell::abort::AbortButton::Leave,
+                    )),
+                    true,
                 )?);
                 self.phase = Phase::CampaignAbortMenu;
             }
@@ -2081,7 +2085,7 @@ fn check_loaded_sidebar_buttons(state: &mut AppState) -> Result<()> {
 
 /// Same physical-window to retained-render coordinates as CursorMoved in the
 /// window handler. The existing hit owner maps them back to its loaded pixels.
-pub(super) fn set_window_pointer_to_rect_center(
+fn set_window_pointer_to_rect_center(
     state: &mut AppState,
     rect: crate::ui::shell::geom::RectPx,
 ) -> [i32; 2] {
@@ -2090,6 +2094,46 @@ pub(super) fn set_window_pointer_to_rect_center(
         point[0] as f32 * state.render_width() as f32 / state.renderer.gpu.config.width as f32;
     state.match_state.input.cursor_y =
         point[1] as f32 * state.render_height() as f32 / state.renderer.gpu.config.height as f32;
+    point
+}
+
+/// Move the pointer to `rect`'s centre through the in-game window handler's
+/// CursorMoved path, then press the left button. The caller releases it, on
+/// this frame or a later presented one. Returns the window point.
+pub(super) fn press_in_game(
+    state: &mut AppState,
+    rect: crate::ui::shell::geom::RectPx,
+) -> [i32; 2] {
+    let point = set_window_pointer_to_rect_center(state, rect);
+    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+    crate::app::input::dispatch::handle_mouse_input(
+        state,
+        winit::event::MouseButton::Left,
+        winit::event::ElementState::Pressed,
+    );
+    point
+}
+
+/// A press and release at `rect`'s centre through the multiplayer setup
+/// page's (and the WOL pages') own pointer handlers.
+fn setup_click(state: &mut AppState, rect: crate::ui::shell::geom::RectPx) {
+    set_window_pointer_to_rect_center(state, rect);
+    crate::app::input::multiplayer_setup::cursor_moved(state);
+    crate::app::input::multiplayer_setup::mouse(state, winit::event::MouseButton::Left, true);
+    crate::app::input::multiplayer_setup::mouse(state, winit::event::MouseButton::Left, false);
+}
+
+/// [`press_in_game`] and its release on the same frame.
+pub(super) fn click_in_game(
+    state: &mut AppState,
+    rect: crate::ui::shell::geom::RectPx,
+) -> [i32; 2] {
+    let point = press_in_game(state, rect);
+    crate::app::input::dispatch::handle_mouse_input(
+        state,
+        winit::event::MouseButton::Left,
+        winit::event::ElementState::Released,
+    );
     point
 }
 

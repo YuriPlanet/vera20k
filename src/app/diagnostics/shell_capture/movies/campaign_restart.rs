@@ -424,8 +424,12 @@ impl RestartCapture {
             | RestartTarget::SavedAbortRestarted => {
                 let choice =
                     (target != RestartTarget::AbortShown).then_some(AbortButton::Secondary);
-                capture.abort = Some(abort_return::AbortReturnInput::begin_choosing(
-                    state, route, frame, choice,
+                capture.abort = Some(abort_return::AbortReturnInput::begin(
+                    state,
+                    route,
+                    frame,
+                    abort_return::AbortGoal::Choose(choice),
+                    true,
                 )?);
             }
             RestartTarget::DefeatPrompt
@@ -639,8 +643,12 @@ impl RestartCapture {
                         paused_tick: 0,
                     });
                     self.observe_objective(state, "objective visible");
-                    self.abort = Some(abort_return::AbortReturnInput::begin_menu(
-                        state, route, frame,
+                    self.abort = Some(abort_return::AbortReturnInput::begin(
+                        state,
+                        route,
+                        frame,
+                        abort_return::AbortGoal::Menu,
+                        true,
                     )?);
                     self.objective_pause.as_mut().unwrap().paused_tick =
                         Self::simulation_tick(state)?;
@@ -685,18 +693,7 @@ impl RestartCapture {
                     let rect = layout
                         .button(crate::ui::shell::pause_menu::PauseMenuButton::Resume)
                         .context("B5 Resume")?;
-                    let point = set_window_pointer_to_rect_center(state, rect);
-                    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                    for edge in [
-                        winit::event::ElementState::Pressed,
-                        winit::event::ElementState::Released,
-                    ] {
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            winit::event::MouseButton::Left,
-                            edge,
-                        );
-                    }
+                    let point = click_in_game(state, rect);
                     ensure!(
                         !state.match_state.match_presentation.in_game_menu.is_open(),
                         "Resume did not close B5"
