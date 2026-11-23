@@ -815,8 +815,10 @@ fn status_text_tint(
 /// The shared7BB020/7BAD90/434120 material geometry. Callers supply their
 /// already measured/clipped backing and native glyph origin; group and
 /// Building labels deliberately use different rectangles and alignment.
+/// Each caller asks its family's built-in template
+/// ([`health_templates::family`]) once a frame and moves the label's point
+/// by it before it measures and culls the label.
 pub(crate) fn status_text_instances(
-    family: Mark,
     font: &BitFont,
     text: &str,
     origin: [f32; 2],
@@ -825,18 +827,6 @@ pub(crate) fn status_text_instances(
     tint: [f32; 3],
 ) -> StatusTextOverlayInstances {
     let mut label = StatusTextOverlayInstances::default();
-    // The family's built-in template (`health_templates`) may hide or move
-    // it; a stock one leaves every number as it was.
-    let Some((_, offset)) = health_templates::mark(family, None, 0) else {
-        return label;
-    };
-    let shifted = health_templates::shifted((origin[0], origin[1]), offset);
-    let origin = [shifted.0, shifted.1];
-    let (rect_x, rect_y) = if offset == [0, 0] {
-        (rect_x, rect_y)
-    } else {
-        (rect_x.saturating_add(offset[0]), rect_y.saturating_add(offset[1]))
-    };
     if rect_width > 0 && rect_height > 0 {
         let rect_x = rect_x as f32 + camera[0];
         let rect_y = rect_y as f32 + camera[1];
@@ -922,6 +912,10 @@ pub(crate) fn build_control_group_status_render_instances(
         rules,
     );
     let mut parents = BTreeMap::new();
+    // The digits' built-in template (`health_templates`) may hide or move them.
+    let Some(shift) = health_templates::family(Mark::GroupLabel) else {
+        return parents;
+    };
     for (stable_id, digit) in labels {
         let Some(entity) = frame.object(stable_id) else {
             continue;
@@ -962,9 +956,12 @@ pub(crate) fn build_control_group_status_render_instances(
             -0x24 as f32
         };
         let text = digit.to_string();
-        let (x, y) = (
-            screen_x + caller_offset_x - 4.0,
-            screen_y + caller_offset_y + tail_offset_y,
+        let (x, y) = health_templates::shifted(
+            (
+                screen_x + caller_offset_x - 4.0,
+                screen_y + caller_offset_y + tail_offset_y,
+            ),
+            shift,
         );
         let width = font.text_width(&text) as f32;
         let height = font.glyph_height();
@@ -996,7 +993,7 @@ pub(crate) fn build_control_group_status_render_instances(
         // applies the camera offset at draw time, like the neighboring pips.
         parents.insert(
             stable_id,
-            status_text_instances(Mark::GroupLabel, font, &text, [x, y], clipped, camera, tint),
+            status_text_instances(font, &text, [x, y], clipped, camera, tint),
         );
     }
     parents
@@ -1078,6 +1075,10 @@ pub(crate) fn build_building_status_render_instances(
 ) -> BuildingStatusTextInstances {
     let mut labels = BuildingStatusTextInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
+    // Each family's built-in template (`health_templates`) may hide or move it.
+    let super_shift = health_templates::family(Mark::SuperLabel);
+    let info_shift = health_templates::family(Mark::InfoLabel);
+    let status_shift = health_templates::family(Mark::StatusLabel);
     let ares_form = rules.ares_form();
     // `current_house_id` is the frame's local player, whom its records answer
     // for, and whose view decides the allies' labels' colour. The sweep is
@@ -1116,7 +1117,7 @@ pub(crate) fn build_building_status_render_instances(
             sim.session().game_options().fog_of_war,
         );
         let lines: &[crate::sim::superweapon::SuperChargeLine] =
-            if superweapon_building_timers && visible {
+            if superweapon_building_timers && visible && super_shift.is_some() {
                 entity.hud.super_charges()
             } else {
                 &[]
@@ -1126,14 +1127,16 @@ pub(crate) fn build_building_status_render_instances(
         // building like the Super lines. `allied` is true for the local house
         // as well as allies, so an enemy's row is never shown. Not restricted
         // to the selected building.
-        let info_lines: Vec<String> = if convenience_help && allied && visible {
+        let info_lines: Vec<String> = if convenience_help && allied && visible && info_shift.is_some()
+        {
             entity.hud.info_lines().collect()
         } else {
             Vec::new()
         };
         // DrawExtraInfo needs the building selected, including when it is
         // also hovered.
-        let label = (entity.selection.is_selected()
+        let label = (status_shift.is_some()
+            && entity.selection.is_selected()
             && body_opportunities.contains(&entity.stable_id()))
         .then(|| building_status_text(entity, object, allied, primary, ares_form))
         .flatten();
@@ -1163,70 +1166,79 @@ pub(crate) fn build_building_status_render_instances(
         // shows both, and a building providing several Supers stacks one line
         // per Super, in its type's own order.
         let line_height = (font.cell_height() as f32 * zoom).round() as i32;
-        for (row, line) in lines.iter().enumerate() {
-            let name = super_line_name(sim, rules, csf, line.super_id);
-            let seconds =
-                line.left.max(0) / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
-            // `*` marks a Super this building charges itself (the Superweapon
-            // Limit's per-building shots) rather than the House's one shared
-            // charge that a radar or a battle lab provides.
-            let text = format!(
-                "{}{name} {}",
-                if line.own { "*" } else { "" },
-                crate::app::presentation::super_timers::time_text(seconds),
-            );
-            let anchor = [
-                anchor[0],
-                anchor[1].wrapping_add(line_height.wrapping_mul(row as i32 + 1)),
-            ];
-            let measure = font.compute_text_rect(&text, anchor, 0x149, [4, 2]);
-            // The backing keeps its whole measured rect: the pass's scissor
-            // already bounds it, so nothing is drawn outside the view, and a
-            // clip that shrank to nothing is exactly what would drop a label
-            // the player can still read.
-            if !rect_overlaps(measure, tactical_clip) {
-                continue;
+        if let Some(shift) = super_shift {
+            for (row, line) in lines.iter().enumerate() {
+                let name = super_line_name(sim, rules, csf, line.super_id);
+                let seconds =
+                    line.left.max(0) / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
+                // `*` marks a Super this building charges itself (the Superweapon
+                // Limit's per-building shots) rather than the House's one shared
+                // charge that a radar or a battle lab provides.
+                let text = format!(
+                    "{}{name} {}",
+                    if line.own { "*" } else { "" },
+                    crate::app::presentation::super_timers::time_text(seconds),
+                );
+                let anchor = health_templates::shifted_px(
+                    [
+                        anchor[0],
+                        anchor[1].wrapping_add(line_height.wrapping_mul(row as i32 + 1)),
+                    ],
+                    shift,
+                );
+                let measure = font.compute_text_rect(&text, anchor, 0x149, [4, 2]);
+                // The backing keeps its whole measured rect: the pass's scissor
+                // already bounds it, so nothing is drawn outside the view, and a
+                // clip that shrank to nothing is exactly what would drop a label
+                // the player can still read.
+                if !rect_overlaps(measure, tactical_clip) {
+                    continue;
+                }
+                let origin = [
+                    measure[0].wrapping_add(4) as f32 + camera[0],
+                    measure[1].wrapping_add(2) as f32 + camera[1],
+                ];
+                labels.push(status_text_instances(
+                    font,
+                    &text,
+                    origin,
+                    measure,
+                    camera,
+                    tint,
+                ));
             }
-            let origin = [
-                measure[0].wrapping_add(4) as f32 + camera[0],
-                measure[1].wrapping_add(2) as f32 + camera[1],
-            ];
-            labels.push(status_text_instances(
-                Mark::SuperLabel,
-                font,
-                &text,
-                origin,
-                measure,
-                camera,
-                tint,
-            ));
         }
         // VERA info rows stack below the Super rows (super first, then info),
         // each localized here from the frozen capture's facts.
-        for (row, text) in info_lines.iter().enumerate() {
-            let anchor = [
-                anchor[0],
-                anchor[1].wrapping_add(line_height.wrapping_mul((lines.len() + row + 1) as i32)),
-            ];
-            let measure = font.compute_text_rect(text, anchor, 0x149, [4, 2]);
-            if !rect_overlaps(measure, tactical_clip) {
-                continue;
+        if let Some(shift) = info_shift {
+            for (row, text) in info_lines.iter().enumerate() {
+                let anchor = health_templates::shifted_px(
+                    [
+                        anchor[0],
+                        anchor[1]
+                            .wrapping_add(line_height.wrapping_mul((lines.len() + row + 1) as i32)),
+                    ],
+                    shift,
+                );
+                let measure = font.compute_text_rect(text, anchor, 0x149, [4, 2]);
+                if !rect_overlaps(measure, tactical_clip) {
+                    continue;
+                }
+                let origin = [
+                    measure[0].wrapping_add(4) as f32 + camera[0],
+                    measure[1].wrapping_add(2) as f32 + camera[1],
+                ];
+                labels.push(status_text_instances(
+                    font,
+                    text,
+                    origin,
+                    measure,
+                    camera,
+                    tint,
+                ));
             }
-            let origin = [
-                measure[0].wrapping_add(4) as f32 + camera[0],
-                measure[1].wrapping_add(2) as f32 + camera[1],
-            ];
-            labels.push(status_text_instances(
-                Mark::InfoLabel,
-                font,
-                text,
-                origin,
-                measure,
-                camera,
-                tint,
-            ));
         }
-        let Some(label) = label else {
+        let (Some(label), Some(shift)) = (label, status_shift) else {
             continue;
         };
         let text = match label {
@@ -1268,7 +1280,12 @@ pub(crate) fn build_building_status_render_instances(
                 ))],
             )),
         };
-        let measure = font.compute_text_rect(&text, anchor, 0x149, [4, 2]);
+        let measure = font.compute_text_rect(
+            &text,
+            health_templates::shifted_px(anchor, shift),
+            0x149,
+            [4, 2],
+        );
         let clipped = crate::util::rect::clip_rect(measure, tactical_clip);
         //70AB0A/70AC60 and4A5EF9 share the whole-string center. Unlike
         //group, these labels do not expand the clipped backing one pixel left.
@@ -1277,7 +1294,6 @@ pub(crate) fn build_building_status_render_instances(
             measure[1].wrapping_add(2) as f32 + camera[1],
         ];
         labels.push(status_text_instances(
-            Mark::StatusLabel,
             font,
             &text,
             origin,

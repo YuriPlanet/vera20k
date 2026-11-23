@@ -628,6 +628,14 @@ pub(crate) fn shifted(point: (f32, f32), offset: [i32; 2]) -> (f32, f32) {
     }
 }
 
+/// `point` moved by a template's whole-pixel `offset`.
+pub(crate) fn shifted_px(point: [i32; 2], offset: [i32; 2]) -> [i32; 2] {
+    [
+        point[0].saturating_add(offset[0]),
+        point[1].saturating_add(offset[1]),
+    ]
+}
+
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;

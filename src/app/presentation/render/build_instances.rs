@@ -514,6 +514,15 @@ pub(super) fn build_world_instances(
             .as_ref(),
     ) {
         let speech_wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+        // The text families' built-in templates (`health_templates`) may hide
+        // or move them; asked once for the frame.
+        let info_shift = crate::app::presentation::health_templates::family(
+            crate::app::presentation::health_templates::Mark::InfoLabel,
+        );
+        #[cfg(feature = "phobos")]
+        let digital_shift = crate::app::presentation::health_templates::family(
+            crate::app::presentation::health_templates::Mark::DigitalDisplay,
+        );
         for parent in planned_objects.iter_mut() {
             parent.status = frame.object(parent.parent.id).map(|entity| {
                 let mut status = crate::app::presentation::ui_overlays::techno_extras_for_parent(
@@ -554,11 +563,13 @@ pub(super) fn build_world_instances(
                 // status anchor. Drawing them here as well produced two repair
                 // countdowns over a captured-and-repairing neutral building.
                 // This TechnoExtras path is for foot/air units only.
-                if convenience_info_lines_admitted(
-                    state.match_state.match_presentation.convenience_help,
-                    viewer_allied,
-                    entity.category(),
-                ) {
+                if let Some(shift) = info_shift
+                    && convenience_info_lines_admitted(
+                        state.match_state.match_presentation.convenience_help,
+                        viewer_allied,
+                        entity.category(),
+                    )
+                {
                     let font = &state.renderer.bit_font;
                     let camera = [
                         state.match_state.input.camera_x,
@@ -570,7 +581,11 @@ pub(super) fn build_world_instances(
                     let tint = [1.0_f32, 1.0, 1.0];
                     let line_height = font.cell_height() as f32 + 2.0;
                     for (row, text) in entity.hud.info_lines().enumerate() {
-                        let origin = [base_x - 4.0, base_y + 10.0 + row as f32 * line_height];
+                        let (x, y) = crate::app::presentation::health_templates::shifted(
+                            (base_x - 4.0, base_y + 10.0 + row as f32 * line_height),
+                            shift,
+                        );
+                        let origin = [x, y];
                         let measure = font.compute_text_rect(
                             &text,
                             [
@@ -582,7 +597,6 @@ pub(super) fn build_world_instances(
                         );
                         status.info_text.push(
                             crate::app::presentation::ui_overlays::status_text_instances(
-                                crate::app::presentation::health_templates::Mark::InfoLabel,
                                 font,
                                 &text,
                                 origin,
@@ -599,9 +613,7 @@ pub(super) fn build_world_instances(
                 #[cfg(feature = "phobos")]
                 if state.match_state.match_presentation.digital_display_enabled
                     && let Some(rules) = state.rules()
-                    && let Some(offset) = crate::app::presentation::health_templates::family(
-                        crate::app::presentation::health_templates::Mark::DigitalDisplay,
-                    )
+                    && let Some(offset) = digital_shift
                 {
                     let digital =
                         crate::app::presentation::digital_display::digital_display_instances(
