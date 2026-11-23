@@ -435,12 +435,12 @@ fn render_skirmish_shell_with_atlas(
         if let Some(prompt_box) = prompt_box.as_ref() {
             crate::app::App::raise_choose_map_prompt(controller, prompt_box.dialog);
         }
-        for (shell_box, parts) in [
+        for (open, parts) in [
             (validation.as_ref(), validation_parts.as_ref()),
             (prompt_box.as_ref(), prompt_parts.as_ref()),
         ] {
-            if let (Some(shell_box), Some(parts)) = (shell_box, parts) {
-                crate::ui::shell::menu_page::sync_box(controller, shell_box, parts);
+            if let (Some(open), Some(parts)) = (open, parts) {
+                crate::ui::shell::menu_page::sync_box(controller, open, parts);
             }
         }
     }
