@@ -3,7 +3,11 @@
 //! for a `-1` node, or a `WallTower=` node without a cell, when its wall draw
 //! builds no walls (`0x004FE633`).
 //!
-//! Without a perimeter vector, as every VERA plan is (module residual):
+//! The choice runs in two shapes, told apart by the base plan's defense-cell
+//! vector (`HouseClass+0x5738`), which native fills only from a loaded base
+//! (`BaseClass::Load @ 0x0042EE30`) and which every fresh game leaves empty.
+//!
+//! Without supplied cells, as every VERA plan is (module residual):
 //! - Coverage (`0x005070D5..0x0050722F`): each building of the house
 //!   (`HouseClass+0x6C`, in order) off the plan centre (`+0x5750`) whose
 //!   `AntiAirValue=`, `AntiArmorValue=` and `AntiInfantryValue=` (BuildingClass
@@ -33,26 +37,40 @@
 //! - The writes ([`crate::sim::base_plan::BasePlanState::place_defense`],
 //!   `0x00507A4C..0x00507B7B`).
 //!
+//! With supplied defense cells:
+//! - The cells are bucketed by quadrant (`0x00506FDF..0x005070CF`), and the
+//!   weakest quadrant must hold one (`0x00507265..0x0050726C`).
+//! - The cell: the weakest quadrant's cells, each keyed with the quadrant's
+//!   own index and argument -1 (`0x00507897..0x00507904`), sorted ascending
+//!   by that key (`0x0050791A..0x0050792C`); the first is the cell
+//!   (`0x00507990`). The cell leaves the vector (`0x005079B4..0x005079CC`)
+//!   before the cell is checked: a cell at the origin is no cell, and the
+//!   choice fails (`0x00507A34..0x00507A47`).
+//! - The site search does not run (`0x005077FB..0x0050780E`); the wall node
+//!   at the cell leaves the plan (`0x00507AA4..0x00507B51`), but only when
+//!   the defense is handed to the node after the chosen one
+//!   (`0x00507A7D..0x00507A9E`). Native scans the nodes from the last one
+//!   down for that node (`0x00507AC3..0x00507AFA`).
+//!
 //! The grids, the threat shares (`+0x1609C..+0x160A4`, which only this call
 //! writes before reading) and the grid pointer (`+0x16060`, cleared on every
 //! return at `0x0050754F`) live only for the call.
 //!
 //! Evidence: instruction reading, and native execution
 //! (`tools/ai_base_defense_oracle.py`, compared in `ai_base_defense_tests.rs`)
-//! of the spread, the key, the threat shares with their draws, and 57 whole
-//! choices with the draws and the site search call.
+//! of the spread, the key, the threat shares with their draws, 57 whole
+//! choices with the draws and the site search call, and 13 whole choices with
+//! the defense-cell vector supplied, over the node shapes the choice writes.
 //!
 //! RESIDUALS:
-//! - The separate defense-cell vector (`HouseClass+0x5738`, passed when
-//!   `+0x5748` is positive, `0x004FE61D..0x004FE62F`) is not ported. It is
-//!   distinct from the primary reservation perimeter+5720. ScanBasePerimeter
-//!   5082C0 appends wall/gate plan nodes, not cells to either vector.
-//!   Trigger: loading positive defense cells (BaseLoad42EFFC..42F038);
-//!   a fresh gameplay producer remains unestablished. Effect: VERA searches
-//!   a site instead of consuming a supplied cell from the weakest quadrant.
+//! - Native reads the looked-up wall type's index (`+0xDF8`) without a null
+//!   check (`0x00507AE8`); VERA removes no node when the house has no
+//!   buildable concrete wall type.
 //! - Native reads VERA defines, none reachable with retail rules: a quadrant
 //!   total of 999999 or more in all four quadrants leaves the weakest at -1,
-//!   whose sums are read from the stack (VERA reads 0); the fudge vector is
+//!   whose sums are read from the stack (VERA reads 0; with supplied cells
+//!   native then reads the quadrant bucket at -1, where VERA takes no cell
+//!   and searches a site); the fudge vector is
 //!   indexed unchecked by the difficulty (VERA reads 0 past its end); a key
 //!   cell outside the grid buffer reads the heap around it (VERA reads 0;
 //!   the perimeter lies in the reserved bounds unless a reservation started
@@ -60,11 +78,20 @@
 //!   WallTower's successor is read past the node count (VERA writes nothing
 //!   there, nor is anything past the count ever read). A negative grid size
 //!   fails the allocation natively (VERA: an empty grid).
+//! - The defense-cell vector (`HouseClass+0x5738`) has no producer in VERA.
+//!   Native passes it when `+0x5748` is positive
+//!   (`0x004FE61D..0x004FE62F`) and fills it only from a loaded base
+//!   (`BaseClass::Load @ 0x0042EE30`, `0x0042EFFC..0x0042F038`);
+//!   ScanBasePerimeter 5082C0 appends wall/gate plan nodes, not cells to
+//!   either vector, so a fresh game leaves it empty as it does in native.
+//!   Trigger: loading positive defense cells; effect: the AI takes a
+//!   supplied cell instead of searching a site; frequency: none today;
+//!   downstream risk: the path is unexercised in play.
 
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_buildable::owner_allows;
-use crate::sim::base_plan::pack_base_plan_cell;
+use crate::sim::base_plan::{pack_base_plan_cell, unpack_base_plan_cell};
 use crate::sim::base_plan_generation::prerequisites_satisfied;
 use crate::sim::house_tracking::ForceValues;
 use crate::sim::intern::InternedId;
@@ -306,6 +333,10 @@ pub(crate) struct DefenseChoice<'r> {
     pub country_bit: u32,
     /// `HouseClass+0x1D4`.
     pub tech_level: i32,
+    /// `HouseClass+0x5738`: the defense cells the base plan supplies, in
+    /// the order the base's Load read them. Empty unless a loaded base
+    /// carries them.
+    pub defense_cells: Vec<u32>,
     /// Per-choice immutable facts, aligned with the side's defense list.
     /// Gathered from the sole live type owner before this call's RNG draws;
     /// rebuilt for every choice, so no trigger needs to invalidate a cache.
@@ -329,6 +360,9 @@ pub(crate) struct DefensePick<'r> {
     pub grid: CoverageGrid,
     /// The key's argument: twice the weakest quadrant.
     pub argument: i32,
+    /// The cell the base plan supplies, when it supplies one: the weakest
+    /// quadrant's least covered cell (`0x00507865..0x005079CE`).
+    pub supplied_cell: Option<u32>,
 }
 
 impl<'r> DefenseChoice<'r> {
@@ -383,6 +417,7 @@ impl<'r> DefenseChoice<'r> {
             enemy,
             fudge,
             node_type,
+            defense_cells: house.base_plan().defense_cells().to_vec(),
         })
     }
 
@@ -413,6 +448,9 @@ impl<'r> DefenseChoice<'r> {
         }
         let mut least = 999_999;
         let mut weakest = None;
+        // The supplied cells, bucketed by quadrant (`0x00506FDF..0x005070CF`).
+        let buckets = self.supplied_quadrants();
+        let supplied = !self.defense_cells.is_empty();
         #[expect(
             clippy::needless_range_loop,
             reason = "sums three per-category quadrant tables in native order"
@@ -421,7 +459,9 @@ impl<'r> DefenseChoice<'r> {
             let total = sums[2][quadrant]
                 .wrapping_add(sums[1][quadrant])
                 .wrapping_add(sums[0][quadrant]);
-            if total < least {
+            // With supplied cells a quadrant also needs one of them
+            // (`0x00507265..0x0050726C`).
+            if total < least && (!supplied || !buckets[quadrant].is_empty()) {
                 least = total;
                 weakest = Some(quadrant);
             }
@@ -478,12 +518,46 @@ impl<'r> DefenseChoice<'r> {
             Category::Armor => armor_grid,
             Category::Infantry => infantry_grid,
         };
+        // The supplied cell (`0x00507865..0x005079CE`): the weakest
+        // quadrant's cells, each keyed with its own index in that quadrant
+        // and argument -1, sorted ascending; the first is the cell.
+        let supplied_cell = weakest.and_then(|quadrant| {
+            let mut keyed: Vec<(i32, u32)> = buckets[quadrant]
+                .iter()
+                .enumerate()
+                .map(|(index, &cell)| {
+                    let (x, y) = unpack_base_plan_cell(cell);
+                    (
+                        grid.key(index as i32, (x, y), self.center, -1),
+                        cell,
+                    )
+                })
+                .collect();
+            keyed.sort_by_key(|(key, _)| *key);
+            keyed.first().map(|&(_, cell)| cell)
+        });
         Some(DefensePick {
             defense,
             place,
             grid,
             argument: weakest.map_or(-2, |quadrant| 2 * quadrant as i32),
+            supplied_cell,
         })
+    }
+
+    /// The supplied cells bucketed by quadrant (`0x00506FDF..0x005070CF`):
+    /// each cell's quadrant from the plan centre, in the vector's order.
+    fn supplied_quadrants(&self) -> [Vec<u32>; 4] {
+        let mut buckets: [Vec<u32>; 4] = Default::default();
+        for &cell in &self.defense_cells {
+            let (x, y) = unpack_base_plan_cell(cell);
+            let delta = (
+                x.wrapping_sub(self.center.0),
+                y.wrapping_sub(self.center.1),
+            );
+            buckets[quadrant(delta)].push(cell);
+        }
+        buckets
     }
 
     /// The prerequisite vector (`0x005072B3..0x0050735F`): the types of the
@@ -551,8 +625,9 @@ fn weighted_pick<'r>(
 }
 
 /// `HouseClass::AI_ChooseNextProduction @ 0x00506EF0` for house `owner`'s
-/// node at `index`, without a perimeter vector: whether the node now holds
-/// a defense (or the WallTower its cell).
+/// node at `index`: whether the node now holds a defense (or the WallTower
+/// its cell). A base plan that supplies defense cells takes one of them
+/// (`0x005077FB..0x005079CE`); otherwise the site is searched.
 pub(crate) fn choose_next_production(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -566,25 +641,71 @@ pub(crate) fn choose_next_production(
     else {
         return false;
     };
-    let site = crate::sim::ai_base_site::find_base_building_site(
-        sim,
-        rules,
-        owner,
-        pick.place,
-        crate::sim::ai_base_site::SiteKey::Defense {
-            grid: &pick.grid,
-            argument: pick.argument,
-        },
-    );
-    if site == (0, 0) {
+    let site = match pick.supplied_cell {
+        Some(packed) => unpack_base_plan_cell(packed),
+        None => crate::sim::ai_base_site::find_base_building_site(
+            sim,
+            rules,
+            owner,
+            pick.place,
+            crate::sim::ai_base_site::SiteKey::Defense {
+                grid: &pick.grid,
+                argument: pick.argument,
+            },
+        ),
+    };
+    // The supplied-cell path drops the wall node at the cell
+    // (`0x00507AA4..0x00507B51`): the first `[AI] ConcreteWalls=` type the
+    // house may own (`HouseClass__FirstBuildableFromArray @ 0x005051E0`,
+    // `base_plan_generation::house_concrete_wall_type`).
+    let wall_type = pick.supplied_cell.and_then(|_| {
+        let house = sim.houses.get(&owner)?;
+        let country = sim.interner.resolve(house.house_type_id());
+        crate::sim::base_plan_generation::house_concrete_wall_type(
+            rules,
+            country,
+            house.side_index(),
+            sim.session.game_options().super_weapons,
+        )
+    });
+    if let Some(house) = sim.houses.get_mut(&owner) {
+        return place_choice(house.base_plan_mut(), index, &pick, site, wall_type);
+    }
+    false
+}
+
+/// The choice's plan writes (`0x00507A4C..0x00507B7B`): the node takes the
+/// defense and the cell. A supplied cell leaves the vector
+/// (`0x005079B4..0x005079CC`) before the cell is checked; a cell at the
+/// origin is no cell, and the choice fails (`0x00507A34..0x00507A47`). The
+/// wall node at the cell leaves the plan (`0x00507AA4..0x00507B51`) only
+/// with the branch that hands the defense to the node after the chosen one
+/// (`0x00507A7D..0x00507A9E`).
+pub(crate) fn place_choice(
+    plan: &mut crate::sim::base_plan::BasePlanState,
+    index: usize,
+    pick: &DefensePick<'_>,
+    cell: (i16, i16),
+    wall_type: Option<i32>,
+) -> bool {
+    if let Some(packed) = pick.supplied_cell {
+        // The supplied cell leaves the vector (`0x005079B4..0x005079CC`),
+        // before the cell is checked (`0x00507A34`).
+        plan.remove_defense_cell(packed);
+    }
+    if cell == (0, 0) {
         return false;
     }
-    if let Some(house) = sim.houses.get_mut(&owner) {
-        house.base_plan_mut().place_defense(
-            index,
-            pick.defense.base_plan_type_index,
-            pack_base_plan_cell(i32::from(site.0), i32::from(site.1)),
-        );
+    let handed = plan.place_defense(
+        index,
+        pick.defense.base_plan_type_index,
+        pack_base_plan_cell(i32::from(cell.0), i32::from(cell.1)),
+    );
+    if handed {
+        // The wall node at the cell leaves the plan (`0x00507AA4..0x00507B51`).
+        if let (Some(packed), Some(wall_type)) = (pick.supplied_cell, wall_type) {
+            plan.remove_node_at_cell(packed, wall_type);
+        }
     }
     true
 }

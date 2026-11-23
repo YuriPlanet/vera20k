@@ -917,6 +917,12 @@ impl Simulation {
                 node.filled.hash(hasher);
                 node.retry_count.hash(hasher);
             }
+            // The base plan's defense cells (`HouseClass+0x5738`), which the
+            // defense choice consumes (`0x005077FB..0x005079CE`).
+            if !house.base_plan().defense_cells().is_empty() {
+                b"house-defense-cells-v1".hash(hasher);
+                house.base_plan().defense_cells().hash(hasher);
+            }
             house.base_plan_center().hash(hasher);
             house.base_reservation().hash(hasher);
             house.waypoint_edge().hash(hasher);

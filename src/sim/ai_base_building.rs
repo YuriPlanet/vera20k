@@ -627,14 +627,13 @@ fn scan_base_perimeter(sim: &mut Simulation, rules: &RuleSet, owner: InternedId)
         &rules.ns_gate_types,
     ]
     .map(|types| {
-        crate::sim::ai_buildable::first_buildable_from_array(
+        crate::sim::base_plan_generation::house_first_buildable_type(
             rules,
             types,
             country,
             house.side_index(),
             sim.session.game_options().super_weapons,
         )
-        .and_then(|ty| rules.building_type_index(&ty.id))
     });
     let (x, y, width, height) = house.base_reservation().bounds();
     let grown = (
