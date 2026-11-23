@@ -256,22 +256,49 @@ pub enum ColorRange {
 }
 
 impl BinkFrame {
-    fn alloc(width: u32, height: u32, color_range: ColorRange) -> Self {
-        let stride_y = ((width + 7) & !7) as usize;
-        let stride_uv = (((width + 15) & !15) / 2) as usize;
-        let y_size = stride_y * ((height + 7) & !7) as usize;
-        let uv_size = stride_uv * (((height + 15) & !15) / 2) as usize;
-        Self {
+    /// The frame's planes, allocated fallibly: a header that names a large
+    /// frame asks for more memory than a machine may have, and a movie that
+    /// cannot hold its own planes must be refused, not fatal.
+    fn alloc(width: u32, height: u32, color_range: ColorRange) -> Result<Self, AssetError> {
+        let stride_y = (width as usize + 7) & !7;
+        let stride_uv = ((width as usize + 15) & !15) / 2;
+        let y_size = stride_y
+            .checked_mul((height as usize + 7) & !7)
+            .ok_or_else(|| bink_error("Bink frame plane size overflows"))?;
+        let uv_size = stride_uv
+            .checked_mul(((height as usize + 15) & !15) / 2)
+            .ok_or_else(|| bink_error("Bink frame plane size overflows"))?;
+        Ok(Self {
             width,
             height,
             color_range,
-            y: vec![0u8; y_size].into_boxed_slice(),
+            y: zeroed(y_size)?,
             stride_y,
-            u: vec![0u8; uv_size].into_boxed_slice(),
+            u: zeroed(uv_size)?,
             stride_uv,
-            v: vec![0u8; uv_size].into_boxed_slice(),
-        }
+            v: zeroed(uv_size)?,
+        })
     }
+}
+
+/// The error a BINK header earns by asking for what a machine cannot give.
+fn bink_error(reason: &str) -> AssetError {
+    AssetError::BinkError {
+        reason: reason.to_owned(),
+    }
+}
+
+/// A zeroed buffer of `size` bytes, or the error that says it could not be
+/// had. The size is the caller's own arithmetic; nothing is reserved twice.
+fn zeroed(size: usize) -> Result<Box<[u8]>, AssetError> {
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes
+        .try_reserve_exact(size)
+        .map_err(|_| AssetError::BinkError {
+            reason: format!("Bink frame needs {size} bytes of plane memory"),
+        })?;
+    bytes.resize(size, 0);
+    Ok(bytes.into_boxed_slice())
 }
 
 /// Per-bundle state.
@@ -325,13 +352,24 @@ impl BinkDecoder {
             _ => ColorRange::Mpeg,
         };
 
-        let bw = ((header.width + 7) >> 3) as usize;
-        let bh = ((header.height + 7) >> 3) as usize;
-        let blocks = bw * bh;
+        let bw = (header.width as usize + 7) >> 3;
+        let bh = (header.height as usize + 7) >> 3;
+        let blocks = bw
+            .checked_mul(bh)
+            .ok_or_else(|| bink_error("Bink frame size overflows"))?;
         let total_bytes = blocks.saturating_mul(64 * NB_SRC);
-        let bundle_data = vec![0u8; total_bytes];
+        // The block scratch is sized by the header alone, so a movie that
+        // cannot hold its own scratch does not play; it must not abort the
+        // process on a machine without that much memory.
+        let mut bundle_data: Vec<u8> = Vec::new();
+        bundle_data
+            .try_reserve_exact(total_bytes)
+            .map_err(|_| AssetError::BinkError {
+                reason: format!("Bink movie needs {total_bytes} bytes of block scratch"),
+            })?;
+        bundle_data.resize(total_bytes, 0);
 
-        let block_per_bundle = blocks * 64;
+        let block_per_bundle = blocks.saturating_mul(64);
         let bundles: [Bundle; NB_SRC] = std::array::from_fn(|i| Bundle {
             len_bits: 0,
             tree: HuffmanTree::default(),
@@ -358,8 +396,8 @@ impl BinkDecoder {
             bundles,
             bundle_data,
             frame_num: 0,
-            cur: BinkFrame::alloc(header.width, header.height, color_range),
-            prev: BinkFrame::alloc(header.width, header.height, color_range),
+            cur: BinkFrame::alloc(header.width, header.height, color_range)?,
+            prev: BinkFrame::alloc(header.width, header.height, color_range)?,
             has_prev: false,
         })
     }
@@ -1795,5 +1833,46 @@ mod tests {
         // src[3,4] = src[3*8+4] = 28. Doubled into dst rows 6..8 cols 8..10.
         assert_eq!(dst[6 * 16 + 8], 28);
         assert_eq!(dst[7 * 16 + 9], 28);
+    }
+
+    #[test]
+    fn a_frame_too_large_to_hold_is_refused_instead_of_overflowing() {
+        // u32::MAX dimensions overflow the plane arithmetic. The header comes
+        // from a file, so it must come back as an error, not as a panic or an
+        // abort inside the allocator.
+        let err = BinkFrame::alloc(u32::MAX, u32::MAX, ColorRange::Mpeg)
+            .err()
+            .expect("a frame this size is refused");
+        let AssetError::BinkError { reason } = err else {
+            panic!("expected a Bink error: {err:?}");
+        };
+        assert!(
+            reason.contains("overflow") || reason.contains("plane memory"),
+            "unexpected reason: {reason}"
+        );
+    }
+
+    #[test]
+    fn a_movie_whose_own_scratch_cannot_be_had_is_refused() {
+        // The block scratch is sized by the header alone. A header that names
+        // an enormous frame must not take the process down with it.
+        let h = crate::assets::bink_file::BinkHeader {
+            version: BinkVersion::BikI,
+            file_size: 1000,
+            num_frames: 1,
+            width: u32::MAX,
+            height: u32::MAX,
+            fps_num: 30,
+            fps_den: 1,
+            video_flags: 0,
+            num_audio_tracks: 0,
+            audio_tracks: vec![],
+            frame_index_offset: 0,
+        };
+        let err = BinkDecoder::new(&h).err().expect("the movie is refused");
+        let AssetError::BinkError { reason } = err else {
+            panic!("expected a Bink error: {err:?}");
+        };
+        assert!(!reason.is_empty(), "the refusal says why");
     }
 }
