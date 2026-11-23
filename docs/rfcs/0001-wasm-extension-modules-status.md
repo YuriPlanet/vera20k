@@ -169,7 +169,7 @@ module (merge timers into one function).
   actions are every kind `run_action` implements, with the trigger house for house 0
   (`trigger_create` checks the kind and SetVar's scope); `Module` actions queue 112-byte `EventRecord`s delivered to
   `on_events` in subject order, at most 16 a call. Each call has the whole
-  budget, and another starts while the frame's use is below it. Delivery drops records for
+  budget. The first call of a frame always starts, and another starts while the frame's use is below it. Delivery drops records for
   disabled or removed triggers and stops when the game ends. After up to 1024
   records are delivered, a backlog beyond 16384 records stops the module. Enqueueing a record beyond the 17408 pending
   records limit also stops the module before further delivery
