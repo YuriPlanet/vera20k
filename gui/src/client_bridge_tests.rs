@@ -10,15 +10,14 @@
 use crate::status::{
     Amount, Band, Condition, Element, ObjectView, SourceId, StatusTemplate, World, WorldOp,
 };
-use crate::hud::{Hud, Layer, Origin, PaintCmd, PaintOp};
-use crate::{NodeKind, Prop, Rect, Rgba, Value};
+use crate::{Gui, Layer, NodeKind, Origin, PaintCmd, PaintOp, Prop, Rect, Rgba, Value};
 
 /// The module the bridge would serve: an origin of its own.
 const MODULE: Origin = Origin::External(1);
 
 #[test]
 fn a_module_builds_a_panel_and_takes_it_away() {
-    let mut hud = Hud::new(4096);
+    let mut hud = Gui::new(4096);
     let panel = hud
         .create_root(Layer::Panels, MODULE, NodeKind::Panel)
         .unwrap();
@@ -28,7 +27,7 @@ fn a_module_builds_a_panel_and_takes_it_away() {
     hud.set(panel, Prop::Background, Value::Rgba(Rgba(0, 0, 0, 200)))
         .unwrap();
     for (y, label) in [(50, "Stop"), (78, "Guard")] {
-        let button = hud.create(NodeKind::Button, panel, MODULE).unwrap();
+        let button = hud.create_by(NodeKind::Button, Some(panel), MODULE).unwrap();
         hud.set(button, Prop::Rect, Value::Rect(Rect::new(100, y, 120, 24)))
             .unwrap();
         hud.set(button, Prop::Text, Value::Text(label.into())).unwrap();

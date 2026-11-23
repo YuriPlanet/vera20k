@@ -6,12 +6,20 @@
 //! over it, and release activates only on the captured button. A disabled
 //! button still takes hover (it shows tooltip and status text) but no press.
 
+mod layers;
+
+use std::collections::HashMap;
 use std::ops::ControlFlow;
 
 use crate::Rect;
+use crate::layout::Layout;
 use crate::node::{NodeId, NodeKind, Prop, Refused, Tree, Value};
+use crate::origin::Origin;
 use crate::shell::geom::ShellScale;
 use crate::widget::{self, Capture, Ctx};
+
+pub use layers::Layer;
+use layers::Meta;
 
 /// Milliseconds on the UI clock (§9.1). The host supplies it, so tests and
 /// replays control time.
@@ -194,7 +202,15 @@ impl Dialog {
 }
 
 pub struct Gui {
-    tree: Tree,
+    pub(crate) tree: Tree,
+    /// Who made each node, its layer and root.
+    pub(crate) meta: HashMap<NodeId, Meta>,
+    /// Each layer's roots, bottom to top.
+    pub(crate) roots: [Vec<NodeId>; 5],
+    pub(crate) layout: Layout,
+    revision: u64,
+    /// Scratch for [`Self::remove_all`], kept for its allocation.
+    gone: Vec<NodeId>,
     dialogs: Vec<Dialog>,
     next_dialog: u32,
     events: Vec<UiEvent>,
@@ -211,6 +227,11 @@ impl Gui {
     pub fn new(max_nodes: usize) -> Self {
         Gui {
             tree: Tree::new(max_nodes),
+            meta: HashMap::new(),
+            roots: Default::default(),
+            layout: Layout::default(),
+            revision: 0,
+            gone: Vec::new(),
             dialogs: Vec::new(),
             next_dialog: 0,
             events: Vec::new(),
@@ -245,17 +266,24 @@ impl Gui {
         &self.tree
     }
 
+    /// The host's node ([`Self::create_by`]): a root goes into
+    /// [`Layer::Modal`].
     pub fn create(&mut self, kind: NodeKind, parent: Option<NodeId>) -> Result<NodeId, Refused> {
-        self.tree.create(kind, parent)
+        self.create_by(kind, parent, Origin::Host)
     }
 
     /// A node disabled while it holds the pointer loses the capture
     /// (`EnableWindow(FALSE)`): it never paints pressed and its release
-    /// activates nothing.
+    /// activates nothing. Setting the value a prop already has changes
+    /// nothing, not the revision either; the pointer rules still apply.
+    /// Geometry takes effect at the next [`Self::layout`].
     pub fn set(&mut self, id: NodeId, prop: Prop, value: Value) -> Result<(), Refused> {
         let disables = prop == Prop::Enabled && value == Value::Bool(false);
         let hides = prop == Prop::Visible && value == Value::Bool(false);
-        self.tree.set(id, prop, value)?;
+        if self.tree.get(id, prop)? != Some(&value) {
+            self.tree.set(id, prop, value)?;
+            self.touch(id);
+        }
         // The chrome's holder keeps the pointer (a gadget list's sticky
         // capture ignores the disabled byte).
         if disables {
@@ -278,8 +306,9 @@ impl Gui {
         self.tree.get(id, prop)
     }
 
-    pub fn remove(&mut self, id: NodeId) -> Result<(), Refused> {
-        self.tree.remove(id)?;
+    /// Pops the dialogs whose root is gone, and lets go of the removed
+    /// nodes a pointer held.
+    fn prune_dialogs(&mut self) {
         let tree = &self.tree;
         self.dialogs.retain(|d| tree.kind(d.root).is_ok());
         for d in &mut self.dialogs {
@@ -291,7 +320,6 @@ impl Gui {
             }
             d.pointer.dragging &= d.pointer.pressed.is_some();
         }
-        Ok(())
     }
 
     /// Pushes a dialog whose root is an existing `Dialog` node, with clean

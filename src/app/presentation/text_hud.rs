@@ -11,8 +11,7 @@
 //! instances are the ones the overlay drew before: the boxes in one lane,
 //! the glyphs in another, each in drawing order.
 
-use vera20k_gui::hud::{Layer, Origin};
-use vera20k_gui::{Rect, Rgba};
+use vera20k_gui::{Layer, Origin, Rect, Rgba};
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::{BitFont, Fit};

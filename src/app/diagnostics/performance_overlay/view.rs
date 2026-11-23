@@ -2,8 +2,7 @@
 //! frame and change only where a part does. At a match zoom a part falls
 //! between whole pixels, so each also keeps its exact place.
 
-use vera20k_gui::Rect;
-use vera20k_gui::hud::{Layer, Origin};
+use vera20k_gui::{Layer, Origin, Rect};
 
 use crate::render::bit_font::BitFont;
 use crate::render::hud_paint::{HudPaint, HudSpace, NodeDraw};

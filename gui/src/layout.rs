@@ -4,13 +4,16 @@
 //! each is placed in its parent's rect as it is listed. A node with a `Rect`
 //! has that rect; any other has no size and sits at its parent's top left
 //! corner, a root at the viewport's.
+//!
+//! Each root's nodes are a span of the list, kept at the root's revision:
+//! a layout places again only the roots that changed since (or all, in a
+//! new viewport), and copies the rest.
 
 use std::collections::HashMap;
 
 use crate::Rect;
+use crate::gui::Gui;
 use crate::node::{NodeId, Prop, Tree, Value};
-
-use super::Hud;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Placed {
@@ -23,15 +26,35 @@ pub(crate) struct Placed {
     pub enabled: bool,
 }
 
+/// One root's nodes in the list, placed at its `revision`.
+#[derive(Clone, Copy, Debug)]
+struct Span {
+    root: NodeId,
+    revision: u64,
+    start: usize,
+    len: usize,
+}
+
 /// The visible nodes in paint order.
 #[derive(Default)]
 pub(crate) struct Layout {
     nodes: Vec<Placed>,
-    index: HashMap<NodeId, usize>,
+    /// One for each root, hidden ones too, in paint order.
+    spans: Vec<Span>,
+    /// Each root's place in `spans`.
+    span_of: HashMap<NodeId, usize>,
+    /// Each listed node's root and place in its root's span.
+    index: HashMap<NodeId, (NodeId, usize)>,
     viewport: Rect,
-    /// One for each of `nodes`: the clip its children get.
+    /// The last layout's list and spans while the next is made, kept for
+    /// their allocations.
+    old_nodes: Vec<Placed>,
+    old_spans: Vec<Span>,
+    /// Scratch: for each node of the root being placed, the clip its
+    /// children get.
     child_clips: Vec<Option<Rect>>,
-    /// Scratch: nodes still to list, with their parent's position.
+    /// Scratch: nodes still to list, with their parent's place in the root's
+    /// span.
     pending: Vec<(NodeId, Option<usize>)>,
 }
 
@@ -40,8 +63,15 @@ impl Layout {
         &self.nodes
     }
 
+    /// The nodes of `root`, a top-level node.
+    pub fn span(&self, root: NodeId) -> Option<&[Placed]> {
+        let span = self.spans.get(*self.span_of.get(&root)?)?;
+        (span.root == root).then(|| &self.nodes[span.start..span.start + span.len])
+    }
+
     pub fn placed(&self, id: NodeId) -> Option<&Placed> {
-        self.index.get(&id).and_then(|i| self.nodes.get(*i))
+        let (root, at) = *self.index.get(&id)?;
+        self.span(root)?.get(at)
     }
 
     /// The viewport of the last layout.
@@ -49,84 +79,157 @@ impl Layout {
         self.viewport
     }
 
-    fn fill(&mut self, tree: &Tree, roots: &[Vec<NodeId>], viewport: Rect) {
-        self.viewport = viewport.bounded();
+    fn fill(&mut self, tree: &Tree, roots: &[Vec<NodeId>], revision_of: impl Fn(NodeId) -> u64, viewport: Rect) {
+        let viewport = viewport.bounded();
+        let moved = viewport != self.viewport;
+        self.viewport = viewport;
+        std::mem::swap(&mut self.nodes, &mut self.old_nodes);
+        std::mem::swap(&mut self.spans, &mut self.old_spans);
         self.nodes.clear();
-        self.index.clear();
+        self.spans.clear();
+        // While the roots are the last layout's in its order, each finds
+        // its old span at its own place; past that, `span_of` (still the
+        // last layout's) does.
+        let mut in_order = true;
+        for &root in roots.iter().flatten() {
+            let at = self.spans.len();
+            in_order &= self.old_spans.get(at).is_some_and(|old| old.root == root);
+            let old = if in_order {
+                Some(self.old_spans[at])
+            } else {
+                self.span_of.get(&root).map(|&i| self.old_spans[i])
+            };
+            let revision = revision_of(root);
+            let start = self.nodes.len();
+            match old {
+                Some(old) if !moved && old.revision == revision => {
+                    self.nodes
+                        .extend_from_slice(&self.old_nodes[old.start..old.start + old.len]);
+                }
+                old => {
+                    if let Some(old) = old {
+                        self.unindex(old);
+                    }
+                    self.place(tree, root);
+                }
+            }
+            self.spans.push(Span {
+                root,
+                revision,
+                start,
+                len: self.nodes.len() - start,
+            });
+        }
+        if !in_order || self.spans.len() != self.old_spans.len() {
+            self.span_of.clear();
+            for (at, span) in self.spans.iter().enumerate() {
+                self.span_of.insert(span.root, at);
+            }
+            // The roots gone since.
+            for at in 0..self.old_spans.len() {
+                let old = self.old_spans[at];
+                if !self.span_of.contains_key(&old.root) {
+                    self.unindex(old);
+                }
+            }
+        }
+    }
+
+    /// Drops the last layout's `span` from the index.
+    fn unindex(&mut self, span: Span) {
+        for placed in &self.old_nodes[span.start..span.start + span.len] {
+            self.index.remove(&placed.id);
+        }
+    }
+
+    /// Lists `root`'s visible nodes after the others.
+    fn place(&mut self, tree: &Tree, root: NodeId) {
+        let base = self.nodes.len();
         self.child_clips.clear();
         self.pending.clear();
-        for root in roots.iter().flatten() {
-            self.pending.push((*root, None));
-            while let Some((id, parent)) = self.pending.pop() {
-                let Ok(node) = tree.node(id) else { continue };
-                if !node.bool_prop(Prop::Visible, true) {
-                    continue;
-                }
-                let (area, clip, inherited) = match parent {
-                    Some(p) => (self.nodes[p].rect, self.child_clips[p], self.nodes[p].enabled),
-                    None => (self.viewport, None, true),
-                };
-                let rect = match node.props.get(&Prop::Rect) {
-                    Some(Value::Rect(rect)) => rect.bounded(),
-                    _ => Rect::new(area.x, area.y, 0, 0),
-                };
-                let at = self.nodes.len();
-                self.nodes.push(Placed {
-                    id,
-                    rect,
-                    clip,
-                    enabled: inherited && node.bool_prop(Prop::Enabled, true),
-                });
-                self.child_clips.push(if node.bool_prop(Prop::Clip, false) {
-                    Some(clip.map_or(rect, |clip| clip.intersect(rect)))
-                } else {
-                    clip
-                });
-                self.index.insert(id, at);
-                self.pending
-                    .extend(node.children.iter().rev().map(|child| (*child, Some(at))));
+        self.pending.push((root, None));
+        while let Some((id, parent)) = self.pending.pop() {
+            let Ok(node) = tree.node(id) else { continue };
+            if !node.bool_prop(Prop::Visible, true) {
+                continue;
             }
+            let (area, clip, inherited) = match parent {
+                Some(p) => (self.nodes[base + p].rect, self.child_clips[p], self.nodes[base + p].enabled),
+                None => (self.viewport, None, true),
+            };
+            let rect = match node.props.get(&Prop::Rect) {
+                Some(Value::Rect(rect)) => rect.bounded(),
+                _ => Rect::new(area.x, area.y, 0, 0),
+            };
+            let at = self.nodes.len() - base;
+            self.nodes.push(Placed {
+                id,
+                rect,
+                clip,
+                enabled: inherited && node.bool_prop(Prop::Enabled, true),
+            });
+            self.child_clips.push(if node.bool_prop(Prop::Clip, false) {
+                Some(clip.map_or(rect, |clip| clip.intersect(rect)))
+            } else {
+                clip
+            });
+            self.index.insert(id, (root, at));
+            self.pending
+                .extend(node.children.iter().rev().map(|child| (*child, Some(at))));
         }
     }
 }
 
-impl Hud {
+impl Gui {
     /// Places every visible node in `viewport`: at its `Rect`, or without
-    /// one at its parent's top left corner with no size.
+    /// one at its parent's top left corner with no size. A root unchanged
+    /// since the last layout, in the same viewport, keeps its places.
     pub fn layout(&mut self, viewport: Rect) {
-        self.layout.fill(&self.tree, &self.roots, viewport);
+        let meta = &self.meta;
+        let revision_of = |root: NodeId| meta.get(&root).map_or(0, |m| m.revision);
+        self.layout.fill(&self.tree, &self.roots, revision_of, viewport);
+    }
+
+    /// The rect from the last [`Self::layout`]; none while hidden or removed,
+    /// also if only since then.
+    pub fn rect(&self, id: NodeId) -> Option<Rect> {
+        if !self.tree.effective(id, Prop::Visible) {
+            return None;
+        }
+        self.layout.placed(id).map(|p| p.rect)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hud::{Layer, Origin};
+    use crate::gui::Layer;
+    use crate::origin::Origin;
     use crate::node::NodeKind;
 
     const VIEW: Rect = Rect::new(0, 0, 200, 100);
 
-    fn hud() -> Hud {
-        Hud::new(250_000)
+    fn hud() -> Gui {
+        Gui::new(250_000)
     }
 
-    fn root(hud: &mut Hud, kind: NodeKind) -> NodeId {
+    fn root(hud: &mut Gui, kind: NodeKind) -> NodeId {
         hud.create_root(Layer::Panels, Origin::Host, kind).unwrap()
     }
 
-    fn child(hud: &mut Hud, parent: NodeId, kind: NodeKind) -> NodeId {
-        hud.create(kind, parent, Origin::Host).unwrap()
+    fn child(hud: &mut Gui, parent: NodeId, kind: NodeKind) -> NodeId {
+        hud.create_by(kind, Some(parent), Origin::Host).unwrap()
     }
 
-    fn flag(hud: &mut Hud, id: NodeId, prop: Prop, v: bool) {
+    fn flag(hud: &mut Gui, id: NodeId, prop: Prop, v: bool) {
         hud.set(id, prop, Value::Bool(v)).unwrap();
     }
 
-    fn fixed(hud: &mut Hud, id: NodeId, rect: Rect) {
+    fn fixed(hud: &mut Gui, id: NodeId, rect: Rect) {
         hud.set(id, Prop::Rect, Value::Rect(rect)).unwrap();
     }
 
-    fn listed(hud: &Hud) -> Vec<NodeId> {
+    fn listed(hud: &Gui) -> Vec<NodeId> {
         hud.layout.nodes().iter().map(|placed| placed.id).collect()
     }
 
@@ -260,6 +363,48 @@ mod tests {
         hud.layout(VIEW);
         let enabled = [top, off, under, beside].map(|id| hud.layout.placed(id).unwrap().enabled);
         assert_eq!(enabled, [true, false, false, true]);
+    }
+
+    #[test]
+    fn only_a_changed_root_is_placed_again() {
+        let mut hud = hud();
+        let still = root(&mut hud, NodeKind::Panel);
+        fixed(&mut hud, still, Rect::new(1, 1, 5, 5));
+        let moving = root(&mut hud, NodeKind::Panel);
+        let leaf = child(&mut hud, moving, NodeKind::Text);
+        hud.layout(VIEW);
+        let before = hud.root_revision(still).unwrap();
+        // A change the revisions do not see: the still root keeps its places.
+        hud.tree.set(still, Prop::Rect, Value::Rect(Rect::new(2, 2, 5, 5))).unwrap();
+        fixed(&mut hud, leaf, Rect::new(3, 4, 5, 6));
+        assert_eq!(hud.root_revision(still), Ok(before));
+        assert!(hud.root_revision(leaf).unwrap() > before);
+        hud.layout(VIEW);
+        assert_eq!(hud.rect(still), Some(Rect::new(1, 1, 5, 5)));
+        assert_eq!(hud.rect(leaf), Some(Rect::new(3, 4, 5, 6)));
+        // A new viewport places every root again.
+        hud.layout(Rect::new(0, 0, 300, 300));
+        assert_eq!(hud.rect(still), Some(Rect::new(2, 2, 5, 5)));
+    }
+
+    #[test]
+    fn roots_made_and_removed_between_layouts_keep_the_others_places() {
+        let mut hud = hud();
+        let mut ids = Vec::new();
+        for x in 0..4 {
+            let id = root(&mut hud, NodeKind::Panel);
+            fixed(&mut hud, id, Rect::new(x, 0, 1, 1));
+            ids.push(id);
+        }
+        hud.layout(VIEW);
+        hud.remove(ids[1]).unwrap();
+        let late = root(&mut hud, NodeKind::Panel);
+        hud.layout(VIEW);
+        assert_eq!(listed(&hud), [ids[0], ids[2], ids[3], late]);
+        assert!(hud.layout.placed(ids[1]).is_none());
+        assert_eq!(hud.rect(ids[0]), Some(Rect::new(0, 0, 1, 1)));
+        assert_eq!(hud.rect(ids[3]), Some(Rect::new(3, 0, 1, 1)));
+        assert_eq!(hud.rect(late), Some(Rect::default()));
     }
 
     #[test]

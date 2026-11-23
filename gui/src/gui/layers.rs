@@ -1,41 +1,19 @@
-//! A retained heads-up display: layered node trees over a world the host
-//! draws. Status templates evaluated per object are [`crate::status`].
+//! The layers a [`Gui`]'s roots paint in, who made each node, and the
+//! revisions that tell a layout what changed.
 //!
 //! Everything a host passes in or reads out is plain data: handles, integers,
 //! strings and colours. No callbacks are kept and no GPU type appears, so a
 //! bridge (a script or a sandboxed module) can forward the calls unchanged.
 //!
-//! The HUD is no security boundary. Such a bridge keeps its own handle table,
-//! checks [`Hud::origin`] before a change, undoes its changes to others'
-//! items, expects [`Hud::remove_origin`] to take others' nodes beneath its
+//! The GUI is no security boundary. Such a bridge keeps its own handle table,
+//! checks [`Gui::origin`] before a change, undoes its changes to others'
+//! items, expects [`Gui::remove_origin`] to take others' nodes beneath its
 //! own, and numbers the enums for its wire.
-//!
-//! A frame: the host's changes, [`Hud::layout`], [`Hud::paint`].
 
-#[cfg(test)]
-mod contract_tests;
-#[cfg(test)]
-mod client_bridge_tests;
-mod layout;
-mod paint;
+use crate::node::{NodeId, NodeKind, Prop, Refused};
+use crate::origin::{Origin, others_share};
 
-use std::collections::HashMap;
-
-use crate::node::{NodeId, NodeKind, Prop, Refused, Tree, Value};
-use crate::Rect;
-use crate::origin::others_share;
-pub use crate::origin::Origin;
-
-pub use paint::{PaintCmd, PaintOp};
-
-/// Empties `buffer` for the next frame, free of what the last frame's
-/// commands borrowed. It keeps the allocation only where `A` and `B` have
-/// one layout, as when they differ in lifetimes alone.
-pub fn recycle<A, B>(mut buffer: Vec<A>) -> Vec<B> {
-    buffer.clear();
-    // An empty same-layout vector collects in place.
-    buffer.into_iter().filter_map(|_| None).collect()
-}
+use super::Gui;
 
 /// Bottom to top.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -43,6 +21,8 @@ pub enum Layer {
     Field,
     Panels,
     Overlay,
+    /// Where a root made by plain [`Gui::create`] goes: the host's dialogs
+    /// and chrome. Their input and paint order is the dialog stack's.
     Modal,
     /// The host's own emergency screens.
     System,
@@ -61,56 +41,50 @@ impl Layer {
 pub(crate) struct Meta {
     pub origin: Origin,
     pub layer: Layer,
+    /// The top-level node it is under (itself for one): nodes never move,
+    /// so a change finds the revision to move without climbing.
+    pub root: NodeId,
+    /// A root's: the [`Gui::revision`] its subtree last changed at.
+    pub revision: u64,
 }
 
-pub struct Hud {
-    pub(crate) tree: Tree,
-    pub(crate) meta: HashMap<NodeId, Meta>,
-    /// Each layer's roots, bottom to top.
-    pub(crate) roots: [Vec<NodeId>; 5],
-    pub(crate) layout: layout::Layout,
-    revision: u64,
-}
-
-impl Hud {
-    pub fn new(max_nodes: usize) -> Self {
-        Hud {
-            tree: Tree::new(max_nodes),
-            meta: HashMap::new(),
-            roots: Default::default(),
-            layout: Default::default(),
-            revision: 0,
-        }
-    }
-
+impl Gui {
     /// Changes whenever a node changes, so the host knows when to lay out
     /// again.
     pub fn revision(&self) -> u64 {
         self.revision
     }
 
-    pub fn tree(&self) -> &Tree {
-        &self.tree
+    /// The revision `id`'s root last changed at: a layout over that root
+    /// runs again only once it moves.
+    pub fn root_revision(&self, id: NodeId) -> Result<u64, Refused> {
+        self.tree.node(id)?;
+        let root = self.meta.get(&id).ok_or(Refused::NotFound)?.root;
+        Ok(self.meta.get(&root).ok_or(Refused::NotFound)?.revision)
     }
 
     /// A top-level node, above the layer's earlier ones.
     pub fn create_root(&mut self, layer: Layer, origin: Origin, kind: NodeKind) -> Result<NodeId, Refused> {
         self.admit(layer, origin)?;
         let id = self.tree.create(kind, None)?;
-        self.meta.insert(id, Meta { origin, layer });
-        self.roots[layer as usize].push(id);
         self.revision += 1;
+        self.meta.insert(id, Meta { origin, layer, root: id, revision: self.revision });
+        self.roots[layer as usize].push(id);
         Ok(id)
     }
 
-    /// A child, above its earlier siblings, in its parent's layer.
-    pub fn create(&mut self, kind: NodeKind, parent: NodeId, origin: Origin) -> Result<NodeId, Refused> {
+    /// A node made by `origin`: under `parent`, above its earlier children
+    /// and in its layer; without one a root in [`Layer::Modal`].
+    pub fn create_by(&mut self, kind: NodeKind, parent: Option<NodeId>, origin: Origin) -> Result<NodeId, Refused> {
+        let Some(parent) = parent else {
+            return self.create_root(Layer::Modal, origin, kind);
+        };
         self.tree.node(parent)?;
-        let layer = self.meta.get(&parent).ok_or(Refused::NotFound)?.layer;
+        let Meta { layer, root, .. } = *self.meta.get(&parent).ok_or(Refused::NotFound)?;
         self.admit(layer, origin)?;
         let id = self.tree.create(kind, Some(parent))?;
-        self.meta.insert(id, Meta { origin, layer });
-        self.revision += 1;
+        self.meta.insert(id, Meta { origin, layer, root, revision: 0 });
+        self.touch(id);
         Ok(id)
     }
 
@@ -128,26 +102,21 @@ impl Hud {
         Ok(())
     }
 
+    /// Moves the revision and that of `id`'s root.
+    pub(crate) fn touch(&mut self, id: NodeId) {
+        self.revision += 1;
+        let Some(root) = self.meta.get(&id).map(|m| m.root) else { return };
+        if let Some(meta) = self.meta.get_mut(&root) {
+            meta.revision = self.revision;
+        }
+    }
+
     /// Back to the prop's default.
     pub fn clear(&mut self, id: NodeId, prop: Prop) -> Result<(), Refused> {
         if self.tree.clear(id, prop)? {
-            self.revision += 1;
+            self.touch(id);
         }
         Ok(())
-    }
-
-    /// Geometry takes effect at the next [`Self::layout`].
-    pub fn set(&mut self, id: NodeId, prop: Prop, value: Value) -> Result<(), Refused> {
-        if self.tree.get(id, prop)? == Some(&value) {
-            return Ok(());
-        }
-        self.tree.set(id, prop, value)?;
-        self.revision += 1;
-        Ok(())
-    }
-
-    pub fn get(&self, id: NodeId, prop: Prop) -> Result<Option<&Value>, Refused> {
-        self.tree.get(id, prop)
     }
 
     pub fn origin(&self, id: NodeId) -> Result<Origin, Refused> {
@@ -162,18 +131,66 @@ impl Hud {
 
     /// Removes the node and its subtree.
     pub fn remove(&mut self, id: NodeId) -> Result<(), Refused> {
-        self.tree.remove(id)?;
-        self.forget_removed();
+        self.tree.node(id)?;
+        self.remove_all(&[id]);
         Ok(())
     }
 
     /// Removes the nodes with their subtrees at once, in the order given;
-    /// those already gone are passed over.
+    /// those already gone are passed over. A dialog whose root goes is
+    /// popped, and a pointer that held a removed node lets go of it.
     pub fn remove_all(&mut self, ids: &[NodeId]) {
-        if !ids.is_empty() {
-            self.tree.remove_all(ids);
-            self.forget_removed();
+        if ids.is_empty() {
+            return;
         }
+        // The bookkeeping to drop, gathered while the tree still links it.
+        let mut gone = std::mem::take(&mut self.gone);
+        gone.clear();
+        let mut layers = [false; 5];
+        for &id in ids {
+            let parent = match self.tree.node(id) {
+                Ok(node) => node.parent,
+                Err(_) => continue,
+            };
+            match parent {
+                Some(parent) => self.touch(parent),
+                None => {
+                    if let Some(meta) = self.meta.get(&id) {
+                        layers[meta.layer as usize] = true;
+                    }
+                }
+            }
+            let mut at = gone.len();
+            gone.push(id);
+            while at < gone.len() {
+                if let Ok(children) = self.tree.children(gone[at]) {
+                    gone.extend_from_slice(children);
+                }
+                at += 1;
+            }
+        }
+        if gone.is_empty() {
+            self.gone = gone;
+            return;
+        }
+        match ids {
+            [id] => {
+                let _ = self.tree.remove(*id);
+            }
+            _ => self.tree.remove_all(ids),
+        }
+        self.revision += 1;
+        for id in &gone {
+            self.meta.remove(id);
+        }
+        self.gone = gone;
+        let tree = &self.tree;
+        for (roots, touched) in self.roots.iter_mut().zip(layers) {
+            if touched {
+                roots.retain(|id| tree.node(*id).is_ok());
+            }
+        }
+        self.prune_dialogs();
     }
 
     /// Removes the nodes `origin` made, with their subtrees. What others made
@@ -186,20 +203,7 @@ impl Hud {
                 made.push(id);
             }
         });
-        if !made.is_empty() {
-            self.tree.remove_all(&made);
-            self.forget_removed();
-        }
-    }
-
-    /// Drops the bookkeeping of nodes the tree no longer has.
-    fn forget_removed(&mut self) {
-        let tree = &self.tree;
-        self.meta.retain(|id, _| tree.node(*id).is_ok());
-        for roots in &mut self.roots {
-            roots.retain(|id| tree.node(*id).is_ok());
-        }
-        self.revision += 1;
+        self.remove_all(&made);
     }
 
     /// The node named `name` (ASCII case aside): `from`'s own first, then
@@ -240,14 +244,5 @@ impl Hud {
                 }
             }
         }
-    }
-
-    /// The rect from the last [`Self::layout`]; none while hidden or removed,
-    /// also if only since then.
-    pub fn rect(&self, id: NodeId) -> Option<Rect> {
-        if !self.tree.effective(id, Prop::Visible) {
-            return None;
-        }
-        self.layout.placed(id).map(|p| p.rect)
     }
 }
