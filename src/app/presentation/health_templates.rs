@@ -1,17 +1,19 @@
-//! The built-in health bars as `vera20k-gui` status templates.
+//! The built-in battlefield status as `vera20k-gui` status templates.
 //!
-//! A template decides what one object's bar shows: whether its PIPBRD
-//! background stands, which PIPS frame its health band lights, how many pips
-//! the row has and how many of them are full. The engine still decides
-//! whether a bar is drawn at all (`ui_overlays::techno_extras_for_parent`)
-//! and works out the band and the counts with the original arithmetic; it
-//! hands them to the templates as plain values and places each picture the
-//! templates return at the original point.
+//! A template decides how one object's status is laid out: whether its
+//! PIPBRD background stands, which PIPS frame its health band lights, where
+//! each picture sits from the object's anchor and how a row walks. The
+//! engine decides the state: whether a bar is drawn at all
+//! (`ui_overlays::techno_extras_for_parent`), the band, the counts, the
+//! slots and which mark frame an animation is on. It hands them to the
+//! templates as plain values and places each picture the templates return
+//! at its anchor moved by the picture's rect.
 //!
 //! Original: unit bars `6F683C..6F6A8E` (PIPBRD frame 0/1, PIPS 16/17/18
 //! every 2 pixels), building bars `6F64A0..6F6774` (PIPS 4/2/1 then the empty
 //! frame 0, walking (-4,+2)).
 
+use std::cell::RefCell;
 use std::sync::LazyLock;
 
 use vera20k_gui::Rect;
@@ -21,6 +23,9 @@ use vera20k_gui::hud::world::{
     World, WorldCmd, WorldOp,
 };
 
+use crate::app::presentation::ui_overlays::ScalePipDraw;
+use crate::map::entities::EntityCategory;
+
 /// Which bar an object has.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HealthClass {
@@ -29,21 +34,23 @@ pub(crate) enum HealthClass {
     Building,
 }
 
+impl HealthClass {
+    /// An object's class by its category: aircraft take the vehicles' bar.
+    pub(crate) fn of(category: EntityCategory) -> Self {
+        match category {
+            EntityCategory::Infantry => Self::Infantry,
+            EntityCategory::Structure => Self::Building,
+            _ => Self::Vehicle,
+        }
+    }
+}
+
 /// Which colour the health pips take.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HealthBand {
     Green,
     Yellow,
     Red,
-}
-
-/// One picture of a bar, in the order the templates give them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum HealthPiece {
-    /// PIPBRD `frame`, `offset` from the bar's anchor.
-    Background { frame: usize, offset: (i32, i32) },
-    /// PIPS `frame`, the row's `index`th pip.
-    Pip { frame: usize, index: i32 },
 }
 
 /// A unit bar's layout: its background and the start of its pip row.
@@ -70,12 +77,11 @@ const UNIT_BARS: [UnitBar; 2] = [
 ];
 
 /// A unit's pips are this many pixels apart (`UNIT_PIP_STEP_X`).
-pub(crate) const UNIT_PIP_STEP: i32 = 2;
+const UNIT_PIP_STEP: i32 = 2;
 /// A building's row walks up the roof's edge.
 const BUILDING_PIP_STEP: (i32, i32) = (-4, 2);
 /// A building's empty pip.
 const BUILDING_EMPTY_FRAME: u32 = 0;
-
 /// PIPS.SHP's unit health pips. Original RA2's copy (ra2.mix -> conquer.mix)
 /// has them at 15/16/17; YR's (conqmd) inserts an insignia at 15 and shifts
 /// them to 16/17/18. The `-ra2` launch flag says which strip is loaded.
@@ -125,8 +131,9 @@ const SCALE: u32 = 2;
 
 /// The status marks an object shows one of each at most: the bomb clock,
 /// the repair wrench, Ares' power-off marker, the rank insignia and the
-/// self-heal marker. Each is a built-in template of its own (`status.<mark>`),
-/// a single slot whose code is the frame the host picked, so a template can
+/// self-heal marker. Each is a built-in template of its own (`status.<mark>`,
+/// one a category where the categories place it apart), a single slot at the
+/// mark's place whose code is the frame the host picked, so a template can
 /// hide a mark, give its frames other pictures or move it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Mark {
@@ -198,122 +205,196 @@ fn at(x: i32, y: i32) -> Rect {
     Rect::new(x, y, 1, 1)
 }
 
-fn templates() -> Vec<StatusTemplate> {
+/// The built-in world a template belongs to.
+#[derive(Clone, Copy)]
+enum Family {
+    Bars,
+    Scale,
+    Shields,
+    Mark(Mark),
+}
+
+/// Where a mark sits from the point the engine draws it from, by category:
+/// a name suffix, the category bits (zero for every one) and the offset.
+type Places = &'static [(&'static str, u32, (i32, i32))];
+
+/// Everywhere at the point itself.
+const AT_POINT: Places = &[("", 0, (0, 0))];
+
+/// The rank insignia from the object's point: the stock leaf
+/// (`70AA20..AA4F`) and Ares' (`1004E1D7`) put an infantry's at (5,2) and
+/// every other object's at (10,6).
+#[cfg(not(feature = "phobos"))]
+const RANK_PLACES: Places = &[
+    (".infantry", class_bit(HealthClass::Infantry), (5, 2)),
+    (
+        ".other",
+        class_bit(HealthClass::Vehicle) | class_bit(HealthClass::Building),
+        (10, 6),
+    ),
+];
+/// Phobos' `DrawInsignia` places the insignia from its own INI
+/// adjustments, which the engine adds to the point.
+#[cfg(feature = "phobos")]
+const RANK_PLACES: Places = AT_POINT;
+
+/// The self-heal marker from the object's point (`70A5EC`): health's
+/// (-10,+10), scale's -5 X (+11 for infantry), then (38,-32) for a unit and
+/// (19,-35) for an infantry. The bracket delta is not passed. Only units and
+/// infantry draw one.
+const SELF_HEAL_PLACES: Places = &[
+    (".vehicle", class_bit(HealthClass::Vehicle), (23, -22)),
+    (
+        ".infantry",
+        class_bit(HealthClass::Infantry) | class_bit(HealthClass::Building),
+        (15, -25),
+    ),
+];
+
+const fn mark_places(mark: Mark) -> Places {
+    match mark {
+        Mark::Rank => RANK_PLACES,
+        Mark::SelfHeal => SELF_HEAL_PLACES,
+        _ => AT_POINT,
+    }
+}
+
+fn templates() -> Vec<(Family, StatusTemplate)> {
     let mut all = Vec::new();
     for bar in &UNIT_BARS {
         let name = match bar.class {
             HealthClass::Vehicle => "vehicle",
             _ => "infantry",
         };
-        all.push(StatusTemplate {
-            name: format!("health.{name}.background"),
-            category: class_bit(bar.class),
-            state: BACKGROUND,
-            elements: vec![Element::Icon {
-                rect: at(bar.background_offset.0, bar.background_offset.1),
-                art: border(bar.background_frame),
-            }],
-            ..Default::default()
-        });
-        for band in BANDS {
-            all.push(StatusTemplate {
-                name: format!("health.{name}.{band:?}").to_lowercase(),
+        all.push((
+            Family::Bars,
+            StatusTemplate {
+                name: format!("health.{name}.background"),
                 category: class_bit(bar.class),
-                when: vec![Condition::Present(band_source(band))],
-                elements: vec![Element::Pips {
-                    at: at(bar.pip_offset.0, bar.pip_offset.1),
-                    step: (UNIT_PIP_STEP, 0),
-                    source: HEALTH,
-                    full: pips(unit_frame(band)),
-                    empty: None,
+                state: BACKGROUND,
+                elements: vec![Element::Icon {
+                    rect: at(bar.background_offset.0, bar.background_offset.1),
+                    art: border(bar.background_frame),
                 }],
                 ..Default::default()
-            });
+            },
+        ));
+        for band in BANDS {
+            all.push((
+                Family::Bars,
+                StatusTemplate {
+                    name: format!("health.{name}.{band:?}").to_lowercase(),
+                    category: class_bit(bar.class),
+                    when: vec![Condition::Present(band_source(band))],
+                    elements: vec![Element::Pips {
+                        at: at(bar.pip_offset.0, bar.pip_offset.1),
+                        step: (UNIT_PIP_STEP, 0),
+                        source: HEALTH,
+                        full: pips(unit_frame(band)),
+                        empty: None,
+                    }],
+                    ..Default::default()
+                },
+            ));
         }
     }
     for band in BANDS {
-        all.push(StatusTemplate {
-            name: format!("health.building.{band:?}").to_lowercase(),
-            category: class_bit(HealthClass::Building),
-            when: vec![Condition::Present(band_source(band))],
-            elements: vec![Element::Pips {
-                at: at(0, 0),
-                step: BUILDING_PIP_STEP,
-                source: HEALTH,
-                full: pips(building_frame(band)),
-                empty: Some(pips(BUILDING_EMPTY_FRAME)),
-            }],
-            ..Default::default()
-        });
+        all.push((
+            Family::Bars,
+            StatusTemplate {
+                name: format!("health.building.{band:?}").to_lowercase(),
+                category: class_bit(HealthClass::Building),
+                when: vec![Condition::Present(band_source(band))],
+                elements: vec![Element::Pips {
+                    at: at(0, 0),
+                    step: BUILDING_PIP_STEP,
+                    source: HEALTH,
+                    full: pips(building_frame(band)),
+                    empty: Some(pips(BUILDING_EMPTY_FRAME)),
+                }],
+                ..Default::default()
+            },
+        ));
     }
     // The scale pips (`709A90`): each slot four pixels on, a building's
     // walking up its roof two pixels a slot; the codes are the strip's own
-    // frames. A unit's row is ten pixels below its anchor.
+    // frames. A mobile row starts at the health anchor's (-10,+10), then
+    // -5 X with infantry's +11 (`709B0F`/`6F6A8E`); a building's at its
+    // foundation edge's (+6,-1) (`6F682C`).
     let frames: Vec<ArtId> = (0..MAX_SLOT_ARTS as u32).map(pips).collect();
-    all.push(StatusTemplate {
-        name: "scale.unit".into(),
-        category: class_bit(HealthClass::Vehicle) | class_bit(HealthClass::Infantry),
-        state: SCALE,
-        elements: vec![Element::Slots {
-            at: at(0, 10),
-            step: (4, 0),
-            arts: frames.clone(),
-        }],
-        ..Default::default()
-    });
+    for (name, class, start, step) in [
+        ("scale.vehicle", HealthClass::Vehicle, (-15, 10), (4, 0)),
+        ("scale.infantry", HealthClass::Infantry, (-4, 10), (4, 0)),
+        ("scale.building", HealthClass::Building, (6, -1), (4, 2)),
+    ] {
+        all.push((
+            Family::Scale,
+            StatusTemplate {
+                name: name.into(),
+                category: class_bit(class),
+                state: SCALE,
+                elements: vec![Element::Slots {
+                    at: at(start.0, start.1),
+                    step,
+                    arts: frames.clone(),
+                }],
+                ..Default::default()
+            },
+        ));
+    }
     for (mark, name) in MARKS {
-        all.push(StatusTemplate {
-            name: name.to_owned(),
-            state: mark_bit(mark),
-            elements: vec![Element::Slots {
-                at: at(0, 0),
-                step: (0, 0),
-                arts: (0..MAX_SLOT_ARTS as u32).map(pips).collect(),
-            }],
-            ..Default::default()
-        });
+        for &(suffix, category, (x, y)) in mark_places(mark) {
+            all.push((
+                Family::Mark(mark),
+                StatusTemplate {
+                    name: format!("{name}{suffix}"),
+                    category,
+                    state: mark_bit(mark),
+                    elements: vec![Element::Slots {
+                        at: at(x, y),
+                        step: (0, 0),
+                        arts: frames.clone(),
+                    }],
+                    ..Default::default()
+                },
+            ));
+        }
     }
     // Phobos shield bars (`DrawShieldBar_Other`, `_Building`): the codes
     // are the frames the shield type picks for full and empty pips. A
     // unit's row starts two pixels right of and one under its bracket,
     // a building's walks up its roof from the bracket.
-    all.push(StatusTemplate {
-        name: "shield.unit".into(),
-        category: class_bit(HealthClass::Vehicle) | class_bit(HealthClass::Infantry),
-        state: SHIELD,
-        elements: vec![Element::Slots {
-            at: at(2, 1),
-            step: (2, 0),
-            arts: (0..MAX_SLOT_ARTS as u32).map(pips).collect(),
-        }],
-        ..Default::default()
-    });
-    all.push(StatusTemplate {
-        name: "shield.building".into(),
-        category: class_bit(HealthClass::Building),
-        state: SHIELD,
-        elements: vec![Element::Slots {
-            at: at(0, 0),
-            step: (-4, 2),
-            arts: (0..MAX_SLOT_ARTS as u32).map(pips).collect(),
-        }],
-        ..Default::default()
-    });
-    all.push(StatusTemplate {
-        name: "scale.building".into(),
-        category: class_bit(HealthClass::Building),
-        state: SCALE,
-        elements: vec![Element::Slots {
-            at: at(0, 0),
-            step: (4, 2),
-            arts: frames,
-        }],
-        ..Default::default()
-    });
+    all.push((
+        Family::Shields,
+        StatusTemplate {
+            name: "shield.unit".into(),
+            category: class_bit(HealthClass::Vehicle) | class_bit(HealthClass::Infantry),
+            state: SHIELD,
+            elements: vec![Element::Slots {
+                at: at(2, 1),
+                step: (2, 0),
+                arts: frames.clone(),
+            }],
+            ..Default::default()
+        },
+    ));
+    all.push((
+        Family::Shields,
+        StatusTemplate {
+            name: "shield.building".into(),
+            category: class_bit(HealthClass::Building),
+            state: SHIELD,
+            elements: vec![Element::Slots {
+                at: at(0, 0),
+                step: (-4, 2),
+                arts: frames,
+            }],
+            ..Default::default()
+        },
+    ));
     all
 }
 
-/// The built-in bars, the same for every match.
 /// The built-in templates, the same for every match, one world per family:
 /// a query matches only its own family's few templates, which keeps a
 /// frame of 5000 units' status well inside its budget.
@@ -332,19 +413,12 @@ static BUILT_IN: LazyLock<BuiltIn> = LazyLock::new(|| {
         shields: World::default(),
         marks: MARKS.iter().map(|_| World::default()).collect(),
     };
-    for template in templates() {
-        let world = if template.name.starts_with("health.") {
-            &mut built.bars
-        } else if template.name.starts_with("scale.") {
-            &mut built.scale
-        } else if template.name.starts_with("shield.") {
-            &mut built.shields
-        } else {
-            let (mark, _) = MARKS
-                .iter()
-                .find(|(_, name)| *name == template.name)
-                .expect("every other built-in template is a mark's");
-            &mut built.marks[*mark as usize]
+    for (family, template) in templates() {
+        let world = match family {
+            Family::Bars => &mut built.bars,
+            Family::Scale => &mut built.scale,
+            Family::Shields => &mut built.shields,
+            Family::Mark(mark) => &mut built.marks[mark as usize],
         };
         world
             .add_template(Origin::Host, template)
@@ -354,35 +428,74 @@ static BUILT_IN: LazyLock<BuiltIn> = LazyLock::new(|| {
 });
 
 thread_local! {
-    /// [`mark`]'s commands, kept from call to call.
-    static MARK_CMDS: std::cell::RefCell<Vec<WorldCmd<'static>>> =
-        const { std::cell::RefCell::new(Vec::new()) };
+    /// The commands of the last query, kept from call to call: a frame asks
+    /// thousands of times and, once grown, allocates nothing.
+    static CMDS: RefCell<Vec<WorldCmd<'static>>> = const { RefCell::new(Vec::new()) };
+    /// The slots of the last scale or shield row, kept likewise.
+    static SLOTS: RefCell<Vec<Slot>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Where a unit class's pip row starts from the bar's anchor, as the
-/// original adds it to the anchor: in floating point.
-pub(crate) fn pip_offset(class: HealthClass) -> [f32; 2] {
-    let ((x, y), _) = row(class);
-    [x as f32, y as f32]
+/// `world`'s pictures for `object`, in order: each image's rect and art.
+/// `out` runs while the shared commands are borrowed, so it must not ask
+/// the templates again.
+fn painted(world: &'static World, object: &ObjectView<'_>, mut out: impl FnMut(Rect, ArtId)) {
+    CMDS.with_borrow_mut(|cmds| {
+        cmds.clear();
+        world.paint_status(std::slice::from_ref(object), cmds);
+        for cmd in cmds.iter() {
+            if let WorldOp::Image { rect, art } = cmd.op {
+                out(rect, art);
+            }
+        }
+    });
 }
 
-/// Where a class's pip row starts and walks, from the bar's anchor.
-fn row(class: HealthClass) -> ((i32, i32), (i32, i32)) {
-    match UNIT_BARS.iter().find(|bar| bar.class == class) {
-        Some(bar) => (bar.pip_offset, (UNIT_PIP_STEP, 0)),
-        None => ((0, 0), BUILDING_PIP_STEP),
+/// An object of `class` showing `state`, with `values` and `slots`.
+fn view<'v>(
+    class: Option<HealthClass>,
+    state: u32,
+    values: &'v [Option<Amount>],
+    slots: &'v [Slot],
+) -> ObjectView<'v> {
+    ObjectView {
+        id: 0,
+        x: 0,
+        y: 0,
+        type_id: 0,
+        category: class.map_or(0, class_bit),
+        relation: 0,
+        state,
+        values,
+        slots,
     }
 }
 
-/// The bar the templates give an object of `class`: the background when
-/// `background` asks for it, then the pip row when `health` gives its band,
-/// its full pips and its length. Each picture goes to `piece` in order.
-pub(crate) fn paint(
+/// `anchor` moved by a template's `rect`. Anchors and rects are whole
+/// pixels, so the sum is the original's to the bit, whatever order the
+/// original added its parts in.
+fn placed(anchor: (f32, f32), rect: Rect) -> (f32, f32) {
+    (anchor.0 + rect.x as f32, anchor.1 + rect.y as f32)
+}
+
+/// One picture of a bar: PIPBRD when `border`, else PIPS.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct HealthDraw {
+    pub(crate) border: bool,
+    pub(crate) frame: usize,
+    pub(crate) point: (f32, f32),
+}
+
+/// The bar the templates give an object of `class`, drawn from `anchor`
+/// (a unit's draw point lowered by its type's bracket delta, a building's
+/// first pip): the background when `background` asks for it, then the pip
+/// row when `health` gives its band, its full pips and its length. Each
+/// picture goes to `out` in order, at the anchor moved by its rect.
+pub(crate) fn bar(
     class: HealthClass,
     background: bool,
     health: Option<(HealthBand, i32, i32)>,
-    cmds: &mut Vec<WorldCmd<'static>>,
-    mut piece: impl FnMut(HealthPiece),
+    anchor: (f32, f32),
+    mut out: impl FnMut(HealthDraw),
 ) {
     let mut values = [None; 4];
     if let Some((band, full, count)) = health {
@@ -392,222 +505,103 @@ pub(crate) fn paint(
         });
         values[usize::from(band_source(band).0)] = Some(Amount { value: 1, max: 1 });
     }
-    let object = ObjectView {
-        id: 0,
-        x: 0,
-        y: 0,
-        type_id: 0,
-        category: class_bit(class),
-        relation: 0,
-        state: if background { BACKGROUND } else { 0 },
-        values: &values,
-        slots: &[],
-    };
+    let object = view(
+        Some(class),
+        if background { BACKGROUND } else { 0 },
+        &values,
+        &[],
+    );
     // The bars' templates ask for health or the background, never for the
     // scale (its own state bit), so they take only their own commands.
-    cmds.clear();
-    BUILT_IN.bars.paint_status(std::slice::from_ref(&object), cmds);
-    let (start, step) = row(class);
-    for cmd in cmds.iter() {
-        let WorldOp::Image { rect, art } = cmd.op else {
-            continue;
-        };
-        let frame = (art.0 & !BORDER_ART) as usize;
-        if art.0 & BORDER_ART != 0 {
-            piece(HealthPiece::Background {
-                frame,
-                offset: (rect.x, rect.y),
-            });
-        } else {
-            let index = if step.0 != 0 {
-                (rect.x - start.0) / step.0
-            } else {
-                (rect.y - start.1) / step.1
-            };
-            piece(HealthPiece::Pip { frame, index });
-        }
-    }
-}
-
-/// Where a bar is drawn from.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum HealthAnchor {
-    /// A unit's draw point and its type's bracket delta.
-    Unit { sx: f32, sy: f32, delta: f32 },
-    /// A building's first pip (`BuildingBarGeometry::first_pip`).
-    Building { start: (f32, f32) },
-}
-
-/// One picture to draw: PIPBRD when `border`, else PIPS.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct HealthDraw {
-    pub(crate) border: bool,
-    pub(crate) frame: usize,
-    pub(crate) point: (f32, f32),
-}
-
-/// [`paint`] at `anchor`: each picture at the point the original computes,
-/// with its own floating-point steps.
-pub(crate) fn draw(
-    class: HealthClass,
-    background: bool,
-    health: Option<(HealthBand, i32, i32)>,
-    anchor: HealthAnchor,
-    cmds: &mut Vec<WorldCmd<'static>>,
-    mut out: impl FnMut(HealthDraw),
-) {
-    paint(class, background, health, cmds, |piece| {
-        let (border, frame, point) = match (piece, anchor) {
-            (HealthPiece::Background { frame, offset }, HealthAnchor::Unit { sx, sy, delta }) => {
-                (true, frame, (sx + offset.0 as f32, sy + delta + offset.1 as f32))
-            }
-            (HealthPiece::Pip { frame, index }, HealthAnchor::Unit { sx, sy, delta }) => {
-                let [x, y] = pip_offset(class);
-                (
-                    false,
-                    frame,
-                    (sx + x + index as f32 * UNIT_PIP_STEP as f32, sy + delta + y),
-                )
-            }
-            (HealthPiece::Pip { frame, index }, HealthAnchor::Building { start }) => (
-                false,
-                frame,
-                (start.0 - (index * 4) as f32, start.1 + (index * 2) as f32),
-            ),
-            (HealthPiece::Background { .. }, HealthAnchor::Building { .. }) => return,
-        };
+    painted(&BUILT_IN.bars, &object, |rect, art| {
         out(HealthDraw {
-            border,
-            frame,
-            point,
+            border: art.0 & BORDER_ART != 0,
+            frame: (art.0 & !BORDER_ART) as usize,
+            point: placed(anchor, rect),
+        })
+    });
+}
+
+/// `pips`, the scale row of an object of `class`, drawn from `anchor` (a
+/// unit's draw point, a building's foundation edge) as the built-in scale
+/// templates lay it out: each pip's frame and point to `out`, in order.
+pub(crate) fn scale_pips(
+    class: HealthClass,
+    pips: &[ScalePipDraw],
+    anchor: (f32, f32),
+    mut out: impl FnMut(usize, (f32, f32)),
+) {
+    if pips.is_empty() {
+        return;
+    }
+    SLOTS.with_borrow_mut(|slots| {
+        slots.clear();
+        slots.extend(pips.iter().map(|pip| Slot {
+            index: u16::try_from(pip.slot).unwrap_or(u16::MAX),
+            code: u16::try_from(pip.frame).unwrap_or(u16::MAX),
+            lift: pip.lift,
+        }));
+        let object = view(Some(class), SCALE, &[], slots);
+        painted(&BUILT_IN.scale, &object, |rect, art| {
+            out(art.0 as usize, placed(anchor, rect))
         });
     });
 }
 
-/// The scale pips of an object of `class`, as the built-in scale templates
-/// lay them out: each pip's frame and its offset from the row's anchor,
-/// which for the stock templates is the pip's own `offset_pixels`.
-/// `pips` are the frames and offsets the record captured
-/// (`ui_overlays::ScalePipDraw`): slot `offset_pixels[0] / 4`, lifted by
-/// what its offset differs from the stock row.
-pub(crate) fn scale_pips(
-    class: HealthClass,
-    pips: impl IntoIterator<Item = (usize, [i32; 2])>,
-    slots: &mut Vec<Slot>,
-    cmds: &mut Vec<WorldCmd<'static>>,
-    mut out: impl FnMut(usize, [i32; 2]),
-) {
-    slots.clear();
-    // The stock row puts slot n at (4n, 10) under a unit and (4n, 2n) on a
-    // building; an arm on another line (the ammo pips, three pixels up)
-    // keeps the difference as the slot's lift.
-    let building = class == HealthClass::Building;
-    slots.extend(pips.into_iter().map(|(frame, offset)| {
-        let index = offset[0] / 4;
-        let line = if building { index * 2 } else { 10 };
-        Slot {
-            index: u16::try_from(index).unwrap_or(u16::MAX),
-            code: u16::try_from(frame).unwrap_or(u16::MAX),
-            lift: i16::try_from(offset[1] - line).unwrap_or(i16::MAX),
-        }
-    }));
-    if slots.is_empty() {
-        return;
-    }
-    let object = ObjectView {
-        id: 0,
-        x: 0,
-        y: 0,
-        type_id: 0,
-        category: class_bit(class),
-        relation: 0,
-        state: SCALE,
-        values: &[],
-        slots,
-    };
-    cmds.clear();
-    BUILT_IN.scale.paint_status(std::slice::from_ref(&object), cmds);
-    for cmd in cmds.iter() {
-        if let WorldOp::Image { rect, art } = cmd.op {
-            out(art.0 as usize, [rect.x, rect.y]);
-        }
-    }
-}
-
-/// The `mark` showing `frame`, as its template has it: the frame to draw
-/// and the offset to move it by, or none where the template hides it.
-pub(crate) fn mark(mark: Mark, frame: usize) -> Option<(usize, [i32; 2])> {
+/// The `mark` showing `frame` on an object of `class` (none for a mark
+/// every object places alike), as its template has it: the frame to draw
+/// and the offset to move the mark's point by, or none where the template
+/// hides it.
+pub(crate) fn mark(
+    mark: Mark,
+    class: Option<HealthClass>,
+    frame: usize,
+) -> Option<(usize, [i32; 2])> {
     let slot = [Slot {
         index: 0,
         code: u16::try_from(frame).unwrap_or(u16::MAX),
         lift: 0,
     }];
-    let object = ObjectView {
-        id: 0,
-        x: 0,
-        y: 0,
-        type_id: 0,
-        category: 0,
-        relation: 0,
-        state: mark_bit(mark),
-        values: &[],
-        slots: &slot,
-    };
-    MARK_CMDS.with_borrow_mut(|cmds| {
-        cmds.clear();
-        BUILT_IN.marks[mark as usize].paint_status(std::slice::from_ref(&object), cmds);
-        cmds.iter().find_map(|cmd| match cmd.op {
-            WorldOp::Image { rect, art } => Some((art.0 as usize, [rect.x, rect.y])),
-            _ => None,
-        })
-    })
+    let object = view(class, mark_bit(mark), &[], &slot);
+    let mut first = None;
+    painted(&BUILT_IN.marks[mark as usize], &object, |rect, art| {
+        first.get_or_insert((art.0 as usize, [rect.x, rect.y]));
+    });
+    first
 }
 
-/// A shield bar's pips of an object of `class`, in order, as the built-in
-/// shield templates lay them out: each pip's frame and offset from the
-/// bracket (the unit's base). `frames` are the frames the shield type picks
-/// for each pip in turn.
+/// A shield bar's pips of an object of `class`, drawn from `anchor` (the
+/// bracket, a unit's lowered by its bracket delta) as the built-in shield
+/// templates lay them out: each pip's frame and point to `out`, in order.
+/// `frames` are the frames the shield type picks for each pip in turn.
 #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
 pub(crate) fn shield_pips(
     class: HealthClass,
     frames: impl IntoIterator<Item = usize>,
-    slots: &mut Vec<Slot>,
-    cmds: &mut Vec<WorldCmd<'static>>,
-    mut out: impl FnMut(usize, [i32; 2]),
+    anchor: (f32, f32),
+    mut out: impl FnMut(usize, (f32, f32)),
 ) {
-    slots.clear();
-    slots.extend(frames.into_iter().enumerate().map(|(index, frame)| Slot {
-        index: u16::try_from(index).unwrap_or(u16::MAX),
-        code: u16::try_from(frame).unwrap_or(u16::MAX),
-        lift: 0,
-    }));
-    if slots.is_empty() {
-        return;
-    }
-    let object = ObjectView {
-        id: 0,
-        x: 0,
-        y: 0,
-        type_id: 0,
-        category: class_bit(class),
-        relation: 0,
-        state: SHIELD,
-        values: &[],
-        slots,
-    };
-    cmds.clear();
-    BUILT_IN.shields.paint_status(std::slice::from_ref(&object), cmds);
-    for cmd in cmds.iter() {
-        if let WorldOp::Image { rect, art } = cmd.op {
-            out(art.0 as usize, [rect.x, rect.y]);
+    SLOTS.with_borrow_mut(|slots| {
+        slots.clear();
+        slots.extend(frames.into_iter().enumerate().map(|(index, frame)| Slot {
+            index: u16::try_from(index).unwrap_or(u16::MAX),
+            code: u16::try_from(frame).unwrap_or(u16::MAX),
+            lift: 0,
+        }));
+        if slots.is_empty() {
+            return;
         }
-    }
+        let object = view(Some(class), SHIELD, &[], slots);
+        painted(&BUILT_IN.shields, &object, |rect, art| {
+            out(art.0 as usize, placed(anchor, rect))
+        });
+    });
 }
 
 /// Whether `family`'s template shows it this frame, and how far it moves
-/// it: a text family's one question to its template.
+/// it: a text family's one question to its template, asked once a frame.
 pub(crate) fn family(family: Mark) -> Option<[i32; 2]> {
-    mark(family, 0).map(|(_, offset)| offset)
+    mark(family, None, 0).map(|(_, offset)| offset)
 }
 
 /// `instances` moved by a template's `offset`, where it has one.
@@ -625,7 +619,7 @@ pub(crate) fn shift_instances<'a>(
 }
 
 /// `point` moved by a template's `offset`; untouched where there is none,
-/// so a stock mark keeps the original arithmetic to the last bit.
+/// so a mark at its point keeps the original arithmetic to the last bit.
 pub(crate) fn shifted(point: (f32, f32), offset: [i32; 2]) -> (f32, f32) {
     if offset == [0, 0] {
         point
@@ -634,61 +628,121 @@ pub(crate) fn shifted(point: (f32, f32), offset: [i32; 2]) -> (f32, f32) {
     }
 }
 
+/// `point` moved by a template's whole-pixel `offset`.
+pub(crate) fn shifted_px(point: [i32; 2], offset: [i32; 2]) -> [i32; 2] {
+    [
+        point[0].saturating_add(offset[0]),
+        point[1].saturating_add(offset[1]),
+    ]
+}
+
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
 
-    fn pieces(
+    fn bars(
         class: HealthClass,
         background: bool,
         health: Option<(HealthBand, i32, i32)>,
-    ) -> Vec<HealthPiece> {
+    ) -> Vec<HealthDraw> {
         let mut out = Vec::new();
-        paint(class, background, health, &mut Vec::new(), |piece| out.push(piece));
+        bar(class, background, health, (100.0, 50.0), |draw| out.push(draw));
         out
+    }
+
+    fn draw(border: bool, frame: usize, x: f32, y: f32) -> HealthDraw {
+        HealthDraw {
+            border,
+            frame,
+            point: (x, y),
+        }
     }
 
     #[test]
     fn a_vehicle_bar_is_its_background_then_its_full_pips() {
         assert_eq!(
-            pieces(HealthClass::Vehicle, true, Some((HealthBand::Yellow, 3, 17))),
+            bars(HealthClass::Vehicle, true, Some((HealthBand::Yellow, 3, 17))),
             [
-                HealthPiece::Background { frame: 0, offset: (1, -26) },
-                HealthPiece::Pip { frame: 17, index: 0 },
-                HealthPiece::Pip { frame: 17, index: 1 },
-                HealthPiece::Pip { frame: 17, index: 2 },
+                draw(true, 0, 101.0, 24.0),
+                draw(false, 17, 85.0, 25.0),
+                draw(false, 17, 87.0, 25.0),
+                draw(false, 17, 89.0, 25.0),
             ]
         );
         assert_eq!(
-            pieces(HealthClass::Infantry, true, None),
-            [HealthPiece::Background { frame: 1, offset: (11, -25) }]
+            bars(HealthClass::Infantry, true, None),
+            [draw(true, 1, 111.0, 25.0)]
         );
-        assert!(pieces(HealthClass::Infantry, false, None).is_empty());
-    }
-
-    #[test]
-    fn a_stock_mark_keeps_its_frame_and_place() {
-        for (mark, _) in MARKS {
-            assert_eq!(super::mark(mark, 14), Some((14, [0, 0])));
-            assert_eq!(super::mark(mark, 0), Some((0, [0, 0])));
-            assert_eq!(super::mark(mark, MAX_SLOT_ARTS), None, "past the table");
-        }
-        let point = (-0.0f32, 12.5f32);
-        let kept = shifted(point, [0, 0]);
-        assert_eq!((kept.0.to_bits(), kept.1.to_bits()), (point.0.to_bits(), point.1.to_bits()));
+        assert!(bars(HealthClass::Infantry, false, None).is_empty());
     }
 
     #[test]
     fn a_building_bar_lights_its_full_pips_and_shows_the_rest_empty() {
-        let bar = pieces(HealthClass::Building, true, Some((HealthBand::Red, 2, 4)));
         assert_eq!(
-            bar,
+            bars(HealthClass::Building, true, Some((HealthBand::Red, 2, 4))),
             [
-                HealthPiece::Pip { frame: 4, index: 0 },
-                HealthPiece::Pip { frame: 4, index: 1 },
-                HealthPiece::Pip { frame: 0, index: 2 },
-                HealthPiece::Pip { frame: 0, index: 3 },
+                draw(false, 4, 100.0, 50.0),
+                draw(false, 4, 96.0, 52.0),
+                draw(false, 0, 92.0, 54.0),
+                draw(false, 0, 88.0, 56.0),
             ]
         );
+    }
+
+    #[test]
+    fn a_scale_row_starts_at_its_class_place_and_keeps_its_lift() {
+        let row = [
+            ScalePipDraw { slot: 0, frame: 1, lift: 0 },
+            ScalePipDraw { slot: 2, frame: 13, lift: -3 },
+        ];
+        let mut out = Vec::new();
+        for class in [HealthClass::Vehicle, HealthClass::Infantry, HealthClass::Building] {
+            scale_pips(class, &row, (0.0, 0.0), |frame, point| out.push((frame, point)));
+        }
+        assert_eq!(
+            out,
+            [
+                (1, (-15.0, 10.0)),
+                (13, (-7.0, 7.0)),
+                (1, (-4.0, 10.0)),
+                (13, (4.0, 7.0)),
+                (1, (6.0, -1.0)),
+                (13, (14.0, 0.0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_mark_keeps_its_frame_at_its_place() {
+        for (mark, _) in MARKS {
+            if mark_places(mark).len() > 1 {
+                continue;
+            }
+            assert_eq!(super::mark(mark, None, 14), Some((14, [0, 0])));
+            assert_eq!(super::mark(mark, None, 0), Some((0, [0, 0])));
+            assert_eq!(super::mark(mark, None, MAX_SLOT_ARTS), None, "past the table");
+        }
+        assert_eq!(
+            super::mark(Mark::SelfHeal, Some(HealthClass::Vehicle), 0x14),
+            Some((0x14, [23, -22]))
+        );
+        assert_eq!(
+            super::mark(Mark::SelfHeal, Some(HealthClass::Infantry), 0x0D),
+            Some((0x0D, [15, -25]))
+        );
+        #[cfg(not(feature = "phobos"))]
+        {
+            assert_eq!(
+                super::mark(Mark::Rank, Some(HealthClass::Infantry), 14),
+                Some((14, [5, 2]))
+            );
+            assert_eq!(
+                super::mark(Mark::Rank, Some(HealthClass::Building), 15),
+                Some((15, [10, 6]))
+            );
+        }
+        let point = (-0.0f32, 12.5f32);
+        let kept = shifted(point, [0, 0]);
+        assert_eq!((kept.0.to_bits(), kept.1.to_bits()), (point.0.to_bits(), point.1.to_bits()));
     }
 }
