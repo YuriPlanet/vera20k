@@ -69,6 +69,7 @@ simulation, session and network command owners.
 - [Computer players pick the nearest enemy](ai-nearest-enemy.md): the `[General] AINearestEnemy=` rules key that stops every computer player in a free-for-all from choosing the human as its enemy.
 - [Jumpjets land beside a taken cell](jumpjet-land-nearby.md): the `[JumpjetControls] LandNearby=` rules key that sends a Nighthawk refused its landing cell to the nearest clear one.
 - [Smooth Jumpjet facing](jumpjet-smooth-facing.md): the `[JumpjetControls] SmoothFacing=` rules key that stops a Nighthawk's body snapping at take-off and unload.
+- [Level high-bridge decks](level-bridge-decks.md): a high bridge keeps one deck height, so a map can run it over a valley or a slope.
 - [Minimap beacons](minimap-beacons.md): tick it in Options, press B and click the minimap to place a beacon far away.
 - [Menu reference](menu-reference.md): every page and menu a player can open, in or out of a match, with where each setting is saved.
 - [Map format](map-format.md): bigger maps and maps for up to 30 players, for people who write map editors and tools.

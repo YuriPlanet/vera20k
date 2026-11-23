@@ -1669,6 +1669,49 @@ mod tests {
         );
     }
 
+    /// Process (`0x00719631..0x007196B2`) resolves the destination's bridge
+    /// before SetHeight(0): an arrival on a fixed high-bridge deck over a dip
+    /// stores that deck as its level, not the dip's ground plus four.
+    #[test]
+    fn an_arrival_over_a_dip_stores_the_decks_level() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+        use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+        let mut sim = crate::sim::world::Simulation::new();
+        // The anchor at level 5 puts the deck at 9; its lane (10, 9) is a dip.
+        let mut terrain = test_grid(32, 32, |x, y| {
+            let mut cell = test_flat_cell(x, y);
+            cell.level = if (x, y) == (10, 9) { 0 } else { 5 };
+            cell
+        });
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((10, 8), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+        sim.install_resolved_terrain_for_new_map(terrain);
+        sim.substrate
+            .entities
+            .insert(teleport_owner(1, "CMIN", 20, 20));
+        assert!(arm_teleport(
+            sim.substrate.entities.get_mut(1).unwrap(),
+            DriveCoord::cell(10, 9, 0),
+            None,
+            &default_rules(),
+            true
+        ));
+
+        sim.process_teleport(
+            1,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
+        );
+
+        let entity = sim.substrate.entities.get(1).unwrap();
+        assert_eq!((entity.position.rx(), entity.position.ry()), (10, 9));
+        assert!(entity.on_bridge());
+        assert_eq!(entity.position.z(), 9);
+    }
+
     /// Regression: non-harvester (Chrono Legionnaire path) still goes through the
     /// full Relocate → ChronoDelay countdown.
     #[test]

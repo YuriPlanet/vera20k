@@ -1451,6 +1451,45 @@ mod tests {
         assert!(runtime(actor).unwrap().destination.is_none());
     }
 
+    /// A Hover Foot that steps into a cell under a fixed high-bridge deck
+    /// stores that deck as its level (`0x005148DF..0x00514973` sets the
+    /// bridge byte from the new cell), not the dip's ground plus four.
+    #[test]
+    fn hover_cell_entry_over_a_dip_stores_the_decks_level() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+        use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0);
+        // The anchor at level 5 puts the deck at 9; its lane (10, 9) is a dip.
+        let mut terrain = test_grid(32, 32, |x, y| {
+            let mut cell = test_flat_cell(x, y);
+            cell.level = if (x, y) == (10, 9) { 0 } else { 5 };
+            cell
+        });
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((10, 8), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+        sim.install_resolved_terrain_for_new_map(terrain);
+        let mut entity = GameEntity::test_default(1, "ROBO", "Americans", 10, 10);
+        entity.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Hover,
+            ),
+        );
+        sim.substrate.entities.insert(entity);
+
+        // Facing 0 at a cell's speed steps north out of (10, 10), at the
+        // deck's height.
+        sim.hover_step(1, 9 * 104, 256, &rules, None, &mut FrameEffects::default());
+
+        let entity = sim.substrate.entities.get(1).unwrap();
+        assert_eq!((entity.position.rx(), entity.position.ry()), (10, 9));
+        assert!(entity.on_bridge());
+        assert_eq!(entity.position.z(), 9);
+    }
+
     #[test]
     fn production_hover_spin_exit_water_gate_matches_native() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
