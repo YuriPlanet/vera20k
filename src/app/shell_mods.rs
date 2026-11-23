@@ -118,8 +118,7 @@ impl App {
         if let Some((rows, selected)) = in_use {
             // The buttons first: the list's id counts as built.
             if let Some(root) = controller.root_in(mods_shell::DIALOG) {
-                let nodes = || mods_shell::PAGE.nodes();
-                crate::ui::shell::page::ensure_built(controller.gui_mut(), root, nodes);
+                crate::ui::shell::page::ensure_built(controller.gui_mut(), root, mods_shell::nodes);
             }
             let built = find_family_list(controller, mods_shell::DIALOG).is_none();
             let list = (rows, selected, 0);
@@ -168,8 +167,8 @@ impl App {
             (mods_shell::USE, mods.switch_to(selected).is_some()),
             (mods_shell::CHECK, mods.picked_is_mod(selected)),
         ];
-        let rect_of = |id| layout.page.button_rect(id);
-        let nodes = || mods_shell::PAGE.nodes();
+        let rect_of = |id| layout.rect_of(id);
+        let nodes = mods_shell::nodes;
         match Self::screen_page_pointer(state, mods_shell::DIALOG, nodes, rect_of, &enabled, down) {
             Some(mods_shell::USE) => Self::use_picked_mod(state),
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]

@@ -14,30 +14,21 @@ use crate::app::frontend::movies_credits_render::family_list_hovered;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{CellRow, GuiStyle, paint_gui_styled};
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::mods::Listed;
-use crate::render::shell_paint::{PaintLabel, SHELL_TEXT_RGB_ENABLED};
-use crate::ui::main_menu_shell::RectPx;
-use crate::ui::mods_shell::{self, ModsLayout, PAGE};
+use crate::render::shell_paint::SHELL_TEXT_RGB_ENABLED;
+use crate::ui::mods_shell::{self, PAGE};
 use crate::ui::movies_credits_shell::{family_list_selected, find_family_list};
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::menu_page;
+use vera20k_gui::{NodeId, Prop, Value};
 
 /// Row text inset from the row's left edge, as in the movie list, and from
 /// its right edge for the mark of the mod in use.
 const ROW_TEXT_INSET: i32 = 2;
 
-fn label<'a>(text: impl Into<Cow<'a, str>>, rect: RectPx, align: ShellAlign) -> PaintLabel<'a> {
-    PaintLabel {
-        text: text.into(),
-        rect,
-        align,
-        rgb: SHELL_TEXT_RGB_ENABLED,
-        path_a_reveal: None,
-    }
-}
-
-/// What the box under the list says about `row`: its name, whether it is in
-/// use or what it needs, who made it, what it is, and its terms.
-fn detail_labels<'a>(row: &'a Listed, in_use: bool, layout: &ModsLayout) -> Vec<PaintLabel<'a>> {
+/// What the box under the list says about `row`, a line each: its name,
+/// whether it is in use or what it needs, who made it, what it is, and its
+/// terms ([`mods_shell::DETAIL_TEXTS`]).
+fn detail_lines(row: &Listed, in_use: bool) -> [Option<String>; 5] {
     let state: Option<String> = if in_use {
         Some(crate::i18n::tr("VERA:ModInUse"))
     } else {
@@ -53,17 +44,52 @@ fn detail_labels<'a>(row: &'a Listed, in_use: bool, layout: &ModsLayout) -> Vec<
         .terms
         .as_ref()
         .map(|terms| crate::i18n::tr_fill("VERA:ModTerms", &[("terms", terms)]));
-    let lines: [(Option<Cow<'a, str>>, RectPx); 5] = [
-        (Some(row.title()), layout.name),
-        (state.map(Cow::Owned), layout.state),
-        (author.map(Cow::Owned), layout.author),
-        (row.about(), layout.about),
-        (terms.map(Cow::Owned), layout.terms),
-    ];
-    lines
-        .into_iter()
-        .filter_map(|(text, rect)| Some(label(text?, rect, ShellAlign::NONE)))
-        .collect()
+    [
+        Some(row.title().into_owned()),
+        state,
+        author,
+        row.about().map(Cow::into_owned),
+        terms,
+    ]
+}
+
+/// The page's statics take their texts, written only on a change: the
+/// empty folder's hint and the selected row's lines, or none.
+fn sync_texts(state: &mut AppState, selected: Option<usize>) {
+    let dialog = PAGE.dialog;
+    let Some(root) = state.frontend.shell_controller.root_in(dialog) else {
+        return;
+    };
+    let mods = &state.frontend.mods;
+    // The hint, then the five lines.
+    let mut texts: [Option<String>; 6] = Default::default();
+    if let Some(page) = mods.page.as_ref() {
+        texts[0] = crate::app::mods::none_installed_hint(page);
+        if let Some(row) = selected.and_then(|selected| page.get(selected)) {
+            let lines = detail_lines(row, mods.in_use(row));
+            for (text, line) in texts[1..].iter_mut().zip(lines) {
+                *text = line;
+            }
+        }
+    }
+    let gui = state.frontend.shell_controller.gui_mut();
+    let count = gui.tree().children(root).map_or(0, <[NodeId]>::len);
+    for index in 0..count {
+        let Some(child) = gui.tree().children(root).ok().and_then(|c| c.get(index).copied()) else {
+            break;
+        };
+        let id = gui.id_of(child).and_then(|id| u16::try_from(id).ok());
+        let slot = match id {
+            Some(mods_shell::HINT_TEXT) => 0,
+            Some(id) => match mods_shell::DETAIL_TEXTS.iter().position(|text| *text == id) {
+                Some(line) => line + 1,
+                None => continue,
+            },
+            None => continue,
+        };
+        let text = Value::Text(texts[slot].take().unwrap_or_default());
+        crate::ui::shell::page::set_if_changed(gui, child, Prop::Text, text);
+    }
 }
 
 /// Hover help for the page's status line.
@@ -98,8 +124,9 @@ pub(crate) fn render_mods_page(
         (mods_shell::USE, mods.switch_to(selected).is_some()),
         (mods_shell::CHECK, mods.picked_is_mod(selected)),
     ];
-    let rect_of = |id| layout.page.button_rect(id);
-    let tree = page_tree(state, dialog, || PAGE.nodes(), rect_of, &enabled);
+    let rect_of = |id| layout.rect_of(id);
+    let tree = page_tree(state, dialog, mods_shell::nodes, rect_of, &enabled);
+    sync_texts(state, selected);
     let status = |state: &AppState| mods_status_key(state).map(str::to_owned);
     let kind = ShellSlideKind::Mods;
     let panel = page_panel_state(state, kind, true, status, layout.page.status_help);
@@ -165,31 +192,12 @@ pub(crate) fn render_mods_page(
                 layout.details,
             );
         }
-        let labels = &mut frame.labels;
-        // An empty Mods folder: where a mod goes, across the empty rows under No
-        // mod, one row down.
-        if let Some(hint) = crate::app::mods::none_installed_hint(page) {
-            let content = geometry.content;
-            let top = geometry.row(2).y;
-            labels.push(label(
-                hint,
-                RectPx::new(
-                    content.x + 4 * ROW_TEXT_INSET,
-                    top,
-                    content.w - 8 * ROW_TEXT_INSET,
-                    (content.y + content.h - top).max(0),
-                ),
-                ShellAlign::NONE,
-            ));
+        // The hint, the selected mod's lines and the caption, from their
+        // statics.
+        if let Some((gui, root)) = frame.buttons {
+            let statics = paint_gui_styled(state, gui, root, scale, &[], GuiStyle::default());
+            frame.over.extend(statics);
         }
-        if let Some(row) = view.selected.and_then(|selected| page.get(selected)) {
-            labels.extend(detail_labels(row, mods.in_use(row), &layout));
-        }
-        labels.push(label(
-            state.csf_text(mods_shell::PROMPT_KEY),
-            layout.prompt,
-            ShellAlign::H_CENTER,
-        ));
     }
     encode_family_page(state, encoder, destination, frame);
     Ok(true)
