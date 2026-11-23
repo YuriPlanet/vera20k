@@ -13,6 +13,11 @@ const V0_4_0: u32 = 0x9BB2_0D64;
 const ALPHA_SHAPE_LISTENER: u32 = 0xFD54_FFFF;
 // d00f8183c added the Ares alternate-theater flag to each retained object image.
 const ALTERNATE_THEATER_ART: u32 = 0xCB54_5137;
+// 08e1424eb (#5002) stores a high bridge's fixed deck level, and 26b2f9464
+// Fly's Ares EMP spin. Older worlds hold neither: no fixed deck, so a converted
+// bridge keeps its saved per-cell height until it is stamped again, and no
+// spin, whose rate is read only while spinning.
+const BRIDGE_DECK_AND_FLY_SPIN: u32 = 0xCADF_6067;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
@@ -40,18 +45,24 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == ALTERNATE_THEATER_ART
+        && snapshot_layout() == BRIDGE_DECK_AND_FLY_SPIN
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const IMAGE_FLAGS: (&str, &[&str]) = ("ObjectImageState", &["alternate_theater_art"]);
-    let absent_bools: &'static [_] = match source {
-        V0_3_8_AND_0_3_9 | V0_4_0 => &[IMAGE_FLAGS, ("AlphaShape", &["anim_listener"])],
-        ALPHA_SHAPE_LISTENER => &[IMAGE_FLAGS],
+    const ALPHA_LISTENER: (&str, &[&str]) = ("AlphaShape", &["anim_listener"]);
+    const DECK: (&str, &[&str]) = ("BridgeCellFacts", &["fixed_deck_level"]);
+    // The pending cell was a bare (x, y) point, the struct's first field.
+    const PENDING_DECK: (&str, &[&str]) = ("PendingBridgeCell", &["corrected_deck_level"]);
+    const SPIN: (&str, &[&str]) = ("FlyRuntime", &["spinning", "spin_rate"]);
+    let absent_fields: &'static [_] = match source {
+        V0_3_8_AND_0_3_9 | V0_4_0 => &[IMAGE_FLAGS, ALPHA_LISTENER, DECK, PENDING_DECK, SPIN],
+        ALPHA_SHAPE_LISTENER => &[IMAGE_FLAGS, DECK, PENDING_DECK, SPIN],
+        ALTERNATE_THEATER_ART => &[DECK, PENDING_DECK, SPIN],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
-        absent_bools,
+        absent_fields,
         // v0.4.0 appended Mech without changing the earlier discriminants.
         absent_variant: (source == V0_3_8_AND_0_3_9).then_some(("LocomotorKind", "Mech")),
     })
@@ -63,7 +74,8 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != ALTERNATE_THEATER_ART {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != BRIDGE_DECK_AND_FLY_SPIN
+    {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -76,10 +88,10 @@ pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
         .ok_or(MigrationError::UnsupportedSource(preamble.layout))?;
     GameSnapshot::read_compatible_header(bytes)?;
 
-    let mut missing_bools = Vec::new();
+    let mut missing_fields = Vec::new();
     {
         let (mut snapshot, remainder): (GameSnapshot, _) =
-            save_codec::deserialize_previous(bytes, previous, &mut missing_bools)?;
+            save_codec::deserialize_previous(bytes, previous, &mut missing_fields)?;
         if !remainder.is_empty() {
             return Err(MigrationError::TrailingBytes);
         }
@@ -102,14 +114,18 @@ pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     })?;
     // Offsets are produced by the successful sequential decoder. Back-fill
     // in a single pass so each original byte moves at most once.
+    let added: usize = missing_fields.iter().map(|&(_, width)| width).sum();
     let mut end = bytes.len();
     bytes
-        .try_reserve_exact(missing_bools.len())
+        .try_reserve_exact(added)
         .map_err(|error| save_codec::Error::Custom(error.to_string()))?;
-    bytes.resize(end + missing_bools.len(), 0);
-    for (index, &offset) in missing_bools.iter().enumerate().rev() {
-        bytes.copy_within(offset..end, offset + index + 1);
-        bytes[offset + index] = 0;
+    bytes.resize(end + added, 0);
+    // `shift` is the width inserted at or before the current field.
+    let mut shift = added;
+    for &(offset, width) in missing_fields.iter().rev() {
+        bytes.copy_within(offset..end, offset + shift);
+        shift -= width;
+        bytes[offset + shift..offset + shift + width].fill(0);
         end = offset;
     }
     bytes
@@ -191,7 +207,7 @@ mod tests {
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
         if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != ALTERNATE_THEATER_ART
+            || snapshot_layout() != BRIDGE_DECK_AND_FLY_SPIN
         {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;
@@ -257,7 +273,30 @@ mod tests {
         .unwrap();
         assert_eq!(restored, image);
         assert!(rest.is_empty());
-        assert_eq!(offsets, [after_image + 1]);
+        assert_eq!(offsets, [(after_image + 1, 1)]);
+    }
+
+    #[test]
+    fn spin_fields_insert_a_false_byte_and_a_zero_rate() {
+        use crate::sim::movement::fly_height::FlyRuntime;
+
+        // The 41f140f93 writer ended FlyRuntime with fall_counter and the two
+        // speed words; spinning and spin_rate now sit between them.
+        let fly = FlyRuntime::default();
+        let mut bytes = save_codec::serialize(&fly).unwrap();
+        let speeds = bytes.len() - 16;
+        assert_eq!(&bytes[speeds - 5..speeds], &[0; 5]);
+        bytes.drain(speeds - 5..speeds);
+        let mut fields = Vec::new();
+        let (restored, rest) = save_codec::deserialize_previous::<FlyRuntime>(
+            &bytes,
+            previous_layout(ALTERNATE_THEATER_ART).unwrap(),
+            &mut fields,
+        )
+        .unwrap();
+        assert_eq!(restored, fly);
+        assert!(rest.is_empty());
+        assert_eq!(fields, [(speeds - 5, 1), (speeds - 5, 4)]);
     }
 
     #[test]

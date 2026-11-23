@@ -99,19 +99,21 @@ pub(crate) fn deserialize_with_remainder<'de, T: serde::Deserialize<'de>>(
     Ok((value, decoder.input))
 }
 
-/// Booleans introduced as false since a particular player-save writer, and
-/// an enum variant that writer could not emit.
+/// Struct fields added since a particular player-save writer, and an enum
+/// variant that writer could not emit. An absent field reads as all-zero
+/// bytes: false, None, 0, an empty sequence or the first variant.
 pub(crate) struct PreviousLayout {
-    pub absent_bools: &'static [(&'static str, &'static [&'static str])],
+    pub absent_fields: &'static [(&'static str, &'static [&'static str])],
     pub absent_variant: Option<(&'static str, &'static str)>,
 }
 
-/// Read the old layout and record each missing boolean's wire offset. The
-/// caller can then preserve every original byte, including normalized values.
+/// Read the old layout and record each missing field's wire offset and
+/// width. The caller can then preserve every original byte, including
+/// normalized values.
 pub(crate) fn deserialize_previous<'de, T: serde::Deserialize<'de>>(
     bytes: &'de [u8],
     layout: PreviousLayout,
-    missing_fields: &mut Vec<usize>,
+    missing_fields: &mut Vec<(usize, usize)>,
 ) -> Result<(T, &'de [u8]), Error> {
     let mut decoder = Deserializer {
         input: bytes,
@@ -391,7 +393,7 @@ impl ser::SerializeStructVariant for &mut Serializer {
 struct PreviousInput<'a> {
     layout: PreviousLayout,
     input_len: usize,
-    missing_fields: &'a mut Vec<usize>,
+    missing_fields: &'a mut Vec<(usize, usize)>,
 }
 
 struct Deserializer<'de, 'a> {
@@ -567,7 +569,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de, '_> {
         visitor: V,
     ) -> Result<V::Value, Error> {
         if let Some(previous) = &self.previous
-            && let Some(&(_, missing)) = previous.layout.absent_bools.iter().find(|p| p.0 == name)
+            && let Some(&(_, missing)) = previous.layout.absent_fields.iter().find(|p| p.0 == name)
         {
             if let Some(field) = missing.iter().find(|field| !fields.contains(field)) {
                 return Err(Error::Custom(format!("missing {name}.{field} in reader")));
@@ -608,7 +610,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de, '_> {
     }
 }
 
-/// Supply new booleans to serde at their declared positions without
+/// Supply new fields to serde at their declared positions without
 /// consuming the following fields' bytes from the historical record.
 struct HistoricalFields<'a, 'de, 'layout> {
     de: &'a mut Deserializer<'de, 'layout>,
@@ -629,12 +631,17 @@ impl<'de> de::SeqAccess<'de> for HistoricalFields<'_, 'de, '_> {
         if self.missing.contains(&field)
             && let Some(previous) = &mut self.de.previous
         {
+            const ZEROS: [u8; 16] = [0; 16];
+            let mut zeros = Deserializer {
+                input: &ZEROS,
+                previous: None,
+            };
+            let value = seed.deserialize(&mut zeros)?;
+            let width = ZEROS.len() - zeros.input.len();
             previous
                 .missing_fields
-                .push(previous.input_len - self.de.input.len());
-            return seed
-                .deserialize(de::value::BoolDeserializer::new(false))
-                .map(Some);
+                .push((previous.input_len - self.de.input.len(), width));
+            return Ok(Some(value));
         }
         seed.deserialize(&mut *self.de).map(Some)
     }
