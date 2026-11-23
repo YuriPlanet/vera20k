@@ -26,7 +26,7 @@ const DEFORM_LOWEST_LEVEL: i32 = -4;
 /// later against `RuleSet::ps_type_id_by_name`, and so on). `None` is the
 /// constructor's null, which an absent key or a `none` keeps — consumers
 /// must supply their own fallback in that case.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CombatDamageDefaults {
     /// RulesCtor665675=100; ReadCombatDamage66BBDE..66BBF5 reads signed
     /// AmmoCrateDamage with its current default, without clamping.
@@ -188,50 +188,52 @@ impl CombatDamageDefaults {
     /// Parse the scalars from a `[CombatDamage]` `IniSection`. The Type
     /// references and the two crate/resource explosion damages keep the
     /// constructor's values: only the ordered Process owner reads them.
+    ///
+    /// [`Default`] is the single source of truth: it holds every value, and
+    /// each read below overwrites the one field it owns.
     pub fn from_ini_section(section: &IniSection) -> Self {
-        Self {
-            ammo_crate_damage: 100,
-            tiberium_explosion_damage: 100,
-            max_damage: section.read_int("MaxDamage", 1000),
-            collapse_chance: section.read_int("CollapseChance", 100),
-            terrain_deformation: section.read_bool("TerrainDeformation", false),
-            deform_lowest_level: section
-                .read_int("DeformLowestLevel", DEFORM_LOWEST_LEVEL)
-                .clamp(i32::from(i8::MIN), i32::from(i8::MAX)),
-            railgun_damage_radius: section.read_int("RailgunDamageRadius", 0x80),
-            ballistic_scatter: section.read_range("BallisticScatter", 0x100),
-            crush: section.read_range("Crush", 0x180),
-            fire_supress: section.read_range("FireSupress", 0x100),
-            incoming: section.read_speed("Incoming", 0),
-            open_topped_warp_distance: section.read_int("OpenToppedWarpDistance", 5),
-            death_weapon: None,
-            flame_damage: None,
-            flame_damage2: None,
-            drain_animation_type: None,
-            falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
-            current_strength_damage: section.read_bool("CurrentStrengthDamage", true),
-            tiberium_explosive: crate::rules::ares_switch::ares_way()
-                && section.read_bool("TiberiumExplosive", false),
-            ivan_warhead: None,
-            ivan_damage: section.read_int("IvanDamage", 100),
-            ivan_timed_delay: section.read_int("IvanTimedDelay", 450),
-            ivan_icon_flicker_rate: section.read_int("IvanIconFlickerRate", 8),
-            can_detonate_time_bomb: section.read_bool("CanDetonateTimeBomb", false),
-            can_detonate_death_bomb: section.read_bool("CanDetonateDeathBomb", false),
-            splash_list: Vec::new(),
-            default_large_grey_smoke_system: None,
-            default_small_grey_smoke_system: None,
-            default_spark_system: None,
-            default_large_red_smoke_system: None,
-            default_small_red_smoke_system: None,
-            default_debris_smoke_system: None,
-            default_fire_stream_system: None,
-            default_test_particle_system: None,
-            default_repair_particle_system: None,
-        }
+        let mut defaults = Self::default();
+        defaults.max_damage = section.read_int("MaxDamage", defaults.max_damage);
+        defaults.collapse_chance = section.read_int("CollapseChance", defaults.collapse_chance);
+        defaults.terrain_deformation =
+            section.read_bool("TerrainDeformation", defaults.terrain_deformation);
+        defaults.deform_lowest_level = section
+            .read_int("DeformLowestLevel", defaults.deform_lowest_level)
+            .clamp(i32::from(i8::MIN), i32::from(i8::MAX));
+        defaults.railgun_damage_radius =
+            section.read_int("RailgunDamageRadius", defaults.railgun_damage_radius);
+        defaults.ballistic_scatter =
+            section.read_range("BallisticScatter", defaults.ballistic_scatter);
+        defaults.crush = section.read_range("Crush", defaults.crush);
+        defaults.fire_supress = section.read_range("FireSupress", defaults.fire_supress);
+        defaults.incoming = section.read_speed("Incoming", defaults.incoming);
+        defaults.open_topped_warp_distance =
+            section.read_int("OpenToppedWarpDistance", defaults.open_topped_warp_distance);
+        defaults.falling_damage_multiplier = section.read_float(
+            "FallingDamageMultiplier",
+            defaults.falling_damage_multiplier,
+        );
+        defaults.current_strength_damage =
+            section.read_bool("CurrentStrengthDamage", defaults.current_strength_damage);
+        // `TiberiumExplosive=` is read the Ares way only (Ares 1004BD90, hook
+        // 0x738749); a stock game keeps the constructor's false.
+        defaults.tiberium_explosive = crate::rules::ares_switch::ares_way()
+            && section.read_bool("TiberiumExplosive", defaults.tiberium_explosive);
+        defaults.ivan_damage = section.read_int("IvanDamage", defaults.ivan_damage);
+        defaults.ivan_timed_delay = section.read_int("IvanTimedDelay", defaults.ivan_timed_delay);
+        defaults.ivan_icon_flicker_rate =
+            section.read_int("IvanIconFlickerRate", defaults.ivan_icon_flicker_rate);
+        defaults.can_detonate_time_bomb =
+            section.read_bool("CanDetonateTimeBomb", defaults.can_detonate_time_bomb);
+        defaults.can_detonate_death_bomb =
+            section.read_bool("CanDetonateDeathBomb", defaults.can_detonate_death_bomb);
+        defaults
     }
 }
 
+/// The constructor's values: every `[CombatDamage]` default before its
+/// section is read. [`CombatDamageDefaults::from_ini_section`] starts from
+/// these, so the two cannot drift apart.
 impl Default for CombatDamageDefaults {
     fn default() -> Self {
         Self {
@@ -303,5 +305,29 @@ mod tests {
         assert_eq!(read("[CombatDamage]\nIncoming=10\n"), 25);
         assert_eq!(read("[CombatDamage]\nFixtureOnly=1\n"), 0);
         assert_eq!(CombatDamageDefaults::default().incoming, 0);
+    }
+
+    /// `Default` is the single source of truth: a `[CombatDamage]` section
+    /// that authors none of the read keys reads back as the defaults, so the
+    /// two lists cannot drift apart. `TiberiumExplosive=` is the one
+    /// Ares-gated read, and it is the only field that can differ from the
+    /// default.
+    #[test]
+    fn an_unauthored_combat_damage_section_reads_as_the_defaults() {
+        let ini = IniFile::from_str("[CombatDamage]\nFixtureOnly=1\n");
+        let section = ini.section("CombatDamage").unwrap();
+        let _stock = crate::rules::ares_switch::read_ares_way(false);
+        assert_eq!(
+            CombatDamageDefaults::from_ini_section(section),
+            CombatDamageDefaults::default()
+        );
+
+        let ini = IniFile::from_str("[CombatDamage]\nTiberiumExplosive=yes\n");
+        let section = ini.section("CombatDamage").unwrap();
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        assert!(
+            CombatDamageDefaults::from_ini_section(section).tiberium_explosive,
+            "an Ares game reads the key the stock game keeps at false"
+        );
     }
 }

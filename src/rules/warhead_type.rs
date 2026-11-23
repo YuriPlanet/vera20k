@@ -72,6 +72,10 @@ pub struct WarheadType {
     /// Native binary32 `DelayKillAtMax` widened exactly to f64; default 1.0f.
     /// `WarheadTypeClass+0x138` (ReadDouble at `0x0075d477`, `FSTP float ptr`
     /// at `0x0075d47c`, key string `0x00847e54`).
+    ///
+    /// A value the float parse makes non-finite (`1e39`) is refused by the
+    /// reader that owns the key (`refused_delay_kill_at_max` below), so this
+    /// field is always finite.
     pub delay_kill_at_max_f64: f64,
     /// Whether this warhead can damage walls/bridges (Wall=yes).
     /// The field itself is `WarheadTypeClass+0x144` (ReadINI `0x0075d508`,
@@ -603,7 +607,8 @@ impl WarheadType {
         let cell_inset_f32 = section.read_float("CellInset", 0.0);
         let percent_at_max_native = section.read_float("PercentAtMax", 1.0);
         let percent_at_max_f64 = f64::from(percent_at_max_native);
-        let delay_kill_at_max_f64 = f64::from(section.read_float("DelayKillAtMax", 1.0));
+        let delay_kill_at_max_f64 =
+            refused_delay_kill_at_max(section.read_float("DelayKillAtMax", 1.0));
 
         // The IntVector reader (`0x0075DD22` -> `0x00475D70`). Ares 3.0
         // WarheadTypeClass_LoadFromINI_ListLength (1005C080, hook 0x75D660)
@@ -812,6 +817,35 @@ pub(crate) fn verses_value(token: &str) -> f64 {
     }
 }
 
+/// The reader's refusal of a non-finite `DelayKillAtMax=`.
+///
+/// `WarheadTypeClass::ReadINI @ 0x0075D3A0` reads the key through
+/// `CCINIClass::ReadDouble @ 0x005283D0` (the call at `0x0075d477`) and
+/// stores the result as the binary32 field `WarheadTypeClass+0x138` (`FSTP
+/// float ptr` at `0x0075d47c`, key string `0x00847e54`). The executed
+/// native receipts (`tools/input_oracle/area_guard.json`) record that store
+/// for `[SA]`, `[SSA]`, `[AP]` and `[GRIZAPE]` with the constructor's 1.0f.
+/// gamemd applies no bound there, so a literal the float scan overflows
+/// (`1e39`) reaches the native field as ±inf.
+///
+/// RESIDUAL: the native consumer keeps that ±inf. The PostMortem
+/// interpolation at `0x00701ED0` runs with the FPU's exceptions masked, so
+/// the infinity reaches `Math__ftol @ 0x007C5F00` as the integer indefinite
+/// (low dword zero) and the post-mortem delay is 0 frames. VERA refuses the
+/// out-of-range literal here, at the reader that owns the key, and keeps the
+/// constructor's 1.0f, so the delayed death keeps the base `DelayKillFrames`.
+/// Trigger: a mod's INI with a `DelayKillAtMax=` the float scan overflows.
+/// Effect: the post-mortem fuse is the base delay instead of native's 0
+/// frames. Frequency: only such a literal; retail's rulesmd authors 7.0 for
+/// `[OilExplosionWH]` alone. Downstream risk: none for retail data.
+fn refused_delay_kill_at_max(value: f32) -> f64 {
+    if value.is_finite() {
+        f64::from(value)
+    } else {
+        1.0
+    }
+}
+
 #[cfg(all(test, tests_rules_o_z))]
 mod tests {
     use super::*;
@@ -1003,6 +1037,48 @@ mod tests {
             wh.delay_kill_at_max_f64.to_bits(),
             f64::from(7.1_f32).to_bits()
         );
+    }
+
+    /// `DelayKillAtMax=` (`WarheadTypeClass+0x138`, ReadDouble at
+    /// `0x0075d477`, `FSTP float ptr` at `0x0075d47c`): the reader refuses a
+    /// value the float scan makes non-finite, so the warhead never hands the
+    /// simulation an exceptional multiplier.
+    #[test]
+    fn a_non_finite_delay_kill_at_max_is_refused_at_the_reader() {
+        let read = |value: &str| {
+            let ini = IniFile::from_str(&format!("[W]\nDelayKillAtMax={value}\n"));
+            WarheadType::from_ini_section("W", ini.section("W").unwrap()).delay_kill_at_max_f64
+        };
+        assert_eq!(read("7.0"), 7.0, "the retail [OilExplosionWH] value");
+        assert_eq!(
+            read("3.4028235e38"),
+            f64::from(f32::MAX),
+            "the largest finite binary32 is inside the range"
+        );
+        assert_eq!(read("3.5e38"), 1.0, "one past the finite range is refused");
+        assert_eq!(read("1e39"), 1.0, "the overflow literal is refused");
+        assert_eq!(
+            refused_delay_kill_at_max(f32::NAN),
+            1.0,
+            "a NaN multiplier is refused too"
+        );
+    }
+
+    /// The retail warhead that carries the PostMortem branch: retail's
+    /// rulesmd authors `[OilExplosionWH] DelayKillAtMax=7.0`,
+    /// `DelayKillFrames=5` and `CausesDelayKill=yes`, read here through the
+    /// production reader.
+    #[test]
+    fn the_retail_delay_kill_warhead_keeps_its_native_multiplier() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+            return;
+        };
+        let warhead = rules
+            .warhead("OilExplosionWH")
+            .expect("retail [OilExplosionWH]");
+        assert!(warhead.causes_delay_kill);
+        assert_eq!(warhead.delay_kill_frames, 5);
+        assert_eq!(warhead.delay_kill_at_max_f64, 7.0);
     }
 
     #[test]
