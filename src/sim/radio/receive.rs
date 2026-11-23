@@ -2197,6 +2197,10 @@ fn techno_repair_tick(
     rules: &RuleSet,
     effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
+    // Firestorm 2.0 `TechnoClass::Receive_Message` RADIO_REPAIR
+    // (`0x0062ABE1`) takes every Tiberian Sun limpet off before its health
+    // test (`sim::limpet`).
+    sim.clear_limpets(techno, rules, effects);
     let Some(entity) = sim.substrate.entities.get(techno) else {
         return RadioResponse::None;
     };

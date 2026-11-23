@@ -1447,6 +1447,13 @@ fn full_foot_entry<'a>(
                 if bt.invisible_in_game {
                     continue;
                 }
+                // Tiberian Sun: a vehicle drives into a limpet mine's cell.
+                // Firestorm 2.0 `UnitClass::Can_Enter_Cell` skips an
+                // `IsLimpetMine=` building right after this test
+                // (`0x0065570A..0x00655717`, `sim::limpet`).
+                if bt.is_limpet_mine {
+                    continue;
+                }
                 // Ares 3.0 10015100 (hook 0x73F7B0): an `IsPassable`
                 // building is ignored; a `Firestorm.Wall` one takes the stock
                 // FirestormWall branch (0x73F7BA) as for infantry.

@@ -29,6 +29,10 @@ const TS_ICE: u32 = 0xAFC7_F643;
 // The next writer stores terrain deformation's pending second dent step.
 // Older worlds have none pending.
 const TERRAIN_DENT: u32 = 0x82C3_2EA4;
+// Each object stores the Tiberian Sun limpets on it (`sim::limpet`) in its
+// seldom part, and its foot speed a byte saying so. Older worlds hold none:
+// only a `LimpetFactor=` warhead, which no older writer read, attaches one.
+const TS_LIMPETS: u32 = 0xF612_7DC1;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -62,7 +66,7 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == TERRAIN_DENT
+        && snapshot_layout() == TS_LIMPETS
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -77,6 +81,8 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const ICE_CRACKS: (&str, &[&str]) = ("Simulation", &["ice_cracks"]);
     const ICE_SINK: (&str, &[&str]) = ("SinkingState", &["ice"]);
     const DENT: (&str, &[&str]) = ("Simulation", &["terrain_dent"]);
+    const LIMPETS: (&str, &[&str]) = ("Seldom", &["limpets"]);
+    const LIMPETED: (&str, &[&str]) = ("FootSpeedState", &["limpeted"]);
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             IMAGE_FLAGS,
@@ -89,6 +95,8 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ICE_CRACKS,
             ICE_SINK,
             DENT,
+            LIMPETS,
+            LIMPETED,
         ],
         ALPHA_SHAPE_LISTENER => &[
             IMAGE_FLAGS,
@@ -100,6 +108,8 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ICE_CRACKS,
             ICE_SINK,
             DENT,
+            LIMPETS,
+            LIMPETED,
         ],
         ALTERNATE_THEATER_ART => &[
             DECK,
@@ -110,10 +120,15 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ICE_CRACKS,
             ICE_SINK,
             DENT,
+            LIMPETS,
+            LIMPETED,
         ],
-        BRIDGE_DECK_AND_FLY_SPIN => &[DEGRADES, ICE_TIMER, ICE_CRACKS, ICE_SINK, DENT],
-        HOUSE_DEGRADES => &[ICE_TIMER, ICE_CRACKS, ICE_SINK, DENT],
-        TS_ICE => &[DENT],
+        BRIDGE_DECK_AND_FLY_SPIN => &[
+            DEGRADES, ICE_TIMER, ICE_CRACKS, ICE_SINK, DENT, LIMPETS, LIMPETED,
+        ],
+        HOUSE_DEGRADES => &[ICE_TIMER, ICE_CRACKS, ICE_SINK, DENT, LIMPETS, LIMPETED],
+        TS_ICE => &[DENT, LIMPETS, LIMPETED],
+        TERRAIN_DENT => &[LIMPETS, LIMPETED],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
@@ -129,7 +144,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != TERRAIN_DENT {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != TS_LIMPETS {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -262,7 +277,7 @@ mod tests {
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
         if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != TERRAIN_DENT
+            || snapshot_layout() != TS_LIMPETS
         {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;
