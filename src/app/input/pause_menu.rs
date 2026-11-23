@@ -432,8 +432,7 @@ pub(crate) fn on_open(state: &mut AppState) {
     let options = &state.match_state.match_presentation.in_game_options;
     let (context, game_speed_shown) = (options.speed_context, !options.game_speed_hidden);
     let speed_position = u8::try_from(options.game_speed_position()).unwrap_or(0);
-    let csf = state.process_assets.csf.as_ref();
-    let label = |key: &str, fallback: &str| crate::i18n::label(csf, key, fallback);
+    let label = |key: &str, fallback: &str| state.csf_label(key, fallback);
     let speed_names = (0..=crate::ui::shell::game_speed::MAX_POSITION)
         .map(|position| label(context.label_key(context.stored_speed(position)), ""))
         .collect();

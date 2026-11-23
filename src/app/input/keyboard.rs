@@ -270,20 +270,9 @@ pub(crate) fn sync(state: &mut AppState) -> Option<KeyboardLayout> {
     Some(layout)
 }
 
-/// A command's name, category or description. VERA's own (`VERA:`) come from
-/// its language files; the game's from the CSF, else the key itself.
+/// A command's name, category or description ([`AppState::csf_label`]).
 fn localized(state: &AppState, key: &str, parameter: Option<u8>) -> String {
-    let text = if key.starts_with("VERA:") {
-        crate::i18n::tr(key)
-    } else {
-        state
-            .process_assets
-            .csf
-            .as_ref()
-            .and_then(|csf| csf.get(key))
-            .unwrap_or(key)
-            .to_owned()
-    };
+    let text = state.csf_label(key, key);
     match parameter {
         Some(value) => text
             .replace("%2d", &format!("{value:2}"))

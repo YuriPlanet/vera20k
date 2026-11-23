@@ -38,7 +38,6 @@ pub(crate) fn render_pause_menu_shell(
         let mut paint = InGamePaint::new(state);
         let state = paint.state;
         let ui = &state.match_state.match_presentation.dialog_ui;
-        let csf = state.process_assets.csf.as_ref();
         let pause = &state.match_state.match_presentation.internet_pause;
         let shared_pause = crate::app::input::pause_menu::multiplayer_control(state)
             .map(|control| control.caption);
@@ -62,14 +61,10 @@ pub(crate) fn render_pause_menu_shell(
                 });
             }
             if let Some(slider) = slot(INTERNET_CAPTIONS, id) {
-                let (key, fallback) = slider.caption();
-                return Some(
-                    csf.map_or_else(|| fallback.to_string(), |csf| csf.text(key).into_owned()),
-                );
+                return Some(caption(slider.caption()));
             }
             if let Some(slider) = slot(INTERNET_VALUES, id) {
-                let (key, fallback) = pause.value_caption(slider);
-                return Some(crate::i18n::label(csf, key, fallback));
+                return Some(caption(pause.value_caption(slider)));
             }
             match id {
                 TITLE => Some(caption(template.title().caption())),
