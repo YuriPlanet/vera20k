@@ -93,8 +93,8 @@ fn current_writer_has_a_frozen_player_save() {
         header.is_compatible(),
         "the current writer changed; add its frozen save and keep every older row"
     );
-    // CI builds snapshot-layout separately without test-support. A cfg-only
-    // change to the actual player's wire layout must fail this same row.
+    // A stock snapshot-layout build has no test-support. With its output set,
+    // a cfg-only change to the actual player's wire layout fails this row.
     if let Ok(stock) = std::env::var("VERA20K_STOCK_WRITER_LAYOUT") {
         assert_eq!(
             header.layout,

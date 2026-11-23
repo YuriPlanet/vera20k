@@ -49,7 +49,7 @@ flag and convert with that flag off. The `41f140f93` writer's layout
 its bridge cells convert with no fixed deck. The `6d6caa108` writer covers
 direct loading of layout `0xCADF6067`.
 
-Run the menu and compatibility tests locally with the pull request workflow's command.
+Run the menu and compatibility tests with this command.
 
 ```sh
 python -m tools.cargo_run -- test --locked -p vera20k --no-default-features --lib app::persistence::resource_load::release_save_tests:: -- app::persistence::save_write_tests:: ui::shell::saved_file_input:: i18n::tests::shipped_languages_are_complete
@@ -61,6 +61,7 @@ and the saved world, the running simulation, the current writer and a
 second cold restore. Presentation upload and rendering can be exercised
 separately in the game.
 
-CI additionally builds the stock `snapshot-layout` binary without test
-features and compares its output with the newest frozen save. This checks
-the shipping layout as well as the one compiled into the test executable.
+To check the shipping layout as well as the one compiled into the test
+executable, build the stock `snapshot-layout` binary without test features
+and set `VERA20K_STOCK_WRITER_LAYOUT` to its output; the test then compares
+it with the newest frozen save.

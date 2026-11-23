@@ -64,4 +64,4 @@ restored world and the next command. It also writes the source layout trace to
 serialize their type families from a HashMap. Two independent writes put
 Animation first in one file and Vehicle first in the other. Their headers,
 rules hashes and restored results matched. `SHA256SUMS` identifies the
-specific bytes frozen for CI.
+specific bytes frozen for the tests.
