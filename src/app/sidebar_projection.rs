@@ -269,7 +269,7 @@ pub(crate) struct PreparedSidebarOrder {
     prediction_categories: HashSet<ProductionCategory>,
     active_tab: SidebarTab,
     #[cfg(feature = "phobos")]
-    sw_sidebar_expanded: bool,
+    pub(crate) sw_sidebar_expanded: bool,
 }
 
 /// The tab a loaded game opens on: Mouse Load 5BDF70 restores the saved

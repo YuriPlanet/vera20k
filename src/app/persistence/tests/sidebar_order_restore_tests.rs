@@ -213,7 +213,7 @@ fn sw_sidebar_expanded_flag_survives_the_snapshot_envelope() {
         !committed
             .sidebar_order
             .expect("retained sidebar")
-            .sw_sidebar_expanded()
+            .sw_sidebar_expanded
     );
 }
 
