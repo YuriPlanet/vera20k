@@ -87,12 +87,6 @@ data.
 | Country power plants: a house with no candidate is a fatal error natively (`0x1001DEF6`); VERA splices nothing | none | [ares-country-powerplants.md](ares-country-powerplants.md) |
 | With Phobos too: Phobos `SuperWeaponSidebar.*Houses` keep the 0x80 buffer | `0x4750EC`, `0x475107` | [ares-bugfixes.md](ares-bugfixes.md) |
 
-Input rungs
-([ares-techno-hooks.md](ares-techno-hooks.md),
-[ares-building-house-hooks.md](ares-building-house-hooks.md)):
-- `SuperGapRadiusInCells` multiples of 256: the stock What_Action (`0x004472AA`)
-  reads the char, VERA the int.
-
 Equivalence notes that need no port stay in their chain docs: INI `+` numbering and
 section caching ([ares-ini-syntax.md](ares-ini-syntax.md)), the random map's urban
 receiver and Main draws ([ares-rmg.md](ares-rmg.md)), the country picks and flags
