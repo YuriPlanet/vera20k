@@ -111,6 +111,7 @@ fn objects(amounts: &[[Option<Amount>; SOURCES]]) -> Vec<ObjectView<'_>> {
             relation: 1,
             state: 1,
             values,
+            slots: &[],
         })
         .collect()
 }

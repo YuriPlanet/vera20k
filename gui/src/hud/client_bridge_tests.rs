@@ -156,6 +156,7 @@ fn a_module_submits_a_health_bar_template_once_and_the_host_paints_it_per_object
             relation: 0,
             state: 0,
             values: &hurt,
+            slots: &[],
         },
         ObjectView {
             id: 8,
@@ -166,6 +167,7 @@ fn a_module_submits_a_health_bar_template_once_and_the_host_paints_it_per_object
             relation: 0,
             state: 0,
             values: &whole,
+            slots: &[],
         },
     ];
     let mut out = Vec::new();

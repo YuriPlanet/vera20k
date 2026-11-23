@@ -537,6 +537,7 @@ fn object(id: u64, type_id: u32, values: &[Option<Amount>]) -> ObjectView<'_> {
         relation: 1,
         state: 1,
         values,
+        slots: &[],
     }
 }
 

@@ -26,6 +26,8 @@ pub const MAX_SEGMENTS: u16 = 64;
 /// The most pictures a [`Element::Pips`] row shows: one object's whole
 /// command share, as a host's tallest row may need it.
 pub const MAX_PIPS: usize = MAX_COMMANDS_PER_OBJECT;
+/// The most pictures an [`Element::Slots`] table names.
+pub const MAX_SLOT_ARTS: usize = 256;
 /// The most commands one object gets from [`World::paint_status`], of which
 /// other origins than the host get three quarters (384) between them. A
 /// template that could pass its share alone is refused. Where several do
@@ -52,6 +54,17 @@ pub struct Amount {
     pub max: i32,
 }
 
+/// One place of an object's row of slots and what shows there: the host
+/// defines the codes, a template's [`Element::Slots`] the pictures.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Slot {
+    pub index: u16,
+    pub code: u16,
+    /// Pixels this slot sits below its place in the row (negative above):
+    /// a host's row whose arms do not share one line.
+    pub lift: i16,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ObjectView<'a> {
     pub id: u64,
@@ -64,6 +77,8 @@ pub struct ObjectView<'a> {
     pub state: u32,
     /// By [`SourceId`]; a missing one hides what reads it.
     pub values: &'a [Option<Amount>],
+    /// The object's row of slots, in drawing order ([`Element::Slots`]).
+    pub slots: &'a [Slot],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,6 +123,14 @@ pub enum Element {
         source: SourceId,
         full: ArtId,
         empty: Option<ArtId>,
+    },
+    /// The object's [`ObjectView::slots`]: each at `at` moved `index` times
+    /// `step`, showing `arts[code]`; a code past the table shows nothing.
+    /// At most [`MAX_PIPS`] are shown.
+    Slots {
+        at: Rect,
+        step: (i32, i32),
+        arts: Vec<ArtId>,
     },
     Icon {
         rect: Rect,
@@ -502,6 +525,8 @@ fn normalized(mut template: StatusTemplate, origin: Origin) -> Result<StatusTemp
             } => usize::from(background.is_some()) + usize::from(!bands.is_empty()),
             Element::Segments { count, .. } => usize::from(*count),
             Element::Pips { .. } => MAX_PIPS,
+            Element::Slots { arts, .. } if arts.len() > MAX_SLOT_ARTS => return Err(Refused::Limit),
+            Element::Slots { .. } => MAX_PIPS,
             Element::Icon { .. } | Element::Number { .. } => 1,
         };
     }
@@ -653,6 +678,22 @@ fn paint_element(object: &ObjectView<'_>, element: &Element, out: &mut Vec<World
                 push(WorldOp::Image { rect, art });
             }
         }
+        Element::Slots { at, step, ref arts } => {
+            let x = i64::from(at.x) + i64::from(point.0);
+            let y = i64::from(at.y) + i64::from(point.1);
+            for slot in object.slots.iter().take(MAX_PIPS) {
+                let Some(&art) = arts.get(usize::from(slot.code)) else {
+                    continue;
+                };
+                let i = i64::from(slot.index);
+                let rect = bounded(Rect {
+                    x: saturate(x + i * i64::from(step.0)),
+                    y: saturate(y + i * i64::from(step.1) + i64::from(slot.lift)),
+                    ..at
+                });
+                push(WorldOp::Image { rect, art });
+            }
+        }
         Element::Icon { rect, art } => push(WorldOp::Image {
             rect: moved(rect, point),
             art,
@@ -755,6 +796,7 @@ mod tests {
             relation: 0,
             state: 0,
             values,
+            slots: &[],
         }
     }
 
@@ -1291,6 +1333,39 @@ mod tests {
         assert_eq!(ops(&lit_only, &some(3, 17)).len(), 3);
         assert!(ops(&lit_only, &some(0, 17)).is_empty());
         assert!(ops(&lit_only, &[]).is_empty());
+    }
+
+    #[test]
+    fn slots_place_each_code_at_its_index_and_skip_unknown_codes() {
+        let row = template(vec![Element::Slots {
+            at: Rect::new(3, 10, 1, 1),
+            step: (4, 2),
+            arts: vec![EMPTY, FULL],
+        }]);
+        let shown = world(row);
+        let slots = [
+            Slot { index: 0, code: 1, lift: 0 },
+            Slot { index: 2, code: 0, lift: -3 },
+            Slot { index: 3, code: 7, lift: 0 },
+            Slot { index: 5, code: 1, lift: 0 },
+        ];
+        let with_slots = ObjectView {
+            slots: &slots,
+            ..object(&[])
+        };
+        let ops: Vec<_> = status(&shown, &[with_slots]).into_iter().map(|cmd| cmd.op).collect();
+        assert_eq!(
+            ops,
+            [
+                WorldOp::Image { rect: Rect::new(3, 10, 1, 1), art: FULL },
+                WorldOp::Image { rect: Rect::new(11, 11, 1, 1), art: EMPTY },
+                WorldOp::Image { rect: Rect::new(23, 20, 1, 1), art: FULL },
+            ]
+        );
+        assert!(status(&shown, &[object(&[])]).is_empty(), "no slots, nothing");
+        let mut shared = World::default();
+        let row = template(vec![Element::Slots { at: UNIT, step: (1, 0), arts: vec![FULL] }]);
+        assert_eq!(shared.add_template(Origin::Layout, row), Err(Refused::Limit));
     }
 
     #[test]
