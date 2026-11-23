@@ -406,7 +406,9 @@ impl App {
         // RA2 mode holds for the whole launch, as the mod does: the `-ra2`
         // switch or the saved Options choice, before any archive or CSF opens.
         if let Some(config) = game_config.as_mut() {
-            config.use_ra2_mode(options_profile.ra2_mode);
+            config.use_ra2_mode(
+                options_profile.ra2_mode && crate::ui::main_menu_dialogs::options::HAS_RA2_MODE,
+            );
         }
         if crate::util::ra2_launch::enabled() {
             log::info!("RA2 mode for this start");
@@ -794,7 +796,7 @@ impl App {
                     &bit_font,
                     gpu.config.width,
                     gpu.config.height,
-                    options_profile.yr_original_style,
+                    options_profile.plays_yr_original_style(),
                 )
                 .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
                 .ok()

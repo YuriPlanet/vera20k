@@ -222,14 +222,17 @@ fn picture_path(folder: &Path, sha256: &str) -> PathBuf {
 
 /// The folder in `pictures` for the [`PICTURE_VERSION`] pictures of maps
 /// drawn with the art in `ra2_dir`, under the mod in `mod_dir` when one is in
-/// use: every build of that version shares it, and another game folder or
-/// mod draws its own. The folders of other versions, game folders and mods,
+/// use and in RA2 Mode when it is on (`util::ra2_launch`): every build of
+/// that version shares it, and another game folder, mod or mode draws its own. The folders of other versions, game folders and mods,
 /// which this run never shows, are removed.
 fn generation_folder(pictures: &Path, ra2_dir: &Path, mod_dir: Option<&Path>) -> PathBuf {
     let mut key = format!("{PICTURE_VERSION}\0{}", ra2_dir.to_string_lossy());
     if let Some(mod_dir) = mod_dir {
         key.push('\0');
         key.push_str(&mod_dir.to_string_lossy());
+    }
+    if crate::util::ra2_launch::enabled() {
+        key.push_str("\0ra2");
     }
     let name = crate::util::sha256::sha256_hex(key.as_bytes())[..GENERATION_LEN].to_owned();
     for entry in std::fs::read_dir(pictures).into_iter().flatten().flatten() {

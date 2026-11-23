@@ -51,8 +51,9 @@ lacks the field and would start the game for `--generate-map`, so check it first
 (`[SpawnLocations]`) and `[HouseTeams]` numbers 0 to 119. Every other launch seats at most 30
 houses, with starts and teams 0 to 29. A build that lacks the field seats 30 in every launch.
 The game folder comes from `config.toml` unless `--ra2-dir` names one, the mod from `config.toml`
-unless `--mod` or `--no-mod` chooses, and the Ares setting from VERA.INI unless `--ares` names the
-one `spawn.ini`'s `[Settings] Ares=` will. In the browser, `probe(map_name)` returns the same JSON
+unless `--mod` or `--no-mod` chooses, the Ares setting from VERA.INI unless `--ares` names the
+one `spawn.ini`'s `[Settings] Ares=` will, and [RA2 Mode](ra2-mode.md) from VERA.INI or `-ra2`, as
+the game takes it; `--generate-map` takes RA2 Mode the same way. In the browser, `probe(map_name)` returns the same JSON
 text.
 
 The mode catalog is the selected mod's `[Files] Modes`, or `MPModesMD.ini` by default. The

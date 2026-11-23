@@ -656,7 +656,7 @@ pub(crate) fn existing_ares_setting(settings_dir: &Path) -> crate::util::ares_la
 
 /// The player's RA2 Mode choice as startup reads it from VERA.INI.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-fn existing_ra2_mode(settings_dir: &Path) -> bool {
+pub(crate) fn existing_ra2_mode(settings_dir: &Path) -> bool {
     crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
         settings_dir,
         &Default::default(),

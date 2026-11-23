@@ -296,7 +296,7 @@ impl App {
     }
 
     pub(crate) fn ensure_skirmish_shell_chrome(state: &mut AppState) -> bool {
-        let yr_original_style = state.persistence.options_profile.yr_original_style;
+        let yr_original_style = state.persistence.options_profile.plays_yr_original_style();
         if state
             .frontend
             .skirmish_shell_chrome

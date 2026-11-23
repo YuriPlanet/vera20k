@@ -573,17 +573,6 @@ impl RetailOptionsLoad {
             retained_profile.apply_ini(ini);
         }
 
-        // Original-RA2 launches must paint the shell with RA2 art. The YR
-        // shell style (GLSMD.PAL / GLSLMD.SHP, the Cooperative setup art,
-        // the YR menu movie) lives in md archives that -ra2 deliberately does
-        // not mount, so honouring `YROriginalStyle=yes` here would leave the
-        // splash, menu and lobby missing their art. Force the RA2 style for
-        // the session; the persisted profile is left untouched so a later
-        // non-ra2 launch still reads what the player chose.
-        if crate::util::ra2_launch::enabled() || retained_profile.ra2_mode {
-            retained_profile.yr_original_style = false;
-        }
-
         Self {
             retained_profile,
             startup_shell_screen,
@@ -592,6 +581,16 @@ impl RetailOptionsLoad {
 }
 
 impl RetailOptionsProfile {
+    /// The YR Original Style box as this start plays it. RA2 Mode paints the
+    /// shell with RA2 art: the YR style (GLSMD.PAL / GLSLMD.SHP, the
+    /// Cooperative setup art, the YR menu movie) lives in md archives RA2
+    /// Mode does not mount, so honouring `YROriginalStyle=yes` would leave the
+    /// splash, menu and lobby without their art. The saved choice is kept for
+    /// a start without RA2 Mode.
+    pub(crate) fn plays_yr_original_style(&self) -> bool {
+        self.yr_original_style && !crate::util::ra2_launch::enabled()
+    }
+
     /// `OptionsClass::Set_Score_Volume` at `0x005FA4A0` stores an upper-only
     /// clamped f32. Reuse the INI reader's normalization so live setters retain
     /// negative and unordered inputs instead of copying the output clamp.
@@ -2378,20 +2377,20 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         );
     }
 
-    /// RA2 Mode comes from its own key and is saved under it, and a start in
-    /// it leaves YR Original Style off: that art is in the md archives RA2
-    /// Mode does not mount.
+    /// RA2 Mode comes from its own key and is saved under it, and saving
+    /// keeps the player's YR Original Style choice, which RA2 Mode only sets
+    /// aside while it plays (`plays_yr_original_style`).
     #[test]
-    fn ra2_mode_round_trips_and_turns_yr_original_style_off() {
+    fn ra2_mode_round_trips_and_keeps_the_yr_original_style_choice() {
         let on = load_snapshot(
             &RetailStartupOptions::default(),
             b"[VERA]\nRA2Mode=yes\nYROriginalStyle=yes\n",
         )
         .retained_profile;
         assert!(on.ra2_mode);
-        assert!(!on.yr_original_style);
         let output = String::from_utf8(on.transform_settings(b"[VERA]\n")).unwrap();
         assert!(output.contains("RA2Mode=yes"), "{output}");
+        assert!(output.contains("YROriginalStyle=yes"), "{output}");
     }
 
     #[test]

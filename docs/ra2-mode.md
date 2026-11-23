@@ -29,10 +29,13 @@ plays RA2 Mode for that start whatever the box says.
 ## Online
 
 RA2 Mode is part of your game's rules, which players compare before a match.
-A player in RA2 Mode cannot play with players in Yuri's Revenge: the room or
-the start says that the other game has RA2 Mode on, and Quick Match, which
-plays Yuri's Revenge, asks you to turn it off. Players who all have it on play
-together ([Networking](Networking.md)).
+A player in RA2 Mode cannot play with players in Yuri's Revenge. When a room
+or a start refuses, that player's game names RA2 Mode, the other players'
+games list it among the reasons another game can differ, and an online room
+says the player has "RA2 Mode or the INI files named in config.toml". Quick
+Match plays Yuri's Revenge and asks you to turn RA2 Mode off. Players who all
+have it on play together ([Networking](Networking.md)). The browser version
+has no RA2 Mode.
 
 ## Known gaps
 

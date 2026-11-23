@@ -339,7 +339,7 @@ pub(crate) fn ensure_movie_for_current_layout(
     requested_owner: Ra2tsDialogOwner,
 ) -> Result<()> {
     let layout = shell_layout::main_menu_layout(state);
-    let yr_original_style = state.persistence.options_profile.yr_original_style;
+    let yr_original_style = state.persistence.options_profile.plays_yr_original_style();
     let requested_identity =
         Ra2tsMovieSessionIdentity::new(requested_owner, layout.movie_base, yr_original_style);
     if ra2ts_movie_session_is_reusable(

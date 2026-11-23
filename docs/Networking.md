@@ -930,7 +930,8 @@ game reads it at start, and it adds its own words to the rules digest
 (`ProcessAssets::multiplayer_rules_digest`) and `ra2: true` to the rules parts, so a
 player in RA2 Mode is refused in a room of Yuri's Revenge players and its game names the
 setting. Its `Vera-Changes` header says `ini_roots: true`, a key lobbies and older games
-already know, so nothing new is exchanged. An older game reads no RA2 Mode and plays
+already know, so nothing new is exchanged; this version's `LobbyChangeIniRoots` text
+names RA2 Mode with the INI files. An older game reads no RA2 Mode and plays
 Yuri's Revenge; it has another build and is refused by the build check first.
 
 Until VERARULES.INI was retired for [New Mod](modding.md#start-a-new-mod), `host_rules`
