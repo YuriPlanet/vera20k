@@ -266,11 +266,7 @@ pub(crate) fn install_world_presentation(
     // (`RuleSet::ares`), resolved once here instead of with every sidebar draw.
     let ares_status_texts = state.rules().filter(|rules| rules.ares()).map(|rules| {
         crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
-            state
-                .process_assets
-                .csf
-                .as_ref()
-                .map_or_else(|| label.to_owned(), |csf| csf.text(label).into_owned())
+            state.csf_text(label)
         })
     });
     state.match_state.match_presentation.ares_status_texts = ares_status_texts;

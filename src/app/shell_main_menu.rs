@@ -833,12 +833,12 @@ impl App {
     ) -> crate::ui::main_menu_dialogs::options::LauncherOptionsLabels {
         let mut labels =
             crate::ui::main_menu_dialogs::options::LauncherOptionsLabels::resolve(&|key| {
+                // The labels' own fallbacks stand in while no table is loaded.
                 state
                     .process_assets
                     .csf
-                    .as_ref()
-                    .and_then(|csf| csf.get(key))
-                    .map(str::to_owned)
+                    .is_some()
+                    .then(|| state.csf_text(key))
             });
         // VERA's Esc menu opens Options over a page: the button returns there.
         if state.frontend.shell_route != ShellRoute::MainMenu {

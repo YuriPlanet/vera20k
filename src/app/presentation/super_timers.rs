@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use crate::app::AppState;
 use crate::app::presentation::text_hud::{self, TextHud};
 use crate::app::presentation::super_timer_groups::{TeamKey, TeamSuperRow, grouped_super_rows};
-use crate::assets::csf_file::{CsfFile, type_ui_name};
+use crate::assets::csf_file::type_ui_name;
 use crate::map::houses::is_allied_with;
 use crate::render::batch::SpriteInstance;
 use crate::rules::house_colors::{
@@ -387,12 +387,6 @@ pub(crate) fn wheel(state: &mut AppState, delta: f32) -> bool {
         .wheel(x, y, delta)
 }
 
-/// The string table's text for `key` (`0x00734E60`); the key itself only
-/// without a string table (an assetless run).
-fn localized(csf: Option<&CsfFile>, key: &str) -> String {
-    csf.map_or_else(|| key.to_string(), |csf| csf.text(key).into_owned())
-}
-
 /// The colour a blinking time prints in: [`BLINK_SCHEME`], or with Phobos
 /// `ColorScheme::Array[TimerBlinkColorScheme]` (`PrintTimerOnTactical_BlinkColor`
 /// at `0x006D4CD9`). A `none` (-1) keeps the native scheme where Phobos would
@@ -605,11 +599,17 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
                     sim.session().current_house(),
                     scenario
                         .filter(|(_, caption)| !caption.is_empty())
-                        .map_or_else(String::new, |(_, caption)| localized(csf, caption)),
+                        .map_or_else(String::new, |(_, caption)| {
+                            crate::i18n::label(csf, caption, caption)
+                        }),
                     None,
                 ),
                 TimerSource::Super(view) => (Some(view.owner()), super_name(view.sw_type()), None),
-                TimerSource::Blackout(house) => (Some(house), localized(csf, BLACKOUT_LABEL), None),
+                TimerSource::Blackout(house) => (
+                    Some(house),
+                    crate::i18n::label(csf, BLACKOUT_LABEL, BLACKOUT_LABEL),
+                    None,
+                ),
                 TimerSource::Team(row) => (
                     Some(row.representative),
                     format!(

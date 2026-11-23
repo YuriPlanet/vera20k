@@ -562,17 +562,7 @@ fn fit_row(font: &BitFont, row: &mut [Part], max_width: f32) {
         return;
     }
     crate::render::text_audit::cut_off(text, max_width as u32);
-    let mut keep = max_width - others - font.text_width(ELLIPSIS) as f32;
-    let mut buffer = [0u8; 4];
-    let end = text
-        .char_indices()
-        .find(|&(_, ch)| {
-            keep -= font.text_width(ch.encode_utf8(&mut buffer)) as f32;
-            keep < 0.0
-        })
-        .map_or(text.len(), |(index, _)| index);
-    text.truncate(end);
-    text.push_str(ELLIPSIS);
+    *text = font.truncate_with_ellipsis(text, (max_width - others).max(0.0) as u32, ELLIPSIS);
 }
 
 #[cfg(all(test, tests_app))]

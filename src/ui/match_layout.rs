@@ -766,13 +766,6 @@ pub fn sidebar_art(layout: &MatchLayout, theme: SidebarTheme) -> Vec<SidebarArt>
     art
 }
 
-/// Colour `name` of the built-in `[Colors]` table for the side whose
-/// pictures are `theme`: `Name@Side` for that side, else `Name`. `r,g,b` or
-/// `r,g,b,a`; `None` when the table has no such colour.
-pub fn built_in_color(name: &str, theme: crate::ui::sidebar::SidebarTheme) -> Option<[u8; 4]> {
-    MatchLayout::original(true).color(name, theme)
-}
-
 /// What reading one value gives: the value, with a problem to report when it
 /// had to be changed; or the problem that keeps the value under it, `None`
 /// for a value that silently keeps it.
