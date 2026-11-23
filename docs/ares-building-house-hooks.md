@@ -129,7 +129,7 @@ DLL removed are not listed.
 | `43CA80` | BuildingClass_ReceivedRadioCommand_DockUnloadCell | `10014540` | ported earlier |
 | `43FD2C` | BuildingClass_Update_ProduceCash | `100146E0` | ported: `credit_income::produce_cash_step` |
 | `44019D` | BuildingClass_Update_Battery | `10014690` | ported earlier |
-| `4409F4` | BuildingClass_Put_ProduceCash | `10014490` | ported: the upgrade's cash timer starts at Put for its `ProduceCashDelay`, then its factory plans (`try_install_building_upgrade`) |
+| `4409F4` | BuildingClass_Put_ProduceCash | `10014490` | ported: the upgrade's cash timer starts at Put for its `ProduceCashDelay` (`credit_income::ares_produce_cash_on_put`), then the factory plans of the upgrade being put, by its own type and Country, not the host's (`try_install_building_upgrade`) |
 | `440C08` | BuildingClass_Put_AIBaseNormal | `10014460` | ported earlier |
 | `44266B` | BuildingClass_ReceiveDamage_Destroyed | `10014520` | ported: a damage-killed building runs `building_death_announcement` after DestructionEffects ([ares-warhead-residuals.md](ares-warhead-residuals.md)) |
 | `444D26` | BuildingClass_KickOutUnit_ArmoryExitBug | `10014100` | ported: an Armory's exit takes the Hospital post (`production_queue::ExitProducer`) |

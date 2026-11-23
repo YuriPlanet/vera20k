@@ -370,6 +370,32 @@ pub(crate) fn produce_cash_on_grand_opening(
     }
 }
 
+/// Ares `BuildingClass_Put_ProduceCash @ 10014490` (hook `0x004409F4`):
+/// an upgrade put with a nonzero `ProduceCashDelay` starts its own timer,
+/// CashUpgradeTimers[UpgradeLevel - 1], with a stock Start (no extra frame).
+/// A zero-capacity host leaves UpgradeLevel at 0, so Ares writes the
+/// BuildingExt bytes before that array (`+0x48`/`+0x50`); VERA starts
+/// nothing there.
+pub(crate) fn ares_produce_cash_on_put(
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    host_id: u64,
+    delay: i32,
+) {
+    if delay == 0 {
+        return;
+    }
+    let Some(host) = substrate.entities.get_mut(host_id) else {
+        return;
+    };
+    let Ok(slot) = usize::try_from(host.building_upgrades().count()) else {
+        return;
+    };
+    if (1..=host.seldom.ares.cash_upgrade_timers.len()).contains(&slot) {
+        *ares_cash_timer_mut(host, slot) = CdTimer::started(session.binary_frame() as i32, delay);
+    }
+}
+
 /// The ProduceCash block of `BuildingClass::Update`: the stock block
 /// ([`stock_produce_cash_step`]), or in a game read the Ares way
 /// (`RuleSet::ares_form`) the hook that replaces it
