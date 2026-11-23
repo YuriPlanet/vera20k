@@ -183,7 +183,7 @@ pub fn pack_launch_session_without_start_validation(
         Some(selected_map.file_name.clone()),
         vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
-            name: state.player_name_edit.text.clone(),
+            name: state.player_name.clone(),
             slot: local,
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],

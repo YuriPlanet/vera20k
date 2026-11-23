@@ -169,13 +169,13 @@ pub(super) fn advance(
     houses: &crate::sim::houses::Houses,
     terrain: Option<&ResolvedTerrainGrid>,
     grid: Option<&PathGrid>,
-) -> i32 {
+) -> (i32, Option<u64>) {
     let Some(loco) = entity.locomotor.as_ref() else {
-        return 0;
+        return (0, None);
     };
     let kind = loco.active_kind();
     if !matches!(kind, LocomotorKind::Drive | LocomotorKind::Ship) {
-        return 0;
+        return (0, None);
     }
     let speed =
         super::foot_speed::adjusted_speed(entity, object, rules.general.veteran_speed, houses);
@@ -213,11 +213,22 @@ pub(super) fn advance(
                 .set_speed_fraction_native_bits(fraction.bits());
         }
     }
-    super::foot_speed::owner_current_speed_from_native_fraction(
+    // Process_Drive_Track 4B1218 / Ship 6A08E0 reaches the follower
+    // hand-off even on equality, when the setter above was skipped.
+    let first_car = if prefix.applies_acceleration()
+        && retained_target.is_some()
+        && entity.category() == crate::map::entities::EntityCategory::Unit
+    {
+        entity.unit_follower()
+    } else {
+        None
+    };
+    let budget = super::foot_speed::owner_current_speed_from_native_fraction(
         speed,
         entity.foot_speed.native_applied_fraction(),
         entity.phobos_speed_multiplier(),
-    )
+    );
+    (budget, first_car)
 }
 
 #[cfg(all(test, tests_sim_movement))]
@@ -265,7 +276,7 @@ mod tests {
                     None,
                     None
                 ),
-                10
+                (10, None)
             );
             assert!(mover.foot_speed.accept_speed_crate(
                 crate::util::native_x87::NativeF64Bits::from_bits(1.2_f64.to_bits())
@@ -279,7 +290,7 @@ mod tests {
                     None,
                     None
                 ),
-                11
+                (11, None)
             );
         }
     }
@@ -380,7 +391,7 @@ mod tests {
                     None,
                     None
                 ),
-                15
+                (15, None)
             );
         }
     }

@@ -365,6 +365,15 @@ fn check_copies(trace: &Trace, client: usize) -> Check {
             if accepted_through(trace, client, due, true) >= id {
                 continue;
             }
+            // Row 6 owes the copy to a lossy uplink only: none once the
+            // first fold (§5.4) has turned it good by the service that
+            // would send it.
+            if trace
+                .client_stats_at(client, due + 15_999)
+                .is_some_and(|stats| stats.uplink != LinkState::Lossy)
+            {
+                continue;
+            }
             // One service later, give or take the client's 16 ms phase.
             let copy = ups.iter().find(|record| {
                 record.sent_us >= due

@@ -255,10 +255,10 @@ pub(crate) fn rebuild_base_zone_topology(
     // Each movement row derives its zones from the shared graph alone, so the
     // rows run on the worker pool; `parallel::map` keeps them in row order.
     let grid = crate::map::cell_index::CellGrid::for_extent(width, height);
+    let node_classes = node_movement_classes(&movement_classes, &zone_ids, zone_count);
     let rows = crate::sim::parallel::map(MovementZone::all_ground(), |&movement_zone| {
         rebuild_zone_ids_for_movement_zone(
-            &movement_classes,
-            &zone_ids,
+            &node_classes,
             zone_count,
             &adjacency,
             movement_zone,
@@ -659,21 +659,30 @@ fn register_scanline_edge(
     }
 }
 
-fn rebuild_zone_ids_for_movement_zone(
+/// Each base node's movement class: that of its first cell in cell order.
+/// Every movement row reads the same table, so a rebuild scans the cells
+/// for it once rather than once per row.
+fn node_movement_classes(
     movement_classes: &[u8],
     node_indices: &[ZoneId],
     node_count: ZoneId,
-    node_adj: &[Vec<ZoneId>],
-    movement_zone: MovementZone,
-    grid: crate::map::cell_index::CellGrid,
-) -> Vec<ZoneId> {
+) -> Vec<u8> {
     let mut node_movement_classes = vec![zone_class::OUTSIDE; node_count as usize + 1];
     for (&node, &movement_class) in node_indices.iter().zip(movement_classes.iter()) {
         if node != 0 && node_movement_classes[node as usize] == zone_class::OUTSIDE {
             node_movement_classes[node as usize] = movement_class;
         }
     }
+    node_movement_classes
+}
 
+fn rebuild_zone_ids_for_movement_zone(
+    node_movement_classes: &[u8],
+    node_count: ZoneId,
+    node_adj: &[Vec<ZoneId>],
+    movement_zone: MovementZone,
+    grid: crate::map::cell_index::CellGrid,
+) -> Vec<ZoneId> {
     let Some(row_index) = movement_zone.matrix_row() else {
         return vec![0 as ZoneId; node_count as usize + 1];
     };
@@ -687,11 +696,12 @@ fn rebuild_zone_ids_for_movement_zone(
     }
 
     let mut next_label: ZoneId = 2;
+    // Each label's walk empties the queue, so one serves them all.
+    let mut queue = VecDeque::new();
     for start_node in 1..=node_count {
         if zone_id_by_node[start_node as usize] != 0 {
             continue;
         }
-        let mut queue = VecDeque::new();
         zone_id_by_node[start_node as usize] = next_label;
         queue.push_back(start_node);
 
@@ -829,26 +839,40 @@ pub(crate) fn find_high_bridge_record_index(
         .enumerate()
         .skip(start_index)
         .find(|(_, record)| {
-            if !record.is_high() {
-                return false;
-            }
-            //56DA10 compares signed endpoint words and widens before distance.
-            let (ax, ay) = (
-                i32::from(record.endpoint_a.0 as i16),
-                i32::from(record.endpoint_a.1 as i16),
-            );
-            let (bx, by) = (
-                i32::from(record.endpoint_b.0 as i16),
-                i32::from(record.endpoint_b.1 as i16),
-            );
-            let (qx, qy) = (i32::from(query.0 as i16), i32::from(query.1 as i16));
-            if ax == bx {
-                qy >= ay && qy <= by && (qx - ax).abs() <= i32::from(tolerance)
-            } else {
-                qx >= ax && qx <= bx && (qy - ay).abs() <= i32::from(tolerance)
-            }
+            high_record_reaches_row(record, query.1, tolerance)
+                && high_record_reaches_column(record, query.0, tolerance)
         })
         .map(|(index, _)| index)
+}
+
+///56DA10 compares signed endpoint words and widens before distance.
+fn signed_endpoints(record: &BridgeEndpointRecord) -> ((i32, i32), (i32, i32)) {
+    let widen = |(x, y): (u16, u16)| (i32::from(x as i16), i32::from(y as i16));
+    (widen(record.endpoint_a), widen(record.endpoint_b))
+}
+
+/// The row half of `find_high_bridge_record`'s test: whether a high record
+/// can match some cell of row `y`.
+fn high_record_reaches_row(record: &BridgeEndpointRecord, y: u16, tolerance: u16) -> bool {
+    let ((ax, ay), (bx, by)) = signed_endpoints(record);
+    let qy = i32::from(y as i16);
+    record.is_high()
+        && if ax == bx {
+            qy >= ay && qy <= by
+        } else {
+            (qy - ay).abs() <= i32::from(tolerance)
+        }
+}
+
+/// The column half of `find_high_bridge_record`'s test.
+fn high_record_reaches_column(record: &BridgeEndpointRecord, x: u16, tolerance: u16) -> bool {
+    let ((ax, _), (bx, _)) = signed_endpoints(record);
+    let qx = i32::from(x as i16);
+    if ax == bx {
+        (qx - ax).abs() <= i32::from(tolerance)
+    } else {
+        qx >= ax && qx <= bx
+    }
 }
 
 ///583180/5835D0 subtract packed words before floating distance and retain
@@ -877,6 +901,14 @@ pub(crate) fn build_bridge_redirect(
     // run on the worker pool; `parallel::map` keeps them in row order.
     let rows: Vec<u16> = (0..height).collect();
     let rows = crate::sim::parallel::map(&rows, |&ry| {
+        // Only the records that reach this row can match one of its cells,
+        // and they keep their order, so the first match is unchanged.
+        let bridge_records: Vec<BridgeEndpointRecord> = bridge_records
+            .iter()
+            .filter(|record| high_record_reaches_row(record, ry, 1))
+            .copied()
+            .collect();
+        let bridge_records = bridge_records.as_slice();
         let mut row: Vec<Option<(u16, u16)>> = vec![None; usize::from(width)];
         let mut has_structural_cell = false;
         for rx in 0..width {
@@ -1029,10 +1061,10 @@ mod tests {
         assert_eq!(movement_classes.len(), zone_ids.len());
         let zone_count = zone_ids.iter().copied().max().unwrap_or(ZONE_INVALID);
         let adjacency = vec![Vec::new(); zone_count as usize + 1];
+        let node_classes = node_movement_classes(&movement_classes, &zone_ids, zone_count);
         let raw_zone_ids_by_row = std::array::from_fn(|row| {
             rebuild_zone_ids_for_movement_zone(
-                &movement_classes,
-                &zone_ids,
+                &node_classes,
                 zone_count,
                 &adjacency,
                 MovementZone::all_ground()[row],

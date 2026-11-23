@@ -1,5 +1,5 @@
 //! VERA extension: write a generated map as a multiplayer `.map` text
-//! (`.yrm` on disk), in the sections [`crate::map::map_file::MapFile`]
+//! (`.map` on disk), in the sections [`crate::map::map_file::MapFile`]
 //! parses back: `[Basic]`, `[Map]`, the map's own INI sections (lighting),
 //! `[Waypoints]`, `[Terrain]`, the object lists, the three packs and an
 //! optional `[Preview]` thumbnail.

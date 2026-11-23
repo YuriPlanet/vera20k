@@ -58,8 +58,9 @@ pub(crate) struct ProcessAssets {
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
     /// The player's own rule switches, read at startup with VERA.INI and
     /// changed by the skirmish Game Options ([`Self::set_terrain_deformation`],
-    /// [`Self::set_superweapon_limit`]). A network room plays its host's
-    /// instead ([`Self::use_personal_rules`]).
+    /// [`Self::set_superweapon_limit`]) and the Options page
+    /// ([`Self::set_building_production_queue`]). A network match plays its
+    /// room's instead ([`Self::use_personal_rules`]).
     personal_rules: crate::rules::personal_rules::PersonalRules,
     manager: Option<AssetManager>,
     leased: bool,
@@ -290,22 +291,7 @@ impl ProcessAssets {
         };
         self.map_additions
             .get_or_init(|| {
-                let roots = assets.ini_roots();
-                let mut names: Vec<String> = [
-                    roots.rules(),
-                    roots.art(),
-                    roots.ai(),
-                    roots.sound(),
-                    roots.eva(),
-                    roots.theme(),
-                    roots.battle(),
-                    roots.mission(),
-                    roots.mapsel(),
-                    roots.modes(),
-                    roots.map_catalog(),
-                ]
-                .map(str::to_owned)
-                .to_vec();
+                let mut names = Vec::from(assets.ini_roots().files().map(str::to_owned));
                 names.extend(crate::map::theater::theater_ini_names(assets));
                 crate::app::mod_additions::MapAdditions::read(dir, &names)
                     .map(|additions| additions.map(std::sync::Arc::new))
@@ -346,10 +332,10 @@ impl ProcessAssets {
         &self.personal_rules
     }
 
-    /// Play `rules` from the next scenario on, and agree on them in a network
-    /// room: the room's host's, or none in Quick Match
-    /// (`NativeRulesProcessOwner::use_personal_rules`). Before the rules load
-    /// the player's own apply when the sources select.
+    /// Play `rules` from the next scenario on, and digest them for a network
+    /// start (`NativeRulesProcessOwner::use_personal_rules`); a network match
+    /// plays the ones `MatchSession::network_personal_rules` picks. Before the
+    /// rules load the player's own apply when the sources select.
     pub(crate) fn use_personal_rules(
         &mut self,
         rules: crate::rules::personal_rules::PersonalRules,
@@ -364,23 +350,14 @@ impl ProcessAssets {
         self.use_personal_rules(self.personal_rules.clone());
     }
 
-    /// Whether the gameplay roots, theater suffix and skirmish catalogs use
-    /// stock YR names. Host configuration or a selected mod can choose others;
-    /// even a suffix aliasing a shipped theater INI counts as a custom choice.
+    /// Whether every INI root the rules agreement compares and the theater
+    /// suffix use stock YR names (`IniRoots::is_stock`). Host configuration
+    /// or a selected mod can choose others; even a suffix aliasing a shipped
+    /// theater INI counts as a custom choice.
     pub(crate) fn stock_ini_roots(&self) -> bool {
-        let stock = crate::util::ini_roots::IniRoots::default();
-        self.selected_ini_roots.as_ref().is_none_or(|roots| {
-            [
-                (roots.rules(), stock.rules()),
-                (roots.art(), stock.art()),
-                (roots.ai(), stock.ai()),
-                (roots.theater_suffix(), stock.theater_suffix()),
-                (roots.modes(), stock.modes()),
-                (roots.map_catalog(), stock.map_catalog()),
-            ]
-            .iter()
-            .all(|(used, stock)| used.eq_ignore_ascii_case(stock))
-        })
+        self.selected_ini_roots
+            .as_ref()
+            .is_none_or(crate::util::ini_roots::IniRoots::is_stock)
     }
 
     /// Loose files or archives in the game folder that change the rules the
@@ -591,10 +568,8 @@ impl ProcessAssets {
         self.native_ini_hashes
     }
 
-    /// The VERA protocol compares the exact process-selected Rules/LANGRULE/ART
-    /// plus the selected mode and AIMD snapshots used by scenario loading,
-    /// each theater's INI as `map::theater::load_theater` reads it, and the
-    /// theater tiles the game folder changes.
+    /// The rules digest network players compare for `mode`; its components
+    /// are [`Self::multiplayer_rules_parts`] (docs/spawn.md "Rules parts").
     /// The legacy advertisement CRC remains a separate native UI value.
     pub(crate) fn multiplayer_rules_digest(&self, mode: &str) -> Result<String, String> {
         let (rules, assets) = self.rules_and_sources()?;
@@ -714,20 +689,6 @@ impl ProcessAssets {
         assets: &AssetManager,
     ) -> Option<crate::app::rules_parts::ResourceSelection> {
         let roots = assets.ini_roots();
-        let stock = crate::util::ini_roots::IniRoots::default();
-        let root_names = [
-            (roots.rules(), stock.rules()),
-            (roots.art(), stock.art()),
-            (roots.ai(), stock.ai()),
-            (roots.sound(), stock.sound()),
-            (roots.eva(), stock.eva()),
-            (roots.theme(), stock.theme()),
-            (roots.battle(), stock.battle()),
-            (roots.mission(), stock.mission()),
-            (roots.mapsel(), stock.mapsel()),
-            (roots.modes(), stock.modes()),
-            (roots.map_catalog(), stock.map_catalog()),
-        ];
         let archives = &self.resources.archives;
         let stock_archives = crate::util::archive_names::ArchiveNames::default();
         let archive_names = [
@@ -750,20 +711,17 @@ impl ProcessAssets {
             ),
         ];
         let chosen = self.resources.requires_ares
-            || root_names
+            || !roots.files_are_stock()
+            || archive_names
                 .iter()
-                .chain(&archive_names)
                 .any(|(name, stock)| !name.eq_ignore_ascii_case(stock));
-        let lowercase = |names: &[(&str, &str)]| -> Vec<String> {
-            names
-                .iter()
-                .map(|(name, _)| name.to_ascii_lowercase())
-                .collect()
-        };
         chosen.then(|| crate::app::rules_parts::ResourceSelection {
             requires_ares: self.resources.requires_ares,
-            roots: lowercase(&root_names),
-            archives: lowercase(&archive_names),
+            roots: roots.files().map(str::to_ascii_lowercase).into(),
+            archives: archive_names
+                .iter()
+                .map(|(name, _)| name.to_ascii_lowercase())
+                .collect(),
         })
     }
 
@@ -1554,8 +1512,10 @@ mod tests {
     /// players whose theater INIs differ never agree, and Quick Match, which
     /// pairs without the agreement, names the changed file. The agreement reads
     /// the file a theater suffix selects, else the stock one, as the loader does.
+    /// Every INI root the agreement compares, an EVA root too, counts against
+    /// the original game, so Quick Match refuses it before it queues.
     #[test]
-    fn theater_inis_take_part_in_the_agreement() {
+    fn ini_roots_and_theater_inis_take_part_in_the_agreement() {
         use crate::util::ini_roots::IniRootConfig;
         let dir =
             crate::assets::asset_manager::test_support::audio_test_install("theater-agreement");
@@ -1566,11 +1526,7 @@ mod tests {
         ] {
             std::fs::write(dir.path().join(name), bytes).unwrap();
         }
-        let started = |theater_suffix: Option<&str>| {
-            let roots = IniRootConfig {
-                theater_suffix: theater_suffix.map(str::to_owned),
-                ..IniRootConfig::default()
-            };
+        let with_roots = |roots: IniRootConfig| {
             let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
             let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL)
                 .unwrap()
@@ -1581,8 +1537,20 @@ mod tests {
             process.return_from_loading(assets);
             process
         };
+        let started = |theater_suffix: Option<&str>| {
+            with_roots(IniRootConfig {
+                theater_suffix: theater_suffix.map(str::to_owned),
+                ..IniRootConfig::default()
+            })
+        };
         let digest = |theater_suffix| started(theater_suffix).multiplayer_rules_digest("");
         let original = digest(None).unwrap();
+        let eva = with_roots(IniRootConfig {
+            eva: Some("my-eva.ini".to_owned()),
+            ..IniRootConfig::default()
+        });
+        assert_ne!(eva.multiplayer_rules_digest("").unwrap(), original);
+        assert!(!eva.stock_ini_roots());
         std::fs::write(
             dir.path().join("snowmd.ini"),
             "[TileSet0000]\nFileName=clear\nTilesInSet=1\n",

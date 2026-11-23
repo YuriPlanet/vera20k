@@ -1031,7 +1031,15 @@ fn a_counting_shp_unit_draws_death_frames_the_atlas_holds() {
     rules.install_art_data(ArtRegistry::from_ini(&art_ini));
     let set = rules.animation_sequence("DTH").expect("SHP unit layout");
     let frame = |death, moving| {
-        crate::sim::animation::resolve_shp_vehicle_body_frame(set, 0, 4, -1, death, moving, false)
+        crate::sim::animation::resolve_shp_vehicle_body_frame(
+            set,
+            crate::sim::animation::shp_vehicle_facing_slot(8, 0, false, false),
+            4,
+            -1,
+            death,
+            moving,
+            true,
+        )
     };
     assert_eq!(frame(3, false), Some(41));
     assert_eq!(frame(9, false), Some(42), "held on the last death frame");

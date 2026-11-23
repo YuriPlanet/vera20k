@@ -90,7 +90,7 @@ impl Simulation {
                 .exact_z_leptons()
                 .or(entity.position.exact_z_leptons());
         }
-        if entity.low_bridge_tube_state.is_some() {
+        if entity.active_tube().is_some() {
             return None;
         }
         let aircraft_type = (entity.category() == EntityCategory::Aircraft)
@@ -805,7 +805,11 @@ impl Simulation {
                 logic_registered = self.register_logic_object(stable_id);
             }
             // Unlimbo's AlphaShapeClass block follows the Logic registration.
-            self.construct_alpha_shape(stable_id, context.rules());
+            self.unlimbo_alpha_shape(
+                stable_id,
+                crate::sim::world::substrate::ObjectKind::Entity,
+                context.rules(),
+            );
         }
         // Building4415D8: successful normal Unlimbo after opening/base-plan.
         // The early dead/failed paths do not reach this call.

@@ -123,16 +123,16 @@ does not open Include files again. The saved Rules owner and snapshot header ret
 the build capability; a build with a different capability rejects the save before
 admitting its simulation.
 
-The change does not select `rulesmo.ini`/`artmo.ini`/`aimo.ini` as game roots,
-configure an arbitrary archive stack, port other Ares/Phobos gameplay tags, or
-establish full MO compatibility. Raw metadata helpers without an asset provider
+The change does not select other game roots, configure an arbitrary archive
+stack, port other Ares/Phobos gameplay tags, or establish compatibility with any
+one mod. Raw metadata helpers without an asset provider
 remain physical readers. It does not load Ares or Phobos DLLs.
 
 ## Read-only probe
 
 ```text
 asset ini-expand rulesmd.ini --ra2-dir <YR directory> --strict
-asset ini-expand rulesmo.ini --ra2-dir <MO directory> --source-only --all-mixes --strict
+asset ini-expand rulesmod.ini --ra2-dir <mod directory> --source-only --all-mixes --strict
 asset ini-expand root.ini --ra2-dir <game directory> --max-depth 16
 ```
 
@@ -145,7 +145,7 @@ The explicit read-only `asset ini-expand` probe remains available without either
 feature and asks for both dialects (`DirectiveOptions::default`), preferring
 `$Include` when both sections exist. It uses the same parser, provider and
 traversal as enabled gameplay. Neither probe success nor a passing regression is
-an in-game MO acceptance test.
+an in-game acceptance test for a mod.
 
 `--source-only` creates an explicit INI-tool resource root without the normal
 game's required archive bootstrap (for example a MOD directory without

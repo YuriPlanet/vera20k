@@ -2249,11 +2249,11 @@ def start_prefix_metadata():
                       "start_scenario": 0x683AB0, "uppercase": 0x7DCFC4,
                       "initial_media": 0x4790B0, "selected_cd_boundary": 0x683BC9},
         assumptions=[
-            "Synthetic source-order INI cache constructs two Campaign records and Movies through original constructors/readers. No MO resources or predetermined accepted filename/index/CD results are supplied.",
+            "Synthetic source-order INI cache constructs two Campaign records and Movies through original constructors/readers. No mod resources or predetermined accepted filename/index/CD results are supplied.",
             "Campaign Session0 and special-name override off are supplied priors. Six cases use valid catalog indexes0/1; null/empty and explicit unlisted/other-record names are independent arguments.",
             "Required native index write683B0A, uppercase call683B5D and selected CD lookup683B86 execute. Original683B65 supplies literal-1 to original4790B0 before the selected-CD boundary.",
             "Main/Scenario/MapGen streams are native-seeded31 before each prefix, and complete storage remains unchanged; the existing Windows clock transport is not called by the prefix (constructor clock0 calls are recorded separately). Later timer cadence, entropy sampling and live simulation are excluded.",
-            "All executable PE sections remain byte-identical. FinalMovie is retained record state only: final movie playback, full StartScenario return, file/archive admission, mission/world loading and installed legacy MO spawner equivalence are not established.",
+            "All executable PE sections remain byte-identical. FinalMovie is retained record state only: final movie playback, full StartScenario return, file/archive admission, mission/world loading and installed legacy spawner equivalence are not established.",
             "Invalid indexes and an empty catalog are not executed; native unchecked pointer boundaries do not establish a safe fallback. VERA keeps a checked failure before reading the startup seed."],
         substitutions=[
             "Existing CampaignReader/BulletReader VM, INI cache projection, bounded allocation, original CRT TLS/atomic transport; synthetic DebugOnly descriptions avoid physical CSF lookup.",

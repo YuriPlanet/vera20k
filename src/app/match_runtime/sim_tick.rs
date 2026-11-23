@@ -565,7 +565,7 @@ fn build_campaign_score_screen_model_from_sources(
 }
 
 fn resolve_campaign_score_label(state: &AppState, native_key: &str) -> String {
-    crate::app::frontend::shell_pass::resolve_csf(state, native_key).into_owned()
+    state.csf_text(native_key)
 }
 
 fn format_campaign_score_time(total_seconds: i32) -> String {
@@ -695,7 +695,7 @@ fn build_score_screen_model(
         snapshot.clone()
     };
     let raw_snapshot = &snapshot;
-    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+    let computer = state.csf_text("TXT_COMPUTER");
     let rows = resolve_score_rows(
         sim,
         raw_snapshot,
@@ -2083,6 +2083,7 @@ fn advance_one_simulation_frame(
         drain_radar_terrain_marks(&mut state.match_state);
     }
     let hash_interval = play_hash_interval(state.match_state.live_network.is_some());
+    let slow_tick = crate::app::cncnet::SpawnSlowPc::of(state).tick;
     // A lent tick publishes the frame the last read captured: until `lend`
     // below, this dispatch writes nothing a frame records.
     let parts = if threaded {
@@ -2125,6 +2126,10 @@ fn advance_one_simulation_frame(
     // Recorded whether or not a client is attached: the history ring
     // backfills a dashboard that connects mid-match.
     let advance_started = crate::util::time::Instant::now();
+    // A lent tick spends it on the simulation thread, inside its own cost.
+    if !threaded {
+        crate::app::cncnet::SpawnSlowPc::spend(slow_tick);
+    }
     let production_visits = state
         .match_state
         .match_presentation
@@ -2142,6 +2147,7 @@ fn advance_one_simulation_frame(
     if threaded {
         let job = move |rt: &mut crate::sim::runtime::SimRuntime| -> super::sim_host::SimJobResult {
             let started = crate::util::time::Instant::now();
+            crate::app::cncnet::SpawnSlowPc::spend(slow_tick);
             let logic_started_ms = super::frame_pacer::wall_clock_ms();
             let deferred = finish
                 .deferred

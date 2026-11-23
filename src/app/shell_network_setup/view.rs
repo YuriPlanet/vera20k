@@ -10,19 +10,13 @@ use crate::app::shell_wol::lobby::player_badge;
 use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam};
 use crate::skirmish_modes::mode_by_id;
 use crate::ui::multiplayer_setup::*;
-use crate::ui::shell::trackbar::TrackbarRange;
 use crate::ui::skirmish_shell::{
     self, SkirmishComboItem, SkirmishCountryChoice, SkirmishTrackbarId,
 };
+use vera20k_gui::shell::trackbar::TrackbarRange;
 
 fn label(state: &AppState, key: &str) -> String {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .and_then(|csf| csf.get(key))
-        .unwrap_or(key)
-        .to_owned()
+    state.csf_label(key, key)
 }
 pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
     let value = match item {
@@ -252,7 +246,15 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
             room_size_shown(state),
         );
         let scroll = roster_scroll(&items, frame);
-        listing.first_row = ui.map_or(0, |ui| ui.roster_top(scroll.max_top));
+        // Its scrollbar node keeps the place (none before the room's dialog
+        // is built), shown within the places the roster has now.
+        let controller = &state.frontend.shell_controller;
+        let top = match controller.prop(dialog.page().dialog, ROSTER_SCROLL, vera20k_gui::Prop::Top)
+        {
+            Some(vera20k_gui::Value::Int(top)) => usize::try_from(*top).unwrap_or(0),
+            _ => 0,
+        };
+        listing.first_row = top.min(scroll.max_top);
         let top = scroll.stops.get(listing.first_row).copied().unwrap_or(0);
         listing.places = roster_page(&items, top, frame);
         listing.page_len = listing.places.len();
@@ -770,7 +772,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             Some(count) => (0..count)
                 .map(|team| SkirmishComboItem::Team(i32::from(team)))
                 .collect(),
-            None => skirmish_shell::team_choices(mode.must_ally || grouped),
+            None => skirmish_shell::team_choices(
+                mode.must_ally || grouped,
+                crate::skirmish_launch::NATIVE_TEAMS,
+            ),
         };
         let team_items = team_items
             .into_iter()
@@ -952,8 +957,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         page_len: listing.page_len,
         roster_scroll: listing.roster_scroll,
         pages: listing.pages,
+        places: listing.places,
         dialog,
-        host,
         locked: protocol.locked,
         // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1): Short Game
         // and Bases checked and disabled in a tournament or clan room.
@@ -989,19 +994,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         ],
         row_icons,
         headers,
-        open_box: state
-            .frontend
-            .multiplayer_setup
-            .as_ref()
-            .and_then(|ui| ui.open_box)
-            .filter(|_| dialog.modern),
         lobby_enabled: dialog.wol() && crate::app::shell_wol::lobby_visits(state),
         drag_rows,
-        map_offer_open: state
-            .frontend
-            .multiplayer_setup
-            .as_ref()
-            .is_some_and(|ui| ui.map_offer.is_some()),
         mode_label: if launch.selected_map_file.is_none() {
             label(state, "GUI:None")
         } else {

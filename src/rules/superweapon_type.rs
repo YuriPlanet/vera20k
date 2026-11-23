@@ -2983,22 +2983,22 @@ Type=BogusType
     }
 
     /// The Ares PsychicReveal handler (LoadFromINI `0x10075360`) writes the
-    /// custom action whatever `Action=` says, so Mental Omega's Satellite Scan
-    /// (`Action=Custom`, `SW.Range=12`) asks for a target; a negative
+    /// custom action whatever `Action=` says, so a reveal with
+    /// `Action=Custom` and `SW.Range=12` asks for a target; a negative
     /// `SW.Range` is a whole-map reveal with none.
     #[test]
     fn ares_psychic_reveal_targets_unless_its_range_is_the_whole_map() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
-            "[CombatDamage]\nPsychicRevealRadius=2\n[SuperWeaponTypes]\n0=SpySatSpecial\n1=Plain\n2=Whole\n3=DefaultRange\n\
-             [SpySatSpecial]\nType=PsychicReveal\nAction=Custom\nSW.Range=12\n\
+            "[CombatDamage]\nPsychicRevealRadius=2\n[SuperWeaponTypes]\n0=ScanSpecial\n1=Plain\n2=Whole\n3=DefaultRange\n\
+             [ScanSpecial]\nType=PsychicReveal\nAction=Custom\nSW.Range=12\n\
              [Plain]\nType=PsychicReveal\nAction=None\n\
              [Whole]\nType=PsychicReveal\nAction=PsychicReveal\nSW.Range=-1\n\
              [DefaultRange]\nType=PsychicReveal\nSW.Range=-1,-1\n",
         );
         let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
         let action = |id| rules.super_weapon(id).unwrap().action.as_deref();
-        assert_eq!(action("SpySatSpecial"), Some("PsychicReveal"));
+        assert_eq!(action("ScanSpecial"), Some("PsychicReveal"));
         assert_eq!(action("Plain"), Some("PsychicReveal"));
         assert_eq!(action("Whole"), None);
         assert_eq!(action("DefaultRange"), Some("PsychicReveal"));

@@ -82,6 +82,17 @@ pub fn deserialize<'de, T: serde::Deserialize<'de>>(bytes: &'de [u8]) -> Result<
     T::deserialize(&mut Deserializer { input: bytes })
 }
 
+/// Decode a value and return the bytes that its decoder did not read. Kept
+/// apart from [`deserialize`], which every load calls: handing the value back
+/// in a pair costs an unoptimized build another copy of it on the stack.
+pub(crate) fn deserialize_with_remainder<'de, T: serde::Deserialize<'de>>(
+    bytes: &'de [u8],
+) -> Result<(T, &'de [u8]), Error> {
+    let mut decoder = Deserializer { input: bytes };
+    let value = T::deserialize(&mut decoder)?;
+    Ok((value, decoder.input))
+}
+
 struct Serializer {
     output: Vec<u8>,
 }

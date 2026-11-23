@@ -1270,6 +1270,7 @@ impl Simulation {
                 );
                 let registered = self.register_projectile(bullet, flat);
                 debug_assert!(registered);
+                self.unlimbo_alpha_shape(bullet, crate::sim::world::ObjectKind::Projectile, rules);
             }
         }
     }

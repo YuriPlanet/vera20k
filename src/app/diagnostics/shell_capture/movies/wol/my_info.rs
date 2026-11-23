@@ -76,12 +76,12 @@ impl WolCapture {
             AUTO_LOGIN, BACK, COUNTRY, FORGET, HEADING, LOCALE, NICKNAME as NICKNAME_COMBO, SERVER,
             WINS,
         };
-        let page = crate::app::shell_wol::my_info::page(state).context("0x114")?;
-        let data: Vec<i32> = page.combos.iter().map(|combo| combo.data_or(-99)).collect();
+        let page = my_info_shown(state)?;
+        let data = page.data.clone();
         let snapshot = json!({
             "selected_data": data,
-            "server_face": page.combos[1].selected.map(|row| page.combos[1].rows[row].text.clone()),
-            "nicknames": page.combos[0].rows.iter().map(|row| row.text.clone()).collect::<Vec<_>>(),
+            "server_face": page.server_face,
+            "nicknames": page.nicknames,
             "auto_login": [page.auto_login, page.auto_login_enabled],
             "match_same_res": page.match_same_res,
             "forget_enabled": page.forget_enabled,
@@ -90,7 +90,7 @@ impl WolCapture {
         });
         if self.target == WolTarget::MyInfoDefault {
             ensure!(
-                page.slot() == -1
+                page.slot == -1
                     && !page.forget_enabled
                     && !page.play_buddy_enabled
                     && !page.auto_login_enabled
@@ -165,17 +165,13 @@ impl WolCapture {
                 let rect = layout_button(state, FORGET)?;
                 welcome_click(state, rect);
                 let requests = self.requests(state, frame)?;
-                let page = crate::app::shell_wol::my_info::page(state).context("0x114")?;
-                let names: Vec<&str> = page.combos[0]
-                    .rows
-                    .iter()
-                    .map(|row| row.text.as_str())
-                    .collect();
+                let page = my_info_shown(state)?;
+                let names: Vec<&str> = page.nicknames.iter().map(String::as_str).collect();
                 ensure!(
                     requests == [WolServiceRequest::ForgetCredential { slot: 1 }]
                         && names.len() == 2
                         && names[1] == PEER
-                        && page.slot() == -1
+                        && page.slot == -1
                         && !page.forget_enabled
                         && page.play_buddy_enabled
                         && !page.auto_login_enabled
@@ -215,33 +211,29 @@ impl WolCapture {
         control: u16,
         matches: impl Fn(&crate::ui::wol_my_info::MyInfoRow) -> bool,
     ) -> Result<usize> {
-        let layout = crate::app::shell_wol::my_info::layout(state);
-        let face = layout.face(control).context("combo face")?;
+        use crate::app::shell_wol::my_info;
+        let layout = my_info::layout(state);
+        let face = layout.rect_of(control).context("combo face")?;
         let arrow = crate::ui::skirmish_shell::combo_arrow_hit_rect(face, layout.page.scale);
         welcome_click(state, arrow);
-        let page = crate::app::shell_wol::my_info::page(state).context("0x114")?;
-        ensure!(
-            page.popup.control == Some(control),
-            "the drop list did not open"
-        );
-        let row = page
-            .combo(control)
-            .and_then(|combo| combo.rows.iter().position(&matches))
+        let page = my_info::page(state).context("0x114")?;
+        let index = crate::ui::wol_my_info::COMBOS
+            .iter()
+            .position(|id| *id == control);
+        let row = index
+            .and_then(|index| page.combos[index].iter().position(&matches))
             .context("no matching row")?;
-        let visible = page
-            .popup_geometry(&layout)
-            .context("drop list")?
-            .visible_rows;
-        // A row below the first page: scroll there first, as the bar would.
-        if row >= visible
-            && let crate::app::shell_wol::WolPage::MyInformation(page) =
-                &mut state.frontend.wol.as_mut().context("WOL visit")?.page
-        {
-            page.popup.top_index = row + 1 - visible;
+        let popup = my_info::drop_down(state, control)
+            .context("the drop list did not open")?
+            .popup;
+        // A row below the first page: step the bar's down arrow there.
+        for _ in 0..(row + 1).saturating_sub(popup.visible_rows) {
+            let bar = popup.scrollbar().context("drop list scrollbar")?;
+            welcome_click(state, RectPx::new(bar.x, bar.y + bar.h - 3, bar.w, 2));
         }
-        let popup = crate::app::shell_wol::my_info::page(state)
-            .and_then(|page| page.popup_geometry(&layout))
-            .context("drop list")?;
+        let popup = my_info::drop_down(state, control)
+            .context("drop list")?
+            .popup;
         let rect = popup.row_rect(row).context("row rect")?;
         welcome_click(state, rect);
         Ok(row)
@@ -250,11 +242,7 @@ impl WolCapture {
     /// A click on a checkbox's icon.
     fn my_info_check(&mut self, state: &mut AppState, control: u16) -> Result<()> {
         let layout = crate::app::shell_wol::my_info::layout(state);
-        let rect = if control == crate::ui::wol_my_info::AUTO_LOGIN {
-            layout.auto_login
-        } else {
-            layout.match_same_res
-        };
+        let rect = layout.rect_of(control).context("checkbox")?;
         welcome_click(
             state,
             crate::ui::skirmish_shell::checkbox_icon_rect(rect, layout.page.scale),

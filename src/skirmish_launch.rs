@@ -507,9 +507,8 @@ pub struct SkirmishLaunchOptions {
     /// waits.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queue: Vec<String>,
-    /// VERA's room rules: the host's Terrain Deformation and personal
-    /// rules, which every player's match plays. Left out while the room has
-    /// neither.
+    /// VERA's room rules: the host's Options switches ([`HostRules`]). Left
+    /// out while all are off.
     #[serde(default, skip_serializing_if = "HostRules::is_empty")]
     pub host_rules: HostRules,
 }
@@ -517,8 +516,9 @@ pub struct SkirmishLaunchOptions {
 /// VERA: the rules a network room plays besides its options, which only its
 /// host sets: the host's Terrain Deformation box, Superweapon Limit and
 /// Building Production Queue.
-/// Every player's match plays these instead of their own; offline games play
-/// the player's own (`ProcessAssets::use_personal_rules`).
+/// Every player's match plays these instead of their own, except in a co-op
+/// campaign (`MatchSession::network_personal_rules`); offline games play the
+/// player's own (`ProcessAssets::use_personal_rules`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostRules {
@@ -582,9 +582,15 @@ fn is_zero(value: &u8) -> bool {
 /// team at 30 seats, as the lobby takes them.
 pub const ROOM_TEAMS: std::ops::RangeInclusive<u8> = 2..=15;
 
-/// The teams gamemd's Team list holds, A to D (`team_choices`). Skirmish and
-/// a VERA room with Teams Off keep it.
+/// The teams gamemd's Team list holds, A to D (`team_choices`). A skirmish
+/// on a map of eight or fewer starts and a VERA room with Teams Off keep it;
+/// it is also where `room_team_label` starts naming teams past D.
 pub const NATIVE_TEAMS: u8 = 4;
+
+/// The teams a skirmish Team list holds on a map past gamemd's eight starts,
+/// A to O: as many as a VERA room ([`ROOM_TEAMS`]). A map of eight or fewer
+/// keeps gamemd's [`NATIVE_TEAMS`].
+pub const SKIRMISH_TEAMS: u8 = 15;
 
 impl Default for SkirmishLaunchOptions {
     fn default() -> Self {

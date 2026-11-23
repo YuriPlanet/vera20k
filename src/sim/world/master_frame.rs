@@ -137,13 +137,16 @@ impl FrameStep {
     }
 }
 
-/// What one frame visit reads, fixed for the whole visit and for a resume of
-/// its tail.
+/// The rules, time and effects bound for one frame visit, and the temporary
+/// tube-turn set passed from the object updates to the wake phase.
 pub(super) struct FrameInputs<'a> {
     rules: &'a RuleSet,
     overlay_registry: Option<&'a OverlayTypeRegistry>,
     tick_ms: u32,
     effects: FrameEffects<'a>,
+    /// Wake producers skipped by this visit's Logic pass. Consumed before
+    /// any tail suspension; a resumed tail never repeats the wake pass.
+    tube_turns: std::collections::BTreeSet<u64>,
 }
 
 impl<'a> FrameInputs<'a> {
@@ -162,6 +165,7 @@ impl<'a> FrameInputs<'a> {
             overlay_registry,
             tick_ms,
             effects,
+            tube_turns: Default::default(),
         }
     }
 }
@@ -406,6 +410,7 @@ impl Simulation {
                 let object_pass =
                     self.advance_live_object_pass(rules, overlay_registry, effects)?;
                 frame.ownership_changed |= object_pass.ownership_changed();
+                inputs.tube_turns = object_pass.tube_turns;
                 frame.spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);
                 frame.destroyed_structure |= object_pass.destroyed_structure;
                 frame.bridge_state_changed |= object_pass.bridge_state_changed;
@@ -414,7 +419,7 @@ impl Simulation {
                 // Ready/Commence.
             }
             // Native gate and cadence in `spawn_wakes_for_frame`.
-            FrameStep::Wakes => self.spawn_wakes_for_frame(rules),
+            FrameStep::Wakes => self.spawn_wakes_for_frame(rules, &inputs.tube_turns),
             FrameStep::Vision => {
                 // Sources open, move and close their sight at their own events
                 // (Unlimbo, arrival, Limbo), so an object spawned after this
@@ -485,12 +490,6 @@ impl Simulation {
                 frame.bridge_state_changed |=
                     self.update_ion_blasts(rules, overlay_registry, effects);
                 self.alpha_shapes.purge_disabled();
-                // Ares' `ObjectClass_Update_AlphaLight` (`0x005F3E70`) places
-                // each surviving glow from its object's live GetCoords ahead
-                // of the Tactical's draw.
-                if rules.ares() {
-                    self.update_alpha_shape_screens(rules);
-                }
             }
             FrameStep::CrateRegen => {
                 // Called between `AlphaShapeClass::PurgeDisabled` and the
@@ -756,6 +755,7 @@ impl Simulation {
             overlay_registry: _,
             tick_ms,
             ref mut effects,
+            ..
         } = *inputs;
         // MainTick55DE45 -> PlanMgr637550 publishes command-generated plans
         // after Queue_AI, using any TIMING change it just applied. Native

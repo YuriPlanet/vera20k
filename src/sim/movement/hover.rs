@@ -131,8 +131,7 @@ impl HoverRuntime {
         self.destination
     }
 
-    /// Test fixtures only: ProcessMovement (`hover_process`) is the writer.
-    #[cfg(any(test, feature = "test-support"))]
+    /// ProcessMovement stores the accepted tunnel exit head at 0x005150EE.
     pub(crate) fn set_head(&mut self, head: Option<DriveCoord>) {
         self.head = head;
     }

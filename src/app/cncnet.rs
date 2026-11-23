@@ -381,6 +381,69 @@ impl MatchSeedClock for SpawnSeedClock {
     }
 }
 
+/// Spawn-only test switches (tools/spawn/README.md): with
+/// `VERA20K_SPAWN_SLOW_DRAW_MS` and `VERA20K_SPAWN_SLOW_TICK_MS`, a `-SPAWN`
+/// multiplayer launch plays as a slow PC once its match is on screen, each
+/// drawn picture and each simulation tick taking that many milliseconds more.
+/// The tick's delay is inside the cost the relay's pace reports carry. Read
+/// only for such launches; ordinary play never consults them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct SpawnSlowPc {
+    pub(crate) draw: std::time::Duration,
+    pub(crate) tick: std::time::Duration,
+}
+
+impl SpawnSlowPc {
+    pub(crate) fn of(state: &AppState) -> Self {
+        let progress = &state.frontend.external_progress;
+        if !state.frontend.external_launch
+            || progress.mode == ExternalLaunchMode::Single
+            || progress.match_started.is_none()
+        {
+            return Self::default();
+        }
+        Self::requested()
+    }
+
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    fn requested() -> Self {
+        static REQUESTED: std::sync::OnceLock<SpawnSlowPc> = std::sync::OnceLock::new();
+        *REQUESTED.get_or_init(|| {
+            let millis = |name| {
+                std::time::Duration::from_millis(
+                    std::env::var(name)
+                        .ok()
+                        .and_then(|value| value.trim().parse().ok())
+                        .unwrap_or(0),
+                )
+            };
+            let slow = SpawnSlowPc {
+                draw: millis("VERA20K_SPAWN_SLOW_DRAW_MS"),
+                tick: millis("VERA20K_SPAWN_SLOW_TICK_MS"),
+            };
+            if slow != SpawnSlowPc::default() {
+                log::info!("Spawn test switch: playing as a slow PC, {slow:?}");
+            }
+            slow
+        })
+    }
+
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    fn requested() -> Self {
+        Self::default()
+    }
+
+    /// Spend `delay` on this thread, as a slow PC would.
+    pub(crate) fn spend(delay: std::time::Duration) {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if !delay.is_zero() {
+            std::thread::sleep(delay);
+        }
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let _ = delay;
+    }
+}
+
 impl App {
     /// CnCNet runs the executable with its game directory as cwd and writes
     /// spawn.ini immediately before launch. Read once, before window creation.
@@ -880,7 +943,8 @@ impl App {
                     if Self::score_shell_active(state) {
                         Self::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::ScoreContinue,
+                            crate::app::frontend::shell_transition::ShellSlideKind::Score,
+                            App::leave_mission_result_screen,
                         );
                     } else {
                         Self::leave_mission_result_screen(state);

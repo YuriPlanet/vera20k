@@ -9,16 +9,18 @@
 //! [`crate::ui::wol_buddy`]; the mirror is [`super::buddies`]. No RNG is
 //! drawn on these paths.
 
+use crate::app::shell_route::ShellRoute;
 use crate::util::time::{Duration, Instant};
 
 use super::WolPage;
+use super::leaf::{self, Pointer};
 use super::service;
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
-use crate::ui::lan_shell::LanEditKey;
-use crate::ui::main_menu_dialogs::options::LauncherCue;
+use crate::ui::shell::page::{PageCue, PageEvent};
 use crate::ui::wol_buddy::*;
 use crate::ui::wol_shell::WolMode;
+use vera20k_gui::NodeId;
 use winit::keyboard::KeyCode;
 
 /// `SetTimer(dlg, 0, 1000)`.
@@ -53,47 +55,41 @@ pub(super) fn page_open(state: &AppState) -> bool {
 }
 
 pub(crate) fn layout(state: &AppState) -> WolBuddyLayout {
-    let (width, height) = shell_layout::shell_screen_size(state);
-    if shell_layout::fills_window(state) {
-        WolBuddyLayout::responsive(width as i32, height as i32)
-    } else {
-        WolBuddyLayout::new(width as i32, height as i32)
-    }
+    shell_layout::on(state, WolBuddyLayout::new)
 }
 
-/// The status help under the pointer (`0x006040B0`). The list's per-row
-/// `0x4E8`/`0x4E9` tooltips are not read, so it answers with its own key.
-pub(crate) fn status_key(state: &AppState) -> Option<&'static str> {
-    page(state)?.ui.buttons.hovered.and_then(tooltip_key)
+/// Builds and places `0x116`'s widgets; the root.
+pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
+    let layout = layout(state);
+    leaf::sync(state, DIALOG, layout.page.scale, spec, |id| {
+        layout.rect_of(id)
+    })
 }
 
-/// `0x0072C060`: BuddyList.shp (800 wide only) through BuddyList.PAL, with
-/// Refresh's pictures.
-pub(crate) fn open_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_buddy_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
+/// Shows the page in its widgets (under `0x115` too).
+fn present(state: &mut AppState) {
+    let unknown = state.csf_text(UNKNOWN_STATS_KEY);
+    sync(state);
+    let image = layout(state).rect_of(crate::ui::wol_buddy::OBSERVER_IMAGE);
+    let frontend = &mut state.frontend;
+    let Some(root) = frontend.shell_controller.root_in(DIALOG) else {
+        return;
     };
-    let mut icons: Vec<&str> = vec![REFRESH_FACES.0, REFRESH_FACES.1];
-    icons.extend([
-        "wolclan.pcx",
-        "woltrny.pcx",
-        "wolpriv.pcx",
-        "wolreslk.pcx",
-        "wolrslkob.pcx",
-        "wolob.pcx",
-    ]);
-    state.frontend.wol_buddy_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("BuddyList.shp", "BuddyList.PAL"),
-        &icons,
+    // The observer image 0x75F toggles on a press anywhere on it.
+    let gui = frontend.shell_controller.gui_mut();
+    let hit = vera20k_gui::Value::Rect(image.unwrap_or_default());
+    crate::ui::shell::page::set(
+        gui,
+        root,
+        crate::ui::wol_buddy::OBSERVER_IMAGE,
+        vera20k_gui::Prop::HitRect,
+        hit,
     );
-    state.frontend.wol_buddy_art.is_some()
+    if let Some(WolPage::Buddy(dialog)) = frontend.wol.as_ref().map(|visit| &visit.page) {
+        dialog
+            .ui
+            .present(frontend.shell_controller.gui_mut(), root, &unknown);
+    }
 }
 
 /// The lobby list arrived: the dialog loop starts. Step 3 leaves the
@@ -118,11 +114,12 @@ pub(super) fn open_dialog(state: &mut AppState) {
         timer_at: Instant::now() + TIMER_PERIOD,
         refresh_at: None,
     }));
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+    state.frontend.shell_route = ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
-    open_art(state);
-    state.frontend.shell_controller.reset_to(DIALOG, false);
+    super::leaf::open_art(state, DIALOG);
+    state.frontend.shell_controller.reset_to(DIALOG);
     super::buddies::restart(state);
+    present(state);
     state.platform.window.request_redraw();
 }
 
@@ -131,10 +128,10 @@ pub(super) fn open_dialog(state: &mut AppState) {
 pub(super) fn dialog_ended(state: &mut AppState) {
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.page = WolPage::Lobby;
-        visit.page_received = None;
     }
-    state.frontend.wol_buddy_art = None;
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+    super::page::close_received(state);
+    super::leaf::free_art(state, DIALOG);
+    state.frontend.shell_route = ShellRoute::Wol;
 }
 
 /// The stop paths of Create and Join (`0x0079F4D7`), a failed or refused
@@ -142,7 +139,7 @@ pub(super) fn dialog_ended(state: &mut AppState) {
 /// RESIDUAL: Create's stop path shows a set `[0xB77AD0]` in a box first;
 /// no path here leaves one set.
 pub(crate) fn stopped(state: &mut AppState) {
-    if state.frontend.shell_route.network_setup() {
+    if state.frontend.shell_route == ShellRoute::NetworkSetup {
         crate::app::shell_network_setup::abandon_for_wol_runner(state);
     }
     dialog_ended(state);
@@ -155,7 +152,7 @@ pub(crate) fn stopped(state: &mut AppState) {
 /// the custom lobby; mode 6 is My Information's driver; mode 0 is the
 /// welcome.
 fn returned(state: &mut AppState) {
-    state.frontend.wol_buddy_art = None;
+    super::leaf::free_art(state, DIALOG);
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
@@ -266,7 +263,7 @@ fn texts(state: &AppState) -> BuddyTexts {
         playing,
         quick_matching,
         unknown,
-    ] = BuddyTexts::KEYS.map(|key| service::resolve(state, key));
+    ] = BuddyTexts::KEYS.map(|key| state.csf_text(key));
     BuddyTexts {
         find_disabled,
         offline,
@@ -289,6 +286,7 @@ pub(super) fn buddies_changed(state: &mut AppState, list_arrived: bool) {
         dialog.refresh_at = None;
         dialog.ui.set_enabled(REFRESH, true);
     }
+    present(state);
     state.platform.window.request_redraw();
 }
 
@@ -345,6 +343,7 @@ fn enables(state: &mut AppState) {
 pub(super) fn stats_changed(state: &mut AppState) {
     if page_open(state) {
         stats(state);
+        present(state);
         state.platform.window.request_redraw();
     }
 }
@@ -363,7 +362,7 @@ fn stats(state: &mut AppState) {
             .collect()
     } else {
         let heading = format_csf(
-            &service::resolve(state, "GUI:UserProfileLabel"),
+            &state.csf_text("GUI:UserProfileLabel"),
             &[CsfArg::Str(&selected)],
         );
         let record = state
@@ -380,7 +379,7 @@ fn stats(state: &mut AppState) {
                 record.points,
             ]
             .map(|value| value.to_string()),
-            None => std::array::from_fn(|_| service::resolve(state, UNKNOWN_STATS_KEY)),
+            None => std::array::from_fn(|_| state.csf_text(UNKNOWN_STATS_KEY)),
         };
         std::iter::once((HEADING, heading))
             .chain(STATS.into_iter().zip(values))
@@ -400,7 +399,8 @@ fn apply(state: &mut AppState, action: WolBuddyAction) {
         WolBuddyAction::End(control) => {
             App::leave_shell_dialog(
                 state,
-                shell_transition::ShellExitThen::WolBuddyClose(control),
+                shell_transition::ShellSlideKind::WolBuddyList,
+                move |state| crate::app::shell_wol::buddy::commit_close(state, control),
             );
         }
         WolBuddyAction::Select(name) => {
@@ -410,10 +410,16 @@ fn apply(state: &mut AppState, action: WolBuddyAction) {
         WolBuddyAction::Page => super::page::open_received_modal(state),
         WolBuddyAction::OpenAdd => {
             if let Some(dialog) = page_mut(state) {
-                dialog.ui.cancel_pointer();
-                dialog.ui.add = Some(WolAddBuddy::new());
+                dialog.ui.add = Some(WolAddBuddy);
             }
-            state.frontend.shell_controller.reset_to(ADD_DIALOG, false);
+            // 0x115 runs over 0x116, which keeps its list but loses the
+            // pointer: no hover, so no status help, while the box is up.
+            let controller = &mut state.frontend.shell_controller;
+            controller.drop_pointer_in(DIALOG);
+            controller.push(ADD_DIALOG);
+            if sync_add(state).is_some() {
+                leaf::focus(state, ADD_DIALOG, Some(NAME));
+            }
         }
         WolBuddyAction::Add(name) => {
             close_add(state);
@@ -446,6 +452,7 @@ fn apply(state: &mut AppState, action: WolBuddyAction) {
             .multiplayer_shell_runtime
             .set_lan_observer(observer),
     }
+    present(state);
     state.frontend.shell_status_line.repaint();
     state.platform.window.request_redraw();
 }
@@ -455,144 +462,91 @@ fn close_add(state: &mut AppState) {
     if let Some(dialog) = page_mut(state) {
         dialog.ui.add = None;
     }
-    state.frontend.shell_controller.reset_to(DIALOG, false);
+    let controller = &mut state.frontend.shell_controller;
+    if controller.top_id() == Some(ADD_DIALOG) {
+        controller.pop();
+    }
+    controller.ensure_active(DIALOG);
 }
 
-/// The `0x115` control under the pointer.
-fn add_control_at(state: &AppState, x: i32, y: i32) -> Option<u16> {
+/// Builds and places `0x115`'s widgets (the box's retail pixels); its
+/// NewEdit keeps its caret in view (`0x00623880`).
+fn sync_add(state: &mut AppState) -> Option<NodeId> {
     let (width, height) = (
         state.renderer.gpu.config.width as i32,
         state.renderer.gpu.config.height as i32,
     );
     let layout = crate::ui::shell::modal::wol_add_buddy_layout(width, height);
-    [(ADD, layout.add), (BACK, layout.back), (NAME, layout.name)]
-        .into_iter()
-        .find_map(|(id, rect)| rect.contains(x, y).then_some(id))
+    leaf::sync(
+        state,
+        ADD_DIALOG,
+        crate::ui::shell::geom::RETAIL_SCALE,
+        add_spec,
+        |id| layout.rect_of(id),
+    )
+}
+
+fn add_open(state: &AppState) -> bool {
+    page(state).is_some_and(|dialog| dialog.ui.add.is_some())
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let add_over = add_control_at(state, x, y);
-    let Some(dialog) = page_mut(state) else {
-        return;
-    };
-    if let Some(add) = dialog.ui.add.as_mut() {
-        add.buttons.hovered = add_over.filter(|id| matches!(*id, ADD | BACK));
-        state.platform.window.request_redraw();
-        return;
+    if add_open(state) {
+        sync_add(state);
+    } else {
+        sync(state);
     }
-    let ui = &mut dialog.ui;
-    ui.buttons.hovered = layout.control_at(x, y);
-    let geometry = ui
-        .list
-        .geometry(layout.list, ui.rows.len(), layout.page.scale);
-    ui.list.hot_row = geometry.row_at(ui.rows.len(), ui.list.top_index, x, y);
-    ui.list
-        .scroll
-        .pointer_moved(geometry, &mut ui.list.top_index, x, y);
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
+    leaf::pointer(state, Pointer::Move);
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     if shell_transition::blocks_shell_input(state) {
         return;
     }
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
-    let scale = layout.page.scale;
-    let add_over = add_control_at(state, x, y);
-    let over = layout.control_at(x, y);
-    let Some(dialog) = page_mut(state) else {
+    let at = if pressed { Pointer::Down } else { Pointer::Up };
+    if add_open(state) {
+        sync_add(state);
+        for event in leaf::pointer(state, at) {
+            if let PageEvent::Activated(id) = event
+                && let Some(action) =
+                    WolAddBuddy::activate(&mut state.frontend.shell_controller, id)
+            {
+                apply(state, action);
+            }
+        }
         return;
-    };
-    let mut action = None;
-    let mut cue = None;
-    let mut button_sound = false;
-    let mut doubled = false;
-    if let Some(add) = dialog.ui.add.as_mut() {
-        if pressed {
-            match add_over {
-                Some(ADD) if !add.add_enabled => {}
-                Some(id @ (ADD | BACK)) => {
-                    add.buttons.press(Some(id));
-                    button_sound = true;
-                }
-                _ => add.buttons.press(None),
+    }
+    if sync(state).is_none() {
+        return;
+    }
+    present(state);
+    let events = leaf::pointer(state, at);
+    for event in events {
+        let Some(ui) = page_mut(state).map(|dialog| &mut dialog.ui) else {
+            return;
+        };
+        let (action, doubled) = match event {
+            PageEvent::Cue(cue) => {
+                App::play_page_cue(state, cue);
+                continue;
             }
-        } else {
-            let over = add_over.filter(|id| matches!(*id, ADD | BACK));
-            action = add.buttons.release(over).and_then(|id| add.activate(id));
+            // LBN_SELCHANGE runs first, then LBN_DBLCLK.
+            PageEvent::Selected(LIST, row) => (ui.select(row as usize), false),
+            PageEvent::DoubleClicked(LIST, row) => (ui.select(row as usize), true),
+            PageEvent::Toggled(id, _) | PageEvent::Activated(id) => (ui.activate(id), false),
+            _ => continue,
+        };
+        if doubled {
+            App::play_page_cue(state, PageCue::ListClick);
         }
-    } else if !pressed {
-        let ui = &mut dialog.ui;
-        ui.list.scroll.cancel();
-        let button = over.filter(|id| PAGE.button(*id).is_some() || *id == REFRESH);
-        if let Some(control) = ui.buttons.release(button) {
-            action = ui.activate(control);
+        if let Some(action) = action {
+            apply(state, action);
         }
-    } else {
-        let ui = &mut dialog.ui;
-        let now = Instant::now();
-        let geometry = ui.list.geometry(layout.list, ui.rows.len(), scale);
-        if let Some(part) = geometry.scroll_part_at(x, y) {
-            ui.list
-                .scroll
-                .press(part, geometry, &mut ui.list.top_index, y, now);
-        } else {
-            match over {
-                Some(LIST) => {
-                    if let Some(row) = geometry.row_at(ui.rows.len(), ui.list.top_index, x, y) {
-                        let double = crate::ui::shell::list::is_double_click(
-                            &mut ui.list.last_press,
-                            now,
-                            x,
-                            y,
-                            crate::ui::shell::saved_file_input::host_double_click_limits(),
-                        );
-                        // LBN_SELCHANGE runs first, then LBN_DBLCLK.
-                        action = ui.select(row);
-                        doubled = double;
-                        cue = Some(LauncherCue::GenericClick);
-                    }
-                }
-                Some(control @ (OBSERVER_IMAGE | OBSERVER_TOGGLE)) => {
-                    let icon_hit = control == OBSERVER_IMAGE
-                        || crate::ui::skirmish_shell::checkbox_icon_rect(
-                            layout.observer_toggle,
-                            scale,
-                        )
-                        .contains(x, y);
-                    if icon_hit {
-                        action = ui.activate(control);
-                        cue = Some(LauncherCue::Checkbox);
-                    }
-                }
-                Some(control) if (PAGE.button(control).is_some() || control == REFRESH) => {
-                    if ui.enabled(control) {
-                        ui.buttons.press(Some(control));
-                        button_sound = true;
-                    }
-                }
-                _ => ui.buttons.press(None),
-            }
+        if doubled {
+            double_click(state);
         }
     }
-    if button_sound {
-        App::play_main_menu_button_sound(state);
-    }
-    if let Some(cue) = cue {
-        App::play_launcher_options_cue(state, cue);
-    }
-    if let Some(action) = action {
-        apply(state, action);
-    }
-    if doubled {
-        double_click(state);
-    }
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
+    present(state);
 }
 
 /// `LBN_DBLCLK` (`0x0079EB52`) after the selection.
@@ -606,7 +560,6 @@ fn double_click(state: &mut AppState) {
     if let Some(action) = action {
         apply(state, action);
     }
-    state.platform.window.request_redraw();
 }
 
 /// Keys reach only `0x115`'s edit while it runs.
@@ -617,89 +570,42 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     let local = local_nickname(state);
     let names = state.frontend.wol_buddies.names().to_vec();
     let valid = |name: &str| super::buddies::valid_new_buddy(&names, name, &local);
-    let key = match code {
-        Some(KeyCode::Backspace) => Some(LanEditKey::Backspace),
-        Some(KeyCode::Delete) => Some(LanEditKey::Delete),
-        Some(KeyCode::ArrowLeft) => Some(LanEditKey::Left),
-        Some(KeyCode::ArrowRight) => Some(LanEditKey::Right),
-        Some(KeyCode::Home) => Some(LanEditKey::Home),
-        Some(KeyCode::End) => Some(LanEditKey::End),
-        Some(KeyCode::Tab) => Some(LanEditKey::Tab),
-        Some(KeyCode::Enter | KeyCode::NumpadEnter) => Some(LanEditKey::Enter),
-        Some(KeyCode::Escape) => return,
-        _ => None,
-    };
-    let Some(add) = page_mut(state).and_then(|dialog| dialog.ui.add.as_mut()) else {
+    let shift = state.platform.live_modifiers.shift_key();
+    let event = crate::ui::shell::controller::gui_input(code, shift, text);
+    let Some(event) = event.filter(|_| add_open(state)) else {
         return;
     };
-    let action = match key {
-        Some(key) => add.key(key, &valid),
-        None => {
-            add.insert_text(text.unwrap_or_default(), &valid);
-            None
-        }
-    };
-    if let Some(action) = action {
+    if let Some(action) = WolAddBuddy::input(&mut state.frontend.shell_controller, event, &valid) {
         apply(state, action);
     }
-    scroll_add_to_caret(state);
-    state.platform.window.request_redraw();
-}
-
-/// `0x115`'s NewEdit keeps its caret in view: `0x00623880` paints from the
-/// first visible unit. Widths are the box's retail pixels.
-fn scroll_add_to_caret(state: &mut AppState) {
-    let (width, height) = (
-        state.renderer.gpu.config.width as i32,
-        state.renderer.gpu.config.height as i32,
-    );
-    let rect = crate::ui::shell::modal::wol_add_buddy_layout(width, height).name;
-    let font = &state.renderer.bit_font;
-    let Some(WolPage::Buddy(dialog)) = state.frontend.wol.as_mut().map(|visit| &mut visit.page)
-    else {
-        return;
-    };
-    if let Some(add) = dialog.ui.add.as_mut() {
-        add.edit
-            .scroll_to_caret((rect.w - 3).max(0) as u32, |text| font.text_width(text));
-    }
+    sync_add(state);
 }
 
 /// `0x116`'s timers (the 1000 ms status refresh and Refresh's 3000 ms
 /// hold) and the list's scroll repeats.
 pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     let now = Instant::now();
-    let layout = layout(state);
-    let (x, y) = state.match_state.input.cursor_px();
     let dialog = page_mut(state)?;
     let mut tick = false;
     if now >= dialog.timer_at {
         dialog.timer_at = now + TIMER_PERIOD;
         tick = true;
     }
-    let mut redraw = false;
-    if dialog.refresh_at.is_some_and(|at| now >= at) {
+    let reenabled = dialog.refresh_at.is_some_and(|at| now >= at);
+    if reenabled {
         dialog.refresh_at = None;
         dialog.ui.set_enabled(REFRESH, true);
-        redraw = true;
     }
-    let ui = &mut dialog.ui;
-    let geometry = ui
-        .list
-        .geometry(layout.list, ui.rows.len(), layout.page.scale);
-    redraw |= ui
-        .list
-        .scroll
-        .poll(geometry, &mut ui.list.top_index, x, y, now);
     let deadlines = [
         Some(dialog.timer_at),
         dialog.refresh_at,
-        ui.list.scroll.repeat_at(),
+        leaf::poll(state, true),
     ];
     if tick {
         super::buddies::timer(state, now);
     }
-    if redraw {
+    if reenabled {
+        present(state);
         state.platform.window.request_redraw();
     }
     deadlines.into_iter().flatten().min()

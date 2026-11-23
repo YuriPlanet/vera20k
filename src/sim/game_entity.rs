@@ -326,10 +326,9 @@ pub struct GameEntity {
     /// Instance stealth grant; sim::cloak_disguise owns its mutations.
     #[serde(default)]
     pub(crate) stealth_ability: StealthAbility,
-    /// Active low-bridge TubeClass movement. Active YR behaviour — not to be
-    /// confused with the subterranean tunnel locomotor, which is Tiberian Sun
-    /// legacy and was removed as unreachable in stock YR.
-    /// `movement::tube_movement` owns it.
+    /// Foot's retained map tunnel byte, cursor and target. DrawIt and radio
+    /// test presence. [`Self::active_tube`] applies the signed movement gate.
+    /// `movement::tube_movement` owns the payload.
     #[serde(default)]
     pub low_bridge_tube_state: Option<LowBridgeTubeMovementState>,
     /// Controller-owned reversible mind-control manager (`TechnoClass+0x2BC`),
@@ -690,9 +689,8 @@ pub struct Seldom {
     barrel_elevation: crate::sim::movement::FacingClass,
     /// UnitClass+6C8. The constructor clears this next-Unit reference at
     /// 7353EC; the map reader74368C, ChangeOwner7463A0 and Find_Path4D3920
-    /// share it (original gamemd.exe instructions). Not yet ported: the
-    /// Accelerates speed hand-off in Process_Drive_Track 4B1218 / Ship 6A08F0
-    /// and the IsTrain-gated Stop_Moving/track consumers (no retail IsTrain).
+    /// share it with the accelerating Drive/Ship speed hand-off (4B1218 /
+    /// 6A08E0) and IsTrain Stop_Moving (4AFE4D / 69F55D).
     unit_follower: Option<u64>,
     /// UnitClass+6D0, constructed false at7353F8. This retained byte is
     /// independent of incoming links: PointerExpired7446E0 clears only the
@@ -1788,7 +1786,7 @@ impl GameEntity {
     }
 
     /// `Foot+0x6B6`, the occupation enable; see the field.
-    pub(crate) fn foot_occupation_enabled(&self) -> bool {
+    pub fn foot_occupation_enabled(&self) -> bool {
         self.foot_occupation_enabled.get()
     }
 
@@ -2170,6 +2168,12 @@ impl GameEntity {
     /// `+0x388`.
     pub fn body_facing_current(&self, frame: u32) -> u16 {
         self.body_facing.current(frame)
+    }
+
+    /// The body heading at `frame` as Ares reads it: its own copy of Current
+    /// (Ares.dll `0x10009CC0`) on `+0x388`.
+    pub fn body_facing_current_ares(&self, frame: u32) -> u16 {
+        self.body_facing.current_ares(frame)
     }
 
     /// The body heading's high byte at `frame`, the 8-bit direction a reader

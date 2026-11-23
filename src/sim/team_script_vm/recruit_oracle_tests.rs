@@ -242,7 +242,7 @@ fn calc_center_matches_the_original() {
             .collect();
         let focus = (!row["focus"].is_null()).then(|| xy(&row["focus"]));
         let cell_at = events(row, "cell_at");
-        match center_of(samples.iter().copied(), focus, ares_plays()) {
+        match center_of(samples.iter().copied(), focus, ares_plays(), false) {
             None => {
                 assert!(cell_at.is_empty(), "center row {number}: no mean");
                 assert!(row["center"].is_null() && row["closest"].is_null());
@@ -323,6 +323,7 @@ fn recruit_matches_the_original() {
                 flag(&row["candidates"][id as usize]["can_add"])
             },
             ares_plays(),
+            false,
         );
         assert_eq!(asked, can_adds, "recruit row {number}: Can_Add calls");
         assert_eq!(winner, added, "recruit row {number}: winner");

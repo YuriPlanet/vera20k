@@ -78,7 +78,8 @@ pub(super) fn finish_fresh_head(
     let Some(loco) = entity.locomotor.as_mut() else {
         return false;
     };
-    if loco.active_kind() != crate::rules::locomotor_type::LocomotorKind::Walk {
+    let mech = loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Mech;
+    if !mech && loco.active_kind() != crate::rules::locomotor_type::LocomotorKind::Walk {
         return false;
     }
     let Some(head) = loco.step_head() else {
@@ -91,7 +92,15 @@ pub(super) fn finish_fresh_head(
             head.x.wrapping_sub(current.x),
             head.y.wrapping_sub(current.y),
         );
-        super::locomotor_turn::walk_do_turn(entity, facing, native_frame);
+        if mech {
+            // Mech 5B10F7..5B111C sets the target and waits for its hull.
+            super::drive_do_turn(entity, facing, native_frame);
+            if entity.body_facing.is_rotating(native_frame) {
+                return true;
+            }
+        } else {
+            super::locomotor_turn::walk_do_turn(entity, facing, native_frame);
+        }
         entity
             .foot_speed
             .set_speed_fraction(crate::util::fixed_math::SIM_ONE);
@@ -152,6 +161,15 @@ impl crate::sim::world::Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<bool, String> {
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|a| a.locomotor.as_ref())
+            .is_some_and(|l| l.active_kind() == crate::rules::locomotor_type::LocomotorKind::Mech)
+        {
+            return self.mech_set_head(id, request, rules, registry, frame_effects);
+        }
         let grid = self.path_grid_snapshot();
         let selection = select_step_head_at(
             &mut self.substrate.entities,
@@ -209,9 +227,8 @@ impl crate::sim::world::Simulation {
     /// (+0x30), runs [`Self::walk_find_sub_cell_dest`] on `coord` (`None` is
     /// the null coordinate) and then, with both its head and its destination
     /// null, clears IsMoving and calls the owner's +0x54C when the byte had
-    /// been set (`0x0075AE5B..0x0075AE9A`). Every other VERA locomotor holds
-    /// the base slot, `ret 0x10` (`0x0055AC00`); Mech's (`0x005B01A0`) has no
-    /// VERA locomotor.
+    /// been set (`0x0075AE5B..0x0075AE9A`). Mech (0x005B01A0) stores all three supplied
+    /// coordinate words in its head. The other installed classes have the base no-op.
     pub(crate) fn foot_force_immediate_destination(
         &mut self,
         id: u64,
@@ -220,6 +237,19 @@ impl crate::sim::world::Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<(), String> {
+        if let Some(loco) = self
+            .substrate
+            .entities
+            .get_mut_if(id, |actor| {
+                actor.locomotor.as_ref().is_some_and(|loco| {
+                    loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Mech
+                })
+            })
+            .and_then(|actor| actor.locomotor.as_mut())
+        {
+            loco.set_step_head(coord.filter(|c| *c != super::foot_coordinate::NULL_COORD));
+            return Ok(());
+        }
         let Some(was_moving) = self
             .substrate
             .entities

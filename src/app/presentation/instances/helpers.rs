@@ -46,6 +46,8 @@ pub(crate) fn display_draw_ids(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TacticalEntityPurpose {
     Drawing,
+    /// Health bars and other class extras draw separately from the body.
+    Extras,
     /// The selectable list (`TacticalClass::AddSelectable @ 0x006D9EF0`).
     ScreenSelection,
 }
@@ -250,11 +252,18 @@ pub(crate) fn tactical_entity_admission(
     if (entity.category() == EntityCategory::Structure && !entity.lifecycle.object_alive())
         // Tactical6D9985..6D9996 skips the live building while its frozen
         // FoggedObjectClass is drawn by the separate4D1890 base pass.
-        || (purpose == TacticalEntityPurpose::Drawing
+        || (purpose != TacticalEntityPurpose::ScreenSelection
             && entity.category() == EntityCategory::Structure
             && !ignore_visibility
             && local_owner_id
                 .is_some_and(|viewer| fog.is_object_fogged(viewer, entity.stable_id())))
+        // BuildingClass::DrawIt (gamemd 0x0043D308..0x0043D316, RA2 game.exe
+        // 0x0043A658..0x0043A666) skips the body even for the lamp's owner.
+        || (purpose == TacticalEntityPurpose::Drawing
+            && entity.place.structure.is_some_and(|art| art.invisible_in_game))
+        // Unit DrawIt 73D30E skips both voxel and SHP bodies in a tube;
+        // Infantry DrawIt 5190DE branches to AddSelectable at 519609.
+        || (purpose == TacticalEntityPurpose::Drawing && entity.in_tube)
         || entity.lifecycle.in_limbo()
         || entity.passenger_role.is_inside_transport()
         // UnitClass::DrawIt returns before AddSelectable while the unit
@@ -1072,6 +1081,48 @@ mod tests {
     }
 
     #[test]
+    fn owned_invisible_lamp_keeps_its_light_without_drawing_its_body() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 43);
+        let owner = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        sim.resolve_type_handles(&rules);
+        for (x, name, draws_body) in [(10, "GALITE", true), (12, "INYELWLAMP", false)] {
+            let id = sim
+                .spawn_object(name, "Americans", x, 10, 0, &rules)
+                .unwrap();
+            let building = ObjectRecord::of_test_sim(&sim, &rules, id);
+            assert!(
+                sim.entities()
+                    .get(id)
+                    .unwrap()
+                    .seldom
+                    .discovery
+                    .owned_by_current_house()
+            );
+            let body = tactical_entity_admission(
+                TacticalEntityPurpose::Drawing,
+                &building,
+                Some(owner),
+                sim.fog(),
+                false,
+                sim.session().binary_frame(),
+                0,
+                building.seen.observer,
+            );
+            assert_eq!(body.is_some(), draws_body, "{name} building sprite");
+            assert!(
+                sim.lighting_sources().buildings()[&id].active,
+                "{name} light"
+            );
+        }
+    }
+
+    #[test]
     fn ordinary_building_admission_matches_executed_native_controls() {
         use crate::sim::combat::Health;
 
@@ -1162,6 +1213,52 @@ mod tests {
             compared, 6,
             "all ordinary visibility/lifecycle controls must run"
         );
+    }
+
+    #[test]
+    fn a_foot_in_a_tube_skips_its_body_and_keeps_its_selectable_entry() {
+        use crate::map::tube_facts::TubeId;
+        use crate::sim::components::DriveCoord;
+        use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
+
+        let fog = FogState::new(8, 8);
+        for (kind, category) in [
+            ("MTNK", EntityCategory::Unit),
+            ("E1", EntityCategory::Infantry),
+        ] {
+            let mut actor =
+                GameEntity::test_default_of_category(1, kind, "Americans", 2, 2, category);
+            actor.lifecycle.set_in_limbo_for_test(false);
+            for inside in [false, true] {
+                actor.low_bridge_tube_state = inside.then(|| {
+                    LowBridgeTubeMovementState::for_test(TubeId(0), 1, DriveCoord::cell(3, 2, 0))
+                });
+                let record = ObjectRecord::of_test(&actor);
+                let admitted = |purpose| {
+                    tactical_entity_admission(
+                        purpose,
+                        &record,
+                        Some(actor.owner()),
+                        &fog,
+                        true,
+                        0,
+                        0,
+                        Default::default(),
+                    )
+                    .is_some()
+                };
+                assert_eq!(
+                    admitted(TacticalEntityPurpose::Drawing),
+                    !inside,
+                    "{kind} body"
+                );
+                assert!(admitted(TacticalEntityPurpose::Extras), "{kind} extras");
+                assert!(
+                    admitted(TacticalEntityPurpose::ScreenSelection),
+                    "{kind} selection"
+                );
+            }
+        }
     }
 
     #[test]

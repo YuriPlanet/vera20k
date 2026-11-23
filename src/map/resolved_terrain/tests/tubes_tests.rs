@@ -32,8 +32,9 @@ fn deploy_tube_neighborhood_matches_original_cell_body() {
             source: TubeSource::AutoLowBridge,
         };
         let grid = ResolvedTerrainGrid::from_cells_with_tubes(16, 16, cells, vec![tube]);
+        let cells = NativeCellQuery::isolated(&grid);
         assert_eq!(
-            grid.is_tube_deploy_neighborhood((10, 10)),
+            cells.is_near_tube_northwest(cells.lookup((10, 10))),
             row["refused"].as_bool().unwrap(),
             "mask {mask}"
         );

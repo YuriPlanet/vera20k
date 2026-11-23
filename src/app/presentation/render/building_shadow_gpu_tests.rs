@@ -95,12 +95,17 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
                 rules
                     .animation_sequence(type_id)
                     .expect("retail Unit layout"),
-                entity.body_facing_byte(sim.session().binary_frame()),
+                crate::sim::animation::shp_vehicle_facing_slot(
+                    8,
+                    u16::from(entity.body_facing_byte(sim.session().binary_frame())) << 8,
+                    false,
+                    false,
+                ),
                 entity.body_frame_counter.get(),
                 entity.unit_firing_counter.get(),
                 entity.unit_death_counter.get(),
                 crate::sim::movement::motion_query::is_moving(entity) == Some(true),
-                false,
+                entity.foot_occupation_enabled(),
             )
             .expect("admitted retail Unit body frame"),
         )

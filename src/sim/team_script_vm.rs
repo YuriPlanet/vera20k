@@ -1807,6 +1807,8 @@ mod recruit_oracle_tests;
 pub(crate) mod reinforcements_tests;
 #[cfg(all(test, tests_sim_t_z))]
 mod type_conversion_tests;
+#[cfg(all(test, tests_sim_t_z))]
+mod vera_only_distance_tests;
 
 /// Hash `count` member ids as the `Vec<u64>` they were once copied into
 /// hashes: the count, then every id's bytes in one write. A team of up to

@@ -39,10 +39,6 @@
 //!   (`publish_fresh_speed`); native reads the shared dummy Cell's land row.
 //!   Trigger: a Foot on map row or column 0 heading off the map. Frequency:
 //!   none in play (the playfield keeps movers inside). Risk: none.
-//! - A train (`IsTrain=`, Type+C94, set by no retail type) extends its last
-//!   path word with Find_Path's append form (`0x4B3F07`), which keeps the
-//!   queue and appends at most 24 - prefix words (`0x4D3E82`). VERA's route
-//!   install replaces the queue, so a train takes the ordinary request.
 //!
 //! A tube word at the path head returns here (`0x4B3298`, and `0x4B2F45`
 //! after a found route); the Process_Track after it enters the tube
@@ -188,10 +184,11 @@ impl Simulation {
                 .expect("same Process_Movement owner");
             clear_track_head(actor);
             if mission == Some(MissionType::Move) {
-                return Ok(self.unit_enter_idle_mode(
+                return Ok(crate::sim::world::enter_idle_mode(
+                    self,
                     id,
                     call.rules,
-                    false,
+                    Some(call.rules.overlay_registry()),
                     &mut call.frame_effects,
                 ));
             }
@@ -594,7 +591,7 @@ impl Simulation {
             return Ok(false);
         }
         //4B3A3E..4B3A56: SetDestination(NULL, 1).
-        self.set_unit_null_destination(
+        self.assign_null_destination(
             id,
             rules,
             Some(rules.overlay_registry()),
@@ -647,8 +644,10 @@ impl Simulation {
                 location.z.wrapping_sub(destination.z),
             );
             if distance > 0x200 {
-                //Find_Path(cell(destination), IsTrain, 0); see the train residual.
-                let request = self.track_path_request(call, destination, 0)?;
+                // Drive 0x4B3EF8..0x4B3F37 / Ship 0x6A3547..0x6A3586: IsTrain
+                // supplies Find_Path's one-word prefix on this call only.
+                let mut request = self.track_path_request(call, destination, 0)?;
+                request.retain_head = self.track_object(id, rules)?.is_train;
                 let found = self.foot_find_path(
                     &request,
                     rules,
@@ -662,7 +661,7 @@ impl Simulation {
                     }
                     //4B3F58..4B3F6E: an unreachable live destination clears.
                     if !self.foot_path_zone_precheck(id, self.live_track_destination(id), rules)? {
-                        self.set_unit_null_destination(
+                        self.assign_null_destination(
                             id,
                             rules,
                             Some(rules.overlay_registry()),
@@ -1471,7 +1470,7 @@ impl crate::sim::world::ObjectSubstrate {
         }
     }
     /// Foot+5E0 = -1 on the live path word.
-    fn clear_path_head(&mut self, id: u64) {
+    pub(super) fn clear_path_head(&mut self, id: u64) {
         if let Some(actor) = self.entities.get_mut(id) {
             actor.clear_live_path_head();
         }
@@ -1526,6 +1525,89 @@ pub(super) fn fresh_heading_ready(body_facing: u16, direction: u8) -> bool {
 mod tests {
     use super::*;
     use crate::sim::mission::MissionId;
+
+    #[test]
+    fn train_extends_its_remaining_head_toward_the_original_destination() {
+        let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[VehicleTypes]\n0=TRAIN\n[TRAIN]\nStrength=400\nSpeed=5\nSpeedType=Track\n\
+             MovementZone=Normal\nIsTrain=yes\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+        );
+        let start = (15, 15);
+        let goal = (15, 21);
+        let id = sim
+            .spawn_object("TRAIN", "Americans", start.0, start.1, 64, &rules)
+            .unwrap();
+        let mut effects = FrameEffects::default();
+        assert!(sim.set_unit_destination(
+            id,
+            NavTargetRef::cell(goal.0, goal.1),
+            &rules,
+            true,
+            &mut effects
+        ));
+        let frame = sim.session.binary_frame();
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        actor.body_facing.snap(0x4000, frame);
+        actor
+            .navigation
+            .path_replay_mut()
+            .set_directions_for_test(vec![2]); // east
+        sim.run_track_process_movement(
+            id,
+            TrackFamily::Drive,
+            ProcessMovementArgs::OUTER,
+            &rules,
+            &mut effects,
+        )
+        .unwrap();
+
+        let queue = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .navigation
+            .path_replay();
+        assert_eq!(
+            queue.directions().first(),
+            Some(&2),
+            "retain the unpaid east step"
+        );
+        assert_eq!(
+            queue.installed_cells(start).last(),
+            Some(&goal),
+            "search from the end of that step"
+        );
+    }
+
+    /// Unit73F865 supplies code 6 for a stationary ally. Find_Path4D3AA5
+    /// keeps that distant occupied destination only for the train.
+    #[test]
+    fn train_keeps_the_distant_cell_occupied_by_a_parked_ally() {
+        let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[VehicleTypes]\n0=ENGINE\n1=TRUCK\n\
+             [ENGINE]\nStrength=400\nSpeed=5\nSpeedType=Track\nMovementZone=Normal\n\
+             IsTrain=yes\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+             [TRUCK]\nStrength=400\nSpeed=5\nSpeedType=Track\nMovementZone=Normal\n\
+             Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+        );
+        let destination = DriveCoord::cell(19, 15, 0);
+        sim.spawn_object("TRUCK", "Americans", 19, 15, 0, &rules)
+            .unwrap();
+        for (kind, y, keeps_goal) in [("ENGINE", 15, true), ("TRUCK", 16, false)] {
+            let mover = sim
+                .spawn_object(kind, "Americans", 15, y, 0, &rules)
+                .unwrap();
+            let answer = sim
+                .find_path_target_answer(mover, destination, &rules)
+                .unwrap();
+            assert_eq!(answer, Some(6), "{kind} encounters the stationary ally");
+            let redirect = sim
+                .find_path_redirect(mover, destination, answer.unwrap(), &rules)
+                .unwrap();
+            assert_eq!(redirect.is_none(), keeps_goal, "{kind}: {redirect:?}");
+        }
+    }
 
     #[test]
     fn terrain_blocker_response_preserves_object_target_and_move_archive() {

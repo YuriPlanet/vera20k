@@ -124,6 +124,14 @@ impl PathsConfig {
         self.settings_dir.join("MapPreviews")
     }
 
+    /// VERA's folder of player-supplied background music. Files here are
+    /// auto-indexed for in-match theme playback when `musics/music.ini`
+    /// enables it (`audio::custom_music`). Kept beside VERA.INI, never in the
+    /// retail installation, like [`Self::downloaded_maps_dir`].
+    pub fn musics_dir(&self) -> PathBuf {
+        self.settings_dir.join("musics")
+    }
+
     fn separate_settings_from_assets(&mut self) -> Result<()> {
         if resolved_directory(&self.settings_dir).starts_with(resolved_directory(&self.ra2_dir)) {
             self.settings_dir = default_settings_dir()?;

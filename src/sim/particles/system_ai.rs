@@ -444,13 +444,7 @@ mod tests {
         assert_eq!(sim.main_rng.logical_state(), old_rng);
 
         let unknown_id = rules.p_type_id_by_name("U").unwrap();
-        let mut unknown = Particle::new(
-            unknown_id,
-            origin,
-            origin,
-            rules.particle_type(unknown_id),
-            &mut sim,
-        );
+        let mut unknown = Particle::new(unknown_id, origin, origin, &rules, &mut sim);
         let old_rng = sim.main_rng.logical_state();
         tick_particle(&mut unknown, &mut sim, &rules, None, None);
         assert!(unknown.marked_for_deletion());
@@ -463,7 +457,7 @@ mod tests {
             fire_id,
             origin,
             IVec3::new(128, 1024, 100),
-            rules.particle_type(fire_id),
+            &rules,
             &mut sim,
         );
         assert_eq!(fire.draw_frame(rules.particle_type(fire_id)), 9);
@@ -509,7 +503,7 @@ mod tests {
             kind,
             IVec3::new(5248, 5248, 0),
             IVec3::ZERO,
-            rules.particle_type(kind),
+            &rules,
             &mut sim,
         );
         let system = sim.substrate.particle_systems.get_mut(host).unwrap();
@@ -575,7 +569,7 @@ mod tests {
             kind,
             IVec3::new(at.x, at.y, at.z),
             IVec3::ZERO,
-            rules.particle_type(kind),
+            &rules,
             &mut sim,
         );
         let system = sim.substrate.particle_systems.get_mut(host).unwrap();
@@ -652,7 +646,7 @@ mod tests {
                         kind,
                         IVec3::new(i32::from(x) * 256 + 128, 5248, 0),
                         IVec3::ZERO,
-                        rules.particle_type(kind),
+                        &rules,
                         &mut sim,
                     );
                     sim.substrate

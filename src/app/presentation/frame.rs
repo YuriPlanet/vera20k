@@ -81,6 +81,13 @@ pub(crate) struct ObjectRecord {
     pub(crate) body_frame_counter: crate::sim::animation::BodyFrameCounter,
     pub(crate) unit_firing_counter: crate::sim::animation::UnitFiringCounter,
     pub(crate) unit_death_counter: crate::sim::animation::UnitDeathCounter,
+    /// The Foot occupation enable (`+0x6B6`), which a still SHP Unit's body
+    /// image reads (`0x0073C6D5`).
+    pub(crate) foot_occupation_enabled: bool,
+    /// IsOnCarryall (`+0x424`): `UnitClass::DrawIt` draws a carried Unit's
+    /// body lower, and its SHP shadows higher, by
+    /// [`crate::app::presentation::instances::CARRIED_DROP_PIXELS`].
+    pub(crate) on_carryall: bool,
     pub(crate) turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
     pub(crate) health: crate::sim::combat::Health,
     pub(crate) veterancy: crate::sim::combat::veterancy::Veterancy,
@@ -88,6 +95,7 @@ pub(crate) struct ObjectRecord {
     pub(crate) deactivated: Deactivated,
     pub(crate) repairing: Repairing,
     pub(crate) lifecycle: crate::sim::world::ObjectLifecycle,
+    pub(crate) in_tube: bool,
     pub(crate) locomotor: Option<LocomotorView>,
     pub(crate) navigation: Navigation,
     pub(crate) last_fire_frame: crate::sim::combat::world_fire::LastFireFrame,
@@ -125,6 +133,12 @@ pub(crate) struct ObjectRecord {
     answers: Answers,
     /// [`RenderPose::read`] at the committed binary frame.
     pub(crate) pose: RenderPose,
+    /// PrimaryFacing (`+0x388`) at the committed binary frame as an SHP
+    /// Unit's body draw reads it: through `FacingClass::Current @ 0x004C93D0`
+    /// (called at `0x0073C636`), or under Ares through its own copy
+    /// (`UnitClass_DrawSHP_FacingsA`, Ares.dll `0x10048064..0x10048102`).
+    /// The pose's `body` is SecondaryFacing for a Fly locomotor.
+    pub(crate) shp_body_facing: u16,
     /// Its tether redraws (`instances::tether_redraw`).
     pub(crate) tether_draw: TetherDraw,
     /// What placing it reads of the world.
@@ -373,6 +387,7 @@ pub(crate) struct Contact {
 /// A Structure's `sim::building_art` answers for its own type.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StructureArt {
+    pub(crate) invisible_in_game: bool,
     /// `building_image` without and with a Buildup.
     pub(crate) image: [crate::sim::building_art::BuildingImage; 2],
     /// `current_body_frame` at its type's tech level.
@@ -396,6 +411,7 @@ impl StructureArt {
             .gate
             .then(|| art.map_or(9, |entry| entry.building_gate_stages));
         Some(Self {
+            invisible_in_game: object.invisible_in_game,
             image: [
                 building_art::building_image(entity, false),
                 building_art::building_image(entity, true),
@@ -617,6 +633,8 @@ impl ObjectRecord {
             body_frame_counter: entity.body_frame_counter,
             unit_firing_counter: entity.unit_firing_counter,
             unit_death_counter: entity.unit_death_counter,
+            foot_occupation_enabled: entity.foot_occupation_enabled(),
+            on_carryall: entity.is_on_carryall(),
             turret_anim_frame: entity.turret_anim_frame,
             health: entity.health,
             veterancy: entity.veterancy,
@@ -630,6 +648,7 @@ impl ObjectRecord {
                 on: entity.building.repairing.is_on(),
             },
             lifecycle: entity.lifecycle,
+            in_tube: entity.low_bridge_tube_state.is_some(),
             locomotor: entity.locomotor.as_ref().map(|locomotor| {
                 LocomotorView::of(locomotor, || {
                     let type_name = at.sim.interner().resolve(entity.type_ref());
@@ -691,6 +710,11 @@ impl ObjectRecord {
             hud,
             scene,
             pose,
+            shp_body_facing: if at.rules().ares() {
+                entity.body_facing_current_ares(at.binary_frame)
+            } else {
+                entity.body_facing_current(at.binary_frame)
+            },
             tether_draw,
         }
     }

@@ -103,12 +103,14 @@ lang: zh-CN
 
 | 分页 | 设置项【存储】 |
 |---|---|
-| **显示** | 缩放【[VERA] Zoom】、显示器【[VERA] Display】、图形 API【[VERA] GraphicsAPI】*(仅 Windows，下次启动生效)*、色觉辅助【[VERA] ColorVisionMode】、队伍颜色强度 1–10【[VERA] HouseColorStrength】*(对局中锁定)*、视觉细节（低/高）【[Options] DetailLevel】、全屏【[VERA] FullScreen】、垂直同步【[VERA] VSync】*(网页版没有)*、原版 4:3 比例【[VERA] OriginalShape】、性能统计 *(不保存)* |
+| **显示** | 缩放【[VERA] Zoom】、显示器【[VERA] Display】、图形 API【[VERA] GraphicsAPI】*(仅 Windows，下次启动生效)*、色觉辅助【[VERA] ColorVisionMode】、队伍颜色强度 1–10【[VERA] HouseColorStrength】*(对局中锁定)*、视觉细节（低/高）【[Options] DetailLevel】、全屏【[VERA] FullScreen】、垂直同步【[VERA] VSync】*(网页版没有)*、战场高刷新率【[VERA] HighRefreshRateInBattle】*(网页版没有)*、原版 4:3 比例【[VERA] OriginalShape】、性能统计 *(不保存)* |
 | **游戏** | 难度【[Options] Difficulty】*(对局中锁定)*、Shift 点击批量排队【[VERA] ShiftQueue】、Building Production Queue（建筑生产队列）【[VERA] BuildingProductionQueue】*(下一局生效)*、自动维修【[VERA] AutoRepair】、Ares（自动/开/关）【[VERA] Ares】*(下次启动生效)*、自定义结局横幅 / 结算画面 / 结局动画【[VERA] CustomEndGameBanner / Score / Movie】、指挥官片段【[VERA] CommanderFeedback】 |
 | **界面** | 侧边栏大小（标准/大/特大）【[VERA] Sidebar】、建造列表列数 2–5【[VERA] SidebarColumns】、高清雷达【[VERA] HdRadar】、平滑侧边栏【[VERA] SmoothSidebar】、生命条（原版/所有单位/所有未满血单位）【[VERA] HealthBars】、工具提示【[Options] ToolTips】、目标线【[Options] UnitActionLines】、显示隐藏物体【[Options] ShowHidden】、精简超级武器计时器【[VERA] CompactSuperTimers】、按队伍合并超级武器计时器【[VERA] GroupedSuperTimers】、详细 EVA 文字【[VERA] DetailedEvaText】、Convenience Help（便利提示）【[VERA] ConvenienceHelp】；按钮：编辑布局 *(只在对局中可用)* |
 | **音频** | 音乐音量【[Audio] ScoreVolume】、音效音量【[Audio] SoundVolume】、语音音量【[Audio] VoiceVolume】 |
 | **操作** | 滚动速度【[Options] ScrollRate】、右键下令【[VERA] RightClickOrders】、小地图信标【[VERA] MinimapBeacons】、鼠标滚轮缩放【[VERA] MouseWheelZoom】、鼠标锁定在窗口内【[VERA] LockCursor】 |
 | **常规** | 语言【[VERA] Language】、原版 YR 风格【[VERA] YROriginalStyle】、平滑在线菜单【[VERA] SmoothOnlineMenus】、高清地图预览【[VERA] HdMapPreviews】*(网页版没有)*、VERA 图标【[VERA] VeraIcon】、跳过片头【[VERA] SkipIntro】*(下次启动生效)*、显示字符串键【[VERA] ShowStringKeys】；按钮：检查更新 *(对局中锁定，网页版没有)* |
+
+“战场高刷新率”默认关闭。可在显示页开启，也可在 `VERA.INI` 的 `[VERA]` 节中设置 `HighRefreshRateInBattle=yes`。无论垂直同步是否开启，只要绘制速度足够快，战场帧率就能达到显示器的刷新率。单位移动会更流畅，但显卡负载可能增加。
 
 在 Windows 上，显示页的“图形 API”列表或 `VERA.INI` 中 `[VERA]` 节的 `GraphicsAPI=` 决定下次启动使用的渲染器：`opengl` 以 OpenGL 兼容模式启动，`vulkan` 或 `dx12` 只请求该 API。如果指定的 API 无法启动，游戏会弹窗说明，并改用另一个 API 启动，同时跳过此前启动失败过的 API。默认值 `auto` 让游戏自动选择。如果 Vulkan 或 DirectX 12 在启动时卡住或丢失图形设备，下次自动启动时游戏会尝试另一个 API，并在与 `VERA.INI` 同目录的 `GraphicsLostAtStart.txt` 中记录失败原因。如果两个 API 都找不到硬件显卡，游戏会尝试 OpenGL。环境变量 `WGPU_BACKEND` 优先于上述设置。上面的语言列表会写入 `[VERA]` 节的 `Language=`，也可以手动修改。
 

@@ -1,20 +1,18 @@
 //! VERA's Mods page, opened by the Mods button of Options; gamemd has none.
 //! A family page shaped like the movie list `0x129`: the mods in the `Mods`
 //! folder with the original game first, what the selected one says of itself,
-//! and Use This Mod, Add Mod, Open Mods Folder, Check Files, New Mod and Back
+//! and Use This Mod, Check Files, New Mod, Add Mod, Open Mods Folder and Back
 //! (docs/modding.md).
 //!
 //! The rows and the choice belong to `app::mods`; this is the page's shape.
 
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale};
-use crate::ui::shell::list::ROW_HEIGHT;
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use vera20k_gui::shell::list::ROW_HEIGHT;
 
 /// Not a retail dialog: their ids stop near `0xBC7`.
-pub(crate) const DIALOG: DialogId = DialogId(0x7E02);
-/// The list of mods: a hover target for status help, as `0x744` is.
-pub(crate) const LIST: u16 = 0x7E30;
+pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x7E02);
 pub(crate) const USE: u16 = 0x7E31;
 pub(crate) const OPEN_FOLDER: u16 = 0x7E32;
 pub(crate) const BACK: u16 = 0x7E33;
@@ -34,50 +32,19 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DIALOG,
     title_key: TITLE_KEY,
     stacked: &[
-        MenuPageButtonSpec {
-            id: USE,
-            dlu_top: 122,
-            csf_key: "VERA:ModUse",
-            tooltip_key: "VERA:ModUseHelp",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: OPEN_FOLDER,
-            dlu_top: 149,
-            csf_key: "VERA:ModsOpenFolder",
-            tooltip_key: "VERA:ModsOpenFolderHelp",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: CHECK,
-            dlu_top: 176,
-            csf_key: "VERA:ModCheck",
-            tooltip_key: "VERA:ModCheckHelp",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: NEW,
-            dlu_top: 203,
-            csf_key: "VERA:ModNew",
-            tooltip_key: "VERA:ModNewHelp",
-            result: None,
-        },
+        MenuPageButtonSpec::new(USE, 122, "VERA:ModUse", "VERA:ModUseHelp"),
+        MenuPageButtonSpec::new(CHECK, 149, "VERA:ModCheck", "VERA:ModCheckHelp"),
+        MenuPageButtonSpec::new(NEW, 176, "VERA:ModNew", "VERA:ModNewHelp"),
         #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-        MenuPageButtonSpec {
-            id: ADD,
-            dlu_top: 230,
-            csf_key: "VERA:ModAdd",
-            tooltip_key: "VERA:ModAddHelp",
-            result: None,
-        },
+        MenuPageButtonSpec::new(ADD, 203, "VERA:ModAdd", "VERA:ModAddHelp"),
+        MenuPageButtonSpec::new(
+            OPEN_FOLDER,
+            230,
+            "VERA:ModsOpenFolder",
+            "VERA:ModsOpenFolderHelp",
+        ),
     ],
-    back: MenuPageButtonSpec {
-        id: BACK,
-        dlu_top: 346,
-        csf_key: "GUI:Back",
-        tooltip_key: "STT:MsnDltButtonBack",
-        result: Some(-1),
-    },
+    back: MenuPageButtonSpec::new(BACK, 346, "GUI:Back", "STT:MsnDltButtonBack").returning(-1),
 };
 
 /// Where the page's own parts go, left of the right panel.
@@ -145,29 +112,23 @@ pub(crate) fn compute_layout(screen_w: u32, screen_h: u32) -> ModsLayout {
     }
 }
 
-/// The responsive variant of [`compute_layout`]: the 800x600 page scaled to
-/// fit the window, keeping its shape. Rows grow with the scale, so the list
-/// shows the rows it shows at 800x600.
-pub(crate) fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> ModsLayout {
-    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    let base = compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32);
-    ModsLayout {
-        page: menu_page::compute_responsive_layout(&PAGE, screen_w, screen_h),
-        prompt: base.prompt.scaled_rects(scale),
-        list: base.list.scaled_rects(scale),
-        details: base.details.scaled_rects(scale),
-        name: base.name.scaled_rects(scale),
-        state: base.state.scaled_rects(scale),
-        author: base.author.scaled_rects(scale),
-        about: base.about.scaled_rects(scale),
-        terms: base.terms.scaled_rects(scale),
-    }
-}
+vera20k_gui::scaled_rects!(ModsLayout {
+    page,
+    prompt,
+    list,
+    details,
+    name,
+    state,
+    author,
+    about,
+    terms
+});
 
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
-    use crate::ui::shell::list::{ListBoxState, ListMetrics};
+    use crate::ui::shell::geom::fit_window;
+    use vera20k_gui::shell::list::{ListMetrics, list_box_geometry};
 
     /// The page's own parts stay left of the right panel and above the lower
     /// strip at both retail sizes, one under the other, and the list shows
@@ -209,15 +170,14 @@ mod tests {
                 line = rect.y + rect.h;
             }
             assert!(line < layout.details.y + layout.details.h);
-            let list = ListBoxState::new(vec![(); 30], None);
             assert_eq!(
-                list.geometry(layout.list, ListMetrics::RETAIL).visible_rows,
+                list_box_geometry(layout.list, 30, 0, ListMetrics::RETAIL).visible_rows,
                 rows
             );
         }
         assert_eq!(
             compute_layout(800, 600).page.button_rect(OPEN_FOLDER),
-            Some(RectPx::new(644, 241, 156, 42))
+            Some(RectPx::new(644, 367, 156, 42))
         );
     }
 
@@ -226,11 +186,10 @@ mod tests {
     #[test]
     fn a_fitted_window_keeps_the_lists_rows() {
         for (width, height) in [(640, 480), (1280, 720), (1366, 768), (1920, 1080)] {
-            let layout = compute_responsive_layout(width, height);
-            let list = ListBoxState::new(vec![(); 30], None);
+            let layout = fit_window(width, height, compute_layout);
             let metrics = ListMetrics::scaled(layout.page.scale);
             assert_eq!(
-                list.geometry(layout.list, metrics).visible_rows,
+                list_box_geometry(layout.list, 30, 0, metrics).visible_rows,
                 9,
                 "{width}x{height}"
             );

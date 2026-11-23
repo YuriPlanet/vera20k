@@ -388,7 +388,7 @@ fn threat_range(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
 /// query; otherwise Object5F6A70 samples +4C then raw Object+9C Location.
 fn should_bridge(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
     let actor = sim.substrate.entities.get(id);
-    if actor.is_some_and(|a| a.category().is_foot() && a.low_bridge_tube_state.is_some()) {
+    if actor.is_some_and(|a| a.category().is_foot() && a.active_tube().is_some()) {
         return false;
     }
     let navigation = sim

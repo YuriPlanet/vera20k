@@ -239,14 +239,23 @@ fn paced_room_with(
     key: &SecretKey,
     pacing: CertificatePacing,
 ) -> (RelayServer, ClientSession, ClientSession) {
+    paced_room_for(
+        key,
+        OrderingCertificate {
+            pacing,
+            ..OrderingCertificate::parse(&certificate(key, 3, 1400)).unwrap()
+        },
+    )
+}
+
+/// Sources 0 and 1 connected and configured for ordering under `certificate`.
+fn paced_room_for(
+    key: &SecretKey,
+    certificate: OrderingCertificate,
+) -> (RelayServer, ClientSession, ClientSession) {
     let mut server = RelayServer::new(key.clone(), 2);
     let (mut first, mut second) = (client(key, 0), client(key, 1));
-    let cert = OrderingCertificate {
-        pacing,
-        ..OrderingCertificate::parse(&certificate(key, 3, 1400)).unwrap()
-    }
-    .sign(key)
-    .unwrap();
+    let cert = certificate.sign(key).unwrap();
     for peer in [&mut first, &mut second] {
         connect(&mut server, peer, 0);
         configure(&mut server, peer, &cert, 0);
@@ -878,7 +887,7 @@ fn a_vo2c_certificate_signs_its_pacing_flag_under_its_own_domain() {
     );
     // A VO1C body relabelled VO2C does not verify, and unknown flags fail.
     let mut relabelled = on.clone();
-    relabelled[34] = 4;
+    relabelled[34] = 8;
     assert!(matches!(
         OrderingCertificate::parse(&relabelled),
         Err(RelayError::Malformed)
@@ -2372,6 +2381,7 @@ fn accepted_future_batches_deduplicate_and_renewal_recovers_a_lost_ack_from_own_
             [89; 32],
         )
         .unwrap();
+    assert!(candidate.ordering.is_none());
     connect(&mut server, &mut candidate, 300);
     candidate.adopt_ordering_from(&mut first).unwrap();
     assert!(first.ordering.is_none());

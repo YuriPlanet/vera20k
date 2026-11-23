@@ -103,9 +103,9 @@ pub(crate) fn observer_entries(
     let Some(rules) = state.rules() else {
         return Vec::new();
     };
-    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+    let computer = state.csf_text("TXT_COMPUTER");
     let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer);
-    let text = |key| crate::app::frontend::shell_pass::resolve_csf(state, key);
+    let text = |key| state.csf_text(key);
     let online = sim.session().game_mode() == ScenarioGameMode::Wol;
     houses
         .iter()
@@ -115,7 +115,7 @@ pub(crate) fn observer_entries(
             let country_name = country.map_or("", |id| sim.interner().resolve(id));
             let mut lines = Vec::with_capacity(4);
             if online {
-                lines.push(text("TXT_UNRANKED").into_owned());
+                lines.push(text("TXT_UNRANKED"));
             }
             for (key, value) in [
                 ("GUI:ObsKills", listed.kills),

@@ -74,7 +74,7 @@ first, and the game folder is never changed.
 | What you can put here | What it does |
 | --- | --- |
 | A folder for your mod, inside `Mods` | Holds the mod's files. See [The Mods folder](#the-mods-folder). |
-| A `Maps` folder of `.yrm` files | Adds your maps to the map list, with or without a mod. Create the folder if it isn't there. Maps you download online go here too. |
+| A `Maps` folder of `.yrm`, `.map` or `.mpr` files | Adds your maps to Skirmish. Mods with their own client catalog use that catalog. Create the folder if it isn't there. Maps you download online go here too. |
 | `vera20k.<language>.ini` | Adds a language, or changes the game's text. See [translating](../src/i18n/README.md). |
 
 `config.toml` is here too. It says where the game folder is and which mod to play; the
@@ -116,6 +116,12 @@ You can also install a mod manually.
 The game then reads the mod's files as if you had copied them on top of the game folder.
 A mod made to be copied into the game folder works the same from its own folder.
 
+A classic Red Alert 2 mod can keep its original filenames. When the selected mod
+supplies the RA2 rules, art, AI or multiplayer mode files, VERA uses the RA2
+file family for Skirmish. A mod can replace just part of that family. For
+example, one that supplies its own `rules.ini` and `mpmodes.ini` can use the
+installed game's `ai.ini`. See [how VERA chooses the files](ini-roots.md).
+
 With **No mod** selected, an `ares.mix` already in the game folder is ignored, unless
 the [Ares setting](ares.md#the-ares-setting) is On; set to Off, no `ares.mix` is used.
 A selected mod can use that copy or provide its own, which takes precedence.
@@ -128,6 +134,9 @@ Other changed rules and terrain files still need to match between players.
 A mod is an external data package. VERA20k reads its files and never runs its
 executables, DLLs or launcher. A manifest selects resources and supported extensions;
 it does not install new engine code.
+
+A mod's own terms still apply. Some authors don't allow their mod in other engines:
+check a mod's terms before you use it here. VERA20k doesn't support such mods.
 
 | What you can put in a mod's folder | What it does |
 | --- | --- |
@@ -244,8 +253,8 @@ The folder name is only the choice saved by the menu. Its loading rules come fro
 
 An extracted CnCNet client folder can go straight into `Mods`. Put the folder
 containing `Resources/ClientDefinitions.ini` and the game archives there, then
-choose it as above. VERA uses its `MPMapsPath` catalog and can recognize one
-complete renamed Rules, Art and AI family in its numbered MIX files. A folder
+choose it as above. VERA uses its `MPMapsPath` catalog. A client whose files
+use other names declares them in `mod.ini`; VERA doesn't guess them. A folder
 that ships the Ares DLL and its injection list uses VERA's own Ares reader.
 VERA also uses the client theme's `splashScreen.png` and skirmish lobby
 background when present. It reads the configured `BackgroundTexture` from
@@ -256,7 +265,7 @@ This import opens offline Skirmish with the supported maps and modes. It applies
 their plain mode INIs and uses VERA's game options. Client-only forced settings,
 random maps, campaigns specific to the client, and multiplayer through the
 imported catalog are outside this path. An explicit loading section in
-`mod.ini` takes precedence over discovery.
+`mod.ini` takes precedence over the client folder's files.
 
 The menu keeps your choice in `config.toml`, as a `mod` line under `[paths]`, and makes
 the file beside the program if there is none yet. You can write the line yourself:
@@ -413,8 +422,14 @@ maps. The game's log says which files it adds.
 
 ### Add a map
 
-Give the map a `.yrm` ending and put it in the `Maps` folder, or in your mod's folder if
-the map needs the mod. As in the original, a map can change any rule for that match.
+Put your `.yrm`, `.map` or `.mpr` file in VERA20k's `Maps` folder and restart the
+game to find it in Skirmish. Skirmish also finds loose multiplayer `.mpr` and
+`.yrm` files directly in the game folder or the selected mod's folder. Put a
+map that needs a particular mod in that mod's folder. As in the original, a
+map can change any rule for that match.
+
+New map exports and downloads use `.map`. If you already have an identical
+copy, VERA20k reuses it under its existing name, including `.yrm` and `.mpr` files.
 
 VERA20k adds two things. Open the map in a text editor to set them:
 

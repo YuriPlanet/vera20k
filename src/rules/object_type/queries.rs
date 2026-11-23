@@ -390,6 +390,13 @@ impl ObjectType {
         self.no_spawn_alt_model.as_deref()
     }
 
+    /// `SmallVisceroid=` or `LargeVisceroid=` of a VehicleType (UnitType
+    /// `+0xE18`/`+0xE19`); the SHP Unit shadow refuses both
+    /// (`0x00705FF3..0x00706007`, and Ares' `UnitClass_DrawSHP_DrawShadowEarlier`).
+    pub fn visceroid(&self) -> bool {
+        self.small_visceroid || self.large_visceroid
+    }
+
     /// Read-only projection of the retained WaterImage pointer.
     pub fn water_image(&self) -> Option<&str> {
         self.water_image.as_deref()
@@ -948,6 +955,23 @@ impl ObjectType {
             weapon_range
                 .filter(|range| *range > 0)
                 .map_or(0, |range| range / 256)
+        }
+    }
+
+    /// Ares ObjectClass_DrawRadialIndicator (10049A70, hook 0x0041BE80): the
+    /// ring radius in cells of a Techno that is no Building. A set
+    /// RadialIndicatorRadius wins, a GapGenerator shows GapRadiusInCells, and
+    /// any other type shows its current weapon's range (vt+0x3F4) in whole
+    /// cells (`Range >> 8`). Zero or less draws nothing.
+    pub fn ares_techno_radial_radius(&self, weapon_range: Option<i32>) -> i32 {
+        if let Some(radius) = self.techno_combat.presentation().radial_indicator_radius() {
+            radius
+        } else if self.gap_generator {
+            self.gap_radius_in_cells
+        } else {
+            weapon_range
+                .filter(|range| *range > 0)
+                .map_or(0, |range| range >> 8)
         }
     }
 

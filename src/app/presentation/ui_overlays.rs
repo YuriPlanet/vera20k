@@ -58,6 +58,9 @@ struct HudMore {
     scale_pips: Vec<ScalePipDraw>,
     /// `MindControlLink::controller`.
     controller: Option<u64>,
+    /// `ObjectType::ares_techno_radial_radius` of an online non-Building
+    /// whose type has a radial indicator, in an Ares game; 0 otherwise.
+    radial_radius: i32,
     /// `Simulation::capture_link_coordinates`, for a capture manager.
     capture_links: Vec<crate::sim::capture_manager::CaptureLinkCoordinates>,
     bomb: Option<HudBomb>,
@@ -79,6 +82,7 @@ impl HudMore {
     fn is_empty(&self) -> bool {
         self.scale_pips.is_empty()
             && self.controller.is_none()
+            && self.radial_radius == 0
             && self.capture_links.is_empty()
             && self.bomb.is_none()
             && self.digital_values.is_empty()
@@ -153,6 +157,28 @@ impl HudFacts {
             // pip rows gets an empty list, which allocates nothing.
             scale_pips: scale_pip_rows(sim, entity, rules),
             controller: entity.seldom.mind_control.controller(),
+            // Ares ObjectClass_DrawRadialIndicator (10049A70, hook
+            // 0x0041BE80; the stock body is empty and Buildings override
+            // it): a Deactivated Techno draws none.
+            radial_radius: object
+                .filter(|object| {
+                    rules.ares()
+                        && entity.category() != EntityCategory::Structure
+                        && object.has_radial_indicator()
+                        && !entity.deactivated.is_offline()
+                })
+                .map_or(0, |object| {
+                    object.ares_techno_radial_radius(
+                        crate::sim::combat::combat_weapon::current_weapon(
+                            entity,
+                            object,
+                            sim.entities(),
+                            rules,
+                            sim.interner(),
+                        )
+                        .map(|weapon| weapon.range_leptons),
+                    )
+                }),
             capture_links: if entity.capture_manager.is_some() {
                 sim.capture_link_coordinates(id, rules)
             } else {
@@ -237,6 +263,12 @@ impl HudFacts {
     /// Its capture manager's link coordinates.
     pub(crate) fn capture_links(&self) -> &[crate::sim::capture_manager::CaptureLinkCoordinates] {
         self.more().map_or(&[], |more| &more.capture_links)
+    }
+
+    /// The Ares radial-ring radius in cells of an object that is no
+    /// Structure; 0 when it draws none.
+    pub(crate) fn ares_radial_radius(&self) -> i32 {
+        self.more().map_or(0, |more| more.radial_radius)
     }
 
     /// A Structure's radial-ring range; 0 for other objects.
@@ -594,7 +626,7 @@ fn admitted_techno_observer(
     // `observer_draw_context` for the frame's local player.
     let observer = entity.seen.observer;
     crate::app::presentation::instances::tactical_entity_admission(
-        crate::app::presentation::instances::TacticalEntityPurpose::Drawing,
+        crate::app::presentation::instances::TacticalEntityPurpose::Extras,
         entity,
         local_owner_id,
         sim.fog(),

@@ -863,7 +863,7 @@ impl Simulation {
                     source_nav,
                     source,
                     actor.on_bridge(),
-                    actor.low_bridge_tube_state.is_some(),
+                    actor.active_tube().is_some(),
                 )?;
                 if self.estimate_zone_cost(
                     id,
@@ -1248,7 +1248,7 @@ impl Simulation {
             source,
             super::ground_pose::position_world_coord(&actor.position),
             actor.on_bridge(),
-            actor.low_bridge_tube_state.is_some(),
+            actor.active_tube().is_some(),
         )?;
         let source = coord_cell(source);
         let zone = self

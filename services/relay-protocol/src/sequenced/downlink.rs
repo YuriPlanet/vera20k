@@ -230,7 +230,7 @@ impl RelayServer {
     /// repeats and a tail probe from the repeat budget; an offline reader
     /// gets nothing.
     pub fn drain_ordering_push(&mut self, now_ms: u64, now: u64) -> Vec<ForwardDatagram> {
-        self.prune(now);
+        self.prune(now, now_ms);
         let mut recipients = Vec::new();
         for (id, room) in &mut self.rooms {
             for peer in &mut room.peers {

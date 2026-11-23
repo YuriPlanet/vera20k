@@ -8,9 +8,8 @@ use crate::net::lan_messages::LanPayload;
 use std::net::SocketAddrV4;
 
 use super::{
-    AppState, DepartureReason, DueBroadcasts, ObservedParticipant, SessionMode, active_game_name,
-    chat_packet, direct, endpoint_id, local_control_proof, local_name, options, send,
-    verify_setup_agreement,
+    AppState, DepartureReason, DueBroadcasts, SessionMode, active_game_name, chat_packet, direct,
+    endpoint_id, local_control_proof, local_name, options, send, verify_setup_agreement,
 };
 
 pub(super) fn setup_liveness_active(state: &AppState) -> bool {
@@ -540,20 +539,7 @@ pub(super) fn observe_participant(
     let Some(service) = state.match_state.lan_service.as_mut() else {
         return;
     };
-    if let Some(peer) = service
-        .observed_participants
-        .iter_mut()
-        .find(|peer| peer.endpoint == endpoint && peer.message.kind() == message.kind())
-    {
-        peer.message = message;
-        peer.last_seen = now;
-    } else {
-        service.observed_participants.push(ObservedParticipant {
-            endpoint,
-            message,
-            last_seen: now,
-        });
-    }
+    service.record_observed_participant(endpoint, message, now);
     project_players(state);
 }
 
@@ -562,15 +548,16 @@ pub(super) fn project_players(state: &mut AppState) {
         return;
     };
     let game = service.selected_game.and_then(|id| service.game(id));
+    let game_name_hash = game.map(|game| crate::net::lan_messages::game_name_hash(&game.name));
     let selected = service.selected_game;
     let mut players = Vec::new();
     if game.is_none() {
         players.push(super::shell_lan::local_lobby_row(&local_name(state)));
     }
     for peer in &service.observed_participants {
-        let color = match (game, peer.message.payload()) {
-            (Some(game), LanPayload::ParticipantDetails(fields)) => {
-                if fields.game_name_hash != crate::net::lan_messages::game_name_hash(&game.name) {
+        let color = match (game_name_hash, peer.message.payload()) {
+            (Some(hash), LanPayload::ParticipantDetails(fields)) => {
+                if fields.game_name_hash != hash {
                     continue;
                 }
                 fields.color

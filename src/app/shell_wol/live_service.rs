@@ -12,6 +12,7 @@ mod responses;
 mod sign_in;
 mod wire;
 
+use crate::app::shell_route::ShellRoute;
 use crate::util::time::{Duration, Instant};
 use std::collections::BTreeMap;
 use std::net::SocketAddrV4;
@@ -48,6 +49,8 @@ use crate::ui::wol_account::{AccountRequest, AccountSuccess};
 use crate::ui::wol_chat::WolChatLine;
 use events::apply_event;
 pub(crate) use events::{decode_external_watch_grant, relay_ticket_is_watch};
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+pub(super) use http::browser_stats;
 #[cfg(test)]
 use match_start::bind_relay_roster;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -100,7 +103,8 @@ const ENDED_AGO_LIMIT: u64 = 24 * 60 * 60;
 /// Gameplay grants (timing confirmation, `relay_renewed`, match resume) are
 /// issued for 300 seconds (docs/lobby-protocol.md). Their
 /// `expires` is lobby wall time; a local clock running slow would renew after
-/// the relay already rejects the ticket, so renewal is timed from receipt.
+/// the relay already rejects the ticket, so renewal and lapse are timed from
+/// receipt.
 /// It uses frame_pacer::wall_clock_ms, which keeps counting through sleep;
 /// an `Instant` deadline would wait out the slept time with a dead ticket.
 const RELAY_GRANT_LIFETIME: Duration = Duration::from_secs(300);
@@ -333,7 +337,6 @@ impl OnlineCleanup {
 }
 
 pub(super) struct LiveService {
-    pub(super) campaign_rooms: bool,
     #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
     _browser_requests: http::RequestOwner,
     stopping: Arc<AtomicBool>,
@@ -363,6 +366,10 @@ pub(super) struct LiveService {
     next_renewal_attempt: Option<u32>,
     /// Renewal deadline of the newest gameplay grant received.
     relay_renewal_due: Option<u32>,
+    /// When the newest gameplay grant lapses: its receipt plus
+    /// [`RELAY_GRANT_LIFETIME`]. A lobby session that ends mid-match
+    /// (`clear_cleanup`) keeps it: the match plays on until the pass lapses.
+    relay_lapses_at: Option<u32>,
     maps: maps::Transfers,
     translations: Translations,
     /// A match an external launcher formed (docs/spawn.md): adopted bearer,
@@ -744,6 +751,16 @@ pub(crate) fn online_match_id(state: &AppState) -> Option<&str> {
         .as_deref()
 }
 
+/// This game's relay pass lapsed by `now_ms` (frame_pacer::wall_clock_ms).
+pub(crate) fn relay_pass_lapsed(state: &AppState, now_ms: u32) -> bool {
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.live_service.as_ref())
+        .is_some_and(|service| service.relay_pass_lapsed(now_ms))
+}
+
 /// Both existing cleanup owners must finish before another online admission.
 /// HTTP logout may complete while the same socket still retries its explicit
 /// relay departure; this observation owns no retry or membership state.
@@ -936,11 +953,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                     log::warn!("Online setup request failed: {error:#}");
                     let text = if let Some(MapTooSmall(capacity)) = error.downcast_ref() {
                         crate::assets::csf_file::format_csf(
-                            &crate::app::App::csf_label(
-                                state,
-                                "TXT_SCENARIO_TOO_SMALL",
-                                "TXT_SCENARIO_TOO_SMALL",
-                            ),
+                            &state.csf_label("TXT_SCENARIO_TOO_SMALL", "TXT_SCENARIO_TOO_SMALL"),
                             &[crate::assets::csf_file::CsfArg::Int(i64::from(*capacity))],
                         )
                     } else {
@@ -1025,9 +1038,10 @@ fn problem_chat_open(
     awaiting_room: bool,
 ) -> bool {
     match route {
-        crate::app::shell_route::ShellRoute::NetworkSetup => setup_open,
-        route if route.wol() => quick_match_open,
-        route => route.wol_lobby() && lobby_open && !awaiting_room,
+        ShellRoute::NetworkSetup => setup_open,
+        ShellRoute::Wol => quick_match_open,
+        ShellRoute::WolLobby => lobby_open && !awaiting_room,
+        _ => false,
     }
 }
 

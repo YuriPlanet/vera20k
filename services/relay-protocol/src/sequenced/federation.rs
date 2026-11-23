@@ -1097,7 +1097,7 @@ impl RelayServer {
                 {
                     return Err(RelayError::Malformed);
                 }
-                let receives = |peer: &Peer| data_recipient(peer, source, target, now);
+                let receives = |peer: &Peer| data_recipient(peer, source, target, now_ms);
                 let cost = (room.peers.iter().filter(|peer| receives(peer)).count()
                     * (envelope::OVERHEAD + 1 + data.len())) as u64;
                 if !room.outgoing.permits(now, cost, ROOM_BYTES_PER_SECOND)
@@ -1149,7 +1149,7 @@ impl RelayServer {
 
     /// Start agreement and contribution exchange for every federated room.
     pub fn drain_federation(&mut self, now_ms: u64, now: u64) -> Vec<ForwardDatagram> {
-        self.prune(now);
+        self.prune(now, now_ms);
         let mut output = Vec::new();
         for (id, room) in &mut self.rooms {
             let Some(federation) = room.federation.as_mut() else {
@@ -1899,10 +1899,10 @@ mod tests {
                 }]
             ));
             let mut bytes = Vec::new();
-            let current = game.clients[relay].ordering.as_ref().unwrap();
-            let (certificate, agreement) = (current.certificate.clone(), current.agreement);
+            let cert = certificate(&game.relays[relay].key, 3, 2000);
+            let agreement = game.clients[relay].ordering.as_ref().unwrap().agreement;
             game.clients[relay]
-                .configure_ordering(&certificate, agreement, &mut bytes)
+                .configure_ordering(&cert, agreement, &mut bytes)
                 .unwrap();
             assert!(matches!(
                 events(

@@ -3,9 +3,10 @@
 
 use super::*;
 use crate::app::match_runtime::session::PeerChoicesChange;
+use crate::app::shell_route::ShellRoute;
 use crate::skirmish_launch::{LaunchTeam, SkirmishLaunchSession, SkirmishLocalSlot};
 use crate::ui::lan_shell::LanChatLine;
-use crate::ui::skirmish_shell::SkirmishValidationModalState;
+use crate::ui::shell::modal::ShellBox;
 use crate::util::time::Instant;
 
 /// A host's full options as `0x005E3D10`'s default (digit-led) arm decodes
@@ -26,7 +27,8 @@ pub(crate) enum NetworkSetupEvent {
     ParticipantLeft {
         index: usize,
     },
-    /// A WOL guest's `R` to the host (`0x007A8260`).
+    /// A guest's `R` to the host: WOL's `0x007A8260`, LAN's Type18
+    /// (`0x005E0D1C`).
     PlayerChoices {
         index: usize,
         choices: SkirmishLocalSlot,
@@ -99,7 +101,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
     // drops the setup protocol: later setup packets have no receiver. VERA:
     // a lobby visitor's room goes on hidden behind the lobby page.
     anyhow::ensure!(
-        (state.frontend.shell_route.network_setup()
+        (state.frontend.shell_route == ShellRoute::NetworkSetup
             || crate::app::shell_wol::lobby::visiting(state)
             || super::quick_match(state)
             || super::external(state))
@@ -147,7 +149,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             || !matches!(
                 event,
                 NetworkSetupEvent::GameStarted { .. }
-                    | NetworkSetupEvent::PlayerChoices { .. }
                     | NetworkSetupEvent::Teams(_)
                     | NetworkSetupEvent::VerifyStarted { .. }
                     | NetworkSetupEvent::PeerConnected { .. }
@@ -266,7 +267,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 // The part sink 0x785740 played PlayerLeft and clears the
                 // acceptances itself (super::wol::user_left).
                 super::cooperative::guest_left(state)?;
-                state.platform.window.request_redraw();
                 return Ok(());
             }
             // A VERA room's host moves its open spectator row after a leave;
@@ -616,8 +616,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 protocol.accept_eligible = true;
             }
             if !ready {
-                let text =
-                    App::csf_label(state, "GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
+                let text = state.csf_label("GUI:HostGameStartJoiner", "GUI:HostGameStartJoiner");
                 crate::app::shell_lan::append_room_chat(
                     state,
                     LanChatLine {
@@ -735,22 +734,25 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     .clear_network_cooperative_partners();
             }
             // LAN Type 10 (0x005E10F2..0x005E1114) keeps its silent native exit.
-            let exit = if state.frontend.native_shell_ui {
-                shell_transition::ShellExitThen::NetworkSetupBack(dialog)
-            } else {
-                // VERA's notice belongs to the lobby opened after setup is retired.
-                shell_transition::ShellExitThen::NetworkSetupBackWithNotice {
-                    dialog,
-                    label: HOST_LEFT_LABEL,
-                }
-            };
-            App::leave_shell_dialog(state, exit);
+            let notice = !state.frontend.native_shell_ui;
+            App::leave_shell_dialog(
+                state,
+                shell_transition::ShellSlideKind::NetworkSetup(dialog),
+                move |state| {
+                    super::commit_back(state);
+                    // VERA's notice belongs to the lobby opened after setup is retired.
+                    if notice {
+                        crate::app::shell_lan::report_error(state, HOST_LEFT_LABEL);
+                    }
+                },
+            );
         }
         NetworkSetupEvent::Kicked => {
             crate::app::shell_lan::report_error(state, "TXT_REQUEST_DENIED");
             App::leave_shell_dialog(
                 state,
-                shell_transition::ShellExitThen::NetworkSetupBack(dialog),
+                crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
+                crate::app::shell_network_setup::commit_back,
             );
         }
         NetworkSetupEvent::GameStarted { users, pings } => {
@@ -764,13 +766,14 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         NetworkSetupEvent::PeerConnected { node } => super::wol::verify_connected(state, node)?,
         NetworkSetupEvent::Negotiated { result } => super::wol::negotiated(state, result)?,
     }
-    state.platform.window.request_redraw();
     Ok(())
 }
 
-/// The host checks a guest's `R` (`0x007A8260`): its slot passes the bans,
-/// and Cooperative's mode +0x1C (0x5C17B0) admits its campaign's countries;
-/// the other modes' (0x5D67A0) admit any.
+/// The host checks a guest's `R`: in either room its slot passes the bans.
+/// WOL's receiver (`0x007A8260`) then checks the country by the mode's
+/// +0x1C: Cooperative's (0x5C17B0) admits its campaign's countries, the
+/// other modes' (0x5D67A0) any. LAN's Type18 receiver (`0x005E0D1C`) has no
+/// such check.
 fn accept_peer_choices(
     state: &mut AppState,
     index: usize,
@@ -778,6 +781,12 @@ fn accept_peer_choices(
     observer: bool,
 ) -> anyhow::Result<PeerChoicesChange> {
     super::bans::admit_slot(state, &mut choices);
+    if !super::dialog(state).wol() {
+        return state
+            .match_state
+            .session
+            .accept_lan_peer_choices(index, choices, observer);
+    }
     let countries = super::cooperative::current(state)
         .then(|| {
             state
@@ -843,13 +852,7 @@ pub(super) fn place_player(
         .get(index)
         .ok_or_else(|| anyhow::anyhow!("unknown participant"))?;
     if index != launch.local_player_index {
-        if super::dialog(state).wol() {
-            return accept_peer_choices(state, index, choices, observer);
-        }
-        return state
-            .match_state
-            .session
-            .accept_lan_peer_choices(index, choices, observer);
+        return accept_peer_choices(state, index, choices, observer);
     }
     if observer != human.is_observer() {
         return state
@@ -889,7 +892,6 @@ pub(super) fn publish_choices(state: &mut AppState, change: PeerChoicesChange) {
     if change.options {
         protocol.requests.push(NetworkSetupRequest::PublishOptions);
     }
-    state.platform.window.request_redraw();
 }
 
 /// VERA's room tells a guest in its own chat when the host's options move
@@ -1053,14 +1055,14 @@ fn fail_go_handoff_with_notice(state: &mut AppState, label: &str, fallback: &str
         App::fail_external_launch(state, "the direct start handshake failed");
         return;
     }
-    let message = App::csf_label(state, label, fallback);
-    let ok = App::csf_label(state, "TXT_OK", "OK");
+    let message = state.csf_label(label, fallback);
+    let ok = state.csf_label("TXT_OK", "OK");
     state
         .frontend
         .multiplayer_setup
         .as_mut()
         .expect("setup interaction")
-        .notice = Some(SkirmishValidationModalState::new(message, ok));
+        .notice = Some(ShellBox::notice(message, ok));
     let protocol = state
         .frontend
         .network_setup_protocol
@@ -1071,7 +1073,7 @@ fn fail_go_handoff_with_notice(state: &mut AppState, label: &str, fallback: &str
     state
         .frontend
         .shell_controller
-        .push(crate::ui::shell::descriptor::DialogId(0xCE), true);
+        .push(crate::ui::shell::descriptor::DialogResourceId(0xCE));
 }
 
 fn prepare_local_map_for_handoff(state: &mut AppState) -> anyhow::Result<()> {
@@ -1177,7 +1179,6 @@ pub(super) fn install_received_preview_image(
     protocol.accept_preview_bounds(None);
     protocol.received_preview_count += 1;
     protocol.received_preview = Some((protocol.received_preview_count, image));
-    state.platform.window.request_redraw();
     Ok(())
 }
 
@@ -1214,7 +1215,7 @@ fn apply_local_map_admission(
     } {
         let map_name = super::map_display_name(state).unwrap_or_default();
         let text = crate::assets::csf_file::format_csf(
-            &App::csf_label(state, key, key),
+            &state.csf_label(key, key),
             &[crate::assets::csf_file::CsfArg::Str(map_name)],
         );
         crate::app::shell_lan::append_room_chat(
@@ -1237,7 +1238,6 @@ pub(crate) fn set_network_map_progress(state: &mut AppState, progress: Option<(u
             protocol.accept_eligible = false;
         }
     }
-    state.platform.window.request_redraw();
 }
 
 pub(crate) fn accept_network_map_source(
@@ -1300,13 +1300,7 @@ fn finish_go(state: &mut AppState) -> anyhow::Result<()> {
         super::commit_start(state, seed);
         return Ok(());
     }
-    App::leave_shell_dialog(
-        state,
-        shell_transition::ShellExitThen::NetworkStart {
-            dialog: super::dialog(state),
-            agreed_seed: seed,
-        },
-    );
+    App::leave_shell_dialog_for_network_start(state, super::dialog(state), seed);
     Ok(())
 }
 
@@ -1331,7 +1325,6 @@ pub(crate) fn invalidate_network_agreement(state: &mut AppState) -> anyhow::Resu
             .requests
             .retain(|request| !matches!(request, NetworkSetupRequest::Ready(_)));
     }
-    state.platform.window.request_redraw();
     Ok(())
 }
 
@@ -1434,7 +1427,6 @@ fn auto_accept(state: &mut AppState) {
     if let Err(error) = super::actions::accept(state) {
         log::warn!("automatic Accept refused: {error:#}");
     }
-    state.platform.window.request_redraw();
 }
 
 /// VERA's join queue in the host's game: each free seat goes to the queue's
@@ -1486,7 +1478,7 @@ const BRIEFING_HINT: &str = "VERA:MapHasBriefing";
 /// the room's map has a briefing: when they enter the room on such a map and
 /// when the room changes to one. Nothing is sent to the others.
 fn point_out_briefing(state: &mut AppState) {
-    if state.frontend.shell_route != crate::app::shell_route::ShellRoute::NetworkSetup
+    if state.frontend.shell_route != ShellRoute::NetworkSetup
         || !super::dialog(state).modern
         || super::quick_match(state)
         || super::external(state)
@@ -1516,7 +1508,6 @@ fn point_out_briefing(state: &mut AppState) {
             color: u32::MAX,
         },
     );
-    state.platform.window.request_redraw();
 }
 
 /// The service could not take the local acceptance. It stays withdrawn
@@ -1536,7 +1527,6 @@ pub(crate) fn refuse_local_acceptance(state: &mut AppState) -> anyhow::Result<()
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         protocol.accept_eligible = false;
     }
-    state.platform.window.request_redraw();
     Ok(())
 }
 

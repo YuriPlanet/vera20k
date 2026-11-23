@@ -358,7 +358,7 @@ impl Simulation {
                 || (matches!(
                     entity.category(),
                     EntityCategory::Unit | EntityCategory::Infantry
-                ) && entity.low_bridge_tube_state.is_some()))
+                ) && entity.active_tube().is_some()))
         {
             return None;
         }

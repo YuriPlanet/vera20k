@@ -756,12 +756,16 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        let red = matches!(
-            entity
-                .health
-                .compare_ratio(object.strength, rules.general.condition_red),
-            Less | Unordered
-        );
+        // Stock's `test ah,1` (`0x0041509A`) takes an unordered ratio (0/0)
+        // as red; Ares' `fcompi`/`jbe` (`0x10047BA6..0x10047BAA`) does not.
+        let red = match entity
+            .health
+            .compare_ratio(object.strength, rules.general.condition_red)
+        {
+            Less => true,
+            Unordered => !rules.ares(),
+            _ => false,
+        };
         if !red || current_fly_height(entity, terrain) <= 0 {
             return;
         }

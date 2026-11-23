@@ -460,9 +460,9 @@ pub(super) fn attack_action_with(
                 rules,
             ) {
                 // Harvest is a Unit's Cell answer, never an object's.
-                crate::sim::world::MoveAction::None | crate::sim::world::MoveAction::Harvest => {
-                    AttackAction::None
-                }
+                crate::sim::world::MoveAction::None
+                | crate::sim::world::MoveAction::Harvest
+                | crate::sim::world::MoveAction::EnterTunnel => AttackAction::None,
                 crate::sim::world::MoveAction::Move => AttackAction::Move,
                 crate::sim::world::MoveAction::NoMove => AttackAction::NoMove,
             }
@@ -644,9 +644,9 @@ fn base_action(
         action = match shrouded {
             crate::sim::world::MoveAction::Move => AttackAction::Move,
             crate::sim::world::MoveAction::NoMove => AttackAction::NoMove,
-            crate::sim::world::MoveAction::None | crate::sim::world::MoveAction::Harvest => {
-                AttackAction::None
-            }
+            crate::sim::world::MoveAction::None
+            | crate::sim::world::MoveAction::Harvest
+            | crate::sim::world::MoveAction::EnterTunnel => AttackAction::None,
         };
     }
     action
