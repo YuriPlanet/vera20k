@@ -1584,46 +1584,19 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     let smooth_command_bar =
         chrome_atlas.is_some_and(|atlas| atlas.retarget_to_smooth(&mut command_bar));
 
-    let ready_text = state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| csf.text("TXT_READY"))
-        .unwrap_or_else(|| std::borrow::Cow::Borrowed("Ready"));
-    // gamemd's strip draw pairs TXT_READY with TXT_HOLD ("On Hold"), shown on
-    // the same cameo slot when production is suspended.
-    let hold_text = state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| csf.text("TXT_HOLD"))
-        .unwrap_or_else(|| std::borrow::Cow::Borrowed("On Hold"));
-    // SuperClass::NameReadiness6CC2B0: native drain state labels share the
-    // same status-strip/text owner as ordinary Ready and Hold.
-    let charging_text = state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| csf.text("TXT_CHARGING"))
-        .unwrap_or_else(|| std::borrow::Cow::Borrowed("Charging"));
-    let active_text = state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| csf.text("TXT_FIRESTORM_ON"))
-        .unwrap_or_else(|| std::borrow::Cow::Borrowed("Firestorm On"));
-    // Ares hook 6CC2B0 labels, resolved once per match
-    // (`install_world_presentation`), only when Ares plays in the game.
+    // The status strip's labels and Ares hook 6CC2B0's, resolved once per
+    // match (`resolve_status_texts`); Ares's only when it plays in the game.
+    let texts = &state.match_state.match_presentation.status_texts;
     let ares_texts = state
         .match_state
         .match_presentation
         .ares_status_texts
         .as_ref();
     let status_labels = crate::app::presentation::sidebar_build::CameoStatusLabels {
-        ready: ready_text.as_ref(),
-        hold: hold_text.as_ref(),
-        charging: charging_text.as_ref(),
-        active: active_text.as_ref(),
+        ready: &texts.ready,
+        hold: &texts.hold,
+        charging: &texts.charging,
+        active: &texts.active,
         ares: ares_texts,
     };
     // StripClass::Draw packs the B0FA1C side colour into the 16-bit surface

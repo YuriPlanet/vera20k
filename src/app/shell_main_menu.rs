@@ -35,6 +35,7 @@ impl AppState {
                 csf,
             );
         }
+        crate::app::loading::transitions::resolve_status_texts(self);
         // The login form keeps its status line as resolved text; the rest of
         // that page resolves every frame.
         if let Some(visit) = self.frontend.wol.as_mut()

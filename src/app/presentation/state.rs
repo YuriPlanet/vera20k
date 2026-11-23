@@ -70,6 +70,8 @@ pub(crate) struct MatchPresentationState {
     /// string table stay fixed for the match. `None` unless Ares plays in
     /// the game (`RuleSet::ares`).
     pub(crate) ares_status_texts: Option<crate::app::presentation::sidebar_build::AresStatusTexts>,
+    /// The cameo status strip's own labels, resolved with the Ares ones.
+    pub(crate) status_texts: StatusTexts,
     /// The local country's own win/lose card from `[EndGameScreens]`, drawn in
     /// the same tactical slot as the retail banner. `None` keeps the native
     /// art; the player's Custom End Game Banner switch is read at draw time.
@@ -456,5 +458,42 @@ mod relation_colour_tests {
         assert_eq!(seen["Foe"], RELATION_ENEMY);
         assert_eq!(seen["Civ"], colors["Civ"]);
         assert_eq!(relation_house_colors(&sim, &colors, None), None);
+    }
+}
+
+/// The cameo status strip's labels: `TXT_READY`, gamemd's strip draw's
+/// `TXT_HOLD` ("On Hold") for suspended production, and
+/// `SuperClass::NameReadiness6CC2B0`'s drain labels `TXT_CHARGING` and
+/// `TXT_FIRESTORM_ON`. Resolved with the incoming world and after the string
+/// table's labels change ([`crate::app::loading::transitions::resolve_status_texts`]),
+/// not with every sidebar draw.
+#[derive(Debug, Clone)]
+pub(crate) struct StatusTexts {
+    pub(crate) ready: String,
+    pub(crate) hold: String,
+    pub(crate) charging: String,
+    pub(crate) active: String,
+}
+
+impl StatusTexts {
+    pub(crate) fn resolve(state: &crate::app::AppState) -> Self {
+        Self {
+            ready: state.csf_label("TXT_READY", "Ready"),
+            hold: state.csf_label("TXT_HOLD", "On Hold"),
+            charging: state.csf_label("TXT_CHARGING", "Charging"),
+            active: state.csf_label("TXT_FIRESTORM_ON", "Firestorm On"),
+        }
+    }
+}
+
+/// The labels while no string table is loaded.
+impl Default for StatusTexts {
+    fn default() -> Self {
+        Self {
+            ready: "Ready".to_owned(),
+            hold: "On Hold".to_owned(),
+            charging: "Charging".to_owned(),
+            active: "Firestorm On".to_owned(),
+        }
     }
 }

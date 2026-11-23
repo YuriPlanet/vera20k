@@ -137,6 +137,21 @@ pub(crate) struct MapPresentationInputs {
 /// route-specific input, sidebar order, waterlines and timers stay outside it.
 /// Missing map-owned surfaces replace the old ones with absence, so a different
 /// map can never inherit the outgoing geometry or shroud dimensions.
+/// The cameo status strip's labels and Ares hook 6CC2B0's, only when Ares
+/// plays in the game (`RuleSet::ares`): resolved with the incoming world and
+/// after the string table's labels change, instead of with every sidebar draw.
+pub(crate) fn resolve_status_texts(state: &mut AppState) {
+    let ares_status_texts = state.rules().filter(|rules| rules.ares()).map(|rules| {
+        crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
+            state.csf_text(label)
+        })
+    });
+    let status_texts = crate::app::presentation::state::StatusTexts::resolve(state);
+    let presentation = &mut state.match_state.match_presentation;
+    presentation.ares_status_texts = ares_status_texts;
+    presentation.status_texts = status_texts;
+}
+
 pub(crate) fn install_world_presentation(
     state: &mut AppState,
     map: MapPresentationInputs,
@@ -262,14 +277,7 @@ pub(crate) fn install_world_presentation(
             .configure(assets.sw_sidebar_ui, significance);
     }
     state.match_state.match_presentation.outcome_banner_side_art = assets.outcome_banner_side_art;
-    // Ares hook 6CC2B0's labels, only when Ares plays in the game
-    // (`RuleSet::ares`), resolved once here instead of with every sidebar draw.
-    let ares_status_texts = state.rules().filter(|rules| rules.ares()).map(|rules| {
-        crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
-            state.csf_text(label)
-        })
-    });
-    state.match_state.match_presentation.ares_status_texts = ares_status_texts;
+    resolve_status_texts(state);
     state.match_state.match_presentation.end_game_banner = assets.end_game_banner;
     // `Game_LoadUI_LoadSideData` resolves the dialog background pair once per
     // game load. The shell chrome atlas carries the three side slots, so a
