@@ -1428,6 +1428,20 @@ pub(crate) fn read_infantry_discharge_frames(section: &IniSection, frames: &mut 
     frames[3] = section.read_int("SecondaryProne", frames[3]);
 }
 
+/// VERA's own bound on the resolved `OccupyHeight=` of an art section, in
+/// cells. This is a safety bound, not a native rule.
+///
+/// Residual: `BuildingTypeClass::ReadINI` reads `Height` at `0x004610ED` and
+/// passes it as the default to `OccupyHeight` at `0x004610F7`; it stores the
+/// parsed value at BuildingType+0xEF8 with no clamp, and the consumer at
+/// `0x0056854A` walks `max(height - 1, 1)` cells per foundation cell, also
+/// unbounded. gamemd therefore has no bound to port. A modded or corrupt
+/// art.ini or save otherwise turns one placement into millions of cell
+/// tests. Retail ARTMD.INI's `OccupyHeight=` reaches 10 and its `Height=` —
+/// the value an absent `OccupyHeight=` inherits — reaches 22, so clamping at
+/// 128 leaves retail play untouched.
+pub const OCCUPY_HEIGHT_LIMIT: i32 = 128;
+
 impl ArtRegistry {
     /// Parse all sections from an art.ini IniFile into the registry.
     pub fn from_ini(ini: &IniFile) -> Self {
@@ -1598,8 +1612,12 @@ impl ArtRegistry {
             let height: i32 = section.read_int("Height", 2);
             let can_hide: bool = section.read_bool("CanHideThings", true);
             // BuildingTypeClass reads Height first, then passes that resolved
-            // field value as the default for OccupyHeight.
-            let occupy_height: i32 = section.read_int("OccupyHeight", height);
+            // field value as the default for OccupyHeight. The resolved
+            // value is bounded by VERA's own `OCCUPY_HEIGHT_LIMIT`: it sizes
+            // the hidden-occupancy pass, and gamemd keeps an unbounded one.
+            let occupy_height: i32 = section
+                .read_int("OccupyHeight", height)
+                .min(OCCUPY_HEIGHT_LIMIT);
             // `MuzzleFlash%d=` is ReadMinMax (`0x0046033F`) for every index
             // below MaxNumberOccupants (`0x00460285..0x00460382`): it reads
             // past a missing index, and (0xFFFF, 0xFFFF), the default, becomes

@@ -29,7 +29,7 @@
 //!   existing Cell geometry and bucket kernels, never app/presentation state.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use crate::map::entities::EntityCategory;
 use crate::sim::game_entity::GameEntity;
@@ -115,12 +115,16 @@ pub struct EntityStore {
     /// Derived InfantryClass registry, in monotonic construction-ID order.
     /// Uninit retains an entry; remove compacts it. Class/category is immutable
     /// while stored, like indexed identity (replace through remove/insert).
-    infantry_registry: Vec<u64>,
+    /// The rows live in [`ClassRegistry`]'s chunks, so a removal compacts the
+    /// registry's ordinals without shifting its tail.
+    infantry_registry: ClassRegistry,
     /// FootClass array8B3DC4, including Aircraft and stored limbo objects.
     /// Derived from the same monotonic constructor IDs as Techno below;
     /// parent Foot registration precedes its constructor-manager children.
     /// UnInit retains rows; removal/replacement/restore update this cache.
-    foot_registry: Vec<u64>,
+    /// The rows live in [`ClassRegistry`]'s chunks, like the other class
+    /// registries.
+    foot_registry: ClassRegistry,
     /// Derived TechnoClass registration index from monotonic constructor IDs.
     /// Production construction stores each parent before manager children;
     /// see construction33/55,world_spawn::store_with_constructor_managers,
@@ -128,12 +132,16 @@ pub struct EntityStore {
     /// authoritative, this cache is rebuilt on restore and never serialized.
     /// UnInit keeps a row; physical remove compacts the registry independently
     /// of the dense storage's empty slots and compaction schedule.
+    /// The rows live in [`ClassRegistry`]'s chunks, so the compaction moves
+    /// one row per chunk instead of the whole tail.
     /// RMG PreconsumedGenerated registration parity is not established here.
-    techno_registry: Vec<u64>,
+    techno_registry: ClassRegistry,
     /// BuildingClass::Array A8EB40, derived from immutable class and the
     /// same constructor IDs. Insert/remove/replace/restore maintain it like
     /// the other class registries; UnInit alone retains its row.
-    building_registry: Vec<u64>,
+    /// The rows live in [`ClassRegistry`]'s chunks, like the other class
+    /// registries.
+    building_registry: ClassRegistry,
     /// VERA-only: `(bucket, enter order, stable_id)` of every stored entity
     /// the AircraftTracker holds (an air bucket): each bucket's entries in
     /// the order [`Self::airborne_in_query_order`] copies them. The entity's
@@ -421,10 +429,10 @@ impl EntityStore {
             categories: Vec::new(),
             sleep: Vec::new(),
             owned: LookupMap::default(),
-            infantry_registry: Vec::new(),
-            foot_registry: Vec::new(),
-            techno_registry: Vec::new(),
-            building_registry: Vec::new(),
+            infantry_registry: ClassRegistry::default(),
+            foot_registry: ClassRegistry::default(),
+            techno_registry: ClassRegistry::default(),
+            building_registry: ClassRegistry::default(),
             airborne: BTreeSet::new(),
             anim_holders: BTreeSet::new(),
             touched: TouchLogs::everything(),
@@ -515,33 +523,20 @@ impl EntityStore {
             }
         }
         self.refocus();
-        if let Err(index) = self.techno_registry.binary_search(&id) {
-            self.techno_registry.insert(index, id);
+        if !self.techno_registry.contains(&id) {
+            self.techno_registry.insert(id);
         }
-        if let Ok(index) = self.building_registry.binary_search(&id) {
-            self.building_registry.remove(index);
-        }
+        self.building_registry.remove(id);
         if category == EntityCategory::Structure {
-            let index = self
-                .building_registry
-                .partition_point(|&existing| existing < id);
-            self.building_registry.insert(index, id);
+            self.building_registry.insert(id);
         }
         self.remove_infantry_index(id);
         if infantry {
-            let index = self
-                .infantry_registry
-                .partition_point(|&existing| existing < id);
-            self.infantry_registry.insert(index, id);
+            self.infantry_registry.insert(id);
         }
-        if let Ok(index) = self.foot_registry.binary_search(&id) {
-            self.foot_registry.remove(index);
-        }
+        self.foot_registry.remove(id);
         if foot {
-            let index = self
-                .foot_registry
-                .partition_point(|&existing| existing < id);
-            self.foot_registry.insert(index, id);
+            self.foot_registry.insert(id);
         }
         id
     }
@@ -564,15 +559,9 @@ impl EntityStore {
         }
         self.touched.note(stable_id, self.len());
         self.remove_infantry_index(stable_id);
-        if let Ok(index) = self.foot_registry.binary_search(&stable_id) {
-            self.foot_registry.remove(index);
-        }
-        if let Ok(index) = self.techno_registry.binary_search(&stable_id) {
-            self.techno_registry.remove(index);
-        }
-        if let Ok(index) = self.building_registry.binary_search(&stable_id) {
-            self.building_registry.remove(index);
-        }
+        self.foot_registry.remove(stable_id);
+        self.techno_registry.remove(stable_id);
+        self.building_registry.remove(stable_id);
         // Compact once a quarter of the slots are empty, so a walk skips few
         // and compaction's cost spreads over many removals.
         let empty = self.ids.len() - self.slot_of.len();
@@ -945,7 +934,7 @@ impl EntityStore {
     /// Action14's full Techno array, independent of Logic and Display order.
     /// Read length/slot afresh after callbacks; append/removal is visible.
     pub(crate) fn techno_registry_at(&self, index: usize) -> Option<u64> {
-        self.techno_registry.get(index).copied()
+        self.techno_registry.at(index)
     }
     pub(crate) fn techno_registry_len(&self) -> usize {
         self.techno_registry.len()
@@ -956,20 +945,19 @@ impl EntityStore {
     /// there is no second class list to save or keep in sync.
     pub(crate) fn unit_registry_ids(&self) -> impl Iterator<Item = u64> + '_ {
         self.techno_registry
-            .iter()
-            .copied()
+            .ids()
             .filter(|&id| self.category_of(id) == Some(EntityCategory::Unit))
     }
 
     pub(crate) fn building_registry_at(&self, index: usize) -> Option<u64> {
-        self.building_registry.get(index).copied()
+        self.building_registry.at(index)
     }
     pub(crate) fn building_registry_len(&self) -> usize {
         self.building_registry.len()
     }
 
     pub(crate) fn foot_registry_at(&self, index: usize) -> Option<u64> {
-        self.foot_registry.get(index).copied()
+        self.foot_registry.at(index)
     }
 
     pub(crate) fn foot_registry_len(&self) -> usize {
@@ -980,7 +968,7 @@ impl EntityStore {
     /// a row shifts successors left, while a newly constructed row is visible.
     /// This is distinct from the live Logic vector and includes dead/limbo rows.
     pub(crate) fn infantry_registry_at(&self, index: usize) -> Option<u64> {
-        self.infantry_registry.get(index).copied()
+        self.infantry_registry.at(index)
     }
 
     /// The native InfantryClass array's length.
@@ -989,9 +977,7 @@ impl EntityStore {
     }
 
     fn remove_infantry_index(&mut self, id: u64) {
-        if let Ok(index) = self.infantry_registry.binary_search(&id) {
-            self.infantry_registry.remove(index);
-        }
+        self.infantry_registry.remove(id);
     }
 
     /// Iterate all entities in deterministic stable_id order (immutable).
@@ -1312,25 +1298,178 @@ impl EntityStore {
                 .push(id);
         }
         self.owned = owned;
-        let infantry: Vec<u64> = self
-            .stored()
-            .filter(|(_, entity)| entity.category() == EntityCategory::Infantry)
-            .map(|(id, _)| id)
-            .collect();
-        // Storage iterates in ascending stable_id order, so the infantry
-        // registry comes out sorted.
-        self.infantry_registry = infantry;
-        self.foot_registry = self
-            .stored()
-            .filter(|(_, entity)| entity.category().is_foot())
-            .map(|(id, _)| id)
-            .collect();
-        self.techno_registry = self.stored().map(|(id, _)| id).collect();
-        self.building_registry = self
-            .stored()
-            .filter(|(_, entity)| entity.category() == EntityCategory::Structure)
-            .map(|(id, _)| id)
-            .collect();
+        // Storage iterates in ascending stable_id order, so every registry
+        // comes out sorted.
+        self.infantry_registry = ClassRegistry::from_sorted(
+            self.stored()
+                .filter(|(_, entity)| entity.category() == EntityCategory::Infantry)
+                .map(|(id, _)| id),
+        );
+        self.foot_registry = ClassRegistry::from_sorted(
+            self.stored()
+                .filter(|(_, entity)| entity.category().is_foot())
+                .map(|(id, _)| id),
+        );
+        self.techno_registry = ClassRegistry::from_sorted(self.stored().map(|(id, _)| id));
+        self.building_registry = ClassRegistry::from_sorted(
+            self.stored()
+                .filter(|(_, entity)| entity.category() == EntityCategory::Structure)
+                .map(|(id, _)| id),
+        );
+    }
+}
+
+/// The ids of one class registry, in ascending stable-id order.
+///
+/// The registry is a list of chunks: every chunk but the last holds exactly
+/// [`Self::CHUNK`] ids and the last holds the rest, so an id's ordinal is
+/// `chunk * CHUNK + offset` and reading one costs a single index. A removal
+/// takes the id out of its chunk and moves one id down from each later
+/// chunk, so the tail of the registry does not shift: the ids keep their
+/// order, and a caller's ordinal still names the same id as before.
+///
+/// The chunks' ids ascend together, and every chunk but the last is full,
+/// which the two rules above keep true.
+#[derive(Debug, Clone, Default)]
+struct ClassRegistry {
+    chunks: Vec<VecDeque<u64>>,
+    len: usize,
+}
+
+impl ClassRegistry {
+    /// Ids per chunk. A removal moves one id per later chunk, so a larger
+    /// chunk trades that walk for a longer shift inside the chunk.
+    const CHUNK: usize = 256;
+
+    /// The number of registered ids.
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    /// The id at `index` in registry order.
+    fn at(&self, index: usize) -> Option<u64> {
+        if index >= self.len {
+            return None;
+        }
+        self.chunks
+            .get(index / Self::CHUNK)
+            .and_then(|chunk| chunk.get(index % Self::CHUNK))
+            .copied()
+    }
+
+    /// The registered ids, in registry order.
+    fn ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.chunks.iter().flat_map(|chunk| chunk.iter().copied())
+    }
+
+    /// Whether the registry holds `id`.
+    fn contains(&self, id: u64) -> bool {
+        self.position(id).is_some()
+    }
+
+    /// The chunk and offset of `id`, if the registry holds it.
+    fn position(&self, id: u64) -> Option<(usize, usize)> {
+        let index = self.chunk_of(id);
+        let chunk = self.chunks.get(index)?;
+        let offset = Self::lower_bound(chunk, id);
+        (offset < chunk.len() && chunk[offset] == id).then_some((index, offset))
+    }
+
+    /// The offset of the first id in a sorted chunk that is not below `id`.
+    fn lower_bound(chunk: &VecDeque<u64>, id: u64) -> usize {
+        let mut low = 0;
+        let mut high = chunk.len();
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if chunk[middle] < id {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        low
+    }
+
+    /// The chunk whose range holds `id`: the first chunk whose last id is
+    /// not below `id`, or the number of chunks when `id` is greater than
+    /// every registered id.
+    fn chunk_of(&self, id: u64) -> usize {
+        self.chunks
+            .partition_point(|chunk| chunk.back().is_some_and(|&last| last < id))
+    }
+
+    /// Build a registry from ascending ids.
+    fn from_sorted(ids: impl IntoIterator<Item = u64>) -> Self {
+        let mut registry = Self::default();
+        for id in ids {
+            registry.insert(id);
+        }
+        registry
+    }
+
+    /// Register `id`, which the registry does not hold yet.
+    fn insert(&mut self, id: u64) {
+        debug_assert!(!self.contains(id), "the registry already holds {id}");
+        match self.chunk_of(id) {
+            // The id is greater than every registered id: it goes last.
+            chunk if chunk == self.chunks.len() => {
+                let full = self
+                    .chunks
+                    .last()
+                    .is_some_and(|last| last.len() >= Self::CHUNK);
+                if full {
+                    self.chunks.push_back(VecDeque::from([id]));
+                } else if let Some(last) = self.chunks.last_mut() {
+                    last.push_back(id);
+                }
+            }
+            chunk => {
+                let offset = Self::lower_bound(&self.chunks[chunk], id);
+                self.chunks[chunk].insert(offset, id);
+                // The chunk took one id too many: push its last id into the
+                // next chunk, and that chunk's last id into the one after it.
+                for next in chunk + 1..self.chunks.len() {
+                    let Some(moved) = self.chunks[next - 1].pop_back() else {
+                        break;
+                    };
+                    self.chunks[next].push_front(moved);
+                }
+                // The last chunk may hold one id too many: split it.
+                let overflow = self.chunks.last_mut().and_then(|last| {
+                    if last.len() > Self::CHUNK {
+                        last.pop_back()
+                    } else {
+                        None
+                    }
+                });
+                if let Some(moved) = overflow {
+                    self.chunks.push_back(VecDeque::from([moved]));
+                }
+            }
+        }
+        self.len += 1;
+    }
+
+    /// Remove `id`. Returns whether the registry held it.
+    fn remove(&mut self, id: u64) -> bool {
+        let Some((chunk, offset)) = self.position(id) else {
+            return false;
+        };
+        self.chunks[chunk].remove(offset);
+        self.len -= 1;
+        // Every chunk but the last holds CHUNK ids: move one id down from
+        // each later chunk.
+        for next in chunk + 1..self.chunks.len() {
+            let Some(moved) = self.chunks[next].pop_front() else {
+                break;
+            };
+            self.chunks[next - 1].push_back(moved);
+        }
+        // The last chunk may have run empty.
+        if self.chunks.last().is_some_and(|last| last.is_empty()) {
+            self.chunks.pop();
+        }
+        true
     }
 }
 
@@ -1477,6 +1616,15 @@ impl<'de> serde::Deserialize<'de> for EntityStore {
         store.ids.reserve(entities.len());
         store.entities.reserve(entities.len());
         for (id, entity) in entities {
+            // The map key is the entity's stable id. A save whose key and
+            // entity disagree is refused here, so the store is never built
+            // with an entity filed under another id.
+            let entity_id = entity.stable_id();
+            if entity_id != id {
+                return Err(<D::Error as serde::de::Error>::custom(format!(
+                    "EntityStore entry {id} holds entity {entity_id}"
+                )));
+            }
             store.slot_of.insert(id, store.ids.len() as u32);
             store.ids.push(id);
             store.owners.push(entity.owner());
@@ -1678,6 +1826,27 @@ mod tests {
 
     fn make_entity(id: u64) -> GameEntity {
         GameEntity::test_default(id, "HTNK", "Americans", 10, 10)
+    }
+
+    /// A save whose map key disagrees with the entity's own stable id is
+    /// refused: the store is never built with an entity filed under another
+    /// id.
+    #[test]
+    fn a_store_whose_key_differs_from_its_entity_is_refused() {
+        let mut store = EntityStore::new();
+        store.insert(make_entity(7));
+
+        let mut saved = serde_json::to_value(&store).expect("the store serializes");
+        let entities = saved.as_object_mut().expect("the store is a map");
+        let entry = entities.remove("7").expect("the entity is saved");
+        entities.insert("8".to_owned(), entry);
+
+        let error = serde_json::from_value::<EntityStore>(saved)
+            .expect_err("the mismatched key is refused");
+        assert!(
+            error.to_string().contains("entry 8"),
+            "the error names the key: {error}"
+        );
     }
 
     /// Each reader takes its own log, so one reader's take leaves the other's
@@ -1922,7 +2091,7 @@ mod tests {
                     model.keys().copied().collect::<Vec<_>>()
                 );
                 assert_eq!(
-                    store.techno_registry,
+                    registry_ids(&store.techno_registry),
                     model.keys().copied().collect::<Vec<_>>(),
                     "native registration rows must not follow dense empty slots"
                 );
@@ -1966,7 +2135,7 @@ mod tests {
         assert_eq!(saved, crate::util::save_codec::serialize(&map).unwrap());
         let restored: EntityStore = crate::util::save_codec::deserialize(&saved).unwrap();
         assert_eq!(restored.keys_sorted(), [2, 4, 7]);
-        assert_eq!(restored.techno_registry, [2, 4, 7]);
+        assert_eq!(registry_ids(&restored.techno_registry), [2, 4, 7]);
         for id in [2, 4, 7] {
             assert_eq!(restored.owner_of(id), Some(store.get(id).unwrap().owner()));
         }
@@ -2006,12 +2175,12 @@ mod tests {
             .lifecycle
             .set_object_alive_for_test(false);
         assert_eq!(
-            store.building_registry,
+            registry_ids(&store.building_registry),
             [3, 7],
             "UnInit does not remove a class row"
         );
         store.insert(make_entity(3));
-        assert_eq!(store.building_registry, [7]);
+        assert_eq!(registry_ids(&store.building_registry), [7]);
         let mut replacement = make_entity(2);
         replacement.set_category_for_test(EntityCategory::Structure);
         store.insert(replacement);
@@ -2023,8 +2192,14 @@ mod tests {
             &crate::util::save_codec::serialize(&store).unwrap(),
         )
         .unwrap();
-        assert_eq!(restored.building_registry, store.building_registry);
-        assert_eq!(store.clone().building_registry, store.building_registry);
+        assert_eq!(
+            registry_ids(&restored.building_registry),
+            registry_ids(&store.building_registry)
+        );
+        assert_eq!(
+            registry_ids(&store.clone().building_registry),
+            registry_ids(&store.building_registry)
+        );
     }
 
     #[test]
@@ -2056,17 +2231,20 @@ mod tests {
         assert_eq!(store.infantry_registry_at(2), Some(4));
         // Replacement through the store updates category membership too.
         store.insert(make_entity(3));
-        assert_eq!(store.infantry_registry, [2, 4]);
+        assert_eq!(registry_ids(&store.infantry_registry), [2, 4]);
         let restored: EntityStore =
             serde_json::from_str(&serde_json::to_string(&store).unwrap()).unwrap();
-        assert_eq!(restored.infantry_registry, [2, 4]);
+        assert_eq!(registry_ids(&restored.infantry_registry), [2, 4]);
         assert_eq!(restored.infantry_registry_at(2), None);
-        assert_eq!(store.foot_registry, [2, 3, 4]);
-        assert_eq!(restored.foot_registry, store.foot_registry);
+        assert_eq!(registry_ids(&store.foot_registry), [2, 3, 4]);
+        assert_eq!(
+            registry_ids(&restored.foot_registry),
+            registry_ids(&store.foot_registry)
+        );
         let mut building = make_entity(3);
         building.set_category_for_test(EntityCategory::Structure);
         store.insert(building);
-        assert_eq!(store.foot_registry, [2, 4]);
+        assert_eq!(registry_ids(&store.foot_registry), [2, 4]);
     }
 
     /// An Anim's expiry reaches each stored entity holding the Anim, once
@@ -2185,5 +2363,40 @@ mod tests {
         assert!(contacts.contains(2) && contacts.contains(4) && !contacts.contains(3));
         assert_eq!(contacts.find_slot(2), Some(0));
         assert_eq!(contacts.find_slot(4), Some(2));
+    }
+
+    /// A class registry's ids, for assertions.
+    fn registry_ids(registry: &ClassRegistry) -> Vec<u64> {
+        registry.ids().collect()
+    }
+
+    /// Removing half the entities in ascending order leaves the registry's
+    /// remaining ids in ascending order and every ordinal naming the id the
+    /// dense registry would name: a removal shifts its successors left.
+    #[test]
+    fn removing_half_the_entities_keeps_the_registry_sorted_and_dense() {
+        let mut store = EntityStore::new();
+        for id in 1..=600 {
+            store.insert(make_entity(id));
+        }
+        for id in (1..=600).step_by(2) {
+            store.remove(id);
+        }
+
+        let expected: Vec<u64> = (2..=600).filter(|id| id % 2 == 0).collect();
+        assert_eq!(registry_ids(&store.techno_registry), expected);
+        assert_eq!(store.techno_registry_len(), expected.len());
+        for (ordinal, id) in expected.iter().enumerate() {
+            assert_eq!(store.techno_registry_at(ordinal), Some(*id));
+        }
+        assert_eq!(store.techno_registry_at(expected.len()), None);
+        // The class rows keep the same rule: a removed row's successor takes
+        // its ordinal.
+        assert_eq!(registry_ids(&store.foot_registry), expected);
+        // The remaining entities keep their handles: an id still names its
+        // own entity.
+        for id in &expected {
+            assert_eq!(store.get(*id).map(|entity| entity.stable_id()), Some(*id));
+        }
     }
 }
