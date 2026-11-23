@@ -388,6 +388,10 @@ mod tests;
 #[path = "anim_move_flash_tests.rs"]
 mod move_flash_tests;
 
+#[cfg(all(test, tests_sim_a_b))]
+#[path = "anim_ts_sound_tests.rs"]
+mod ts_sound_tests;
+
 #[cfg(all(test, any(tests_sim_a_b, tests_sim_trigger, tests_sim_world_t_z)))]
 #[path = "anim_meteor_tests.rs"]
 pub(in crate::sim) mod meteor_tests;
