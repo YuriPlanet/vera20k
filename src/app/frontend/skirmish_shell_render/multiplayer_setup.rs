@@ -605,29 +605,30 @@ pub(crate) fn render_multiplayer_setup(
             // Download greys while the map comes, but still takes a press.
             let enabled_of =
                 |id: i32| (id == i32::from(MAP_OFFER_DOWNLOAD)).then_some(!offer.downloading);
+            // How much of the map has arrived, in the label colour.
+            let frame_of = |id: i32| {
+                let (done, total) = progress.filter(|_| id == i32::from(MAP_OFFER_PROGRESS))?;
+                Some(FrameArt::Progress {
+                    rgb: SHELL_LABEL_TEXT_RGB,
+                    done,
+                    total,
+                    depth: super::wol_lobby::POPUP_DEPTHS.button,
+                })
+            };
             let style = GuiStyle {
                 text_of: Some(&text_of),
                 enabled_of: Some(&enabled_of),
+                frame_of: Some(&frame_of),
                 ..GuiStyle::popup()
             };
-            let ids = [MAP_OFFER_BODY, MAP_OFFER_DOWNLOAD, MAP_OFFER_LEAVE];
-            let widgets = paint_ids(
-                controller.root_in(MAP_OFFER_BOX),
-                &ids,
-                crate::ui::shell::geom::RETAIL_SCALE,
-                style,
-            );
+            // Its text, buttons and bar in tree order.
+            let scale = crate::ui::shell::geom::RETAIL_SCALE;
+            let widgets = controller
+                .root_in(MAP_OFFER_BOX)
+                .map(|root| paint_gui_styled(state, controller.gui(), root, scale, &[], style))
+                .unwrap_or_default();
             overlay.controls.extend(widgets.controls);
             overlay.texts.extend(widgets.texts);
-            if let Some(progress) = progress {
-                super::modals::push_download_progress_bar(
-                    &mut overlay.controls,
-                    atlas,
-                    boxed.body,
-                    progress,
-                    super::wol_lobby::POPUP_DEPTHS.button,
-                );
-            }
         }
     }
     if let Some(notice) = &ui.notice {

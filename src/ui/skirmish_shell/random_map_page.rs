@@ -149,6 +149,7 @@ fn spec() -> NodeSpec {
         .child(text(URBAN_CAPTION))
         .child(text(PROGRESS))
         .child(NodeSpec::new(NodeKind::Text).id(PREVIEW.into()).tooltip(""))
+        .child(text(RandomMapSetupLayout::PROGRESS_BAR))
 }
 
 /// Widget `id`'s rect in the view on show; none while it does not show.
@@ -179,6 +180,12 @@ fn rect(
                 .then(|| checkbox_text_rect(layout.rect(5000), layout.scale));
         }
         PROGRESS => return Some(layout.rect(0x6C6)),
+        // The progress well shows only while a map generates.
+        RandomMapSetupLayout::PROGRESS_BAR => {
+            return modal
+                .generating
+                .then(|| layout.rect(RandomMapSetupLayout::PROGRESS_BAR));
+        }
         PREVIEW => return Some(layout.preview),
         _ => {}
     }
@@ -213,12 +220,6 @@ fn help(modal: &RandomMapSetupModalState, control: C) -> &'static str {
             .map_or("", super::state::ExtrasRow::help),
         control => status_help_key_for_random_map_setup(control),
     }
-}
-
-/// The Advanced scrollbar as its widget paints: the bar, and its thumb at
-/// the page showing.
-pub fn scrollbar_view(controller: &DialogController) -> Option<vera20k_gui::ScrollBarView> {
-    controller.gui().scrollbar_view(controller.control(DIALOG, SCROLLBAR)?)
 }
 
 /// Builds the widgets under the controller's `0x105` (a fresh instance when

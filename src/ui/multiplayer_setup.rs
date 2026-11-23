@@ -37,6 +37,8 @@ pub(crate) const MAP_OFFER_DOWNLOAD: u16 = 0x7F04;
 pub(crate) const MAP_OFFER_LEAVE: u16 = 0x7F05;
 /// The offer's text, a static.
 pub(crate) const MAP_OFFER_BODY: u16 = 0x7F34;
+/// The offer's download bar under its text, while the map comes.
+pub(crate) const MAP_OFFER_PROGRESS: u16 = 0x7F36;
 /// VERA-only, in the team bar under the roster: the Teams count and the
 /// host's Quick Team Setup and Bulk Seat Actions lists
 /// ([`crate::ui::team_tools`]).
@@ -1827,6 +1829,7 @@ impl MultiplayerSetupLayout {
             SEAT_MENU => self.seat_menu,
             MAP_OFFER_DOWNLOAD => Some(self.map_offer.button(0)),
             MAP_OFFER_BODY => Some(self.map_offer.body),
+            MAP_OFFER_PROGRESS => Some(self.map_offer.progress_track()),
             crate::ui::shell::modal::control::OK => Some(self.notice_ok),
             MAP_OFFER_LEAVE => Some(self.map_offer.button(1)),
             _ => self.page.button_rect(id),
@@ -2275,14 +2278,15 @@ fn game_options_spec() -> NodeSpec {
         ))
 }
 
-/// VERA's missing-map offer: its text, Download (greyed in [0xAC1CB4]
-/// while the map comes) and Leave.
+/// VERA's missing-map offer, in paint order: its text, Download (greyed
+/// in [0xAC1CB4] while the map comes), Leave and the download bar.
 fn map_offer_spec() -> NodeSpec {
     let grey = Value::Rgba(vera20k_gui::Rgba(0x9F, 0, 0, 0xFF));
     NodeSpec::new(NodeKind::Dialog)
+        .child(node(NodeKind::Text, MAP_OFFER_BODY).with(Prop::Align, Value::Int(0)))
         .child(node(NodeKind::Button, MAP_OFFER_DOWNLOAD).with(Prop::DisabledColor, grey))
         .child(node(NodeKind::Button, MAP_OFFER_LEAVE))
-        .child(node(NodeKind::Text, MAP_OFFER_BODY).with(Prop::Align, Value::Int(0)))
+        .child(node(NodeKind::Text, MAP_OFFER_PROGRESS))
 }
 
 /// Control `id`'s rect while it shows: a combo for a shown row (the team

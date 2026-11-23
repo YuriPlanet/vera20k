@@ -242,6 +242,22 @@ pub(crate) enum FrameArt {
     /// node's rect less `inset` (base pixels, as a `TextInset`), no
     /// caption: the WOL pages' `BS_GROUPBOX` frames.
     ListRings { inset: RectPx },
+    /// The node's rect filled in `fill`, then outlined in `outline`, at
+    /// `depths` (fill, outline): `0x105`'s progress well while a map
+    /// generates.
+    Filled {
+        fill: [f32; 3],
+        outline: [f32; 3],
+        depths: [f32; 2],
+    },
+    /// VERA's download bar ([`push_progress`]): the node's rect outlined
+    /// in `rgb` and filled two pixels in for `done` of `total`, at `depth`.
+    Progress {
+        rgb: [f32; 3],
+        done: u64,
+        total: u64,
+        depth: f32,
+    },
 }
 
 /// How an edit paints in place of a NewEdit ([`GuiStyle::edit_face_of`]).
@@ -1268,6 +1284,19 @@ pub(crate) fn paint_gui_into(
                     );
                 }
             }
+            // A lone scrollbar (VERA's random-map Advanced pages): the
+            // control scrollbar on its bar, its thumb at its position; it
+            // acts on press, so no part shows pushed.
+            NodeKind::ScrollBar => {
+                if let Some(view) = gui.scrollbar_view(node) {
+                    let control = ControlPaint::ScrollBar {
+                        scrollbar: view.bar,
+                        thumb: view.thumb,
+                        pressed_part: None,
+                    };
+                    paint_control(&mut paint.controls, &chrome, control, scale);
+                }
+            }
             // A bar's one meaning (`vera20k_gui::shell::bar`): the outline
             // in `Background`, the fill `Fill` percent wide in `Color`, here
             // the style's without one.
@@ -1430,6 +1459,32 @@ pub(crate) fn push_frame(
             });
             super::list::paint_list_frame_px(controls, white, window);
         }
+        FrameArt::Filled { fill, outline, depths } => {
+            super::chrome::push_solid_rect_px(controls, white, rect, fill, depths[0]);
+            super::chrome::push_rect_outline_px(controls, white, rect, outline, depths[1]);
+        }
+        FrameArt::Progress { rgb, done, total, depth } => {
+            push_progress(controls, white, rect, rgb, (done, total), depth)
+        }
+    }
+}
+
+/// VERA's download boxes show how much has arrived: `track` outlined in
+/// `rgb`, filled two pixels in for `done` of `total` of its inner width.
+pub(crate) fn push_progress(
+    out: &mut Vec<SpriteInstance>,
+    white: Option<SkirmishShellChromeEntry>,
+    track: RectPx,
+    rgb: [f32; 3],
+    (done, total): (u64, u64),
+    depth: f32,
+) {
+    super::chrome::push_rect_outline_px(out, white, track, rgb, depth);
+    let inner = track.w - 4;
+    let filled = (inner as u64 * done.min(total) / total.max(1)) as i32;
+    if filled > 0 {
+        let fill = RectPx::new(track.x + 2, track.y + 2, filled, track.h - 4);
+        super::chrome::push_solid_rect_px(out, white, fill, rgb, depth);
     }
 }
 

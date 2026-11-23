@@ -229,9 +229,8 @@ fn build_skirmish_shell_instances(
     wave: Option<&ShellFrameWave>,
     leaving: bool,
     // `0x102`'s widgets as the GUI paints them (the computer rows'
-    // scrollbar and the flags among them), and the random-map Advanced
-    // scrollbar's widget.
-    (page, advanced_bar): (&[SpriteInstance], Option<vera20k_gui::ScrollBarView>),
+    // scrollbar and the flags among them).
+    page: &[SpriteInstance],
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::new();
     // Every page of the family starts with the right panel and the lower
@@ -253,17 +252,13 @@ fn build_skirmish_shell_instances(
                 choose_map_layout,
                 1.0,
             );
-        } else if let (Some(modal), Some(setup_layout)) =
-            (shell.random_map_setup_modal.as_ref(), setup_layout)
-        {
+        } else if shell.random_map_setup_modal.is_some() && setup_layout.is_some() {
             push_generic_shell_background_instances(&mut instances, atlas, layout);
             // `0x105`'s slides draw the top panel and the column like `0x6B`'s;
-            // the slide-out repaint blanks every child.
+            // the slide-out repaint blanks every child. Its widgets paint
+            // from its tree, the Advanced scrollbar and progress well too.
             let profile = ShellDialogChromeProfile::RandomMapSetup0x105;
             push_panel_chrome(&mut instances, atlas, layout, wave, profile, CHOOSE_MAP_COLUMN_DEPTH);
-            if !leaving {
-                push_random_map_setup_modal_control_instances(&mut instances, atlas, setup_layout, modal, advanced_bar);
-            }
         } else {
             push_choose_map_background_instances(
                 &mut instances,
@@ -620,10 +615,7 @@ fn render_skirmish_shell_with_atlas(
             &state.frontend.skirmish_shell_state,
             wave.as_ref(),
             leaving,
-            (
-                &page_paint.controls,
-                crate::ui::skirmish_shell::random_map_page::scrollbar_view(&state.frontend.shell_controller),
-            ),
+            &page_paint.controls,
         )
     };
     // Choose Map's, `0x105`'s or a browser's widgets over their art.
