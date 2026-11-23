@@ -97,6 +97,22 @@ impl AbortReturnInput {
         Self::begin_mode(state, route, frame, choice, true)
     }
 
+    /// A capture whose match the ordinary frame loop runs (a skirmish started
+    /// from the shell) has no exact-step owner: Escape queues Options and the
+    /// route waits for the menu the loop's next tick opens. `stop_at_menu`
+    /// stops on the presented menu, else `choice` as [`Self::begin_choosing`].
+    pub(in super::super) fn begin_live(
+        state: &mut AppState,
+        route: &mut Vec<Value>,
+        frame: u32,
+        choice: Option<AbortButton>,
+        stop_at_menu: bool,
+    ) -> Result<Self> {
+        let mut input = Self::begin_mode(state, route, frame, choice, false)?;
+        input.stop_at_menu = stop_at_menu;
+        Ok(input)
+    }
+
     /// Live peers must advance only through their normal frame boundary. Queue
     /// Options through the keyboard and wait for the actual menu to appear.
     pub(super) fn begin_network_observe(
