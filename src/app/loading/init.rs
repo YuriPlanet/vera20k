@@ -1699,6 +1699,69 @@ impl MapLoadInitial {
         Ok(self)
     }
 
+    /// `-ra2` translation of the retail Allied mission ALL02S ("Hail to the
+    /// Chief"): its Chapel and Tanya triggers use RA2 event kinds whose stock
+    /// YR descendants the engine evaluates differently.
+    ///
+    /// `Chapel Destroyed` uses event 57, "the trigger's House owns no
+    /// BuildingTypes[186]". An engineer capture moves the only Chapel out of
+    /// NeutralA's registration and zeroes that House-scoped count, which the
+    /// trigger cannot distinguish from the Chapel being destroyed. The YR
+    /// campaign master rewrites these triggers to event 61, "no TechnoType
+    /// named CACOLO01 exists anywhere" — still true when the Chapel is
+    /// destroyed, false while the captured building lives on. Tanya's event
+    /// 11 ("House destroyed") is the same retail-to-YR translation, rewritten
+    /// to event 61 keyed by TANY in the community master.
+    ///
+    /// This is map data, applied after every other map source has been merged
+    /// and before anything reads the map's rules or triggers. It never runs in
+    /// YR mode, on another map, or on a network map.
+    pub(crate) fn with_ra2_campaign_fixups(mut self, map_file: &str) -> Result<Self> {
+        use crate::rules::ini_parser::{IniFile, IniSection};
+
+        if !crate::util::ra2_launch::enabled() {
+            return Ok(self);
+        }
+        let base_name = map_file.rsplit(['/', '\\']).next().unwrap_or(map_file);
+        if !base_name.eq_ignore_ascii_case("ALL02S.MAP") {
+            return Ok(self);
+        }
+        let edits: Vec<String> = self
+            .map_data
+            .ini
+            .section("Events")
+            .into_iter()
+            .flat_map(|section| section.raw_entries())
+            .filter_map(|(key, value)| {
+                let translated = if value.eq_ignore_ascii_case("1,57,0,186") {
+                    Some("1,61,2,0,CACOLO01")
+                } else if value.eq_ignore_ascii_case("1,11,0,3") {
+                    Some("1,61,2,0,TANY")
+                } else {
+                    None
+                };
+                translated.map(|value| format!("{key}={value}"))
+            })
+            .collect();
+        if edits.is_empty() {
+            return Ok(self);
+        }
+        let mut patch_events = IniSection::new("Events".to_owned());
+        for edit in &edits {
+            let (key, value) = edit.split_once('=').expect("built as key=value");
+            patch_events.set(key, value);
+        }
+        let patch = IniFile::from_sections([patch_events]);
+        let mut ini = std::mem::replace(&mut self.map_data.ini, IniFile::empty());
+        ini.merge(&patch);
+        self.map_data = crate::map::map_file::MapFile::from_ini(ini)?;
+        log::info!(
+            "-ra2 ALL02S campaign translation applied: {}",
+            edits.join(", ")
+        );
+        Ok(self)
+    }
+
     /// Physical cached .SED names must not become shared Scenario identity.
     /// ReadScenario684620 regenerates from the supplied path, while the
     /// accepted network record remains the common logical seed name.

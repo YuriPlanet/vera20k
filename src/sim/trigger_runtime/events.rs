@@ -51,6 +51,7 @@ impl Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         live_index: usize,
     ) -> bool {
+        crate::sim::ra2_all02_diagnostic::on_trigger_evaluation(self, rules);
         let type_index = self
             .trigger_runtime
             .trigger(live_index)
@@ -304,7 +305,17 @@ impl Simulation {
                 //The null incoming House reaches the original generic true
                 //tail without writing persistence.
                 let Some(owner) = incoming_house else {
-                    return !self.event_house_lookup_rejects(condition.value, rules);
+                    let fallback = !self.event_house_lookup_rejects(condition.value, rules);
+                    crate::sim::ra2_all02_diagnostic::on_building_count_event(
+                        self,
+                        rules,
+                        None,
+                        condition.kind,
+                        condition.value,
+                        -1,
+                        fallback,
+                    );
+                    return fallback;
                 };
                 let Some(type_name) = usize::try_from(condition.value).ok().and_then(|index| {
                     rules
@@ -321,6 +332,15 @@ impl Simulation {
                     })
                 });
                 let result = (count != 0) == (condition.kind == 32);
+                crate::sim::ra2_all02_diagnostic::on_building_count_event(
+                    self,
+                    rules,
+                    Some(owner),
+                    condition.kind,
+                    condition.value,
+                    count,
+                    result,
+                );
                 if result {
                     *persistence = true;
                 }
