@@ -649,7 +649,7 @@ pub(super) fn build_world_instances(
                             coord.x, coord.y, coord.z,
                         );
                         use crate::app::presentation::health_templates::{Mark, mark, shifted};
-                        status.talk_bubble = mark(Mark::TalkBubble, frame)
+                        status.talk_bubble = mark(Mark::TalkBubble, None, frame)
                             .and_then(|(frame, offset)| {
                                 shape.instance(frame, shifted(point, offset), 0.0)
                             })

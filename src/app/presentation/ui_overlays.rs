@@ -393,7 +393,7 @@ impl StatusInfo {
 const UNIT_PIPS_VEHICLE: u32 = 17; // vehicles + aircraft
 const UNIT_PIPS_INFANTRY: u32 = 8;
 
-use crate::app::presentation::health_templates::{self, HealthAnchor, HealthBand, HealthClass, Mark};
+use crate::app::presentation::health_templates::{self, HealthBand, HealthClass, Mark};
 
 /// The object under the cursor whose health bar the original draws on hover,
 /// for either Techno health branch, from the frame's cursor `hover`
@@ -603,7 +603,7 @@ impl BuildingBarGeometry {
 /// `[x, y, width, height]`.
 #[cfg(feature = "phobos")]
 pub(crate) fn foot_select_bracket(sx: f32, sy: f32, infantry: bool) -> [f32; 4] {
-    let length = if infantry { 8.0 } else { 17.0 };
+    let length = (if infantry { UNIT_PIPS_INFANTRY } else { UNIT_PIPS_VEHICLE }) as f32;
     let nudge = if infantry { 1.0 } else { 0.0 };
     [
         sx - length + nudge + 1.0,
@@ -827,7 +827,7 @@ pub(crate) fn status_text_instances(
     let mut label = StatusTextOverlayInstances::default();
     // The family's built-in template (`health_templates`) may hide or move
     // it; a stock one leaves every number as it was.
-    let Some((_, offset)) = health_templates::mark(family, 0) else {
+    let Some((_, offset)) = health_templates::mark(family, None, 0) else {
         return label;
     };
     let shifted = health_templates::shifted((origin[0], origin[1]), offset);
@@ -1448,18 +1448,6 @@ impl SelfHealPip {
     }
 }
 
-///70A5EC chooses the offset by RTTI, independently of the icon frame.
-/// Health6F6A8E supplies(-10,+10),709B14 subtracts5 X and adds11 for
-/// Infantry.70A5F1 adds(38,-32) for every Unit, even Organic, while
-///70A60A adds(19,-35) for Infantry. Type+3E0 bracket delta is not passed.
-fn self_heal_pip_offset(category: EntityCategory) -> (f32, f32) {
-    if category == EntityCategory::Unit {
-        (23.0, -22.0)
-    } else {
-        (15.0, -25.0)
-    }
-}
-
 /// The self-heal status pip an object draws, or `None`.
 ///
 /// Native `DrawPipScalePips` (`0x0070A50C..0x0070A6BB`): an Infantry
@@ -1699,23 +1687,13 @@ fn shield_bar_instances(
         let empty_frame = usize::try_from(empty_frame.max(0)).unwrap_or(0);
         // The built-in shield template lays the bar out
         // (`health_templates`): full pips, then empty ones, walking [-4,+2].
-        // Subtracting the negated step keeps the original `- 4.0 * index`.
         health_templates::shield_pips(
             HealthClass::Building,
             (0..total.max(0))
                 .map(|_| frame)
                 .chain((total.max(0)..length).map(|_| empty_frame)),
-            &mut Vec::new(),
-            &mut Vec::new(),
-            |frame, offset| {
-                strip.fills.extend(instance(
-                    frame,
-                    (
-                        bracket.0 - offset[0].wrapping_neg() as f32,
-                        bracket.1 + offset[1] as f32,
-                    ),
-                ));
-            },
+            bracket,
+            |frame, point| strip.fills.extend(instance(frame, point)),
         );
         return;
     }
@@ -1729,7 +1707,7 @@ fn shield_bar_instances(
         // Phobos DrawShieldBar_Other (0x6F683C) draws PIPBRD with E00;
         // keep its texture/material separate from the following PIPS/600.
         // https://github.com/Phobos-developers/Phobos/blob/b90ab4bcba3f4b0b8ce74d2119ac0d561eaccc8f/src/New/Entity/ShieldClass.cpp#L1195-L1209
-        strip.shield_background = health_templates::mark(Mark::ShieldBackground, board_frame)
+        strip.shield_background = health_templates::mark(Mark::ShieldBackground, None, board_frame)
             .and_then(|(board_frame, shift)| {
                 board.instance(
                     board_frame,
@@ -1750,14 +1728,8 @@ fn shield_bar_instances(
             HealthClass::Vehicle
         },
         (0..total.max(0)).map(|_| frame),
-        &mut Vec::new(),
-        &mut Vec::new(),
-        |frame, offset| {
-            strip.fills.extend(instance(
-                frame,
-                (base.0 + offset[0] as f32, base.1 + offset[1] as f32),
-            ));
-        },
+        base,
+        |frame, point| strip.fills.extend(instance(frame, point)),
     );
 }
 
@@ -2197,7 +2169,7 @@ pub(crate) fn techno_extras_for_parent(
                       mark: Mark,
                       frame: usize,
                       shift: f32| {
-            let (frame, offset) = health_templates::mark(mark, frame)?;
+            let (frame, offset) = health_templates::mark(mark, None, frame)?;
             let at = health_templates::shifted((point.0 + shift, point.1 + shift), offset);
             let mut instance = shape.instance(frame, at, 0.0)?;
             // Init52C1D8 MOUSEPAL N1; E00/493DF0 consumes A with zero
@@ -2283,6 +2255,23 @@ pub(crate) fn techno_extras_for_parent(
         instance.palette_light = crate::render::palette_light::PaletteLight::plain(53, 1000);
         Some(instance)
     };
+    // The rank insignia at `point` through its built-in template, which
+    // places the stock and Ares leaves' by class.70AA20..AA4F: opaque PIPS
+    // E00, plain53/1000, A-consuming/no-Z. Its -2 Z-adjust is unused by this
+    // leaf; do not inherit body FX.
+    let rank = |shape: &crate::render::selection_overlay::CenteredShapeStrip,
+                frame: usize,
+                point: (f32, f32)| {
+        health_templates::mark(Mark::Rank, Some(HealthClass::of(entity.category())), frame)
+            .and_then(|(frame, offset)| {
+                instance(shape, frame, health_templates::shifted(point, offset), 0.0006)
+            })
+            .filter(|rank| viewport.contains(rank))
+            .map(|mut rank| {
+                rank.z_adjust = -2.0;
+                rank
+            })
+    };
     //6F534E..5382: +C8's canonical observer-disguise query is distinct
     // from drawing disguise art; +68 uses VisualCharacter's screen(0,NULL)
     // query. The first screen argument means graphical client, not force_sensor.
@@ -2310,22 +2299,7 @@ pub(crate) fn techno_extras_for_parent(
             None
         };
         if let (Some(frame), Some(shape)) = (frame, overlay.pips()) {
-            let (dx, dy) = if entity.category() == EntityCategory::Infantry {
-                (5.0, 2.0)
-            } else {
-                (10.0, 6.0)
-            };
-            //70AA20..AA4F: opaque PIPS E00, plain53/1000, A-consuming/no-Z.
-            // Its -2 Z-adjust is unused by this leaf; do not inherit body FX.
-            strip.rank = health_templates::mark(Mark::Rank, frame)
-                .and_then(|(frame, offset)| {
-                    instance(shape, frame, health_templates::shifted((sx + dx, sy + dy), offset), 0.0006)
-                })
-                .filter(|rank| viewport.contains(rank))
-                .map(|mut rank| {
-                    rank.z_adjust = -2.0;
-                    rank
-                });
+            strip.rank = rank(shape, frame, (sx, sy));
         }
     }
     #[cfg(feature = "phobos")]
@@ -2343,15 +2317,7 @@ pub(crate) fn techno_extras_for_parent(
             sy,
         )
     {
-        strip.rank = health_templates::mark(Mark::Rank, frame)
-            .and_then(|(frame, offset)| {
-                instance(shape, frame, health_templates::shifted(point, offset), 0.0006)
-            })
-            .filter(|rank| viewport.contains(rank))
-            .map(|mut rank| {
-                rank.z_adjust = -2.0;
-                rank
-            });
+        strip.rank = rank(shape, frame, point);
         strip.rank_insignia = strip.rank.is_some().then_some(insignia).flatten();
     }
     #[cfg(not(feature = "phobos"))]
@@ -2362,20 +2328,7 @@ pub(crate) fn techno_extras_for_parent(
         && let Some((shape, frame, insignia)) =
             ares_insignia_draw(sim, entity, object, rules, overlay, observer_id)
     {
-        let (dx, dy) = if entity.category() == EntityCategory::Infantry {
-            (5.0, 2.0)
-        } else {
-            (10.0, 6.0)
-        };
-        strip.rank = health_templates::mark(Mark::Rank, frame)
-            .and_then(|(frame, offset)| {
-                instance(shape, frame, health_templates::shifted((sx + dx, sy + dy), offset), 0.0006)
-            })
-            .filter(|rank| viewport.contains(rank))
-            .map(|mut rank| {
-                rank.z_adjust = -2.0;
-                rank
-            });
+        strip.rank = rank(shape, frame, (sx, sy));
         strip.rank_insignia = strip.rank.is_some().then_some(insignia).flatten();
     }
     let widened = health_strip_widened(
@@ -2468,12 +2421,11 @@ pub(crate) fn techno_extras_for_parent(
         //6F6658..6774: filled first, then empty frame0, walking [-4,+2].
         // Building PIPS600 bypasses A and Z; the replay owner preserves both
         // original first-Extras and late-Extras positions around the body.
-        health_templates::draw(
+        health_templates::bar(
             HealthClass::Building,
             false,
             Some((band, filled, num_pips)),
-            HealthAnchor::Building { start },
-            &mut Vec::new(),
+            start,
             |pip| strip.fills.extend(instance(shape, pip.frame, pip.point, 0.0006)),
         );
         if pip_zoom < 1.0 {
@@ -2487,22 +2439,9 @@ pub(crate) fn techno_extras_for_parent(
         // The built-in scale template lays the row out (`health_templates`).
         health_templates::scale_pips(
             HealthClass::Building,
-            scale_pip_draws(sim, entity, hovered_id, local_owner_id, rules)
-                .iter()
-                .map(|pip| (pip.frame, pip.offset_pixels)),
-            &mut Vec::new(),
-            &mut Vec::new(),
-            |frame, offset| {
-                strip.fills.extend(instance(
-                    shape,
-                    frame,
-                    (
-                        sx + ax as f32 + 6.0 + offset[0] as f32,
-                        sy + ay as f32 - 1.0 + offset[1] as f32,
-                    ),
-                    0.0006,
-                ));
-            },
+            scale_pip_draws(sim, entity, hovered_id, local_owner_id, rules),
+            (sx + ax as f32, sy + ay as f32),
+            |frame, point| strip.fills.extend(instance(shape, frame, point, 0.0006)),
         );
         strip.cull_health_to_viewport(viewport);
         return strip;
@@ -2515,11 +2454,10 @@ pub(crate) fn techno_extras_for_parent(
         (UNIT_PIPS_VEHICLE, HealthClass::Vehicle)
     };
     // The built-in unit templates (`health_templates`) give the background's
-    // frame and offset and the pip row's start.
-    let mut cmds = Vec::new();
-    let anchor = HealthAnchor::Unit { sx, sy, delta };
+    // frame and offset and the pip row's start from the lowered draw point.
+    let anchor = (sx, sy + delta);
     if draw_background && let Some(shape) = overlay.pipbrd() {
-        health_templates::draw(class, true, None, anchor, &mut cmds, |border| {
+        health_templates::bar(class, true, None, anchor, |border| {
             strip.background = instance(shape, border.frame, border.point, 0.0006);
         });
     }
@@ -2534,7 +2472,6 @@ pub(crate) fn techno_extras_for_parent(
     // adds the object bracket delta and the type's offset -3.
     #[cfg(feature = "phobos")]
     {
-        let length = if infantry { 8 } else { 17 };
         let [left, top, _, _] = foot_select_bracket(sx, sy, infantry);
         let bracket = (left - 1.0, top);
         let type_delta = entity
@@ -2547,7 +2484,7 @@ pub(crate) fn techno_extras_for_parent(
             shape,
             overlay.pipbrd(),
             false,
-            length as i32,
+            num_pips as i32,
             bracket,
             delta + type_delta - 3.0,
             &mut strip,
@@ -2573,12 +2510,11 @@ pub(crate) fn techno_extras_for_parent(
         HealthBand::Green
     };
     strip.fills.reserve(filled as usize);
-    health_templates::draw(
+    health_templates::bar(
         class,
         false,
         Some((band, filled as i32, num_pips as i32)),
         anchor,
-        &mut cmds,
         |pip| strip.fills.extend(instance(shape, pip.frame, pip.point, 0.0005)),
     );
     //709B0F/6F6A8E: nonbuilding scale starts at health anchor(-15,+10),
@@ -2589,15 +2525,9 @@ pub(crate) fn techno_extras_for_parent(
     if let Some(art) = overlay.scale_pips() {
         health_templates::scale_pips(
             class,
-            scale_pip_draws(sim, entity, hovered_id, local_owner_id, rules)
-                .iter()
-                .map(|pip| (pip.frame, pip.offset_pixels)),
-            &mut Vec::new(),
-            &mut cmds,
-            |frame, offset| {
-                let x = sx - 15.0 + if infantry { 11.0 } else { 0.0 } + offset[0] as f32;
-                strip.scale.extend(instance(art, frame, (x, sy + offset[1] as f32), 0.0004));
-            },
+            scale_pip_draws(sim, entity, hovered_id, local_owner_id, rules),
+            (sx, sy),
+            |frame, point| strip.scale.extend(instance(art, frame, point, 0.0004)),
         );
     }
     //70A50C..6BB: House admission precedes signed frame division, even for
@@ -2622,15 +2552,11 @@ pub(crate) fn techno_extras_for_parent(
             // frame.
             let remainder = frame.checked_rem(period).unwrap_or(i32::MAX);
             let selector = u8::from(remainder <= 5 && entity.health.current() < object.strength);
-            let (offset_x, offset_y) = self_heal_pip_offset(entity.category());
-            strip.self_heal = health_templates::mark(Mark::SelfHeal, arm.frame())
+            //70A5EC places the marker by RTTI, independently of the icon
+            // frame; its built-in template has each class's place.
+            strip.self_heal = health_templates::mark(Mark::SelfHeal, Some(class), arm.frame())
                 .and_then(|(frame, offset)| {
-                    instance(
-                        shape,
-                        frame,
-                        health_templates::shifted((sx + offset_x, sy + offset_y), offset),
-                        0.0004,
-                    )
+                    instance(shape, frame, health_templates::shifted((sx, sy), offset), 0.0004)
                 })
                 .map(|mut instance| {
                     instance.draw_state =
@@ -2647,13 +2573,17 @@ pub(crate) fn techno_extras_for_parent(
     strip
 }
 
-/// One709A90 pip command relative to the caller's class-specific row anchor.
-/// Buildings use PIPS and step(4,2); mobiles use PIPS2 and step(4,0).
-/// Independent native arms restart their slot origins.
+/// One709A90 pip command: its slot in the row and its frame. The built-in
+/// scale templates (`health_templates`) place a slot from the caller's
+/// class-specific row anchor: buildings use PIPS and step(4,2), mobiles
+/// PIPS2 and step(4,0). Independent native arms restart their slot origins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ScalePipDraw {
+    pub slot: usize,
     pub frame: usize,
-    pub offset_pixels: [i32; 2],
+    /// Pixels the pip sits below its row's line: -3 for the Ammo arm
+    /// (`70A3B7`), 0 for every other.
+    pub lift: i16,
 }
 
 /// VERA's bound on the pips one scale row draws. A row's count comes from
@@ -2793,13 +2723,10 @@ fn scale_pip_rows(
         return Vec::new();
     };
     let building = entity.category() == EntityCategory::Structure;
-    let row_y = if building { 0 } else { 10 };
-    let pip = |slot: usize, frame: usize, y: i32| ScalePipDraw {
+    let pip = |slot: usize, frame: usize| ScalePipDraw {
+        slot,
         frame,
-        offset_pixels: [
-            (slot * 4) as i32,
-            y + if building { (slot * 2) as i32 } else { 0 },
-        ],
+        lift: 0,
     };
     let mut pips = Vec::new();
     //709B73..C25 is independent of Passengers/PipScale. Current type+D5C
@@ -2814,7 +2741,7 @@ fn scale_pip_rows(
         let docked = manager.count_docked_spawns();
         pips.extend(
             (0..object.spawns_number as usize)
-                .map(|slot| pip(slot, usize::from(slot < docked), row_y)),
+                .map(|slot| pip(slot, usize::from(slot < docked))),
         );
     }
     //709C27..D17 precedes passengers and uses raw OccupyPip, including
@@ -2831,7 +2758,7 @@ fn scale_pip_rows(
                 .and_then(|id| sim.entities().get(*id))
                 .and_then(|passenger| sim.interner().object_type(passenger.type_ref(), rules))
                 .map_or(6, |passenger| passenger.occupy_pip() as usize);
-            pip(slot, frame, row_y)
+            pip(slot, frame)
         }));
     }
     //709D1D tests positive Passengers before the non-passenger PipScale arms.
@@ -2850,7 +2777,6 @@ fn scale_pip_rows(
             pip(
                 slot + usize::from(gap_after != 0 && slot >= gap_after),
                 frame,
-                row_y,
             )
         }));
         return pips;
@@ -2863,7 +2789,7 @@ fn scale_pip_rows(
         pips.extend((0..slots).map(|slot| {
             //709F50..A06F: later Gunner slots advance two extra steps.
             let gunner_step = if object.gunner && slot > 0 { 2 } else { 0 };
-            pip(slot + gunner_step, 0, row_y)
+            pip(slot + gunner_step, 0)
         }));
         let Some(cargo) = entity.passenger_role().cargo() else {
             return pips;
@@ -2963,7 +2889,10 @@ fn scale_pip_rows(
         //70A3B7 resets this arm three pixels above the ordinary Y anchor,
         //even after a preceding spawn row. No empty Ammo outlines are drawn.
         let ammo_frame = stock_ammo_pip_frame();
-        pips.extend((0..filled as usize).map(|slot| pip(slot, ammo_frame, row_y - 3)));
+        pips.extend((0..filled as usize).map(|slot| ScalePipDraw {
+            lift: -3,
+            ..pip(slot, ammo_frame)
+        }));
         return pips;
     }
     if object.pip_scale == crate::rules::object_type::PipScale::MindControl {
@@ -2979,14 +2908,14 @@ fn scale_pip_rows(
         //Canonical708C30 owns count/max rounding, including signed numeric
         //boundaries. Draw70A0B5 uses frame1 below fill, frame0 afterward.
         pips.extend(
-            (0..slots).map(|slot| pip(slot, usize::from((slot as i64) < i64::from(count)), row_y)),
+            (0..slots).map(|slot| pip(slot, usize::from((slot as i64) < i64::from(count)))),
         );
         // IsOverloading4726C0 owns infinite/capacity/counter policy;
         //70A17F..1C2 adds exactly one frame3 (positive) or4 (idle).
         if let Some(manager) = manager {
             let effective = effective.unwrap_or_else(|| manager.count());
             if let Some(active) = manager.overload_pip_state(effective) {
-                pips.push(pip(slots, if active { 3 } else { 4 }, row_y));
+                pips.push(pip(slots, if active { 3 } else { 4 }));
             }
         }
         return pips;
@@ -3025,7 +2954,7 @@ fn scale_pip_rows(
         } else {
             0
         };
-        pip(slot, frame, row_y)
+        pip(slot, frame)
     }));
     pips
 }
