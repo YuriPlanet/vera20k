@@ -1261,6 +1261,7 @@ fn synthetic_theater_with_bridge_keys(
         automatic_tube_bases: [-1; 4],
         cliff_ranges: TheaterCliffRanges::default(),
         rmg_tiles: super::RmgTileKeys::default(),
+        ice_sets: None,
     }
 }
 

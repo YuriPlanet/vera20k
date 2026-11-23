@@ -3724,6 +3724,16 @@ fn continue_area_damage(
     {
         world.spawn_particle_in_system(system, position, position, rules);
     }
+    // Firestorm ice: TS Explosion_Damage cracked ice after its particle
+    // system (Firestorm 2.0 0x4601b4..0x46024f, docs/ts-ice.md).
+    world.explosion_ice(
+        rules,
+        overlay_registry,
+        run.effects(),
+        context.warhead,
+        context.impact,
+        context.cell,
+    );
     death
 }
 

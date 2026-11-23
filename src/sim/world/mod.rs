@@ -47,6 +47,7 @@ mod disk_laser_tests;
 pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
+mod ice;
 mod idle_sleep;
 #[cfg(all(test, tests_sim_world_c_o))]
 mod idle_sleep_tests;
@@ -907,6 +908,10 @@ pub struct Simulation {
     /// overlay/bridge/navigation reconstruction on restore.
     #[serde(default)]
     pub(crate) dynamic_terrain_cells: crate::map::resolved_terrain::DynamicTerrainCells,
+    /// Firestorm 2.0 MapClass+0x14C, the cracked ice waiting to freeze over
+    /// (`ice`, docs/ts-ice.md). Empty unless the map runs ice.
+    #[serde(default)]
+    ice_cracks: Vec<ice::CrackedIce>,
     pub(crate) bridge_state: Option<BridgeRuntimeState>,
     /// Resident Map+D4 ordered collapse coordinates. Independent of optional
     /// geometry so even standalone fallout/save retains its native publication.

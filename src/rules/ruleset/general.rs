@@ -789,6 +789,8 @@ pub struct GeneralRules {
     /// entirely when the count is zero and otherwise plays
     /// `items[rand % count]` at the strike coordinate.
     pub lightning_sounds: Vec<String>,
+    /// The Firestorm ice chain's keys (docs/ts-ice.md).
+    pub ice: crate::rules::ice_rules::IceRules,
     /// Displayed-credits tick cues from `[AudioVisual] CreditTicks=` (stock
     /// `CreditUp,CreditDown`), the `Rules+0x6D0` sound list (count `+0x6DC`).
     ///
@@ -2053,6 +2055,7 @@ impl Default for GeneralRules {
             create_aircraft_sound: None,
             disk_laser_charge_up: None,
             lightning_sounds: Vec::new(),
+            ice: Default::default(),
             credit_ticks: Vec::new(),
             storm_sound: None,
             // `RulesClass::Constructor @ 0x006676BC` writes AL, and the last
@@ -2617,8 +2620,11 @@ impl GeneralRules {
         let airstrike_line_z_adjust = crate::rules::ares_switch::not_ares_read(|| {
             audio_visual.read_ares_int("AirstrikeLineZAdjust", defaults.airstrike_line_z_adjust)
         });
+        let mut ice = defaults.ice.clone();
+        ice.read_audio_visual(&audio_visual);
         let Some(general) = ini.section("General") else {
             return Self {
+                ice,
                 message_delay_minutes,
                 savour_delay_minutes,
                 pose_dir,
@@ -2676,7 +2682,9 @@ impl GeneralRules {
             general.read_double("ConditionRedSparkingProbability", 0.02);
         let condition_yellow_spark_prob: f64 =
             general.read_double("ConditionYellowSparkingProbability", 0.01);
+        ice.read_general(general);
         Self {
+            ice,
             pose_dir,
             deploy_dir,
             max_waypoint_path_length: general

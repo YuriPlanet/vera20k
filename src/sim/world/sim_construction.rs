@@ -255,6 +255,7 @@ impl Simulation {
             native_allocated_cell_cursor: None,
             real_cell_bridge_flags_0x1180: RealCellBridgeFlags0x1180::default(),
             dynamic_terrain_cells: Default::default(),
+            ice_cracks: Vec::new(),
             bridge_state: None,
             pending_bridge_collapses: Default::default(),
             overlay_grid: None,

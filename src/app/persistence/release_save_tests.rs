@@ -392,8 +392,12 @@ pub(super) fn resume_player_file(
         let converted = repository.read(&path).unwrap();
         let converted_header = GameSnapshot::read_header(&converted).unwrap();
         assert_eq!(converted_header.description, name);
-        if matches!(header.layout, 0xFD30_A463 | 0x9BB2_0D64 | 0xFD54_FFFF) {
-            // Both newly saved flags default to false in historical worlds.
+        if matches!(
+            header.layout,
+            0xFD30_A463 | 0x9BB2_0D64 | 0xFD54_FFFF | 0xCADF_6067
+        ) {
+            // Both newly saved flags default to false in historical worlds,
+            // as the ice timer, cracks and sinking flag read as none.
             // Every original body byte survives in order, including any
             // animation-listener flag already present in the eb05f451e layout.
             let original_body =
