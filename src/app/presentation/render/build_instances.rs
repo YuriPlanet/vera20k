@@ -1503,9 +1503,12 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     } else {
         Vec::new()
     };
+    let mut chrome_hud = std::mem::take(
+        &mut state.match_state.match_presentation.sidebar_chrome_hud,
+    );
     let view = current_sidebar_view(state);
     let mut chrome = view
-        .map(|v| build_sidebar_chrome_instances(state, v))
+        .map(|v| build_sidebar_chrome_instances(state, v, &mut chrome_hud))
         .unwrap_or_default();
     // The smooth sidebar's chrome copy packs the pieces apart from the atlas.
     let chrome_atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
@@ -1569,6 +1572,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             crate::app::presentation::sw_sidebar_build::build(state, status_labels, ready_tint)
         })
         .unwrap_or_default();
+    state.match_state.match_presentation.sidebar_chrome_hud = chrome_hud;
     // The column's text, at the window's pixels wherever it is drawn.
     let frame_raster = state.renderer.bit_font.set_raster(
         crate::app::presentation::sidebar_surface::column_text(state)
