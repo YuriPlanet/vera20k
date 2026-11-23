@@ -292,6 +292,7 @@ pub(crate) fn render_wol_page(
     if state.frontend.main_menu_shell_chrome.is_none() || state.frontend.wol.is_none() {
         return Ok(false);
     }
+    crate::app::shell_network_setup::verify_sync(state);
     let painted = painted(state);
     let kind = painted.as_ref().map(Painted::kind);
     let page = match &painted {

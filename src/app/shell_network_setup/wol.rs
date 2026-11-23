@@ -820,6 +820,22 @@ pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
     }
 }
 
+/// `0x130`'s widgets on its layout before they paint (input syncs them only
+/// on a pointer message).
+pub(crate) fn verify_sync(state: &mut AppState) {
+    let Some(shown) = verify(state) else {
+        return;
+    };
+    let ok = Some(shown)
+        .and_then(|verify| verify.mismatch.as_ref())
+        .map(|message| verify_mismatch_parts(state, message).button(0))
+        .unwrap_or_default();
+    let layout = verify_layout(state);
+    if let Ok(verify) = verify_mut(state) {
+        verify.sync_widgets(&layout, ok);
+    }
+}
+
 pub(crate) fn verify_poll_scroll(state: &mut AppState) -> Option<Instant> {
     verify_mut(state).ok()?.poll_scroll().1
 }

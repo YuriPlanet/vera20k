@@ -1314,6 +1314,8 @@ pub(super) fn dispatch_draw_passes(
             [tac_x, tac_y, tac_w, tac_h],
             bar_under,
         );
+    // The Surrender box paints from its nodes, kept on its layout.
+    crate::app::input::surrender::sync(state);
     let page_draw = crate::app::frontend::skirmish_shell_render::in_match_page_draw(state);
     let mut pass = begin_main_load_pass(encoder, view, frame_depth);
 
