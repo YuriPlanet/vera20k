@@ -12,7 +12,7 @@
 //! GAME.FNT's style without GAME.FNT until it loads ([`BitFont::without_fnt`]).
 //! The panel is independent of tactical cameras,
 //! optional dev overlays, and shell/offscreen composition. It is a
-//! [`vera20k_gui::hud`] tree ([`view`]).
+//! [`vera20k_gui::Gui`] tree ([`view`]).
 
 mod panel;
 mod view;

@@ -7,7 +7,7 @@
 use crate::Rect;
 use crate::node::{Refused, Rgba};
 
-use super::{Origin, others_share};
+use crate::origin::{Origin, others_share};
 
 // Every count limit is per world, shared by all origins. Going past one is
 // `Refused::Limit` and changes nothing.

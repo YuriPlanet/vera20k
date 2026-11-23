@@ -21,7 +21,7 @@ pub enum Refused {
     Stale,
     WrongKind,
     Limit,
-    /// The caller's origin may not do this ([`crate::hud`]).
+    /// The caller's origin may not do this ([`crate::Origin`]).
     Denied,
 }
 
@@ -39,12 +39,12 @@ pub enum NodeKind {
     /// A lone vertical scrollbar over rows its host lays out
     /// ([`crate::widget::scrollbar`]).
     ScrollBar,
-    /// A picture named by `Prop::Art` ([`crate::hud`]).
+    /// A picture named by `Prop::Art` ([`crate::Gui::paint`]).
     Image,
-    /// A proportional bar, `Prop::Fill` percent full ([`crate::hud`]).
+    /// A proportional bar, `Prop::Fill` percent full ([`crate::Gui::paint`]).
     Bar,
     /// An area the host fills itself (a map, a video), named by `Prop::Art`
-    /// ([`crate::hud`]).
+    /// ([`crate::Gui::paint`]).
     External,
 }
 
@@ -71,8 +71,8 @@ impl NodeKind {
 /// the rest of the §2.3 table is added with the screen that needs it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Prop {
-    // The [`crate::hud`] props.
-    /// The node's name among its origin's nodes ([`crate::hud::Hud::find`]).
+    // The props [`crate::Gui::paint`] and [`crate::Gui::find`] read.
+    /// The node's name among its origin's nodes ([`crate::Gui::find`]).
     Name,
     /// 0..=100.
     Fill,

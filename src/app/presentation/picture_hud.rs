@@ -8,8 +8,7 @@
 //! instance is the one its host made, handed to the adapter unchanged, so
 //! every instance is what the host drew before.
 
-use vera20k_gui::Rect;
-use vera20k_gui::hud::{Layer, Origin};
+use vera20k_gui::{Layer, Origin, Rect};
 
 use crate::render::batch::SpriteInstance;
 use crate::render::hud_paint::{HudSpace, NodeDraw};

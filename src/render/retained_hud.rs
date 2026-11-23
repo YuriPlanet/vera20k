@@ -12,8 +12,7 @@
 //! The host hands each node its exact place on the target ([`NodeDraw`]),
 //! so the instances are the ones the host drew itself.
 
-use vera20k_gui::hud::{Hud, Layer, Origin};
-use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Rgba, Value};
+use vera20k_gui::{Gui, Layer, NodeId, NodeKind, Origin, Prop, Rect, Rgba, Value};
 
 use crate::render::bit_font::BitFont;
 use crate::render::hud_paint::{HudPaint, HudSpace, NodeDraw};
@@ -37,7 +36,7 @@ pub(crate) enum Rest {
 
 /// The pieces' tree, kept from frame to frame, and the instances it draws.
 pub(crate) struct RetainedHud {
-    hud: Hud,
+    hud: Gui,
     /// The layer every root goes into and who makes the nodes.
     layer: Layer,
     origin: Origin,
@@ -87,7 +86,7 @@ impl RetainedHud {
     /// `origin`, with `runs` runs (at least one).
     pub(crate) fn new(layer: Layer, origin: Origin, limit: usize, runs: usize, rest: Rest) -> Self {
         Self {
-            hud: Hud::new(limit),
+            hud: Gui::new(limit),
             layer,
             origin,
             rest,
@@ -206,7 +205,7 @@ impl RetainedHud {
 
     /// The tree, for a test that hides or restyles a part.
     #[cfg(test)]
-    pub(crate) fn hud_mut(&mut self) -> &mut Hud {
+    pub(crate) fn hud_mut(&mut self) -> &mut Gui {
         &mut self.hud
     }
 
@@ -239,7 +238,7 @@ impl RetainedHud {
         if !same {
             self.forget_from(run, used);
             let node = match parent {
-                Some(part) => self.hud.create(kind, part, self.origin).ok()?,
+                Some(part) => self.hud.create_by(kind, Some(part), self.origin).ok()?,
                 None => self.hud.create_root(self.layer, self.origin, kind).ok()?,
             };
             if let Some(name) = name {

@@ -1,4 +1,4 @@
-//! Turns a [`vera20k_gui::hud::Hud`]'s paint list into sprite instances and
+//! Turns a [`vera20k_gui::Gui`]'s paint list into sprite instances and
 //! the runs that draw them in the list's order.
 //!
 //! It draws fills, pictures, text and host areas (whose instance the host
@@ -7,8 +7,7 @@
 
 use std::ops::Range;
 
-use vera20k_gui::hud::{Hud, PaintCmd, PaintOp, recycle};
-use vera20k_gui::{NodeId, Rect, Rgba};
+use vera20k_gui::{Gui, NodeId, PaintCmd, PaintOp, Rect, Rgba, recycle};
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
@@ -93,7 +92,7 @@ impl HudPaint {
     /// starts at its node's top left, and draws nothing without a `font`.
     pub(crate) fn build(
         &mut self,
-        hud: &Hud,
+        hud: &Gui,
         space: HudSpace,
         font: Option<&BitFont>,
         mut draw: impl FnMut(NodeId) -> NodeDraw,
@@ -276,13 +275,12 @@ fn clip_from(instances: &mut Vec<SpriteInstance>, start: usize, clip: Rect, spac
 #[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
-    use vera20k_gui::hud::{Layer, Origin};
-    use vera20k_gui::{NodeKind, Prop, Value};
+    use vera20k_gui::{Layer, NodeKind, Origin, Prop, Value};
 
     #[test]
     fn a_clipped_hud_keeps_paint_order_and_cuts_each_quad_with_its_texture() {
         let font = crate::render::bit_font::tests::make_test_font(&[(u16::from(b'a'), 4)], 3);
-        let mut hud = Hud::new(16);
+        let mut hud = Gui::new(16);
         let root = hud
             .create_root(Layer::Field, Origin::Host, NodeKind::Panel)
             .unwrap();
@@ -290,7 +288,7 @@ mod tests {
             .unwrap();
         hud.set(root, Prop::Clip, Value::Bool(true)).unwrap();
         let mut child = |kind, rect| {
-            let node = hud.create(kind, root, Origin::Host).unwrap();
+            let node = hud.create_by(kind, Some(root), Origin::Host).unwrap();
             hud.set(node, Prop::Rect, Value::Rect(rect)).unwrap();
             match kind {
                 NodeKind::Text => hud.set(node, Prop::Text, Value::Text("a".into())).unwrap(),

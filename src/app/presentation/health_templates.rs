@@ -17,8 +17,8 @@ use std::cell::RefCell;
 use std::sync::LazyLock;
 
 use vera20k_gui::Rect;
-use vera20k_gui::hud::Origin;
-use vera20k_gui::hud::world::{
+use vera20k_gui::origin::Origin;
+use vera20k_gui::status::{
     Amount, ArtId, Condition, Element, MAX_SLOT_ARTS, ObjectView, Slot, SourceId, StatusTemplate,
     World, WorldCmd, WorldOp,
 };

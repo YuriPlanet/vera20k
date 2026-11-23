@@ -11,9 +11,8 @@
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
-use vera20k_gui::hud::world::{Amount, Band, Element, ObjectView, SourceId, StatusTemplate, World};
-use vera20k_gui::hud::{Hud, Layer, Origin};
-use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Refused, Rgba, Value};
+use vera20k_gui::status::{Amount, Band, Element, ObjectView, SourceId, StatusTemplate, World};
+use vera20k_gui::{Gui, Layer, NodeId, NodeKind, Origin, Prop, Rect, Refused, Rgba, Value};
 
 const FRAMES: usize = 600;
 const OBJECTS: usize = 5000;
@@ -165,11 +164,11 @@ fn bench_status(templates: usize) -> Result<Report, Refused> {
 }
 
 struct PanelTree {
-    hud: Hud,
+    hud: Gui,
     panels: Vec<NodeId>,
 }
 
-fn place(hud: &mut Hud, id: NodeId, x: i32, y: i32, w: i32, h: i32) -> Result<(), Refused> {
+fn place(hud: &mut Gui, id: NodeId, x: i32, y: i32, w: i32, h: i32) -> Result<(), Refused> {
     hud.set(id, Prop::Rect, Value::Rect(Rect::new(x, y, w, h)))
 }
 
@@ -178,7 +177,7 @@ fn panel_x(p: usize) -> i32 {
 }
 
 fn panel_tree() -> Result<PanelTree, Refused> {
-    let mut hud = Hud::new(NODES);
+    let mut hud = Gui::new(NODES);
     let mut panels = Vec::new();
     for p in 0..PANELS {
         let panel = hud.create_root(Layer::Panels, Origin::Host, NodeKind::Panel)?;
@@ -187,16 +186,16 @@ fn panel_tree() -> Result<PanelTree, Refused> {
         hud.set(panel, Prop::Background, Value::Rgba(SLATE))?;
         hud.set(panel, Prop::Clip, Value::Bool(true))?;
 
-        let column = hud.create(NodeKind::Panel, panel, Origin::Host)?;
+        let column = hud.create_by(NodeKind::Panel, Some(panel), Origin::Host)?;
         let (x, y) = (x + 10, y + 10);
         place(&mut hud, column, x, y, 340, 400)?;
 
         for r in 0..ROWS {
-            let row = hud.create(NodeKind::Panel, column, Origin::Host)?;
+            let row = hud.create_by(NodeKind::Panel, Some(column), Origin::Host)?;
             let y = y + r as i32 * 46;
             place(&mut hud, row, x, y, 340, 40)?;
 
-            let icon = hud.create(NodeKind::Image, row, Origin::Host)?;
+            let icon = hud.create_by(NodeKind::Image, Some(row), Origin::Host)?;
             place(&mut hud, icon, x, y, 24, 24)?;
             hud.set(
                 icon,
@@ -204,12 +203,12 @@ fn panel_tree() -> Result<PanelTree, Refused> {
                 Value::Text(format!("bench/icon-{}", r % 3)),
             )?;
 
-            let button = hud.create(NodeKind::Button, row, Origin::Host)?;
+            let button = hud.create_by(NodeKind::Button, Some(row), Origin::Host)?;
             place(&mut hud, button, x + 32, y, 180, 28)?;
             hud.set(button, Prop::Art, Value::Text("bench/plate".to_owned()))?;
             hud.set(button, Prop::Label, Value::Text(format!("Entry {p}.{r}")))?;
 
-            let bar = hud.create(NodeKind::Bar, row, Origin::Host)?;
+            let bar = hud.create_by(NodeKind::Bar, Some(row), Origin::Host)?;
             let percent = (scramble(p * ROWS + r) % 100) as i32 + 1;
             place(&mut hud, bar, x + 220, y, 100, 8)?;
             hud.set(bar, Prop::Fill, Value::Int(percent))?;
@@ -229,7 +228,8 @@ fn bench_tree() -> Result<[Report; 2], Refused> {
     hud.layout(VIEWPORT);
     for frame in 0..FRAMES {
         let p = frame % PANELS;
-        // Each panel alternates between two places, so every layout has work.
+        // Each panel alternates between two places, so every layout places
+        // that panel again (and copies the others).
         let x = panel_x(p) + ((frame / PANELS + 1) % 2) as i32;
         place(&mut hud, panels[p], x, 10 + (p / 5) as i32 * 440, 360, 420)?;
         layout.time(|| hud.layout(black_box(VIEWPORT)));

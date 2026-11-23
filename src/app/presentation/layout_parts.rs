@@ -12,8 +12,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use vera20k_gui::hud::{Layer, Origin};
-use vera20k_gui::{Rect, Rgba};
+use vera20k_gui::{Layer, Origin, Rect, Rgba};
 
 use crate::app::AppState;
 use crate::app::input::hotkeys::HotkeyCommand;

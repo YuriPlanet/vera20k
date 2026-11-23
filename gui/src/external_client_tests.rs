@@ -1,4 +1,4 @@
-//! The HUD driven as a sandboxed client's bridge would drive it.
+//! The GUI's layers driven as a sandboxed client's bridge would drive it.
 //!
 //! The client speaks [`Call`]s: integers, strings, byte-sized enums and handles
 //! that are indices into a table. It gets back the same. Only [`Client::call`]
@@ -7,8 +7,7 @@
 
 // The runner takes `--lib` tests only, so this lives in the crate; it names
 // nothing but the public API, through the crate's external name.
-use vera20k_gui::hud::{Hud, Layer, Origin, PaintOp};
-use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Refused, Rgba, Value};
+use vera20k_gui::{Gui, Layer, NodeId, NodeKind, Origin, PaintOp, Prop, Rect, Refused, Rgba, Value};
 
 const VIEWPORT: Rect = Rect::new(0, 0, 800, 600);
 const CLIENT: Origin = Origin::External(7);
@@ -116,12 +115,12 @@ impl Client {
     }
 
     /// The bridge. A call that makes or finds a node answers its handle.
-    fn call(&mut self, hud: &mut Hud, call: Call) -> Result<u32, Refused> {
+    fn call(&mut self, hud: &mut Gui, call: Call) -> Result<u32, Refused> {
         let from = copied(self.origin);
         let made = match owned(call) {
             Call::Root { layer, kind } => hud.create_root(copied(layer), from, copied(kind))?,
             Call::Child { parent, kind } => {
-                hud.create(copied(kind), copied(self.node(parent)?), from)?
+                hud.create_by(copied(kind), Some(copied(self.node(parent)?)), from)?
             }
             Call::SetBool { node, prop, value } => {
                 hud.set(
@@ -158,12 +157,12 @@ impl Client {
         Ok(self.keep(made))
     }
 
-    fn ask(&mut self, hud: &mut Hud, call: Call) -> u32 {
+    fn ask(&mut self, hud: &mut Gui, call: Call) -> u32 {
         self.call(hud, call.clone())
             .unwrap_or_else(|e| panic!("{call:?} refused: {e:?}"))
     }
 
-    fn set_flag(&mut self, hud: &mut Hud, node: u32, prop: Prop) {
+    fn set_flag(&mut self, hud: &mut Gui, node: u32, prop: Prop) {
         self.ask(
             hud,
             Call::SetBool {
@@ -174,7 +173,7 @@ impl Client {
         );
     }
 
-    fn set_text(&mut self, hud: &mut Hud, node: u32, prop: Prop, value: &str) {
+    fn set_text(&mut self, hud: &mut Gui, node: u32, prop: Prop, value: &str) {
         self.ask(
             hud,
             Call::SetText {
@@ -185,7 +184,7 @@ impl Client {
         );
     }
 
-    fn place(&mut self, hud: &mut Hud, node: u32, rect: [i32; 4]) {
+    fn place(&mut self, hud: &mut Gui, node: u32, rect: [i32; 4]) {
         self.ask(hud, Call::SetRect { node, rect });
     }
 
@@ -193,7 +192,7 @@ impl Client {
         self.table.iter().position(|h| *h == id).map(|i| i as u32)
     }
 
-    fn picture(&self, hud: &Hud) -> Vec<Painted> {
+    fn picture(&self, hud: &Gui) -> Vec<Painted> {
         let mut commands = Vec::new();
         hud.paint(&mut commands);
         commands
@@ -219,11 +218,11 @@ fn material_and_key<'a>(op: &PaintOp<'a>) -> (Drawn, &'a str) {
     }
 }
 
-fn new_hud() -> Hud {
-    Hud::new(128)
+fn new_hud() -> Gui {
+    Gui::new(128)
 }
 
-fn host_panel(hud: &mut Hud, layer: Layer, name: &str, area: [i32; 4]) -> NodeId {
+fn host_panel(hud: &mut Gui, layer: Layer, name: &str, area: [i32; 4]) -> NodeId {
     let id = hud
         .create_root(layer, Origin::Host, NodeKind::Panel)
         .unwrap();
@@ -242,7 +241,7 @@ struct Panel {
 }
 
 /// A panel at (20, 20) with two buttons, one above the other.
-fn button_panel(client: &mut Client, hud: &mut Hud) -> Panel {
+fn button_panel(client: &mut Client, hud: &mut Gui) -> Panel {
     let root = client.ask(
         hud,
         Call::Root {
@@ -374,7 +373,7 @@ fn the_system_layer_is_closed_to_the_client() {
         name: "HostStop".to_owned(),
     };
     assert_eq!(client.call(&mut hud, find), Err(Refused::NotFound));
-    let child = hud.create(NodeKind::Button, screen, CLIENT);
+    let child = hud.create_by(NodeKind::Button, Some(screen), CLIENT);
     assert_eq!(child, Err(Refused::Denied));
     assert!(hud.tree().children(screen).unwrap().is_empty());
 }
@@ -385,7 +384,7 @@ fn a_client_cannot_make_or_enter_a_modal() {
     let made = hud.create_root(Layer::Modal, CLIENT, NodeKind::Panel);
     assert_eq!(made, Err(Refused::Denied));
     let host = host_panel(&mut hud, Layer::Modal, "HostQuestion", [0, 0, 100, 100]);
-    let child = hud.create(NodeKind::Button, host, CLIENT);
+    let child = hud.create_by(NodeKind::Button, Some(host), CLIENT);
     assert_eq!(child, Err(Refused::Denied));
 }
 
@@ -475,7 +474,7 @@ fn removing_the_origin_takes_all_of_the_clients_and_nothing_else() {
         },
     );
 
-    let everything = |hud: &mut Hud| {
+    let everything = |hud: &mut Gui| {
         hud.layout(VIEWPORT);
         let mut nodes = Vec::new();
         hud.paint(&mut nodes);

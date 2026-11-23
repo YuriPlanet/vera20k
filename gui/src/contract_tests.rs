@@ -1,10 +1,10 @@
-use super::world::{MAX_TEMPLATES, StatusTemplate, World};
-use super::*;
+use crate::status::{MAX_TEMPLATES, StatusTemplate, World};
+use crate::{DialogKind, Gui, Layer, NodeKind, Origin, Prop, Rect, Refused, Value, recycle};
 
 const CLIENT: Origin = Origin::External(3);
 
-fn hud() -> Hud {
-    Hud::new(16)
+fn hud() -> Gui {
+    Gui::new(16)
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn only_the_host_enters_and_finds_in_the_host_only_layers() {
             assert_eq!(found, host.then_some(id), "{layer:?} {origin:?}");
             let made = [
                 hud.create_root(layer, origin, NodeKind::Panel),
-                hud.create(NodeKind::Text, id, origin),
+                hud.create_by(NodeKind::Text, Some(id), origin),
             ];
             for made in made {
                 if host {
@@ -44,7 +44,7 @@ fn only_the_host_enters_and_finds_in_the_host_only_layers() {
 #[test]
 fn find_follows_the_origin_precedence() {
     let mut hud = hud();
-    let named = |hud: &mut Hud, origin| {
+    let named = |hud: &mut Gui, origin| {
         let id = hud
             .create_root(Layer::Panels, origin, NodeKind::Panel)
             .unwrap();
@@ -76,13 +76,13 @@ fn find_follows_the_origin_precedence() {
 fn each_change_moves_the_revision_and_an_equal_set_does_not() {
     let mut hud = hud();
     let mut last = hud.revision();
-    let mut moved = |hud: &Hud| std::mem::replace(&mut last, hud.revision()) != hud.revision();
+    let mut moved = |hud: &Gui| std::mem::replace(&mut last, hud.revision()) != hud.revision();
 
     let root = hud
         .create_root(Layer::Panels, CLIENT, NodeKind::Panel)
         .unwrap();
     assert!(moved(&hud), "create_root");
-    let child = hud.create(NodeKind::Text, root, CLIENT).unwrap();
+    let child = hud.create_by(NodeKind::Text, Some(root), CLIENT).unwrap();
     assert!(moved(&hud), "create");
     hud.set(child, Prop::Align, Value::Int(4)).unwrap();
     assert!(moved(&hud), "set");
@@ -106,7 +106,7 @@ fn a_node_hidden_since_the_layout_has_no_rect() {
     let panel = hud
         .create_root(Layer::Panels, Origin::Host, NodeKind::Panel)
         .unwrap();
-    let child = hud.create(NodeKind::Text, panel, Origin::Host).unwrap();
+    let child = hud.create_by(NodeKind::Text, Some(panel), Origin::Host).unwrap();
     hud.layout(Rect::new(0, 0, 300, 300));
     assert!(hud.rect(child).is_some());
     hud.set(panel, Prop::Visible, Value::Bool(false)).unwrap();
@@ -143,7 +143,7 @@ fn a_cleared_rect_is_the_parents_corner_again() {
         .unwrap();
     hud.set(panel, Prop::Rect, Value::Rect(Rect::new(10, 20, 30, 40)))
         .unwrap();
-    let child = hud.create(NodeKind::Text, panel, Origin::Host).unwrap();
+    let child = hud.create_by(NodeKind::Text, Some(panel), Origin::Host).unwrap();
     hud.set(child, Prop::Rect, Value::Rect(Rect::new(1, 2, 3, 4)))
         .unwrap();
     let before = hud.revision();
@@ -163,17 +163,17 @@ fn a_recycled_buffer_keeps_its_allocation() {
 #[test]
 fn removing_an_origin_leaves_the_same_ids_to_give_out_in_every_run() {
     let rebuilt = || {
-        let mut hud = Hud::new(64);
+        let mut hud = Gui::new(64);
         let dock = hud
             .create_root(Layer::Panels, Origin::Host, NodeKind::Panel)
             .unwrap();
         for _ in 0..16 {
-            hud.create(NodeKind::Panel, dock, CLIENT).unwrap();
+            hud.create_by(NodeKind::Panel, Some(dock), CLIENT).unwrap();
         }
         hud.remove_origin(CLIENT);
         assert!(hud.tree().children(dock).unwrap().is_empty());
         (0..16)
-            .map(|_| hud.create(NodeKind::Panel, dock, Origin::Host).unwrap())
+            .map(|_| hud.create_by(NodeKind::Panel, Some(dock), Origin::Host).unwrap())
             .collect::<Vec<_>>()
     };
     assert_eq!(rebuilt(), rebuilt());
@@ -183,14 +183,14 @@ fn removing_an_origin_leaves_the_same_ids_to_give_out_in_every_run() {
 fn a_deep_tree_is_laid_out_and_removed() {
     const DEPTH: usize = 50_000;
     let rect = Rect::new(0, 0, 50, 50);
-    let mut hud = Hud::new(DEPTH);
+    let mut hud = Gui::new(DEPTH);
     let top = hud
         .create_root(Layer::Panels, Origin::Host, NodeKind::Panel)
         .unwrap();
     hud.set(top, Prop::Rect, Value::Rect(rect)).unwrap();
     let mut leaf = top;
     for _ in 1..DEPTH {
-        leaf = hud.create(NodeKind::Panel, leaf, Origin::Host).unwrap();
+        leaf = hud.create_by(NodeKind::Panel, Some(leaf), Origin::Host).unwrap();
     }
     // Climbing to the root from each node would take billions of steps here.
     hud.layout(Rect::new(0, 0, 300, 300));
@@ -207,7 +207,7 @@ fn a_deep_tree_is_laid_out_and_removed() {
 #[test]
 fn others_fill_three_quarters_rounded_down() {
     for (limit, share) in [(1, 0), (2, 1), (3, 2), (4, 3), (5, 3), (16, 12)] {
-        let mut hud = Hud::new(limit);
+        let mut hud = Gui::new(limit);
         for _ in 0..share {
             hud.create_root(Layer::Overlay, CLIENT, NodeKind::Panel)
                 .unwrap();
@@ -224,4 +224,28 @@ fn others_fill_three_quarters_rounded_down() {
     }
     let more = world.add_template(CLIENT, StatusTemplate::default());
     assert_eq!(more, Err(Refused::Limit));
+}
+
+#[test]
+fn a_plain_root_is_the_hosts_in_the_modal_layer() {
+    let mut gui = Gui::new(8);
+    let dialog = gui.create(NodeKind::Dialog, None).unwrap();
+    let button = gui.create(NodeKind::Button, Some(dialog)).unwrap();
+    assert_eq!(gui.layer(dialog), Ok(Layer::Modal));
+    assert_eq!(gui.layer(button), Ok(Layer::Modal));
+    assert_eq!(gui.origin(button), Ok(Origin::Host));
+    assert_eq!(gui.create_by(NodeKind::Panel, None, CLIENT), Err(Refused::Denied));
+}
+
+#[test]
+fn removing_a_dialogs_root_among_others_pops_it() {
+    let mut gui = Gui::new(8);
+    let page = gui.create(NodeKind::Dialog, None).unwrap();
+    let boxed = gui.create(NodeKind::Dialog, None).unwrap();
+    let stray = gui.create(NodeKind::Panel, None).unwrap();
+    let under = gui.push_dialog(page, DialogKind::Page).unwrap();
+    gui.push_dialog(boxed, DialogKind::Modal).unwrap();
+    gui.remove_all(&[stray, boxed]);
+    assert_eq!(gui.top_dialog(), Some(under));
+    assert_eq!(gui.tree().live_count(), 1);
 }

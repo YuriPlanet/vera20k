@@ -1,10 +1,12 @@
 //! The ordered paint list the host draws.
+//!
+//! A frame: the host's changes, [`Gui::layout`], [`Gui::paint`].
 
 use crate::Rect;
+use crate::gui::Gui;
+use crate::layout::Placed;
 use crate::shell::bar;
 use crate::node::{Node, NodeId, NodeKind, Prop, Rgba, Value};
-
-use super::Hud;
 
 const WHITE: Rgba = Rgba(255, 255, 255, 255);
 
@@ -40,7 +42,16 @@ pub struct PaintCmd<'a> {
     pub op: PaintOp<'a>,
 }
 
-impl Hud {
+/// Empties `buffer` for the next frame, free of what the last frame's
+/// commands borrowed. It keeps the allocation only where `A` and `B` have
+/// one layout, as when they differ in lifetimes alone.
+pub fn recycle<A, B>(mut buffer: Vec<A>) -> Vec<B> {
+    buffer.clear();
+    // An empty same-layout vector collects in place.
+    buffer.into_iter().filter_map(|_| None).collect()
+}
+
+impl Gui {
     /// Appends the last layout's commands to `out`, bottom to top, the order
     /// to draw them in.
     ///
@@ -52,8 +63,20 @@ impl Hud {
     /// clip or the viewport is left out, so text needs a rect with a size,
     /// and so is a fill of alpha 0.
     pub fn paint<'a>(&'a self, out: &mut Vec<PaintCmd<'a>>) {
+        self.paint_placed(self.layout.nodes(), out);
+    }
+
+    /// [`Self::paint`] of `root`'s subtree alone, a top-level node; nothing
+    /// for another node or one the last layout did not have.
+    pub fn paint_from<'a>(&'a self, root: NodeId, out: &mut Vec<PaintCmd<'a>>) {
+        if let Some(nodes) = self.layout.span(root) {
+            self.paint_placed(nodes, out);
+        }
+    }
+
+    fn paint_placed<'a>(&'a self, nodes: &'a [Placed], out: &mut Vec<PaintCmd<'a>>) {
         let viewport = self.layout.viewport();
-        for placed in self.layout.nodes() {
+        for placed in nodes {
             let (id, rect, clip) = (placed.id, placed.rect, placed.clip);
             let area = clip.map_or(viewport, |clip| clip.intersect(viewport));
             if !shows(rect, area) {
@@ -154,38 +177,39 @@ fn text_color(node: &Node, enabled: bool) -> Option<Rgba> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hud::{Layer, Origin};
+    use crate::gui::Layer;
+    use crate::origin::Origin;
 
     const VIEW: Rect = Rect::new(0, 0, 100, 100);
     const BOX: Rect = Rect::new(10, 10, 40, 20);
     const INK: Rgba = Rgba(10, 20, 30, 255);
     const FADED: Rgba = Rgba(40, 50, 60, 128);
 
-    fn hud() -> Hud {
-        Hud::new(64)
+    fn hud() -> Gui {
+        Gui::new(64)
     }
 
-    fn root(hud: &mut Hud, kind: NodeKind, rect: Rect) -> NodeId {
+    fn root(hud: &mut Gui, kind: NodeKind, rect: Rect) -> NodeId {
         let id = hud.create_root(Layer::Panels, Origin::Host, kind).unwrap();
         hud.set(id, Prop::Rect, Value::Rect(rect)).unwrap();
         id
     }
 
-    fn child(hud: &mut Hud, parent: NodeId, kind: NodeKind, rect: Rect) -> NodeId {
-        let id = hud.create(kind, parent, Origin::Host).unwrap();
+    fn child(hud: &mut Gui, parent: NodeId, kind: NodeKind, rect: Rect) -> NodeId {
+        let id = hud.create_by(kind, Some(parent), Origin::Host).unwrap();
         hud.set(id, Prop::Rect, Value::Rect(rect)).unwrap();
         id
     }
 
-    fn text(hud: &mut Hud, id: NodeId, prop: Prop, v: &str) {
+    fn text(hud: &mut Gui, id: NodeId, prop: Prop, v: &str) {
         hud.set(id, prop, Value::Text(v.into())).unwrap();
     }
 
-    fn color(hud: &mut Hud, id: NodeId, prop: Prop, v: Rgba) {
+    fn color(hud: &mut Gui, id: NodeId, prop: Prop, v: Rgba) {
         hud.set(id, prop, Value::Rgba(v)).unwrap();
     }
 
-    fn painted(hud: &mut Hud) -> Vec<PaintCmd<'_>> {
+    fn painted(hud: &mut Gui) -> Vec<PaintCmd<'_>> {
         hud.layout(VIEW);
         let mut out = Vec::new();
         hud.paint(&mut out);
@@ -400,6 +424,22 @@ mod tests {
         assert_eq!(cmds.len(), 1);
         assert_eq!(cmds[0].node, shown);
         assert_eq!(cmds[0].clip, Some(Rect::new(0, 0, 20, 20)));
+    }
+
+    #[test]
+    fn paint_from_paints_one_roots_subtree() {
+        let mut hud = hud();
+        root(&mut hud, NodeKind::External, BOX);
+        let panel = root(&mut hud, NodeKind::Panel, VIEW);
+        let inner = child(&mut hud, panel, NodeKind::External, BOX);
+        hud.layout(VIEW);
+        let mut out = Vec::new();
+        hud.paint_from(panel, &mut out);
+        let nodes: Vec<NodeId> = out.iter().map(|cmd| cmd.node).collect();
+        assert_eq!(nodes, [inner]);
+        out.clear();
+        hud.paint_from(inner, &mut out);
+        assert!(out.is_empty());
     }
 
     #[test]
