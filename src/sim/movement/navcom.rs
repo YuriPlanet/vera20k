@@ -559,9 +559,22 @@ fn adjusted_destination(
         let cell = terrain.native_cell_identity((rx, ry));
         let structural = terrain.native_cell_flags(cell) & 0x100 != 0;
         if structural {
-            coord.z = coord
-                .z
-                .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+            use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
+            // VERA's independent deck height replaces the Drive4AFD40 /
+            // Ship69F450 bridge lift, keeping the caller's relative Z.
+            let lift = terrain
+                .corrected_high_bridge_deck_at(cell)
+                .and_then(|deck| {
+                    super::ground_pose::ground_surface_z_at(
+                        [coord.x, coord.y],
+                        false,
+                        Some(terrain),
+                        None,
+                    )
+                    .map(|ground| i32::from(deck) * GROUND_LEVEL_HEIGHT_LEPTONS - ground)
+                })
+                .unwrap_or(BRIDGE_DECK_HEIGHT_LEPTONS);
+            coord.z = coord.z.wrapping_add(lift);
         }
     }
     Some(coord)

@@ -1,6 +1,7 @@
 //! ProcessMovement publishes the class target; TrackProcess consumes it.
 //! Class targets and the speed prefix retain native binary64 values.
 
+use super::movement_bridge::{cell_transition_bridge_update, projected_on_bridge};
 use super::track_process::TrackFamily;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::LocomotorKind;
@@ -21,6 +22,7 @@ pub(super) fn publish_fresh_track_target(
     strength: i32,
     rules: &RuleSet,
     terrain: &ResolvedTerrainGrid,
+    path_grid: Option<&PathGrid>,
     terrain_speed: &TerrainSpeedConfig,
     next_cell: (u16, u16),
     road: bool,
@@ -43,10 +45,29 @@ pub(super) fn publish_fresh_track_target(
             })
     });
     let xy = super::ground_pose::position_world_xy(&entity.position);
+    let on_bridge = entity.on_bridge();
+    // Admission publishes speed before the track applies its cell crossing.
+    // Project the candidate's layer without writing the actor's OnBridge flag.
+    let next_on_bridge = path_grid
+        .and_then(|grid| {
+            let src = grid.cell(entity.position.rx(), entity.position.ry())?;
+            let dst = grid.cell(next_cell.0, next_cell.1)?;
+            let deck = if dst.has_structural_bridge() {
+                terrain.corrected_high_bridge_deck_level(next_cell)
+            } else {
+                None
+            };
+            Some(projected_on_bridge(
+                on_bridge,
+                cell_transition_bridge_update(src, dst, deck),
+            ))
+        })
+        .unwrap_or(on_bridge);
     let requested = crate::sim::pathfinding::terrain_speed::fresh_track_speed_fraction(
         speed_type,
         (xy[0], xy[1]),
         next_cell,
+        [on_bridge, next_on_bridge],
         road_row,
         terrain,
         terrain_speed,
@@ -122,14 +143,13 @@ fn braking_distance(
         & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
         != 0;
     // Headless fixtures without map cells read a level-0 ground.
-    let ground = super::ground_pose::ground_surface_z_at(
+    let destination_z = super::ground_pose::ground_surface_z_at(
         [destination.x, destination.y],
-        false,
+        structural,
         terrain,
         grid,
     )
-    .unwrap_or(0);
-    let destination_z = super::ground_pose::z_at_height(ground, 0, structural);
+    .unwrap_or_else(|| super::ground_pose::z_at_height(0, 0, structural));
     let current = super::ground_pose::object_location(entity, terrain);
     sqrt_approx_length([
         current.z.wrapping_sub(destination_z),
@@ -273,6 +293,84 @@ mod tests {
                 (11, None)
             );
         }
+    }
+
+    #[test]
+    fn fresh_track_speed_uses_deck_grade_over_a_ground_ramp() {
+        use crate::map::bridge_facts::{BRIDGE_FLAG_ANCHOR_SELF, BRIDGE_FLAG_STRUCTURAL};
+        use crate::map::resolved_terrain::test_flat_cell;
+
+        let mut src = test_flat_cell(0, 0);
+        src.level = 3;
+        src.slope_type = 1;
+        src.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_ANCHOR_SELF;
+        src.bridge_facts.fixed_deck_level = Some(9);
+        let mut deck = test_flat_cell(1, 0);
+        deck.level = 5;
+        deck.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+        let mut raised_deck = test_flat_cell(1, 1);
+        raised_deck.level = 1;
+        raised_deck.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_ANCHOR_SELF;
+        raised_deck.bridge_facts.fixed_deck_level = Some(10);
+        let mut approach = test_flat_cell(0, 1);
+        approach.level = 9;
+        let terrain = ResolvedTerrainGrid::from_cells(2, 2, vec![src, deck, approach, raised_deck]);
+        let grid = PathGrid::from_resolved_terrain(&terrain);
+
+        let rules = RuleSet::from_ini(&IniFile::from_str("[Road]\nTrack=50%\n")).unwrap();
+        let speed = TerrainSpeedConfig {
+            tracked_uphill: NativeF64Bits::from_bits(0.75_f64.to_bits()),
+            tracked_downhill: NativeF64Bits::from_bits(1.25_f64.to_bits()),
+            ..Default::default()
+        };
+        let mut mover = entity(LocomotorKind::Drive, 0, SIM_ONE);
+        let mut target = |xy, on_bridge, next, road| {
+            mover.position.put_world_xy(xy);
+            mover.set_on_bridge(on_bridge);
+            publish_fresh_track_target(
+                &mut mover,
+                100,
+                &rules,
+                &terrain,
+                Some(&grid),
+                &speed,
+                next,
+                road,
+            );
+            mover
+                .locomotor
+                .as_ref()
+                .unwrap()
+                .track_target_fraction_native(TrackFamily::Drive)
+                .unwrap()
+        };
+        let native = |value: f64| NativeF64Bits::from_bits(value.to_bits());
+        let deck_xy = [200, 200];
+        assert_eq!(
+            target(deck_xy, true, (1, 0), false),
+            native(1.0),
+            "level deck"
+        );
+        assert_eq!(
+            target(deck_xy, true, (1, 1), true),
+            native(0.375),
+            "uphill deck on Road"
+        );
+        assert_eq!(
+            target(deck_xy, true, (0, 1), false),
+            native(1.0),
+            "level exit"
+        );
+        assert_eq!(
+            target([128, 384], false, (0, 0), false),
+            native(1.0),
+            "level entry"
+        );
+        assert_eq!(
+            target(deck_xy, false, (1, 0), false),
+            native(0.75),
+            "underpass grade"
+        );
     }
 
     #[test]

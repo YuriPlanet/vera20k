@@ -722,8 +722,7 @@ mod tests {
         SparkCollisionFacts {
             ground_z: 0,
             slope_matrix: Some(crate::map::voxel_slope::slope_matrix(0).unwrap()),
-            old_has_structural_bridge: false,
-            candidate_has_structural_bridge: false,
+            bridge_z: None,
             accepted_building: false,
             wall_overlay_id: None,
         }
@@ -972,8 +971,10 @@ SpawnSparkPercentage=1
                 (SparkCellSelectionRole::Cell, 256, 0),
             ]
         );
-        assert!(facts.candidate_has_structural_bridge);
-        assert!(!facts.old_has_structural_bridge);
+        assert_eq!(
+            facts.bridge_z,
+            Some(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+        );
         assert!(!facts.accepted_building);
         assert_eq!(facts.wall_overlay_id, None);
         assert!(facts.slope_matrix.is_none());

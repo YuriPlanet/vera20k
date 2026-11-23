@@ -592,24 +592,25 @@ impl FlyRuntime {
             world_z,
             ground_z,
             mut on_bridge,
-            structural_bridge,
+            bridge_deck_z,
             health,
             has_passenger,
             is_dropship,
             flight_level,
             hunter_seeker,
         } = input;
-        // Object GetHeight5F5F40 subtracts ground and its current OnBridge
-        // adjustment. Fly then independently normalizes an unattached deck.
-        let mut height = super::ground_pose::height_at_z(world_z, ground_z, on_bridge);
-        let mut bridge_bonus = 0;
-        if !on_bridge
-            && height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-            && structural_bridge
-        {
-            height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-            bridge_bonus = crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
-        }
+        // Object GetHeight5F5F40 subtracts the current surface. The Fly
+        // height step (4CDD0D..4CDFB6) also uses an unattached structural deck
+        // once the aircraft's Location reaches it.
+        let on_bridge_surface_z = bridge_deck_z
+            .unwrap_or_else(|| super::ground_pose::z_at_height(ground_z, 0, true));
+        let reached_bridge = !on_bridge && bridge_deck_z.is_some_and(|deck| world_z >= deck);
+        let surface_z = if on_bridge || reached_bridge {
+            on_bridge_surface_z
+        } else {
+            ground_z
+        };
+        let mut height = world_z.wrapping_sub(surface_z);
         let mut output_z = world_z;
         if height < self.target_height && health > 0 {
             let ordinary = if has_passenger { 10 } else { 20 };
@@ -628,11 +629,7 @@ impl FlyRuntime {
             let rate = if is_dropship { 16 } else { ordinary };
             let step = self.target_height.wrapping_sub(height).min(rate);
             // SetHeight happens BEFORE OnBridge is cleared (4CDE9D/4CDEA6).
-            output_z = super::ground_pose::z_at_height(
-                ground_z,
-                height.wrapping_add(step).wrapping_add(bridge_bonus),
-                on_bridge,
-            );
+            output_z = surface_z.wrapping_add(height).wrapping_add(step);
             on_bridge = false;
         }
         // Native compares the original normalized height again. Health==0
@@ -662,21 +659,16 @@ impl FlyRuntime {
                 height = 1;
             } else if height <= 0 {
                 height = 0;
-                if bridge_bonus > 0 {
+                if reached_bridge {
                     on_bridge = true;
-                    bridge_bonus = 0;
                 }
             }
-            output_z = super::ground_pose::z_at_height(
-                ground_z,
-                height.wrapping_add(bridge_bonus),
-                on_bridge,
-            );
+            output_z = surface_z.wrapping_add(height);
         }
         HeightOutput {
             world_z: output_z,
             on_bridge,
-            height: super::ground_pose::height_at_z(output_z, ground_z, on_bridge),
+            height: output_z.wrapping_sub(if on_bridge { on_bridge_surface_z } else { ground_z }),
             descended,
         }
     }
@@ -686,7 +678,7 @@ pub(crate) struct HeightInput {
     pub world_z: i32,
     pub ground_z: i32,
     pub on_bridge: bool,
-    pub structural_bridge: bool,
+    pub bridge_deck_z: Option<i32>,
     pub health: i32,
     pub has_passenger: bool,
     pub is_dropship: bool,
@@ -786,7 +778,8 @@ mod tests {
                 world_z: integer("z", 0),
                 ground_z,
                 on_bridge: flag("on_bridge"),
-                structural_bridge: flag("bridge"),
+                bridge_deck_z: flag("bridge")
+                    .then(|| super::super::ground_pose::z_at_height(ground_z, 0, true)),
                 health: integer("health", 100),
                 has_passenger: flag("loaded") && c["kind"].as_str() != Some("unit"),
                 is_dropship: flag("dropship"),
@@ -828,7 +821,7 @@ mod tests {
                     world_z,
                     ground_z: 0,
                     on_bridge: false,
-                    structural_bridge: false,
+                    bridge_deck_z: None,
                     health: 100,
                     has_passenger: false,
                     is_dropship: false,

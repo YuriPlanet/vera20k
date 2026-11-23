@@ -59,6 +59,47 @@ impl SearchFootEntry for NativeReceiptEntry<'_> {
 }
 
 #[test]
+fn smoothing_keeps_the_fixed_deck_height_for_the_next_entry() {
+    use crate::map::bridge_facts::{BRIDGE_FLAG_ANCHOR_SELF, BRIDGE_FLAG_STRUCTURAL};
+
+    struct DeckEntry;
+    impl SearchFootEntry for DeckEntry {
+        fn classify(&self, query: SearchEntryQuery) -> Result<u8, String> {
+            Ok(if query.path_height == 10 { 0 } else { 7 })
+        }
+        fn finishing_house_threat(&self, _: (i16, i16)) -> Result<i32, String> {
+            Ok(0)
+        }
+        fn finishing_threat_coefficient(&self) -> Result<NativeF64Bits, String> {
+            Ok(NativeF64Bits::ONE)
+        }
+    }
+
+    let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(8);
+    let cell = terrain.native_cell_identity((4, 3));
+    terrain.write_native_cell_flags(cell, BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL);
+    terrain.write_native_cell_level(cell, 8);
+    terrain.set_authored_high_bridge_deck(cell, 10);
+    let grid = PathGrid::from_resolved_terrain(&terrain);
+    let ctx = Finishing {
+        cells: Some(NativeCellQuery::canonical(&terrain)),
+        grid: &grid,
+        context: PathfindingContext {
+            path_grid: Some(&grid),
+            zone_grid: None,
+            resolved_terrain: Some(&terrain),
+            playfield_bounds: None,
+            blocker_neighbor_counts: None,
+        },
+        foot: &DeckEntry,
+        markers: None,
+    };
+    let mut directions = [1, 3];
+    path_smooth::smooth_corners((2, 3), &mut directions, &[10, 10], &ctx).unwrap();
+    assert_eq!(directions, [2, 2]);
+}
+
+#[test]
 fn production_finisher_forwards_native_real_and_mutable_dummy_receipts() {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/astar_path_finishing.json",

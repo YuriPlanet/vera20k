@@ -1089,6 +1089,15 @@ fn select_object_damage_layer(
     } else {
         0 // Unread by the topology selector on the non-bridge arm.
     };
+    if let Some(deck) = crate::sim::movement::ground_pose::corrected_deck_z(terrain, cell) {
+        // Retain 0x0048955E's strict halfway split, using the actual clearance.
+        let midpoint = floor + (deck - floor) / 2;
+        return if impact.z_leptons > midpoint {
+            ListLayer::Bridge
+        } else {
+            ListLayer::Ground
+        };
+    }
     view.aoe_object_layer(impact.z_leptons, floor)
 }
 
@@ -1110,21 +1119,34 @@ fn impact_is_above_ground(
     // Ares DamageArea_DamageAir (100533A0, hook 0x4893BA): the height above
     // the floor must exceed DamageAirThreshold (default 0, the native
     // `floor < Z`); with `[General] DamageAirConsiderBridges=yes` a bridge
-    // cell (flag 0x100) measures from its 416-lepton deck once reached.
+    // cell (flag 0x100) measures from its live deck once reached.
     if rules.ares()
         && let Some(combat) = warhead.ares_combat()
     {
-        const BRIDGE_HEIGHT_LEPTONS: i32 = 416;
+        use crate::map::cell_index::NativeCellIdentity;
+        use crate::sim::movement::ground_pose::corrected_deck_z;
+        use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
+
         let mut height = impact.z_leptons.wrapping_sub(floor);
-        if height >= BRIDGE_HEIGHT_LEPTONS
-            && rules.ares_warhead_globals().damage_air_consider_bridges()
-            && CellBridgeView::from_query(
-                &cells,
-                cells.lookup((impact_rx as i16, impact_ry as i16)),
-            )
-            .is_bridge_cell()
-        {
-            height -= BRIDGE_HEIGHT_LEPTONS;
+        if rules.ares_warhead_globals().damage_air_consider_bridges() {
+            let coord = (impact_rx as i16, impact_ry as i16);
+            // Below the native threshold only a fixed real deck can change
+            // the result. Preserve the original conditional Dummy lookup.
+            let deck = if height >= BRIDGE_DECK_HEIGHT_LEPTONS {
+                let cell = cells.lookup(coord);
+                (cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0)
+                    .then(|| crate::sim::movement::ground_pose::deck_surface_z(&cells, cell, floor))
+            } else {
+                terrain
+                    .native_fixed_cell_index(coord.0, coord.1)
+                    .and_then(|index| corrected_deck_z(terrain, NativeCellIdentity::Real(index)))
+            };
+            if let Some(deck) = deck {
+                let above_deck = impact.z_leptons.wrapping_sub(deck);
+                if above_deck >= 0 {
+                    height = above_deck;
+                }
+            }
         }
         return height > combat.damage_air_threshold();
     }

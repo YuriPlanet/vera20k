@@ -1794,7 +1794,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         true,
         AnimOccupationOperation::Mark,
     );
@@ -1805,7 +1805,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         false,
         AnimOccupationOperation::Clear,
     );
@@ -1816,7 +1816,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         false,
         AnimOccupationOperation::Mark,
     );
@@ -1826,7 +1826,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         false,
         AnimOccupationOperation::Clear,
     );

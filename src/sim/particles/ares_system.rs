@@ -991,8 +991,8 @@ fn smoke_movement(ext: &mut AresParticleSystemExt, sim: &mut Simulation, rules: 
                 .wrapping_add(old[1]),
             new_z,
         ];
-        // 10028270..10028354: the old cell's bridge deck (floor + 0x1A0);
-        // rising from below it to floor + 0x9C or higher dies.
+        // Ares 10028270..10028354: rising from below the old cell's deck to
+        // deck minus 0x104 or higher dies. The stock fallback is floor + 0x1A0.
         match super::spark_world::smoke_bridge_deck(sim, IVec3::from_array(old)) {
             Ok(Some(deck)) => {
                 if old[2] < deck && new_z >= deck.wrapping_sub(0x104) {

@@ -649,7 +649,7 @@ fn fire_coordinate_base<'r>(
                 ));
             }
             use crate::map::voxel_pose::{VxlSlopeBlend, ground_locomotor_matrix};
-            use crate::sim::movement::slope_transition::{SlopeRenderPhase, state_for_entity};
+            use crate::sim::movement::slope_transition::{SlopeRenderPhase, phase_for_entity};
             if !matches!(
                 kind,
                 LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover
@@ -671,7 +671,7 @@ fn fire_coordinate_base<'r>(
                     None,
                 )
             } else {
-                match state_for_entity(entity).map(|state| state.render_phase(binary_frame)) {
+                match phase_for_entity(entity, binary_frame) {
                     Some(SlopeRenderPhase::Stable(slope)) => (slope, None),
                     Some(SlopeRenderPhase::Transition {
                         from_slope,

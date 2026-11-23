@@ -23,8 +23,7 @@ const COLOR_JITTER_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0x3fa9_9999_9
 pub struct SparkCollisionFacts {
     pub ground_z: i32,
     pub slope_matrix: Option<[NativeF32Bits; 12]>,
-    pub old_has_structural_bridge: bool,
-    pub candidate_has_structural_bridge: bool,
+    pub bridge_z: Option<i32>,
     pub accepted_building: bool,
     pub wall_overlay_id: Option<u8>,
 }
@@ -166,19 +165,24 @@ fn resolve_collision_decision(
     // bridge, ground, building, wall, commit-Z, and slope-reflection decisions.
     let ground_z = facts.ground_z;
     let ground_exact = X87Chop53::load_i32(ground_z);
-    let bridge_plane = ground_z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+    let bridge_plane = facts.bridge_z;
     let kind = classify_collision_kind(motion, facts)?;
     let ground_stored_bits = X87Chop53::store_f32(ground_exact)?;
 
-    let committed_z_bits = match kind {
-        Some(SparkCollisionKind::DescendingBridge) => integer_as_stored_f32(bridge_plane)?,
-        Some(SparkCollisionKind::AscendingBridge) => {
-            integer_as_stored_f32(bridge_plane.wrapping_sub(ASCENDING_BRIDGE_DELETE_OFFSET))?
+    let committed_z_bits = match (kind, bridge_plane) {
+        (Some(SparkCollisionKind::DescendingBridge), Some(deck)) => integer_as_stored_f32(deck)?,
+        (Some(SparkCollisionKind::AscendingBridge), Some(deck)) => {
+            integer_as_stored_f32(deck.wrapping_sub(ASCENDING_BRIDGE_DELETE_OFFSET))?
         }
-        Some(SparkCollisionKind::BelowGroundNear)
-        | Some(SparkCollisionKind::Building)
-        | Some(SparkCollisionKind::Wall) => ground_stored_bits,
-        Some(SparkCollisionKind::BelowGroundDeep) | None => motion.candidate_f32[2],
+        (
+            Some(
+                SparkCollisionKind::BelowGroundNear
+                | SparkCollisionKind::Building
+                | SparkCollisionKind::Wall,
+            ),
+            _,
+        ) => ground_stored_bits,
+        _ => motion.candidate_f32[2],
     };
 
     let transient_reflection = if let Some(kind) = kind {
@@ -203,19 +207,12 @@ fn resolve_collision_decision(
 
 pub(super) fn bridge_collision_kind(
     motion: SparkMotionStep,
-    ground_z: i32,
-    old_has_structural_bridge: bool,
-    candidate_has_structural_bridge: bool,
+    bridge_z: Option<i32>,
 ) -> Option<SparkCollisionKind> {
-    let bridge_plane = ground_z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    let structural = old_has_structural_bridge || candidate_has_structural_bridge;
-    if structural && motion.candidate_coords.z < bridge_plane && motion.old_coords.z >= bridge_plane
-    {
+    let bridge_plane = bridge_z?;
+    if motion.candidate_coords.z < bridge_plane && motion.old_coords.z >= bridge_plane {
         Some(SparkCollisionKind::DescendingBridge)
-    } else if structural
-        && motion.candidate_coords.z >= bridge_plane
-        && motion.old_coords.z < bridge_plane
-    {
+    } else if motion.candidate_coords.z >= bridge_plane && motion.old_coords.z < bridge_plane {
         Some(SparkCollisionKind::AscendingBridge)
     } else {
         None
@@ -247,12 +244,7 @@ pub(super) fn classify_collision_kind(
     motion: SparkMotionStep,
     facts: SparkCollisionFacts,
 ) -> Result<Option<SparkCollisionKind>, SparkKernelError> {
-    if let Some(kind) = bridge_collision_kind(
-        motion,
-        facts.ground_z,
-        facts.old_has_structural_bridge,
-        facts.candidate_has_structural_bridge,
-    ) {
+    if let Some(kind) = bridge_collision_kind(motion, facts.bridge_z) {
         return Ok(Some(kind));
     }
 
@@ -590,8 +582,7 @@ mod tests {
         SparkCollisionFacts {
             ground_z,
             slope_matrix: Some(identity_matrix()),
-            old_has_structural_bridge: false,
-            candidate_has_structural_bridge: false,
+            bridge_z: None,
             accepted_building: false,
             wall_overlay_id: None,
         }
@@ -783,7 +774,7 @@ mod tests {
     #[test]
     fn gsi_04_03b_structural_bridge_predicates_keep_their_equality_sides() {
         let mut structural = facts(0);
-        structural.old_has_structural_bridge = true;
+        structural.bridge_z = Some(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
         let descending = resolve_collision(motion(426, 414), structural).unwrap();
         assert_eq!(descending.committed_coords.z, 416);
         assert_eq!(descending.kind, Some(SparkCollisionKind::DescendingBridge));

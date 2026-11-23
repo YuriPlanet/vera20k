@@ -5,7 +5,7 @@
 
 use crate::render::foot_depth::DepthCell;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, absolute_leptons_to_screen};
+use crate::util::lepton::absolute_leptons_to_screen;
 use crate::util::native_x87::adjust_for_z_standard;
 
 pub(crate) struct AircraftShadowContext {
@@ -41,36 +41,38 @@ pub(crate) fn pose(
     let cell = lookup(coord);
     let floor =
         crate::util::lepton::ground_height_leptons(cell.level as u8, cell.ramp, x, y).ok()?;
-    let height = crate::sim::movement::ground_pose::height_at_z(z, floor, context.on_bridge);
+    let deck = cell.deck_z(floor);
+    let deck_lift = deck.wrapping_sub(floor);
+    let surface = if context.on_bridge { deck } else { floor };
+    let height = z.wrapping_sub(surface);
     //414775..4147EC checks the neighboring bridge segment as well as the
     //current Cell's bridge flag. It uses the Cell's stored coordinate.
-    let bridge_height = if height
-        >= if context.on_bridge {
+    let bridge_height =
+        if height >= if context.on_bridge { 0 } else { deck_lift } && cell.flags & 0x100 != 0 {
+            let delta = if cell.flags & 0x800 != 0 {
+                [0, -1]
+            } else {
+                [-1, 0]
+            };
+            let neighbor = [
+                cell.coord[0].wrapping_add(delta[0]),
+                cell.coord[1].wrapping_add(delta[1]),
+            ];
+            if lookup(neighbor).flags & 0x100 != 0 {
+                deck_lift
+            } else {
+                0
+            }
+        } else {
             0
-        } else {
-            BRIDGE_DECK_HEIGHT_LEPTONS
-        }
-        && cell.flags & 0x100 != 0
-    {
-        let delta = if cell.flags & 0x800 != 0 {
-            [0, -1]
-        } else {
-            [-1, 0]
         };
-        let neighbor = [
-            cell.coord[0].wrapping_add(delta[0]),
-            cell.coord[1].wrapping_add(delta[1]),
-        ];
-        if lookup(neighbor).flags & 0x100 != 0 {
-            BRIDGE_DECK_HEIGHT_LEPTONS
-        } else {
-            0
-        }
-    } else {
-        0
-    };
-    let (sx, mut sy) = absolute_leptons_to_screen(x, y, floor);
-    sy -= adjust_for_z_standard(bridge_height) as f32;
+    let fixed_deck = cell
+        .fixed_deck_z
+        .filter(|_| context.on_bridge || bridge_height != 0);
+    let (sx, mut sy) = absolute_leptons_to_screen(x, y, fixed_deck.unwrap_or(floor));
+    if fixed_deck.is_none() {
+        sy -= adjust_for_z_standard(bridge_height) as f32;
+    }
     if context.locomotor == LocomotorKind::Rocket {
         //55A8C0 is called twice: before SetHeight by Aircraft, then after it
         //by Foot4DB0D0. Keep both integer conversions and their rounding.
@@ -79,15 +81,11 @@ pub(crate) fn pose(
     }
     Some(AircraftShadowPose {
         anchor: [sx, sy],
-        world_z: floor
-            .wrapping_add(bridge_height)
-            .wrapping_add(if context.on_bridge {
-                BRIDGE_DECK_HEIGHT_LEPTONS
-            } else {
-                0
-            }),
+        world_z: fixed_deck.unwrap_or_else(|| surface.wrapping_add(bridge_height)),
         facing: crate::render::vxl_raster::voxel_facing_step_u16(facing) * 8,
-        slope: if context.locomotor == LocomotorKind::Fly && context.is_dropship {
+        slope: if fixed_deck.is_some()
+            || context.locomotor == LocomotorKind::Fly && context.is_dropship
+        {
             0
         } else {
             cell.ramp

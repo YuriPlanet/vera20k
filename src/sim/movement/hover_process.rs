@@ -125,12 +125,12 @@ pub(crate) fn hover_move_to(
     let z = terrain.map_or(coord.z, |terrain| {
         let cells = NativeCellQuery::canonical(terrain);
         let ground = ground_pose::query_ground_height(&cells, coord).unwrap_or(coord.z);
-        let structural = cells.flags(cells.lookup_world(coord.x, coord.y)) & 0x100 != 0;
-        ground.wrapping_add(if structural {
-            BRIDGE_DECK_HEIGHT_LEPTONS
+        let cell = cells.lookup_world(coord.x, coord.y);
+        if cells.flags(cell) & 0x100 != 0 {
+            ground_pose::deck_surface_z(&cells, cell, ground)
         } else {
-            0
-        })
+            ground
+        }
     });
     hover.destination = Some(DriveCoord { z, ..coord });
     if !airborne {
@@ -586,18 +586,16 @@ impl Simulation {
             let entered = cells.lookup_world(x, y);
             let structural = cells.flags(entered) & 0x100 != 0;
             let height = super::super::air_movement::current_fly_height(entity, Some(terrain));
-            let on_bridge =
-                if !entity.on_bridge() && structural && height >= BRIDGE_DECK_HEIGHT_LEPTONS {
-                    true
-                } else if entity.on_bridge() && !structural {
-                    false
-                } else {
-                    entity.on_bridge()
-                };
+            let reaches_deck = ground_pose::corrected_deck_z(terrain, entered)
+                .map_or(height >= BRIDGE_DECK_HEIGHT_LEPTONS, |deck| next.z >= deck);
+            let on_bridge = structural && (entity.on_bridge() || reaches_deck);
             let level = cells.ground_fields(entered).0;
+            let deck = terrain.corrected_high_bridge_deck_at(entered);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.on_bridge.store(on_bridge);
-                entity.position.store_cell_level(level, on_bridge);
+                entity
+                    .position
+                    .store_cell_level_on_deck(level, on_bridge, deck);
             }
         }
         self.foot_mark_put(id, rules, registry, effects);

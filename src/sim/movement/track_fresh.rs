@@ -69,7 +69,7 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 use crate::util::direction::TUBE_STEP_DIRECTION;
-use crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEVELS, GROUND_LEVEL_HEIGHT_LEPTONS};
 
 /// Arguments 2 and 3 of `Process_Movement(&out, arg2, arg3)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -614,8 +614,10 @@ impl Simulation {
         let rules = call.rules;
         //4B357F..4B35D6 / 4B3C84: within two levels the candidate's own level
         //and land speed row; otherwise the current height and Road (1).
-        let level = self.track_cell_level(cell)?;
-        let road = (height - level).abs() >= 2;
+        // An admitted fixed deck uses the Road row and retains its level for
+        // the second entry query, even when the ground is close to the deck.
+        let (level, fixed_deck) = self.track_cell_levels(cell)?;
+        let road = fixed_deck == Some(height) || (height - level).abs() >= 2;
         let height2 = if road { height } else { level };
         //4B3C8D..4B3E21: publish the target speed fraction.
         self.publish_fresh_speed(id, cell, road, rules);
@@ -1021,13 +1023,17 @@ impl Simulation {
     }
 
     /// Cell+11B of the candidate.
-    fn track_cell_level(&self, cell: (i16, i16)) -> Result<i32, String> {
+    fn track_cell_levels(&self, cell: (i16, i16)) -> Result<(i32, Option<i32>), String> {
         let terrain = self
             .resolved_terrain
             .as_ref()
             .ok_or("Drive/Ship accept arm requires map cells")?;
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        Ok(i32::from(cells.ground_fields(cells.lookup(cell)).0 as i8))
+        let cell = cells.lookup(cell);
+        Ok((
+            i32::from(cells.ground_fields(cell).0 as i8),
+            terrain.corrected_high_bridge_deck_at(cell).map(i32::from),
+        ))
     }
 
     /// 0x4B3C8D..0x4B3E21: publish the admitted candidate's target speed.
@@ -1056,6 +1062,7 @@ impl Simulation {
             strength,
             rules,
             terrain,
+            self.path_grid.as_deref(),
             &terrain_speed,
             (cell.0 as u16, cell.1 as u16),
             road,
@@ -1138,7 +1145,8 @@ impl Simulation {
     /// Scatter_Objects(Null, 1, 1, deck) on a refused `cell` (fresh
     /// 0x4B38B3..0x4B393A and 0x4B43D0..0x4B4437, the continuation's ally
     /// arm 0x4B2D68..0x4B2DC0): the deck list when the Cell is structural and
-    /// the Foot (Unit+9C) is more than two levels from the Cell's level.
+    /// the Foot (Unit+9C) is at or above a fixed deck, or (with no fixed deck)
+    /// more than two levels from the Cell's ground level.
     pub(super) fn scatter_blocked_track_cell(
         &mut self,
         id: u64,
@@ -1173,7 +1181,10 @@ impl Simulation {
         let level = i32::from(cells.ground_fields(native).0 as i8);
         let location = ground_pose::position_world_coord(&actor.position);
         let deck = cells.flags(native) & 0x100 != 0
-            && (location.z / GROUND_LEVEL_HEIGHT_LEPTONS - level).abs() > 2;
+            && ground_pose::corrected_deck_z(terrain, native).map_or_else(
+                || (location.z / GROUND_LEVEL_HEIGHT_LEPTONS - level).abs() > 2,
+                |deck_z| location.z >= deck_z,
+            );
         self.scatter_cell_contacts(list_cell, deck, true, rules, registry, frame_effects)
     }
 
@@ -1248,9 +1259,10 @@ impl Simulation {
             let level = i32::from(cells.ground_fields(native).0 as i8);
             let location = ground_pose::position_world_coord(&actor.position);
             let here = cells.lookup_world(location.x, location.y);
-            actor.on_bridge()
-                || i32::from(cells.ground_fields(here).0 as i8)
-                    == level + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS
+            let deck_level = terrain
+                .corrected_high_bridge_deck_at(native)
+                .map_or(level + BRIDGE_DECK_HEIGHT_LEVELS, i32::from);
+            actor.on_bridge() || i32::from(cells.ground_fields(here).0 as i8) == deck_level
         };
         if !crusher {
             return Ok(());
