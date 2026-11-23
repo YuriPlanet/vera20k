@@ -563,6 +563,7 @@ impl App {
         selected_mode_id: i32,
         current_record_index: Option<usize>,
     ) {
+<<<<<<< HEAD
         (state.frontend.skirmish_shell_state.statics).hover("", crate::util::time::Instant::now());
         // A fresh `0x6B`: its widgets build on the first sync.
         crate::ui::skirmish_shell::choose_map_page::close(&mut state.frontend.shell_controller);
@@ -597,6 +598,51 @@ impl App {
             state.frontend.scenario_catalog.records(),
             &layout,
         ));
+=======
+        state.frontend.skirmish_shell_state.open_combo_dropdown = None;
+        state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
+        state.frontend.skirmish_shell_state.trackbar_hold = None;
+        state
+            .frontend
+            .skirmish_shell_state
+            .pressed_owner_draw_button = None;
+        crate::ui::skirmish_shell::clear_status_help_text(&mut state.frontend.skirmish_shell_state);
+        // VeraX: the game's data turns the Skirmish map hot reload on, so a
+        // map copied after launch appears without a restart. A network lobby
+        // keeps its launch snapshot, because the map list is local and peers
+        // must still compare the same catalog.
+        let current_record_index =
+            if Self::verax_map_reload(state.rules(), state.frontend.shell_route.network_setup()) {
+                Self::reload_skirmish_catalog(state, current_record_index)
+            } else {
+                current_record_index
+            };
+        let layout = Self::skirmish_choose_map_layout(state);
+        state.frontend.skirmish_shell_state.choose_map_modal =
+            Some(crate::ui::skirmish_shell::ChooseMapModalState::open(
+                if state.frontend.shell_route.network_setup() {
+                    {
+                        let room = state.match_state.session.network_room();
+                        crate::ui::skirmish_shell::ChooseMapContext::Network {
+                            observer: state
+                                .match_state
+                                .session
+                                .network_setup()
+                                .is_some_and(|launch| launch.local_player().is_observer()),
+                            tournament_room: room.tournament_or_clan(),
+                            clan_room: room.clan,
+                        }
+                    }
+                } else {
+                    crate::ui::skirmish_shell::ChooseMapContext::Skirmish
+                },
+                selected_mode_id,
+                current_record_index,
+                &state.frontend.skirmish_modes,
+                state.frontend.scenario_catalog.records(),
+                &layout,
+            ));
+>>>>>>> feature/verax-data-switch
         // VERA: the starred maps list under Favorites, and online rooms list
         // the online map library under its own row.
         let favorites = crate::app::map_library::read_favorites(state);
@@ -633,6 +679,18 @@ impl App {
         }
     }
 
+    /// Whether the Skirmish chooser rescans the game directory: VeraX plays
+    /// in this game, which the game's own data decides (the per-game switch,
+    /// `rules::verax_switch`), and the chooser is the local one. A network
+    /// lobby keeps its launch snapshot, because the map list is local and
+    /// every peer must still compare the same catalog.
+    fn verax_map_reload(
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        network_setup: bool,
+    ) -> bool {
+        !network_setup && rules.is_some_and(|rules| rules.verax())
+    }
+
     /// VeraX map hot reload: re-run the retail Choose Map scan over the game
     /// directory and replace the catalog.
     ///
@@ -640,7 +698,6 @@ impl App {
     /// skips names the manager already knows, so rescanning the same
     /// process-sticky manager neither duplicates archives nor loses its CRC
     /// cache. An empty or failed scan keeps the launch list.
-    #[cfg(feature = "verax")]
     fn reload_skirmish_catalog(
         state: &mut AppState,
         current_record_index: Option<usize>,
@@ -669,7 +726,6 @@ impl App {
     /// One Choose Map scan through the process manager. `None` leaves the
     /// caller's catalog untouched: no Skirmish scenarios or an unreadable
     /// directory is a failed reload, not an empty map list.
-    #[cfg(feature = "verax")]
     fn scan_skirmish_records(
         ra2_dir: &std::path::Path,
         assets: &mut crate::assets::asset_manager::AssetManager,
@@ -693,7 +749,6 @@ impl App {
     /// Keep the selected map across a rescan by file name. A removed map falls
     /// back to the nearest surviving index; a network list or a still-valid
     /// index is unchanged.
-    #[cfg(feature = "verax")]
     fn remap_record_index(
         selected_file: Option<&str>,
         previous: Option<usize>,
@@ -1598,7 +1653,6 @@ mod tests {
 
     /// A loose map the chooser lists: the retail `.yrm` branch reads
     /// `[Basic] Name=` from the file itself.
-    #[cfg(feature = "verax")]
     fn write_loose_map(dir: &std::path::Path, file_name: &str, display_name: &str) {
         std::fs::write(
             dir.join(file_name),
@@ -1607,7 +1661,26 @@ mod tests {
         .expect("write loose map");
     }
 
-    #[cfg(feature = "verax")]
+    /// The Skirmish map hot reload follows the game's own data, not the
+    /// build: a retail ruleset leaves it off, and a ruleset holding VeraX's
+    /// own key turns it on.
+    #[test]
+    fn the_map_reload_follows_the_games_own_data() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+
+        let rules = |ini: &str| RuleSet::from_ini(&IniFile::from_str(ini)).expect("a ruleset");
+        let retail = rules("[General]\nBuildSpeed=.7\n");
+        let verax = rules("[VeraX]\nEnabled=1\n");
+        assert!(!App::verax_map_reload(Some(&retail), false));
+        assert!(App::verax_map_reload(Some(&verax), false));
+        assert!(
+            !App::verax_map_reload(Some(&verax), true),
+            "a network lobby keeps its launch snapshot"
+        );
+        assert!(!App::verax_map_reload(None, false));
+    }
+
     fn synthetic_record(file_name: &str) -> crate::map::skirmish_scenarios::SkirmishScenarioRecord {
         let ini =
             crate::rules::ini_parser::IniFile::from_str(&format!("[Basic]\nName={file_name}\n"));
@@ -1622,7 +1695,6 @@ mod tests {
     /// VeraX map hot reload: the app rescans the same process manager when the
     /// chooser opens, so a map copied after launch must appear without a
     /// restart and without duplicating the rows already listed.
-    #[cfg(feature = "verax")]
     #[test]
     fn rescan_lists_a_map_copied_after_launch_without_duplicating_rows() {
         use crate::assets::asset_manager::test_support::audio_test_install;
@@ -1666,7 +1738,6 @@ mod tests {
 
     /// The chooser's selection is a list index; the rescan may move it, so the
     /// selected file name must win over the stale index.
-    #[cfg(feature = "verax")]
     #[test]
     fn selection_follows_the_file_not_the_stale_index() {
         let records = [

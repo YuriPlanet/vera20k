@@ -858,6 +858,12 @@ impl RuleSet {
     #[inline]
     pub fn ra2(&self) -> bool {
         self.ra2
+    /// Whether VeraX plays in this game: its Rules layers or map hold a VeraX
+    /// key (`rules::verax_switch`). Every build reads this one answer, so a
+    /// game that ships the key plays the same everywhere.
+    #[inline]
+    pub fn verax(&self) -> bool {
+        self.verax
     }
 
     /// Whether this game's Rules were read the Ares way

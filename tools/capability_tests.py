@@ -97,13 +97,6 @@ CAPABILITIES: tuple[Capability, ...] = (
         test=False,
     ),
     Capability(
-        "verax",
-        ("verax",),
-        "VERA20K's own first-party extension: the VeraX-gated autoload, "
-        "hotkey and skirmish chains.",
-        focus=("autoload",),
-    ),
-    Capability(
         "npbug",
         ("npbug",),
         "VERA20K's opt-in NPBUG bug-fix extension: gameplay corrections "
@@ -162,9 +155,10 @@ CAPABILITIES: tuple[Capability, ...] = (
 
 # The capability mixes #2797 declares meaningful: the extension flags are
 # orthogonal, so every pair of them is compiled, then all of them together, and
-# the diagnostic build over all of them. Ares needs no flag: it is in every
-# build and switches on from a game's data. Combinations are compile-covered;
-# each capability is tested on its own so the matrix stays bounded.
+# the diagnostic build over all of them. Ares and VeraX need no flag: they are
+# in every build and switch on from a game's data. Combinations are
+# compile-covered; each capability is tested on its own so the matrix stays
+# bounded.
 COMBINATIONS: tuple[tuple[str, ...], ...] = (
     ("phobos", "npatch"),
     ("phobos", "npbug"),

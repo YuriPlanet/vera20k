@@ -43,7 +43,8 @@ impl RuleSet {
     /// registry reads that way (`ares_switch::ares_way`). The projection's
     /// reader lookups are recorded, so the per-game Ares and Phobos switches
     /// it stores ([`Self::ares`], [`Self::phobos`]) also count the keys only
-    /// these readers read.
+    /// these readers read. VeraX's own switch ([`Self::verax`]) is a VeraX key
+    /// the game's Rules hold.
     pub fn from_processed_rules(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
         let _ares_way = crate::rules::ares_switch::read_ares_way(
             processed.native_registry_state().reads_ares_way(),
@@ -53,6 +54,7 @@ impl RuleSet {
         rules.ares = processed.ares_inputs().decide(&reads);
         rules.ares_kept_off = processed.ares_inputs().kept_off(&reads);
         rules.phobos = crate::rules::phobos_switch::decide(&reads);
+        rules.verax = crate::rules::verax_switch::decide(processed.ini());
         rules.reads_ares_way = processed.native_registry_state().reads_ares_way();
         rules.apply_ra2(crate::util::ra2_launch::enabled());
         Ok(rules)
@@ -1970,7 +1972,11 @@ impl RuleSet {
             ares: false,
             ares_kept_off: false,
             phobos: false,
+<<<<<<< HEAD
             ra2: false,
+=======
+            verax: false,
+>>>>>>> feature/verax-data-switch
             reads_ares_way: false,
             ares_global_controls: processed.ares_global_controls().clone(),
             ares_mouse_cursors: processed.ares_mouse_cursors().clone(),

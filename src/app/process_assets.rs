@@ -1379,7 +1379,6 @@ impl ProcessAssets {
     /// Field-level split borrow for a scenario rescan: the scan registers loose
     /// YRO archives, and its PKT titles resolve through the process CSF. Both
     /// fields live on this owner, so the pair is borrowed together.
-    #[cfg(feature = "verax")]
     pub(crate) fn scenario_rescan_sources(
         &mut self,
     ) -> (

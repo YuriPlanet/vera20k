@@ -132,6 +132,7 @@ pub mod insignia_type;
 pub mod invulnerability_rules;
 pub mod phobos_parallel_ai_queues;
 pub mod phobos_switch;
+pub mod verax_switch;
 #[cfg(all(test, tests_rules_o_z, feature = "phobos"))]
 #[path = "phobos_infantry_deploy_tests.rs"]
 mod phobos_infantry_deploy_tests;
@@ -166,9 +167,6 @@ pub mod phobos_shields;
 pub const PHOBOS_ENABLED: bool = cfg!(feature = "phobos");
 /// Whether this binary includes supported NPatch behavior. INIs cannot change it.
 pub const NPATCH_ENABLED: bool = cfg!(feature = "npatch");
-/// Whether this binary includes VERA20K's own extension behaviors. INIs cannot
-/// change it; builds without the feature keep every stock path.
-pub const VERAX_ENABLED: bool = cfg!(feature = "verax");
 /// Whether this binary includes the NPBUG bug-fix extension. INIs cannot
 /// change it; builds without the feature keep every native path.
 pub const NPBUG_ENABLED: bool = cfg!(feature = "npbug");
@@ -206,6 +204,8 @@ mod ares_manual_control_tests;
 mod ares_switch_tests;
 #[cfg(all(test, tests_rules_a_n))]
 mod ares_type_selection_tests;
+#[cfg(all(test, tests_rules_o_z))]
+mod verax_switch_tests;
 pub mod compatibility;
 pub mod animation_sequence;
 pub mod art_data;

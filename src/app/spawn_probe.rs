@@ -114,7 +114,6 @@ pub(crate) struct BuildIdentity {
     /// `network_build` covers.
     pub phobos: bool,
     pub npatch: bool,
-    pub verax: bool,
     /// Informational: the build's platform.
     pub target: &'static str,
     /// Informational: the commit this build was made from, as its builder
@@ -217,7 +216,6 @@ pub(crate) fn build_identity() -> BuildIdentity {
         network_build: env!("VERA20K_NETWORK_BUILD").to_owned(),
         phobos: crate::rules::PHOBOS_ENABLED,
         npatch: crate::rules::NPATCH_ENABLED,
-        verax: crate::rules::VERAX_ENABLED,
         target: if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
             "wasm32"
         } else {
@@ -937,8 +935,7 @@ mod tests {
                 "npatch",
                 "package_version",
                 "phobos",
-                "target",
-                "verax"
+                "target"
             ]
         );
     }

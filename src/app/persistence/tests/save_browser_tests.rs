@@ -62,13 +62,13 @@ fn browser_admission_rejects_other_build_capability() {
     let bytes = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "other build", 0);
     let header = GameSnapshot::read_header(&bytes).unwrap();
     // Any other capability combination must be refused; flip every bit so this
-    // stays a foreign mode as capabilities are added. No build records Ares
-    // any more, so its bit is always flipped on.
+    // stays a foreign mode as capabilities are added. No build records Ares or
+    // VeraX any more, so their bits are always flipped on.
     let other_capability = crate::rules::compatibility::RulesCompatibility::from_capabilities(
         true,
         !crate::rules::PHOBOS_ENABLED,
         !crate::rules::NPATCH_ENABLED,
-        !crate::rules::VERAX_ENABLED,
+        true,
         !crate::rules::NPBUG_ENABLED,
     );
     let mut header = serde_json::to_value(header).unwrap();

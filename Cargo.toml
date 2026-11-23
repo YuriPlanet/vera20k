@@ -73,12 +73,11 @@ wasm-threads = ["wasm", "vera20k-core/wasm-threads", "dep:wasm-bindgen-rayon", "
 # with `--no-default-features`, so shipped binaries do not.
 default = ["dev-overlays"]
 # Optional Phobos extensions; neither default nor shipping builds enable this.
-# Ares needs no feature: it switches on from a game's data in every build.
+# Ares and VeraX need no feature: they switch on from a game's data in every
+# build.
 phobos = ["vera20k-core/phobos"]
 # Placeholder for the NPatch capability; no chain reads it yet.
 npatch = ["vera20k-core/npatch"]
-# VERA20K's own first-party extension capability; VeraX-gated chains read it.
-verax = ["vera20k-core/verax"]
 # Optional NPBUG bug-fix extension; neither default nor shipping builds enable
 # it.
 npbug = ["vera20k-core/npbug"]
