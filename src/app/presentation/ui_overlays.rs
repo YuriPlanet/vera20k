@@ -287,6 +287,7 @@ impl HudFacts {
     }
 
     /// Its digital displays' values, in `digital_display_indices` order.
+    #[cfg(feature = "phobos")]
     pub(crate) fn digital_values(&self) -> &[Option<(i32, i32)>] {
         self.more().map_or(&[], |more| &more.digital_values)
     }

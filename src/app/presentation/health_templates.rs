@@ -574,7 +574,7 @@ pub(crate) fn mark(
 /// bracket, a unit's lowered by its bracket delta) as the built-in shield
 /// templates lay them out: each pip's frame and point to `out`, in order.
 /// `frames` are the frames the shield type picks for each pip in turn.
-#[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+#[cfg(feature = "phobos")]
 pub(crate) fn shield_pips(
     class: HealthClass,
     frames: impl IntoIterator<Item = usize>,
@@ -605,6 +605,7 @@ pub(crate) fn family(family: Mark) -> Option<[i32; 2]> {
 }
 
 /// `instances` moved by a template's `offset`, where it has one.
+#[cfg(feature = "phobos")]
 pub(crate) fn shift_instances<'a>(
     instances: impl IntoIterator<Item = &'a mut crate::render::batch::SpriteInstance>,
     offset: [i32; 2],
