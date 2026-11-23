@@ -442,7 +442,7 @@ impl App {
             .score_page
             .as_ref()
             .is_some_and(|page| page.page_count() > 1);
-        let rect_of = |id| layout.control_rect(id, paged);
+        let rect_of = |id| layout.node_rect(id, paged);
         let dialog = score::SCORE_DIALOG;
         match Self::screen_page_pointer(state, dialog, score::nodes, rect_of, &[], down) {
             Some(score::CONTINUE_BUTTON) => Self::leave_shell_dialog(
