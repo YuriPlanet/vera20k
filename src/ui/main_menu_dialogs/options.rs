@@ -904,6 +904,9 @@ pub(crate) enum LauncherCheckboxId {
     ShiftQueue,
     /// The player's damaged buildings are sent the Repair order by themselves.
     AutoRepair,
+    /// The next start plays original Red Alert 2 (`[VERA] RA2Mode=`,
+    /// docs/ra2-mode.md).
+    Ra2Mode,
     /// The wheel changes battle view distance.
     MouseWheelZoom,
     /// Alternative controls: left selects, right commands.
@@ -1075,6 +1078,7 @@ pub(crate) const ROWS: &[Row] = {
             "BuildingProductionQueue"
         ),
         row!(Gameplay, Checkbox(AutoRepair), "AutoRepair"),
+        row!(Gameplay, Checkbox(Ra2Mode), "Ra2Mode"),
         row!(Gameplay, List(Ares), "AresSetting"),
         row!(
             Gameplay,

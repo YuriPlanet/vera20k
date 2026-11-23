@@ -291,6 +291,11 @@ pub(crate) struct RetailOptionsProfile {
     /// change applies from the next start. Auto keeps the game's data in
     /// charge; an unknown value reads as Auto.
     pub(crate) ares: crate::util::ares_launch::AresSetting,
+    /// `[VERA] RA2Mode=`: the Options page's RA2 Mode box (docs/ra2-mode.md).
+    /// On, the game plays original Red Alert 2 from the installation's
+    /// non-md files (`util::ra2_launch`). Read at start, like the Ares
+    /// setting: a change applies from the next start. Off by default.
+    pub(crate) ra2_mode: bool,
     /// `[VERA] ColorVisionMode=`: the whole-viewport colour-vision filter, as
     /// a [`ColorVisionMode`](crate::ui::main_menu_dialogs::options::ColorVisionMode)
     /// value. `Off` keeps the retail image. Client presentation only: the
@@ -435,6 +440,7 @@ impl Default for RetailOptionsProfile {
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             auto_repair: false,
+            ra2_mode: false,
             minimap_beacons: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
@@ -476,7 +482,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 43],
+    pub(crate) vera: [(&'static str, String); 44],
 }
 
 impl RetailOptionsLoad {
@@ -574,7 +580,7 @@ impl RetailOptionsLoad {
         // splash, menu and lobby missing their art. Force the RA2 style for
         // the session; the persisted profile is left untouched so a later
         // non-ra2 launch still reads what the player chose.
-        if crate::util::ra2_launch::enabled() {
+        if crate::util::ra2_launch::enabled() || retained_profile.ra2_mode {
             retained_profile.yr_original_style = false;
         }
 
@@ -725,6 +731,7 @@ impl RetailOptionsProfile {
                 vera.read_int("SuperweaponLimit", i32::from(self.superweapon_limit)),
             );
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
+            self.ra2_mode = vera.read_bool("RA2Mode", self.ra2_mode);
             self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
@@ -968,6 +975,7 @@ impl RetailOptionsProfile {
                     format_bool(self.skirmish_cheats).to_string(),
                 ),
                 ("AutoRepair", format_bool(self.auto_repair).to_string()),
+                ("RA2Mode", format_bool(self.ra2_mode).to_string()),
                 (
                     "MinimapBeacons",
                     format_bool(self.minimap_beacons).to_string(),
@@ -2368,6 +2376,22 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             explicit_new_key.retained_profile.yr_original_style,
             "the YR-original preference must be read from its own key"
         );
+    }
+
+    /// RA2 Mode comes from its own key and is saved under it, and a start in
+    /// it leaves YR Original Style off: that art is in the md archives RA2
+    /// Mode does not mount.
+    #[test]
+    fn ra2_mode_round_trips_and_turns_yr_original_style_off() {
+        let on = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[VERA]\nRA2Mode=yes\nYROriginalStyle=yes\n",
+        )
+        .retained_profile;
+        assert!(on.ra2_mode);
+        assert!(!on.yr_original_style);
+        let output = String::from_utf8(on.transform_settings(b"[VERA]\n")).unwrap();
+        assert!(output.contains("RA2Mode=yes"), "{output}");
     }
 
     #[test]

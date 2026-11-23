@@ -98,7 +98,8 @@ agree.
   counts it (`on` or `off` where the setting decides which game opens; `auto` for Auto and for a
   setting that opens the game Auto opens, such as Off without a mod), whether
   `ares.mix` is mounted, whether the INI roots listed under `resources` and the theater suffix are
-  all YR's (`ini_roots_stock`), and the mod (`title` and `version`, from its `mod.ini`, else its folder's
+  all YR's (`ini_roots_stock`), `ra2: true` when [RA2 Mode](ra2-mode.md) is on (left out while
+  off), and the mod (`title` and `version`, from its `mod.ini`, else its folder's
   name; `version` is empty without one). When a mod requires Ares or the game reads one of these INI roots
   or archives under another name than YR's, `resources` names them as the digest compares them, lowercased:
   `requires_ares`, `roots` (Rules, Art, AI, mode and map catalog) and `archives` (expansion and

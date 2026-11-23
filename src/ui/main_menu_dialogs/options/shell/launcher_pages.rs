@@ -66,6 +66,7 @@ pub(super) fn controls(
             section(&mut row, Category::Gameplay, 201);
             check(&mut row, Check::ShiftQueue, x, 239);
             check(&mut row, Check::BuildingProductionQueue, x, 265);
+            check(&mut row, Check::Ra2Mode, right, 280);
             slider(&mut row, Slider::Difficulty, right, 228, 181);
             section(&mut row, Category::Interface, 310);
             check(&mut row, Check::Tooltips, x, 342);

@@ -127,6 +127,11 @@ pub(crate) fn parse_args(args: Vec<OsString>) -> Result<MapPictureRequest> {
     let (mut sha256, mut output, mut area, mut max_size, mut markers, mut prepared_mod) =
         (None, None, None, None, None, None);
     while let Some(flag) = args.next() {
+        // The parent's RA2 mode (`pictures::start`), which
+        // `util::ra2_launch::configure` has already read.
+        if flag.eq_ignore_ascii_case("-ra2") {
+            continue;
+        }
         let value = args
             .next()
             .with_context(|| format!("missing value after {}", flag.to_string_lossy()))?;
@@ -294,6 +299,10 @@ mod tests {
         assert_eq!(args.len(), 6, "the menus ask for nothing more");
         assert!(is_invocation(args.clone()));
         assert_eq!(parse_args(args.clone()).unwrap(), menus);
+        // A parent in RA2 Mode adds its switch (`pictures::start`).
+        let mut ra2 = args.clone();
+        ra2.push("-ra2".into());
+        assert_eq!(parse_args(ra2).unwrap(), menus);
         let tool = MapPictureRequest {
             area: PictureArea::View,
             max_size: (1200, 1200),

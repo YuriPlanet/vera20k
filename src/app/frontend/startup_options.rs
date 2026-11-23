@@ -53,7 +53,7 @@ const ACCEPTED_EXACT_SWITCHES: &[&str] = &["-JABBER", "-STR", "-NOSTR", "-RECORD
 /// the argv is consumed here so it never reaches the strict capture parser,
 /// which would otherwise reject it as an unknown argument. The actual choice
 /// is recorded process-wide by `util::ra2_launch::configure` before any switch
-/// parsing; an `ra2` build then slots the non-md INI roots into config loading.
+/// parsing, and config loading then selects the non-md INI roots.
 const RA2_SWITCH: &str = "-RA2";
 
 /// The four help forms. Native prints its usage strings and returns a failure
@@ -323,7 +323,7 @@ pub fn usage_text() -> String {
         "  -CD             Use the wildcard media-archive branch.",
         "  -WIN            No effect: full screen is a choice on the Options page.",
         "  -NOAUDIO        Disable music and sound output.",
-        "  -ra2            Load original Red Alert 2 non-md data (ra2 build only).",
+        "  -ra2            Play original Red Alert 2 (RA2 Mode in Options).",
         "  -SPAWN          Start an offline CnCNet session from ./spawn.ini.",
         "  --mod <folder>  Play with the mod in that folder of Mods.",
         "  --no-mod        Play the original game, whatever config.toml says.",

@@ -141,6 +141,8 @@ pub(crate) fn rules_differ_text(state: &AppState) -> String {
 pub(crate) enum OriginalGameChange<'a> {
     /// The mod in use, by its title.
     Mod(&'a str),
+    /// RA2 Mode is on (`util::ra2_launch`, docs/ra2-mode.md).
+    Ra2,
     /// `config.toml`'s INI roots that games compare (`IniRoots::agreed_files`)
     /// or its theater suffix are not YR's.
     IniRoots,
@@ -151,8 +153,8 @@ pub(crate) enum OriginalGameChange<'a> {
     ChangedFiles(&'a [String]),
 }
 
-/// What this game changes from the original game: its mod, `config.toml`'s
-/// INI roots, the Ares setting where it decides which game this is and
+/// What this game changes from the original game: its mod, RA2 Mode or else
+/// `config.toml`'s INI roots (RA2 Mode picks its own), the Ares setting where it decides which game this is and
 /// changed game files, in that order. The rules-differ text names them all,
 /// Quick Match refuses on the first. Ares comes before the files: On can
 /// mount the installation's `ares.mix`, which counts as a changed file, and a
@@ -168,9 +170,11 @@ pub(crate) fn original_game_changes<'a>(
 ) -> Vec<OriginalGameChange<'a>> {
     let ares = assets.agreed_ares_setting();
     let files = assets.changed_game_files();
+    let ra2 = crate::util::ra2_launch::enabled();
     [
         mod_title.map(OriginalGameChange::Mod),
-        (!assets.stock_ini_roots()).then_some(OriginalGameChange::IniRoots),
+        ra2.then_some(OriginalGameChange::Ra2),
+        (!ra2 && !assets.stock_ini_roots()).then_some(OriginalGameChange::IniRoots),
         (ares != crate::util::ares_launch::AresSetting::Auto)
             .then_some(OriginalGameChange::Ares(ares)),
         (!files.is_empty()).then_some(OriginalGameChange::ChangedFiles(files)),
@@ -207,7 +211,9 @@ pub(crate) fn changes_header(changes: &[OriginalGameChange]) -> String {
             OriginalGameChange::Mod(name) => {
                 header.insert("mod".into(), text(name).into());
             }
-            OriginalGameChange::IniRoots => {
+            // The lobby names no RA2 Mode, and RA2 Mode does read other
+            // INI roots, so lobbies and older games keep naming it so.
+            OriginalGameChange::Ra2 | OriginalGameChange::IniRoots => {
                 header.insert("ini_roots".into(), true.into());
             }
             OriginalGameChange::Ares(AresSetting::On) => {
@@ -329,6 +335,7 @@ fn changes_text(changes: Vec<OriginalGameChange<'_>>) -> Option<String> {
         .into_iter()
         .map(|change| match change {
             OriginalGameChange::Mod(name) => tr_fill("VERA:RulesChangeMod", &[("name", &name)]),
+            OriginalGameChange::Ra2 => tr("VERA:RulesChangeRa2"),
             OriginalGameChange::IniRoots => tr("VERA:RulesChangeIniRoots"),
             OriginalGameChange::Ares(setting) => tr_fill(
                 "VERA:RulesChangeAres",

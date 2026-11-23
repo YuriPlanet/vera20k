@@ -669,6 +669,13 @@ impl ProcessAssets {
             }
             crate::util::ares_launch::AresSetting::Off => bytes.extend_from_slice(b"ares off\0"),
         }
+        // VERA: RA2 mode (docs/ra2-mode.md) also plays RA2's rules in the
+        // simulation (`util::ra2_launch`), which its INI roots alone do not
+        // show: config.toml can name the same roots without it. Off adds
+        // nothing, so a game without it keeps its digest.
+        if crate::util::ra2_launch::enabled() {
+            bytes.extend_from_slice(b"ra2 mode\0");
+        }
         // mod.ini's display metadata is deliberately absent from the mod-file
         // digest. Its effective loading declarations still select what plays;
         // compare the frozen choice, not the mutable manifest on disk.
@@ -899,6 +906,8 @@ impl ProcessAssets {
             // a mod only On mounts it, and Off never does.
             ares_mix: assets.ares_mix_mounted(),
             ini_roots_stock: self.stock_ini_roots(),
+            // As the digest counts it.
+            ra2: crate::util::ra2_launch::enabled(),
             resources: self.resource_selection(assets),
             mod_in_use: self.resources.mod_folder.as_deref().map(|dir| {
                 let (title, version) =

@@ -380,7 +380,7 @@ impl App {
                 }
                 Ok(config)
             });
-        let game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
+        let mut game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
         if let Some(config) = &game_config {
             crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
             crate::render::locomotor_visual::set_high_terrain_building_lift(
@@ -403,6 +403,14 @@ impl App {
             options_load.startup_shell_screen,
         );
         let options_profile = options_load.retained_profile;
+        // RA2 mode holds for the whole launch, as the mod does: the `-ra2`
+        // switch or the saved Options choice, before any archive or CSF opens.
+        if let Some(config) = game_config.as_mut() {
+            config.use_ra2_mode(options_profile.ra2_mode);
+        }
+        if crate::util::ra2_launch::enabled() {
+            log::info!("RA2 mode for this start");
+        }
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
         personal_rules.set_building_production_queue(options_profile.building_production_queue);
