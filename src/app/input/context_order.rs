@@ -174,9 +174,9 @@ pub(crate) use formation::queue_formation_line;
 pub(crate) use formation::toggle_formation_lock;
 pub(super) use infantry::InfantryAttackAction;
 pub(super) use infantry::InfantryC4Action;
+pub(super) use infantry::ares_ivan_grinds;
 use infantry::cursor_owner;
 use infantry::disarm_bomb_engineers;
-use infantry::friendly_bomb_ivans;
 pub(super) use infantry::infantry_attack_action;
 use infantry::infantry_attack_action_with;
 pub(super) use infantry::infantry_c4_action;
@@ -187,6 +187,7 @@ pub(crate) use infantry::ivan_bomb_refused;
 use infantry::ivan_cannot_bomb;
 use infantry::object_click_release;
 use infantry::shot_is_illegal;
+use infantry::{FriendlyIvanAction, friendly_ivans};
 use orders::attack_branch_orders;
 #[cfg(test)]
 use orders::command_actor_id;
