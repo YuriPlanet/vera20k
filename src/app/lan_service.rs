@@ -1241,12 +1241,9 @@ pub(super) fn verify_setup_agreement(state: &mut AppState) -> anyhow::Result<()>
         }
     };
     if expected != actual {
-        // VERA: with the same build, say what this game changes.
-        let message = if expected.version == actual.version {
-            super::shell_network_setup::agreement::rules_differ_text(state)
-        } else {
-            crate::i18n::tr("VERA:LanClientsDiffer")
-        };
+        // VERA: say what this game changes. The build is the same: the join
+        // refuses another, and so does `options::admit_host_room`.
+        let message = super::shell_network_setup::agreement::rules_differ_text(state);
         reject_setup_compatibility(state, &message);
         anyhow::bail!("LAN selected-mode agreement mismatch");
     }
