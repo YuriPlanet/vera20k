@@ -48,7 +48,7 @@ pub(crate) fn render_network_failure(
     let look =
         super::BoxLook::skirmish(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
     let size = (width as i32, height as i32);
-    let (controls_out, texts_out) = (Some(&mut controls), Some((&mut texts, false)));
+    let (controls_out, texts_out) = (&mut controls, (&mut texts, false));
     super::shell_box::push_skirmish_box(
         state,
         atlas,

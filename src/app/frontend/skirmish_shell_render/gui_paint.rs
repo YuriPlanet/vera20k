@@ -152,6 +152,12 @@ pub(crate) enum ButtonArt {
     /// pushed look: a button that keeps a button's presses and events but
     /// shows as a box (Ares' Urban Areas, whose caption is its own static).
     CheckboxFace,
+    /// A message or wait box's button ([`super::shell_box`]): [`Self::Modal`]'s
+    /// MNBTTN art at [`GuiStyle::shell_box`]'s depths, its caption centred
+    /// in the owner-draw label rect taken at the page's scale, in the style's
+    /// colour or, greyed, the box's own. The caption shows without the art
+    /// too, and gives way only where an overlay meets the caption itself.
+    ModalBox,
 }
 
 impl ButtonArt {
@@ -164,6 +170,7 @@ impl ButtonArt {
             | ButtonArt::ModalCentred
             | ButtonArt::ModalSqueezed
             | ButtonArt::ModalType2
+            | ButtonArt::ModalBox
             | ButtonArt::PanelType2
             | ButtonArt::Side
             | ButtonArt::Image => held,
@@ -413,6 +420,20 @@ pub(crate) struct GuiStyle<'a> {
     /// right edge (rows wrapped narrower than the list, such as hanging
     /// lines under a bullet).
     pub(crate) indent_of: Option<&'a dyn Fn(i32, usize) -> Option<i32>>,
+    /// A message box's depths and greyed caption colour
+    /// ([`ButtonArt::ModalBox`]); its body `Text` paints at its own depth.
+    pub(crate) shell_box: Option<BoxStyle>,
+}
+
+/// What a message box's widgets take from the box ([`GuiStyle::shell_box`]).
+#[derive(Clone, Copy)]
+pub(crate) struct BoxStyle {
+    /// Its buttons' art (`button`) and captions (`text`).
+    pub(crate) depths: ModalDepths,
+    /// Its body's.
+    pub(crate) body_depth: f32,
+    /// A greyed button's caption colour.
+    pub(crate) disabled_rgb: [f32; 3],
 }
 
 impl Default for GuiStyle<'_> {
@@ -450,6 +471,7 @@ impl Default for GuiStyle<'_> {
             empty_of: None,
             solid_lists: false,
             indent_of: None,
+            shell_box: None,
         }
     }
 }
@@ -784,6 +806,50 @@ pub(crate) fn paint_gui_into(
                         paint.column.extend(chrome.and_then(|chrome| {
                             shell_paint::column_button(chrome, rect, frame, SHELL_CONTROL_DEPTH)
                         }));
+                    }
+                    // A box's button: its art when there is any, its caption
+                    // either way.
+                    (ButtonArt::ModalBox, atlas) => {
+                        let look = style.shell_box.unwrap_or(BoxStyle {
+                            depths: ModalDepths {
+                                background: SHELL_CONTROL_DEPTH,
+                                button: SHELL_CONTROL_DEPTH,
+                                text: depth,
+                            },
+                            body_depth: depth,
+                            disabled_rgb: SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
+                        });
+                        if let Some(atlas) = atlas {
+                            let button = ModalButton {
+                                rect,
+                                pressed,
+                                enabled,
+                            };
+                            paint.controls.extend(shell_paint::paint_modal_sprites(
+                                None,
+                                super::type3_button_frames(atlas),
+                                rect,
+                                &[button],
+                                scale,
+                                look.depths,
+                            ));
+                        }
+                        let at = scale.derive_rect(rect, |r| {
+                            crate::app::frontend::shell_pass::owner_draw_button_label_rect(
+                                r, pressed,
+                            )
+                        });
+                        let shown = caption(node)
+                            .filter(|_| !super::text_covered_by_overlay(at, overlays));
+                        if let Some(label) = shown {
+                            let rgb = if enabled { style.rgb } else { look.disabled_rgb };
+                            let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+                            let depth = look.depths.text;
+                            paint
+                                .texts
+                                .push(text(state, &label, at, centred, glyph, rgb, depth));
+                        }
+                        continue;
                     }
                     // The rest are the shell control art's.
                     (_, None) => continue,
@@ -1214,6 +1280,8 @@ pub(crate) fn paint_gui_into(
                 paint.texts.extend(hint);
             }
             NodeKind::Text => {
+                // A box's body sits at the box's depth.
+                let depth = style.shell_box.map_or(depth, |look| look.body_depth);
                 if let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) {
                     let at = inset(gui, node, rect, scale).unwrap_or(rect);
                     let reveal = style

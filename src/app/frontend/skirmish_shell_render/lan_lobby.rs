@@ -236,10 +236,7 @@ pub(crate) fn render_lan_lobby(
             let notice = crate::ui::shell::modal::ShellBox::new(MODAL, body).button(OK, ok);
             let pressed = box_pressed(state, OK.into());
             let look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
-            let (sprites, texts) = (
-                Some(&mut overlay.controls),
-                Some((&mut overlay.texts, false)),
-            );
+            let (sprites, texts) = (&mut overlay.controls, (&mut overlay.texts, false));
             let size = (width as i32, height as i32);
             let pressed = |id| pressed && id == OK;
             super::shell_box::push_skirmish_box(

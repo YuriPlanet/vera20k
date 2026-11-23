@@ -644,10 +644,7 @@ pub(crate) fn render_multiplayer_setup(
         let pressed = |id| ok && id == crate::ui::shell::modal::control::OK;
         let box_look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
         let size = (width as i32, height as i32);
-        let (sprites, texts) = (
-            Some(&mut overlay.controls),
-            Some((&mut overlay.texts, false)),
-        );
+        let (sprites, texts) = (&mut overlay.controls, (&mut overlay.texts, false));
         super::shell_box::push_skirmish_box(
             state,
             Some(atlas),

@@ -108,6 +108,10 @@ pub(crate) struct FrontendState {
     /// ([`crate::app::frontend::menu_page_render::paint_panel_statics`]).
     pub(crate) panel_statics:
         std::sync::Mutex<crate::app::frontend::menu_page_render::PanelStatics>,
+    /// The one tree the message and wait boxes paint from, kept on the box
+    /// showing ([`crate::app::frontend::skirmish_shell_render::paint_shell_box`]).
+    pub(crate) shell_box_tree:
+        std::sync::Mutex<crate::app::frontend::skirmish_shell_render::ShellBoxTree>,
     /// The showing family dialog's teardown slide-out while it runs; its
     /// continuation commits the route change when the slide ends.
     pub(crate) shell_exit: Option<crate::app::frontend::shell_transition::ShellExit>,

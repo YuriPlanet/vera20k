@@ -107,7 +107,7 @@ pub(crate) fn push_saved_browser_box<I>(
     let look = BoxLook::prompt(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
     let size = (layout.screen.w, layout.screen.h);
     let pressed = |id| browser.pressed(id);
-    let texts = Some((texts, true));
+    let texts = (texts, true);
     push_skirmish_box(
         state,
         atlas,
@@ -115,7 +115,7 @@ pub(crate) fn push_saved_browser_box<I>(
         &prompt.shell_box(),
         pressed,
         look,
-        Some(sprites),
+        sprites,
         texts,
     );
 }

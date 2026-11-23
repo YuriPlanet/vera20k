@@ -18,6 +18,9 @@ pub mod control {
     /// with 1 (`0x005D370D`), so the box's hidden IDOK takes both keys.
     pub const IDOK: u16 = 0x0001;
     pub const THIRD: u16 = 0x05AF;
+    /// The body static (`0x5B0`; the wait box's `0x5B2`), which takes no
+    /// pointer.
+    pub const BODY: u16 = 0x05B0;
 }
 
 /// Pixel client size of the 300x200 DLU box templates (F0/CE/120/C4). The
@@ -152,6 +155,14 @@ vera20k_gui::scaled_rects!(BoxParts { [scale] dialog, body, buttons; keep: centr
 impl BoxParts {
     pub fn rect_of(&self, id: u16) -> Option<RectPx> {
         self.buttons.get(id)
+    }
+
+    /// Node `id`'s rect in [`ShellBox::nodes`]: the body's, or a button's.
+    pub fn node_rect(&self, id: u16) -> Option<RectPx> {
+        match id {
+            control::BODY => Some(self.body),
+            id => self.rect_of(id),
+        }
     }
 
     /// The `index`th button's rect (the first is OK).
@@ -311,15 +322,19 @@ impl ShellBox {
         }
     }
 
-    /// Its buttons as nodes under its dialog root.
+    /// Its body static and buttons as nodes under its dialog root, in the
+    /// order they paint, then the hidden IDOK. The body shows only where
+    /// [`BoxParts::node_rect`] places it: its painted tree's.
     pub fn nodes(&self) -> vera20k_gui::NodeSpec {
         use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+        let body = NodeSpec::new(NodeKind::Text).id(i32::from(control::BODY));
         let button = |b: &BoxButton| NodeSpec::new(NodeKind::Button).id(i32::from(b.id));
         let keys = NodeSpec::new(NodeKind::Button)
             .id(i32::from(control::IDOK))
             .with(Prop::Default, Value::Bool(true))
             .with(Prop::Cancel, Value::Bool(true));
         NodeSpec::new(NodeKind::Dialog)
+            .child(body)
             .children(self.buttons.iter().map(button))
             .child(keys)
     }

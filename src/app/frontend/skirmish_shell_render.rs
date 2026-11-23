@@ -597,16 +597,23 @@ fn render_skirmish_shell_with_atlas(
         ) == Some(crate::ui::shell::modal::control::OK);
     let validation_pressed = |id| validation_ok_pressed && id == crate::ui::shell::modal::control::OK;
     let validation_look = BoxLook::skirmish(atlas.mode_two_dialog_background(None));
+    // Each box paints once: its sprites go in here, its texts after the
+    // dialog's below.
+    let mut validation_draw = validation.as_ref().map(|validation| {
+        let size = shell_box::render_size(state);
+        shell_box::skirmish_box(state, Some(atlas), size, validation, validation_pressed, validation_look)
+    });
+    let mut prompt_draw = message_box
+        .as_ref()
+        .map(|prompt| shell_box::choose_map_prompt_box(state, Some(atlas), prompt));
     let mut instances = if message_box_up {
         let mut instances = Vec::new();
         push_message_box_backdrop_instances(&mut instances, atlas, &layout);
-        if let Some(validation) = validation.as_ref() {
-            let size = shell_box::render_size(state);
-            let out = Some(&mut instances);
-            shell_box::push_skirmish_box(state, Some(atlas), size, validation, validation_pressed, validation_look, out, None);
+        if let Some(draw) = validation_draw.as_mut() {
+            draw.push_sprites(&mut instances);
         }
-        if let Some(prompt) = message_box {
-            shell_box::push_choose_map_prompt(state, Some(atlas), &prompt, Some(&mut instances), None);
+        if let Some(draw) = prompt_draw.as_mut() {
+            draw.push_sprites(&mut instances);
         }
         instances
     } else {
@@ -671,13 +678,11 @@ fn render_skirmish_shell_with_atlas(
         Vec::new()
     };
     shell_draws.append(&mut dialog_paint.texts);
-    if let Some(prompt) = message_box {
-        shell_box::push_choose_map_prompt(state, Some(atlas), &prompt, None, Some(&mut shell_draws));
+    if let Some(draw) = prompt_draw.as_mut() {
+        draw.push_texts(&mut shell_draws, true);
     }
-    if let Some(validation) = validation.as_ref() {
-        let size = shell_box::render_size(state);
-        let out = Some((&mut shell_draws, false));
-        shell_box::push_skirmish_box(state, Some(atlas), size, validation, validation_pressed, validation_look, None, out);
+    if let Some(draw) = validation_draw.as_mut() {
+        draw.push_texts(&mut shell_draws, false);
     }
     let marker_label_buffer = state
         .renderer
@@ -1785,7 +1790,7 @@ pub(crate) use chrome::type3_button_frames;
 mod keyboard;
 mod lan_lobby;
 mod shell_box;
-pub(crate) use shell_box::{BoxLook, paint_shell_box};
+pub(crate) use shell_box::{BoxLook, ShellBoxTree, paint_shell_box};
 mod wol_buddy;
 mod wol_lobby;
 mod wol_login;
