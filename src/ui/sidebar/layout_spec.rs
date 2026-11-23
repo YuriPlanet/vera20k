@@ -194,11 +194,11 @@ pub struct SidebarChromeLayoutSpec {
 }
 
 impl SidebarChromeLayoutSpec {
-    pub const fn stock() -> Self {
+    pub fn stock() -> Self {
         Self::for_theme(SidebarTheme::Allied)
     }
 
-    pub const fn for_theme(theme: SidebarTheme) -> Self {
+    pub fn for_theme(theme: SidebarTheme) -> Self {
         Self::for_theme_and_positions(theme, matches!(theme, SidebarTheme::Allied))
     }
 
@@ -206,70 +206,88 @@ impl SidebarChromeLayoutSpec {
     /// hardcoded button coords are independent. `theme` still selects the
     /// SIDEBAR MIX and chrome heights; `gdi_positions` selects the GDI
     /// (allied) position table.
-    pub const fn for_theme_and_positions(theme: SidebarTheme, gdi_positions: bool) -> Self {
-        let allied = gdi_positions;
-        let stock = SidebarPart::STOCK_ORDER;
-        let mut parts = [None; 12];
-        let mut index = 0;
-        while index < stock.len() {
-            parts[index] = Some(stock[index]);
-            index += 1;
-        }
-        Self {
+    ///
+    /// The positions are the built-in `original.ini`, a `veraui.ini` of two
+    /// layouts; what a layout file has no key for stays here.
+    pub fn for_theme_and_positions(theme: SidebarTheme, gdi_positions: bool) -> Self {
+        let mut spec = Self {
             theme,
-            parts,
+            parts: SidebarPart::STOCK_ORDER.map(Some),
             places: super::PanelPlaces::ORIGINAL,
-            sidebar_width: super::SIDEBAR_WIDTH_PX as f32,
-            side_height: super::SIDEBAR_WIDTH_PX as f32,
             field: crate::ui::field_layout::FieldLayout::ORIGINAL,
             side2_height: 50.0,
             side3_height: 26.0,
-            credits_x: 0.0,
-            credits_y: 0.0,
-            money_x: 0.0,
-            money_y: 2.0,
-            top_x: 0.0,
-            top_y: 16.0,
-            top_buttons: if allied {
-                [[11.0, 4.0], [83.0, 4.0]]
-            } else {
-                [[14.0, 5.0], [86.0, 5.0]]
-            },
-            radar_housing_x: 0.0,
-            radar_housing_y: 48.0,
-            radar_x: 16.0,
-            radar_y: 1.0,
-            radar_width: 140.0,
-            radar_height: 108.0,
-            side1_x: 0.0,
-            side1_y: 158.0,
-            repair_x: if allied { 20.0 } else { 33.0 },
-            repair_y: if allied { 8.0 } else { 7.0 },
-            sell_x: if allied { 84.0 } else { 85.0 },
-            sell_y: if allied { 8.0 } else { 7.0 },
-            tab_x: if allied { 26.0 } else { 20.0 },
-            tab_y: 39.0,
-            tab_pitch: if allied { 29.0 } else { 32.0 },
-            strip_x: 0.0,
-            strip_y: 227.0,
-            cameo_inset_x: 22.0,
-            cameo_inset_y: 1.0,
-            cameo_columns: 2.0,
-            cameo_column_pitch: if allied { 63.0 } else { 64.0 },
-            cameo_cell_source_width: if allied { 63.0 } else { 64.0 },
             cameo_width: 60.0,
             cameo_height: 48.0,
-            cameo_row_height: 50.0,
-            strip_footer: if allied { 33.0 } else { 25.0 },
-            scroll_x: 39.0,
-            scroll_y: 7.0,
-            scroll_pitch: if allied { 46.0 } else { 45.0 },
-            power_bar_x: if allied { 5.0 } else { 0.0 },
-            power_bar_y: 227.0,
             power_bar_tile_height: 3.0,
-        }
+            ..Self::UNSET
+        };
+        let layout = ORIGINAL
+            .for_side(Some(if gdi_positions { "GDI" } else { "Nod" }))
+            .expect("original.ini has both position tables");
+        layout.apply_to_sidebar(&mut spec);
+        // SIDE2 paints two cells of the table's own column width.
+        spec.cameo_cell_source_width = spec.cameo_column_pitch;
+        spec
     }
+
+    /// Every number zero, for [`Self::for_theme_and_positions`] to fill.
+    const UNSET: Self = Self {
+        theme: SidebarTheme::Allied,
+        parts: [None; 12],
+        places: super::PanelPlaces::ORIGINAL,
+        sidebar_width: 0.0,
+        side_height: 0.0,
+        field: crate::ui::field_layout::FieldLayout::ORIGINAL,
+        side2_height: 0.0,
+        side3_height: 0.0,
+        credits_x: 0.0,
+        credits_y: 0.0,
+        money_x: 0.0,
+        money_y: 0.0,
+        top_x: 0.0,
+        top_y: 0.0,
+        top_buttons: [[0.0; 2]; 2],
+        radar_housing_x: 0.0,
+        radar_housing_y: 0.0,
+        radar_x: 0.0,
+        radar_y: 0.0,
+        radar_width: 0.0,
+        radar_height: 0.0,
+        side1_x: 0.0,
+        side1_y: 0.0,
+        repair_x: 0.0,
+        repair_y: 0.0,
+        sell_x: 0.0,
+        sell_y: 0.0,
+        tab_x: 0.0,
+        tab_y: 0.0,
+        tab_pitch: 0.0,
+        strip_x: 0.0,
+        strip_y: 0.0,
+        cameo_inset_x: 0.0,
+        cameo_inset_y: 0.0,
+        cameo_columns: 0.0,
+        cameo_column_pitch: 0.0,
+        cameo_cell_source_width: 0.0,
+        cameo_width: 0.0,
+        cameo_height: 0.0,
+        cameo_row_height: 0.0,
+        strip_footer: 0.0,
+        scroll_x: 0.0,
+        scroll_y: 0.0,
+        scroll_pitch: 0.0,
+        power_bar_x: 0.0,
+        power_bar_y: 0.0,
+        power_bar_tile_height: 0.0,
+    };
 }
+
+/// The original sidebar's numbers, read once.
+static ORIGINAL: std::sync::LazyLock<crate::ui::match_layout::MatchLayoutFile> =
+    std::sync::LazyLock::new(|| {
+        crate::ui::match_layout::MatchLayoutFile::from_bytes(include_bytes!("original.ini"))
+    });
 
 impl SidebarChromeLayoutSpec {
     /// Where a radar movie's top-left corner sits in the radar housing:
