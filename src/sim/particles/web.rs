@@ -26,7 +26,13 @@ use crate::sim::world::{Simulation, UninitContext};
 /// `Take_Damage(0, 0, warhead, no source)` (0x005A4332..0x005A4374), the
 /// next object read before each call. Then the animation state advances on
 /// the shared UID/EC cadence and wraps or ends at `EndStateAI=`
-/// (0x005A4376..0x005A43EC). It draws no random numbers.
+/// (0x005A4376..0x005A43EC). It draws no random numbers itself.
+///
+/// Only a `Webby=` warhead's zero hit does anything in Firestorm: the
+/// Infantry receiver's web arm (0x004D23D1) runs before
+/// `TechnoClass::Take_Damage` (0x006325D6) and `ObjectClass::Take_Damage`
+/// (0x00585EE4) drop a zero damage. gamemd's receiver floors a zero to 1
+/// (0x007019D8), so VERA calls it for a Webby warhead alone.
 ///
 /// Residual: Firestorm calls every object in the list; VERA calls the live
 /// ones above zero strength and leaves terrain objects out, which a zero
@@ -38,7 +44,11 @@ pub(super) fn tick_particle(
     mut context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
-    if let Some(warhead) = pt.warhead.as_deref() {
+    if let Some(warhead) = pt
+        .warhead
+        .as_deref()
+        .filter(|&name| rules.warhead(name).is_some_and(|w| w.webby().is_some()))
+    {
         let warhead = sim.interner.intern(warhead);
         let cell = ((p.coords.x >> 8) as u16, (p.coords.y >> 8) as u16);
         let mut current = sim.cell_objects(cell, MovementLayer::Ground).next();

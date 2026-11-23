@@ -115,8 +115,8 @@ where
         // gamemd.exe ParticleClass::AI_Gas (0x0062BD50), 62C2C2..62C2DC:
         // read the parent system's +FC source House regardless of its own
         // BehavesLike. Smoke, Fire and Spark retain that same reference.
-        // RESIDUAL: a Gas or Fire child of a host of another behaviour (mod
-        // data only) damages with the rules-only context below, not the
+        // RESIDUAL: a Gas, Fire or Web child of a host of another behaviour
+        // (mod data only) damages with the rules-only context below, not the
         // frame's: its kills' sounds wait for the next flush, and the overlay
         // table and extension callbacks (bounty text) are absent.
         ParticleBehavesLike::Gas => super::gas::tick_particle(
@@ -152,7 +152,8 @@ where
             super::railgun::tick_particle(p, pt, sim.particle_rng())?;
         }
         // Firestorm 2.0 0x005A4400 (case 5) -> AI_Web 0x005A4310, then the
-        // same tail (0x005A444C).
+        // same tail (0x005A444C). A Gas or Web system runs its own Web
+        // particles with its frame's context ([`super::gas::tick_system`]).
         ParticleBehavesLike::Web => {
             super::web::tick_particle(p, sim, rules, crate::sim::world::UninitContext::new(rules))
         }

@@ -68,14 +68,27 @@ WebRadius=1
 Particle=WebSys
 [ParticleSystems]
 0=WebSys
+1=SAWebSys
 [WebSys]
 HoldsWhat=Web
 BehavesLike=Web
 Lifetime=30
+[SAWebSys]
+HoldsWhat=SAWeb
+BehavesLike=Web
+Lifetime=30
 [Particles]
 0=Web
+1=SAWeb
 [Web]
 BehavesLike=Web
+MaxEC=80
+EndStateAI=10
+StateAIAdvance=2
+DeleteOnStateLimit=yes
+[SAWeb]
+BehavesLike=Web
+Warhead=SA
 MaxEC=80
 EndStateAI=10
 StateAIAdvance=2
@@ -96,9 +109,13 @@ Struggle=0,6,0
 ";
 
 fn rules() -> RuleSet {
+    rules_from(RULES)
+}
+
+fn rules_from(text: &str) -> RuleSet {
     let art = IniFile::from_str(ART);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
-        &crate::sim::arena_fixture::clear_ground_ini(RULES),
+        &crate::sim::arena_fixture::clear_ground_ini(text),
         &art,
     )
     .expect("web rules");
@@ -262,4 +279,52 @@ fn a_web_gun_is_chosen_only_against_a_man_it_can_web() {
     assert_eq!(choose(&sim, cyborg), 0, "IsWebImmune");
     web(&mut sim, &rules, spider, man);
     assert_eq!(choose(&sim, man), 0, "already webbed");
+}
+
+/// Each cell's men are hit right after that cell's web particle is made
+/// (0x004467BC, then 0x00446803), so the man in the centre, the third cell,
+/// takes the fourth Scenario draw: three particle lifetimes come first.
+#[test]
+fn each_cell_is_webbed_right_after_its_particle_is_made() {
+    use crate::sim::rng::SimRng;
+    let rules = rules_from(&RULES.replace("WebDurationVariation=0", "WebDurationVariation=7"));
+    let (mut sim, _, [spider, man, _]) = scene(&rules);
+    sim.scenario_rng = SimRng::with_next_draws_for_test(&[0, 0, 0, 3, 0, 0, 0, 0]);
+    web(&mut sim, &rules, spider, man);
+    let variation = SimRng::with_next_draws_for_test(&[3]).next_range_i32_inclusive(-7, 7);
+    assert_eq!(web_left(&sim, man), 60 + variation);
+}
+
+/// A web particle whose warhead does not web hurts no one: Firestorm drops
+/// its zero damage (0x00585EE4), where gamemd's receiver would make it 1.
+#[test]
+fn a_web_particle_without_a_webby_warhead_leaves_its_cell_unharmed() {
+    let rules = rules();
+    let (mut sim, grid, [_, man, _]) = scene(&rules);
+    let coords = object_get_coords(sim.entities().get(man).unwrap(), sim.resolved_terrain());
+    let point = glam::IVec3::new(coords.x, coords.y, coords.z);
+    let system = sim
+        .spawn_particle_system(
+            rules.ps_type_id_by_name("SAWebSys").unwrap(),
+            point,
+            None,
+            None,
+            glam::IVec3::ZERO,
+            None,
+            &rules,
+        )
+        .unwrap();
+    sim.spawn_particle_in_system(system, point, point, &rules);
+    for _ in 0..5 {
+        step(&mut sim, &rules, &grid);
+    }
+    assert_eq!(
+        sim.particle_systems()
+            .get(system)
+            .unwrap()
+            .particles()
+            .len(),
+        1
+    );
+    assert_eq!(sim.entities().get(man).unwrap().health.current(), 125);
 }

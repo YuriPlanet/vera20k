@@ -3956,6 +3956,7 @@ fn ares_damage_occupants(
 /// The area damage's house (`0x00469A5C..0x00469A75`) is the live bullet
 /// owner's: a bullet whose firer has expired (`BulletClass::PointerExpired
 /// @ 0x004684E0` nulled `+0xB0`) damages with no house.
+#[allow(clippy::too_many_arguments)]
 fn emit_detonation_receivers<'r>(
     world: &mut Simulation,
     run: &mut ReceiverRun<'_>,
@@ -3964,6 +3965,7 @@ fn emit_detonation_receivers<'r>(
     detonation: &ProjectileDetonation,
     warhead: &'r WarheadType,
     out: &mut CombatEmit,
+    pings: &mut Vec<UnderAttackEvent>,
 ) -> (Option<AreaDamageContinuation<'r>>, bool) {
     let (impact_rx, impact_ry, ..) = projectile_impact_cell(detonation.impact);
 
@@ -4134,7 +4136,17 @@ fn emit_detonation_receivers<'r>(
             // `Explosion_Damage` (0x00446632..0x0044663A); the anim tail
             // (0x00446856) still follows.
             if let Some(web) = warhead.webby() {
-                emit_web_receivers(world, rules, detonation, warhead, web, out);
+                commit_web_burst(
+                    world,
+                    run,
+                    rules,
+                    overlay_registry,
+                    detonation,
+                    warhead,
+                    web,
+                    out,
+                    pings,
+                );
                 return (None, false);
             }
 
@@ -4220,25 +4232,31 @@ fn emit_detonation_receivers<'r>(
 ///   bridge cell).
 /// - Each visited cell gets the warhead's `Particle=` system with one held
 ///   particle at that point (`0x00446779..0x004467BC`), occupied or not.
-/// - Each object of the list that is active, on the map and above zero
-///   strength (`0x004467C5..0x004467DB`) takes `Take_Damage(0, 0, warhead,
-///   no source)` (`0x00446803`); the Infantry receiver's web arm does the
-///   rest ([`Simulation::infantry_take_web`]).
+///   The particle's constructor draws its lifetime from Scenario, as
+///   Firestorm's does (`0x005A2D9B..0x005A2DAF`, `% MaxEC`).
+/// - Then each object of the cell's list that is active, on the map and
+///   above zero strength (`0x004467C5..0x004467DB`) takes `Take_Damage(0, 0,
+///   warhead, no source)` (`0x00446803`) before the next cell is visited, so
+///   each man's web draw follows his own cell's particle in the Scenario
+///   stream. The Infantry receiver's web arm does the rest
+///   ([`Simulation::infantry_take_web`]).
 ///
 /// Residuals: off-map cells are skipped (Firestorm visits its dummy cell
-/// and spawns the particle system there); the receivers commit after the
-/// whole loop rather than between its particle systems, which draw from
-/// their own stream; Firestorm passes no house to the particle system and
-/// a null `Particle=` still reaches its spawn call (`0x004467BC`), which VERA
-/// skips; Terrain objects in the list, which take no damage at 0, are not
-/// called.
-fn emit_web_receivers(
+/// and spawns the particle system there); Firestorm passes no house to the
+/// particle system and a null `Particle=` still reaches its spawn call
+/// (`0x004467BC`), which VERA skips; Terrain objects in the list, which take
+/// no damage at 0, are not called.
+#[allow(clippy::too_many_arguments)]
+fn commit_web_burst(
     world: &mut Simulation,
+    run: &mut ReceiverRun<'_>,
     rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
     detonation: &ProjectileDetonation,
     warhead: &WarheadType,
     web: &crate::rules::warhead_type::WarheadWeb,
     out: &mut CombatEmit,
+    pings: &mut Vec<UnderAttackEvent>,
 ) {
     use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
     let radius = web.radius;
@@ -4317,21 +4335,27 @@ fn emit_web_receivers(
                         && !object.lifecycle.in_limbo()
                         && object.health.current() > 0
                 }) {
-                    out.damage_events
-                        .push(combat_aoe::AreaDamageReceiver::Entity(
-                            EntityDamageEvent::direct_receiver(
-                                id,
-                                0,
-                                0,
-                                RAD_NO_ATTACKER,
-                                None,
-                                detonation.payload.warhead,
-                                ReceiverCallFlags {
-                                    ignore_defenses: false,
-                                    arg6: false,
-                                },
-                            ),
-                        ));
+                    let hit = EntityDamageEvent::direct_receiver(
+                        id,
+                        0,
+                        0,
+                        RAD_NO_ATTACKER,
+                        None,
+                        detonation.payload.warhead,
+                        ReceiverCallFlags {
+                            ignore_defenses: false,
+                            arg6: false,
+                        },
+                    );
+                    let (death, _) = commit_receiver(
+                        world,
+                        run,
+                        combat_aoe::AreaDamageReceiver::Entity(hit),
+                        rules,
+                        overlay_registry,
+                        pings,
+                    );
+                    out.effects.append(death);
                 }
             }
         }
@@ -4719,6 +4743,7 @@ pub(crate) fn commit_projectile_detonations_inline(
                 &clustered,
                 warhead,
                 emit,
+                under_attack_events,
             );
             let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
             let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
