@@ -25,8 +25,8 @@ use crate::skirmish_launch::{
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::skirmish_shell::{
-    PlayerNameEditState, SkirmishAiRowType, SkirmishModeSelection, SkirmishSavedSetup,
-    SkirmishShellState, SkirmishTrackbarId,
+    SkirmishAiRowType, SkirmishModeSelection, SkirmishSavedSetup, SkirmishShellState,
+    SkirmishTrackbarId, player_name_from_profile,
 };
 use cooperative::{
     CooperativeCountryRole, CooperativeCountryRosterEntry, CooperativeError,
@@ -480,7 +480,7 @@ impl MultiplayerShellRuntime {
     fn handle_bytes_for(&self, text: &str) -> Vec<u8> {
         Self::name_box_bytes(
             text,
-            &PlayerNameEditState::with_name(&self.handle_text()).text,
+            &player_name_from_profile(&self.handle_text()),
             &self.local_preferences.handle_bytes,
         )
     }
@@ -592,6 +592,9 @@ impl MultiplayerShellRuntime {
         if let Some(room) = snapshot.room {
             options.set_room_options(room);
         }
+        if let Some(session) = snapshot.session {
+            options.set_session_options(session);
+        }
         let mut local = self.local_participant();
         local.set_observer(observe);
         local.slot.team = if mode.must_ally {
@@ -697,6 +700,7 @@ impl MultiplayerShellRuntime {
         snapshot.mcv_repacks = launch.options.mcv_redeploy;
         snapshot.crates_appear = launch.options.crates;
         snapshot.room = Some(launch.options.room_options());
+        snapshot.session = Some(launch.options.session_options());
         for (index, slot) in snapshot.slots.iter_mut().enumerate() {
             let row = (index + 1) as u8;
             *slot = if let Some(ai) = launch.opponents.iter().find(|ai| ai.raw_slot_index == row) {
@@ -1191,8 +1195,17 @@ impl MultiplayerShellRuntime {
         state.build_off_ally = self.snapshot.build_off_ally;
         state.mcv_redeploy = self.snapshot.mcv_repacks;
         state.crates = self.snapshot.crates_appear;
+        if let Some(session) = self.snapshot.session {
+            state.session = crate::skirmish_launch::SessionOptions {
+                tech_level: crate::ui::skirmish_shell::game_options::admitted_tech_level(
+                    session.tech_level,
+                )
+                .unwrap_or(state.session.tech_level),
+                ..session
+            };
+        }
 
-        state.player_name_edit = PlayerNameEditState::with_name(&self.handle_text());
+        state.player_name = player_name_from_profile(&self.handle_text());
         state.player_country =
             LaunchCountry::from_country_index(self.local_preferences.side.max(0) as u32);
         state.player_country_random = self.local_preferences.side_ex == RANDOM_ITEM_DATA;
@@ -1299,7 +1312,7 @@ impl MultiplayerShellRuntime {
         // the unconditional writer at 0x006990A0. Keep the resolved concrete
         // values behind the raw -1/-2 markers so reopening the shell can show
         // Random without discarding the value selected for this launch.
-        let handle_bytes = self.handle_bytes_for(&state.player_name_edit.text);
+        let handle_bytes = self.handle_bytes_for(&state.player_name);
         self.local_preferences = LocalMultiplayerPreferences {
             toggles: self.local_preferences.toggles,
             handle_bytes,
@@ -1336,7 +1349,7 @@ impl MultiplayerShellRuntime {
         pack_snapshot_selection(&mut self.snapshot, state, maps, modes);
         pack_snapshot_slots(&mut self.snapshot, state);
         pack_snapshot_options(&mut self.snapshot, state);
-        self.local_preferences.handle_bytes = self.handle_bytes_for(&state.player_name_edit.text);
+        self.local_preferences.handle_bytes = self.handle_bytes_for(&state.player_name);
         self.local_preferences.handle_source = HandleSource::Native;
         self.local_preferences.game_mode = self.snapshot.game_mode;
         if state.player_country_random {
@@ -1352,16 +1365,6 @@ impl MultiplayerShellRuntime {
         } else {
             self.local_preferences.color_ex = RANDOM_ITEM_DATA;
         }
-    }
-
-    /// Resolve a borrowed raw session on the process-continuity Scenario RNG.
-    /// The shell and durable snapshot remain unchanged.
-    #[cfg(test)]
-    pub(crate) fn resolve_launch_session(
-        &mut self,
-        session: &SkirmishLaunchSession,
-    ) -> SkirmishLaunchSession {
-        session.resolve_shell_random_assignments(&mut self.scenario_rng)
     }
 
     pub(crate) fn cooperative_setup_view(&self) -> CooperativeSetupView<'_> {
@@ -1432,19 +1435,14 @@ impl MultiplayerShellRuntime {
         }
     }
 
-    /// Cooperative `+0x28` as a launch country: None is Random.
+    /// Cooperative `+0x28` as a launch country (a `HouseTypeClass` index):
+    /// None is Random.
     pub(crate) fn cooperative_default_country(&self) -> Option<LaunchCountry> {
-        self.cooperative_country(
-            self.cooperative_progress
-                .default_country(&self.cooperative_registry, &self.cooperative_country_roster),
-        )
-    }
-
-    /// A roster index as the launch country (`HouseTypeClass` index).
-    pub(crate) fn cooperative_country(&self, index: i32) -> Option<LaunchCountry> {
+        let roster = &self.cooperative_country_roster;
+        let index = (self.cooperative_progress).default_country(&self.cooperative_registry, roster);
         usize::try_from(index)
             .ok()
-            .filter(|index| *index < self.cooperative_country_roster.len())
+            .filter(|index| *index < roster.len())
             .map(|index| LaunchCountry::from_country_index(index as u32))
     }
 
@@ -1853,6 +1851,7 @@ fn pack_snapshot_options(snapshot: &mut MultiplayerSetupSnapshot, state: &Skirmi
     snapshot.build_off_ally = state.build_off_ally;
     snapshot.mcv_repacks = state.mcv_redeploy;
     snapshot.crates_appear = state.crates;
+    snapshot.session = Some(state.session);
 }
 
 pub(crate) fn skirmish_global_defaults(state: &SkirmishShellState) -> SkirmishGlobalDefaults {
@@ -1867,6 +1866,7 @@ pub(crate) fn skirmish_global_defaults(state: &SkirmishShellState) -> SkirmishGl
         build_off_ally: state.build_off_ally,
         mcv_repacks: state.mcv_redeploy,
         crates_appear: state.crates,
+        session: state.session,
     }
 }
 
@@ -2653,7 +2653,7 @@ mod tests {
     /// A room reopened after its game keeps VERA's room options, as it keeps
     /// the native checkboxes.
     #[test]
-    fn a_reopened_room_keeps_its_bans_bridges_allying_and_teams() {
+    fn a_reopened_room_keeps_its_bans_bridges_allying_teams_and_session() {
         use crate::map::skirmish_scenarios::{SkirmishScenarioRecord, SkirmishScenarioSource};
         let mut owner = runtime(
             MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish),
@@ -2693,8 +2693,17 @@ mod tests {
             },
             teams: Some(3),
         };
+        let session = crate::skirmish_launch::SessionOptions {
+            tech_level: 7,
+            bases: false,
+            fog_of_war: true,
+            multi_engineer: true,
+            harvester_truce: true,
+        };
         assert_ne!(launch.options.room_options(), room);
+        assert_ne!(launch.options.session_options(), session);
         launch.options.set_room_options(room);
+        launch.options.set_session_options(session);
         owner.remember_network_setup(
             SetupProfile::Lan,
             &launch,
@@ -2702,7 +2711,9 @@ mod tests {
             std::array::from_fn(|_| None),
             &catalog,
         );
-        assert_eq!(open(&mut owner).0.options.room_options(), room);
+        let reopened = open(&mut owner).0.options;
+        assert_eq!(reopened.room_options(), room);
+        assert_eq!(reopened.session_options(), session);
     }
 
     #[test]
@@ -2889,10 +2900,13 @@ mod tests {
         let initial =
             b"; keep this comment\r\n[Unrelated]\r\nKey=kept\r\n[Skirmish]\r\nCredits=10000\r\n";
         std::fs::write(&path, initial).expect("existing nonempty profile");
-        let seed_name = crate::util::native_file_name::NativeFileName::from("SAVE0001.SED");
         let mut seed = RmgOptions::default();
-        saved_seeds::write_browser_seed(&directory, &seed_name, &seed, false)
-            .expect("existing seed");
+        seed.description = "Earlier map".into();
+        std::fs::write(directory.join("SAVE0001.SED"), seed.to_sed_bytes(false))
+            .expect("existing root-level seed");
+        let seed_name = saved_seeds::list_saved_seeds(&directory)
+            .remove(0)
+            .file_name;
         let assets = AssetManager::from_loose_root_for_test(&directory);
         let borrowed_profile = assets
             .get_ref(profile_file::FILENAME)
@@ -2935,8 +2949,14 @@ mod tests {
 
         seed.seed = 42424;
         seed.description = "Overwritten".into();
-        saved_seeds::write_browser_seed(&directory, &seed_name, &seed, false)
-            .expect("overwrite existing seed");
+        saved_seeds::write_browser_seed(
+            &directory,
+            &seed_name,
+            &seed,
+            false,
+            saved_seeds::SeedWrite::Overwrite,
+        )
+        .expect("overwrite existing seed");
         let reread = saved_seeds::read_browser_seed(
             &directory,
             &seed_name,
@@ -3495,7 +3515,7 @@ WOLTaunts=junk
         let mut shell = SkirmishShellState::default();
         runtime.hydrate_shell(&mut shell, &[map()], &[mode()]);
 
-        assert_eq!(shell.player_name_edit.text, "[New Player]");
+        assert_eq!(shell.player_name, "[New Player]");
         assert_eq!(shell.player_country, LaunchCountry::America);
         assert!(!shell.player_country_random);
         assert_eq!(shell.player_color_index, 2);
@@ -3547,7 +3567,7 @@ WOLTaunts=junk
             0x1234,
         );
         let shell = SkirmishShellState {
-            player_name_edit: PlayerNameEditState::with_name("12345678901234567890"),
+            player_name: player_name_from_profile("12345678901234567890"),
             player_country_random: true,
             player_color_claimed: false,
             ..Default::default()
@@ -3756,7 +3776,7 @@ WOLTaunts=junk
             0x89ab,
         );
         let mut shell = SkirmishShellState::default();
-        shell.player_name_edit = PlayerNameEditState::with_name("\u{20ac}");
+        shell.player_name = player_name_from_profile("\u{20ac}");
 
         active_runtime
             .close_shell_transaction(&shell, &[map()], &[mode()], &random_session())
@@ -3776,7 +3796,7 @@ WOLTaunts=junk
 
         let mut reopened_shell = SkirmishShellState::default();
         reopened.hydrate_shell(&mut reopened_shell, &[map()], &[mode()]);
-        assert_eq!(reopened_shell.player_name_edit.text, "\u{20ac}");
+        assert_eq!(reopened_shell.player_name, "\u{20ac}");
     }
 
     /// A code page stored the name box's text (`玩家` in GBK, `€` in
@@ -3818,7 +3838,7 @@ WOLTaunts=junk
             runtime.hydrate_shell(&mut shell, &[map()], &[mode()]);
             runtime.pack_durable_state(&shell, &[map()], &[mode()]);
             assert_eq!(runtime.local_preferences.handle_bytes, handle);
-            shell.player_name_edit.text
+            shell.player_name
         };
         assert_eq!(visit(acp_encode("Hélène")), acp_round_trip("Hélène"));
         visit(gbk.clone());
@@ -3831,7 +3851,7 @@ WOLTaunts=junk
         assert_eq!(runtime.local_preferences.handle_bytes, gbk);
         // Skirmish: an edited name.
         let mut shell = SkirmishShellState::default();
-        shell.player_name_edit = PlayerNameEditState::with_name("Zoë");
+        shell.player_name = player_name_from_profile("Zoë");
         runtime.pack_durable_state(&shell, &[map()], &[mode()]);
         assert_eq!(runtime.local_preferences.handle_bytes, acp_encode("Zoë"));
     }
@@ -3900,7 +3920,7 @@ WOLTaunts=junk
         let mut runtime = runtime(snapshot, 11);
         let session = random_session();
 
-        let resolved = runtime.resolve_launch_session(&session);
+        let resolved = session.resolve_shell_random_assignments(&mut runtime.scenario_rng);
 
         assert!(session.local_slot().country_random);
         assert!(session.local_slot().color_random);

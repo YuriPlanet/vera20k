@@ -7,24 +7,25 @@
 //! Skirmish and the network rooms take it as Back. The menu is made of retail
 //! pieces: the three-button message box `0x121` on the Allied dialog art,
 //! launcher Options `0xD5` and the Main Menu's Exit Game quit. Each page
-//! answers whether Esc is free, so its own boxes and popups keep the key.
+//! answers whether Esc is free, so its own boxes keep the key; the page's
+//! widgets then see it first, so an open drop-down takes it and closes.
 
 use winit::event::KeyEvent;
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 use super::{App, AppState};
 use crate::app::frontend::shell_layout;
-use crate::app::frontend::shell_transition::{self, ShellExitThen};
+use crate::app::frontend::shell_transition;
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::input::precedence::ScreenPage;
-use crate::ui::main_menu_dialogs::options::LauncherOptionsEvent;
-use crate::ui::main_menu_dialogs::{OptionsDialogState, ShellMessageBoxLabels};
+use crate::ui::main_menu_dialogs::{OptionsDialogState, shell_menu};
+use crate::ui::shell::controller::gui_input;
 use crate::ui::shell::keyboard::KeyboardParent;
-use crate::ui::shell::modal::ModalResult;
 
 impl App {
-    /// An Esc press on `screen`. True when the key was used: it closed a
-    /// dropdown, or opened the menu.
+    /// An Esc press on `screen`. True when the key was used: the page's
+    /// widgets took it (an open drop-down closes, without a cue), or it
+    /// opened the menu.
     pub(super) fn shell_menu_key(
         state: &mut AppState,
         event: &KeyEvent,
@@ -39,10 +40,22 @@ impl App {
         {
             return false;
         }
-        if !Self::close_page_dropdown(state, screen) {
-            Self::open_shell_menu(state);
+        // My Information's lists stay open under the menu: its Esc never
+        // reached them.
+        let my_info = screen == ScreenPage::Wol
+            && matches!(
+                state.frontend.wol.as_ref().map(|visit| &visit.page),
+                Some(super::shell_wol::WolPage::MyInformation(_))
+            );
+        let escape =
+            gui_input(Some(KeyCode::Escape), false, event.text.as_deref()).filter(|_| !my_info);
+        let controller = &mut state.frontend.shell_controller;
+        if escape.is_some_and(|escape| controller.on_input(escape)) {
+            return true;
         }
-        state.platform.window.request_redraw();
+        // A focused edit reported the Escape as its cancel; the menu takes it.
+        controller.discard_cancelled();
+        Self::open_shell_menu(state);
         true
     }
 
@@ -72,41 +85,19 @@ impl App {
         }
     }
 
-    /// A dropdown the page has open closes first.
-    fn close_page_dropdown(state: &mut AppState, screen: ScreenPage) -> bool {
-        match screen {
-            ScreenPage::Skirmish => crate::ui::skirmish_shell::close_combo_dropdown(
-                &mut state.frontend.skirmish_shell_state,
-            ),
-            ScreenPage::NetworkSetup => {
-                crate::ui::skirmish_shell::close_combo_dropdown(
-                    &mut state.frontend.skirmish_shell_state,
-                ) || state.frontend.multiplayer_setup.as_mut().is_some_and(|ui| {
-                    let open = ui.popup.control.is_some();
-                    ui.popup.close();
-                    open
-                })
-            }
-            ScreenPage::Wol => Self::close_wol_open_list(state),
-            _ => false,
-        }
-    }
-
     fn open_shell_menu(state: &mut AppState) {
         // The box's art; without it nothing could draw or close the menu.
         Self::ensure_skirmish_shell_chrome(state);
         if state.frontend.skirmish_shell_chrome.is_none() {
             return;
         }
-        let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
-        let labels = ShellMessageBoxLabels::shell_menu(&csf);
+        let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
+        let shell_box = shell_menu(&csf);
         let settings = Box::new(Self::launcher_options_from_state(state));
         Self::open_shell_message_box(
             state,
-            ShellMessageBox {
-                labels,
-                purpose: ShellMessageBoxPurpose::ShellMenu(settings),
-            },
+            shell_box,
+            ShellMessageBoxPurpose::ShellMenu(settings),
         );
     }
 
@@ -125,7 +116,7 @@ impl App {
         };
         let layout = shell_layout::shell_menu_settings_layout(size, &state.renderer.bit_font);
         let (x, y) = state.match_state.input.cursor_px();
-        let list_open = settings.shell_popup(&layout).is_some();
+        let list_open = settings.shell_list_open();
         match pressed {
             Some(true) => settings.shell_mouse_down(x, y, &layout),
             Some(false) => settings.shell_mouse_up(x, y, &layout),
@@ -159,28 +150,19 @@ impl App {
         let Some(settings) = Self::shell_menu_settings(state) else {
             return;
         };
-        let events = settings.drain_output().events;
-        let language = events
-            .iter()
-            .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
-        for event in events {
-            crate::app::persistence::options::launcher::dispatch_launcher_preview_event(
-                state, event,
-            );
-        }
-        if language {
-            let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
-            let labels = ShellMessageBoxLabels::shell_menu(&csf);
+        let output = settings.drain_output();
+        if Self::run_launcher_options_events(state, output.cues, output.events) {
+            let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
+            let shell_box = shell_menu(&csf);
             let option_labels = Self::launcher_options_labels(state);
             if let Some(message_box) = state.frontend.shell_message_box.as_mut() {
-                message_box.labels = labels;
+                message_box.shell_box = shell_box;
                 if let Some(settings) = message_box.menu_settings_mut() {
                     settings.set_labels(option_labels);
                 }
             }
             crate::app::persistence::options::persist_options_profile(state);
         }
-        state.platform.window.request_redraw();
     }
 
     /// The menu's box shows what the window is. A change is written once the
@@ -206,26 +188,23 @@ impl App {
         }
     }
 
-    /// The menu has closed with `result`: 0 is Options, 2 Exit Game, 1 Cancel
+    /// The menu has closed with `answer`: 0 is Options, 2 Exit Game, 1 Cancel
     /// or Esc. The page slides out for Options as it does for any button of
     /// its own, and slides back in when Options closes.
-    pub(super) fn answer_shell_menu(state: &mut AppState, result: ModalResult) {
-        match result {
-            ModalResult::MessageBox(0) => {
-                match shell_transition::current_shell_slide_target(state) {
-                    Some(kind) => {
-                        Self::leave_shell_dialog(state, ShellExitThen::ShellMenuOptions(kind));
-                    }
-                    None => Self::open_launcher_options_dialog(state),
+    pub(super) fn answer_shell_menu(state: &mut AppState, answer: usize) {
+        match answer {
+            0 => match shell_transition::current_shell_slide_target(state) {
+                Some(kind) => {
+                    Self::leave_shell_dialog(state, kind, App::open_launcher_options_dialog);
                 }
-            }
-            ModalResult::MessageBox(2) => {
+                None => Self::open_launcher_options_dialog(state),
+            },
+            2 => {
                 Self::prepare_shell_terminal_exit(state);
                 Self::confirm_quit(state);
             }
             _ => {}
         }
-        state.platform.window.request_redraw();
     }
 
     /// A match is launching under the menu, because a room's host started it.

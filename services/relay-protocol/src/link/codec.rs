@@ -2,6 +2,17 @@
 //! STATUS (spec §3.3, §3.4), in the varint encoding of the bandwidth
 //! compaction (its §7.1-§7.3, §8). Fixed-width integers are little-endian.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use super::{HopFeedback, RecvWindow};
 use crate::{ORDERING_BATCH_CAPACITY, OrderPace, RelayError, varint};
 
@@ -206,6 +217,34 @@ pub(crate) fn read_feedback(reader: &mut Reader<'_>) -> Result<HopFeedback, Rela
     })
 }
 
+/// The `N` bytes at `offset` of a message, `Malformed` past its end.
+pub(crate) fn field<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N], RelayError> {
+    bytes
+        .get(offset..)
+        .and_then(<[u8]>::first_chunk)
+        .copied()
+        .ok_or(RelayError::Malformed)
+}
+
+/// The little-endian `u32` at `offset`, `Malformed` past the end.
+pub(crate) fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, RelayError> {
+    field(bytes, offset).map(u32::from_le_bytes)
+}
+
+/// The little-endian `u64` at `offset`, `Malformed` past the end.
+pub(crate) fn read_u64(bytes: &[u8], offset: usize) -> Result<u64, RelayError> {
+    field(bytes, offset).map(u64::from_le_bytes)
+}
+
+/// The `N` bytes at `AT` of a fixed-size record. A field that would run
+/// past the record's end fails the build, so the read has no failure.
+pub(crate) fn array_at<const AT: usize, const N: usize, const L: usize>(
+    bytes: &[u8; L],
+) -> [u8; N] {
+    const { assert!(AT + N <= L, "a fixed field past the end of its record") };
+    std::array::from_fn(|index| bytes[AT + index])
+}
+
 /// A cursor over a message: fixed-width little-endian fields and §8
 /// varints, each `Malformed` past the end.
 pub(crate) struct Reader<'a>(pub(crate) &'a [u8]);
@@ -219,17 +258,25 @@ impl<'a> Reader<'a> {
         self.0 = tail;
         Ok(head)
     }
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], RelayError> {
+        let (head, tail) = self
+            .0
+            .split_first_chunk::<N>()
+            .ok_or(RelayError::Malformed)?;
+        self.0 = tail;
+        Ok(*head)
+    }
     pub(crate) fn u8(&mut self) -> Result<u8, RelayError> {
         Ok(self.take(1)?[0])
     }
     pub(crate) fn u16(&mut self) -> Result<u16, RelayError> {
-        Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
+        self.array().map(u16::from_le_bytes)
     }
     pub(crate) fn u32(&mut self) -> Result<u32, RelayError> {
-        Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+        self.array().map(u32::from_le_bytes)
     }
     pub(crate) fn u64(&mut self) -> Result<u64, RelayError> {
-        Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+        self.array().map(u64::from_le_bytes)
     }
     pub(crate) fn varint(&mut self) -> Result<u64, RelayError> {
         let (value, length) = varint::read(self.0)?;

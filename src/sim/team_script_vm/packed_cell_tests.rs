@@ -15,7 +15,12 @@ pub(super) fn frame(scene: &mut HeadlessScenario) {
     let commands = scene.runtime.simulation.take_due_commands();
     let result = scene
         .runtime
-        .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(
+            &commands,
+            22,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
         .unwrap();
     assert!(!result.outcome_waiting);
 }
@@ -142,7 +147,8 @@ pub(super) fn reload(scene: &mut HeadlessScenario) {
     let dummy = sim.effective_shared_cell_dummy();
     dummy.adopt_prepared_load_state(&loaded.effective_shared_cell_dummy());
     loaded.bind_shared_cell_dummy(dummy);
-    loaded.install_fresh_process_main(sim.main_rng());
+    // No app process cell here: the install writes a stand-in nothing reads.
+    loaded.install_fresh_process_main(&crate::sim::rng::MainRng::new(0));
     loaded.publish_scenario_started();
     runtime.replace_simulation(loaded);
 }
@@ -244,9 +250,14 @@ fn packed_cell_dummy_keeps_its_pointer_across_restamps_and_reload() {
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(target)
     );
-    sim.team_member_assign_target(member, target, rules, FrameEffects::default());
+    sim.team_member_assign_target(member, target, rules, &mut FrameEffects::default());
     let changed_token = sim.canonical_team_cell((-2, 0));
-    sim.team_assign_mission_target(team, Some(changed_token), rules, FrameEffects::default());
+    sim.team_assign_mission_target(
+        team,
+        Some(changed_token),
+        rules,
+        &mut FrameEffects::default(),
+    );
     assert_eq!(
         sim.entities().get(member).unwrap().attack_target.target(),
         Some(TargetKind::Cell(u16::MAX, 0)),
@@ -274,7 +285,7 @@ fn a_team_only_dummy_target_makes_its_live_coordinate_part_of_the_hash() {
     let team_type = sim.interner.get("TEAM").unwrap();
     let team = sim.create_team(team_type, Some(owner), &rules).unwrap();
     let target = sim.canonical_team_cell((-1, 0));
-    sim.team_assign_mission_target(team, Some(target), &rules, FrameEffects::default());
+    sim.team_assign_mission_target(team, Some(target), &rules, &mut FrameEffects::default());
     let before = sim.state_hash();
     let _ = sim.canonical_team_cell((-2, 0));
     assert_ne!(

@@ -57,7 +57,7 @@ pub fn launch(
     target_rx: u16,
     target_ry: u16,
     sw_type: InternedId,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let general = &rules.general;
     let frame = sim.session.binary_frame();

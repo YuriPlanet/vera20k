@@ -7,9 +7,9 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::houses::Houses;
 use crate::sim::intern::StringInterner;
+use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameChannel;
-use crate::sim::world::MainRng;
 use crate::sim::world::ObjectSubstrate;
 
 /// Foot+0x53C and signed dword+0x540. The sound may have finished (or playback
@@ -51,7 +51,7 @@ impl Simulation {
     pub(super) fn tick_move_sound_after_process(
         interner: &StringInterner,
         session: &ScenarioSession,
-        main_rng: &MainRng,
+        main_rng: &mut SimRng,
         substrate: &mut ObjectSubstrate,
         sound_events: &mut FrameChannel<SimSoundEvent>,
         houses: &Houses,
@@ -91,7 +91,7 @@ impl Simulation {
                 let index = main_rng.next_u32() as usize % sounds.len();
                 sound_events.emit(SimSoundEvent::AnimationStarted {
                     anim_id: stable_id,
-                    sound_id: sounds[index].clone(),
+                    sound_id: rules.sound_name(&sounds[index]),
                     world,
                 });
                 // 0x4DAAE7 does not depend on PlayAt's device/admission result.

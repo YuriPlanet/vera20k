@@ -349,10 +349,6 @@ impl TacticalCaptureSession {
             "classification": "AcceptedExplicitFixedBattle",
         }));
 
-        state
-            .frontend
-            .skirmish_shell_state
-            .pressed_owner_draw_button = None;
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_preview_texture = None;
@@ -1084,16 +1080,15 @@ impl TacticalCaptureSession {
             .match_presentation
             .radar_content_insets
             .context("radar content insets are absent")?;
+        let drawn_sidebar = output.drawn_sidebar_view(state);
         let render_evidence = SidebarRenderEvidence::from_render_output(
             output,
+            drawn_sidebar,
             aperture,
             insets,
             [state.render_width(), state.render_height()],
         )?;
-        let sidebar = output
-            .sidebar_view
-            .as_ref()
-            .context("production render emitted no SidebarView")?;
+        let sidebar = drawn_sidebar.context("production render emitted no SidebarView")?;
         let panel_contains_aperture = aperture.x >= sidebar.panel_rect.x
             && aperture.y >= 0.0
             && aperture.x + aperture.w <= sidebar.panel_rect.x + sidebar.panel_rect.w
@@ -1173,7 +1168,7 @@ impl TacticalCaptureSession {
             && radar_phase_online
             && actual_theme == expected_theme
             && source_matches_owner
-            && output.sidebar_view.is_some()
+            && drawn_sidebar.is_some()
             && panel_contains_aperture
             && counts_ready
             && sidebar_values_ready

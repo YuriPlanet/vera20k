@@ -55,7 +55,7 @@ fn order(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) {
         NavTargetRef::cell(cell.0, cell.1),
         rules,
         true,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -81,7 +81,7 @@ fn long_trip_digs_travels_underground_and_surfaces() {
     let mut underground_frames = 0;
     for frame in 1..3000 {
         sim.session.set_binary_frame_for_test(frame);
-        sim.process_tunnel_locomotor(DIGGER, &rules, None, FrameEffects::default());
+        sim.process_tunnel_locomotor(DIGGER, &rules, None, &mut FrameEffects::default());
         let entity = sim.substrate.entities.get(DIGGER).unwrap();
         if entity.movement_layer_or_ground() == MovementLayer::Underground {
             underground_frames += 1;
@@ -125,7 +125,7 @@ fn blocked_destination_surfaces_on_a_burrowable_neighbour() {
     while tunnel_state(&sim) != Some(TunnelState::Digging) {
         frame += 1;
         sim.session.set_binary_frame_for_test(frame);
-        sim.process_tunnel_locomotor(DIGGER, &rules, None, FrameEffects::default());
+        sim.process_tunnel_locomotor(DIGGER, &rules, None, &mut FrameEffects::default());
         assert!(frame < 500, "the digger reaches its underground state");
     }
     // A slope refuses burrowing (CellClass `0x00486FF0`).
@@ -138,7 +138,7 @@ fn blocked_destination_surfaces_on_a_burrowable_neighbour() {
     while tunnel_state(&sim) != Some(TunnelState::Idle) {
         frame += 1;
         sim.session.set_binary_frame_for_test(frame);
-        sim.process_tunnel_locomotor(DIGGER, &rules, None, FrameEffects::default());
+        sim.process_tunnel_locomotor(DIGGER, &rules, None, &mut FrameEffects::default());
         assert!(frame < 3000, "the digger surfaces");
     }
     let entity = sim.substrate.entities.get(DIGGER).unwrap();
@@ -161,7 +161,7 @@ fn dispatched_order_reaches_the_unit_setter() {
         DIGGER,
         Some(NavTargetRef::cell(30, 10)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .expect("dispatched destination");
     assert_eq!(tunnel_state(&sim), Some(TunnelState::PreDigIn));
@@ -255,7 +255,7 @@ fn ares_null_destination_ends_the_dig() {
         .tunnel_runtime_mut()
         .unwrap()
         .set_state(TunnelState::PreDigIn);
-    sim.process_tunnel_locomotor(DIGGER, &rules, None, FrameEffects::default());
+    sim.process_tunnel_locomotor(DIGGER, &rules, None, &mut FrameEffects::default());
     assert_eq!(tunnel_state(&sim), Some(TunnelState::DugOut));
 }
 

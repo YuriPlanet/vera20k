@@ -68,10 +68,10 @@ fn active(sim: &Simulation, owner: &str, name: &str) -> bool {
 
 fn recheck(sim: &mut Simulation, rules: &RuleSet, owner: &str) {
     let owner = sim.interner.get(owner).unwrap();
-    sim.recheck_house_tech_tree(owner, rules, Default::default());
+    sim.recheck_house_tech_tree(owner, rules, &mut Default::default());
     // Revocation itself requests a follow-up tail. Settle it so each next
     // lifecycle change must publish its own invalidation, not inherit one.
-    sim.recheck_house_tech_tree(owner, rules, Default::default());
+    sim.recheck_house_tech_tree(owner, rules, &mut Default::default());
     assert!(!sim.houses.get_mut(&owner).unwrap().take_tech_recheck());
 }
 
@@ -152,7 +152,7 @@ fn black_widow_upgrade_switches_grants_at_the_existing_dirty_house_tail() {
         id,
         (15, 15),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     sim.sound_events.clear_for_test();
@@ -182,14 +182,14 @@ fn capture_moves_last_negative_and_grants_between_both_houses() {
     recheck(&mut sim, &rules, OWNER);
     recheck(&mut sim, &rules, OTHER);
     let other = sim.interner.get(OTHER).unwrap();
-    sim.change_owner_with_rules(first, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(first, other, &rules, None, &mut FrameEffects::default());
     recheck(&mut sim, &rules, OWNER);
     recheck(&mut sim, &rules, OTHER);
     assert!(!active(&sim, OWNER, NORMAL), "one negative still remains");
     assert!(active(&sim, OWNER, ALPHA));
     assert!(!active(&sim, OTHER, NORMAL));
     assert!(active(&sim, OTHER, ALPHA));
-    sim.change_owner_with_rules(second, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(second, other, &rules, None, &mut FrameEffects::default());
     recheck(&mut sim, &rules, OWNER);
     recheck(&mut sim, &rules, OTHER);
     assert!(active(&sim, OWNER, NORMAL));
@@ -233,7 +233,14 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
     };
     sim.sound_events.clear_for_test();
     let before = sim.state_hash();
-    sim.apply_command_with_overlays(None, OWNER, &command, &rules, None, FrameEffects::default());
+    sim.apply_command_with_overlays(
+        None,
+        OWNER,
+        &command,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert_eq!(
         sim.state_hash(),
         before,
@@ -245,7 +252,14 @@ fn command_refusal_preserves_charge_state_and_rng_then_same_command_launches() {
     );
     spawn(&mut sim, &rules, "GASCEA", OWNER, 8);
     sim.sound_events.clear_for_test();
-    sim.apply_command_with_overlays(None, OWNER, &command, &rules, None, FrameEffects::default());
+    sim.apply_command_with_overlays(
+        None,
+        OWNER,
+        &command,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(!sim.super_weapons[&owner][&id].is_ready);
     assert!(
         sim.sound_events
@@ -272,7 +286,7 @@ fn unavailable_ai_does_not_enter_target_search_or_draw_rng() {
     ready(&mut sim, NORMAL);
     let before = sim.state_hash();
     ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));
-    ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+    ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
     let observed = ai_fire::AI_FIRE_LOG.take().unwrap();
     assert_eq!(observed, vec![ai_fire::AiFireEvent::TryFire]);
     assert_eq!(sim.state_hash(), before);
@@ -478,7 +492,7 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
         id,
         (15, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.state_hash(), before);
@@ -492,7 +506,7 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
         id,
         (15, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 925);
@@ -507,7 +521,7 @@ fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
         id,
         (15, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.state_hash(), before);

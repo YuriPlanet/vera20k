@@ -4,14 +4,14 @@
 
 use std::collections::VecDeque;
 
-use crate::util::time::Instant;
+use vera20k_gui::{Gui, InputEvent, Key, NodeId, NodeKind, NodeSpec, Prop, Value};
 
-use crate::ui::shell::button::ShellButtonInteraction;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::controller::DialogController;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::list::{ListMetrics, ListScrollInteraction, ShellListGeometry};
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
 pub(crate) const CREATE: u16 = 0x6CC;
 pub(crate) const JOIN: u16 = 0x6CD;
@@ -20,7 +20,7 @@ pub(crate) const OBSERVE: u16 = 0x6CE;
 pub(crate) const BACK: u16 = 0x5C0;
 pub(crate) const NAME: u16 = 0x541;
 /// The name edit's limit: 16 units, each a code-page byte in gamemd.
-const NAME_LIMIT: usize = 16;
+pub(crate) const NAME_LIMIT: usize = 16;
 pub(crate) const CHAT: u16 = 0x540;
 pub(crate) const GAMES: u16 = 0x549;
 pub(crate) const PLAYERS: u16 = 0x53E;
@@ -29,31 +29,13 @@ pub(crate) const OBSERVER_IMAGE: u16 = 0x75F;
 pub(crate) const OBSERVER_TOGGLE: u16 = 0x760;
 
 pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0xBB),
+    dialog: DialogResourceId(0xBB),
     title_key: "GUI:Lobby",
     stacked: &[
-        MenuPageButtonSpec {
-            id: CREATE,
-            dlu_top: 122,
-            csf_key: "GUI:New",
-            tooltip_key: "STT:LobbyButtonNew",
-            result: None,
-        },
-        MenuPageButtonSpec {
-            id: JOIN,
-            dlu_top: 149,
-            csf_key: "GUI:Join",
-            tooltip_key: "STT:LobbyButtonJoin",
-            result: None,
-        },
+        MenuPageButtonSpec::new(CREATE, 122, "GUI:New", "STT:LobbyButtonNew"),
+        MenuPageButtonSpec::new(JOIN, 149, "GUI:Join", "STT:LobbyButtonJoin"),
     ],
-    back: MenuPageButtonSpec {
-        id: BACK,
-        dlu_top: 346,
-        csf_key: "GUI:MainMenu",
-        tooltip_key: "STT:LobbyButtonBack",
-        result: None,
-    },
+    back: MenuPageButtonSpec::new(BACK, 346, "GUI:MainMenu", "STT:LobbyButtonBack"),
 };
 
 /// Executed6040B0 against BB's original resource control IDs.
@@ -71,6 +53,39 @@ pub(crate) fn tooltip_key(control: u16) -> Option<&'static str> {
         OBSERVER_TOGGLE => "STT:ObserverToggle",
         _ => return None,
     })
+}
+
+/// BB's widgets, each with its status help: the right-panel buttons, the
+/// two NewEdits (the name's limits as [`LanLobbyState::name_edited`] says),
+/// the lists (their rows painted by BB, hit inside their frame) and the
+/// observer box, which
+/// toggles on the press (`0x5DDBD0`'s BN_CLICKED off the icon), with the
+/// observer image `0x75F` beside it (a box the page paints as its image,
+/// toggled anywhere on it).
+pub(crate) fn spec() -> NodeSpec {
+    let node = |kind: NodeKind, id: u16| {
+        NodeSpec::new(kind)
+            .id(i32::from(id))
+            .tooltip(tooltip_key(id).unwrap_or_default())
+    };
+    // Each row's text 2 px in from both ends; the chat log shows no
+    // selection.
+    let list = |id: u16| {
+        node(NodeKind::List, id)
+            .with(Prop::RowCount, Value::Int(0))
+            .with(Prop::TextInset, Value::Rect(RectPx::new(2, 0, 2, 0)))
+            .with(Prop::NoSelectionFill, Value::Bool(id == CHAT_LOG))
+    };
+    NodeSpec::new(NodeKind::Dialog)
+        .children(crate::ui::shell::page::menu_buttons(&PAGE))
+        .child(
+            node(NodeKind::Edit, NAME)
+                .with(Prop::MaxBytes, Value::Int(NAME_LIMIT as i32))
+                .with(Prop::Rejected, Value::Text(",".into())),
+        )
+        .child(node(NodeKind::Edit, CHAT))
+        .children([GAMES, PLAYERS, CHAT_LOG].map(list))
+        .children([OBSERVER_TOGGLE, OBSERVER_IMAGE].map(|id| node(NodeKind::Checkbox, id)))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,16 +123,6 @@ pub(crate) struct LanChatLine {
     pub(crate) color: u32,
 }
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct LanListState {
-    pub(crate) selected: Option<usize>,
-    pub(crate) top_index: usize,
-    pub(crate) hot_row: Option<usize>,
-    pub(crate) scroll: ListScrollInteraction,
-    /// Passed to the shared list::is_double_click owner by the app adapter.
-    pub(crate) last_press: Option<(Instant, i32, i32)>,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum PlayerNameMatch {
     Exact,
@@ -136,56 +141,6 @@ pub(crate) fn saved_player_name_matches(
     match matching {
         PlayerNameMatch::Exact => saved_name == current_name,
         PlayerNameMatch::IgnoreAsciiCase => saved_name.eq_ignore_ascii_case(current_name),
-    }
-}
-
-impl LanListState {
-    pub(crate) fn geometry(
-        &self,
-        rect: RectPx,
-        count: usize,
-        scale: ShellScale,
-    ) -> ShellListGeometry {
-        self.geometry_for_text(rect, count, scale, 1.0)
-    }
-
-    /// [`Self::geometry`] for rows of text at `text` times the shell's size.
-    pub(crate) fn geometry_for_text(
-        &self,
-        rect: RectPx,
-        count: usize,
-        scale: ShellScale,
-        text: f32,
-    ) -> ShellListGeometry {
-        let metrics = ListMetrics::for_text(scale, text);
-        ShellListGeometry::new(rect, count, self.top_index, metrics)
-    }
-
-    fn reconcile(&mut self, count: usize) {
-        self.selected = self.selected.filter(|index| *index < count);
-        self.hot_row = self.hot_row.filter(|index| *index < count);
-        self.top_index = self.top_index.min(count.saturating_sub(1));
-    }
-
-    /// Reapply the shared scrollbar's range after discovery or a resized
-    /// viewport, before painting/hit-testing its retained top index.
-    pub(crate) fn reconcile_geometry(&mut self, rect: RectPx, count: usize, scale: ShellScale) {
-        self.reconcile_geometry_for_text(rect, count, scale, 1.0);
-    }
-
-    /// [`Self::reconcile_geometry`] for rows of text at `text` times the
-    /// shell's size.
-    pub(crate) fn reconcile_geometry_for_text(
-        &mut self,
-        rect: RectPx,
-        count: usize,
-        scale: ShellScale,
-        text: f32,
-    ) {
-        self.reconcile(count);
-        self.top_index = self
-            .top_index
-            .min(self.geometry_for_text(rect, count, scale, text).max_top);
     }
 }
 
@@ -221,26 +176,77 @@ pub(crate) enum LanSelectionChange {
     Clamped,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LanEditKey {
-    Backspace,
-    Delete,
-    Left,
-    Right,
-    Home,
-    End,
-    Tab,
-    Enter,
+/// The gui inputs a key press or typed text makes in a focused NewEdit
+/// (`0x00614B30`), one per WM_CHAR: Escape (the edit consumes it) and Tab
+/// (the dialog's) make none.
+fn edit_inputs(code: Option<winit::keyboard::KeyCode>, text: Option<&str>) -> Vec<InputEvent> {
+    let inputs = crate::ui::shell::controller::gui_inputs(code, false, text);
+    inputs
+        .into_iter()
+        .filter(|e| !matches!(e, InputEvent::Key(Key::Escape | Key::Tab | Key::BackTab)))
+        .collect()
 }
 
-/// One chat editor/transcript owner for LAN BB/BC/BD. Parent dialogs own
-/// focus/admission; the shared NewEdit owns editing and this owner implements
-/// original5EDD00 ->5DE360 send and5E2820 ->5E29A0 display behavior.
+/// The chat edit `0x540`'s EN_CHANGE: `0x005EDD00`'s length cap
+/// ([`apply_chat_length_limit`]) on its text. The hosts run it after every
+/// input the edit takes.
+pub(crate) fn cap_chat_edit(gui: &mut Gui, node: NodeId) {
+    let mut edit = gui.edit_state(node).unwrap_or_default();
+    let before = edit.units.len();
+    apply_chat_length_limit(&mut edit);
+    if edit.units.len() != before {
+        let _ = gui.set_edit_state(node, &edit);
+    }
+}
+
+/// Enter in the chat edit `0x540`: `0x614DEB` appends CRLF before the
+/// parent's `0x501` handler `0x005EDD00` caps the text, reads at most 110
+/// units and clears the edit. The line read, unless it holds no more than
+/// the line end.
+pub(crate) fn submit_chat_edit(gui: &mut Gui, node: NodeId) -> Option<Vec<u16>> {
+    let mut edit = gui.edit_state(node).unwrap_or_default();
+    edit.append_enter_line_end();
+    apply_chat_length_limit(&mut edit);
+    let sent = edit.wide_text(111);
+    let _ = gui.set_edit_state(node, &Default::default());
+    (sent.len() > 2).then_some(sent)
+}
+
+/// A key or typed text for `dialog`'s chat edit `0x540` while it holds the
+/// focus (BC/BD's, BC6's): it takes every key but Escape and Tab, capping
+/// its text after each; the line Enter sends.
+pub(crate) fn chat_key(
+    controller: &mut DialogController,
+    dialog: DialogResourceId,
+    code: Option<winit::keyboard::KeyCode>,
+    text: Option<&str>,
+) -> Option<Vec<u16>> {
+    let node = controller.control(dialog, CHAT)?;
+    if controller.focused_control(dialog) != Some(CHAT) {
+        return None;
+    }
+    let mut sent = None;
+    for input in edit_inputs(code, text) {
+        controller.on_input(input);
+        let submitted = controller.drain_events().into_iter().any(
+            |event| matches!(event, vera20k_gui::UiEvent::Submitted { node: n, .. } if n == node),
+        );
+        if submitted {
+            sent = submit_chat_edit(controller.gui_mut(), node);
+        } else {
+            cap_chat_edit(controller.gui_mut(), node);
+        }
+    }
+    sent
+}
+
+/// One chat transcript owner for LAN BB/BC/BD, the WOL lobby and BC6:
+/// `0x005E2820` -> `0x005E29A0`'s rows. The log's list widget owns the
+/// scroll ([`Gui::log_rows`]); the edit is a gui `Edit`
+/// ([`edit_inputs`], [`cap_chat_edit`], [`submit_chat_edit`]).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct LanChatState {
-    pub(crate) edit: SavedSeedDescriptionEdit,
     pub(crate) lines: Vec<LanChatLine>,
-    pub(crate) list: LanListState,
     /// The messages `lines` were wrapped from, newest last, and the width
     /// they were wrapped to: VERA's room re-wraps them when its chat column
     /// changes width with the window ([`Self::rewrap`]).
@@ -249,80 +255,37 @@ pub(crate) struct LanChatState {
 }
 
 impl LanChatState {
-    pub(crate) fn insert_text(&mut self, text: &str) {
-        for unit in text.encode_utf16() {
-            self.insert_unit(unit);
-        }
-    }
-
-    pub(crate) fn insert_unit(&mut self, unit: u16) {
-        if self.edit.insert_unit_filtered(unit, 0, false, &[]) {
-            apply_chat_length_limit(&mut self.edit);
-        }
-    }
-
-    pub(crate) fn key(&mut self, key: LanEditKey) -> Option<Vec<u16>> {
-        if key == LanEditKey::Enter {
-            //614DEB appends before the parent's501 handler5EDD00/5DE360.
-            self.edit.append_enter_line_end();
-            apply_chat_length_limit(&mut self.edit);
-            let sent = self.edit.wide_text(111);
-            self.edit.set_units_limited([], 0);
-            return (sent.len() > 2).then_some(sent);
-        }
-        let before = self.edit.units.len();
-        match key {
-            LanEditKey::Backspace => self.edit.backspace(),
-            LanEditKey::Delete => self.edit.delete(),
-            LanEditKey::Left => self.edit.left(),
-            LanEditKey::Right => self.edit.right(),
-            LanEditKey::Home => self.edit.home(),
-            LanEditKey::End => self.edit.end(),
-            LanEditKey::Tab | LanEditKey::Enter => {}
-        }
-        if self.edit.units.len() != before {
-            apply_chat_length_limit(&mut self.edit);
-        }
-        None
-    }
-
+    /// Adds `message`, wrapped to `width`; `log` hears each change of the
+    /// rows (their count, and how many left the front) for the log's list
+    /// ([`Gui::log_rows`]).
     pub(crate) fn append_message(
         &mut self,
         message: LanChatLine,
         width: i32,
-        visible_rows: usize,
         measure: impl Fn(&[u16]) -> i32,
+        mut log: impl FnMut(usize, usize),
     ) {
-        self.rewrap(width, visible_rows, &measure);
+        if self.rewrap(width, &measure) {
+            log(self.lines.len(), 0);
+        }
         // Each message adds a row at least, so these cover the rows kept.
         if self.messages.len() >= CHAT_ROWS {
             self.messages.pop_front();
         }
         self.messages.push_back(message.clone());
-        append_list_message(
-            &mut self.lines,
-            &mut self.list,
-            message,
-            width,
-            visible_rows,
-            measure,
-        );
+        let dropped = append_wrapped(&mut self.lines, message, width, measure);
+        log(self.lines.len(), dropped);
     }
 
     /// Wrap the messages again when the log is now `width` wide (VERA's own:
-    /// gamemd's logs never change width). A view at the bottom stays there;
-    /// a scrolled one keeps its top row's index.
-    pub(crate) fn rewrap(
-        &mut self,
-        width: i32,
-        visible_rows: usize,
-        measure: impl Fn(&[u16]) -> i32,
-    ) {
+    /// gamemd's logs never change width); whether it did. The log's list
+    /// keeps a view at the bottom there, a scrolled one at its top row's
+    /// index.
+    pub(crate) fn rewrap(&mut self, width: i32, measure: impl Fn(&[u16]) -> i32) -> bool {
         if width == self.width {
-            return;
+            return false;
         }
         self.width = width;
-        let follow = self.lines.len().saturating_sub(self.list.top_index) <= visible_rows;
         self.lines = self
             .messages
             .iter()
@@ -337,9 +300,37 @@ impl LanChatState {
             .collect();
         let dropped = self.lines.len().saturating_sub(CHAT_ROWS);
         self.lines.drain(..dropped);
-        if follow {
-            self.list.top_index = self.lines.len().saturating_sub(visible_rows);
+        true
+    }
+}
+
+/// `list`'s rows changed as `log` reports them (count, dropped from the
+/// front): the transcript list follows them ([`Gui::log_rows`]).
+pub(crate) fn log_to(gui: &mut Gui, list: Option<NodeId>) -> impl FnMut(usize, usize) + '_ {
+    move |rows, dropped| {
+        if let Some(list) = list {
+            let _ = gui.log_rows(list, rows, dropped);
         }
+    }
+}
+
+/// A chat edit and its log while their dialog is torn down (VERA's room
+/// hidden while its player visits the lobby): the draft, and the log's view
+/// as its list kept it, still following the lines that arrive meanwhile.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ParkedChat {
+    pub(crate) edit: vera20k_gui::shell::new_edit::NewEdit,
+    pub(crate) top: usize,
+    pub(crate) rows: usize,
+}
+
+impl ParkedChat {
+    /// The log's rows changed while parked, `visible` of them showing
+    /// ([`vera20k_gui::shell::list::log_top`]).
+    pub(crate) fn log(&mut self, rows: usize, dropped: usize, visible: usize) {
+        let top =
+            vera20k_gui::shell::list::log_top(self.rows, Some(self.top), visible, rows, dropped);
+        (self.top, self.rows) = (top, rows);
     }
 }
 
@@ -354,45 +345,43 @@ pub(crate) fn chat_wrap_width(rect: RectPx, scale: ShellScale, text: f32) -> i32
 const CHAT_ROWS: usize = 501;
 
 /// The shell list line adder `0x005E2820` -> `0x005E29A0`: wrap the text to
-/// the list's width and append each row. An empty text adds nothing.
-pub(crate) fn append_list_message(
+/// the list's width and append each row, keeping at most 501 (delete only
+/// when the old count is over 500). An empty text adds nothing. The rows
+/// dropped from the front, for the list's view
+/// ([`vera20k_gui::shell::list::log_top`]).
+pub(crate) fn append_wrapped(
     lines: &mut Vec<LanChatLine>,
-    list: &mut LanListState,
     message: LanChatLine,
     width: i32,
-    visible_rows: usize,
     measure: impl Fn(&[u16]) -> i32,
-) {
+) -> usize {
+    let mut dropped = 0;
     for text in split_chat_lines(&message.text, width, measure) {
-        append_row(
-            lines,
-            list,
-            LanChatLine {
-                text,
-                color: message.color,
-            },
-            visible_rows,
-        );
+        if lines.len() >= CHAT_ROWS {
+            lines.remove(0);
+            dropped += 1;
+        }
+        lines.push(LanChatLine {
+            text,
+            color: message.color,
+        });
     }
+    dropped
 }
 
-///5E29A0: keep at most501rows (delete only when oldcount>500),
-/// and follow appended text only when the old view was at the bottom.
-fn append_row(
+/// [`append_wrapped`] into a list whose view the host keeps itself at
+/// `top`, `visible` rows showing (the connection dialog's `0x651`).
+pub(crate) fn append_list_message(
     lines: &mut Vec<LanChatLine>,
-    list: &mut LanListState,
-    line: LanChatLine,
-    visible_rows: usize,
+    top: &mut usize,
+    message: LanChatLine,
+    width: i32,
+    visible: usize,
+    measure: impl Fn(&[u16]) -> i32,
 ) {
-    let follow = lines.len().saturating_sub(list.top_index) <= visible_rows;
-    if lines.len() >= CHAT_ROWS {
-        lines.remove(0);
-        list.top_index = list.top_index.saturating_sub(1);
-    }
-    lines.push(line);
-    if follow {
-        list.top_index = lines.len().saturating_sub(visible_rows);
-    }
+    let old = lines.len();
+    let dropped = append_wrapped(lines, message, width, measure);
+    *top = vera20k_gui::shell::list::log_top(old, Some(*top), visible, lines.len(), dropped);
 }
 
 ///5E2820 first tries through the next LF, then walks backward across graphic
@@ -460,56 +449,42 @@ fn chat_graphic_unit(unit: u16) -> bool {
         && char::from_u32(u32::from(unit)).is_some_and(|c| !c.is_whitespace() && !c.is_control())
 }
 
+/// BB's lobby: its discovery rows, transcript and admission gates. The
+/// edits (their text, caret and focus), the lists' scroll, the buttons and
+/// the observer box are widgets in the shell tree ([`spec`]); the
+/// selections are the lobby's (the join target, the roster's by-name rule),
+/// which the tree shows.
 #[derive(Debug, Clone)]
 pub(crate) struct LanLobbyState {
-    pub(crate) name: SavedSeedDescriptionEdit,
     pub(crate) chat: LanChatState,
     /// Excludes the always-present TXT_LOBBY sentinel at displayed index0.
     pub(crate) games: Vec<LanGameRow>,
     pub(crate) players: Vec<LanPlayerRow>,
-    pub(crate) game_list: LanListState,
-    pub(crate) player_list: LanListState,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) focused_control: u16,
-    pub(crate) observer: bool,
+    /// The selected games row; `0x549` always has one (index 0 the Lobby).
+    pub(crate) selected_game: usize,
+    pub(crate) selected_player: Option<usize>,
     pub(crate) enabled: bool,
     /// Projected native membership gate<=0; no membership authority lives here.
     pub(crate) selection_enabled: bool,
     pending_command: bool,
-    /// Last emitted edit value, not a second live Session name owner.
-    notified_name: String,
-    focus_started_at: Instant,
+    /// Last emitted edit value, not a second live Session name owner; the
+    /// name edit starts with it.
+    pub(crate) notified_name: String,
 }
 
 impl LanLobbyState {
-    pub(crate) fn new(name: &str, observer: bool) -> Self {
-        let mut name_edit = SavedSeedDescriptionEdit::default();
-        name_edit.set_units_limited(name.encode_utf16(), NAME_LIMIT);
-        let notified_name = name_text(&name_edit);
+    pub(crate) fn new(name: &str) -> Self {
+        let units: Vec<u16> = name.encode_utf16().take(NAME_LIMIT).collect();
         Self {
-            name: name_edit,
-            chat: LanChatState {
-                edit: SavedSeedDescriptionEdit {
-                    focused: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
+            chat: LanChatState::default(),
             games: Vec::new(),
             players: Vec::new(),
-            game_list: LanListState {
-                selected: Some(0),
-                ..Default::default()
-            },
-            player_list: LanListState::default(),
-            buttons: ShellButtonInteraction::default(),
-            focused_control: CHAT,
-            observer,
+            selected_game: 0,
+            selected_player: None,
             enabled: true,
             selection_enabled: true,
             pending_command: false,
-            notified_name,
-            focus_started_at: Instant::now(),
+            notified_name: String::from_utf16_lossy(&units),
         }
     }
 
@@ -518,21 +493,16 @@ impl LanLobbyState {
     }
 
     pub(crate) fn selected_game(&self) -> Option<&LanGameRow> {
-        self.game_list
-            .selected
-            .and_then(|index| index.checked_sub(1))
-            .and_then(|index| self.games.get(index))
+        self.games.get(self.selected_game.checked_sub(1)?)
     }
 
     pub(crate) fn replace_games(&mut self, games: Vec<LanGameRow>) -> Option<LanLobbyAction> {
-        let before = self.game_list.selected.unwrap_or(0);
+        let before = self.selected_game;
         self.games = games;
         //5DB9B0 clamps the numeric selection, preserving top index; it does
         // not reselect by name when discovery rows are reordered.
-        let selected = before.min(self.games.len());
-        self.game_list.reconcile(self.game_count());
-        self.game_list.selected = Some(selected);
-        (selected != before).then(|| LanLobbyAction::SelectGame {
+        self.selected_game = before.min(self.games.len());
+        (self.selected_game != before).then(|| LanLobbyAction::SelectGame {
             game_id: self.selected_game().map(|row| row.id),
             change: LanSelectionChange::Clamped,
         })
@@ -544,13 +514,11 @@ impl LanLobbyState {
     /// `0x4CA`, `_wcsicmp`), or none.
     pub(crate) fn replace_players(&mut self, players: Vec<LanPlayerRow>) {
         let selected = self
-            .player_list
-            .selected
+            .selected_player
             .and_then(|index| self.players.get(index))
             .map(|row| row.name.clone());
         self.players = players;
-        self.player_list.reconcile(self.players.len());
-        self.player_list.selected = selected.and_then(|name| {
+        self.selected_player = selected.and_then(|name| {
             self.players.iter().position(|row| {
                 saved_player_name_matches(&name, &row.name, PlayerNameMatch::IgnoreAsciiCase)
             })
@@ -564,7 +532,7 @@ impl LanLobbyState {
         if index >= self.players.len() {
             return false;
         }
-        self.player_list.selected = Some(index);
+        self.selected_player = Some(index);
         true
     }
 
@@ -573,38 +541,12 @@ impl LanLobbyState {
         if enabled {
             self.pending_command = false;
         }
-        if !enabled {
-            self.cancel_pointer();
-        }
     }
 
-    pub(crate) fn cancel_pointer(&mut self) {
-        self.buttons = ShellButtonInteraction::default();
-        self.game_list.scroll.cancel();
-        self.player_list.scroll.cancel();
-        self.chat.list.scroll.cancel();
-        self.game_list.last_press = None;
-        self.player_list.last_press = None;
-    }
-
-    pub(crate) fn focus(&mut self, control: u16) {
-        // Ordinary owner-draw buttons restore the preceding focus610CA0.
-        if !matches!(control, NAME | CHAT) || !self.enabled {
-            return;
-        }
-        if self.focused_control != control {
-            self.focus_started_at = Instant::now();
-        }
-        self.focused_control = control;
-        self.name.focused = control == NAME;
-        self.chat.edit.focused = control == CHAT;
-    }
-
-    pub(crate) fn caret_visible(&self, now: Instant) -> bool {
-        now.saturating_duration_since(self.focus_started_at)
-            .as_secs()
-            % 2
-            == 0
+    /// The edits take keys and presses: the page is on and no command is
+    /// pending.
+    pub(crate) fn takes_keys(&self) -> bool {
+        self.enabled && !self.pending_command
     }
 
     pub(crate) fn select_game(&mut self, index: usize) -> Option<LanLobbyAction> {
@@ -615,12 +557,12 @@ impl LanLobbyState {
         {
             return None;
         }
-        let change = if self.game_list.selected == Some(index) {
+        let change = if self.selected_game == index {
             LanSelectionChange::Unchanged
         } else {
             LanSelectionChange::Changed
         };
-        self.game_list.selected = Some(index);
+        self.selected_game = index;
         // The roster follows through `replace_players` (the 0x549 LBN_SELCHANGE
         // handler's `0x005DAFE0`), which keeps the selected player by name.
         Some(LanLobbyAction::SelectGame {
@@ -629,22 +571,21 @@ impl LanLobbyState {
         })
     }
 
-    pub(crate) fn activate(&mut self, control: u16) -> Option<LanLobbyAction> {
+    /// Control `control` activated, with the player's observer choice
+    /// `observer` (the preference owner's).
+    pub(crate) fn activate(&mut self, control: u16, observer: bool) -> Option<LanLobbyAction> {
         if !self.enabled || self.pending_command {
             return None;
         }
         let action = match control {
-            CREATE => LanLobbyAction::Create {
-                observe: self.observer,
-            },
+            CREATE => LanLobbyAction::Create { observe: observer },
             JOIN | OBSERVE => LanLobbyAction::Join {
                 game_id: self.selected_game().map(|row| row.id),
-                observe: control == OBSERVE || self.observer,
+                observe: control == OBSERVE || observer,
             },
             BACK => LanLobbyAction::Back,
             OBSERVER_IMAGE | OBSERVER_TOGGLE => {
-                self.observer = !self.observer;
-                return Some(LanLobbyAction::ObserverChanged(self.observer));
+                return Some(LanLobbyAction::ObserverChanged(!observer));
             }
             _ => return None,
         };
@@ -655,115 +596,94 @@ impl LanLobbyState {
         Some(action)
     }
 
-    fn name_changed(&mut self) -> Option<LanLobbyAction> {
-        //5DDD90..5DDE42: collapse all ASCII spaces, but preserve every
-        // leading/trailing space in a name that contains another character.
-        if !self.name.units.is_empty() && self.name.units.iter().all(|unit| *unit == 32) {
-            self.name.set_units_limited([], NAME_LIMIT);
-        }
-        // BB narrows its edit's units by their low byte (`0x5DDE07`), which
-        // gives back the code-page bytes its ANSI edit was typed in. This edit
-        // holds the typed text instead; the app saves it through the code page.
-        let value = name_text(&self.name);
-        if value == self.notified_name {
-            return None;
-        }
-        self.notified_name = value.clone();
-        Some(LanLobbyAction::NameChanged(value))
-    }
-
+    /// The name edit's EN_CHANGE with its text `text` (each typed
+    /// character's: the host types it in one at a time). `0x5DDD90..
+    /// 0x5DDE42` collapses a name of ASCII spaces only, but keeps every
+    /// leading/trailing space in one with another character; the text the
+    /// edit then holds, if it changed, and the change to announce.
+    ///
     /// BB's name edit takes 16 bytes: BB switches on its byte-only filter
     /// (`0x4D1` at `0x5DE0E3`), which drops units from 0x100 up
     /// (`0x61525E..0x61526A`). Typed keys reach gamemd, an ANSI program, as
     /// code-page bytes and get in, but input-method characters arrive widened
     /// (`0x6151F6..0x61520C`) and stay out; VERA offers no input method here
-    /// either. VERA gets keys as text, so it keeps the text and saves it
-    /// through the code page: a character goes in as the code page passes it
-    /// (`?` for one it cannot hold) while the name's code-page bytes fit in
-    /// 16. A character of two UTF-16 units, such as an emoji, stays out, so
-    /// the edit's one-unit keys never split one.
-    fn insert_name_char(&mut self, character: char) -> bool {
-        let Ok(unit) = u16::try_from(u32::from(character)) else {
-            return false;
-        };
-        let mut text = self.name.display_text();
-        text.push(character);
-        crate::util::native_string::acp_encode(&text).len() <= NAME_LIMIT
-            && self.name.insert_unit_filtered(unit, 0, false, &[44])
-    }
-
-    pub(crate) fn insert_text(&mut self, text: &str) -> Vec<LanLobbyAction> {
-        let mut actions = Vec::new();
-        if !self.enabled || self.pending_command {
-            return actions;
+    /// either. VERA gets keys as text, so the edit keeps the text (typed
+    /// through the code page, [`name_input`]) and admits a character while
+    /// the name's code-page bytes fit in 16 (`MaxBytes`); commas stay out
+    /// (`Rejected`). BB narrows its edit's units by their low byte
+    /// (`0x5DDE07`), which gives back the code-page bytes its ANSI edit was
+    /// typed in; the app saves the text through the code page instead.
+    pub(crate) fn name_edited(&mut self, text: &str) -> (Option<String>, Option<LanLobbyAction>) {
+        let collapse = !text.is_empty() && text.chars().all(|c| c == ' ');
+        let value = if collapse { "" } else { text };
+        let kept = collapse.then(String::new);
+        if value == self.notified_name {
+            return (kept, None);
         }
-        match self.focused_control {
-            NAME => {
-                for character in crate::util::native_string::acp_round_trip(text).chars() {
-                    if self.insert_name_char(character)
-                        && let Some(action) = self.name_changed()
-                    {
-                        actions.push(action);
-                    }
-                }
-            }
-            CHAT => {
-                for unit in text.encode_utf16() {
-                    self.chat.insert_unit(unit);
-                }
-            }
-            _ => {}
-        }
-        actions
-    }
-
-    pub(crate) fn edit_key(&mut self, key: LanEditKey) -> Option<LanLobbyAction> {
-        if !self.enabled || self.pending_command {
-            return None;
-        }
-        if key == LanEditKey::Tab {
-            self.focus(if self.focused_control == CHAT {
-                NAME
-            } else {
-                CHAT
-            });
-            return None;
-        }
-        if self.focused_control == CHAT {
-            return self.chat.key(key).map(LanLobbyAction::SendChat);
-        }
-        if self.focused_control != NAME || key == LanEditKey::Enter {
-            return None;
-        }
-        let before = self.name.units.len();
-        match key {
-            LanEditKey::Backspace => self.name.backspace(),
-            LanEditKey::Delete => self.name.delete(),
-            LanEditKey::Left => self.name.left(),
-            LanEditKey::Right => self.name.right(),
-            LanEditKey::Home => self.name.home(),
-            LanEditKey::End => self.name.end(),
-            LanEditKey::Tab | LanEditKey::Enter => unreachable!(),
-        }
-        if self.name.units.len() != before {
-            self.name_changed()
-        } else {
-            None
-        }
+        self.notified_name = value.to_owned();
+        (kept, Some(LanLobbyAction::NameChanged(value.to_owned())))
     }
 }
 
-/// The name edit's text as BB reads it: message `0x4B3` with room for 20
-/// units, the last for the NUL (`0x005DDDA9..0x005DDDBC`).
-fn name_text(edit: &SavedSeedDescriptionEdit) -> String {
-    String::from_utf16_lossy(&edit.wide_text(20))
+/// A key or typed text for BB while the lobby takes keys: Tab trades the
+/// focus between the edits (the chat's at first), the rest goes to the
+/// focused one. The name edit announces its changes, the chat edit caps
+/// its text and sends its line on Enter (`0x5DE360`).
+pub(crate) fn key(
+    controller: &mut DialogController,
+    lobby: &mut LanLobbyState,
+    code: Option<winit::keyboard::KeyCode>,
+    text: Option<&str>,
+) -> Vec<LanLobbyAction> {
+    let mut actions = Vec::new();
+    if !lobby.takes_keys() {
+        return actions;
+    }
+    let focus = controller.focused_control(PAGE.dialog);
+    let key = code.and_then(|code| crate::ui::shell::controller::gui_key(code, false));
+    if let Some(key @ (Key::Tab | Key::BackTab)) = key {
+        controller.on_input(InputEvent::Key(key));
+        controller.drain_events();
+        return actions;
+    }
+    if focus == Some(CHAT) {
+        let sent = chat_key(controller, PAGE.dialog, code, text);
+        return sent.map(LanLobbyAction::SendChat).into_iter().collect();
+    }
+    if focus != Some(NAME) {
+        return actions;
+    }
+    // Each typed character's EN_CHANGE announces the name (`0x5DDD90`).
+    for input in edit_inputs(code, Some(&name_input(text.unwrap_or_default()))) {
+        controller.on_input(input);
+        for event in controller.drain_events() {
+            if let vera20k_gui::UiEvent::TextChanged { text, .. } = event {
+                let (kept, action) = lobby.name_edited(&text);
+                if let Some(kept) = kept {
+                    controller.set_text(PAGE.dialog, NAME, &kept);
+                }
+                actions.extend(action);
+            }
+        }
+    }
+    actions
+}
+
+/// Typed text for the name edit, as the code page passes it (`?` for a
+/// character it cannot hold); a character of two UTF-16 units, such as an
+/// emoji, stays out, so the edit's one-unit keys never split one.
+pub(crate) fn name_input(text: &str) -> String {
+    crate::util::native_string::acp_round_trip(text)
+        .chars()
+        .filter(|c| c.len_utf16() == 1)
+        .collect()
 }
 
 /// One port of the shared5EDD00 chat-length prepass (BB/BC/BD and WOL).
 /// IsLatin1 tests>FF, but the following scan tests>100. DEC ESI wraps when
 /// that scan stops at zero, leaving no cap; keep this unsigned native trap.
 /// The helper's trimmed return is discarded by these LAN dialog callers.
-pub(crate) fn apply_chat_length_limit(edit: &mut SavedSeedDescriptionEdit) {
+pub(crate) fn apply_chat_length_limit(edit: &mut vera20k_gui::shell::new_edit::NewEdit) {
     let cap = if edit.units.iter().all(|unit| *unit <= 0xff) {
         120
     } else {
@@ -779,75 +699,31 @@ pub(crate) fn apply_chat_length_limit(edit: &mut SavedSeedDescriptionEdit) {
     }
 }
 
+/// BB's captions (statics `0xFFFF`), the lobby paints them.
+pub(crate) const LABELS: [(u16, &str); 3] = [
+    (0xFF00, "GUI:Games"),
+    (0xFF01, "GUI:Players"),
+    (0xFF02, "GUI:YourName"),
+];
+
+/// BB at the current screen (`[0xBB]`): ordinary controls keep their
+/// template places at every size, right-panel controls take the shared
+/// anchors.
 #[derive(Debug, Clone)]
 pub(crate) struct LanLobbyLayout {
     pub(crate) page: MenuPageLayout,
-    pub(crate) name: RectPx,
-    pub(crate) chat: RectPx,
-    pub(crate) games: RectPx,
-    pub(crate) players: RectPx,
-    pub(crate) chat_log: RectPx,
-    pub(crate) observer_image: RectPx,
-    pub(crate) observer_toggle: RectPx,
-    pub(crate) labels: [(&'static str, RectPx); 3],
+    pub(crate) rects: RectTable,
 }
 
 impl LanLobbyLayout {
-    pub(crate) fn new(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::RETAIL)
-    }
-    pub(crate) fn responsive(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::from_screen(width, height))
+    pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
+        let (page, rects) = layout_data::menu_page(&PAGE, "0xBB", scale, width, height);
+        Self { page, rects }
     }
 
-    fn build(width: i32, height: i32, scale: ShellScale) -> Self {
-        let page = if scale.is_retail() {
-            menu_page::compute_layout(&PAGE, width as u32, height as u32)
-        } else {
-            menu_page::compute_responsive_layout(&PAGE, width as u32, height as u32)
-        };
-        let rect = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
-        // Executed original BB child setup60AAB0/include60C540/relayout60C4A0
-        // ->60C0C0; corpus lan_lobby.json. Ordinary controls retain template
-        // positions even at1024x768; right-panel controls use shared anchors.
-        // NewEdit497 at614CCF..614CF3 adds1 to x/y and removes2 from w/h.
-        Self {
-            page,
-            name: rect(136, 17, 134, 19),
-            chat: rect(12, 524, 609, 19),
-            games: rect(323, 73, 300, 292),
-            players: rect(11, 73, 301, 292),
-            chat_log: rect(11, 369, 612, 154),
-            observer_image: rect(594, 13, 28, 21),
-            observer_toggle: rect(576, 16, 16, 17),
-            labels: [
-                ("GUI:Games", rect(326, 49, 223, 17)),
-                ("GUI:Players", rect(15, 49, 171, 17)),
-                ("GUI:YourName", rect(15, 16, 112, 17)),
-            ],
-        }
-    }
-
-    pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
-        for button in &self.page.buttons {
-            if button.rect.contains(x, y) {
-                return Some(button.id);
-            }
-        }
-        for (id, rect) in [
-            (NAME, self.name),
-            (CHAT, self.chat),
-            (GAMES, self.games),
-            (PLAYERS, self.players),
-            (CHAT_LOG, self.chat_log),
-            (OBSERVER_IMAGE, self.observer_image),
-            (OBSERVER_TOGGLE, self.observer_toggle),
-        ] {
-            if rect.contains(x, y) {
-                return Some(id);
-            }
-        }
-        None
+    /// Control `id`'s window; none for a control BB does not show.
+    pub(crate) fn rect(&self, id: u16) -> Option<RectPx> {
+        self.rects.get(id).or_else(|| self.page.button_rect(id))
     }
 }
 
@@ -870,15 +746,15 @@ mod tests {
             host: false,
             accepted: false,
         };
-        let mut lobby = LanLobbyState::new("Tester", false);
+        let mut lobby = LanLobbyState::new("Tester");
         lobby.replace_players(vec![player("A"), player("B")]);
         assert!(lobby.select_player(1));
         assert!(!lobby.select_player(2));
-        assert_eq!(lobby.player_list.selected, Some(1));
+        assert_eq!(lobby.selected_player, Some(1));
         lobby.replace_players(vec![player("b"), player("A")]);
-        assert_eq!(lobby.player_list.selected, Some(0));
+        assert_eq!(lobby.selected_player, Some(0));
         lobby.replace_players(vec![player("A")]);
-        assert_eq!(lobby.player_list.selected, None);
+        assert_eq!(lobby.selected_player, None);
     }
 
     #[test]
@@ -892,42 +768,37 @@ mod tests {
         assert_eq!(rows, ["[Tester] hello", "second", "third"]);
     }
 
+    /// A controller with BB's page built, as the lobby shows it.
+    fn bb() -> (DialogController, LanLobbyState) {
+        let mut controller = DialogController::default();
+        controller.push(PAGE.dialog);
+        let root = controller.root_in(PAGE.dialog).unwrap();
+        crate::ui::shell::page::ensure_built(controller.gui_mut(), root, spec);
+        controller.focus_control(PAGE.dialog, Some(CHAT));
+        (controller, LanLobbyState::new("Tester"))
+    }
+
     #[test]
     fn chat_retains_501_rows_and_does_not_jump_a_scrolled_view() {
-        let mut lobby = LanLobbyState::new("Tester", false);
-        for value in 0..501 {
-            let chat = &mut lobby.chat;
-            append_row(
-                &mut chat.lines,
-                &mut chat.list,
-                LanChatLine {
-                    text: vec![value],
-                    color: u32::MAX,
-                },
-                8,
-            );
+        let line = |value: u16| LanChatLine {
+            text: vec![value],
+            color: u32::MAX,
+        };
+        let (mut lines, mut top) = (Vec::new(), 0);
+        for value in 1..=501 {
+            append_list_message(&mut lines, &mut top, line(value), 600, 8, |_| 8);
         }
-        assert_eq!(lobby.chat.lines.len(), 501);
-        assert_eq!(lobby.chat.list.top_index, 493);
-        lobby.chat.list.top_index = 10;
-        let chat = &mut lobby.chat;
-        append_row(
-            &mut chat.lines,
-            &mut chat.list,
-            LanChatLine {
-                text: vec![501],
-                color: u32::MAX,
-            },
-            8,
-        );
-        assert_eq!(lobby.chat.lines.len(), 501);
-        assert_eq!(lobby.chat.lines.first().unwrap().text, [1]);
-        assert_eq!(lobby.chat.list.top_index, 9);
+        assert_eq!((lines.len(), top), (501, 493));
+        top = 10;
+        append_list_message(&mut lines, &mut top, line(502), 600, 8, |_| 8);
+        assert_eq!(lines.len(), 501);
+        assert_eq!(lines.first().unwrap().text, [2]);
+        assert_eq!(top, 9);
     }
 
     /// VERA's room re-wraps its chat when the column changes width: a
-    /// message wrapped wide splits to fit a narrow log, the view stays at
-    /// the bottom, and a later message at the old width joins it again.
+    /// message wrapped wide splits to fit a narrow log, and a later message
+    /// at the old width joins it again; the log hears each change.
     #[test]
     fn chat_rewraps_its_messages_to_a_new_width() {
         let measure = |units: &[u16]| units.len() as i32 * 8;
@@ -943,9 +814,10 @@ mod tests {
         };
         let hint = "Players join ready. Press Start Game when everyone is here.";
         let mut chat = LanChatState::default();
-        chat.append_message(message(hint), 600, 2, measure);
+        let mut heard = Vec::new();
+        chat.append_message(message(hint), 600, measure, |r, d| heard.push((r, d)));
         assert_eq!(rows(&chat), [hint]);
-        chat.rewrap(200, 2, measure);
+        assert!(chat.rewrap(200, measure));
         assert_eq!(
             rows(&chat),
             [
@@ -954,21 +826,27 @@ mod tests {
                 "everyone is here."
             ]
         );
-        assert_eq!(chat.list.top_index, 1);
-        chat.append_message(message("ok"), 600, 2, measure);
+        chat.append_message(message("ok"), 600, measure, |r, d| heard.push((r, d)));
         assert_eq!(rows(&chat), [hint, "ok"]);
-        assert_eq!(chat.list.top_index, 0);
+        assert_eq!(heard, [(0, 0), (1, 0), (1, 0), (2, 0)]);
     }
 
     #[test]
     fn chat_enter_matches_original_newedit_parent_getter_and_clear_chain() {
         for row in native()["chat"].as_array().unwrap() {
             let units: Vec<u16> = serde_json::from_value(row["input"].clone()).unwrap();
-            let mut lobby = LanLobbyState::new("Tester", false);
-            lobby.chat.edit.set_units_limited(units, 0);
-            let sent = match lobby.edit_key(LanEditKey::Enter) {
-                Some(LanLobbyAction::SendChat(units)) => vec![units],
-                None => Vec::new(),
+            let (mut controller, mut lobby) = bb();
+            controller.set_text(PAGE.dialog, CHAT, &String::from_utf16(&units).unwrap());
+            let sent = match key(
+                &mut controller,
+                &mut lobby,
+                Some(winit::keyboard::KeyCode::Enter),
+                None,
+            )
+            .as_slice()
+            {
+                [LanLobbyAction::SendChat(units)] => vec![units.clone()],
+                [] => Vec::new(),
                 other => panic!("{other:?}"),
             };
             assert_eq!(
@@ -977,43 +855,22 @@ mod tests {
                 "{}",
                 row["name"]
             );
-            assert_eq!(
-                serde_json::to_value(lobby.chat.edit.units).unwrap(),
-                row["edit_after"]
-            );
+            assert_eq!(controller.text(PAGE.dialog, CHAT), "");
         }
     }
 
     #[test]
     fn layout_and_help_follow_original_bb_execution() {
-        let layout = LanLobbyLayout::new(800, 600);
+        let layout = LanLobbyLayout::new(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
         for row in native()["layout_800"].as_array().unwrap() {
             let id = row["id"].as_u64().unwrap() as u32;
             let expected: Vec<i32> = serde_json::from_value(row["rect"].clone()).unwrap();
             let rect = match id as u16 {
-                NAME => Some(RectPx::new(
-                    layout.name.x - 1,
-                    layout.name.y - 1,
-                    layout.name.w + 2,
-                    layout.name.h + 2,
-                )),
-                CHAT => Some(RectPx::new(
-                    layout.chat.x - 1,
-                    layout.chat.y - 1,
-                    layout.chat.w + 2,
-                    layout.chat.h + 2,
-                )),
-                GAMES => Some(layout.games),
-                PLAYERS => Some(layout.players),
-                CHAT_LOG => Some(layout.chat_log),
-                OBSERVER_IMAGE => Some(layout.observer_image),
-                OBSERVER_TOGGLE => Some(layout.observer_toggle),
-                _ => layout
-                    .page
-                    .buttons
-                    .iter()
-                    .find(|button| u32::from(button.id) == id)
-                    .map(|button| button.rect),
+                // The NewEdits' windows before 0x00614CCF's inset.
+                NAME | CHAT => layout
+                    .rect(id as u16)
+                    .map(|r| RectPx::new(r.x - 1, r.y - 1, r.w + 2, r.h + 2)),
+                id => layout.rect(id),
             };
             if let Some(rect) = rect {
                 assert_eq!(
@@ -1031,40 +888,63 @@ mod tests {
         }
     }
 
+    /// Types `text` into the focused edit; the actions it made.
+    fn type_text(
+        controller: &mut DialogController,
+        lobby: &mut LanLobbyState,
+        text: &str,
+    ) -> Vec<LanLobbyAction> {
+        key(controller, lobby, None, Some(text))
+    }
+
     #[test]
     fn name_input_takes_16_code_page_bytes_rejects_commas_and_keeps_literal_spaces() {
-        let mut lobby = LanLobbyState::new("", false);
-        assert_eq!(lobby.focused_control, CHAT);
-        lobby.focus(NAME);
-        lobby.insert_text("  A,é€B");
-        assert_eq!(lobby.name.display_text(), "Aé€B");
-        lobby.insert_text("12345678901234567890");
-        let saved = crate::util::native_string::acp_encode(&lobby.name.display_text());
+        let (mut controller, _) = bb();
+        let mut lobby = LanLobbyState::new("");
+        controller.set_text(PAGE.dialog, NAME, "");
+        key(
+            &mut controller,
+            &mut lobby,
+            Some(winit::keyboard::KeyCode::Tab),
+            None,
+        );
+        assert_eq!(controller.focused_control(PAGE.dialog), Some(NAME));
+        type_text(&mut controller, &mut lobby, "  A,é€B");
+        assert_eq!(controller.text(PAGE.dialog, NAME), "Aé€B");
+        type_text(&mut controller, &mut lobby, "12345678901234567890");
+        let saved = crate::util::native_string::acp_encode(&controller.text(PAGE.dialog, NAME));
         assert_eq!(saved.len(), 16);
-        assert_eq!(lobby.edit_key(LanEditKey::Enter), None);
-        let retained = LanLobbyState::new(" A ", false);
-        assert_eq!(retained.name.display_text(), " A ");
+        let enter = Some(winit::keyboard::KeyCode::Enter);
+        assert_eq!(key(&mut controller, &mut lobby, enter, None), []);
+        assert_eq!(LanLobbyState::new(" A ").notified_name, " A ");
     }
 
     /// Typing into a name beyond Latin-1 and deleting it again reports the
     /// name as shown, not its characters' low bytes (`玩家` as `©¶`).
     #[test]
     fn name_edit_reports_the_name_it_shows() {
-        let mut lobby = LanLobbyState::new("玩家", false);
-        lobby.focus(NAME);
+        let (mut controller, _) = bb();
+        let mut lobby = LanLobbyState::new("玩家");
+        controller.set_text(PAGE.dialog, NAME, &lobby.notified_name.clone());
+        controller.focus_control(PAGE.dialog, Some(NAME));
         assert_eq!(
-            lobby.insert_text("x"),
+            type_text(&mut controller, &mut lobby, "x"),
             vec![LanLobbyAction::NameChanged("玩家x".into())]
         );
         assert_eq!(
-            lobby.edit_key(LanEditKey::Backspace),
-            Some(LanLobbyAction::NameChanged("玩家".into()))
+            key(
+                &mut controller,
+                &mut lobby,
+                Some(winit::keyboard::KeyCode::Backspace),
+                None
+            ),
+            vec![LanLobbyAction::NameChanged("玩家".into())]
         );
     }
 
     #[test]
     fn discovery_clamps_selection_and_join_remains_an_intent() {
-        let mut lobby = LanLobbyState::new("Tester", false);
+        let mut lobby = LanLobbyState::new("Tester");
         let rows = (0..3)
             .map(|id| LanGameRow {
                 id,
@@ -1088,21 +968,21 @@ mod tests {
             })
         );
         assert_eq!(
-            lobby.activate(JOIN),
+            lobby.activate(JOIN, false),
             Some(LanLobbyAction::Join {
                 game_id: None,
                 observe: false
             })
         );
         assert!(!lobby.enabled);
-        assert_eq!(lobby.activate(CREATE), None);
+        assert_eq!(lobby.activate(CREATE, false), None);
         lobby.set_enabled(true);
         assert_eq!(
-            lobby.activate(OBSERVER_IMAGE),
+            lobby.activate(OBSERVER_IMAGE, false),
             Some(LanLobbyAction::ObserverChanged(true))
         );
         assert_eq!(
-            lobby.activate(CREATE),
+            lobby.activate(CREATE, true),
             Some(LanLobbyAction::Create { observe: true })
         );
     }

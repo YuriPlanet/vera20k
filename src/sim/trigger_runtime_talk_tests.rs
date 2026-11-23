@@ -113,7 +113,7 @@ fn dispatch(
         &mut effects,
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     // The production frame output is the authoritative receipt queue.
     sim.publish_trigger_effects(effects);

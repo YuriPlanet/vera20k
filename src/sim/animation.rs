@@ -93,7 +93,7 @@ pub fn infantry_facing_slot(facing: u8) -> u16 {
 /// `frame_index` to select the correct SHP frame via `resolve_shp_frame()`.
 /// Only this module writes it. Its native counterpart has not been traced
 /// (#1593).
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Animation {
     /// Currently playing sequence.
     sequence: SequenceKind,
@@ -227,28 +227,17 @@ pub fn resolve_shp_frame<'a>(
             i32::from(infantry_facing_slot(facing)),
             frame_index,
         ),
-        ShpFrameDefinition::Generic(def) => {
-            resolve_generic_shp_frame(def, facing, frame_index, false)
-        }
+        ShpFrameDefinition::Generic(def) => resolve_generic_shp_frame(def, facing, frame_index),
     }
 }
 
-fn resolve_generic_shp_frame(
-    def: &SequenceDef,
-    facing: u8,
-    frame_index: i32,
-    suppress_facing: bool,
-) -> i32 {
-    let slot = if suppress_facing {
-        0
-    } else {
-        match def.facing_slots {
-            FacingSlots::InfantryTable => infantry_facing_slot(facing),
-            FacingSlots::VehicleOctant if def.facings == VEHICLE_FACING_SLOTS => {
-                vehicle_facing_slot(facing)
-            }
-            FacingSlots::VehicleOctant => 0,
+fn resolve_generic_shp_frame(def: &SequenceDef, facing: u8, frame_index: i32) -> i32 {
+    let slot = match def.facing_slots {
+        FacingSlots::InfantryTable => infantry_facing_slot(facing),
+        FacingSlots::VehicleOctant if def.facings == VEHICLE_FACING_SLOTS => {
+            vehicle_facing_slot(facing)
         }
+        FacingSlots::VehicleOctant => 0,
     };
     resolve_shp_frame_parts(
         i32::from(def.start_frame),
@@ -259,6 +248,18 @@ fn resolve_generic_shp_frame(
             i32::from(def.facing_multiplier)
         },
         i32::from(slot),
+        frame_index,
+    )
+}
+
+/// One SHP Unit block's image: its start, the bucket times the block's
+/// frames, and the step within it (`0x0073C65B..0x0073C71D`).
+fn vehicle_block_frame(def: &SequenceDef, slot: i32, frame_index: i32) -> i32 {
+    resolve_shp_frame_parts(
+        i32::from(def.start_frame),
+        i32::from(def.frame_count),
+        i32::from(def.facing_multiplier),
+        slot,
         frame_index,
     )
 }
@@ -508,41 +509,70 @@ pub(crate) fn foot_body_frame_due(
             && crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0)
 }
 
+/// The facing bucket an SHP Unit's body draws (`UnitClass::Draw_Body_And_Turret`
+/// `0x0073C613..0x0073C64B`), from the actual type's `Facings=` (UnitType
+/// `+0xE3C`) and PrimaryFacing's current 16-bit facing. A disguised Unit
+/// (vt+0xC4) draws bucket 0.
+///
+/// Stock gamemd buckets only an eight-facing type:
+/// `(((facing >> 12) + 1) >> 1) + 1 & 7`; any other count draws bucket 0.
+/// Ares 3.0 `UnitClass_DrawSHP_FacingsA` (hook `0x0073C613`, Ares.dll
+/// `0x10047FE0`, resuming at `0x0073C64B`) buckets any count of at least 8:
+/// with `n = floor(log2(Facings))`, `(((facing + 0x2000) >> (15 - n)) + 1) >> 1`
+/// masked to `2^n - 1`, which is the stock value for 8. A count below 8, or
+/// not positive, draws bucket 0. From `n = 16` the hook neither shifts nor
+/// masks. `facing` is PrimaryFacing's current value: stock reads it through
+/// FacingClass::Current (`0x004C93D0`, called at `0x0073C636`); the Ares hook
+/// through its own inline copy (`0x10048064..0x10048102`,
+/// [`FacingClass::current_ares`](crate::sim::movement::FacingClass::current_ares)).
+pub fn shp_vehicle_facing_slot(facings: i32, facing: u16, disguised: bool, ares: bool) -> i32 {
+    if disguised {
+        return 0;
+    }
+    if !ares {
+        return if facings == i32::from(VEHICLE_FACING_SLOTS) {
+            i32::from(vehicle_facing_slot((facing >> 8) as u8))
+        } else {
+            0
+        };
+    }
+    let count = u32::try_from(facings).unwrap_or(0);
+    crate::util::direction_tables::ares_facing_bucket(count, facing) as i32
+}
+
 /// Unit73C64B..73C725: an active firing counter precedes Stand/Walk and
-/// advances one image per two counter steps, in descending image order.
+/// advances one image per two counter steps, in descending image order,
+/// with no bound
+/// ([`ShpVehicleFireFrames::image`](crate::rules::animation_sequence::ShpVehicleFireFrames::image)).
 /// The persistent Foot counter continues to own Stand/Walk. A still body
 /// with no `IdleRate=` and a running death counter draws its death image
-/// instead of Stand (`0x0073C6AD..0x0073C6D3`).
+/// instead of Stand (`0x0073C6AD..0x0073C6D3`), and one whose Foot
+/// occupation enable is clear draws its bare bucket. `set` is the type whose
+/// frame layout the draw reads (`UnitType+0x6C4`, or the Ares water type,
+/// see `UnitClass_DrawSHP_ChangeType1`), and `slot` its facing bucket
+/// ([`shp_vehicle_facing_slot`]); each block multiplies the bucket by its
+/// own frame count (`0x0073C65B..0x0073C71D`).
 pub fn resolve_shp_vehicle_body_frame(
     set: &SequenceSet,
-    facing: u8,
+    slot: i32,
     body_frame_counter: u32,
     firing_counter: i32,
     death_counter: i32,
     locomotor_is_moving: bool,
-    disguised: bool,
+    occupation_enabled: bool,
 ) -> Option<u16> {
     let cadence = set.shp_vehicle_cadence()?;
     if firing_counter >= 0 {
-        let def = set.get(&SequenceKind::Attack)?;
-        let frame_index = firing_counter / 2;
-        // The native seed is within its type's fire block. Do not wrap an
-        // incompatible/invalid retained counter onto an unrelated atlas frame.
-        if frame_index >= i32::from(def.frame_count) {
-            return None;
-        }
-        return u16::try_from(resolve_generic_shp_frame(
-            def,
-            facing,
-            frame_index,
-            disguised,
-        ))
-        .ok();
+        return u16::try_from(set.shp_vehicle_fire()?.image(slot, firing_counter)).ok();
     }
     let sequence = if locomotor_is_moving || cadence.idle_rate != 0 {
         SequenceKind::Walk
     } else if death_counter >= 0 {
         return u16::try_from(set.shp_vehicle_death()?.image(death_counter)).ok();
+    } else if !occupation_enabled {
+        // `0x0073C6D5..0x0073C6DD`: with the Foot occupation enable
+        // (`+0x6B6`) clear, the image is the bare facing bucket.
+        return u16::try_from(slot).ok();
     } else {
         SequenceKind::Stand
     };
@@ -552,16 +582,7 @@ pub fn resolve_shp_vehicle_body_frame(
     } else {
         0
     };
-    // Unit73C654..73C681 only computes the facing bucket when the actual
-    // type has eight facings AND the object is not disguised. Slot zero is
-    // not equivalent to raw facing zero in the vehicle direction table.
-    u16::try_from(resolve_generic_shp_frame(
-        def,
-        facing,
-        i32::from(frame_index),
-        disguised,
-    ))
-    .ok()
+    u16::try_from(vehicle_block_frame(def, slot, i32::from(frame_index))).ok()
 }
 
 /// Advance a single animation by one reached native gameplay frame.
@@ -650,100 +671,95 @@ fn tick_animations_impl(
                 .all(|entity| entity.animation.is_none()),
         "a Structure holds an Animation the frame-end step would not advance"
     );
-    let keys: Vec<u64> = if tick_dying {
-        entities.keys_sorted()
-    } else {
-        entities.ids_of_categories(animated)
-    };
+    entities.for_each_entry_mut(
+        |category| tick_dying || animated(category),
+        |entry| {
+            let id = entry.id();
+            let entity = entry.get();
+            if entity.death.is_dying() && !tick_dying {
+                return;
+            }
+            // The stage steps in TechnoClass::AI_Update (`0x006FAC4D`), which a
+            // warped object never reaches (`GameEntity::ai_frozen`): its pose holds.
+            if !entity.death.is_dying() && entity.ai_frozen() {
+                return;
+            }
+            // Its Doing's sequence, which its actions restart and whose stage
+            // steps in its own turn (`sim::movement::infantry_action`); this
+            // frame-end clock leaves it.
+            if crate::sim::movement::infantry_action::doing_owns_sequence(entity) {
+                return;
+            }
+            if entity.animation.is_none() {
+                // Dying entity with no animation → ready for despawn.
+                if entity.death.is_dying() {
+                    dying_finished.push(id);
+                }
+                return;
+            }
+            let entity = entry.into_mut();
+            let type_ref = entity.type_ref();
+            let category = entity.category();
+            let anim = entity
+                .animation
+                .as_mut()
+                .expect("an animated entity was just read");
 
-    for &id in &keys {
-        let Some(entity) = entities.get(id) else {
-            continue;
-        };
-        if entity.death.is_dying() && !tick_dying {
-            continue;
-        }
-        // The stage steps in TechnoClass::AI_Update (`0x006FAC4D`), which a
-        // warped object never reaches (`GameEntity::ai_frozen`): its pose holds.
-        if !entity.death.is_dying() && entity.ai_frozen() {
-            continue;
-        }
-        // Its Doing's sequence, which its actions restart and whose stage
-        // steps in its own turn (`sim::movement::infantry_action`); this
-        // frame-end clock leaves it.
-        if crate::sim::movement::infantry_action::doing_owns_sequence(entity) {
-            continue;
-        }
-        if entity.animation.is_none() {
-            // Dying entity with no animation → ready for despawn.
+            // Dying entities: only advance the death animation, skip all transitions.
             if entity.death.is_dying() {
-                dying_finished.push(id);
+                if anim.finished {
+                    dying_finished.push(id);
+                    return;
+                }
+                let Some(seq_set) =
+                    sequence_set_for_type(sequences, rules, interner.resolve(type_ref))
+                else {
+                    dying_finished.push(id);
+                    return;
+                };
+                let Some(def) = seq_set.get(&anim.sequence) else {
+                    dying_finished.push(id);
+                    return;
+                };
+                advance_animation(anim, def, game_options);
+                if anim.finished {
+                    dying_finished.push(id);
+                }
+                return;
             }
-            continue;
-        }
-        let entity = entities
-            .get_mut(id)
-            .expect("an animated entity was just read");
-        let type_ref = entity.type_ref();
-        let category = entity.category();
-        let anim = entity
-            .animation
-            .as_mut()
-            .expect("an animated entity was just read");
 
-        // Dying entities: only advance the death animation, skip all transitions.
-        if entity.death.is_dying() {
-            if anim.finished {
-                dying_finished.push(id);
-                continue;
-            }
-            let Some(seq_set) = sequence_set_for_type(sequences, rules, interner.resolve(type_ref))
-            else {
-                dying_finished.push(id);
-                continue;
+            // Infantry never enters this cascade: Doing/Stage is its only
+            // sequence clock. Motion does not switch the sequence either: the Unit
+            // SHP draw picks Walk or Stand by the locomotor's Is_Moving (vt+0x10 at
+            // `0x0073C696`, `resolve_shp_vehicle_body_frame`).
+            let seq_set = sequence_set_for_type(sequences, rules, interner.resolve(type_ref));
+
+            // Advance frame timing.
+            let Some(set) = seq_set else {
+                return;
             };
-            let Some(def) = seq_set.get(&anim.sequence) else {
-                dying_finished.push(id);
-                continue;
+            let Some(def) = set.get(&anim.sequence) else {
+                return;
             };
-            advance_animation(anim, def, game_options);
-            if anim.finished {
-                dying_finished.push(id);
+
+            // UnitClass SHP Stand/Walk images are selected from Foot's persistent
+            // body counter at draw time. Do not advance a second relative clock or
+            // reset cadence when the generic visual sequence changes.
+            if category == crate::map::entities::EntityCategory::Unit
+                && set.shp_vehicle_cadence().is_some()
+                && matches!(anim.sequence, SequenceKind::Stand | SequenceKind::Walk)
+            {
+                return;
             }
-            continue;
-        }
 
-        // Infantry never enters this cascade: Doing/Stage is its only
-        // sequence clock. Motion does not switch the sequence either: the Unit
-        // SHP draw picks Walk or Stand by the locomotor's Is_Moving (vt+0x10 at
-        // `0x0073C696`, `resolve_shp_vehicle_body_frame`).
-        let seq_set = sequence_set_for_type(sequences, rules, interner.resolve(type_ref));
-
-        // Advance frame timing.
-        let Some(set) = seq_set else {
-            continue;
-        };
-        let Some(def) = set.get(&anim.sequence) else {
-            continue;
-        };
-
-        // UnitClass SHP Stand/Walk images are selected from Foot's persistent
-        // body counter at draw time. Do not advance a second relative clock or
-        // reset cadence when the generic visual sequence changes.
-        if category == crate::map::entities::EntityCategory::Unit
-            && set.shp_vehicle_cadence().is_some()
-            && matches!(anim.sequence, SequenceKind::Stand | SequenceKind::Walk)
-        {
-            continue;
-        }
-
-        if let Some(next) = advance_animation(anim, def, game_options) {
-            if let Some(facing) = def.completion_facing {
-                snap_completion_facing(&mut entity.body_facing, facing, binary_frame);
+            if let Some(next) = advance_animation(anim, def, game_options) {
+                if let Some(facing) = def.completion_facing {
+                    snap_completion_facing(&mut entity.body_facing, facing, binary_frame);
+                }
+                anim.switch_to(next);
             }
-            anim.switch_to(next);
-        }
-    }
+        },
+    );
 
     dying_finished
 }

@@ -51,16 +51,28 @@ enum OptionalIniSelection {
 }
 
 pub fn select_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni, String> {
-    // A game that ships `ares.mix` loads its INIs with Ares' syntax and
-    // `[#include]` (`ares_switch::ares_way`), as its launch does.
-    let _ares_way = crate::rules::ares_switch::read_ares_way(
-        crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
-    );
-    if crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED {
+    select_game_ini(assets, name, assets.ships_ares())
+}
+
+/// [`select_ini`] for a game that ships `ares.mix` or not: such a game loads
+/// its INIs with Ares' syntax and `[#include]` (`ares_switch::ares_way`), as
+/// its launch does.
+pub(crate) fn select_game_ini(
+    assets: &AssetManager,
+    name: &str,
+    ships_ares: bool,
+) -> Result<SelectedIni, String> {
+    let _ares_way = crate::rules::ares_switch::read_ares_way(ships_ares);
+    if expands_directives(ships_ares) {
         select_ini_with_options(assets, name, DirectiveOptions::production())
     } else {
         select_physical_ini(assets, name)
     }
+}
+
+/// Whether a game that ships `ares.mix` or not expands its INIs' directives.
+fn expands_directives(ships_ares: bool) -> bool {
+    ships_ares || crate::rules::PHOBOS_ENABLED
 }
 
 /// Explicit file-composition probe. Tool callers may inspect extension syntax
@@ -221,13 +233,23 @@ pub struct RetailRulesSources {
 }
 
 impl RetailRulesSources {
+    /// The game's startup sources, read as its asset manager says: an Ares
+    /// game (`AssetManager::ships_ares`) or not, under the player's Ares
+    /// setting (`AssetManager::ares_setting`).
     pub fn select(assets: &AssetManager) -> Result<Self, String> {
-        let rulesmd = select_ini(assets, assets.ini_roots().rules())?;
+        Self::select_for_game(assets, assets.ships_ares())
+    }
+
+    /// [`Self::select`] for a game that ships `ares.mix` or not, whatever the
+    /// archives `assets` mounted: a fixture that reads a stock install as an
+    /// Ares game says so here.
+    pub(crate) fn select_for_game(assets: &AssetManager, ships_ares: bool) -> Result<Self, String> {
+        let rulesmd = select_game_ini(assets, assets.ini_roots().rules(), ships_ares)?;
         // VERA's Original mode deliberately omits the optional LANGRULE pass
         // of Load_Game_Rules (0x0052CD70) and Reset (0x00668B05). A selected
         // mod keeps it, including its native Digest validation and layering.
         let langrule = if assets.mod_selected() {
-            select_optional_ini(assets, "langrule.ini")
+            select_optional_ini(assets, "langrule.ini", ships_ares)
         } else {
             OptionalIniSelection::Absent
         };
@@ -236,14 +258,14 @@ impl RetailRulesSources {
             OptionalIniSelection::Selected(selected) => (Some(selected), None),
             OptionalIniSelection::SelectionFailed(error) => (None, Some(error)),
         };
-        let artmd = select_ini(assets, assets.ini_roots().art())?;
+        let artmd = select_game_ini(assets, assets.ini_roots().art(), ships_ares)?;
         Ok(Self {
             rulesmd,
             langrule,
             langrule_selection_failure,
             artmd,
             personal_rules: PersonalRules::default(),
-            ships_ares: crate::rules::ares_switch::game_ships_ares(assets.ships_ares()),
+            ships_ares,
             ares_keys_off: assets.ares_setting() == crate::util::ares_launch::AresSetting::Off,
         })
     }
@@ -324,11 +346,15 @@ impl RetailRulesSources {
 /// Optional LANGRULE selection uses the same physical parser and Ares include
 /// expansion as the original selector. Probe availability first to retain a
 /// physical absence separately from a selected file whose expansion fails.
-fn select_optional_ini(assets: &AssetManager, name: &str) -> OptionalIniSelection {
+fn select_optional_ini(
+    assets: &AssetManager,
+    name: &str,
+    ships_ares: bool,
+) -> OptionalIniSelection {
     if assets.resolve_ref(name).is_none() {
         return OptionalIniSelection::Absent;
     }
-    match select_ini(assets, name) {
+    match select_game_ini(assets, name, ships_ares) {
         Ok(selected) => OptionalIniSelection::Selected(selected),
         Err(error) => OptionalIniSelection::SelectionFailed(error),
     }
@@ -351,7 +377,7 @@ const SHIPPED_LOCAL: &str = "localmd.mix";
 
 /// Whether a source (`AssetResolutionRef::source_archive`, an archive's name)
 /// is a shipped archive or nested in one. A loose file never is.
-pub(crate) fn shipped_source(source: &str) -> bool {
+pub fn shipped_source(source: &str) -> bool {
     !source.starts_with("loose:")
         && SHIPPED_ARCHIVES
             .iter()
@@ -360,13 +386,107 @@ pub(crate) fn shipped_source(source: &str) -> bool {
 
 /// The game-folder file a source comes from: a loose file's name, else the
 /// archive's outermost name (`expandmd99.mix`).
-pub(crate) fn game_folder_file(source: &str) -> String {
+pub fn game_folder_file(source: &str) -> String {
     match source.strip_prefix("loose:") {
         Some(path) => std::path::Path::new(path).file_name().map_or_else(
             || path.to_owned(),
             |file| file.to_string_lossy().into_owned(),
         ),
         None => outermost_archive(source).to_owned(),
+    }
+}
+
+/// One archive a retail install searches ([`retail_archive`]): the name its
+/// files report as their source, the game-folder source it stands in for,
+/// and the archive.
+pub(crate) type RetailArchive<'a> = (&'a str, Option<&'a str>, std::borrow::Cow<'a, MixArchive>);
+
+/// The registered archives as a retail install searches them, in their
+/// order ([`retail_archive`]).
+pub(crate) fn registered_retail(asset_manager: &AssetManager) -> Vec<RetailArchive<'_>> {
+    asset_manager
+        .registered_archives()
+        .filter_map(|(source, archive)| {
+            let (replaces, retail) = retail_archive(asset_manager, source, Some(archive))?;
+            Some((source, replaces, retail))
+        })
+        .collect()
+}
+
+/// What a retail install searches in place of one archive (`None` when it
+/// does not open): the archive itself when it ships; else the shipped copy of
+/// the archive of its name, with the source it stands in for; else nothing
+/// (`expandmd99.mix`).
+pub(crate) fn retail_archive<'a>(
+    assets: &AssetManager,
+    source: &'a str,
+    archive: Option<&'a MixArchive>,
+) -> Option<(Option<&'a str>, std::borrow::Cow<'a, MixArchive>)> {
+    if let Some(archive) = archive.filter(|_| shipped_source(source)) {
+        return Some((None, std::borrow::Cow::Borrowed(archive)));
+    }
+    let name = source.rsplit("->").next().unwrap_or(source).trim();
+    shipped_nested_archive(assets, name).map(|copy| (Some(source), std::borrow::Cow::Owned(copy)))
+}
+
+/// VERA: a binder's reads of picture and model files, telling a file the
+/// game folder supplies from the copy a retail install reads. The asset
+/// binders read through it where a network start certifies what they take
+/// (`RuleSet::file_inputs_hash`), so a refused start can name the files that
+/// change it (`RuleSet::file_input_folder_files`).
+pub(crate) struct FolderFiles<'a> {
+    assets: &'a AssetManager,
+    /// [`registered_retail`], found by the first read no shipped archive
+    /// supplies; a game without such files never builds it.
+    retail: std::cell::OnceCell<Vec<RetailArchive<'a>>>,
+}
+
+impl<'a> FolderFiles<'a> {
+    pub(crate) fn new(assets: &'a AssetManager) -> Self {
+        Self {
+            assets,
+            retail: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// `name` as the game reads it (`AssetManager::get_ref`'s bytes), with
+    /// the game-folder file that supplies it ([`game_folder_file`]) when no
+    /// shipped archive does ([`shipped_source`]).
+    pub(crate) fn read(&self, name: &str) -> Option<(&'a [u8], Option<String>)> {
+        let (bytes, source) = self.assets.get_with_source_ref(name)?;
+        Some((
+            bytes,
+            (!shipped_source(source)).then(|| game_folder_file(source)),
+        ))
+    }
+
+    /// The copy of `name` a retail install reads from the registered
+    /// archives; `None` when it ships none.
+    pub(crate) fn shipped(&self, name: &str) -> Option<&[u8]> {
+        let id = crate::assets::mix_hash::mix_hash(name);
+        self.retail
+            .get_or_init(|| registered_retail(self.assets))
+            .iter()
+            .find(|(_, _, archive)| archive.contains_id(id))
+            .and_then(|(_, _, archive)| archive.get_by_id(id))
+    }
+
+    /// [`Self::read`]'s bytes, noting the game-folder file in `changed` when
+    /// `value` of them is not `value` of the shipped copy's: the file then
+    /// changes what the binder takes. A name a retail install lacks differs.
+    pub(crate) fn read_noting<V: PartialEq>(
+        &self,
+        name: &str,
+        value: impl Fn(&[u8]) -> V,
+        changed: &mut std::collections::BTreeSet<String>,
+    ) -> Option<&'a [u8]> {
+        let (bytes, folder_file) = self.read(name)?;
+        if let Some(file) = folder_file
+            && self.shipped(name).map(&value) != Some(value(bytes))
+        {
+            changed.insert(file);
+        }
+        Some(bytes)
     }
 }
 
@@ -399,20 +519,95 @@ pub(crate) fn shipped_nested_archive(assets: &AssetManager, name: &str) -> Optio
 /// (`IniFile::multiplayer_digest`) are unchanged, and so is a name nothing
 /// supplies.
 pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec<String> {
-    let mut local = None;
+    let shipped = ShippedInis::new(assets);
     let mut files = Vec::new();
-    for name in names.iter().map(|name| name.trim()) {
-        let Some(used) = (!name.is_empty())
-            .then(|| assets.resolve_ref(name))
-            .flatten()
-        else {
+    for name in names {
+        let Some(used) = shipped.used(name) else {
             continue;
         };
-        if shipped_source(used.source_archive) {
+        if used.shipped == ShippedCopy::Same {
             continue;
         }
-        let local = local.get_or_insert_with(|| {
-            assets
+        let file = game_folder_file(used.source);
+        if !files.contains(&file) {
+            files.push(file);
+        }
+    }
+    files
+}
+
+/// VERA: the copies of INIs the game reads held against the ones a retail
+/// install ships, as [`files_changing_shipped_inis`] compares them.
+pub struct ShippedInis<'a> {
+    assets: &'a AssetManager,
+    /// `ra2md.mix`'s own `localmd.mix`, opened by the first comparison that
+    /// needs it.
+    local: std::cell::OnceCell<Option<MixArchive>>,
+}
+
+/// One INI as the game reads it ([`ShippedInis::used`]).
+pub struct UsedIni<'a> {
+    /// Where it comes from (`AssetResolutionRef::source_archive`).
+    pub source: &'a str,
+    pub bytes: &'a [u8],
+    pub shipped: ShippedCopy<'a>,
+}
+
+/// How an INI the game reads stands to the copy a retail install ships.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShippedCopy<'a> {
+    /// The shipped copy, or one with the same entries.
+    Same,
+    /// Another copy: the shipped one's bytes, `None` when retail ships no
+    /// such file.
+    Changed(Option<&'a [u8]>),
+}
+
+impl<'a> UsedIni<'a> {
+    /// The copy a retail install ships: this one when it is the same.
+    pub fn shipped_bytes(&self) -> Option<&'a [u8]> {
+        match self.shipped {
+            ShippedCopy::Same => Some(self.bytes),
+            ShippedCopy::Changed(shipped) => shipped,
+        }
+    }
+}
+
+impl<'a> ShippedInis<'a> {
+    pub fn new(assets: &'a AssetManager) -> Self {
+        Self {
+            assets,
+            local: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// The copy of `name` the game reads and how it stands to the shipped
+    /// one; `None` when nothing supplies `name`.
+    pub fn used(&self, name: &str) -> Option<UsedIni<'_>> {
+        let name = name.trim();
+        let used = (!name.is_empty())
+            .then(|| self.assets.resolve_ref(name))
+            .flatten()?;
+        let mut found = UsedIni {
+            source: used.source_archive,
+            bytes: used.bytes,
+            shipped: ShippedCopy::Same,
+        };
+        if shipped_source(used.source_archive) {
+            return Some(found);
+        }
+        let shipped = self.shipped(name);
+        if !shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
+            found.shipped = ShippedCopy::Changed(shipped);
+        }
+        Some(found)
+    }
+
+    /// The copy of `name` a retail install ships: a shipped archive's own
+    /// entry, else the one in `ra2md.mix`'s own `localmd.mix`.
+    fn shipped(&self, name: &str) -> Option<&[u8]> {
+        let local = self.local.get_or_init(|| {
+            self.assets
                 .archive_with_source(SHIPPED_MASTER)
                 .and_then(|(_, master)| {
                     master
@@ -421,23 +616,72 @@ pub fn files_changing_shipped_inis(assets: &AssetManager, names: &[&str]) -> Vec
                         .flatten()
                 })
         });
-        let shipped = SHIPPED_ARCHIVES
+        SHIPPED_ARCHIVES
             .iter()
             .find_map(|archive| {
-                assets
+                self.assets
                     .archive_with_source(archive)
                     .and_then(|(_, archive)| archive.get_by_name(name))
             })
-            .or_else(|| local.as_ref().and_then(|archive| archive.get_by_name(name)));
-        if shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
-            continue;
-        }
-        let file = game_folder_file(used.source_archive);
-        if !files.contains(&file) {
-            files.push(file);
-        }
+            .or_else(|| local.as_ref().and_then(|archive| archive.get_by_name(name)))
     }
-    files
+}
+
+/// VERA: which AI INI (`IniRoots::ai`) a match reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiFile {
+    /// The one the game folder supplies, as every other INI root.
+    GameFolder,
+    /// The copy a retail install ships, whatever the game folder supplies.
+    Original,
+}
+
+/// VERA: the AI INI a match reads. A network match of the original game
+/// that seats no computer reads the original AI INI. No house in it runs
+/// the computer's teams, and the teams a map's triggers create are then the
+/// original game's for every player, so players whose game folders hold
+/// other AI files load one world and their rules agreement compares the
+/// original (the app's `ProcessAssets::multiplayer_match_rules_digest`).
+/// `computers` is whether the match seats a house the computer runs
+/// (`SkirmishLaunchSession::seats_computers`; a campaign always does).
+/// Every other match reads the game folder's: one with a computer, a
+/// selected mod's, whose AI file is its game, one whose AI root is not
+/// YR's, and every match off the network.
+pub fn match_ai_file(assets: &AssetManager, network: bool, computers: bool) -> AiFile {
+    let stock_root = assets
+        .ini_roots()
+        .ai()
+        .eq_ignore_ascii_case(crate::util::ini_roots::IniRoots::default().ai());
+    if network && !computers && !assets.mod_selected() && stock_root {
+        AiFile::Original
+    } else {
+        AiFile::GameFolder
+    }
+}
+
+/// The AI root as `file` names it, read as [`select_ini`] reads it. The game
+/// folder's too where a retail install ships no AI INI.
+pub fn select_ai_ini(assets: &AssetManager, file: AiFile) -> Result<IniFile, String> {
+    let name = assets.ini_roots().ai();
+    let shipped = ShippedInis::new(assets);
+    let from_folder = assets
+        .resolve_ref(name)
+        .is_some_and(|used| !shipped_source(used.source_archive));
+    if file == AiFile::Original
+        && from_folder
+        && let Some(bytes) = shipped.shipped(name)
+    {
+        let ships_ares = assets.ships_ares();
+        let _ares_way = crate::rules::ares_switch::read_ares_way(ships_ares);
+        let ini = IniFile::from_bytes(bytes)
+            .map_err(|error| format!("parse the original {name}: {error}"))?;
+        if !expands_directives(ships_ares) {
+            return Ok(ini);
+        }
+        return expand_ini_with_assets(assets, ini, name, DirectiveOptions::production())
+            .map(|(expanded, _)| expanded.ini);
+    }
+    select_ini(assets, name).map(|selected| selected.ini)
 }
 
 fn same_entries(shipped: &[u8], used: &[u8]) -> bool {
@@ -620,8 +864,8 @@ mod tests {
 
     /// A selected mod that mounts `ares.mix` (Load_Bootstrap_AresMIX, hook
     /// `0x0053029E`) selects its INIs with Ares' syntax. No mod ignores the
-    /// installed archive and keeps gamemd's syntax, unless the thread already
-    /// reads the Ares way.
+    /// installed archive and keeps gamemd's syntax. The game's asset manager
+    /// gives that answer, whichever way the calling thread reads.
     #[test]
     fn a_game_with_ares_mix_selects_its_rules_with_ares_syntax() {
         use crate::assets::asset_manager::MediaArchiveMode;
@@ -658,11 +902,9 @@ mod tests {
                     .collect();
                 (assets.ships_ares(), sources.ships_ares, keys)
             };
-            // A thread read the Ares way reads every game the Ares way.
-            let stock_key = if ares_way { "var_0" } else { "+" };
-            assert_eq!(keys(false), (false, ares_way, vec![stock_key.to_owned()]));
+            assert_eq!(keys(false), (false, false, vec!["+".to_owned()]));
             directory.write_mix("ares.mix", "ares.txt", b"ares");
-            assert_eq!(keys(false), (false, ares_way, vec![stock_key.to_owned()]));
+            assert_eq!(keys(false), (false, false, vec!["+".to_owned()]));
             assert_eq!(keys(true), (true, true, vec!["var_0".to_owned()]));
         }
     }
@@ -684,6 +926,9 @@ mod tests {
             "lang-extra.ini",
             b"[General]\nBuildSpeed=.4\n[ColorAdd]\nLANG0=7,8,9\n",
         );
+        // The selected mod mounts the installation's `ares.mix`, so its game
+        // reads the Ares way.
+        install.write_mix("ares.mix", "ares.txt", b"ares");
         let assets = AssetManager::with_mod(
             install.path(),
             Some(directory.path()),

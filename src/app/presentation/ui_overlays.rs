@@ -5,7 +5,6 @@
 use crate::app::AppState;
 use crate::app::input::cursor::{
     CursorTargets, current_cursor_feedback_kind, cursor_id_for_feedback,
-    software_cursor_frame_index,
 };
 use crate::app::input::entity_pick::HoverObject;
 use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
@@ -59,6 +58,9 @@ struct HudMore {
     scale_pips: Vec<ScalePipDraw>,
     /// `MindControlLink::controller`.
     controller: Option<u64>,
+    /// `ObjectType::ares_techno_radial_radius` of an online non-Building
+    /// whose type has a radial indicator, in an Ares game; 0 otherwise.
+    radial_radius: i32,
     /// `Simulation::capture_link_coordinates`, for a capture manager.
     capture_links: Vec<crate::sim::capture_manager::CaptureLinkCoordinates>,
     bomb: Option<HudBomb>,
@@ -70,21 +72,22 @@ struct HudMore {
     /// with the frame so the label never reads the live simulation while a
     /// frame is being drawn; empty for anything but such a Structure.
     super_charges: Vec<crate::sim::superweapon::SuperChargeLine>,
-    /// VERA's convenience status lines ([VERA] ConvenienceHelp): reload,
-    /// building repair, unit repair. Each string is formatted at capture time
-    /// from frozen sim facts, so the draw pass reads no live simulation.
-    info_lines: Vec<String>,
+    /// VERA's convenience status facts ([VERA] ConvenienceHelp): reload and
+    /// building repair, captured from frozen sim facts so the draw pass
+    /// reads no live simulation, and formatted when drawn.
+    info: StatusInfo,
 }
 
 impl HudMore {
     fn is_empty(&self) -> bool {
         self.scale_pips.is_empty()
             && self.controller.is_none()
+            && self.radial_radius == 0
             && self.capture_links.is_empty()
             && self.bomb.is_none()
             && self.digital_values.is_empty()
             && self.super_charges.is_empty()
-            && self.info_lines.is_empty()
+            && self.info.is_empty()
     }
 }
 
@@ -143,15 +146,39 @@ impl HudFacts {
                     rules.ares(),
                 )
             }),
-            foundation_leptons: entity.type_facts.foundation().dimensions_leptons(),
+            foundation_leptons: entity.seldom.type_facts.foundation().dimensions_leptons(),
             toggled_off: entity.ares_toggled_off(),
             shows_production_to_observer: at
                 .observer_id
                 .is_some_and(|viewer| entity.shows_production_to(viewer)),
         });
         let more = HudMore {
+            // Owned rows, as the frame outlives this tick; an object with no
+            // pip rows gets an empty list, which allocates nothing.
             scale_pips: scale_pip_rows(sim, entity, rules),
-            controller: entity.mind_control.controller(),
+            controller: entity.seldom.mind_control.controller(),
+            // Ares ObjectClass_DrawRadialIndicator (10049A70, hook
+            // 0x0041BE80; the stock body is empty and Buildings override
+            // it): a Deactivated Techno draws none.
+            radial_radius: object
+                .filter(|object| {
+                    rules.ares()
+                        && entity.category() != EntityCategory::Structure
+                        && object.has_radial_indicator()
+                        && !entity.deactivated.is_offline()
+                })
+                .map_or(0, |object| {
+                    object.ares_techno_radial_radius(
+                        crate::sim::combat::combat_weapon::current_weapon(
+                            entity,
+                            object,
+                            sim.entities(),
+                            rules,
+                            sim.interner(),
+                        )
+                        .map(|weapon| weapon.range_leptons),
+                    )
+                }),
             capture_links: if entity.capture_manager.is_some() {
                 sim.capture_link_coordinates(id, rules)
             } else {
@@ -163,6 +190,8 @@ impl HudFacts {
                     .is_some_and(|viewer| sim.bomb_seen_by(id, viewer)),
                 clock_frame: sim.bomb_clock_frame(id, rules, 0),
                 clock: sim.bomb_clock(id, rules),
+                // Owned, as the frame outlives this tick; only a bombed object
+                // holds any.
                 images: sim.bomb_images(id, rules).to_vec(),
             }),
             #[cfg(feature = "phobos")]
@@ -197,23 +226,22 @@ impl HudFacts {
             },
             // Convenience Help's rows: captured only while it is on, and only
             // for the observer's and its allies' objects, which alone draw them.
-            info_lines: if at.status_rows
-                && at.observer.is_some_and(|viewer| {
-                    crate::map::houses::is_allied_with(
-                        sim.house_alliances().as_map(),
-                        viewer,
-                        sim.interner().resolve(entity.owner()),
-                    )
+            info: if at.status_rows
+                && at.observer_id.is_some_and(|viewer| {
+                    sim.house_alliances()
+                        .is_allied(sim.interner(), viewer, entity.owner())
                 }) {
-                status_info_lines(entity, object, rules, at.binary_frame)
+                StatusInfo::capture(entity, object, rules, at.binary_frame)
             } else {
-                Vec::new()
+                StatusInfo::default()
             },
         };
         Self {
             get_coords: crate::sim::movement::ground_pose::object_get_coords(entity, terrain),
             location,
             structure,
+            // Boxed so a record without extras, most of them, stays small;
+            // only one with extras allocates.
             more: (!more.is_empty()).then(|| Box::new(more)),
         }
     }
@@ -235,6 +263,12 @@ impl HudFacts {
     /// Its capture manager's link coordinates.
     pub(crate) fn capture_links(&self) -> &[crate::sim::capture_manager::CaptureLinkCoordinates] {
         self.more().map_or(&[], |more| &more.capture_links)
+    }
+
+    /// The Ares radial-ring radius in cells of an object that is no
+    /// Structure; 0 when it draws none.
+    pub(crate) fn ares_radial_radius(&self) -> i32 {
+        self.more().map_or(0, |more| more.radial_radius)
     }
 
     /// A Structure's radial-ring range; 0 for other objects.
@@ -263,9 +297,11 @@ impl HudFacts {
         self.more().map_or(&[], |more| &more.super_charges)
     }
 
-    /// VERA's detailed status lines, already formatted at capture time.
-    pub(crate) fn info_lines(&self) -> &[String] {
-        self.more().map_or(&[], |more| &more.info_lines)
+    /// VERA's detailed status lines, formatted from the captured facts.
+    pub(crate) fn info_lines(&self) -> impl Iterator<Item = String> {
+        self.more()
+            .map_or_else(StatusInfo::default, |more| more.info)
+            .lines()
     }
 
     fn toggled_off(&self) -> bool {
@@ -279,10 +315,10 @@ impl HudFacts {
     }
 }
 
-/// VERA's convenience help status lines, resolved from frozen sim facts at
-/// capture time (`HudFacts::capture`) so the draw pass never reads live state.
-/// Every number comes from the object's own sim fields plus Rules; nothing
-/// writes back. The strings are complete and localized.
+/// VERA's convenience help status facts of an object, captured from
+/// frozen sim facts (`HudFacts::capture`) so the draw pass never reads live
+/// state; the draw formats them ([`Self::lines`]). Every number comes from
+/// the object's own sim fields plus Rules; nothing writes back.
 ///
 /// Two kinds are enabled here, both single-entity facts:
 /// - ammo reload: the Techno's reload clock while a magazine is incomplete;
@@ -291,51 +327,66 @@ impl HudFacts {
 /// Unit repair is depot-side (its progress lives on the servicing Building,
 /// keyed by radio contact) and is intentionally not shown here: the unit has
 /// no reliable single owning repair clock to report.
-fn status_info_lines(
-    entity: &crate::sim::game_entity::GameEntity,
-    object: Option<&crate::rules::object_type::ObjectType>,
-    rules: &RuleSet,
-    frame: u32,
-) -> Vec<String> {
-    let frame = frame as i32;
-    let mut lines = Vec::new();
+#[derive(Clone, Copy, Debug, Default)]
+struct StatusInfo {
+    /// Whole seconds left on the reload clock of a magazine that is not full.
+    reload_seconds: Option<i32>,
+    /// Whole seconds and credits the running repair still needs.
+    repair: Option<(i32, i32)>,
+}
 
-    // Ammo reload: only a Techno with a limited magazine that is not full and
-    // whose reload clock is actually running. Mirrors DigitalInfoType::Reload.
-    if let Some(object) = object {
-        if object.ammo > 0 {
-            let ammo = entity.ammo().map_or(0, |ammo| ammo.current());
-            if ammo < object.ammo {
-                let timer = entity.ammo_reload_timer();
-                let remaining = timer.remaining(frame);
-                if remaining > 0 {
-                    let seconds =
-                        remaining / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
-                    if let Some(template) = crate::i18n::find("VERA:InfoReload") {
-                        let time = crate::app::presentation::super_timers::time_text(seconds);
-                        lines.push(crate::i18n::fill(&template, &[("time", &time)]));
-                    }
-                }
-            }
+impl StatusInfo {
+    fn capture(
+        entity: &crate::sim::game_entity::GameEntity,
+        object: Option<&crate::rules::object_type::ObjectType>,
+        rules: &RuleSet,
+        frame: u32,
+    ) -> Self {
+        use crate::app::presentation::super_timers::FRAMES_PER_SECOND;
+        let Some(object) = object else {
+            return Self::default();
+        };
+        // Ammo reload: only a Techno with a limited magazine that is not full
+        // and whose reload clock is actually running. Mirrors
+        // DigitalInfoType::Reload.
+        let ammo = entity.ammo().map_or(0, |ammo| ammo.current());
+        let reload_seconds = (object.ammo > 0 && ammo < object.ammo)
+            .then(|| entity.ammo_reload_timer().remaining(frame as i32))
+            .filter(|&remaining| remaining > 0)
+            .map(|remaining| remaining / FRAMES_PER_SECOND);
+        // Building repair: the repair's own owner answers what is left.
+        let repair = (entity.category() == EntityCategory::Structure)
+            .then(|| crate::sim::production::repair_remaining(entity, object, rules, frame))
+            .flatten()
+            .map(|(frames, cost)| (frames / FRAMES_PER_SECOND, cost));
+        Self {
+            reload_seconds,
+            repair,
         }
     }
 
-    // Building repair: the repair's own owner answers what is left.
-    if entity.category() == EntityCategory::Structure
-        && let Some(object) = object
-        && let Some((frames, cost)) =
-            crate::sim::production::repair_remaining(entity, object, rules, frame as u32)
-        && let Some(template) = crate::i18n::find("VERA:InfoBuildingRepair")
-    {
-        let seconds = frames / crate::app::presentation::super_timers::FRAMES_PER_SECOND;
-        let time = crate::app::presentation::super_timers::time_text(seconds);
-        lines.push(crate::i18n::fill(
-            &template,
-            &[("time", &time), ("cost", &cost)],
-        ));
+    fn is_empty(&self) -> bool {
+        self.reload_seconds.is_none() && self.repair.is_none()
     }
 
-    lines
+    /// The localized rows: the reload's, then the repair's.
+    fn lines(self) -> impl Iterator<Item = String> {
+        use crate::app::presentation::super_timers::time_text;
+        let reload = self.reload_seconds.and_then(|seconds| {
+            let template = crate::i18n::find("VERA:InfoReload")?;
+            let time = time_text(seconds);
+            Some(crate::i18n::fill(&template, &[("time", &time)]))
+        });
+        let repair = self.repair.and_then(|(seconds, cost)| {
+            let template = crate::i18n::find("VERA:InfoBuildingRepair")?;
+            let time = time_text(seconds);
+            Some(crate::i18n::fill(
+                &template,
+                &[("time", &time), ("cost", &cost)],
+            ))
+        });
+        reload.into_iter().chain(repair)
+    }
 }
 
 /// Authentic pip counts for unit health bars.
@@ -575,7 +626,7 @@ fn admitted_techno_observer(
     // `observer_draw_context` for the frame's local player.
     let observer = entity.seen.observer;
     crate::app::presentation::instances::tactical_entity_admission(
-        crate::app::presentation::instances::TacticalEntityPurpose::Drawing,
+        crate::app::presentation::instances::TacticalEntityPurpose::Extras,
         entity,
         local_owner_id,
         sim.fog(),
@@ -1058,15 +1109,15 @@ pub(crate) fn build_building_status_render_instances(
             } else {
                 &[]
             };
-        // VERA's convenience status rows (building repair): the same frozen
-        // capture, gated by ConvenienceHelp, drawn for every visible friendly
+        // VERA's convenience status rows (reload, building repair): the same
+        // frozen capture, gated by ConvenienceHelp, drawn for every visible friendly
         // building like the Super lines. `allied` is true for the local house
         // as well as allies, so an enemy's row is never shown. Not restricted
         // to the selected building.
-        let info_lines: &[String] = if convenience_help && allied && visible {
-            entity.hud.info_lines()
+        let info_lines: Vec<String> = if convenience_help && allied && visible {
+            entity.hud.info_lines().collect()
         } else {
-            &[]
+            Vec::new()
         };
         // DrawExtraInfo needs the building selected, including when it is
         // also hovered.
@@ -1133,7 +1184,7 @@ pub(crate) fn build_building_status_render_instances(
             ));
         }
         // VERA info rows stack below the Super rows (super first, then info),
-        // each a complete already-localized string from the frozen capture.
+        // each localized here from the frozen capture's facts.
         for (row, text) in info_lines.iter().enumerate() {
             let anchor = [
                 anchor[0],
@@ -1569,7 +1620,6 @@ fn shield_pip_frame(
 /// `bracket` is the native bracket anchor after the class fixed offsets;
 /// `bracket_delta` is the shield's own `BracketDelta` (foot only).
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 fn shield_bar_instances(
     entity: &ObjectRecord,
     rules: &RuleSet,
@@ -1735,7 +1785,6 @@ fn phobos_insignia_type<'r>(
 /// hook replaces the native rank block whenever the Phobos capability is
 /// compiled in, so the stock negative-rank frame19 arm is not reached.
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 fn phobos_insignia_draw<'a>(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,
@@ -1847,6 +1896,41 @@ fn ares_insignia_visible(
         })
 }
 
+/// `(veteran, elite, negative)` PIPS.SHP frame numbers on the stock strip.
+///
+/// Retail RA2's `ra2.mix -> conquer.mix` copy has 19 frames; YR's
+/// `ra2md.mix -> conqmd.mix` has 21. YR inserts an extra magenta pip at 12,
+/// so from there on every later frame is one slot higher. Inspecting both
+/// strips: RA2 13=single star, 14=three stars, 18=negative marker (YR puts
+/// them at 14, 15 and 19). Drawing YR's numbers over RA2's strip shows one
+/// star as three stars and three stars as the green ammo pip.
+#[cfg(not(feature = "phobos"))]
+fn stock_rank_frames() -> (usize, usize, usize) {
+    if crate::util::ra2_launch::enabled() {
+        (13, 14, 18)
+    } else {
+        (14, 15, 19)
+    }
+}
+
+/// Frame of the filled Ammo magazine pip on PIPS2.SHP (stock ORCA/Harrier
+/// scale row).
+///
+/// Same divergence as [`stock_rank_frames`]: retail RA2's `conquer.mix` copy
+/// has 19 frames and YR's `conqmd.mix` has 21. YR inserts an extra magenta
+/// pip at 12, so from there every later frame is one slot higher. Inspecting
+/// both strips: RA2 12 = green filled magazine, 13 = dark empty magazine;
+/// YR 13 = green filled magazine, 14 = dark empty magazine. Drawing YR's 13
+/// over RA2's strip selects the dark empty frame, so a loaded aircraft's
+/// pips look empty.
+fn stock_ammo_pip_frame() -> usize {
+    ammo_pip_frame_for(crate::util::ra2_launch::enabled())
+}
+
+fn ammo_pip_frame_for(ra2: bool) -> usize {
+    if ra2 { 12 } else { 13 }
+}
+
 /// Ares `TechnoClass_DrawVeterancy` (Ares.dll 1004E0C0, hook 0x70A990),
 /// which replaces the stock rank leaf; Phobos's `DrawInsignia` replaces it
 /// in turn. The rank shape, frame and custom SHP name, or `None`:
@@ -1883,10 +1967,11 @@ fn ares_insignia_draw<'a>(
         return None;
     }
     let raw = entity.veterancy.raw();
+    let (veteran_frame, elite_frame, _) = stock_rank_frames();
     let (rank, stock_frame) = if raw_is_elite(raw) {
-        (2, 15)
+        (2, elite_frame as i32)
     } else if raw_is_veteran(raw) {
-        (1, 14)
+        (1, veteran_frame as i32)
     } else {
         (0, -1)
     };
@@ -2161,12 +2246,13 @@ pub(crate) fn techno_extras_for_parent(
         // there is no Trainable gate.70A9B2/C2/D2 tests the raw accumulator,
         // not the cached/quantized rank. A negative value selects frame19.
         let raw = entity.veterancy.raw();
+        let (veteran_frame, elite_frame, negative_frame) = stock_rank_frames();
         let frame = if raw_is_veteran(raw) {
-            Some(14)
+            Some(veteran_frame)
         } else if raw_is_elite(raw) {
-            Some(15)
+            Some(elite_frame)
         } else if raw_is_negative(raw) {
-            Some(19)
+            Some(negative_frame)
         } else {
             None
         };
@@ -2397,21 +2483,31 @@ pub(crate) fn techno_extras_for_parent(
     let filled = filled_count(object.strength, num_pips as i32) as u32;
     //6F69B1..69F3 compares independently: <=red overrides <=yellow. These
     // are direct ratio comparisons, unlike Building's positive-HP red gate.
+    // Original RA2's PIPS.SHP (from ra2.mix -> conquer.mix) puts the unit
+    // health pips at 15=green / 16=yellow / 17=red. YR's PIPS.SHP (conqmd)
+    // inserts an insignia at 15 and shifts them to 16/17/18. The two files
+    // are distinguished by frame count (RA2 19, YR 21) but the launch flag
+    // is authoritative for a `-ra2` run.
+    let (green_frame, yellow_frame, red_frame) = if crate::util::ra2_launch::enabled() {
+        (15usize, 16usize, 17usize)
+    } else {
+        (16usize, 17usize, 18usize)
+    };
     use crate::util::native_x87::MaskedX87Ordering::Greater;
     let frame = if entity
         .health
         .compare_ratio(object.strength, rules.general.condition_red)
         != Greater
     {
-        18
+        red_frame
     } else if entity
         .health
         .compare_ratio(object.strength, rules.general.condition_yellow)
         != Greater
     {
-        17
+        yellow_frame
     } else {
-        16
+        green_frame
     };
     strip.fills.reserve(filled as usize);
     for index in 0..filled {
@@ -2489,6 +2585,17 @@ pub(crate) struct ScalePipDraw {
     pub offset_pixels: [i32; 2],
 }
 
+/// VERA's bound on the pips one scale row draws. A row's count comes from
+/// INI keys gameplay keeps raw (`Passengers=`, `MaxNumberOccupants=`,
+/// `Ammo=`, a MindControl weapon's `Damage=`), and each frame builds one pip
+/// per slot, so a value near `i32::MAX` would freeze the game or exhaust
+/// memory as soon as the row draws. At 4 pixels a pip, a longer row runs off
+/// any screen; retail rows hold at most 100. The storage row is bound the
+/// same way (`GetPipMax` grows with a custom foundation's width). A stock
+/// passenger row longer than the bound that carries more than the bound
+/// drops its row, as an overfull one does.
+const PIP_ROW_LIMIT: usize = 256;
+
 /// PIPS2's infantry/unit filler count: the draw owner loads current Type+380
 /// Size, subtracts 1.0 in x87, then calls FTOL and consumes positive results.
 pub(super) fn passenger_pip_filler_count(size: f64) -> i32 {
@@ -2519,7 +2626,9 @@ fn ares_passenger_pip_frames(
 ) -> (Vec<usize>, usize) {
     use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
 
-    let max = usize::try_from(object.pip_max(rules)).unwrap_or(0);
+    let max = usize::try_from(object.pip_max(rules))
+        .unwrap_or(0)
+        .min(PIP_ROW_LIMIT);
     let pip_of = |id: u64| {
         let passenger = sim.entities().get(id)?;
         let kind = sim.interner().object_type(passenger.type_ref(), rules)?;
@@ -2639,9 +2748,13 @@ fn scale_pip_rows(
     }
     //709C27..D17 precedes passengers and uses raw OccupyPip, including
     //reader-produced1..5 as well as person frames6..12. Keep its own origin.
+    // Both RA2 and YR draw occupant pips here: hiding them in -ra2 made
+    // garrisons invisible to both sides, which hurts playability more than
+    // any native fidelity gain. Revisit only if balance actually demands it.
     if building && object.show_occupant_pips && object.max_number_occupants > 0 {
         let occupants = entity.passenger_role().occupants().ids();
-        pips.extend((0..object.max_number_occupants as usize).map(|slot| {
+        let slots = (object.max_number_occupants as usize).min(PIP_ROW_LIMIT);
+        pips.extend((0..slots).map(|slot| {
             let frame = occupants
                 .get(slot)
                 .and_then(|id| sim.entities().get(*id))
@@ -2672,7 +2785,9 @@ fn scale_pip_rows(
         return pips;
     }
     if object.passengers > 0 && !rules.ares() {
-        let slots = usize::try_from(object.pip_max(rules)).unwrap_or(0);
+        let slots = usize::try_from(object.pip_max(rules))
+            .unwrap_or(0)
+            .min(PIP_ROW_LIMIT);
         let row_start = pips.len();
         pips.extend((0..slots).map(|slot| {
             //709F50..A06F: later Gunner slots advance two extra steps.
@@ -2772,17 +2887,19 @@ fn scale_pip_rows(
         }
         let filled = entity
             .techno_pip_fill_level(object, rules, None)
-            .clamp(0, object.pip_max(rules).max(0));
+            .clamp(0, object.pip_max(rules).max(0))
+            .min(PIP_ROW_LIMIT as i32);
         //70A3B7 resets this arm three pixels above the ordinary Y anchor,
         //even after a preceding spawn row. No empty Ammo outlines are drawn.
-        pips.extend((0..filled as usize).map(|slot| pip(slot, 13, row_y - 3)));
+        let ammo_frame = stock_ammo_pip_frame();
+        pips.extend((0..filled as usize).map(|slot| pip(slot, ammo_frame, row_y - 3)));
         return pips;
     }
     if object.pip_scale == crate::rules::object_type::PipScale::MindControl {
         //716290 case5 reads current primary Weapon.Damage, independently of
         //the manager's retained admission capacity.
         let maximum = object.pip_max(rules);
-        let slots = usize::try_from(maximum).unwrap_or(0);
+        let slots = usize::try_from(maximum).unwrap_or(0).min(PIP_ROW_LIMIT);
         let manager = entity.capture_manager.as_ref();
         // Phobos `GetControlledCount` may sum `MindControlSize=` instead of
         // the node count; the fill and overload read that effective count.
@@ -2816,7 +2933,7 @@ fn scale_pip_rows(
         .count();
     let ore = bales.len() - gems;
     let maximum = object.pip_max(rules);
-    let slots = usize::try_from(maximum).unwrap_or(0);
+    let slots = usize::try_from(maximum).unwrap_or(0).min(PIP_ROW_LIMIT);
     //70A230..29C independently rounds Storage slot1 (gems) and (slot3+2)+0
     //(ore) through amount / current Type.Storage * GetPipMax + binary64 0.5.
     //Ambient0E7F is PC53/chop: stock4/40 remains just below0.5 after the
@@ -2908,7 +3025,11 @@ pub(crate) fn build_software_cursor_instances(
     };
     // Row 0 is still the shape shown over a node, so its phase steps:
     // leaving the node restarts the next cursor's animation.
-    let Some(animated) = software_cursor_frame_index(id, sequence) else {
+    let Some(animated) = state
+        .match_state
+        .input
+        .software_cursor_frame_index(id, sequence)
+    else {
         return (Vec::new(), None);
     };
     let (id, sequence, index) = if id == CursorId::Default
@@ -2998,6 +3119,86 @@ mod mind_control_pip_tests;
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
+    /// RA2's PIPS2.SHP lacks the magenta pip YR inserts at frame 12, so the
+    /// filled Ammo magazine sits one slot earlier than in YR. Using YR's 13
+    /// on RA2's strip selects the dark empty magazine and a loaded aircraft
+    /// shows no pips.
+    #[test]
+    fn stock_ammo_pip_frame_tracks_the_ra2_strip() {
+        assert_eq!(super::ammo_pip_frame_for(true), 12, "RA2 conquer.mix green magazine");
+        assert_eq!(super::ammo_pip_frame_for(false), 13, "YR conqmd.mix green magazine");
+    }
+
+    /// Convenience Help's reload row, formatted when drawn from the facts
+    /// the frame captured: an allied unit and an allied building that are
+    /// reloading their magazines each draw the filled VERA:InfoReload row.
+    #[test]
+    fn convenience_reload_rows_reach_allied_units_and_buildings() {
+        use crate::rules::ruleset::RuleSet;
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[VehicleTypes]\n0=AMMO\n[AMMO]\nStrength=100\nAmmo=2\nReload=150\n\
+             [BuildingTypes]\n0=AMMOBLDG\n[AMMOBLDG]\nStrength=100\nAmmo=2\nReload=150\n",
+        ))
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        let mut spend_one = |name: &str, cell: u16| {
+            let id = sim
+                .spawn_object(name, "Americans", cell, cell, 0, &rules)
+                .unwrap();
+            crate::sim::arena_fixture::install_status_ammo_state(
+                sim.entities_mut_for_test().get_mut_for_test(id).unwrap(),
+                rules.object(name).unwrap(),
+                "reloading",
+                Some(1),
+            );
+            id
+        };
+        let unit = spend_one("AMMO", 8);
+        let building = spend_one("AMMOBLDG", 14);
+        let player = sim.interner().get("Americans");
+        sim.session_mut_for_test()
+            .set_current_house_for_test(player);
+        let frame = crate::app::presentation::frame::PresentationFrame::of_test_with_status_rows(
+            &sim, &rules, true,
+        );
+        let rows = |id| {
+            frame
+                .object(id)
+                .unwrap()
+                .hud
+                .info_lines()
+                .collect::<Vec<_>>()
+        };
+        let reload = crate::i18n::fill(
+            &crate::i18n::find("VERA:InfoReload").unwrap(),
+            &[("time", &super::super::super_timers::time_text(150 / 15))],
+        );
+        assert_eq!(rows(unit), [reload]);
+        assert_eq!(rows(building), rows(unit));
+    }
+
+    /// A huge `Ammo=` or `Passengers=` builds a pip row of
+    /// [`super::PIP_ROW_LIMIT`] pips, not one per unit of the key.
+    #[test]
+    fn huge_pip_counts_stop_at_the_row_bound() {
+        use crate::rules::ruleset::RuleSet;
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[VehicleTypes]\n0=AMMO\n1=BUS\n\
+             [AMMO]\nStrength=100\nAmmo=100000\nPipScale=Ammo\n\
+             [BUS]\nStrength=100\nPassengers=100000\nPipScale=Passengers\n",
+        ))
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        for (name, cell) in [("AMMO", 8), ("BUS", 14)] {
+            let id = sim
+                .spawn_object(name, "Americans", cell, cell, 0, &rules)
+                .unwrap();
+            let entity = sim.entities().get(id).unwrap();
+            let rows = super::scale_pip_rows(&sim, entity, &rules);
+            assert_eq!(rows.len(), super::PIP_ROW_LIMIT, "{name}");
+        }
+    }
+
     #[cfg(not(feature = "phobos"))]
     #[test]
     fn ares_enemy_insignia_checks_the_owners_allies_and_the_observer_house() {
@@ -3240,7 +3441,7 @@ mod tests {
             false,
         );
         actor.lifecycle.set_in_limbo_for_test(false);
-        actor.selection.set_selected_for_test(true);
+        actor.seldom.selection.set_selected_for_test(true);
         sim.entities_mut_for_test().insert(actor);
         sim.resubmit_entity_display_for_test(1);
         sim.session_mut_for_test()
@@ -3284,6 +3485,7 @@ mod tests {
         );
         sim.entity_mut_for_test(1)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(false);
         assert!(!admitted(&sim, None));
@@ -3356,14 +3558,18 @@ mod tests {
                 if disguised {
                     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
                     disguise.acquire(0, None, None);
-                    entity.disguise = Some(disguise);
+                    entity.seldom.disguise = Some(disguise);
                 }
                 entity
+                    .seldom
                     .selection
                     .set_selected_for_test(input["selected"].as_bool().unwrap());
-                entity.discovery.set_discovered_by_current_house_for_test(
-                    input["discovered"].as_bool().unwrap(),
-                );
+                entity
+                    .seldom
+                    .discovery
+                    .set_discovered_by_current_house_for_test(
+                        input["discovered"].as_bool().unwrap(),
+                    );
                 sim.entities_mut_for_test().insert(entity);
                 sim.resubmit_entity_display_for_test(1);
                 sim.session_mut_for_test()
@@ -3444,10 +3650,10 @@ mod tests {
                 false,
             );
             entity.lifecycle.set_in_limbo_for_test(false);
-            entity.selection.set_selected_for_test(selected);
+            entity.seldom.selection.set_selected_for_test(selected);
             let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
             disguise.acquire(0, None, None);
-            entity.disguise = Some(disguise);
+            entity.seldom.disguise = Some(disguise);
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
             health_bar_drawable(
@@ -3607,7 +3813,7 @@ mod tests {
             if disguised {
                 let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
                 disguise.acquire(0, None, None);
-                entity.disguise = Some(disguise);
+                entity.seldom.disguise = Some(disguise);
             }
             sim.entities_mut_for_test().insert(entity);
             sim.session_mut_for_test()
@@ -3678,7 +3884,7 @@ mod tests {
         )
         .expect("revealed time-machine hover");
         assert_eq!(hover.stable_id, id);
-        assert!(!target.selection.is_selected());
+        assert!(!target.seldom.selection.is_selected());
         println!(
             "CATIME01 raw_anchor_mapped={} hover={hover:?}",
             sim.fog()
@@ -3745,4 +3951,54 @@ mod tests {
         assert_eq!(self_heal_pip(Unit, false, 1, 0), None);
         assert_eq!(self_heal_pip(Unit, false, 0, 1), Some(SelfHealPip::Units));
     }
+
+    /// Occupant pips stay visible in both profiles. Hiding them under -ra2
+    /// made garrisons impossible to read for either side, so the RA2 launch
+    /// profile must draw the same pip rows as YR.
+    #[test]
+    fn ra2_shows_garrison_occupant_pips_like_yr() {
+        // This test lives in the main crate; its ra2_launch flag is a
+        // separate process-global from vera20k-core's tests. Serialize within
+        // this crate only.
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let before = crate::util::ra2_launch::enabled();
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[InfantryTypes]\n0=E1\n[BuildingTypes]\n0=HOUSE\n\
+             [E1]\nStrength=100\n\
+             [HOUSE]\nStrength=800\nCanBeOccupied=yes\nMaxNumberOccupants=2\n",
+        ))
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        let building = sim
+            .spawn_object("HOUSE", "Americans", 12, 12, 0, &rules)
+            .unwrap();
+        let e1 = sim
+            .spawn_object("E1", "Americans", 13, 13, 0, &rules)
+            .unwrap();
+        let e2 = sim
+            .spawn_object("E1", "Americans", 14, 14, 0, &rules)
+            .unwrap();
+        {
+            let b = sim.entities_mut_for_test().get_mut_for_test(building).unwrap();
+            b.passenger_role_mut_for_test()
+                .set_occupants_for_test(vec![e1, e2], 0);
+        }
+        let entity = sim.entities().get(building).unwrap();
+
+        crate::util::ra2_launch::set(false);
+        let yr = scale_pip_rows(&sim, entity, &rules);
+        assert!(yr.len() >= 2, "YR draws one pip per occupant slot");
+
+        crate::util::ra2_launch::set(true);
+        let ra2 = scale_pip_rows(&sim, entity, &rules);
+        assert_eq!(
+            ra2.len(),
+            yr.len(),
+            "RA2 must draw the same occupant pip rows as YR"
+        );
+
+        crate::util::ra2_launch::set(before);
+    }
+
 }

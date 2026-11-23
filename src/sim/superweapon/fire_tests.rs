@@ -142,7 +142,7 @@ fn click_fire_matches_native() {
             &sw,
             (33, 44),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             None,
             false,
         );
@@ -402,7 +402,7 @@ fn default_build_refuses_forged_extension_launches_before_mutation_or_ai_rng() {
             sw_type,
             (20, 20),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
         sim.houses
@@ -419,7 +419,7 @@ fn default_build_refuses_forged_extension_launches_before_mutation_or_ai_rng() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(before_ai, sim.state_hash(), "{kind:?}");
         sim.houses
@@ -461,7 +461,7 @@ fn default_build_stock_launch_ignores_extension_money_and_building_tags() {
         sw_type,
         (20, 20),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert_eq!(wallet, sim.houses[&owner].economy().available_money());
@@ -511,7 +511,7 @@ fn default_build_refuses_forged_paid_commands_and_saved_selection_state() {
         sw_type,
         (20, 20),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         crate::sim::superweapon::SuperWeaponTargetSource::Manual,
         Some(selection),
     ));
@@ -555,7 +555,7 @@ fn ares_a_super_still_charged_after_fire_alerts_no_house() {
             sw_type_id,
             (33, 44),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         );
         let (_, frame) = sim.houses[&owner].super_weapon_defense();

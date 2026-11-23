@@ -196,7 +196,7 @@ fn nested_death_bridge_continuation_finishes_before_parent_area_returns() {
                     0,
                     6,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             // Both objects are in the deck list at the identical coordinate,
@@ -227,12 +227,13 @@ fn nested_death_bridge_continuation_finishes_before_parent_area_returns() {
         let warhead = sim.interner.intern("WH");
         let hit = EntityDamageEvent::area(units[0], 100, 0, RAD_NO_ATTACKER, None, warhead);
         let mut run = world_receiver::ReceiverRun::default();
-        let (effects, _) = world_receiver::commit_area(
+        let effects = world_receiver::commit_area(
             &mut sim,
             &mut run,
             &[combat_aoe::AreaDamageReceiver::Entity(hit)],
             &rules,
             None,
+            &mut Vec::new(),
         );
         assert_eq!(run.handled_deaths, units, "both recursive receivers ran");
         run.finish();

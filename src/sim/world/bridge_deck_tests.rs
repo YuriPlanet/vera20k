@@ -44,6 +44,7 @@ fn structural_fallout_retires_effect_only_ground_victim() {
         .entities
         .get_mut(victim)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     // Supplied structural47DD70 callback. Concrete ground overlays205..232
@@ -54,11 +55,11 @@ fn structural_fallout_retires_effect_only_ground_victim() {
         4,
         4,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let object = sim.substrate.entities.get(victim).unwrap();
     assert!(!object.lifecycle.object_alive());
-    assert!(object.death.is_dying() && !object.selection.is_selected());
+    assert!(object.death.is_dying() && !object.seldom.selection.is_selected());
     assert!(!sim.substrate.occupancy.contains_entity(4, 4, victim));
     assert!(!sim.live_object_order_snapshot().contains(&victim));
     assert_eq!(
@@ -123,7 +124,7 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
                 0,
                 4,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         {
@@ -205,7 +206,7 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
         4,
         4,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let ground = vec![older, newer, building];
     for (x, expected) in [(4, ground.clone()), (3, vec![building])] {
@@ -366,7 +367,7 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
                 &rules,
                 Some(&registry),
                 hit,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         } else {
             sim.session.set_binary_frame_for_test(100 + 451);
@@ -374,7 +375,7 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
                 hut,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 sim.substrate.entities.get(hut).unwrap().health.current(),

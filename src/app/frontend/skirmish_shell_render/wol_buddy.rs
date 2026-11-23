@@ -6,16 +6,17 @@
 //! chrome.
 
 use super::chrome::push_flag_entry_clipped_centered;
-use super::controls::{ControlPaint, list_controls, paint_control};
+use super::controls::list_view_controls;
 use super::text::rect_to_text_rect;
-use super::wol_lobby::{WolLobbyPaint, label, push_icon, row_rgb};
-use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
+use super::wol_lobby::{WolLobbyPaint, push_icon, row_rgb};
+use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH};
 use crate::app::AppState;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint;
-use crate::render::shell_text::{self, ShellAlign};
-use crate::ui::shell::geom::RectPx;
+use crate::render::shell_text;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 use crate::ui::wol_buddy::*;
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 pub(crate) fn paint_wol_buddy_children(
     state: &AppState,
@@ -48,55 +49,31 @@ pub(crate) fn paint_wol_buddy_children(
             RectPx::new(row.x + x, row.y, w, row.h)
         })
     };
-    // The headers are left-aligned statics; the statistics' labels SS_RIGHT.
-    for (index, ((key, _), rect)) in LABELS.iter().zip(layout.labels).enumerate() {
-        let align = if index < 2 {
-            ShellAlign::NONE
-        } else {
-            ShellAlign::H_RIGHT
-        };
-        paint
-            .texts
-            .push(text(&label(state, key), rect, align, SHELL_LABEL_TEXT_RGB));
+    // The captions, heading, statistics and observer box are widgets.
+    let controller = &state.frontend.shell_controller;
+    let gui = controller.gui();
+    let root = controller.root_in(DIALOG);
+    if let Some(root) = root {
+        // The observer image paints as its art below, not as a box.
+        let ids = super::gui_paint::child_ids_except(gui, root, &[OBSERVER_IMAGE]);
+        let style = super::gui_paint::GuiStyle::default();
+        let widgets = super::gui_paint::paint_gui_ids(state, gui, root, ids, scale, style);
+        paint.controls.extend(widgets.controls);
+        paint.texts.extend(widgets.texts);
     }
-    let value = |id: u16| match &ui.texts {
-        Some(texts) => texts
-            .iter()
-            .find(|(control, _)| *control == id)
-            .map(|(_, value)| value.clone())
-            .unwrap_or_default(),
-        None if id == HEADING => String::new(),
-        None => label(state, UNKNOWN_STATS_KEY),
-    };
-    let heading = value(HEADING);
-    if !heading.is_empty() {
-        paint.texts.push(text(
-            &heading,
-            layout.heading,
-            ShellAlign::H_CENTER,
-            SHELL_LABEL_TEXT_RGB,
-        ));
-    }
-    for (id, rect) in STATS.iter().copied().zip(layout.stats) {
-        let value = value(id);
-        if !value.is_empty() {
-            paint
-                .texts
-                .push(text(&value, rect, ShellAlign::NONE, SHELL_LABEL_TEXT_RGB));
-        }
-    }
+    let node = |id: u16| root.and_then(|root| gui.find_id(root, id.into()));
 
     // Refresh's picture: released, pressed, or disabled (the released
     // face; the owner-draw button greys nothing of a picture).
     if let Some(art) = art {
-        let face = if ui.buttons.is_pressed(REFRESH) {
+        let face = if node(REFRESH).is_some_and(|refresh| gui.shows_pressed(refresh)) {
             REFRESH_FACES.1
         } else {
             REFRESH_FACES.0
         };
         if let Some((_, entry)) = art.icons.iter().find(|(name, _)| name == face) {
             let (w, h) = entry.native_size();
-            let base = scale.base_rect(layout.refresh);
+            let base = scale.base_rect(layout.rect_of(REFRESH).unwrap_or_default());
             let [x, y] = scale.scale_point([base.x + (base.w - w) / 2, base.y + (base.h - h) / 2]);
             shell_paint::push_entry_grown(
                 &mut paint.icons,
@@ -108,31 +85,36 @@ pub(crate) fn paint_wol_buddy_children(
             );
         }
     }
-    paint_control(
-        &mut paint.controls,
-        &atlas.control_chrome(),
-        ControlPaint::Checkbox {
-            rect: layout.observer_toggle,
-            checked: ui.observer,
-        },
-        scale,
-    );
     if let Some(entry) = atlas.lan_observer_toggle(ui.observer) {
         push_flag_entry_clipped_centered(
             &mut paint.controls,
             entry,
-            layout.observer_image,
+            layout.rect_of(OBSERVER_IMAGE).unwrap_or_default(),
             scale,
             SHELL_CONTROL_DEPTH,
         );
     }
 
-    let geometry = ui.list.geometry(layout.list, ui.rows.len(), scale);
-    list_controls(&mut paint.controls, atlas, geometry, &ui.list, true, scale);
+    // The list widget's top and pushed arrow.
+    let view = node(LIST).and_then(|list| gui.list_view(list));
+    let (top, pressed) = view.map_or((0, None), |view| (view.top, view.pressed));
+    let geometry = ShellListGeometry::new(
+        layout.rect_of(LIST).unwrap_or_default(),
+        ui.rows.len(),
+        top,
+        ListMetrics::scaled(scale),
+    );
+    list_view_controls(
+        &mut paint.controls,
+        atlas,
+        geometry,
+        (ui.selected, top, pressed),
+        scale,
+    );
     for (visible, row) in ui
         .rows
         .iter()
-        .skip(ui.list.top_index)
+        .skip(top)
         .take(geometry.visible_rows)
         .enumerate()
     {

@@ -62,7 +62,7 @@ impl Simulation {
         &self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -87,7 +87,7 @@ impl Simulation {
         id: u64,
         operational: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -107,7 +107,7 @@ impl Simulation {
         let owner = working_sound_owner(id);
         self.sound_events
             .emit(SimSoundEvent::ObjectSoundDetached { owner });
-        if let Some(sound_id) = sound.clone() {
+        if let Some(sound_id) = sound.as_deref().map(|sound| rules.sound_name(sound)) {
             self.sound_events.emit(SimSoundEvent::AnimationStarted {
                 anim_id: owner,
                 sound_id,

@@ -43,7 +43,7 @@ pub const fn clamp_game_speed(speed: i32) -> u8 {
 ///
 /// Set once at game start except for the synchronized offline game-speed
 /// transition admitted by [`GameOptions::apply_in_game_speed`].
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct GameOptions {
     // --- Runtime-checked by gameplay systems ---
     /// Defeat when all buildings lost (vs all objects lost). Rules+0x14B6.

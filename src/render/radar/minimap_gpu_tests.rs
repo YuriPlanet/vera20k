@@ -24,7 +24,7 @@ fn ordinary_frame(scene: &mut HeadlessScenario, payload: Option<Command>) {
             &commands,
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
 }

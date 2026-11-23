@@ -170,7 +170,7 @@ pub(crate) fn mission_hunt_deploy(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     match sim
         .substrate
@@ -188,7 +188,7 @@ pub(crate) fn mission_hunt_deploy(
         }
         Some(1) => {
             if let Some(entity) = sim.substrate.entities.get_mut(id)
-                && !entity.mcv_deploy_pending.is_pending()
+                && !entity.seldom.mcv_deploy_pending.is_pending()
             {
                 entity.mission.set_handler_state(0);
             }
@@ -220,7 +220,7 @@ pub(crate) fn try_to_deploy(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some((yard, cell, owner)) = sim.substrate.entities.get(id).and_then(|entity| {
         Some((
@@ -348,7 +348,7 @@ pub(crate) fn mission_unload(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let state = sim
         .substrate
@@ -400,7 +400,7 @@ pub(crate) fn mission_unload(
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|e| e.mcv_deploy_pending.is_pending());
+                .is_some_and(|e| e.seldom.mcv_deploy_pending.is_pending());
             if pending {
                 let accepted = sim.deploy_mcv(id, rules, registry, effects);
                 finish_retry(&mut sim.substrate, id, accepted);
@@ -434,7 +434,7 @@ pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64, rules: &Rule
         .get(id)
         .filter(|e| !e.death.is_dying())
     {
-        if e.mcv_deploy_pending.is_pending() {
+        if e.seldom.mcv_deploy_pending.is_pending() {
             sim.substrate
                 .entities
                 .get_mut(id)
@@ -468,7 +468,7 @@ pub(crate) fn finish_retry(substrate: &mut ObjectSubstrate, id: u64, accepted: b
         && let Some(e) = substrate.entities.get_mut(id)
         && e.navigation.nav_com().is_some()
     {
-        e.mcv_deploy_pending.clear();
+        e.seldom.mcv_deploy_pending.clear();
     }
 }
 
@@ -477,7 +477,7 @@ pub(crate) fn per_cell_process(
     id: u64,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // 0x739EEC..0x739EF8 has no current-mission guard. Stop and Move do not
     // erase pending intent; native Deploy decides whether NavCom allows it.
@@ -485,7 +485,7 @@ pub(crate) fn per_cell_process(
         .substrate
         .entities
         .get(id)
-        .is_some_and(|e| !e.death.is_dying() && e.mcv_deploy_pending.is_pending())
+        .is_some_and(|e| !e.death.is_dying() && e.seldom.mcv_deploy_pending.is_pending())
     {
         sim.deploy_mcv(id, rules, registry, effects);
     }

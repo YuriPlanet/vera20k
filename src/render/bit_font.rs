@@ -130,6 +130,8 @@ pub struct BitFont {
     pub(crate) tab_width: u32,
     pub(crate) tab_origin: u32,
     pub(crate) darken_texture: Option<BatchTexture>,
+    /// A `RefCell`, like `fit` and `raster`: every text draw measures and
+    /// lays out through the one `&BitFont` the renderer lends all passes.
     engine: RefCell<TextEngine>,
     /// GPU-free test fonts: every text takes the native path and places
     /// whole cells, as GAME.FNT's own glyph table did.

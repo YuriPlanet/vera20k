@@ -171,21 +171,19 @@ pub fn pack_launch_session_without_start_validation(
     options.crates = state.crates;
     options.mcv_redeploy = state.mcv_redeploy;
     // Then SkirmishDialog's Start/Back packing (`0x006AD88F..0x006AD8A4`)
-    // forces four session bytes whatever the rules default: Fog of War
-    // (`0x00A8B31F`) off, Bridge Destruction (`0x00A8B260`) on, Harvester
-    // Truce (`0x00A8B31D`) off and MultiEngineer (`0x00A8B26C`) off. Only the
-    // network setup dialogs offer the last three.
-    options.fog_of_war = false;
+    // forces Bridge Destruction (`0x00A8B260`) on, and Fog of War, Harvester
+    // Truce and MultiEngineer off. VERA's Game Options can turn those three
+    // on and set Tech Level and Bases; with nothing turned on the session
+    // holds the forced values ([`super::skirmish_session_options`]).
     options.bridges_destroyable = true;
-    options.harvester_truce = false;
-    options.multi_engineer = false;
+    options.set_session_options(state.session);
 
     Ok(SkirmishLaunchSession::from_rows(
         SkirmishLaunchMode::from_game_mode(selected_mode),
         Some(selected_map.file_name.clone()),
         vec![crate::skirmish_launch::SkirmishHumanSlot {
             raw_slot_index: Some(0),
-            name: state.player_name_edit.text.clone(),
+            name: state.player_name.clone(),
             slot: local,
             role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
         }],

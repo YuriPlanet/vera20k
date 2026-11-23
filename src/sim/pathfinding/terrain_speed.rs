@@ -39,8 +39,12 @@
 //! Depends on: `ResolvedTerrainGrid` (cell height + land type),
 //! `SpeedCostProfile` (INI-parsed terrain percentages).
 
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+use crate::map::cell_index::NativeCellIdentity;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::SpeedType;
+use crate::sim::movement::ground_pose;
+use crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
 use crate::util::native_x87::{MaskedX87Chop53 as X, MaskedX87Ordering, NativeF64Bits};
 
 // --- Constants from the original engine ---
@@ -92,7 +96,7 @@ pub fn is_at_or_below_condition_yellow(
 /// uphill and a downhill coefficient, selected by the mover's SpeedType (Track
 /// uses the tracked pair, every other SpeedType uses the wheeled pair) and by
 /// travel direction. Vanilla values are 1.0 uphill / 1.2 downhill for both.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct TerrainSpeedConfig {
     /// Tracked vehicle moving uphill (`TrackedUphill=`, Rules +0x768).
     pub tracked_uphill: NativeF64Bits,
@@ -142,6 +146,7 @@ pub(crate) fn fresh_track_speed_fraction(
     speed_type: SpeedType,
     mover_world: (i32, i32),
     next_cell: (u16, u16),
+    [mover_on_bridge, next_on_bridge]: [bool; 2],
     road_row: Option<NativeF64Bits>,
     terrain: &ResolvedTerrainGrid,
     config: &TerrainSpeedConfig,
@@ -159,12 +164,13 @@ pub(crate) fn fresh_track_speed_fraction(
         },
         0,
     );
-    let slope_factor = slope_factor_for(
-        speed_type,
-        ground_height_at_world(mover_world, terrain),
-        ground_height_at_world((centre.x, centre.y), terrain),
-        config,
-    );
+    let cells = NativeCellQuery::canonical(terrain);
+    // Drive4B3D21 / Ship grade comparison. Each end of the step uses its
+    // own travel surface so a level bridgehead does not inherit a grade
+    // from terrain below the deck.
+    let current_height = track_grade_height(&cells, mover_world, mover_on_bridge);
+    let next_height = track_grade_height(&cells, (centre.x, centre.y), next_on_bridge);
+    let slope_factor = slope_factor_for(speed_type, current_height, next_height, config);
     combine_speed_stages(terrain_factor, slope_factor, below_condition_yellow)
 }
 
@@ -210,9 +216,9 @@ fn combine_speed_stages(
 /// The low bytes of the world coordinates carry the sub-cell offset, which is
 /// the whole point: on a ramp, two positions in one cell have different ground
 /// heights. A slope past the native 21-record table reads 0.
-fn ground_height_at_world(world: (i32, i32), terrain: &ResolvedTerrainGrid) -> i32 {
-    crate::sim::movement::ground_pose::query_ground_height(
-        &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+fn ground_height_at_world(world: (i32, i32), cells: &NativeCellQuery<'_>) -> i32 {
+    ground_pose::query_ground_height(
+        cells,
         crate::sim::components::DriveCoord {
             x: world.0,
             y: world.1,
@@ -220,6 +226,19 @@ fn ground_height_at_world(world: (i32, i32), terrain: &ResolvedTerrainGrid) -> i
         },
     )
     .unwrap_or(0)
+}
+
+/// The track surface is the whole-level high deck. An ordinary deck has the
+/// stock four-level lift above the signed cell level (Object5F5F00).
+fn track_grade_height(cells: &NativeCellQuery<'_>, world: (i32, i32), on_bridge: bool) -> i32 {
+    if on_bridge {
+        let cell = cells.lookup_world(world.0, world.1);
+        if cell != NativeCellIdentity::Dummy && cells.flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0 {
+            let level = i32::from(cells.ground_fields(cell).0 as i8);
+            return ground_pose::deck_surface_z(cells, cell, level * GROUND_LEVEL_HEIGHT_LEPTONS);
+        }
+    }
+    ground_height_at_world(world, cells)
 }
 
 /// Factor 1: terrain type speed from INI land-type percentages.
@@ -246,7 +265,7 @@ fn terrain_speed_factor(
     }
 }
 
-/// Pick the slope coefficient from two sampled ground heights, in leptons.
+/// Pick the slope coefficient from two surface heights, in leptons.
 ///
 /// Destination higher than the mover = uphill; lower = downhill; equal = no
 /// change. Track SpeedType uses the tracked pair, every other SpeedType the
@@ -337,6 +356,7 @@ mod tests {
                     speed,
                     (128, 128),
                     (1, 0),
+                    [false; 2],
                     None,
                     &terrain,
                     &TerrainSpeedConfig::default(),
@@ -424,6 +444,7 @@ mod tests {
             SpeedType::Track,
             on_ramp,
             FLAT,
+            [false; 2],
             None,
             &terrain,
             &config,
@@ -436,6 +457,7 @@ mod tests {
             SpeedType::Track,
             on_flat,
             (FLAT.0 + 1, FLAT.1),
+            [false; 2],
             None,
             &terrain,
             &config,

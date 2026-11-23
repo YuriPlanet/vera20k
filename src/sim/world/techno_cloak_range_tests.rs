@@ -42,7 +42,7 @@ fn placed_sub_with_attack(
     assert_eq!(actor.health.current(), sub_type.strength);
     assert_eq!(actor.cloak.as_ref().unwrap().state(), 0);
     let frame = sim.session.binary_frame() as i32;
-    assert!(actor.rearm_timer.timer().expired(frame));
+    assert!(actor.seldom.rearm_timer.timer().expired(frame));
     assert!(actor.cloak.as_ref().unwrap().recloak_delay().expired(frame));
     assert!(sim.houses[&owner].is_human());
     assert!(sim.apply_command(

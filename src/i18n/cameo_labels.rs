@@ -19,6 +19,17 @@
 //!
 //! `tools/language_assets.py` writes it.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::collections::HashMap;
 use std::sync::Arc;
 

@@ -214,9 +214,7 @@ impl TypeSelectOutcome {
 
 // Cursor identity and software-cursor DTOs are render-owned (F06);
 // re-exported so app consumers keep their paths.
-pub(crate) use crate::render::cursor_atlas::{
-    CursorId, SoftwareCursor, SoftwareCursorFrame, SoftwareCursorSequence,
-};
+pub(crate) use crate::render::cursor_atlas::{CursorId, SoftwareCursor, SoftwareCursorSequence};
 
 #[cfg(all(test, tests_app))]
 mod tests {
@@ -324,12 +322,17 @@ pub(crate) enum CursorFeedbackKind {
     NoDeploy,
     /// Enter cursor — garrison, capture, board transport, sabotage, grind.
     Enter,
+    /// Tunnel entrance (35) uses the Enter row and the radar drops its action.
+    EnterTunnel,
     /// Grind (11) shares Enter's cursor but is excluded by the radar keep table.
     Grind,
     /// NoEnter cursor (action 0x1F, row 0x1A at `0x004AB382`).
     NoEnter,
     /// Tote cursor (action 0x11): a Carryall over a Unit it may lift.
     Tote,
+    /// Heal (action 0x1B): a healer infantryman over a damaged ally without
+    /// Ares, whose arm sets its own cursor.
+    Heal,
     /// Engineer action28 damage cursor. Its uncommon authored-threshold
     /// display route remains outside the ordinary repair cursor proof.
     EngineerDamage,

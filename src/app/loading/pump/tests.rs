@@ -178,6 +178,69 @@ fn replay_install_uses_recorded_rules_and_keeps_skirmish_map_construction() {
 }
 
 #[test]
+fn authored_campaign_replay_uses_campaign_prefix_and_no_stock_seats() {
+    use crate::app::loading::fresh_scenario::{FreshScenarioFamily, FreshStartupProvenance};
+    use crate::app::match_bootstrap::{MatchSeed, MatchSeedSource};
+    use crate::map::campaign_manifest::CampaignManifest;
+    use crate::sim::scenario_bootstrap::AuthoredCampaignStart;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let dir =
+        crate::map::source::test_support::TestDirectory::new("authored-campaign-replay-summary");
+    let manifest_path = dir.path().join("campaign.ini");
+    std::fs::write(
+        &manifest_path,
+        b"[Stage Opening]\nMap=open.map\n[Roles Opening]\nLead=Americans\nWing=Americans\n[Grants Opening]\nWing.Russians=UnitsOnly",
+    ).unwrap();
+    let manifest = CampaignManifest::load(&manifest_path).unwrap();
+    let start =
+        AuthoredCampaignStart::from_stage(&manifest.stages[0], 0, 2, Default::default()).unwrap();
+    let policy = start.rule_policy();
+    let logical_map = "campaigns/test/open.map";
+    let local_map = dir
+        .path()
+        .join("relocated.map")
+        .to_string_lossy()
+        .into_owned();
+    let startup = LoadingStartup::AuthoredCampaignReplay {
+        start: Box::new(start),
+        logical_map: logical_map.into(),
+        local_map: local_map.clone(),
+        map_sha256: crate::util::sha256::sha256_hex(b"campaign scenario fixture"),
+        seed: MatchSeed {
+            value: 31,
+            source: MatchSeedSource::SavedScenario,
+            seed_authority_certifying: false,
+        },
+        native_id_prefix: 15,
+        game_mode: ScenarioGameMode::Wol,
+        game_speed: 4,
+    };
+    let source = crate::map::source::LoadedMapSource::Loose {
+        cache_lease: Default::default(),
+        path: local_map.clone().into(),
+        payload_len: 32,
+        source_sha256: crate::util::sha256::sha256_hex(b"campaign scenario fixture"),
+    };
+    let initial = MapLoadInitial::from_test_map_source(prefix_test_map(&[]), source);
+    let context = FreshScenarioLoadContextDescriptor::admit(
+        &startup,
+        initial.map_data(),
+        initial.map_source(),
+        &mut None,
+    )
+    .unwrap();
+    assert_eq!(context.family(), FreshScenarioFamily::Campaign);
+    assert_eq!(context.startup_provenance(), FreshStartupProvenance::Replay);
+    assert_eq!(context.match_seed(), 31);
+    assert!(startup.launch_session().is_none());
+    assert_eq!(startup.match_spec().rules(), policy);
+    assert_eq!(startup.authored_campaign_speed(), Some(4));
+    assert_eq!(startup.selected_map_file(), logical_map);
+    assert_eq!(startup.physical_map_file(), local_map);
+}
+
+#[test]
 #[ignore = "slow; retail warm/cold ordered online startup"]
 fn sequenced_wol_cold_and_warm_rules_share_world_and_agreement_identity() {
     cold_and_warm_rules_share_world_and_agreement_identity(
@@ -225,7 +288,7 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
         session.set_network_start_seed(73).unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
     }
-    let startup = session.freeze_network_start(73).unwrap();
+    let startup = session.freeze_network_start(73, None).unwrap();
     let LoadingStartup::Network(admitted) = &startup else {
         unreachable!()
     };
@@ -311,6 +374,7 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
                 45,
                 std::num::NonZeroU32::new(u32::from(send_rate)).unwrap(),
                 sim.state_hash(),
+                0,
                 "",
                 "",
             )
@@ -318,6 +382,16 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
         );
     }
     assert_eq!(warm.sim().state_hash(), cold.sim().state_hash());
+    // And one reading of the picture and model files, which each start
+    // certifies with its world (`RuleSet::file_inputs_hash`).
+    assert_eq!(
+        warm.runtime.resources.rules.file_inputs_hash(),
+        cold.runtime.resources.rules.file_inputs_hash()
+    );
+    // And the retail install changes none of it: a refused start would name
+    // no file of its folder.
+    let folder_files = cold.runtime.resources.rules.file_input_folder_files();
+    assert!(folder_files.is_empty(), "{folder_files:?}");
     assert_eq!(checkpoint, Some(0));
     assert_eq!(warm.sim().native_identity_prefix_checkpoint(), Some(0));
     assert_eq!(
@@ -344,7 +418,7 @@ fn failed_network_load_retries_its_shell_without_installing_an_offline_fallback(
         .unwrap();
     session.set_network_start_seed(77).unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
-    let startup = session.freeze_network_start(77).unwrap();
+    let startup = session.freeze_network_start(77, None).unwrap();
     let loading = LoadingSession::from_request(LoadingRequest::network(startup));
     assert_eq!(
         loading.failure_policy(),
@@ -406,6 +480,42 @@ pub(super) fn prepared_campaign() -> crate::app::match_bootstrap::PreparedCampai
     .expect("synthetic campaign catalog admits a selected campaign")
 }
 
+/// VERA: a network match that seats no computer loads the original AI INI,
+/// and one that seats a computer the game folder's; its room's rules
+/// agreement asks the same of the same launch.
+#[test]
+fn a_network_load_reads_the_original_ai_ini_only_without_computers() {
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};
+    use crate::rules::retail_sources::AiFile;
+    let dir = crate::map::source::test_support::TestDirectory::new("load-ai-file");
+    let assets = AssetManager::from_loose_root_for_test(dir.path());
+    let started = |computers: bool| {
+        let mut launch = test_launch_session(LaunchCountry::America);
+        if !computers {
+            launch.opponents.clear();
+            launch.ai_player_count = 0;
+        }
+        let mut guest = launch.humans[0].clone();
+        guest.name = "Guest".into();
+        guest.raw_slot_index = Some(2);
+        guest.slot.color_index = 2;
+        guest.slot.start_position = LaunchStartPosition::Position(2);
+        launch.humans.push(guest);
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(launch, false, Some(7), false)
+            .unwrap();
+        let room = session.network_seats_computers();
+        session.prepare_network_timing(2, || 0).unwrap();
+        let startup = session.freeze_network_start(0xabc123, None).unwrap();
+        assert_eq!(session.network_seats_computers(), room);
+        (room, startup.ai_file(&assets))
+    };
+    assert_eq!(started(false), (false, AiFile::Original));
+    assert_eq!(started(true), (true, AiFile::GameFolder));
+}
+
 #[test]
 fn admitted_network_start_preserves_canonical_humans_and_host_seed_in_fresh_loading() {
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
@@ -425,7 +535,7 @@ fn admitted_network_start_preserves_canonical_humans_and_host_seed_in_fresh_load
         .accept_network_setup(launch, false, Some(7), false)
         .unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
-    let startup = session.freeze_network_start(0xabc123).unwrap();
+    let startup = session.freeze_network_start(0xabc123, None).unwrap();
     let request = LoadingRequest::network(startup);
     let initial = crate::app::loading::init::MapLoadInitial::from_test_map_source(
         prefix_test_map(&[(0, 20, 24), (1, 42, 46)]),
@@ -1177,7 +1287,7 @@ fn gsi_04_12_generated_prefix_uses_accepted_staging_once() {
         &launch,
         None,
         [800, 600],
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
         Some(DecodedPreview {
             width: 300,
             height: 100,
@@ -1789,7 +1899,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
         &launch,
         None,
         [800, 600],
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
         Some(preview),
         &launch_map,
         &active_scenario_waypoints,
@@ -2330,7 +2440,7 @@ fn network_load_with_remote_peer(
         .unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
     let mut result = super::super::transitions::fallback_map_load_result();
-    result.scenario.startup = session.freeze_network_start(1).unwrap();
+    result.scenario.startup = session.freeze_network_start(1, None).unwrap();
     result.scenario.simulation = Some(sim);
     (session, result, local, peer)
 }
@@ -2408,7 +2518,7 @@ fn a_network_start_installs_its_mode_and_timing_into_the_scenario() {
         .unwrap();
     session.set_network_start_seed(77).unwrap();
     session.prepare_network_timing(2, || 0).unwrap();
-    let startup = session.freeze_network_start(77).unwrap();
+    let startup = session.freeze_network_start(77, None).unwrap();
     let crate::app::match_bootstrap::LoadingStartup::Network(accepted) = &startup else {
         panic!("a frozen network start");
     };

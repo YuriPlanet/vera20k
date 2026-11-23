@@ -31,6 +31,17 @@
 //! - Compressed entries decode through `assets::ima_adpcm`, the crate's single
 //!   IMA ADPCM implementation, mirroring the single decoder in `gamemd.exe`.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::util::read_helpers::read_u32_le;

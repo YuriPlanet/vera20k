@@ -349,6 +349,22 @@ impl FlightOwnerKind {
     }
 }
 
+/// A structural high bridge with either a fixed deck Z or stock geometry.
+#[derive(Clone, Copy)]
+pub(crate) enum JumpjetBridgeDeck {
+    Fixed(i32),
+    Legacy,
+}
+
+impl JumpjetBridgeDeck {
+    fn above(self, ground: i32) -> i32 {
+        match self {
+            Self::Fixed(z) => z,
+            Self::Legacy => ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS),
+        }
+    }
+}
+
 /// Everything the flight kernel reads from or writes to the owner and the map.
 /// Coordinates are world leptons.
 pub(crate) trait JumpjetFlightHost {
@@ -402,6 +418,9 @@ pub(crate) trait JumpjetFlightHost {
     fn floor_height(&self, xy: [i32; 2]) -> i32;
     /// The cell holding `xy` carries a high bridge (`+0x140 & 0x100`).
     fn cell_high_bridge(&self, xy: [i32; 2]) -> bool;
+    fn high_bridge_deck(&self, xy: [i32; 2]) -> Option<JumpjetBridgeDeck> {
+        self.cell_high_bridge(xy).then_some(JumpjetBridgeDeck::Legacy)
+    }
     /// `CellClass @ 0x00485080` for the cell holding `xy`.
     fn cell_top_height(&self, xy: [i32; 2]) -> i32;
     /// `CellClass+0xEC` LandType of the cell holding `xy`.
@@ -580,8 +599,9 @@ fn native_cell(value: i32) -> i16 {
 /// Reference height `0x0054D820`: the current cell's top height, and while
 /// moving the max-or-average with the cell one step ahead along the facing.
 ///
-/// Both bridge tests add the deck to the *current* cell's value (`ADD EDI` at
-/// `0x0054D875` and `0x0054D906`), so a bridge ahead raises the current sample.
+/// Both stock bridge tests add the rise to the *current* cell's value
+/// (`ADD EDI` at `0x0054D875` and `0x0054D906`). A fixed deck is a world-space
+/// obstacle in its own cell, alongside any taller terrain or building.
 fn reference_height(
     flight: &JumpjetFlight,
     host: &impl JumpjetFlightHost,
@@ -589,8 +609,11 @@ fn reference_height(
 ) -> i32 {
     let here_xy = [location[0], location[1]];
     let mut here = host.cell_top_height(here_xy);
-    if host.cell_high_bridge(here_xy) {
-        here = here.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+    let here_bridge = host.high_bridge_deck(here_xy);
+    match here_bridge {
+        Some(JumpjetBridgeDeck::Fixed(deck)) => here = here.max(deck),
+        Some(JumpjetBridgeDeck::Legacy) => here = here.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS),
+        None => {}
     }
     if ordering(double(flight.current_speed_bits), zero()) != X87Ordering::Greater {
         return here;
@@ -599,9 +622,14 @@ fn reference_height(
     let direction = dir_from_facing16(flight.facing.current(host.binary_frame()));
     let (dx, dy) = LEPTON_DELTAS[usize::from(direction)];
     let ahead_xy = [location[0].wrapping_add(dx), location[1].wrapping_add(dy)];
-    let ahead = host.cell_top_height(ahead_xy);
-    if host.cell_high_bridge(ahead_xy) {
-        here = here.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+    let mut ahead = host.cell_top_height(ahead_xy);
+    match host.high_bridge_deck(ahead_xy) {
+        Some(JumpjetBridgeDeck::Fixed(deck)) => ahead = ahead.max(deck),
+        Some(JumpjetBridgeDeck::Legacy) if matches!(here_bridge, Some(JumpjetBridgeDeck::Fixed(_))) => {
+            ahead = ahead.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+        }
+        Some(JumpjetBridgeDeck::Legacy) => here = here.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS),
+        None => {}
     }
     if ahead > here {
         ahead
@@ -686,13 +714,11 @@ pub(crate) fn update_coordinates_and_altitude(
     let z = location[2];
     let xy = [location[0], location[1]];
     let mut ground = host.floor_height(xy);
-    if host.cell_high_bridge(xy) {
-        let deck_approach = X87Chop53::sub(
-            int(ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS)),
-            single(params.crash_bits),
-        );
+    if let Some(bridge) = host.high_bridge_deck(xy) {
+        let deck = bridge.above(ground);
+        let deck_approach = X87Chop53::sub(int(deck), single(params.crash_bits));
         if ordering(deck_approach, int(z)) != X87Ordering::Greater {
-            ground = ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+            ground = deck;
         }
     }
     let reference =
@@ -708,13 +734,14 @@ pub(crate) fn update_coordinates_and_altitude(
     let mut new_z = None;
     if altitude < bob_target {
         let mut height = host.height_above_ground();
-        if host.cell_high_bridge(xy)
+        if let Some(bridge) = host.high_bridge_deck(xy)
             && !host.on_bridge()
-            && z >= host
-                .floor_height(xy)
-                .wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS)
         {
-            height = height.wrapping_sub(BRIDGE_DECK_HEIGHT_LEPTONS);
+            let floor = host.floor_height(xy);
+            let deck = bridge.above(floor);
+            if z >= deck {
+                height = height.wrapping_sub(deck.wrapping_sub(floor));
+            }
         }
         if height == 0 {
             host.grounded_reset();
@@ -1076,6 +1103,15 @@ fn claim_or_scatter(
     }
 }
 
+/// The widest `[JumpjetControls] LandNearby=` range: its reader clamps the
+/// key to 0..=8 (VERA's own bound).
+const LAND_NEARBY_MAX_RANGE: i32 = 8;
+
+/// The cells of the widest range's square, its centre left out: a bound on
+/// the candidates [`nearby_landing_cell`] sorts.
+const LAND_NEARBY_MAX_CELLS: usize =
+    ((2 * LAND_NEARBY_MAX_RANGE + 1) * (2 * LAND_NEARBY_MAX_RANGE + 1) - 1) as usize;
+
 /// VERA `[JumpjetControls] LandNearby=`: among the cells within the key's
 /// range of `refused`, the one nearest the owner's own cell `here` that the
 /// owner may enter outright (`Can_Enter_Cell` 0), that is neither water nor
@@ -1086,23 +1122,26 @@ fn nearby_landing_cell(
     here: (i16, i16),
     host: &mut impl JumpjetFlightHost,
 ) -> Option<(i16, i16)> {
-    let range = host.land_nearby_range();
+    let range = host.land_nearby_range().min(LAND_NEARBY_MAX_RANGE);
     if range <= 0 {
         return None;
     }
-    let mut cells: Vec<(i32, i32, i32)> = Vec::new();
+    let mut cells = [(0, 0, 0); LAND_NEARBY_MAX_CELLS];
+    let mut count = 0;
     for dy in -range..=range {
         for dx in -range..=range {
             if (dx, dy) != (0, 0) && dx * dx + dy * dy <= range * range {
                 let x = i32::from(refused.0) + dx;
                 let y = i32::from(refused.1) + dy;
                 let (hx, hy) = (x - i32::from(here.0), y - i32::from(here.1));
-                cells.push((hx * hx + hy * hy, y, x));
+                cells[count] = (hx * hx + hy * hy, y, x);
+                count += 1;
             }
         }
     }
+    let cells = &mut cells[..count];
     cells.sort_unstable();
-    cells.into_iter().find_map(|(_, y, x)| {
+    cells.iter().find_map(|&(_, y, x)| {
         let x = i16::try_from(x).ok().filter(|x| *x >= 0)?;
         let y = i16::try_from(y).ok().filter(|y| *y >= 0)?;
         let centre = [i32::from(x) * 256 + 128, i32::from(y) * 256 + 128];
@@ -1223,10 +1262,7 @@ pub(crate) fn state1_ascend(
         host.tracker_update(here);
     }
     // The owner's own height, taken off the deck while it flies over a bridge.
-    let mut height = host.height_above_ground();
-    if !host.on_bridge() && host.cell_high_bridge_at(here) && height >= BRIDGE_DECK_HEIGHT_LEPTONS {
-        height = height.wrapping_sub(BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
+    let height = height_over_landing_surface(host, location);
 
     if height < runtime.flight.target_height {
         // Climbing: a quarter of the way up releases the horizontal speed, and
@@ -1433,10 +1469,7 @@ pub(crate) fn state4_descend(
     }
     runtime.flight.target_height = 0;
 
-    let mut height = host.height_above_ground();
-    if !host.on_bridge() && host.cell_high_bridge_at(here) && height >= BRIDGE_DECK_HEIGHT_LEPTONS {
-        height = height.wrapping_sub(BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
+    let height = height_over_landing_surface(host, location);
     if height != 0 {
         return STATE_DESCEND;
     }
@@ -1457,6 +1490,23 @@ pub(crate) fn state4_descend(
     host.finish_touchdown(runtime);
     runtime.landing_latched = false;
     runtime.phase
+}
+
+/// States 1 (`0x0054BA3D..0x0054BA90`) and 4 (`0x0054C7B2..0x0054C805`) adjust GetHeight only
+/// when a flyer has reached the deck and isn't already marked OnBridge.
+fn height_over_landing_surface(host: &impl JumpjetFlightHost, location: [i32; 3]) -> i32 {
+    let mut height = host.height_above_ground();
+    let xy = [location[0], location[1]];
+    if !host.on_bridge() && let Some(bridge) = host.high_bridge_deck(xy) {
+        let rise = match bridge {
+            JumpjetBridgeDeck::Fixed(deck) => deck.wrapping_sub(host.floor_height(xy)),
+            JumpjetBridgeDeck::Legacy => BRIDGE_DECK_HEIGHT_LEPTONS,
+        };
+        if height >= rise {
+            height = height.wrapping_sub(rise);
+        }
+    }
+    height
 }
 
 /// `State5_Crash @ 0x0054CA90`. Returns the new state.
@@ -1517,10 +1567,11 @@ pub(crate) fn state5_crash(runtime: &mut JumpjetRuntime, host: &mut impl Jumpjet
 
     // `CMP EBP,ESI` / `CMP EAX,ESI`, both signed: from on or above the deck to
     // below it.
-    let deck = host
-        .floor_height([x, y])
-        .wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
-    let crossed_deck = host.cell_high_bridge([x, y]) && old_z >= deck && new_z < deck;
+    let floor = host.floor_height([x, y]);
+    let crossed_deck = host.high_bridge_deck([x, y]).is_some_and(|bridge| {
+        let deck = bridge.above(floor);
+        old_z >= deck && new_z < deck
+    });
     let here = host.cell_of([x, y]);
     if host.in_bounds(here) {
         host.crash_relocate([x, y, new_z]);

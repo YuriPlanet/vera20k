@@ -166,7 +166,7 @@ pub(crate) fn try_fire(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     #[cfg(any(test, feature = "test-support"))]
     observe(AiFireEvent::TryFire);
@@ -337,7 +337,7 @@ pub(super) fn fire_extension_automatic(
     owner: InternedId,
     sw_id: InternedId,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
     manual: bool,
 ) -> bool {
     let Some(sw) = rules.super_weapon(sim.interner.resolve(sw_id)) else {
@@ -455,7 +455,7 @@ fn extension_target(
         // the House's buildings (+0x6C, in order) that has the type
         // (HasSuperWeapon 10011E60, upgrades too) and is operational
         // (vt+0x350, Building4555D0) whose own cell CanFireAt (vt+4, not
-        // manual) admits; the cell of its GetCoords. MO's Iron Guard.
+        // manual) admits; the cell of its GetCoords.
         M::SelfTarget => sim
             .houses
             .get(&owner)?

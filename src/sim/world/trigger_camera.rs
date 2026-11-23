@@ -4,8 +4,7 @@
 use super::Simulation;
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::sim::components::DriveCoord;
-use crate::sim::movement::ground_pose::query_ground_height;
-use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
+use crate::sim::movement::ground_pose::{deck_surface_z, query_ground_height};
 
 impl Simulation {
     /// Original TActionExecute6DD8B0 cases48/112: GetWaypoint68BCC0,
@@ -39,7 +38,7 @@ impl Simulation {
         let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref()?);
         let first = cells.lookup(cell);
         if cells.flags(first) & 0x100 != 0 || cells.flags(cells.lookup(cell)) & 0x400 != 0 {
-            z = z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+            z = deck_surface_z(&cells, first, z);
         }
         Some([x, y, z])
     }
@@ -57,11 +56,11 @@ impl Simulation {
         let cells = NativeCellQuery::canonical(terrain);
         let identity = cells.lookup(cell);
         let (x, y, z) = crate::sim::cell_kernel::native_cell_own_coords(identity, &cells)?;
-        let z = (z as i32).wrapping_add(if cells.flags(identity) & 0x500 != 0 {
-            BRIDGE_DECK_HEIGHT_LEPTONS
+        let z = if cells.flags(identity) & 0x500 != 0 {
+            deck_surface_z(&cells, identity, z as i32)
         } else {
-            0
-        });
+            z as i32
+        };
         Some([x as i32, y as i32, z])
     }
 }

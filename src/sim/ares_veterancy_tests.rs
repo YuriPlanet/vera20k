@@ -116,6 +116,7 @@ fn airstrike_kill_credits_the_designator_scaled() {
             .entities
             .get_mut(drone)
             .unwrap()
+            .seldom
             .airstrike
             .set_test_link(Some(boris));
         sim.record_the_kill(
@@ -225,7 +226,7 @@ fn academy_bonus_follows_placement_capture_and_limbo() {
     assert_eq!(raw(&mut sim, "E2", "Americans"), 0.0, "Academy.Ignore");
     assert_eq!(raw(&mut sim, "E1", "Russians"), 0.0);
     let russians = sim.interner.intern("Russians");
-    sim.change_owner_with_rules(academy, russians, &rules, None, Default::default());
+    sim.change_owner_with_rules(academy, russians, &rules, None, &mut Default::default());
     assert_eq!(raw(&mut sim, "E1", "Americans"), 0.0);
     assert_eq!(raw(&mut sim, "E1", "Russians"), 1.5);
     sim.techno_limbo_with_rules(academy, &rules);

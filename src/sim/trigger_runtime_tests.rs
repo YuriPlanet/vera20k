@@ -430,7 +430,7 @@ fn music_action_reaches_the_ordered_presentation_effects() {
             &mut effects,
             &rules,
             Some(&overlay),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
     }
     assert_eq!(
@@ -473,7 +473,7 @@ fn retail_sov01_closeout_queues_matching_triggers_without_detaching_them() {
             &mut Vec::new(),
             &rules,
             Some(&overlay),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
     }
     // Original Execute6DF051 calls726720, never the deleting destructor.
@@ -501,7 +501,7 @@ fn retail_sov01_closeout_queues_matching_triggers_without_detaching_them() {
             .filter(|trigger| trigger.type_index == source)
             .all(|trigger| !trigger.pending)
     );
-    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, true);
+    sim.process_pending_delete_with(&rules, &mut FrameEffects::default(), 1, true);
     assert!(
         sim.trigger_runtime
             .triggers
@@ -556,13 +556,13 @@ fn delete_tag_returns_safely_through_its_active_dispatcher() {
                 &mut Vec::new(),
                 &rules,
                 Some(&overlays),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ));
             assert!(sim.trigger_runtime.tag(active).is_none());
             assert!(!sim.trigger_runtime.cell_tags.contains_key(&cell));
             assert!(!sim.trigger_runtime.locals_set.contains(&7));
             assert!(!sim.trigger_runtime.tag(other).unwrap().dispatch_guard);
-            sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, true);
+            sim.process_pending_delete_with(&rules, &mut FrameEffects::default(), 1, true);
             sim.validate_restored_trigger_runtime(rules.ares_form())
                 .unwrap();
         }
@@ -606,7 +606,7 @@ fn retail_sov01_boris_tag_delete_is_immediate_and_releases_attachments() {
         &mut Vec::new(),
         &rules,
         Some(&overlay),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     //6DF0CA's virtual20 is6E58B0 ->6E4F60; only its linked Triggers defer.
     assert!(sim.trigger_runtime.tag(first).is_none());
@@ -618,7 +618,7 @@ fn retail_sov01_boris_tag_delete_is_immediate_and_releases_attachments() {
             .iter()
             .all(|&id| sim.trigger_runtime.trigger(id).is_some())
     );
-    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, true);
+    sim.process_pending_delete_with(&rules, &mut FrameEffects::default(), 1, true);
     assert!(
         linked
             .iter()
@@ -694,7 +694,7 @@ fn retail_sov01_make_enemy_reaches_the_shared_diplomacy_owner() {
         &mut Vec::new(),
         &rules,
         Some(&overlay),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     assert!(!sim.house_alliances.as_map()["RUSSIANS"].contains("ARABS"));
     assert!(!sim.house_alliances.as_map()["ARABS"].contains("RUSSIANS"));
@@ -726,7 +726,7 @@ fn retail_sov01_transport_hint_emits_the_named_cameo_on_the_native_clock() {
             &mut effects,
             &rules,
             Some(&overlay),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
     }
     assert_eq!(
@@ -763,17 +763,17 @@ fn scenario_timer_uses_the_sound_parameter_ordinal_before_expiring() {
     sim.initialize_trigger_definitions(&map, &Default::default(), None, Some(&sounds), None);
     sim.classify_map_triggers(rules);
     let rng = sim.rng_state();
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     // Read6DD7CE stores FindIndex7514D0's retained ordinal, not the list
     // key or zero. Execute27 at6DE5C9 consumes it as signed seconds.
     assert_eq!(sim.session.scenario_timer_view(), Some((15, "")));
     assert!(!sim.global_variables()[7]);
     sim.session.set_binary_frame_for_test(14);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     assert_eq!(sim.session.scenario_timer_view(), Some((1, "")));
     assert!(!sim.global_variables()[7]);
     sim.session.set_binary_frame_for_test(15);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     assert!(sim.global_variables()[7]);
     assert_eq!(sim.session.scenario_timer_view(), None);
     assert!(
@@ -799,7 +799,7 @@ fn trigger_trace_orders_a_spring_between_poll_bounds_and_before_its_write() {
     sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
     sim.classify_map_triggers(rules);
     sim.record_trigger_springs(true);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     let (springs, events) = sim.take_trigger_trace();
     let spring = &springs[..];
     assert_eq!(spring.len(), 1);
@@ -871,7 +871,7 @@ fn scenario_timer_extends_by_minus_one_for_an_untrimmed_unknown_sound() {
     let rules = crate::rules::ruleset::RuleSet::empty_for_test();
     sim.initialize_trigger_definitions(&map, &Default::default(), None, Some(&sounds), None);
     sim.classify_map_triggers(rules);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     // FindIndex7514D0 does not trim; its -1 reaches Extend6DE4A0.
     assert_eq!(sim.session.scenario_timer_view(), Some((15, "")));
 }
@@ -897,7 +897,7 @@ fn scenario_timer_uses_the_theme_parameter_ordinal_before_expiring() {
     sim.initialize_trigger_definitions(&map, &Default::default(), None, None, Some(&themes));
     sim.classify_map_triggers(rules);
     let rng = sim.rng_state();
-    let effects = sim.advance_triggers(rules, None, FrameEffects::default());
+    let effects = sim.advance_triggers(rules, None, &mut FrameEffects::default());
     assert!(
         effects.is_empty(),
         "a scalar does not request music playback"
@@ -907,11 +907,11 @@ fn scenario_timer_uses_the_theme_parameter_ordinal_before_expiring() {
     assert_eq!(sim.session.scenario_timer_view(), Some((15, "")));
     assert!(!sim.global_variables()[7]);
     sim.session.set_binary_frame_for_test(14);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     assert_eq!(sim.session.scenario_timer_view(), Some((1, "")));
     assert!(!sim.global_variables()[7]);
     sim.session.set_binary_frame_for_test(15);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     assert!(sim.global_variables()[7]);
     assert_eq!(sim.session.scenario_timer_view(), None);
     assert!(
@@ -938,7 +938,7 @@ fn scenario_timer_extends_by_minus_one_for_an_untrimmed_unknown_theme() {
     let rules = crate::rules::ruleset::RuleSet::empty_for_test();
     sim.initialize_trigger_definitions(&map, &Default::default(), None, None, Some(&themes));
     sim.classify_map_triggers(rules);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     // From_Name721210 does not trim; its -1 reaches Extend6DE4A0.
     assert_eq!(sim.session.scenario_timer_view(), Some((15, "")));
 }
@@ -960,7 +960,7 @@ fn scenario_timer_expiry_polls_all_tags_before_stopping() {
     sim.session.set_scenario_timer_caption("MISSION:TmeTimer");
     let rng = sim.rng_state();
     sim.session.set_binary_frame_for_test(14);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     assert!(!sim.global_variables()[7] && !sim.global_variables()[8]);
     assert_eq!(
         sim.session.scenario_timer_view(),
@@ -968,7 +968,7 @@ fn scenario_timer_expiry_polls_all_tags_before_stopping() {
     );
 
     sim.session.set_binary_frame_for_test(15);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     assert!(
         sim.global_variables()[7] && sim.global_variables()[8],
         "all expiry tags see the running timer before the Logic tail stops it"
@@ -981,7 +981,7 @@ fn scenario_timer_expiry_polls_all_tags_before_stopping() {
     assert!(!sim.session.scenario_timer_elapsed());
     let actions = sim.trigger_runtime.action_trace.clone();
     sim.session.set_binary_frame_for_test(16);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.trigger_runtime.action_trace, actions,
         "repeatable expiry tags do not fire again after completion"
@@ -1004,7 +1004,7 @@ fn scenario_timer_restarted_by_expiry_action_survives_logic_tail() {
     sim.session
         .change_scenario_timer(crate::sim::scenario_session::ScenarioTimerAction::Set(1));
     sim.session.set_binary_frame_for_test(15);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     assert_eq!(sim.session.scenario_timer_view(), Some((75, "")));
     assert!(!sim.session.scenario_timer_elapsed());
 }
@@ -1101,7 +1101,7 @@ fn all_change_house_dispatch_matches_original_selector_controls() {
             &mut Vec::new(),
             &rules,
             Some(&overlays),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(result, row["result"] == 1, "{}", input["name"]);
         assert_eq!(
@@ -1162,7 +1162,7 @@ fn all_change_house_retail_sov01_handoff_transfers_units_and_powered_buildings()
         &mut Vec::new(),
         &rules,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     for actor in actors {
         assert_eq!(sim.substrate.entities.get(actor).unwrap().owner(), target);
@@ -1237,7 +1237,7 @@ fn action128_retail_foots_use_reverse_shared_sweep_and_finish_the_warp() {
         &mut Vec::new(),
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     for id in [immune, other] {
         assert!(!sim.substrate.entities.get(id).unwrap().chrono_warp_latch());
@@ -1330,7 +1330,7 @@ fn action128_skips_only_passengers_with_a_transporter() {
         transport,
         BoardingArm::InfantryTransport,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert!(
         add_garrison_occupant(
@@ -1339,7 +1339,7 @@ fn action128_skips_only_passengers_with_a_transporter() {
             occupant,
             bunker,
             None,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         )
         .unwrap()
     );
@@ -1375,7 +1375,7 @@ fn action128_skips_only_passengers_with_a_transporter() {
         &mut Vec::new(),
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     let entity = |sim: &Simulation, id| sim.substrate.entities.get(id).unwrap().clone();
     assert!(entity(&sim, occupant).chrono_warp_latch());
@@ -1398,7 +1398,7 @@ fn action128_skips_only_passengers_with_a_transporter() {
             None,
             bunker,
             crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         1
     );
@@ -1477,7 +1477,7 @@ fn variable_scripts_use_shared_owner_and_advance_on_rejected_indices() {
         );
         sim.trigger_runtime.dirty[0] = false;
         let rng = sim.rng_state();
-        sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+        sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
         assert!(
             sim.trigger_runtime.locals_set.is_empty(),
             "action {action_id}, index {index}"
@@ -1497,7 +1497,7 @@ fn variable_scripts_use_shared_owner_and_advance_on_rejected_indices() {
             rng,
             "no Trigger timers watch these variables"
         );
-        sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+        sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
         assert_eq!(sim.team_script_vm.team(team).unwrap().cursor(), 1);
     }
 }
@@ -1621,7 +1621,7 @@ fn script40_releases_all_retail_sov01_opening_naval_teams_to_their_move_step() {
                 -1,
                 &rules,
                 Some(&overlay),
-                FrameEffects::default()
+                &mut FrameEffects::default()
             )
             .0,
             "{name}"
@@ -1634,13 +1634,13 @@ fn script40_releases_all_retail_sov01_opening_naval_teams_to_their_move_step() {
             .all(|team| team.members().count() == 1),
         "each authored naval TaskForce has one member; spawn-manager children are not team members"
     );
-    sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&overlay), &mut FrameEffects::default());
     assert!(
         sim.team_script_vm
             .teams_in_order()
             .all(|team| team.advance_pending())
     );
-    sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&overlay), &mut FrameEffects::default());
     for team in sim.team_script_vm.teams_in_order() {
         assert_eq!(
             team.cursor(),
@@ -1681,7 +1681,7 @@ fn script20_uses_country_order_and_survives_members_unlinked_by_owner_callbacks(
     let team = sim
         .team_script_vm
         .create_team(houses[1], script, members.clone(), 0);
-    sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+    sim.run_team_ai_pass(&rules, Some(&overlay), &mut FrameEffects::default());
     for member in members {
         assert_eq!(
             sim.substrate.entities.get(member).unwrap().owner(),
@@ -1771,7 +1771,7 @@ fn script20_retail_sov01_transport_tails_set_the_authored_landing_flags() {
         let team = sim
             .team_script_vm
             .create_team(original_owner, script, vec![member], 0);
-        sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+        sim.run_team_ai_pass(&rules, Some(&overlay), &mut FrameEffects::default());
         assert_eq!(sim.substrate.entities.get(member).unwrap().owner(), target);
         assert_eq!(
             sim.team_script_vm.team(team).unwrap().owner(),
@@ -1783,7 +1783,7 @@ fn script20_retail_sov01_transport_tails_set_the_authored_landing_flags() {
                 .locals_set
                 .contains(&(expected_flag as u32))
         );
-        sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());
+        sim.run_team_ai_pass(&rules, Some(&overlay), &mut FrameEffects::default());
         assert!(
             sim.trigger_runtime
                 .locals_set
@@ -1896,7 +1896,7 @@ pub(super) fn sparse_line_ingress_fixture() -> (
         },
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     sim.session.set_map_width_for_test(5);
     sim.session.set_map_height_for_test(5);
@@ -1919,7 +1919,7 @@ pub(super) fn event_ingress_damage(
     victim: u64,
     source: u64,
     damage: i32,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let warhead = sim.interner.intern("SA");
     sim.commit_direct_damage_receiver(
@@ -2188,7 +2188,12 @@ fn mind_control_tags_precede_capture_admission_and_use_object_alive() {
         entity.health.set_for_test(health);
         entity.lifecycle.set_object_alive_for_test(alive);
         let detonation = mind_control_tag_projectile(&mut sim, source, victim);
-        sim.mind_control_detonation(detonation, &rules, Some(&overlay), FrameEffects::default());
+        sim.mind_control_detonation(
+            detonation,
+            &rules,
+            Some(&overlay),
+            &mut FrameEffects::default(),
+        );
         let context =
             format!("manager={manager}, ObjectAlive={alive}, HP={health}, immune={immune}");
         assert_eq!(
@@ -2211,6 +2216,7 @@ fn mind_control_tags_precede_capture_admission_and_use_object_alive() {
                 .entities
                 .get(victim)
                 .unwrap()
+                .seldom
                 .mind_control
                 .controller(),
             (manager && !immune).then_some(source),
@@ -2237,7 +2243,12 @@ fn mind_control_event6_owner_change_updates_source_house_before_event44_and_capt
     sim.attach_object_trigger_tag(victim, Some("TAG"));
     sim.attach_object_trigger_tag(source, Some("TAG"));
     let detonation = mind_control_tag_projectile(&mut sim, source, victim);
-    sim.mind_control_detonation(detonation, &rules, Some(&overlay), FrameEffects::default());
+    sim.mind_control_detonation(
+        detonation,
+        &rules,
+        Some(&overlay),
+        &mut FrameEffects::default(),
+    );
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
     let live = sim.projectiles.current_detonation(detonation);
     assert_eq!(live.source_id, source);
@@ -2250,7 +2261,7 @@ fn mind_control_event6_owner_change_updates_source_house_before_event44_and_capt
     assert_eq!(victim.owner(), houses[1]);
     assert_eq!(victim.health.current(), 100);
     assert_eq!(
-        victim.mind_control.controller(),
+        victim.seldom.mind_control.controller(),
         None,
         "event6 transfers both actors to the same house before the capture attempt"
     );
@@ -2280,7 +2291,7 @@ fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
         },
         &rules,
         Some(&overlay),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     for _ in 0..90 {
         let commands = sim.take_due_commands();
@@ -2290,6 +2301,7 @@ fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
             .entities
             .get(victim)
             .unwrap()
+            .seldom
             .mind_control
             .controller()
             .is_some()
@@ -2299,7 +2311,7 @@ fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
     }
     let victim = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(victim.health.current(), 100);
-    assert_eq!(victim.mind_control.controller(), Some(source));
+    assert_eq!(victim.seldom.mind_control.controller(), Some(source));
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
 }
 
@@ -2332,7 +2344,7 @@ fn object_damage_tags_spring_before_techno_and_reread_the_source_house_index() {
         victim,
         source,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate.entities.get(victim).unwrap().health.current(),
@@ -2367,6 +2379,7 @@ fn object_damage_tags_spring_before_techno_and_reread_the_source_house_index() {
             .entities
             .get(victim)
             .unwrap()
+            .seldom
             .ai_sell_repair
             .was_attacked_by_enemy(),
         "the Techno continuation must consume the changed, now-allied owners"
@@ -2393,12 +2406,12 @@ fn object_damage_tag_owner_change_precedes_the_hostile_hit_latch() {
         victim,
         source,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let victim = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(victim.owner(), houses[1]);
     assert!(
-        !victim.ai_sell_repair.was_attacked_by_enemy(),
+        !victim.seldom.ai_sell_repair.was_attacked_by_enemy(),
         "capturing pre-Tag hostility would latch an enemy hit after ownership changed"
     );
 }
@@ -2424,7 +2437,7 @@ fn object_damage_event44_uses_source_house_index_instead_of_country_or_victim() 
             victim,
             source,
             1,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             sim.trigger_runtime.globals_set.contains(&44),
@@ -2454,7 +2467,7 @@ fn fatal_receiver_does_not_raise_surviving_damage_event44() {
         victim,
         source,
         100,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     // RecordKill703000 legitimately raises victim6 with sourceNULL. It must
     // not admit the separate surviving Object6/44 pair after a fatal result.
@@ -2494,7 +2507,7 @@ fn entered_cell_retains_the_actual_duplicate_country_house_for_8997_actions() {
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -2546,7 +2559,7 @@ fn line_arrival_rereads_later_cell_attachments_after_real_tag_cleanup() {
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(sim.trigger_runtime.dispatch_trace, [(tag, 26)]);
@@ -2571,7 +2584,7 @@ fn line_arrival_rereads_later_cell_attachments_after_real_tag_cleanup() {
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(sim.trigger_runtime.dispatch_trace.is_empty());
@@ -2606,7 +2619,7 @@ fn advance_trigger_frame(
     sim.advance_triggers(
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -2665,7 +2678,7 @@ fn ordinary_master_frame(
         67,
         TickLane::Ordinary,
         poll_triggers,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .expect("the ordinary fixture frame completes")
     .into_tick()
@@ -2750,7 +2763,7 @@ fn create_building_type10_reaches_placement_and_house_publication() {
         &mut Vec::new(),
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     let building = sim
         .substrate
@@ -2939,7 +2952,7 @@ fn damage_at_waypoint_reaches_the_shared_building_receiver() {
         &mut Vec::new(),
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     assert!(sim.substrate.entities.get(1).unwrap().health.current() < 769);
 }
@@ -3007,7 +3020,7 @@ fn parsed_event_records_match_native_list_and_production_predicates() {
                     crate::rules::ruleset::RuleSet::empty_for_test(),
                     67,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert!(result.tick.frame_committed);
@@ -3144,7 +3157,7 @@ fn parsed_map_trigger_flags_gate_production_frames_and_survive_restore() {
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("production frame completes");
         assert!(frame.tick.frame_committed);
@@ -3800,7 +3813,7 @@ fn dispatch_typed_trigger_reference(kind: i32, target_enabled: bool) -> Simulati
         &mut Vec::new(),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     sim
 }
@@ -3838,7 +3851,7 @@ fn destroy_attached_refuses_stationary_immune_hut_without_blocking_other_receive
         unit,
         crate::sim::combat::RAD_NO_ATTACKER,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         sim.global_variables()[7],
@@ -3902,7 +3915,7 @@ fn spring_test_trigger(sim: &mut Simulation, name: &str) {
         &mut Vec::new(),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -3991,7 +4004,7 @@ fn retail_hills_forced_trigger_does_not_inherit_the_outer_bridge_cell() {
         &mut Vec::new(),
         &runtime.resources.rules,
         Some(runtime.resources.rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.global_variables()[7], "the forced Trigger ran");
     assert!(bridge(sim) == before, "the forced Trigger hit the bridge");
@@ -4542,7 +4555,7 @@ fn house_tag_raise_matches_original_cadence_and_order() {
             house,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         let expected: Vec<(usize, i32)> = case["raises"]
             .as_array()
@@ -4612,7 +4625,7 @@ fn physical_readers_take_each_record_by_the_type_id() {
         trigger
             .events
             .iter()
-            .map(|event| event.value)
+            .map(|event| event.condition.value)
             .collect::<Vec<_>>(),
         [7, 7]
     );

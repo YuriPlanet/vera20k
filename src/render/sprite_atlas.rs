@@ -664,7 +664,8 @@ pub struct SpriteAtlas {
     /// Updated after placement/upload and dropped with the atlas on map load.
     physical_frames: HashMap<ShpPhysicalFrame, ShpFramePlacement>,
     /// Building type → number of make (build-up) animation frames.
-    /// Key is the base type_id (e.g., "GACNST"), not the "_MAKE" suffixed key.
+    /// Keyed by the make image's atlas name, the type id with `_MAKE`
+    /// appended (e.g. "GACNST_MAKE").
     pub make_frame_counts: HashMap<String, u16>,
     /// Building/world-animation type → available non-shadow frame count.
     /// Building consumers use this only to ensure their live animation frame is
@@ -1113,15 +1114,17 @@ impl RenderedShpSprite {
 /// End a refresh without changing the atlas the renderer is already using.
 ///
 /// A refresh mutates the prior atlas only after every fallible step has
-/// passed, so dropping it here leaves that atlas exactly as it was. Initial
-/// construction deliberately has no fallback and keeps the existing fail-fast
-/// contract for required cell-drawer assets.
+/// passed, so dropping it here leaves that atlas exactly as it was.
 #[cold]
-fn abandon_sprite_atlas_refresh(initial: bool, failure: &str) {
-    if initial {
-        panic!("{failure}");
-    }
+fn keep_previous_sprite_atlas(failure: &str) {
     log::warn!("{failure}; keeping the previous valid sprite atlas");
+}
+
+/// A map-load build that cannot draw what the map needs fails the load,
+/// which returns the player to the shell with this message.
+#[cold]
+fn sprite_atlas_load_error(failure: String) -> anyhow::Error {
+    anyhow::Error::msg(failure).context("could not prepare the map's sprites")
 }
 
 /// Whether `atlas` — None while no sprite atlas exists — already holds
@@ -1186,6 +1189,7 @@ fn entity_pairs<'a>(
             // no real infantryman supplies that type/colour to the atlas.
             let disguise = if entity.category() == EntityCategory::Infantry {
                 entity
+                    .seldom
                     .disguise
                     .as_ref()
                     .filter(|disguise| disguise.is_disguised())
@@ -1219,8 +1223,9 @@ fn entity_pairs<'a>(
 /// alone adds the scenario-start crate CellAnim remaps
 /// (`startup_crate_anim_remap_keys`), whose AnimObjects do not exist yet.
 pub(crate) struct EntityAtlasCoverage<'r> {
-    /// Deploy targets, pre-loaded in every house colour.
-    pub(crate) extra_buildings: Vec<&'r str>,
+    /// Deploy targets and Ares SHP water images, pre-loaded in every house
+    /// colour.
+    pub(crate) extra_types: Vec<&'r str>,
     /// Live AnimClass palette variants.
     pub(crate) anim_remap_keys: HashSet<AnimRemapKey>,
     /// Terrain tile animations, drawn from the theater ISO palette.
@@ -1235,8 +1240,10 @@ impl<'r> EntityAtlasCoverage<'r> {
         rules: Option<&'r RuleSet>,
         house_colors: &HouseColorMap,
     ) -> Self {
+        let mut extra_types = deployable_building_types(rules);
+        extra_types.extend(ares_shp_water_image_types(rules));
         Self {
-            extra_buildings: deployable_building_types(rules),
+            extra_types,
             anim_remap_keys: collect_anim_remap_base_keys(sim, house_colors),
             cell_drawer_type_ids: sim
                 .resolved_terrain()
@@ -1273,6 +1280,29 @@ pub(crate) fn deployable_building_types(rules: Option<&RuleSet>) -> Vec<&str> {
                 .any(|r| r.eq_ignore_ascii_case(&target_obj.id))
         {
             result.push(&target_obj.id);
+        }
+    }
+    result
+}
+
+/// SHP VehicleTypes another type names as its `WaterImage=` in a game Ares
+/// plays. `UnitClass_DrawSHP_WaterType` (hook `0x0073C5FC`) draws one the
+/// moment its owner enters water, so the atlas loads it before any object of
+/// that type exists; a voxel water image has no SHP to load.
+pub(crate) fn ares_shp_water_image_types(rules: Option<&RuleSet>) -> Vec<&str> {
+    let Some(rules) = rules.filter(|rules| rules.ares()) else {
+        return Vec::new();
+    };
+    let mut result: Vec<&str> = Vec::new();
+    for object in rules.all_objects() {
+        if let Some(water) = object.water_image().and_then(|name| rules.object(name))
+            && !rules
+                .art()
+                .resolve_metadata_entry(&water.id, &water.image)
+                .is_some_and(|art| art.voxel)
+            && !result.iter().any(|id| id.eq_ignore_ascii_case(&water.id))
+        {
+            result.push(&water.id);
         }
     }
     result
@@ -1908,11 +1938,21 @@ fn insert_object_keys(
                 }
             }
             // A `Turret=yes` SHP Unit draws its turret from the same SHP:
-            // thirty-two frames from `WalkFrames * 8`. The draw picks one from
-            // the turret heading, so all of them stay resident.
+            // thirty-two frames from `WalkFrames * 8`, or with Ares from
+            // `WalkFrames * Facings` (`UnitClass_DrawSHP_FacingsB`). The draw
+            // picks one from the turret heading, so all of them stay resident.
             if let Some(turret) = seq_set.and_then(|set| set.shp_vehicle_turret()) {
-                for slot in 0..turret.facings {
-                    insert(turret.start_frame.saturating_add(slot));
+                let start = match rules.filter(|rules| rules.ares()) {
+                    Some(rules) => rules
+                        .object(type_str)
+                        .and_then(|object| rules.unit_shp_read_state_of(object))
+                        .and_then(|art| art.ares_turret_start_frame()),
+                    None => Some(turret.start_frame),
+                };
+                if let Some(start) = start {
+                    for slot in 0..crate::rules::art_data::SHP_TURRET_FACING_FRAMES {
+                        insert(start.saturating_add(slot));
+                    }
                 }
             }
         }
@@ -1990,20 +2030,20 @@ fn insert_new_object_keys(
         .collect();
     let mut sources = HashMap::new();
     let mut frame_sets: HashMap<&str, Vec<u16>> = HashMap::new();
+    let water_images = ares_shp_water_image_types(rules);
     for (type_str, color_idx) in new_objects {
         let category = categories
             .get(type_str.as_str())
             .copied()
             .unwrap_or_else(|| {
-                if rules
+                use crate::rules::object_type::ObjectCategory;
+                match rules
                     .and_then(|rules| rules.object(type_str))
-                    .is_some_and(|object| {
-                        object.category == crate::rules::object_type::ObjectCategory::Infantry
-                    })
+                    .map(|object| object.category)
                 {
-                    EntityCategory::Infantry
-                } else {
-                    EntityCategory::Structure
+                    Some(ObjectCategory::Infantry) => EntityCategory::Infantry,
+                    Some(ObjectCategory::Vehicle) => EntityCategory::Unit,
+                    _ => EntityCategory::Structure,
                 }
             });
         let infantry_frames = if category == EntityCategory::Infantry {
@@ -2099,6 +2139,27 @@ fn insert_new_object_keys(
                     }
                 }
                 let shadow_start = raw_count / 2;
+                // An Ares water image is drawn with its owner's facing count
+                // and turret block (`UnitClass_DrawSHP_ChangeType1`,
+                // `FacingsA`/`FacingsB`), which its own blocks need not
+                // match: keep its whole body half resident.
+                if category == EntityCategory::Unit
+                    && water_images
+                        .iter()
+                        .any(|water| water.eq_ignore_ascii_case(type_str))
+                {
+                    for frame in 0..shadow_start {
+                        let key = ShpSpriteKey {
+                            palette_context: ShpPaletteContext::Legacy,
+                            type_id: type_str.as_str().into(),
+                            facing: 0,
+                            frame,
+                            house_color: *color_idx,
+                        };
+                        needed.insert(key.clone());
+                        body_keys.push(key);
+                    }
+                }
                 // Techno7064C2..7064CD adds half the physical SHP count
                 // to the selected body frame. Infantry51958A calls this same
                 // Techno draw; retain its companions too, including nonempty
@@ -2257,8 +2318,12 @@ pub fn build_sprite_atlas(
         interner,
     );
     let mut atlas = existing;
-    if let PreparedSpriteAtlas::Raster(work, upload) = prepared {
-        upload.finish(device, queue, batch, work.render(), &mut atlas);
+    match prepared {
+        PreparedSpriteAtlas::Unchanged => {}
+        PreparedSpriteAtlas::Abandoned(failure) => keep_previous_sprite_atlas(&failure),
+        PreparedSpriteAtlas::Raster(work, upload) => {
+            upload.finish(device, queue, batch, work.render(), &mut atlas);
+        }
     }
     atlas
 }
@@ -2696,18 +2761,16 @@ pub(crate) fn prepare_sprite_atlas(
                     log::debug!("Effect anim SHP {}: {} frames from {}", name, count, file);
                 }
                 Err(error) if required_cell_drawer => {
-                    return PreparedSpriteAtlas::abandoned(
-                        previous_atlas.is_none(),
-                        format!("bound cell-drawer animation [{name}] failed SHP decode: {error}"),
-                    );
+                    return PreparedSpriteAtlas::Abandoned(format!(
+                        "bound cell-drawer animation [{name}] failed SHP decode: {error}"
+                    ));
                 }
                 Err(_) => {}
             },
             None if required_cell_drawer => {
-                return PreparedSpriteAtlas::abandoned(
-                    previous_atlas.is_none(),
-                    format!("bound cell-drawer animation [{name}] has no SHP asset"),
-                );
+                return PreparedSpriteAtlas::Abandoned(format!(
+                    "bound cell-drawer animation [{name}] has no SHP asset"
+                ));
             }
             None => {}
         }
@@ -2945,14 +3008,12 @@ pub(crate) fn prepare_sprite_atlas(
         })
         .collect();
     if cell_palette.is_none() && palette_choices.contains(&SpritePaletteChoice::CellIso) {
-        return PreparedSpriteAtlas::abandoned(
-            previous_atlas.is_none(),
+        return PreparedSpriteAtlas::Abandoned(
             "terrain-attached animations require the active theater ISO palette".to_string(),
         );
     }
     if bullet_palette.is_none() && palette_choices.contains(&SpritePaletteChoice::Bullet) {
-        return PreparedSpriteAtlas::abandoned(
-            previous_atlas.is_none(),
+        return PreparedSpriteAtlas::Abandoned(
             "visible projectiles require PALETTE.PAL".to_string(),
         );
     }
@@ -2967,8 +3028,7 @@ pub(crate) fn prepare_sprite_atlas(
                 )
         })
     {
-        return PreparedSpriteAtlas::abandoned(
-            previous_atlas.is_none(),
+        return PreparedSpriteAtlas::Abandoned(
             "literal animation palettes require ANIM.PAL".to_string(),
         );
     }
@@ -3123,32 +3183,35 @@ pub(crate) fn prepare_sprite_atlas(
 /// across frames while those existing owners stay in their original phase,
 /// and live growth draws its frames on a worker.
 pub(crate) enum PreparedSpriteAtlas {
-    /// Nothing to draw: no sprite at map load, or a refresh abandoned before
-    /// any frame was drawn.
+    /// Nothing to draw: no sprite at map load.
     Unchanged,
+    /// A required asset or palette is missing, before any frame was drawn:
+    /// a map load fails, a refresh keeps its atlas.
+    Abandoned(String),
     /// The frames to draw and the bookkeeping published with them.
     Raster(ShpRasterWork, ShpAtlasUpload),
 }
 
 impl PreparedSpriteAtlas {
-    #[cold]
-    fn abandoned(initial: bool, failure: String) -> Self {
-        abandon_sprite_atlas_refresh(initial, &failure);
-        Self::Unchanged
-    }
-
-    /// Draw the frames on this thread and complete a map-load build.
+    /// Draw the frames on this thread and complete a map-load build. An
+    /// abandoned build is the load's error.
     pub(crate) fn finish(
         self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
-    ) -> Option<SpriteAtlas> {
+    ) -> anyhow::Result<Option<SpriteAtlas>> {
+        let (work, upload) = match self {
+            Self::Unchanged => return Ok(None),
+            Self::Abandoned(failure) => return Err(sprite_atlas_load_error(failure)),
+            Self::Raster(work, upload) => (work, upload),
+        };
+        let drawn = upload
+            .drawn(work.render())
+            .map_err(sprite_atlas_load_error)?;
         let mut atlas = None;
-        if let Self::Raster(work, upload) = self {
-            upload.finish(device, queue, batch, work.render(), &mut atlas);
-        }
-        atlas
+        upload.finish_drawn(device, queue, batch, drawn, &mut atlas);
+        Ok(atlas)
     }
 }
 
@@ -3209,6 +3272,9 @@ pub(crate) struct ShpRasterWork {
 
 /// What [`ShpRasterWork`] drew, or why its refresh must be abandoned.
 pub(crate) struct ShpRasterOutput(ShpRaster);
+
+/// A raster's drawn frames, its unrenderable keys and its palette rows.
+type DrawnShpSprites = (Vec<RenderedShpSprite>, Vec<ShpSpriteKey>, ShpPalettes);
 
 enum ShpRaster {
     Drawn {
@@ -3310,7 +3376,8 @@ impl ShpRasterWork {
 /// The bookkeeping a build or refresh publishes with its frames.
 pub(crate) struct ShpAtlasUpload {
     started: Instant,
-    /// Prepared without an atlas: a map-load build, which has no fallback.
+    /// Prepared without an atlas: a map-load build, which publishes the
+    /// effect registry.
     initial: bool,
     registered_effects: EffectRegistry,
     make_frame_counts: HashMap<String, u16>,
@@ -3338,9 +3405,24 @@ impl ShpAtlasUpload {
         output: ShpRasterOutput,
         atlas: &mut Option<SpriteAtlas>,
     ) -> bool {
-        let Some((rendered, unrenderable, rows)) = self.drawn(output) else {
-            return false;
-        };
+        match self.drawn(output) {
+            Ok(drawn) => self.finish_drawn(device, queue, batch, drawn, atlas),
+            Err(failure) => {
+                keep_previous_sprite_atlas(&failure);
+                false
+            }
+        }
+    }
+
+    /// [`Self::finish`] once the frames are drawn.
+    fn finish_drawn(
+        self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        (rendered, unrenderable, rows): DrawnShpSprites,
+        atlas: &mut Option<SpriteAtlas>,
+    ) -> bool {
         let added = rendered.len();
         let atlas = match atlas {
             Some(atlas) => {
@@ -3357,22 +3439,16 @@ impl ShpAtlasUpload {
         true
     }
 
-    /// The drawn frames, unrenderable keys and palette rows, or None once an
-    /// abandoned refresh is reported.
-    fn drawn(
-        &self,
-        output: ShpRasterOutput,
-    ) -> Option<(Vec<RenderedShpSprite>, Vec<ShpSpriteKey>, ShpPalettes)> {
+    /// The drawn frames, unrenderable keys and palette rows, or why the
+    /// raster abandoned them.
+    fn drawn(&self, output: ShpRasterOutput) -> Result<DrawnShpSprites, String> {
         match output.0 {
             ShpRaster::Drawn {
                 rendered,
                 unrenderable,
                 rows,
-            } => Some((rendered, unrenderable, rows)),
-            ShpRaster::Abandoned(failure) => {
-                abandon_sprite_atlas_refresh(self.initial, &failure);
-                None
-            }
+            } => Ok((rendered, unrenderable, rows)),
+            ShpRaster::Abandoned(failure) => Err(failure),
         }
     }
 

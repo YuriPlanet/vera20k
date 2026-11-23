@@ -1700,7 +1700,7 @@ mod tests {
         assert_eq!(ore(&first), ore(&variant(1)));
     }
 
-    /// VERA extension: the exported `.yrm` text of a generated map parses
+    /// VERA extension: the exported text of a generated map parses
     /// back to the same cells, overlays, objects and starts.
     #[test]
     fn exported_map_text_reads_back_the_generated_map() {
@@ -2100,9 +2100,31 @@ mod tests {
         );
         let blocks =
             crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
-                assets.get(name)
+                assets.get_ref(name)
             });
         Some((settings, resolved, blocks))
+    }
+
+    /// Every retail theater the generator offers holds each piece of its
+    /// cliff set, so the missing-piece refusal never stops a retail map.
+    #[test]
+    fn retail_theaters_hold_every_cliff_set_piece() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        for theater_name in (0..5).map(crate::map::rmg::emit::theater_name) {
+            let theater = crate::map::theater::load_theater(&mut assets, theater_name)
+                .unwrap_or_else(|| panic!("retail {theater_name} theater"));
+            let blocks = crate::map::rmg::theater_blocks::TheaterTileBlocks::build(
+                &theater.lookup,
+                |name| assets.get_ref(name),
+            );
+            assert_eq!(
+                blocks.missing_cliff_tile(&theater.lookup, theater.cliff_ranges.cliff_set),
+                None,
+                "{theater_name}"
+            );
+        }
     }
 
     /// [`observe_run`] of `options(map_type, theater)`, run once per test

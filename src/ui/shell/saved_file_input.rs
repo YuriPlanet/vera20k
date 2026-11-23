@@ -1,293 +1,186 @@
-//! Shared input for the native saved-file browser (driver 558DD0).
-//! Persistence, prompt purpose, audio and font measurement remain app-owned.
+//! Shared input for the native saved-file browser (driver 558DD0) on its
+//! `vera20k-gui` widgets. Persistence, prompt purpose, audio and font
+//! measurement remain app-owned.
 
-use crate::ui::shell::list::ListMetrics;
-use crate::ui::skirmish_shell::seed_list::SeedListGeometry;
-use crate::ui::skirmish_shell::{
-    SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout, SavedSeedMode, SavedSeedOutcome,
+use crate::ui::shell::page::{self, PageCue, PageEvent};
+use crate::ui::skirmish_shell::saved_seed_browser::{
+    ACTION, BACK, BROWSER_DIALOG, DELETE, EDIT, LIST, LOAD, NO, PROMPT_DIALOG, YES,
 };
-use crate::util::time::{Duration, Instant};
+use crate::ui::skirmish_shell::{
+    SavedSeedBrowserState, SavedSeedLayout, SavedSeedMode, SavedSeedOutcome,
+};
+use vera20k_gui::{InputEvent, Key, MouseButton, Prop, Value};
 use winit::keyboard::KeyCode;
 
 pub enum BrowserInputResult<I> {
-    None,
     Outcome(SavedSeedOutcome<I>),
     PromptAnswer(bool),
-    ButtonPressed,
-    /// A press on a prompt's button: the message box (`0x005D3490`)
-    /// subclasses its owner-draw buttons to `0x00612B70`, which plays
-    /// GUIMainButtonSound (`0x0061374B`) whichever browser asked.
-    PromptButtonPressed,
-    /// A single press selected a row: the list subclass plays GenericClick
-    /// (`0x0061AA43..0x0061AA5A`).
-    RowClicked,
+    /// A press on an owner-draw button, a box's included (the message box
+    /// `0x005D3490` subclasses its buttons to `0x00612B70`, which plays
+    /// GUIMainButtonSound, `0x0061374B`), or a row selected by a press (the
+    /// list subclass's GenericClick, `0x0061AA43..0x0061AA5A`).
+    Cue(PageCue),
 }
 
-/// Native list notifications use the host's double-click policy.
-#[cfg(windows)]
-pub fn host_double_click_limits() -> (Duration, i32, i32) {
-    #[link(name = "user32")]
-    unsafe extern "system" {
-        fn GetDoubleClickTime() -> u32;
-        fn GetSystemMetrics(index: i32) -> i32;
+/// Puts the widgets on `layout` (a control without a rect is hidden) with
+/// the enable rules, and the box's buttons on its template in `extent`.
+fn sync<I: Clone + PartialEq>(
+    browser: &mut SavedSeedBrowserState<I>,
+    layout: &SavedSeedLayout,
+    extent: (u32, u32),
+) {
+    // A disabled window takes no press: the action with no rows
+    // (0x00558FE5), VERA's Setups Load and Delete without a saved row.
+    let enabled = [
+        (ACTION, browser.action_enabled()),
+        (LOAD, browser.selected_saved().is_some()),
+        (DELETE, browser.selected_saved().is_some()),
+    ];
+    let prompt = browser
+        .prompt
+        .as_ref()
+        .map(|prompt| prompt.layout(extent.0, extent.1));
+    let rows = Value::Int(browser.entries.len() as i32);
+    let ui = &mut browser.ui;
+    ui.set_scale_in(BROWSER_DIALOG, layout.scale);
+    ui.set_prop(BROWSER_DIALOG, LIST, Prop::RowCount, rows);
+    for (id, on) in enabled {
+        ui.set_prop(BROWSER_DIALOG, id, Prop::Enabled, Value::Bool(on));
     }
-    // SAFETY: pointer-free Win32 queries with no ownership effects.
-    unsafe {
-        (
-            Duration::from_millis(u64::from(GetDoubleClickTime())),
-            GetSystemMetrics(36),
-            GetSystemMetrics(37),
-        )
+    if let Some(root) = ui.root_in(BROWSER_DIALOG) {
+        page::sync_rects(ui.gui_mut(), root, |id| match id {
+            LIST => Some(layout.list),
+            EDIT => layout.name_edit,
+            ACTION => Some(layout.action),
+            LOAD => layout.load,
+            DELETE => layout.delete,
+            BACK => Some(layout.back),
+            _ => None,
+        });
     }
-}
-#[cfg(not(windows))]
-pub fn host_double_click_limits() -> (Duration, i32, i32) {
-    (Duration::from_millis(500), 4, 4)
+    if let (Some((_, _, yes, no)), Some(root)) = (prompt, ui.root_in(PROMPT_DIALOG)) {
+        page::sync_rects(ui.gui_mut(), root, |id| match id {
+            YES => Some(yes),
+            NO => no,
+            _ => None,
+        });
+    }
 }
 
+/// What the widgets' events ask of the app, in order.
+fn take_events<I: Clone + PartialEq>(
+    browser: &mut SavedSeedBrowserState<I>,
+    setups: bool,
+) -> Vec<BrowserInputResult<I>> {
+    let events = browser.ui.drain_events();
+    let events = page::page_events(browser.ui.gui(), events);
+    let mut out = Vec::new();
+    for event in events {
+        let result = match event {
+            PageEvent::Cue(cue) => Some(BrowserInputResult::Cue(cue)),
+            PageEvent::Activated(id @ (YES | NO)) if browser.prompt.is_some() => {
+                Some(BrowserInputResult::PromptAnswer(id == YES))
+            }
+            PageEvent::Selected(LIST, row) => {
+                browser.select(row as usize);
+                None
+            }
+            // LBN_DBLCLK: the Load proc loads when the list has rows
+            // (0x00558AC0); VERA's Setups page loads the selected setup.
+            PageEvent::DoubleClicked(LIST, _)
+                if browser.mode == SavedSeedMode::Load && browser.action_enabled() =>
+            {
+                browser
+                    .selected_saved()
+                    .cloned()
+                    .map(SavedSeedOutcome::Load)
+                    .map(BrowserInputResult::Outcome)
+            }
+            PageEvent::DoubleClicked(LIST, _) if setups => {
+                browser.setup_outcome(LOAD).map(BrowserInputResult::Outcome)
+            }
+            PageEvent::Activated(ACTION) => {
+                browser.action_outcome().map(BrowserInputResult::Outcome)
+            }
+            PageEvent::Submitted(EDIT, _) if browser.mode == SavedSeedMode::Save => {
+                browser.action_outcome().map(BrowserInputResult::Outcome)
+            }
+            PageEvent::Activated(BACK) => {
+                Some(BrowserInputResult::Outcome(SavedSeedOutcome::Close))
+            }
+            PageEvent::Activated(id @ (LOAD | DELETE)) => {
+                browser.setup_outcome(id).map(BrowserInputResult::Outcome)
+            }
+            _ => None,
+        };
+        out.extend(result);
+    }
+    out
+}
+
+/// One pointer message at `pointer` (`down`: `None` moves). The window
+/// system moves the pointer before a press or release; a press anywhere but
+/// on the description edit takes its focus.
+pub fn pointer<I: Clone + PartialEq>(
+    browser: &mut SavedSeedBrowserState<I>,
+    layout: &SavedSeedLayout,
+    extent: (u32, u32),
+    (x, y): (i32, i32),
+    down: Option<bool>,
+) -> Vec<BrowserInputResult<I>> {
+    sync(browser, layout, extent);
+    browser.ui.on_input(InputEvent::PointerMove { x, y });
+    let button = MouseButton::Left;
+    match down {
+        Some(true) => {
+            if browser.prompt.is_none() && browser.ui.gui().hovered() != browser.node(EDIT) {
+                browser.ui.focus_control(BROWSER_DIALOG, None);
+            }
+            browser
+                .ui
+                .on_input(InputEvent::PointerDown { x, y, button });
+        }
+        Some(false) => {
+            browser.ui.on_input(InputEvent::PointerUp { x, y, button });
+        }
+        None => {}
+    }
+    take_events(browser, layout.load.is_some())
+}
+
+/// A key, with the text it types, on the browser.
 pub fn key<I: Clone + PartialEq>(
     browser: &mut SavedSeedBrowserState<I>,
     code: Option<KeyCode>,
     text: Option<&str>,
-) -> BrowserInputResult<I> {
-    if browser.prompt.is_some() {
-        // 5D4DDB IsDialogMessageA / 5D370D maps initial-focus IDOK and
-        // IDCANCEL to result 1 (negative for confirms). Consume the key.
-        return if matches!(
-            code,
-            Some(KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter)
-        ) {
-            BrowserInputResult::PromptAnswer(false)
-        } else {
-            BrowserInputResult::None
-        };
-    }
-    if !browser.description_edit.focused {
-        return BrowserInputResult::None;
-    }
-    if matches!(code, Some(KeyCode::Enter | KeyCode::NumpadEnter)) {
-        return browser
-            .action_outcome()
-            .map_or(BrowserInputResult::None, BrowserInputResult::Outcome);
-    }
-    let edit = &mut browser.description_edit;
-    match code {
-        Some(KeyCode::Backspace) => edit.backspace(),
-        Some(KeyCode::Delete) => edit.delete(),
-        Some(KeyCode::ArrowLeft) => edit.left(),
-        Some(KeyCode::ArrowRight) => edit.right(),
-        Some(KeyCode::Home) => edit.home(),
-        Some(KeyCode::End) => edit.end(),
-        // Base-browser callbacks ignore IDCANCEL; Escape does not close it.
-        Some(KeyCode::Tab | KeyCode::Escape) => {}
-        _ => {
-            if let Some(text) = text {
-                edit.insert_text(text);
-            }
-        }
-    }
-    BrowserInputResult::None
+) -> Vec<BrowserInputResult<I>> {
+    // A prompt's No takes Enter and Escape and the box every other key.
+    // Enter in the edit acts; the base browser ignores IDCANCEL, so Escape
+    // does not close it, and control characters (Tab too) type nothing.
+    let event = super::controller::gui_input(code, false, text);
+    let Some(event) = event.filter(|e| !matches!(e, InputEvent::Key(Key::Tab | Key::BackTab)))
+    else {
+        return Vec::new();
+    };
+    browser.ui.on_input(event);
+    take_events(browser, false)
 }
 
-fn hit<I>(
-    browser: &SavedSeedBrowserState<I>,
-    layout: &SavedSeedLayout,
-    extent: (u32, u32),
-    pointer: (i32, i32),
-) -> Option<SavedSeedControl> {
-    let (x, y) = pointer;
-    if let Some(prompt) = browser.prompt.as_ref() {
-        prompt.control_at(extent.0, extent.1, x, y)
-    } else {
-        SeedListGeometry::new(
-            layout.list,
-            browser.entries.len(),
-            browser.top_index,
-            ListMetrics::scaled(layout.scale),
-        )
-        .scroll_control_at(x, y)
-        .or_else(|| crate::ui::skirmish_shell::saved_seed_control_at(layout, x, y))
-    }
-}
-
-pub fn mouse_down<I: Clone + PartialEq>(
+/// Each frame: the scrollbar arrow's repeat (`0x0061C690`), and NewEdit
+/// keeps the edit's caret in view (`measure`: text widths in the font's
+/// authored units).
+pub fn update<I: Clone + PartialEq>(
     browser: &mut SavedSeedBrowserState<I>,
     layout: &SavedSeedLayout,
     extent: (u32, u32),
-    pointer: (i32, i32),
-    now: Instant,
-    double_click_limits: (Duration, i32, i32),
-) -> BrowserInputResult<I> {
-    let (x, y) = pointer;
-    let hit = hit(browser, layout, extent, pointer);
-    browser.pressed_control = None;
-    if browser.prompt.is_some() {
-        browser.pressed_control = hit;
-        return if hit.is_some() {
-            BrowserInputResult::PromptButtonPressed
-        } else {
-            BrowserInputResult::None
-        };
+    measure: impl Fn(&str) -> u32,
+) {
+    sync(browser, layout, extent);
+    browser.ui.poll();
+    browser.ui.drain_events();
+    if let (Some(_), Some(node)) = (layout.name_edit, browser.node(EDIT)) {
+        let _ = browser.ui.gui_mut().keep_caret_in_view(node, &measure);
     }
-    browser.description_edit.focused = hit == Some(SavedSeedControl::NameEdit0x526);
-    match hit {
-        Some(SavedSeedControl::List) => {
-            if crate::ui::shell::list::is_double_click(
-                &mut browser.last_list_press,
-                now,
-                x,
-                y,
-                double_click_limits,
-            ) {
-                // LBN_DBLCLK: the Load proc loads when the list has rows
-                // (0x00558AC0), wherever in the list the clicks landed.
-                if browser.mode == SavedSeedMode::Load && browser.action_enabled() {
-                    return browser
-                        .action_outcome()
-                        .map_or(BrowserInputResult::None, BrowserInputResult::Outcome);
-                }
-                // VERA's Setups page loads the double-clicked setup.
-                if layout.load.is_some() {
-                    return browser
-                        .setup_outcome(SavedSeedControl::Load)
-                        .map_or(BrowserInputResult::None, BrowserInputResult::Outcome);
-                }
-                return BrowserInputResult::None;
-            }
-            // 0x0061A948: a press on a row selects it and clicks; presses
-            // below the last row are ignored.
-            if let Some(row) = SeedListGeometry::new(
-                layout.list,
-                browser.entries.len(),
-                browser.top_index,
-                ListMetrics::scaled(layout.scale),
-            )
-            .row_at(browser.entries.len(), browser.top_index, x, y)
-            {
-                browser.select(row);
-                return BrowserInputResult::RowClicked;
-            }
-        }
-        Some(SavedSeedControl::ScrollUp | SavedSeedControl::ScrollDown) => {
-            let geometry = SeedListGeometry::new(
-                layout.list,
-                browser.entries.len(),
-                browser.top_index,
-                ListMetrics::scaled(layout.scale),
-            );
-            if hit == Some(SavedSeedControl::ScrollUp) {
-                browser.top_index = browser.top_index.saturating_sub(1);
-            } else {
-                browser.top_index = (browser.top_index + 1).min(geometry.max_top);
-            }
-            browser.pressed_control = hit;
-            browser.scroll_repeat_at = Some(now + Duration::from_millis(500));
-        }
-        Some(SavedSeedControl::ScrollThumb) => browser.pressed_control = hit,
-        Some(SavedSeedControl::ScrollTrack) => {
-            browser.top_index = SeedListGeometry::new(
-                layout.list,
-                browser.entries.len(),
-                browser.top_index,
-                ListMetrics::scaled(layout.scale),
-            )
-            .top_at_pointer(y);
-        }
-        // A disabled window takes no press (Load with no rows, 0x00558FE5).
-        Some(SavedSeedControl::Action) if !browser.action_enabled() => {}
-        Some(SavedSeedControl::Action | SavedSeedControl::Back0x686) => {
-            browser.pressed_control = hit;
-            return BrowserInputResult::ButtonPressed;
-        }
-        // VERA's Setups page: Load and Delete take a press while a saved
-        // setup is selected.
-        Some(control @ (SavedSeedControl::Load | SavedSeedControl::Delete))
-            if browser.selected_saved().is_some() =>
-        {
-            browser.pressed_control = Some(control);
-            return BrowserInputResult::ButtonPressed;
-        }
-        _ => {}
-    }
-    BrowserInputResult::None
-}
-
-pub fn mouse_up<I: Clone + PartialEq>(
-    browser: &mut SavedSeedBrowserState<I>,
-    layout: &SavedSeedLayout,
-    extent: (u32, u32),
-    pointer: (i32, i32),
-) -> BrowserInputResult<I> {
-    let hit = hit(browser, layout, extent, pointer);
-    let pressed = browser.pressed_control.take();
-    browser.scroll_repeat_at = None;
-    if pressed == Some(SavedSeedControl::ScrollThumb) {
-        browser.top_index = SeedListGeometry::new(
-            layout.list,
-            browser.entries.len(),
-            browser.top_index,
-            ListMetrics::scaled(layout.scale),
-        )
-        .top_at_pointer(pointer.1);
-        return BrowserInputResult::None;
-    }
-    if pressed.is_none() || pressed != hit {
-        return BrowserInputResult::None;
-    }
-    if browser.prompt.is_some() {
-        return BrowserInputResult::PromptAnswer(hit == Some(SavedSeedControl::Action));
-    }
-    match hit {
-        Some(SavedSeedControl::Action) => browser
-            .action_outcome()
-            .map_or(BrowserInputResult::None, BrowserInputResult::Outcome),
-        Some(SavedSeedControl::Back0x686) => BrowserInputResult::Outcome(SavedSeedOutcome::Close),
-        Some(control @ (SavedSeedControl::Load | SavedSeedControl::Delete)) => browser
-            .setup_outcome(control)
-            .map_or(BrowserInputResult::None, BrowserInputResult::Outcome),
-        _ => BrowserInputResult::None,
-    }
-}
-
-/// Returns whether the app should also update its font-measured edit scroll.
-pub fn update_scroll<I>(
-    browser: &mut SavedSeedBrowserState<I>,
-    layout: &SavedSeedLayout,
-    pointer_y: i32,
-    pointer_moved: bool,
-    now: Instant,
-) -> bool {
-    if browser.prompt.is_some() {
-        return false;
-    }
-    let geometry = SeedListGeometry::new(
-        layout.list,
-        browser.entries.len(),
-        browser.top_index,
-        ListMetrics::scaled(layout.scale),
-    );
-    if pointer_moved && browser.pressed_control == Some(SavedSeedControl::ScrollThumb) {
-        browser.top_index = geometry.top_at_pointer(pointer_y);
-    }
-    if browser
-        .scroll_repeat_at
-        .is_some_and(|deadline| now >= deadline)
-    {
-        match browser.pressed_control {
-            Some(SavedSeedControl::ScrollUp) => {
-                browser.top_index = browser.top_index.saturating_sub(1)
-            }
-            Some(SavedSeedControl::ScrollDown) => {
-                browser.top_index = (browser.top_index + 1).min(geometry.max_top)
-            }
-            _ => {
-                browser.scroll_repeat_at = None;
-                return false;
-            }
-        }
-        browser.scroll_repeat_at = Some(now + Duration::from_millis(25));
-    }
-    true
 }
 
 #[cfg(all(test, tests_ui))]
@@ -295,6 +188,7 @@ mod tests {
     use super::*;
     use crate::ui::skirmish_shell::{SavedSeedBrowserRow, SavedSeedPrompt, SavedSeedPromptPurpose};
     use std::path::PathBuf;
+    use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
     fn fixture(
         mode: SavedSeedMode,
@@ -308,194 +202,182 @@ mod tests {
                 last_write_time: (count - i) as u64,
                 visible: true,
                 loadable: true,
+                migratable: false,
             })
             .collect();
+        let visible =
+            ShellListGeometry::new(layout.list, count, 0, ListMetrics::scaled(layout.scale))
+                .visible_rows;
         let browser = SavedSeedBrowserState::open_rows(
             mode,
             rows,
             "Working".into(),
             "New".into(),
             100,
-            SeedListGeometry::new(layout.list, count, 0, ListMetrics::scaled(layout.scale))
-                .visible_rows,
+            visible,
         );
         (browser, layout)
+    }
+
+    fn click<I: Clone + PartialEq>(
+        browser: &mut SavedSeedBrowserState<I>,
+        layout: &SavedSeedLayout,
+        at: (i32, i32),
+    ) -> Vec<BrowserInputResult<I>> {
+        let mut out = pointer(browser, layout, (800, 600), at, Some(true));
+        out.extend(pointer(browser, layout, (800, 600), at, Some(false)));
+        out
+    }
+
+    fn error() -> SavedSeedPrompt<PathBuf> {
+        SavedSeedPrompt {
+            purpose: SavedSeedPromptPurpose::Error,
+            body: "Failure".into(),
+            affirmative: "OK".into(),
+            negative: None,
+        }
     }
 
     #[test]
     fn prompt_blocks_editor_and_base_escape_does_not_close_browser() {
         let (mut browser, _) = fixture(SavedSeedMode::Save, 0);
-        let before = browser.description_edit.units.clone();
+        let before = browser.description();
+        assert!(key(&mut browser, Some(KeyCode::Escape), Some("\u{1b}")).is_empty());
+        assert_eq!(browser.description(), before);
+        browser.show_prompt(error());
+        assert!(key(&mut browser, None, Some("typed")).is_empty());
+        assert_eq!(browser.description(), before);
         assert!(matches!(
-            key(&mut browser, Some(KeyCode::Escape), None),
-            BrowserInputResult::None
-        ));
-        assert_eq!(browser.description_edit.units, before);
-        browser.prompt = Some(SavedSeedPrompt {
-            purpose: SavedSeedPromptPurpose::Error,
-            body: "Failure".into(),
-            affirmative: "OK".into(),
-            negative: None,
-        });
-        assert!(matches!(
-            key(&mut browser, None, Some("typed")),
-            BrowserInputResult::None
-        ));
-        assert_eq!(browser.description_edit.units, before);
-        assert!(matches!(
-            key(&mut browser, Some(KeyCode::Enter), None),
-            BrowserInputResult::PromptAnswer(false)
+            key(&mut browser, Some(KeyCode::Enter), None)[..],
+            [BrowserInputResult::PromptAnswer(false)]
         ));
         assert!(browser.prompt.is_some(), "the app owns prompt resolution");
     }
 
     #[test]
-    fn a_press_on_a_prompt_button_is_a_button_press() {
+    fn a_press_on_a_prompt_button_cues_and_its_release_answers() {
         let (mut browser, layout) = fixture(SavedSeedMode::Save, 0);
-        let prompt = SavedSeedPrompt {
-            purpose: SavedSeedPromptPurpose::Error,
-            body: "Failure".into(),
-            affirmative: "OK".into(),
-            negative: None,
-        };
-        let (dialog, _, ok, _) = prompt.layout(800, 600);
-        browser.prompt = Some(prompt);
-        let limits = (Duration::from_millis(500), 4, 4);
-        let on_ok = (ok.x + 2, ok.y + 2);
-        let off = (dialog.x + 2, dialog.y + 2);
-        let now = Instant::now();
+        let (dialog, _, ok, _) = error().layout(800, 600);
+        browser.show_prompt(error());
+        assert!(click(&mut browser, &layout, (dialog.x + 2, dialog.y + 2)).is_empty());
         assert!(matches!(
-            mouse_down(&mut browser, &layout, (800, 600), off, now, limits),
-            BrowserInputResult::None
-        ));
-        assert!(matches!(
-            mouse_down(&mut browser, &layout, (800, 600), on_ok, now, limits),
-            BrowserInputResult::PromptButtonPressed
-        ));
-        assert!(matches!(
-            mouse_up(&mut browser, &layout, (800, 600), on_ok),
-            BrowserInputResult::PromptAnswer(true)
+            click(&mut browser, &layout, (ok.x + 2, ok.y + 2))[..],
+            [
+                BrowserInputResult::Cue(PageCue::Button),
+                BrowserInputResult::PromptAnswer(true)
+            ]
         ));
     }
 
     #[test]
-    fn double_click_load_fires_on_second_press_without_release_replay() {
+    fn double_click_loads_the_selection_even_below_the_rows() {
         let (mut browser, layout) = fixture(SavedSeedMode::Load, 2);
-        let row =
-            SeedListGeometry::new(layout.list, 2, 0, ListMetrics::scaled(layout.scale)).row(1);
-        let pointer = (row.x + 2, row.y + 2);
-        let now = Instant::now();
-        let limits = (Duration::from_millis(500), 4, 4);
+        let geometry = ShellListGeometry::new(layout.list, 2, 0, ListMetrics::scaled(layout.scale));
+        let row = geometry.row(1);
         assert!(matches!(
-            mouse_down(&mut browser, &layout, (800, 600), pointer, now, limits),
-            BrowserInputResult::RowClicked
+            click(&mut browser, &layout, (row.x + 2, row.y + 2))[..],
+            [BrowserInputResult::Cue(PageCue::ListClick)]
         ));
         assert!(matches!(
-            mouse_up(&mut browser, &layout, (800, 600), pointer),
-            BrowserInputResult::None
+            &click(&mut browser, &layout, (row.x + 2, row.y + 2))[..],
+            [BrowserInputResult::Outcome(SavedSeedOutcome::Load(path))] if *path == *"save1.bin"
         ));
-        assert!(
-            matches!(mouse_down(&mut browser, &layout, (800,600), pointer, now+Duration::from_millis(100), limits), BrowserInputResult::Outcome(SavedSeedOutcome::Load(path)) if path == *"save1.bin")
-        );
-        assert!(matches!(
-            mouse_up(&mut browser, &layout, (800, 600), pointer),
-            BrowserInputResult::None
-        ));
-    }
-
-    #[test]
-    fn a_double_click_below_the_rows_loads_the_selection_without_reselecting() {
-        let (mut browser, layout) = fixture(SavedSeedMode::Load, 2);
-        let geometry = SeedListGeometry::new(layout.list, 2, 0, ListMetrics::scaled(layout.scale));
         let below = geometry.row(geometry.visible_rows - 1);
-        let pointer = (below.x + 2, below.y + 2);
-        let now = Instant::now();
-        let limits = (Duration::from_millis(500), 4, 4);
+        browser.reset_interaction();
+        assert!(click(&mut browser, &layout, (below.x + 2, below.y + 2)).is_empty());
         assert!(matches!(
-            mouse_down(&mut browser, &layout, (800, 600), pointer, now, limits),
-            BrowserInputResult::None
+            &click(&mut browser, &layout, (below.x + 2, below.y + 2))[..],
+            [BrowserInputResult::Outcome(SavedSeedOutcome::Load(path))] if *path == *"save1.bin"
         ));
-        let _ = mouse_up(&mut browser, &layout, (800, 600), pointer);
-        assert!(matches!(
-            mouse_down(
-                &mut browser,
-                &layout,
-                (800, 600),
-                pointer,
-                now + Duration::from_millis(100),
-                limits
-            ),
-            BrowserInputResult::Outcome(SavedSeedOutcome::Load(path)) if path == *"save0.bin"
-        ));
-        assert_eq!(browser.selected, Some(0));
+        assert_eq!(browser.selected(), Some(1));
     }
 
     #[test]
-    fn a_disabled_load_takes_no_press() {
+    fn only_the_convert_button_asks_to_migrate_a_supported_old_save() {
+        let (mut browser, layout) = fixture(SavedSeedMode::Load, 2);
+        let action = (layout.action.x + 5, layout.action.y + 5);
+        assert!(matches!(
+            &click(&mut browser, &layout, action)[..],
+            [BrowserInputResult::Cue(PageCue::Button), BrowserInputResult::Outcome(SavedSeedOutcome::Load(path))]
+                if *path == *"save0.bin"
+        ));
+        browser.entries[1].loadable = false;
+        browser.entries[1].migratable = true;
+        let geometry = ShellListGeometry::new(layout.list, 2, 0, ListMetrics::scaled(layout.scale));
+        let row = geometry.row(1);
+        let old_save = (row.x + 2, row.y + 2);
+        click(&mut browser, &layout, old_save);
+        assert_eq!(
+            browser.ui.prop(BROWSER_DIALOG, ACTION, Prop::Label),
+            Some(&Value::Text("VERA:ConvertSave".into()))
+        );
+        assert!(key(&mut browser, Some(KeyCode::Enter), None).is_empty());
+        assert!(matches!(
+            &click(&mut browser, &layout, old_save)[..],
+            [BrowserInputResult::Outcome(SavedSeedOutcome::Load(path))] if *path == *"save1.bin"
+        ));
+        assert!(matches!(
+            &click(&mut browser, &layout, action)[..],
+            [BrowserInputResult::Cue(PageCue::Button), BrowserInputResult::Outcome(SavedSeedOutcome::Convert(path))]
+                if *path == *"save1.bin"
+        ));
+        browser.select(0);
+        assert_eq!(browser.action_label().0, "GUI:Load");
+    }
+
+    #[test]
+    fn a_disabled_load_takes_no_press_and_setups_buttons_take_theirs() {
         let (mut browser, layout) = fixture(SavedSeedMode::Load, 0);
         assert!(!browser.action_enabled());
-        let pointer = (layout.action.x + 5, layout.action.y + 5);
-        let limits = (Duration::from_millis(500), 4, 4);
-        assert!(matches!(
-            mouse_down(
+        assert!(
+            click(
                 &mut browser,
                 &layout,
-                (800, 600),
-                pointer,
-                Instant::now(),
-                limits
-            ),
-            BrowserInputResult::None
+                (layout.action.x + 5, layout.action.y + 5)
+            )
+            .is_empty()
+        );
+        // At 640x480 the list reaches under the Setups column: a press right
+        // of it lands on Delete.
+        let layout = crate::ui::skirmish_shell::compute_setups_layout(640, 480);
+        let (mut browser, _) = fixture(SavedSeedMode::Save, 1);
+        browser.select(1);
+        let delete = layout.delete.unwrap();
+        assert!(matches!(
+            &click(&mut browser, &layout, (delete.x + delete.w - 4, delete.y + 4))[..],
+            [BrowserInputResult::Cue(PageCue::Button), BrowserInputResult::Outcome(SavedSeedOutcome::Delete(path))]
+                if *path == *"save0.bin"
         ));
-        assert_eq!(browser.pressed_control, None);
     }
 
     #[test]
-    fn scrollbar_hold_repeats_at_deadline_and_release_cancels_capture() {
-        let (mut browser, layout) = fixture(SavedSeedMode::Load, 40);
-        let bar = SeedListGeometry::new(layout.list, 40, 0, ListMetrics::scaled(layout.scale))
-            .scrollbar
-            .unwrap();
-        let pointer = (bar.x + 3, bar.y + bar.h - 3);
-        let now = Instant::now();
-        let _ = mouse_down(
+    fn load_status_help_follows_the_cursor_again_once_the_box_goes() {
+        let (mut browser, layout) = fixture(SavedSeedMode::Load, 2);
+        let over = (layout.list.x + 5, layout.list.y + 5);
+        pointer(&mut browser, &layout, (800, 600), over, None);
+        assert_eq!(browser.hovered_help(), Some("STT:LoadList"));
+        browser.show_prompt(error());
+        assert_eq!(browser.hovered_help(), None);
+        browser.take_prompt();
+        pointer(&mut browser, &layout, (800, 600), over, None);
+        assert_eq!(browser.hovered_help(), Some("STT:LoadList"));
+    }
+
+    #[test]
+    fn typing_is_limited_and_a_press_off_the_edit_takes_its_focus() {
+        let (mut browser, layout) = fixture(SavedSeedMode::Save, 0);
+        key(&mut browser, None, Some(&"x".repeat(100)));
+        assert_eq!(browser.edit().units.len(), 79);
+        key(&mut browser, Some(KeyCode::Backspace), None);
+        key(&mut browser, None, Some(":"));
+        assert_eq!(browser.edit().units[78], u16::from(b':'));
+        click(
             &mut browser,
             &layout,
-            (800, 600),
-            pointer,
-            now,
-            (Duration::from_millis(500), 4, 4),
+            (layout.back.x - 2, layout.back.y - 2),
         );
-        assert_eq!(browser.top_index, 1);
-        update_scroll(
-            &mut browser,
-            &layout,
-            pointer.1,
-            false,
-            now + Duration::from_millis(499),
-        );
-        assert_eq!(browser.top_index, 1);
-        update_scroll(
-            &mut browser,
-            &layout,
-            pointer.1,
-            false,
-            now + Duration::from_millis(500),
-        );
-        assert_eq!(browser.top_index, 2);
-        assert!(matches!(
-            mouse_up(&mut browser, &layout, (800, 600), (0, 0)),
-            BrowserInputResult::None
-        ));
-        assert!(browser.pressed_control.is_none());
-        assert!(browser.scroll_repeat_at.is_none());
-        update_scroll(
-            &mut browser,
-            &layout,
-            pointer.1,
-            false,
-            now + Duration::from_secs(1),
-        );
-        assert_eq!(browser.top_index, 2);
+        key(&mut browser, None, Some("y"));
+        assert_eq!(browser.edit().units.len(), 79);
+        assert!(!browser.edit().focused);
     }
 }

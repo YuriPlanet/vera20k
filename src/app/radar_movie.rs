@@ -135,14 +135,14 @@ impl RadarMovies {
     }
 }
 
-/// Request5BF390: campaign mode0, fixed catalogue ordinal, unlock progress
+/// Request5BF390: campaign world, fixed catalogue ordinal, unlock progress
 /// before the asset check, source-preserving YR media resolution, then append.
 pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) {
     if state
         .match_state
         .sim_runtime
         .runtime()
-        .is_none_or(|rt| rt.simulation.session().game_mode_nonzero())
+        .is_none_or(|rt| !rt.simulation.session().uses_campaign_world())
     {
         return;
     }

@@ -16,6 +16,7 @@ MakeInfantryOwner=victim     ; now also for the InfDeath table, virus, mutate an
 
 [GlobalControls]
 AllowBypassBuildLimit=no,no,yes  ; also lets a hard AI team ignore BuildLimit
+AllowParallelAIQueues=no         ; a computer house builds in one factory per category at a time
 ```
 
 ## AI base plans, teams and production
@@ -32,6 +33,20 @@ compares TechLevels signed (HouseExt::GetTypeToProduce 100216A0, hooks
 0x4FEA60, 0x4FEEE0, 0x4FF210). Anger against a `MultiplayPassive` house is
 ignored outside campaigns (10023FB0, 0x504796). A construction yard's queue
 update also refreshes the defense strip (10025100, 0x509140).
+
+With `AllowParallelAIQueues=no` a computer house starts production in one
+factory building per category (buildings, infantry, vehicles, ships,
+aircraft) at a time: the first to try claims the house's slot, even when too
+poor to start, and any other waits (10024E00, 0x4502F4). The slot frees when
+a unit, infantryman or aircraft exits (0x444119, 0x444131, 0x443CCA), when a
+factory abandons its product (0x4CA07A), or when the building is removed
+(Ares' `AnnounceInvalidPointer`, 0x7258D0). A placed structure keeps the
+building slot: the building exit's hook (0x44531F) is never reached, since
+the exit sets the house's building choice to -1 at its start (0x444F3F) and
+the compare before the hook (0x44531B) then fails. The key defaults to yes, which
+keeps stock parallel production. It is the same gate Phobos' forbids read
+([phobos-parallel-ai-queues.md](phobos-parallel-ai-queues.md)), so the two
+never act in one game and share the house's slots (`sim::ai_base_building`).
 
 ## Buildings
 
@@ -82,8 +97,6 @@ cites each hook.
 - An upgrade's ProduceCash timer is not started at Put (0x4409F4); the
   Update hook starts it one frame longer. The payout and
   `ProduceCashDisplay` are ported in `sim::credit_income`.
-- Ares serial AI queues (`AllowParallelAIQueues=no`, 0x4502F4, 0x4CA07A and
-  the four KickOutUnit hooks); the default changes nothing.
 - Doggie (0x51F628, 0x518CB3, 0x51ABD7,
   0x5200C1), `DeathAnims=` owners (0x51849A), Mission_Guard's SW gate
   (0x449716) and the ICBM crate's Ares Nuke type (0x6CEEB0): dormant on
@@ -221,12 +234,12 @@ DLL removed are not listed.
 
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
-| `443CCA` | BuildingClass_KickOutUnit_AircraftType | `10024D60` | residual: serial AI queue bookkeeping |
-| `444119` | BuildingClass_KickOutUnit_UnitType | `10024DC0` | residual: serial AI queue bookkeeping |
-| `444131` | BuildingClass_KickOutUnit_InfantryType | `10024DA0` | residual: serial AI queue bookkeeping |
-| `44531F` | BuildingClass_KickOutUnit_BuildingType | `10024D80` | residual: serial AI queue bookkeeping |
-| `4502F4` | BuildingClass_Update_Factory | `10024E00` | residual: Ares serial AI queues (`AllowParallelAIQueues=no`); with the default the hook does nothing (`phobos_parallel_ai_queues`) |
-| `4CA07A` | FactoryClass_AbandonProduction | `10024EE0` | residual: serial AI queue bookkeeping (as 0x4502F4) |
+| `443CCA` | BuildingClass_KickOutUnit_AircraftType | `10024D60` | ported: frees the aircraft slot (`production_queue::exit_produced_object`) |
+| `444119` | BuildingClass_KickOutUnit_UnitType | `10024DC0` | ported: frees the vehicle or ship slot by the Unit's own `Naval=` (same) |
+| `444131` | BuildingClass_KickOutUnit_InfantryType | `10024DA0` | ported: frees the infantry slot (same) |
+| `44531F` | BuildingClass_KickOutUnit_BuildingType | `10024D80` | not applicable: unreachable, the exit sets the choice the 0x44531B compare reads to -1 at 0x444F3F |
+| `4502F4` | BuildingClass_Update_Factory | `10024E00` | ported: serial AI queues under `AllowParallelAIQueues=no` (`factory_ai::parallel_start_allowed`, `RuleSet::serial_ai_queues_act`) |
+| `4CA07A` | FactoryClass_AbandonProduction | `10024EE0` | ported: any factory's abandoned product frees its slot (`factory_lifecycle::settle_abandoned`) |
 | `509140` | HouseClass_Update_Factories_Queues | `10025100` | ported: the BuildingType update also refreshes the Combat (defense) queue (`update_factory_queue`); the sidebar redraw flag is presentation |
 | `50B370` | HouseClass_ShouldDisableCameo | `10024F80` | ported: replaces CheckBuildLimit for every caller (BuildLimitRemaining less the queue, the held object counted once, the AirportBound limit going on to BuildLimit, a usable factory) |
 | `535DB6` | SetStructureTabCommandClass_Execute_Power | `10025150` | residual: structure-tab hotkey asks a powered factory (input) |

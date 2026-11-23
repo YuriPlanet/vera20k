@@ -70,7 +70,7 @@ pub(super) fn resolve_attacker_fire(
     binary_frame: u32,
     has_active_wave: bool,
     out: &mut CombatEmit,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> FireReach {
     let mut reach = FireReach::default();
     if let Some(shot) = admit_attacker_fire(
@@ -127,7 +127,7 @@ fn admit_attacker_fire<'r>(
     has_active_wave: bool,
     reach: &mut FireReach,
     out: &mut CombatEmit,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<AdmittedFire<'r>> {
     let sound_enabled = sound_enabled(world);
     let delayed_building_slot = match snap.building_shot {
@@ -159,8 +159,8 @@ fn admit_attacker_fire<'r>(
     // Wave on either slot) keep the same protection for other layouts.
     if snap.category == EntityCategory::Unit
         && has_active_wave
-        && combat_weapon::primary_for_tier(obj, snap.veterancy)
-            .and_then(|weapon_id| rules.weapon(weapon_id))
+        && combat_weapon::weapon_for_index(obj, snap.veterancy, 0)
+            .and_then(|record| record.weapon(rules))
             .is_some_and(|weapon| weapon.is_sonic)
     {
         return None;
@@ -579,7 +579,7 @@ fn admit_attacker_fire<'r>(
     let snap = if infantry_fire {
         let actor = world.substrate.entities.get(snap.stable_id)?;
         firing_snapshot =
-            build_attacker_snapshot(actor, actor.attack_target.target()?, snap.garrison.clone());
+            build_attacker_snapshot(actor, actor.attack_target.target()?, snap.garrison);
         &firing_snapshot
     } else {
         snap
@@ -613,7 +613,7 @@ fn admit_attacker_fire<'r>(
     };
 
     Some(AdmittedFire {
-        snap: snap.clone(),
+        snap: *snap,
         obj,
         selected,
         target_coords,
@@ -655,7 +655,7 @@ fn unit_fire_tail(
     fire_error: Option<fire_error::FireError>,
     fire_hull: Option<u16>,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if unit_reaches_fire_update(world, id) {
         world.unit_fire_update_tail(
@@ -712,7 +712,7 @@ fn visit_without_target(
     world: &mut Simulation,
     visit: &FireVisit,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let holds_target = |world: &Simulation, id: u64| {
         world
@@ -1012,7 +1012,11 @@ fn fireat_launch_aim(
         weapon.speed,
         speed_projectile(weapon),
         rules.general.gravity,
-        fireat_launch_distance(source, target_coord),
+        fireat_launch_distance(
+            source,
+            target_coord,
+            world.session.map_exceeds_original_size(),
+        ),
     );
     FireAtLaunchAim {
         aim: super::aim_coord::led_target_coordinate(world, rules, snap.stable_id, tarcom),
@@ -1079,7 +1083,10 @@ fn firepower_stages(
         // `vt+0x400`: BuildingClass `0x00458DD0`, CanBeOccupied &&
         // CanOccupyFire && an occupant for FireAt; Phobos' Bullet-init
         // helper applies the same type flags without requiring an occupant.
-        occupied: is_garrison.then(|| f32_bits(multipliers.occupy_damage_multiplier)),
+        // Original RA2 has no OccupyDamageMultiplier: the garrison gun deals
+        // its plain WeaponType damage. YR applies the global multiplier.
+        occupied: (!rules.ra2() && is_garrison)
+            .then(|| f32_bits(multipliers.occupy_damage_multiplier)),
         // `+0x2E4` on a non-building: a unit installed in a Tank Bunker.
         bunkered: firer
             .filter(|firer| firer.category() != EntityCategory::Structure)
@@ -1212,10 +1219,10 @@ fn reveal_on_fire(
     };
     // The clients whose victim/weapon leaf passes: 6FF6D0..6FF6FA (Spawner
     // 6FDEE0..6FDF0F), RevealOnFire and IsHumanPlayer of the victim's House.
-    let admitted = match victim {
-        Some(victim) if enabled => world.human_player_clients(victim),
-        _ => Vec::new(),
-    };
+    let admission = victim
+        .filter(|_| enabled)
+        .map(|victim| world.human_player_client_set(victim));
+    let admitted = admission.as_deref().unwrap_or_default();
     let clients;
     let viewers = match path {
         // No callback or RNG occurs in this border. Every client runs it, in
@@ -1225,9 +1232,9 @@ fn reveal_on_fire(
             &clients[..]
         }
         FireDisclosurePath::Shot if admitted.is_empty() => return,
-        FireDisclosurePath::Shot => &admitted[..],
+        FireDisclosurePath::Shot => admitted,
     };
-    let context = crate::sim::world::UninitContext::new(rules);
+    let mut context = crate::sim::world::UninitContext::new(rules);
     let config = world.sight_reveal_config(rules);
     let heights = world.sight_height_grid(&config);
     // FireAt6FDE73..6FDF5A / 6FF66C..6FF73D may read PlayerPtr's
@@ -1247,7 +1254,7 @@ fn reveal_on_fire(
         let owned = firer.owner() == house;
         let discovered = !uses_local_discovery
             || (world.session.current_house() == Some(house)
-                && firer.discovery.discovered_by_current_house());
+                && firer.seldom.discovery.discovered_by_current_house());
         if owned || discovered {
             if owned && firer.category() == EntityCategory::Aircraft {
                 continue;
@@ -1299,7 +1306,7 @@ fn reveal_on_fire(
                 Some(&heights),
                 false,
                 &config,
-                context,
+                context.reborrow(),
                 crate::sim::vision::MapRevealProjection::Fire,
                 Some(house),
             );
@@ -1310,7 +1317,7 @@ fn reveal_on_fire(
                     house,
                     local_origin,
                     6,
-                    context,
+                    context.reborrow(),
                 );
             }
         }
@@ -1321,7 +1328,7 @@ fn reveal_on_fire(
             house,
             origin,
             4,
-            context,
+            context.reborrow(),
         );
     }
 }
@@ -1414,6 +1421,16 @@ pub(crate) fn snapshot_get_rof(
                 crate::rules::object_type::Ability::Rof,
             ),
             veteran_rof: rules.general.veteran_rof,
+            // `TechnoClass::GetROF` divides the occupied building's ROF by
+            // its occupant count in BOTH game.exe (RA2) and gamemd.exe (YR):
+            // that signed IDIV is the sole mechanism that makes a full
+            // garrison fire faster than a single occupant. RA2 differs only
+            // in WHICH gun fires (the building's own Primary, see
+            // get_weapon_record), not in how the garrison ROF is scaled.
+            // Suppressing the divisor under -ra2 left every garrison firing
+            // at a lone occupant's cadence regardless of how many troops
+            // were inside. OccupyROFMultiplier= is a YR/Ares rule absent from
+            // retail RA2, so keep its RA2 value at identity (1.0).
             occupants: snap.garrison.as_ref().map(|gs| gs.occupant_count),
             bunkered: snap.category != EntityCategory::Structure
                 && firer.is_some_and(|firer| {
@@ -1470,7 +1487,7 @@ pub(super) fn emit_admitted_fire(
     binary_frame: u32,
     out: &mut CombatEmit,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<u64> {
     // Infantry51DF70 clears68D for every direct FireAt caller, including
     // Guard521432 and a launch subsequently refused by Techno6FDD50.
@@ -1552,9 +1569,10 @@ pub(super) fn emit_admitted_fire(
         .entities
         .get(snap.stable_id)
         .is_some_and(|firer| {
-            (weapon.use_fire_particles && firer.fire_particle_system.system().is_some())
-                || (weapon.is_railgun && firer.railgun_particle_system.system().is_some())
-                || (weapon.use_spark_particles && firer.spark_particle_system.system().is_some())
+            (weapon.use_fire_particles && firer.seldom.fire_particle_system.system().is_some())
+                || (weapon.is_railgun && firer.seldom.railgun_particle_system.system().is_some())
+                || (weapon.use_spark_particles
+                    && firer.seldom.spark_particle_system.system().is_some())
         })
     {
         return None;
@@ -1643,7 +1661,7 @@ pub(super) fn emit_admitted_fire(
         Some((rx, ry)) => {
             area_fire_snap = AttackerSnapshot {
                 target: TargetKind::Cell(rx, ry),
-                ..snap.clone()
+                ..*snap
             };
             (&area_fire_snap, cell_center_coords(rx, ry))
         }
@@ -1659,7 +1677,7 @@ pub(super) fn emit_admitted_fire(
         .substrate
         .entities
         .get(snap.stable_id)
-        .map(|entity| entity.weapon_burst)
+        .map(|entity| entity.seldom.weapon_burst)
         .unwrap_or_default();
     // FLH uses only odd/even parity; retain the signed dword in its owner.
     let burst_index = (burst.index() & 1) as u8;
@@ -1724,7 +1742,10 @@ pub(super) fn emit_admitted_fire(
         );
         if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
             entity.rearm_after_fire(binary_frame as i32, rof);
-            entity.weapon_burst.complete_shot(weapon.burst.max(1));
+            entity
+                .seldom
+                .weapon_burst
+                .complete_shot(weapon.burst.max(1));
         }
         let weapon_id = world.interner.intern(selected.weapon_id);
         world.fire_disk_laser(
@@ -1750,7 +1771,7 @@ pub(super) fn emit_admitted_fire(
     let bullet_id = world.substrate.allocate_stable_id();
     let native_unique_id = world.next_native_runtime_id();
     fireat_estimate_debit(world, rules, snap.stable_id, tarcom, obj, weapon);
-    let launched = {
+    let launched_weapon = {
         let impact_world_z_leptons =
             attack_world_z_leptons(snap.target, world, world.resolved_terrain.as_ref());
         let origin_world_z_leptons = fire.source_z;
@@ -1963,6 +1984,7 @@ pub(super) fn emit_admitted_fire(
             .get_mut(snap.stable_id)
             .map_or(0, |source| {
                 source
+                    .seldom
                     .weapon_burst
                     .take_radial_index(obj.radial_fire_segments)
             });
@@ -1987,8 +2009,8 @@ pub(super) fn emit_admitted_fire(
         });
         // A launch with no ballistic solution deletes its bullet
         // (`0x006FF000` -> `0x006FF93C`, or `0x006FF01E` when
-        // `BulletClass::Fire` refuses) and resumes at `0x006FF749`.
-        let mut launched = launch.is_some();
+        // `BulletClass::Fire` refuses) and resumes at `0x006FF749`. A
+        // launched shot answers its weapon's id, interned with its payload.
         if let Some(FireAtLaunchResult {
             velocity,
             speed: launch_speed,
@@ -2013,14 +2035,17 @@ pub(super) fn emit_admitted_fire(
                     .wrapping_add(world.ares_prism_shot_damage_add(snap.stable_id, rules)),
                 _ => base_damage,
             };
-            let payload = ProjectilePayload::new(
-                base_damage,
-                world.interner.intern(&warhead.id),
-                projectile_type.map(|kind| world.interner.intern(&kind.id)),
-                weapon.bright,
-            )
-            .with_installed_weapon(Some(world.interner.intern(selected.weapon_id)))
-            .with_damage_multiplier(damage_multiplier);
+            // Interned per shot on purpose: interned ids are saved and hashed
+            // and take first-use order, so the first shot of a weapon is what
+            // assigns them. A later shot's call is one hash probe and
+            // allocates nothing.
+            let warhead_id = world.interner.intern(&warhead.id);
+            let projectile_id = projectile_type.map(|kind| world.interner.intern(&kind.id));
+            let weapon_id = world.interner.intern(selected.weapon_id);
+            let payload =
+                ProjectilePayload::new(base_damage, warhead_id, projectile_id, weapon.bright)
+                    .with_installed_weapon(Some(weapon_id))
+                    .with_damage_multiplier(damage_multiplier);
             // Ares TechnoClass_Fire_CreateBullet (1001ADE0, hook 0x6FE53F):
             // the bullet's Range is the weapon's ProjectileRange, which only
             // a `Ranged=` type spends, in a game read the Ares way.
@@ -2037,7 +2062,7 @@ pub(super) fn emit_admitted_fire(
             let payload =
                 payload.with_firepower_multiplier(phobos_firepower_multiplier(&damage_stages));
             // `BulletClass::Fire` (`0x006FF014`) at the launch source.
-            launched = super::admit_techno_fired_bullet(
+            super::admit_techno_fired_bullet(
                 world,
                 rules,
                 weapon,
@@ -2065,9 +2090,11 @@ pub(super) fn emit_admitted_fire(
                         entry_target.projectile_target(world),
                     ),
                 },
-            );
+            )
+            .then_some(weapon_id)
+        } else {
+            None
         }
-        launched
     };
 
     // A failed launch resumes at `0x006FF749`, past the rest of the shot
@@ -2077,10 +2104,10 @@ pub(super) fn emit_admitted_fire(
     // `+0x3BC` 15-frame timer (`0x006FF4B0`), RevealOnFire and the `+0x120`
     // store, so the firer may try again next frame. The tail from
     // `0x006FF749` still runs.
-    if !launched {
+    let Some(weapon_id) = launched_weapon else {
         fireat_tail(world, rules, snap, weapon, None, effects);
         return None;
-    }
+    };
 
     let sequence = world
         .substrate
@@ -2100,7 +2127,7 @@ pub(super) fn emit_admitted_fire(
         attacker_id: snap.stable_id,
         #[cfg(any(test, feature = "test-support"))]
         weapon_slot: selected.slot,
-        weapon_id: world.interner.intern(selected.weapon_id),
+        weapon_id,
         #[cfg(any(test, feature = "test-support"))]
         facing,
         #[cfg(any(test, feature = "test-support"))]
@@ -2116,6 +2143,8 @@ pub(super) fn emit_admitted_fire(
             fire.aim_facing16,
             snap.garrison.is_some(),
             in_open_transport,
+            rules.ares(),
+            rules.ra2(),
         )
         .map(|name| world.interner.intern(name)),
         occupied_building: snap.garrison.is_some(),
@@ -2161,7 +2190,7 @@ pub(super) fn emit_admitted_fire(
             .substrate
             .entities
             .get(snap.stable_id)
-            .is_some_and(|firer| firer.fire_particle_system.system().is_none())
+            .is_some_and(|firer| firer.seldom.fire_particle_system.system().is_none())
     {
         let system = fireat_attached_system(world, rules, weapon, snap, launch);
         if let Some(system) = system {
@@ -2171,7 +2200,7 @@ pub(super) fn emit_admitted_fire(
                 .link_to_owner_fire_slot(system);
         }
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.fire_particle_system.bind(system);
+            firer.seldom.fire_particle_system.bind(system);
         }
     }
     // FireAt6FF1AD..6FF1F5: after successful Bullet::Fire and recoil, before
@@ -2183,11 +2212,11 @@ pub(super) fn emit_admitted_fire(
             .substrate
             .entities
             .get(snap.stable_id)
-            .is_some_and(|firer| firer.spark_particle_system.system().is_none())
+            .is_some_and(|firer| firer.seldom.spark_particle_system.system().is_none())
     {
         let system = fireat_attached_system(world, rules, weapon, snap, launch);
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.spark_particle_system.bind(system);
+            firer.seldom.spark_particle_system.bind(system);
         }
     }
     // FireAt6FF1FB..6FF26E: an IsRailgun weapon with no live +314 system runs
@@ -2203,7 +2232,7 @@ pub(super) fn emit_admitted_fire(
                 .substrate
                 .entities
                 .get(snap.stable_id)
-                .is_some_and(|firer| firer.railgun_particle_system.system().is_none())
+                .is_some_and(|firer| firer.seldom.railgun_particle_system.system().is_none())
     {
         let end = super::railgun::line_damage(
             world,
@@ -2236,7 +2265,7 @@ pub(super) fn emit_admitted_fire(
                 )
             });
         if !detached && let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.railgun_particle_system.bind(system);
+            firer.seldom.railgun_particle_system.bind(system);
         }
     }
     // GetROF (`0x006FCFA0`) reads its weapon through GetWeapon (vt+0x3F8,
@@ -2294,7 +2323,10 @@ pub(super) fn emit_admitted_fire(
             fireat_rearm_frames(rof, entity.berserk.is_active())
         };
         entity.rearm_after_fire(binary_frame as i32, rearm);
-        entity.weapon_burst.complete_shot(weapon.burst.max(1));
+        entity
+            .seldom
+            .weapon_burst
+            .complete_shot(weapon.burst.max(1));
         entity.last_fire_frame.record(binary_frame);
     }
     // TechnoClass::FireAt6FF38F calls VocClass::PlayAt7509E0 before the
@@ -2304,7 +2336,7 @@ pub(super) fn emit_admitted_fire(
         && sound_enabled(world)
     {
         world.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-            world.interner.resolve(report_id).to_owned(),
+            rules.sound_name(world.interner.resolve(report_id)),
             crate::sim::anim_class::AnimWorldCoord {
                 x: launch_source.coord.x,
                 y: launch_source.coord.y,
@@ -2315,11 +2347,11 @@ pub(super) fn emit_admitted_fire(
     }
     // `0x006FF394..0x006FF43F`, after GetROF: the muzzle anim, appended to the
     // Logic vector behind this shot's bullet.
-    if let Some(event) = out.fire_events.last().cloned() {
-        crate::sim::world::damage_consequences::admit_muzzle_anim(world, rules, &event);
+    if let Some(event) = out.fire_events.last() {
+        crate::sim::world::damage_consequences::admit_muzzle_anim(world, rules, event);
         // Sonic6FF470 precedes the independent later-effect ladder.
         if weapon.is_sonic && callbacks_enabled(world) {
-            world.commit_fired_wave(rules, &event, 0, selected.index);
+            world.commit_fired_wave(rules, event, 0, selected.index);
         }
     }
     // 6FF4CC..6FF54B: successful FireAt only, after burst advance and before
@@ -2348,9 +2380,9 @@ pub(super) fn emit_admitted_fire(
     if fire_at_effect(weapon) == FireAtEffect::MagneticWave
         && world.active_wave_id(snap.stable_id).is_none()
         && callbacks_enabled(world)
-        && let Some(event) = out.fire_events.last().cloned()
+        && let Some(event) = out.fire_events.last()
     {
-        world.commit_fired_wave(rules, &event, 3, selected.index);
+        world.commit_fired_wave(rules, event, 3, selected.index);
     }
     // Ares 3.0 TechnoClass_Fire_OtherWaves (10056E60, hook 0x6FF5F5): a
     // weapon past the four earlier effects and without IsMagBeam creates a TS
@@ -2361,9 +2393,9 @@ pub(super) fn emit_admitted_fire(
         && fire_at_effect(weapon) == FireAtEffect::None
         && let Some(wave_type) = weapon.ares_visuals.laser_wave_type()
         && callbacks_enabled(world)
-        && let Some(event) = out.fire_events.last().cloned()
+        && let Some(event) = out.fire_events.last()
     {
-        world.commit_fired_wave(rules, &event, wave_type, selected.index);
+        world.commit_fired_wave(rules, event, wave_type, selected.index);
     }
     // FireAt6FF65A: shared DecreaseAmmo70D670 (+390) debits only signed>0.
     // Aircraft's override is RET41B900; release/dock retain their own writes.
@@ -2441,8 +2473,10 @@ pub(super) fn emit_admitted_fire(
         {
             entity.start_reloading_ammo(live_type, binary_frame as i32);
         }
-        let frames = rules
-            .unit_shp_read_state(world.interner.resolve(snap.type_id))
+        let frames = world
+            .interner
+            .object_type(snap.type_id, rules)
+            .and_then(|object| rules.unit_shp_read_state_of(object))
             .map_or(0, |layout| layout.firing_frames());
         if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
             crate::sim::animation::commit_unit_firing_counter(entity, frames);
@@ -2466,7 +2500,7 @@ pub(super) fn emit_admitted_fire(
             .substrate
             .entities
             .get_mut(snap.stable_id)
-            .and_then(|entity| entity.disguise.as_mut())
+            .and_then(|entity| entity.seldom.disguise.as_mut())
     {
         disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
         world.note_disguise_blink_started();
@@ -2491,7 +2525,7 @@ fn fireat_tail(
     snap: &AttackerSnapshot,
     weapon: &WeaponType,
     bullet: Option<u64>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if weapon.limbo_launch {
         world.parasite_limbo_launch(snap.stable_id, snap.target, weapon, bullet, rules, effects);
@@ -2631,7 +2665,7 @@ fn commit_fire_bookkeeping(
     rules: &RuleSet,
     emit: &mut CombatEmit,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let spawn_target_updates = std::mem::take(&mut emit.spawn_target_updates);
     let drain_links = std::mem::take(&mut emit.drain_links);
@@ -2719,12 +2753,13 @@ impl FireCommitBoundary {
         } = self;
         let outer_explosion_effects = emit.effects.explosion_effects.split_off(explosion_start);
         let outer_anim_requests = emit.effects.smudge_spawn_requests.split_off(smudge_start);
-        let (inline_death, mut pings) = commit_area(
+        let inline_death = commit_area(
             world,
             run,
             &emit.damage_events[damage_start..],
             rules,
             overlay_registry,
+            under_attack_events,
         );
         emit.effects.append(inline_death);
         emit.effects
@@ -2737,7 +2772,6 @@ impl FireCommitBoundary {
             outer_anim_requests,
             &mut emit.effects.smudge_spawn_requests,
         );
-        under_attack_events.append(&mut pings);
         commit_fire_bookkeeping(world, rules, emit, overlay_registry, run.effects());
         #[cfg(any(test, feature = "test-support"))]
         for event in &emit.fire_events[fire_event_start..] {
@@ -2824,7 +2858,7 @@ fn infantry_fire_tail(
     id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(actor) = world.substrate.entities.get(id) else {
         return;
@@ -3028,7 +3062,7 @@ pub(crate) fn visit_fire(
     boundary.commit(world, run, rules, overlay_registry, emit, pings);
     for removed in emit.remove_attack.drain(remove_start..) {
         world
-            .assign_target_represented(removed, None, rules, FrameEffects::default())
+            .assign_target_represented(removed, None, rules, &mut FrameEffects::default())
             .expect("FireAt target receiver remains retained");
     }
     if let Some(id) = infantry_tail {
@@ -3100,18 +3134,17 @@ pub(crate) fn tick_combat(
             world
                 .substrate
                 .entities
-                .keys_sorted()
-                .into_iter()
-                .filter(|&id| {
+                .iter_sorted()
+                .filter(|&(id, actor)| {
                     !fire_suppressed.contains(&id)
-                        && world.substrate.entities.get(id).is_some_and(|actor| {
-                            matches!(
-                                actor.category(),
-                                EntityCategory::Unit | EntityCategory::Infantry
-                            ) && actor.is_ai_alive()
-                                && !actor.lifecycle.in_limbo()
-                        })
-                }),
+                        && matches!(
+                            actor.category(),
+                            EntityCategory::Unit | EntityCategory::Infantry
+                        )
+                        && actor.is_ai_alive()
+                        && !actor.lifecycle.in_limbo()
+                })
+                .map(|(id, _)| id),
         );
     }
     visits.sort_by_key(|&id| (live_index.get(&id).copied().unwrap_or(usize::MAX), id));
@@ -3170,7 +3203,8 @@ pub(crate) fn tick_combat(
     remove_attack.sort_unstable();
     remove_attack.dedup();
     for &attacker_id in &remove_attack {
-        let _ = world.assign_target_represented(attacker_id, None, rules, FrameEffects::default());
+        let _ =
+            world.assign_target_represented(attacker_id, None, rules, &mut FrameEffects::default());
     }
 
     // Push the synchronously selected death sounds to the presentation sink.
@@ -3368,7 +3402,7 @@ mod reveal_on_fire_tests {
             &sim.interner,
             sim.session.binary_frame(),
         );
-        sim.visit_building_operational(gap, &rules, None, FrameEffects::default());
+        sim.visit_building_operational(gap, &rules, None, &mut FrameEffects::default());
         assert!(!sim.fog.is_cell_revealed(viewer, cell.0, cell.1));
         assert_eq!(
             sim.fog.by_owner()[&viewer].ground_flags_raw()[index] & 0x18,

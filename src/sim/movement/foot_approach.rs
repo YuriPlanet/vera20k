@@ -266,7 +266,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         // The harvest_attack_return corpus substitutes the Approach vcall
         // itself with a declared RET4 (`APPROACH_SEAM`); a replayed row takes
@@ -315,7 +315,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(destination) = self.unit_approach_head(id, rules) else {
             return false;
@@ -351,7 +351,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -479,7 +479,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<NavTargetRef>, String> {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(None);
@@ -672,7 +672,7 @@ impl Simulation {
                 .get(id)
                 .filter(|t| t.category() == EntityCategory::Structure)
                 .map(|t| {
-                    let (width, height) = t.type_facts.foundation().dimensions();
+                    let (width, height) = t.seldom.type_facts.foundation().dimensions();
                     (i32::from(width), i32::from(height))
                 }),
             TargetKind::Cell(..) => None,
@@ -863,7 +863,7 @@ impl Simulation {
                     source_nav,
                     source,
                     actor.on_bridge(),
-                    actor.low_bridge_tube_state.is_some(),
+                    actor.active_tube().is_some(),
                 )?;
                 if self.estimate_zone_cost(
                     id,
@@ -1008,7 +1008,7 @@ impl Simulation {
         target_center: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         use super::ground_pose::{position_world_coord, query_object_cell};
         use crate::sim::cell_kernel::{native_cell_own_xy, native_xy_distance};
@@ -1150,7 +1150,7 @@ impl Simulation {
         close_range: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         if close_range {
             self.foot_mark_remove(id, rules, registry, frame_effects);
@@ -1248,7 +1248,7 @@ impl Simulation {
             source,
             super::ground_pose::position_world_coord(&actor.position),
             actor.on_bridge(),
-            actor.low_bridge_tube_state.is_some(),
+            actor.active_tube().is_some(),
         )?;
         let source = coord_cell(source);
         let zone = self

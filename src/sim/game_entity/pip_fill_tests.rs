@@ -105,7 +105,7 @@ fn check_fill(row: &serde_json::Value, rules: &RuleSet) {
         // complete SLAV draw/lifecycle comparison or inventing new goldens.
         let mut slave_storage = entity.clone();
         slave_storage.miner = None;
-        slave_storage.slave = SlaveLink::for_test(None, bales);
+        slave_storage.seldom.slave = SlaveLink::for_test(None, bales);
         assert_eq!(
             slave_storage.techno_pip_fill_level(object, rules, None),
             int(&row["result"]),

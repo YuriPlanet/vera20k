@@ -14,7 +14,8 @@ fn fixture() -> (TestDirectory, ProcessAssets, LoadingSession) {
     dir.write("artmd.ini", b"[Movies]\n");
     dir.write("parent.pal", &[12; 768]);
     dir.write("child.pal", &[20; 768]);
-    let manager = AssetManager::from_loose_root_for_test(dir.path());
+    // An Ares game: its Rules are read the Ares way.
+    let manager = AssetManager::from_loose_root_with_ares_for_test(dir.path());
     let mut assets = ProcessAssets::new(
         crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
         false,
@@ -149,7 +150,7 @@ fn ares_country_loading_attempt_freezes_early_palette_color_and_binds_late_text(
         prepared.request.startup().launch_session().unwrap(),
         Some(&csf),
         [800, 600],
-        ShellScale::RETAIL,
+        crate::ui::shell::geom::RETAIL_SCALE,
         &[],
     );
     composition.bind_country_loading(late, Some(&csf));

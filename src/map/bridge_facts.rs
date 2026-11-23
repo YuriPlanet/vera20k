@@ -245,6 +245,9 @@ pub struct BridgeCellFacts {
     /// Literal CellClass+0x2C. Native47E040 preserves this on Anchor/Forward3;
     /// the derived self relation above must not replace a retained pointer.
     pub native_anchor: Option<crate::map::cell_index::NativeCellIdentity>,
+    /// Signed whole-level deck elevation established at the self-anchor.
+    /// The terrain bridge publisher retains it through collapse and repair.
+    pub(crate) fixed_deck_level: Option<i16>,
 }
 
 impl BridgeCellFacts {

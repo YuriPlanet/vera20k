@@ -112,11 +112,38 @@ where
     })())
 }
 
+/// `vera20k --version` (docs/spawn.md, "Version"): print the build's version
+/// as one JSON line and exit, without a game folder. Headless, like `--probe`.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub fn try_version<I>(args: I) -> Option<Result<i32>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
+    if args.next().as_deref() != Some(OsStr::new("--version")) {
+        return None;
+    }
+    Some((|| {
+        ensure!(args.next().is_none(), "usage: vera20k --version");
+        print_version()
+    })())
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn print_version() -> Result<i32> {
+    let report = crate::app::spawn_probe::version_report();
+    println!("{}", serde_json::to_string(&report)?);
+    Ok(0)
+}
+
 /// `vera20k --probe [--ra2-dir <dir>] [--map <path>]` (docs/spawn.md): print
 /// one JSON object describing what a spawn launch on this installation is
 /// checked against, then exit. Headless: no logger, window or audio. `--mod
 /// <folder>` and `--no-mod` choose the mod as they do for that launch, and
 /// `--ares <Auto|On|Off>` the Ares setting spawn.ini's `[Settings] Ares=` will.
+/// `vera20k --probe --version` prints what `--version` does: a launcher asks
+/// that way because a build from before `--version` refuses the probe
+/// argument instead of starting the game.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn try_probe<I>(args: I) -> Option<Result<i32>>
 where
@@ -126,8 +153,15 @@ where
     if args.next().as_deref() != Some(OsStr::new("--probe")) {
         return None;
     }
+    let args: Vec<OsString> = args.collect();
+    if args.iter().any(|arg| arg == OsStr::new("--version")) {
+        return Some((|| {
+            ensure!(args.len() == 1, "usage: vera20k --probe --version");
+            print_version()
+        })());
+    }
     Some((|| {
-        let (mod_switch, mut args) = crate::app::mods::take_switch(args.collect())?;
+        let (mod_switch, mut args) = crate::app::mods::take_switch(args)?;
         let ares = match args.iter().position(|arg| arg == OsStr::new("--ares")) {
             Some(at) => {
                 let setting = args
@@ -394,11 +428,18 @@ pub struct TacticalCaptureRequest {
     profile: CaptureProfile,
     contract: SealedJsonFile<TacticalCaptureContract>,
     output_dir: PathBuf,
+    /// `--ares`: the Ares setting this start uses, as a `-SPAWN` launch's
+    /// `[Settings] Ares=` gives one; a capture reads no VERA.INI.
+    ares: Option<crate::util::ares_launch::AresSetting>,
 }
 
 impl TacticalCaptureRequest {
     pub fn checkpoint(&self) -> TacticalCaptureCheckpoint {
         self.checkpoint
+    }
+
+    pub(crate) fn ares_setting(&self) -> Option<crate::util::ares_launch::AresSetting> {
+        self.ares
     }
 
     pub(crate) fn profile(&self) -> Result<&TacticalCaptureProfile> {
@@ -559,6 +600,7 @@ fn parse_tactical_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
     let mut profile_path = None;
     let mut contract_path = None;
     let mut output_dir = None;
+    let mut ares = None;
 
     while let Some(flag) = args.next() {
         let flag = flag
@@ -588,6 +630,15 @@ fn parse_tactical_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
                         .ok_or_else(|| anyhow::anyhow!("missing value after --output"))?,
                 ),
                 "--output",
+            )?,
+            "--ares" => set_once(
+                &mut ares,
+                crate::util::ares_launch::AresSetting::parse(&next_utf8(
+                    &mut args,
+                    "value after --ares",
+                )?)
+                .context("\"--ares\" needs Auto, On or Off")?,
+                "--ares",
             )?,
             _ => bail!("unknown tactical-capture option {flag:?}"),
         }
@@ -624,6 +675,7 @@ fn parse_tactical_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
         profile,
         contract,
         output_dir,
+        ares,
     }))
 }
 
@@ -649,6 +701,28 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn version_dispatch_is_strict_and_only_first() {
+        let args = |list: &[&str]| list.iter().map(OsString::from).collect::<Vec<_>>();
+        assert!(try_version(args(&["-WIN", "--version"])).is_none());
+        assert!(try_version(args(&["--probe", "--version"])).is_none());
+        assert!(
+            try_version(args(&["--version", "--extra"]))
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            try_probe(args(&["--probe", "--version", "--no-mod"]))
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            try_probe(args(&["--probe", "--map", "m.ini", "--version"]))
+                .unwrap()
+                .is_err()
+        );
+    }
 
     #[test]
     fn probe_dispatch_is_strict_and_only_first() {
@@ -723,7 +797,7 @@ mod tests {
         let root = test_directory("replay-cd-values");
         let path = root.join("record-cd.json");
         let log = crate::sim::replay::ReplayLog::new(crate::sim::replay::ReplayHeader {
-            version: 2,
+            version: crate::sim::replay::REPLAY_VERSION,
             tick_hz: 45,
             seed: 7,
             map_name: "XMP03T4.MAP".into(),
@@ -863,6 +937,19 @@ mod tests {
         );
         assert_eq!(request.map_profile().unwrap().value.ticks, 30);
         assert!(request.profile().is_err());
+        assert_eq!(request.ares_setting(), None);
+        let mut off = args.clone();
+        off.extend(["--ares".into(), "off".into()]);
+        let AppLaunchMode::TacticalCapture(request) = parse_launch_args(off.clone()).unwrap()
+        else {
+            panic!("wrong capture lifecycle");
+        };
+        assert_eq!(
+            request.ares_setting(),
+            Some(crate::util::ares_launch::AresSetting::Off)
+        );
+        off.extend(["--ares".into(), "On".into()]);
+        assert!(parse_launch_args(off).is_err());
         std::fs::create_dir(&output).unwrap();
         assert!(parse_launch_args(args).is_err());
         std::fs::remove_dir(&output).unwrap();

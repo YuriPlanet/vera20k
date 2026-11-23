@@ -9,13 +9,13 @@
 //! Filename candidate generation lives in free functions below so render code can
 //! use convention helpers without re-mixing them into metadata resolution.
 
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use crate::rules::flh::Flh;
 use crate::rules::ini_parser::{IniFile, IniSection};
-use crate::rules::native_processing::anim_type_runtime_key;
+use crate::rules::native_processing::anim_type_runtime_keys;
 use crate::rules::object_type::{BuildingHiddenOccupancyProfile, HIDDEN_OCCUPY_SLOT_COUNT};
-use crate::util::lookup_hash::LookupMap;
+use crate::util::lookup_hash::{LookupMap, LookupSet};
 use crate::util::native_string::with_ascii_uppercase;
 use crate::util::native_x87::NativeF64Bits;
 use crate::util::pixel_conversion::PixelConversionBounds;
@@ -991,7 +991,7 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         }),
         bouncer: section.read_bool("Bouncer", false),
         spawns: None,
-        spawn_count: section.read_int("SpawnCount", 0),
+        spawn_count: section.read_int("SpawnCount", 0).min(SPAWN_COUNT_LIMIT),
         running_frames: section.read_int("RunningFrames", 0),
         // gamemd-derived: `AnimTypeClass::ReadINI @ 0x00427D00` reads these
         // through `CCINIClass::ReadDouble` and each defaults to the value the
@@ -1013,7 +1013,7 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         double_thick: section.read_bool("DoubleThick", false),
         flamer: section.read_bool("Flamer", false),
         spawns_particle: None,
-        num_particles: section.read_int("NumParticles", 0),
+        num_particles: section.read_int("NumParticles", 0).min(NUM_PARTICLES_LIMIT),
         // AnimTypeExt::LoadFromINIFile (1000A4B0) reads both Leptons through
         // INI_EX's double (1000A6D0: cells * 256), then Damage.Delay.
         ares_spawns_particle_range: if ares_way {
@@ -1068,6 +1068,18 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         stop_sound: None,
     }
 }
+
+/// VERA's bound on an AnimType's or VoxelAnimType's `SpawnCount=`. Each
+/// bounce or expiry draws twice in `0..=SpawnCount` and spawns their sum of
+/// child anims one at a time, so a value near `i32::MAX` freezes the match the
+/// first time it fires; retail spawns at most 7 (`METSMALL`).
+pub(crate) const SPAWN_COUNT_LIMIT: i32 = 256;
+
+/// VERA's bound on `NumParticles=`: an anim with `SpawnsParticle=` births
+/// that many particles at once, so a value near `i32::MAX` freezes the match
+/// or exhausts memory the first time it plays; retail births at most 3
+/// (`VIRUSD`).
+pub(crate) const NUM_PARTICLES_LIMIT: i32 = 256;
 
 /// `AnimTypeClass::AnimTypeClass @ 0x00427530` constructor defaults for the four
 /// `ReadDouble` animation keys, taken from the literal dword pairs the
@@ -1149,8 +1161,9 @@ pub struct ArtRegistry {
     /// section ID (uppercase) -> `OccupyHeight=`, defaulting to art `Height=`.
     occupy_heights: HashMap<String, i32>,
     /// section ID (uppercase) -> generic AnimType runtime metadata. Every
-    /// anim reads its type's here each frame; only looked up.
-    anim_runtime_configs: LookupMap<String, AnimTypeRuntimeConfig>,
+    /// anim reads its type's here each frame, through an
+    /// [`AnimConfigHandle`] the simulation keeps per interned name.
+    anim_runtime_configs: AnimConfigs,
     /// Each native Anim slot's immutable image projection. Unlike orphan
     /// ART metadata, these requests came from the retained ProcessedType.
     anim_type_images: HashMap<String, crate::rules::object_image::ObjectImageState>,
@@ -1158,6 +1171,144 @@ pub struct ArtRegistry {
     anim_theater_flags: HashMap<String, (bool, bool)>,
     /// Full deterministic Next/Trailer closure reachable from scheduler-owned roots.
     scheduler_anim_types: BTreeSet<String>,
+    /// Derived from `anim_runtime_configs`: the keys whose anim, or an anim
+    /// it can become or make, affects play
+    /// ([`ArtRegistry::anim_presentation_only`]). Every writer of a config's
+    /// play keys or `Next=`/`TrailerAnim=`/`ExpireAnim=`/`BounceAnim=`, and
+    /// every insert, rebuilds it with
+    /// [`ArtRegistry::refresh_anim_types_affecting_play`].
+    anim_types_affecting_play: LookupSet<String>,
+    /// VERA: by AnimType key, the game-folder files whose SHP has another
+    /// frame count than the copy a retail install reads
+    /// (`retail_sources::FolderFiles`), and the ones whose image has another
+    /// height: what its bound frame count, bounds and height came from.
+    anim_folder_files: BTreeMap<String, AnimFolderFiles>,
+    /// VERA: the game-folder files whose middle frame puts a smudging
+    /// animation on the other side of [`smudge_frame_is_large`] than the
+    /// retail copy's ([`Self::populate_anim_frame_dims`]).
+    smudge_folder_files: BTreeSet<String>,
+}
+
+/// An AnimType runtime config's place in its [`ArtRegistry`]: an index, so a
+/// holder reads the config without hashing the name. Valid for every
+/// registry with the [`ArtRegistry::anim_configs_serial`] of the one that
+/// gave it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnimConfigHandle(u32);
+
+/// VERA: the game-folder files that change what one AnimType's bound SHPs
+/// give ([`ArtRegistry::anim_folder_files`]).
+#[derive(Debug, Clone, Default)]
+struct AnimFolderFiles {
+    /// Another frame count than the retail copy's.
+    frames: BTreeSet<String>,
+    /// Another image height than the retail copy's.
+    height: BTreeSet<String>,
+}
+
+/// The one test the smudge pick makes of a scorching or cratering
+/// animation's middle frame (`AnimClass::Middle`, as
+/// `sim::smudge_grid::pick_smudge_candidate` ports it): wider than `0x3C` and
+/// taller than `0x32` takes any smudge, else a 1x1 one.
+pub(crate) const fn smudge_frame_is_large(width: i32, height: i32) -> bool {
+    0x3C < width && 0x32 < height
+}
+
+/// The AnimType runtime configs, in the order their keys first arrived, and
+/// each key's index. A config is never removed, so a key keeps its handle
+/// while the registry lives; overwriting a key's config keeps it too.
+#[derive(Debug, Clone)]
+struct AnimConfigs {
+    configs: Vec<AnimTypeRuntimeConfig>,
+    /// Uppercase key -> its config's index. Only looked up.
+    by_key: LookupMap<String, AnimConfigHandle>,
+    /// Distinct for every key -> handle layout the process makes: taken anew
+    /// when a registry is made and whenever a key is added, so a cache of
+    /// handles (and of a name's absence) knows when it is stale. A clone
+    /// keeps it, as its layout is the same.
+    serial: u64,
+}
+
+fn next_anim_configs_serial() -> u64 {
+    static SERIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    SERIALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+}
+
+impl Default for AnimConfigs {
+    fn default() -> Self {
+        Self {
+            configs: Vec::new(),
+            by_key: LookupMap::default(),
+            serial: next_anim_configs_serial(),
+        }
+    }
+}
+
+impl AnimConfigs {
+    fn handle(&self, key: &str) -> Option<AnimConfigHandle> {
+        self.by_key.get(key).copied()
+    }
+
+    fn get(&self, key: &str) -> Option<&AnimTypeRuntimeConfig> {
+        self.handle(key).map(|handle| self.by_handle(handle))
+    }
+
+    fn get_mut(&mut self, key: &str) -> Option<&mut AnimTypeRuntimeConfig> {
+        let handle = self.handle(key)?;
+        Some(&mut self.configs[handle.0 as usize])
+    }
+
+    /// A handle is valid only for the layout it came from ([`Self::serial`]):
+    /// against another layout it reads another type's config, or panics past
+    /// the end.
+    fn by_handle(&self, handle: AnimConfigHandle) -> &AnimTypeRuntimeConfig {
+        &self.configs[handle.0 as usize]
+    }
+
+    /// Store `config` under `key`, in the slot `key` already has.
+    fn insert(&mut self, key: String, config: AnimTypeRuntimeConfig) {
+        if let Some(slot) = self.get_mut(&key) {
+            *slot = config;
+        } else {
+            self.add(key, config);
+        }
+    }
+
+    /// `key`'s config, made by `make` when it has none.
+    fn get_or_insert_with(
+        &mut self,
+        key: String,
+        make: impl FnOnce() -> AnimTypeRuntimeConfig,
+    ) -> &mut AnimTypeRuntimeConfig {
+        let handle = match self.handle(&key) {
+            Some(handle) => handle,
+            None => self.add(key, make()),
+        };
+        &mut self.configs[handle.0 as usize]
+    }
+
+    /// Give `key`, which has no config, the next slot: a new layout.
+    fn add(&mut self, key: String, config: AnimTypeRuntimeConfig) -> AnimConfigHandle {
+        // An AnimType per ART section: an ART file of 2^32 sections cannot
+        // be read into memory.
+        let handle =
+            AnimConfigHandle(u32::try_from(self.configs.len()).expect("fewer than 2^32 AnimTypes"));
+        self.configs.push(config);
+        self.by_key.insert(key, handle);
+        self.serial = next_anim_configs_serial();
+        handle
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&String, &AnimTypeRuntimeConfig)> {
+        self.by_key
+            .iter()
+            .map(|(key, &handle)| (key, self.by_handle(handle)))
+    }
+
+    #[cfg(test)]
+    fn values(&self) -> impl Iterator<Item = &AnimTypeRuntimeConfig> {
+        self.configs.iter()
+    }
 }
 
 /// An AnimType whose ART body was never read: the constructor's values, with
@@ -1218,21 +1369,48 @@ impl AnimTypeRuntimeConfig {
     pub fn custom_palette(&self) -> Option<&str> {
         self.ares_custom_palette.as_deref()
     }
+
+    /// Whether this type itself reads a key whose AnimClass effect reaches
+    /// the simulation, or keeps unread constructor state; the keys are
+    /// listed at [`ArtRegistry::anim_presentation_only`], which also follows
+    /// its chain.
+    fn affects_play(&self) -> bool {
+        let damage = self.damage.bits() & !(1 << 63) != 0;
+        #[cfg(feature = "phobos")]
+        let creates_unit = self.phobos_create_unit.is_some();
+        #[cfg(not(feature = "phobos"))]
+        let creates_unit = false;
+        !self.art_body_read
+            || damage
+            || self.ares_damage_delay != 0
+            || self.ares_weapon.is_some()
+            || self.warhead.is_some()
+            || self.spawns.is_some()
+            || self.spawns_particle.is_some()
+            || self.make_infantry != -1
+            || creates_unit
+            || self.scorch
+            || self.crater
+            || self.bouncer
+            || self.is_meteor
+            || self.is_tiberium
+            || self.is_animated_tiberium
+            || self.tiberium_chain_reaction
+            || self.tiberium_spawn_type.is_some()
+            || self.is_veins
+            || self.hide_if_no_ore
+            || self.flamer
+            || self.sticky
+            || self.psi_warning
+            || self.is_flaming_guy
+            || self.random_rate_logic_frames.is_some()
+            || self.random_loop_delay.is_some()
+    }
 }
 
 /// Hardcoded filename prefixes that always receive `NewTheater` treatment
 /// regardless of the `NewTheater=` INI key.
 const NEW_THEATER_PREFIXES: &[&str] = &["GA", "GT", "NA", "NT", "CA", "CT"];
-
-/// `repo-derived`: theater name -> replacement letter for `NewTheater`.
-const THEATER_LETTERS: &[(&str, char)] = &[
-    ("TEMPERATE", 'T'),
-    ("SNOW", 'A'),
-    ("URBAN", 'U'),
-    ("DESERT", 'D'),
-    ("LUNAR", 'L'),
-    ("NEWURBAN", 'N'),
-];
 
 /// `repo-derived`: generic fallback letter used by original-style building art.
 const NEW_THEATER_GENERIC_LETTER: char = 'G';
@@ -1257,8 +1435,7 @@ impl ArtRegistry {
         let mut entry_names: LookupMap<String, String> = LookupMap::default();
         let mut can_hide_things: HashMap<String, bool> = HashMap::new();
         let mut occupy_heights: HashMap<String, i32> = HashMap::new();
-        let mut anim_runtime_configs: LookupMap<String, AnimTypeRuntimeConfig> =
-            LookupMap::default();
+        let mut anim_runtime_configs = AnimConfigs::default();
         let mut anim_theater_flags = HashMap::new();
 
         for section_name in ini.section_names() {
@@ -1519,7 +1696,7 @@ impl ArtRegistry {
         }
 
         log::info!("ArtRegistry: {} entries loaded from art.ini", entries.len());
-        ArtRegistry {
+        let mut registry = ArtRegistry {
             entries,
             entry_names,
             can_hide_things,
@@ -1528,7 +1705,12 @@ impl ArtRegistry {
             anim_type_images: HashMap::new(),
             anim_theater_flags,
             scheduler_anim_types: BTreeSet::new(),
-        }
+            anim_types_affecting_play: LookupSet::default(),
+            anim_folder_files: BTreeMap::new(),
+            smudge_folder_files: BTreeSet::new(),
+        };
+        registry.refresh_anim_types_affecting_play();
+        registry
     }
 
     /// Create an empty registry (used when art.ini is unavailable).
@@ -1538,10 +1720,13 @@ impl ArtRegistry {
             entry_names: LookupMap::default(),
             can_hide_things: HashMap::new(),
             occupy_heights: HashMap::new(),
-            anim_runtime_configs: LookupMap::default(),
+            anim_runtime_configs: AnimConfigs::default(),
             anim_type_images: HashMap::new(),
             anim_theater_flags: HashMap::new(),
             scheduler_anim_types: BTreeSet::new(),
+            anim_types_affecting_play: LookupSet::default(),
+            anim_folder_files: BTreeMap::new(),
+            smudge_folder_files: BTreeSet::new(),
         }
     }
 
@@ -1570,6 +1755,153 @@ impl ArtRegistry {
         with_ascii_uppercase(image_id, |key| self.anim_runtime_configs.get(key))
     }
 
+    /// VERA: what an AnimType's SHP decides for the simulation once bound:
+    /// its frame count and the End, LoopEnd and middle frame taken from it,
+    /// for every type that affects play ([`Self::anim_presentation_only`]
+    /// refuses it) and every type in `paced`, which a simulation owner
+    /// waits on though it changes nothing but its picture; in name order.
+    /// A type with no bound image folds as unbound. The other types' frames
+    /// stay out, as a match presents them outside the simulation
+    /// (`Simulation::effect_anim_constructor`), and so do the image's name,
+    /// its size and every other field of a config: what
+    /// `RuleSet::file_inputs_hash` folds of the animations.
+    pub(crate) fn fold_anim_frame_bounds<'a>(
+        &self,
+        paced: impl IntoIterator<Item = &'a str>,
+        state: &mut impl std::hash::Hasher,
+    ) {
+        use std::hash::Hash;
+        let names = self.anims_read_for_play(paced);
+        names.len().hash(state);
+        for name in names {
+            let bounds = self.anim_runtime_configs.get(&name).map(|config| {
+                (
+                    config.raw_shp_frame_count,
+                    config.middle_frame,
+                    config.end,
+                    config.loop_end,
+                )
+            });
+            (name, bounds).hash(state);
+        }
+    }
+
+    /// The keys of the AnimTypes whose frames the simulation reads: every
+    /// type that affects play and every one in `paced`.
+    fn anims_read_for_play<'a>(
+        &self,
+        paced: impl IntoIterator<Item = &'a str>,
+    ) -> BTreeSet<String> {
+        let mut names: BTreeSet<String> = self.anim_types_affecting_play.iter().cloned().collect();
+        names.extend(
+            paced
+                .into_iter()
+                .filter(|name| !name.is_empty())
+                .map(str::to_ascii_uppercase),
+        );
+        names
+    }
+
+    /// VERA: the game-folder files that change what the simulation reads of
+    /// the animations: another frame count for an AnimType whose frames it
+    /// reads ([`Self::fold_anim_frame_bounds`]'s types, with `paced` as
+    /// there), another image height for `measured` (the weather bolt), and
+    /// a smudging frame on the other side of the size test
+    /// ([`Self::fold_smudge_frame_classes`]).
+    pub(crate) fn anim_folder_files<'a>(
+        &self,
+        paced: impl IntoIterator<Item = &'a str>,
+        measured: Option<&str>,
+    ) -> BTreeSet<&str> {
+        let mut files: BTreeSet<&str> = self
+            .anims_read_for_play(paced)
+            .iter()
+            .filter_map(|name| self.anim_folder_files.get(name))
+            .flat_map(|files| &files.frames)
+            .map(String::as_str)
+            .collect();
+        files.extend(
+            measured
+                .and_then(|name| self.anim_folder_files.get(&name.to_ascii_uppercase()))
+                .into_iter()
+                .flat_map(|files| &files.height)
+                .map(String::as_str),
+        );
+        files.extend(self.smudge_folder_files.iter().map(String::as_str));
+        files
+    }
+
+    /// VERA: for each animation whose middle frame leaves a smudge picked by
+    /// its frame size, whether that frame is large
+    /// ([`smudge_frame_is_large`]), the one thing the pick reads of it; in
+    /// name order. `ForceBigCraters=` picks by the smudge's own size. What
+    /// `RuleSet::file_inputs_hash` folds of the smudges.
+    pub(crate) fn fold_smudge_frame_classes(&self, state: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.iter_entries()
+            .filter(|(_, entry)| (entry.scorch || entry.crater) && !entry.force_big_craters)
+            .map(|(name, entry)| {
+                (
+                    name,
+                    smudge_frame_is_large(
+                        i32::from(entry.frame_width),
+                        i32::from(entry.frame_height),
+                    ),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+            .hash(state);
+    }
+
+    /// The frame size each scorching or cratering animation took from its
+    /// SHP's middle frame, which selects the smudge it leaves, with the keys
+    /// that make it one, in name order.
+    pub(crate) fn fold_smudge_anim_dims(&self, state: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.iter_entries()
+            .filter(|(_, entry)| entry.scorch || entry.crater || entry.force_big_craters)
+            .map(|(name, entry)| {
+                (
+                    name.to_string(),
+                    (
+                        entry.scorch,
+                        entry.crater,
+                        entry.force_big_craters,
+                        entry.frame_width,
+                        entry.frame_height,
+                    ),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+            .hash(state);
+    }
+
+    /// The handle of the config [`Self::anim_runtime_config`] answers for
+    /// `image_id`, matched the same way.
+    pub fn anim_config_handle(&self, image_id: &str) -> Option<AnimConfigHandle> {
+        with_ascii_uppercase(image_id, |key| self.anim_runtime_configs.handle(key))
+    }
+
+    /// The config `handle` names.
+    ///
+    /// A handle is valid only under the `&RuleSet` borrow it was read from:
+    /// against a registry of another [`Self::anim_configs_serial`] it reads
+    /// another type's config, or panics past the end. Callers that keep
+    /// handles check that serial (`TypeHandleTable`).
+    #[inline]
+    pub fn anim_config(&self, handle: AnimConfigHandle) -> &AnimTypeRuntimeConfig {
+        self.anim_runtime_configs.by_handle(handle)
+    }
+
+    /// The identity of this registry's name -> [`AnimConfigHandle`] layout:
+    /// it changes when a registry is made and whenever an AnimType gains a
+    /// config, so a cache of handles, and of names that have none, is current
+    /// exactly while it matches. Editing a config keeps it, as handles still
+    /// read the edited config.
+    pub fn anim_configs_serial(&self) -> u64 {
+        self.anim_runtime_configs.serial
+    }
+
     /// Whether an anim of type `image_id` changes nothing but its own picture,
     /// so it may run as a presentation anim
     /// (`sim::anim_class::AnimConstructorInput::Presentation`). VERA-only.
@@ -1583,64 +1915,53 @@ impl ArtRegistry {
     /// Scenario stream. Every anim it can become or make (`Next=`,
     /// `TrailerAnim=`, `ExpireAnim=`, `BounceAnim=`) must be one too. A type
     /// whose ART body was never read keeps constructor state and is refused.
+    /// A name with no AnimType constructs nothing, in the simulation or out of
+    /// it, so it counts as presentation only; so does a type that reaches
+    /// itself again down its chain without meeting one that affects play.
     pub fn anim_presentation_only(&self, image_id: &str) -> bool {
-        let mut seen = Vec::new();
-        self.anim_presentation_only_from(image_id, &mut seen)
+        with_ascii_uppercase(image_id, |key| {
+            !self.anim_types_affecting_play.contains(key)
+        })
     }
 
-    fn anim_presentation_only_from(&self, image_id: &str, seen: &mut Vec<String>) -> bool {
-        let key = image_id.to_ascii_uppercase();
-        if seen.contains(&key) {
-            return true;
-        }
-        // A missing type constructs nothing, in the simulation or out of it.
-        let Some(config) = self.anim_runtime_configs.get(&key) else {
-            return true;
-        };
-        seen.push(key);
-        let damage = config.damage.bits() & !(1 << 63) != 0;
-        #[cfg(feature = "phobos")]
-        let creates_unit = config.phobos_create_unit.is_some();
-        #[cfg(not(feature = "phobos"))]
-        let creates_unit = false;
-        let affects_play = !config.art_body_read
-            || damage
-            || config.ares_damage_delay != 0
-            || config.ares_weapon.is_some()
-            || config.warhead.is_some()
-            || config.spawns.is_some()
-            || config.spawns_particle.is_some()
-            || config.make_infantry != -1
-            || creates_unit
-            || config.scorch
-            || config.crater
-            || config.bouncer
-            || config.is_meteor
-            || config.is_tiberium
-            || config.is_animated_tiberium
-            || config.tiberium_chain_reaction
-            || config.tiberium_spawn_type.is_some()
-            || config.is_veins
-            || config.hide_if_no_ore
-            || config.flamer
-            || config.sticky
-            || config.psi_warning
-            || config.is_flaming_guy
-            || config.random_rate_logic_frames.is_some()
-            || config.random_loop_delay.is_some();
-        if affects_play {
-            return false;
-        }
-        let children = [
-            config.next.clone(),
-            config.trailer_anim.clone(),
-            config.expire_anim.clone(),
-            config.bounce_anim.clone(),
-        ];
-        children
+    /// Rebuild [`Self::anim_types_affecting_play`]: the types that affect
+    /// play themselves, then, walking `Next=`/`TrailerAnim=`/`ExpireAnim=`/
+    /// `BounceAnim=` backwards, every type that can become or make one. A
+    /// link to a name with no AnimType leads nowhere. One pass over the
+    /// configs and their links, whatever their chains or cycles.
+    fn refresh_anim_types_affecting_play(&mut self) {
+        // Child key (looked up as its ASCII uppercase, as the configs are
+        // keyed) -> the types that name it.
+        let mut parents: LookupMap<String, Vec<&str>> = LookupMap::default();
+        let mut pending = Vec::new();
+        for (key, config) in self.anim_runtime_configs.iter() {
+            if config.affects_play() {
+                pending.push(key.as_str());
+            }
+            for child in [
+                &config.next,
+                &config.trailer_anim,
+                &config.expire_anim,
+                &config.bounce_anim,
+            ]
             .into_iter()
             .flatten()
-            .all(|child| self.anim_presentation_only_from(&child, seen))
+            {
+                parents
+                    .entry(child.to_ascii_uppercase())
+                    .or_default()
+                    .push(key.as_str());
+            }
+        }
+        let mut affecting: LookupSet<String> = pending.iter().map(|&key| key.to_owned()).collect();
+        while let Some(key) = pending.pop() {
+            for &parent in parents.get(key).into_iter().flatten() {
+                if affecting.insert(parent.to_owned()) {
+                    pending.push(parent);
+                }
+            }
+        }
+        self.anim_types_affecting_play = affecting;
     }
 
     /// Apply the canonical RulesClass processing receipt before asset binding.
@@ -1659,15 +1980,14 @@ impl ArtRegistry {
                 }
             })
             .collect();
-        for (index, config) in configs.into_iter().enumerate() {
+        let keys = anim_type_runtime_keys(states.iter().map(|(name, _)| name.as_str()));
+        for (key, config) in keys.zip(configs) {
             if let Some(config) = config {
-                let key =
-                    anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
-                        .unwrap()
-                        .to_ascii_uppercase();
-                self.anim_runtime_configs.insert(key, config);
+                self.anim_runtime_configs
+                    .insert(key.to_ascii_uppercase(), config);
             }
         }
+        self.refresh_anim_types_affecting_play();
     }
 
     /// Install the process owner's image projection after the separate ART
@@ -1678,10 +1998,9 @@ impl ArtRegistry {
         states: &[(String, crate::rules::object_image::ObjectImageState)],
     ) {
         self.anim_type_images.clear();
-        for (index, (_, image)) in states.iter().enumerate() {
-            let key = anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
-                .unwrap()
-                .to_ascii_uppercase();
+        let keys = anim_type_runtime_keys(states.iter().map(|(name, _)| name.as_str()));
+        for (key, (_, image)) in keys.zip(states) {
+            let key = key.to_ascii_uppercase();
             if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
                 config.image = image.image().to_owned();
             }
@@ -1710,14 +2029,13 @@ impl ArtRegistry {
         &mut self,
         states: &[(String, crate::rules::native_processing::AnimTypeReferences)],
     ) {
-        for (index, (_, references)) in states.iter().enumerate() {
-            let key = anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
-                .unwrap()
-                .to_ascii_uppercase();
-            if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
+        let keys = anim_type_runtime_keys(states.iter().map(|(name, _)| name.as_str()));
+        for (key, (_, references)) in keys.zip(states) {
+            if let Some(config) = self.anim_runtime_configs.get_mut(&key.to_ascii_uppercase()) {
                 references.apply_to(config);
             }
         }
+        self.refresh_anim_types_affecting_play();
     }
 
     /// Animation types whose complete raw SHP ranges must be available to the
@@ -1841,12 +2159,30 @@ impl ArtRegistry {
             theater_ext,
             theater_name,
         );
-        let data = candidates
-            .iter()
-            .find_map(|candidate| asset_manager.get_ref(candidate));
+        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
+        let word = |bytes: &[u8], offset: usize| {
+            bytes
+                .get(offset..offset + 2)
+                .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
+        };
+        let mut folder_files = AnimFolderFiles::default();
+        let data = candidates.iter().find_map(|candidate| {
+            let (bytes, file) = folder.read(candidate)?;
+            if let Some(file) = file {
+                let shipped = folder.shipped(candidate);
+                if shipped.map(|shipped| word(shipped, 6)) != Some(word(bytes, 6)) {
+                    folder_files.frames.insert(file.clone());
+                }
+                if shipped.map(|shipped| word(shipped, 4)) != Some(word(bytes, 4)) {
+                    folder_files.height.insert(file);
+                }
+            }
+            Some(bytes)
+        });
         if !config.art_body_read && data.is_none() {
             // Fresh unread types and saved own-name misses are valid null
             // images (AnimRead427D22 / AnimTypeLoad428955).
+            self.anim_folder_files.remove(name);
             return;
         }
         let header_word = |data: Option<&[u8]>, offset: usize| {
@@ -1862,6 +2198,7 @@ impl ArtRegistry {
             bound.raw_shp_frame_count = Some(raw_count);
             bound.raw_shp_height = Some(header_word(data, 4));
             bound.middle_frame = Some(0);
+            self.note_anim_folder_files(name, folder_files);
             return;
         }
         // Read_Map4AD092 / MouseLoad5BE689 -> InitTheater427940 can replace
@@ -1875,7 +2212,9 @@ impl ArtRegistry {
             Some(loads) => loads
                 .iter()
                 .flat_map(|load| load.shp_names(theater_ext, theater_name))
-                .find_map(|candidate| asset_manager.get_ref(&candidate)),
+                .find_map(|candidate| {
+                    folder.read_noting(&candidate, |bytes| word(bytes, 6), &mut folder_files.frames)
+                }),
             None => data,
         };
         let bounds_count = header_word(bounds_data, 6);
@@ -1902,7 +2241,9 @@ impl ArtRegistry {
             && let Some(post_data) = loads
                 .iter()
                 .flat_map(|load| load.shp_names(theater_ext, theater_name))
-                .find_map(|candidate| asset_manager.get_ref(&candidate))
+                .find_map(|candidate| {
+                    folder.read_noting(&candidate, |bytes| word(bytes, 6), &mut folder_files.frames)
+                })
         {
             // The NewTheater arm427A1E calls427B50 again after the explicit
             // ART bounds reads: fill only zero End/LoopEnd, always write
@@ -1923,6 +2264,16 @@ impl ArtRegistry {
         bound.middle_frame = Some(middle);
         bound.end = loaded_end;
         bound.loop_end = loaded_loop_end;
+        self.note_anim_folder_files(name, folder_files);
+    }
+
+    /// Replace what [`Self::anim_folder_files`] holds for `name`.
+    fn note_anim_folder_files(&mut self, name: &str, folder_files: AnimFolderFiles) {
+        if folder_files.frames.is_empty() && folder_files.height.is_empty() {
+            self.anim_folder_files.remove(name);
+        } else {
+            self.anim_folder_files.insert(name.to_owned(), folder_files);
+        }
     }
 
     /// Bind native loader-derived End/LoopEnd values for the transitive
@@ -1953,6 +2304,7 @@ impl ArtRegistry {
             .filter(|name| !name.is_empty())
             .collect();
         let mut resolved = BTreeSet::new();
+        let mut gained_config = false;
 
         while let Some(name) = pending.pop_front() {
             if !resolved.insert(name.clone()) {
@@ -1960,8 +2312,10 @@ impl ArtRegistry {
             }
             let config = self
                 .anim_runtime_configs
-                .entry(name.clone())
-                .or_insert_with(|| unread_anim_type_config(&name))
+                .get_or_insert_with(name.clone(), || {
+                    gained_config = true;
+                    unread_anim_type_config(&name)
+                })
                 .clone();
             self.bind_one_anim_asset(&name, &config, asset_manager, theater_ext, theater_name);
 
@@ -1987,6 +2341,11 @@ impl ArtRegistry {
         }
 
         self.scheduler_anim_types = resolved;
+        // Only a new config can change the set, and map load binds one
+        // authored anim at a time.
+        if gained_config {
+            self.refresh_anim_types_affecting_play();
+        }
     }
 
     /// Hidden-occupancy gate from the art.ini object-type-ID section.
@@ -2336,18 +2695,31 @@ impl ArtRegistry {
         // Two-pass: collect (name, image_id) under &self, then mutate via
         // get_mut. Direct iter_mut would conflict with the &self call to
         // resolve_anim_image_id.
-        let pending: Vec<(String, String)> = self
+        let pending: Vec<(String, String, bool)> = self
             .iter_entries()
             .filter(|(_name, entry)| entry.crater || entry.scorch || entry.force_big_craters)
-            .map(|(name, _entry)| {
+            .map(|(name, entry)| {
                 let image_id: String = self.resolve_anim_image_id(name);
-                (name.to_string(), image_id)
+                // The smudge pick reads this frame's size
+                // ([`Self::fold_smudge_frame_classes`]).
+                let sized = (entry.scorch || entry.crater) && !entry.force_big_craters;
+                (name.to_string(), image_id, sized)
             })
             .collect();
 
         let mut populated: u32 = 0;
         let mut fallback: u32 = 0;
-        for (name, image_id) in pending {
+        let mut folder_files = BTreeSet::new();
+        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
+        let middle_frame_is_large = |bytes: &[u8]| {
+            let shp = crate::assets::shp_file::ShpFile::from_bytes(bytes).ok()?;
+            let frame = shp.frames.get(shp.frames.len() / 2)?;
+            Some(smudge_frame_is_large(
+                i32::from(frame.frame_width),
+                i32::from(frame.frame_height),
+            ))
+        };
+        for (name, image_id, sized) in pending {
             let candidates: Vec<String> = effect_shp_candidates(
                 crate::rules::art_data::EffectImageKind::Animation,
                 Some(self),
@@ -2356,7 +2728,13 @@ impl ArtRegistry {
                 theater_ext,
                 theater_name,
             );
-            let shp_bytes: Option<&[u8]> = candidates.iter().find_map(|c| asset_manager.get_ref(c));
+            let shp_bytes: Option<&[u8]> = candidates.iter().find_map(|c| {
+                if sized {
+                    folder.read_noting(c, middle_frame_is_large, &mut folder_files)
+                } else {
+                    asset_manager.get_ref(c)
+                }
+            });
             let Some(data) = shp_bytes else {
                 fallback += 1;
                 continue;
@@ -2379,6 +2757,7 @@ impl ArtRegistry {
                 fallback += 1;
             }
         }
+        self.smudge_folder_files = folder_files;
         (populated, fallback)
     }
 }
@@ -2753,16 +3132,16 @@ fn read_building_body_range(section: &IniSection, key: &str) -> [i32; 3] {
     section.read_int_fields(key, 64, [0, 1, 0])
 }
 
-/// Replace the 2nd character of a filename with the theater-specific letter.
+/// Replace the 2nd character of a filename with the theater's letter
+/// ([`ImageTheater::letter`](crate::rules::object_image::ImageTheater::letter)).
 fn apply_theater_letter(name: &str, theater_name: &str) -> String {
     if name.len() < 2 {
         return name.to_string();
     }
 
-    let upper_theater: String = theater_name.to_ascii_uppercase();
-    let letter: char = match THEATER_LETTERS.iter().find(|(t, _)| *t == upper_theater) {
-        Some((_, ch)) => *ch,
-        None => return name.to_string(),
+    let Some(letter) = crate::rules::object_image::ImageTheater::from_name(theater_name).letter()
+    else {
+        return name.to_string();
     };
     let mut chars: Vec<char> = name.chars().collect();
     chars[1] = letter;
@@ -2848,8 +3227,14 @@ fn normalize_id(value: &str) -> Option<String> {
     }
 }
 
+/// Compares the first two bytes, so a name whose second character is not
+/// ASCII never matches and never splits a character.
 fn has_hardcoded_new_theater_prefix(upper_image: &str) -> bool {
-    upper_image.len() >= 2 && NEW_THEATER_PREFIXES.iter().any(|&p| p == &upper_image[..2])
+    upper_image.as_bytes().get(..2).is_some_and(|head| {
+        NEW_THEATER_PREFIXES
+            .iter()
+            .any(|prefix| prefix.as_bytes() == head)
+    })
 }
 
 fn push_shp_pair(candidates: &mut Vec<String>, base_name: &str, theater_ext: &str) {
@@ -3314,6 +3699,15 @@ mod anim_runtime_metadata_tests {
     /// Three of them are NOT the zero/false a naive port would pick:
     /// `Elasticity` 0.8, `MinZVel` 3.5, `MaxXYVel` 15.0, and both
     /// `ShouldUseCellDrawer` and `ShouldFogRemove` start true.
+    #[test]
+    fn huge_anim_spawn_and_particle_counts_stop_at_their_bounds() {
+        let ini = IniFile::from_str("[HUGE]\nSpawnCount=2147483647\nNumParticles=2147483647\n");
+        let registry = ArtRegistry::from_ini(&ini);
+        let huge = registry.anim_runtime_config("HUGE").unwrap();
+        assert_eq!(huge.spawn_count, SPAWN_COUNT_LIMIT);
+        assert_eq!(huge.num_particles, NUM_PARTICLES_LIMIT);
+    }
+
     #[test]
     fn anim_constructor_defaults_are_not_all_zero() {
         let ini = IniFile::from_str("[BARE]\nFixtureOnly=1\n");

@@ -74,7 +74,7 @@ fn a_wave_hit_can_ally_the_next_receiver_before_it_writes_the_shared_damage() {
     wave.replace_recorded_cells(vec![WaveRecordedCell::real(17, 15)]);
     let id = sim.substrate.allocate_stable_id();
     sim.admit_wave(id, wave);
-    assert!(sim.object_ai_visit_one(id, Some(&rules), Default::default()));
+    assert!(sim.object_ai_visit_one(id, Some(&rules), &mut Default::default()));
 
     assert!(
         sim.house_alliances()
@@ -106,7 +106,7 @@ fn timer(value: &Value) -> CdTimer {
 
 fn install_rng_boundary(sim: &mut Simulation, states: &Value) {
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
 }
 
@@ -187,7 +187,7 @@ fn explosion_damage_tag_chain_respects_depth_and_recovers_on_a_small_stack() {
                 targets[0],
                 crate::sim::combat::RAD_NO_ATTACKER,
                 1,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             assert_eq!(
                 sim.trigger_runtime
@@ -218,7 +218,7 @@ fn explosion_damage_tag_chain_respects_depth_and_recovers_on_a_small_stack() {
                 targets[count],
                 crate::sim::combat::RAD_NO_ATTACKER,
                 1,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             assert!(
                 sim.global_variables()[10],
@@ -258,7 +258,7 @@ fn retail_no_dock_crash_springs_41_before_record_kill() {
         aircraft,
         object.flight_level(rules.general.flight_level),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.entities().get(aircraft).unwrap().health.current(),
@@ -288,7 +288,7 @@ fn retail_no_dock_crash_springs_41_before_record_kill() {
             &mut sim,
             aircraft,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     });
     // Crash4DEC0F raises41 before RecordKill4DEC51 can raise29. The sole
@@ -316,7 +316,7 @@ fn live_crash_with_attacker_keeps_both_41_visits() {
     let (mut sim, rules, _overlays, houses) = event_ingress_fixture();
     let victim = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
     let attacker = spawn_event_ingress_unit(&mut sim, &rules, houses[1], (17, 15));
-    sim.set_object_height(victim, 512, &rules, FrameEffects::default());
+    sim.set_object_height(victim, 512, &rules, &mut FrameEffects::default());
     install_event_ingress_map(
         &mut sim,
         &rules,
@@ -328,7 +328,7 @@ fn live_crash_with_attacker_keeps_both_41_visits() {
     );
     sim.attach_object_trigger_tag(victim, Some("TAG"));
     sim.trigger_runtime.dispatch_trace.clear();
-    assert!(sim.foot_crash(victim, Some(attacker), &rules, FrameEffects::default(),));
+    assert!(sim.foot_crash(victim, Some(attacker), &rules, &mut FrameEffects::default(),));
     // Crash4DEBEC/4DEC0F/4DEC36: the persistent Tag survives all three
     // visits, including the second41 carrying the retained attacker.
     assert_eq!(
@@ -354,7 +354,7 @@ fn crash_stops_when_a_real_tag_action_uninits_before_or_during_record_kill() {
         assert!(!rules.object("TAGUNIT").unwrap().crashable);
         // Supplied shared-Foot boundary: C4 on this non-Crashable Unit
         // reaches UnInit, rather than an Aircraft's nested dead-HP Crash.
-        sim.set_object_height(victim, 512, &rules, FrameEffects::default());
+        sim.set_object_height(victim, 512, &rules, &mut FrameEffects::default());
         install_event_ingress_map(
             &mut sim,
             &rules,
@@ -366,7 +366,7 @@ fn crash_stops_when_a_real_tag_action_uninits_before_or_during_record_kill() {
         );
         sim.attach_object_trigger_tag(victim, Some("TAG"));
         let (accepted, draws) = crate::sim::rng::trace_draws(|| {
-            sim.foot_crash(victim, None, &rules, FrameEffects::default())
+            sim.foot_crash(victim, None, &rules, &mut FrameEffects::default())
         });
         assert!(
             accepted,
@@ -425,15 +425,23 @@ fn damage_event_predicates_match_original_discrete_controls() {
         let trigger_type = sim.trigger_runtime.trigger(live).unwrap().type_index;
         let events = &sim.trigger_runtime.definitions.trigger_types[trigger_type].events;
         assert_eq!(events.len(), 1, "{name}: counted event reader");
-        assert_eq!(events[0].kind, integer(&case["read"]["kind"]), "{name}");
-        assert_eq!(events[0].value, integer(&case["read"]["value"]), "{name}");
         assert_eq!(
-            events[0].type_name.as_deref().unwrap_or(""),
+            events[0].condition.kind,
+            integer(&case["read"]["kind"]),
+            "{name}"
+        );
+        assert_eq!(
+            events[0].condition.value,
+            integer(&case["read"]["value"]),
+            "{name}"
+        );
+        assert_eq!(
+            events[0].condition.type_name.as_deref().unwrap_or(""),
             case["read"]["name"].as_str().unwrap(),
             "{name}: counted event reader"
         );
         assert_eq!(
-            events[0].team_name.is_some(),
+            events[0].condition.team_name.is_some(),
             case["read"]["team_present"].as_bool().unwrap(),
             "{name}: counted event reader"
         );
@@ -783,7 +791,7 @@ fn retail_all05_first_damage_creates_defense_team_from_existing_units() {
         [sim.trigger_runtime.trigger(live).unwrap().type_index];
     assert_eq!(definition.id, route["trigger_id"]);
     assert_eq!(
-        definition.events[0].kind,
+        definition.events[0].condition.kind,
         integer(&route["native_event"]["conditions"][0]["kind"])
     );
     assert_eq!(
@@ -827,7 +835,7 @@ fn retail_all05_first_damage_creates_defense_team_from_existing_units() {
         victim,
         supplied[0],
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.entities().get(victim).unwrap().health.current(),
@@ -870,7 +878,7 @@ fn retail_all05_first_damage_creates_defense_team_from_existing_units() {
     assert!(sim.trigger_runtime.tag(tag).is_none());
     assert!(sim.trigger_runtime.trigger(live).is_none());
     for _ in 0..3 {
-        sim.run_team_ai_pass(&rules, Some(&overlays), FrameEffects::default());
+        sim.run_team_ai_pass(&rules, Some(&overlays), &mut FrameEffects::default());
     }
     let state = sim.team_script_vm.team(team).unwrap();
     let mut members: Vec<_> = state.members().collect();
@@ -888,7 +896,7 @@ fn retail_all05_first_damage_creates_defense_team_from_existing_units() {
         victim,
         supplied[0],
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     sim.flush_pending_delete();
     assert_eq!(sim.team_script_vm.teams_in_order().count(), 1);
@@ -1006,7 +1014,7 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
     sim.trigger_runtime.dispatch_trace.clear();
     sim.clear_lifecycle_test_events_for_test();
     let _ = sim.drain_trigger_effects();
-    sim.commit_direct_damage_receiver(&rules, Some(&overlays), hit, FrameEffects::default());
+    sim.commit_direct_damage_receiver(&rules, Some(&overlays), hit, &mut FrameEffects::default());
     assert_eq!(
         sim.trigger_runtime
             .action_trace
@@ -1092,7 +1100,7 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
             arg6: false,
         },
     );
-    sim.commit_direct_damage_receiver(&rules, Some(&overlays), hit, FrameEffects::default());
+    sim.commit_direct_damage_receiver(&rules, Some(&overlays), hit, &mut FrameEffects::default());
     sim.flush_pending_delete();
     assert_eq!(
         sim.houses[&owner].stats().buildings_lost(),
@@ -1121,7 +1129,7 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
     sim.session
         .set_binary_frame_for_test(timer.start_frame().wrapping_add(timer.duration()) as u32);
     let previous_actions = sim.trigger_runtime.action_trace.len();
-    let effects = sim.advance_triggers(&rules, Some(&overlays), FrameEffects::default());
+    let effects = sim.advance_triggers(&rules, Some(&overlays), &mut FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(next).unwrap().enabled);
     assert_eq!(
         sim.trigger_runtime.action_trace[previous_actions..]

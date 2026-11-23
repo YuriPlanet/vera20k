@@ -608,19 +608,21 @@ impl SelectionOverlay {
             .iter()
             .map(|entry| {
                 let shape = entry.shape.as_deref()?;
+                let palette = digital_display_palette(assets, entry.palette_name());
+                if palette != entry.palette_name() {
+                    log::warn!(
+                        "Phobos DigitalDisplay {}: cannot load {}; drawing {shape} in {palette}",
+                        entry.name,
+                        entry.palette_name()
+                    );
+                }
                 let strip = CenteredShapeStrip::from_assets_on_device(
-                    device,
-                    queue,
-                    batch,
-                    assets,
-                    shape,
-                    entry.palette_name(),
+                    device, queue, batch, assets, shape, palette,
                 );
                 if strip.is_none() {
                     log::warn!(
-                        "Phobos DigitalDisplay {}: cannot load {shape} / {}; using text",
-                        entry.name,
-                        entry.palette_name()
+                        "Phobos DigitalDisplay {}: cannot load {shape} / {palette}; using text",
+                        entry.name
                     );
                 }
                 strip
@@ -914,9 +916,42 @@ fn generate_diamond_cell(color: [u8; 4]) -> Vec<u8> {
     rgba
 }
 
+/// The palette a `[DigitalDisplayTypes]` Shape draws in. Phobos
+/// `CustomPalette::LoadFromINI` (`src/Utilities/Constructs.cpp:42-61`) keeps no
+/// Convert when the named `Palette=` file does not load, and
+/// `DigitalDisplayTypeClass` draws through
+/// `Palette.GetOrDefaultConvert(FileSystem::PALETTE_PAL)`
+/// (`src/New/Type/DigitalDisplayTypeClass.cpp:262, 275`), so the Shape still
+/// draws, in `PALETTE.PAL`. Residual: the reader's `~~~` theater suffix
+/// (`ApplyTheaterSuffixToString`) is not applied to the name.
+#[cfg(feature = "phobos")]
+fn digital_display_palette<'a>(assets: &AssetManager, name: &'a str) -> &'a str {
+    use crate::render::shell_ui_style_assets::ui_art_candidates;
+    if ui_art_candidates(assets, name).any(|asset| Palette::from_bytes(asset.bytes).is_ok()) {
+        name
+    } else {
+        "palette.pal"
+    }
+}
+
 #[cfg(all(test, tests_render_s_z))]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn a_digital_display_palette_that_does_not_load_draws_in_palette_pal() {
+        let root = crate::map::source::test_support::TestDirectory::new("digital-display-palette");
+        root.write("palette.pal", &[0; 768]);
+        root.write("digits.pal", &[0; 768]);
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        // A mod may name a palette that none of its archives ship.
+        assert_eq!(
+            digital_display_palette(&assets, "interior.pal"),
+            "palette.pal"
+        );
+        assert_eq!(digital_display_palette(&assets, "digits.pal"), "digits.pal");
+    }
 
     fn grid(cells: &[(u16, u16, bool)]) -> BuildingPlacementPreview {
         BuildingPlacementPreview {

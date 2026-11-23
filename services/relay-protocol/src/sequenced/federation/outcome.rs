@@ -1,9 +1,11 @@
 //! A marked federation reports its own terminal ordering verdict to the lobby.
 //! Ordinary player departures, including removal of a silent player by their
 //! healthy home relay, stay in the command stream. Only an absent relay link
-//! in a started VF2L match, or a peer that already proved that failure, voids it.
+//! in a started marked match, or a peer that already proved that failure, voids
+//! it.
 
 use super::*;
+use crate::link::array_at;
 use sha2::Digest;
 
 const OUTCOME_DOMAIN: &[u8] = b"VERA20k relay federation outcome v1\0";
@@ -45,10 +47,10 @@ impl FederationOutcome {
         &self.0
     }
     pub fn room(&self) -> [u8; 16] {
-        self.0[4..20].try_into().expect("fixed receipt")
+        array_at::<4, 16, _>(&self.0)
     }
     pub fn issued_at(&self) -> u64 {
-        read_u64(&self.0, 54)
+        u64::from_le_bytes(array_at::<54, 8, _>(&self.0))
     }
     pub fn expires_at(&self) -> u64 {
         self.issued_at().saturating_add(OUTCOME_AGE)

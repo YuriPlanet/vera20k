@@ -119,7 +119,6 @@ impl LiveRoundFlow {
         }
         let host = self.online_config().host.clone();
         let present = crate::app::shell_wol::lobby::member_names(state)
-            .iter()
             .any(|name| name.eq_ignore_ascii_case(&host));
         let (since, seen, left) =
             self.quick_match_wait
@@ -321,7 +320,7 @@ impl LiveRoundFlow {
                 WolPage::Message { .. } => "message",
                 WolPage::Lobby => "lobby",
                 WolPage::Options(_) => "options",
-                WolPage::AutoLoginQuery(_) => "auto_login",
+                WolPage::AutoLoginQuery => "auto_login",
                 WolPage::Locale(_) => "locale",
                 WolPage::MyInformation(_) => "my_information",
                 WolPage::Buddy(_) => "buddy",
@@ -432,12 +431,12 @@ impl LiveRoundFlow {
                     .iter()
                     .position(|row| row.locale != 0)
                     .unwrap_or(0);
-                let geometry = persona::list_geometry(&layout, page);
+                let (geometry, top) = persona::list_view(state).context("online location list")?;
                 ensure!(
-                    row >= page.top && row < page.top + geometry.visible_rows,
+                    row >= top && row < top + geometry.visible_rows,
                     "online location choice is outside the visible list"
                 );
-                let row_rect = geometry.row(row - page.top);
+                let row_rect = geometry.row(row - top);
                 click(state, row_rect);
                 click(
                     state,
@@ -597,29 +596,24 @@ impl LiveRoundFlow {
                 if rendered == PresentedShell::WolLogin
                     && MoviesCapture::slide_settled(state, ShellSlideKind::WolLogin) =>
             {
-                // The page's form starts from the last username: replace it.
-                let username = crate::app::shell_wol::login_layout(state)
-                    .online
-                    .context("the online sign-in form")?
-                    .fields[0]
-                    .1;
-                click(state, username);
-                App::handle_wol_key(state, Some(KeyCode::Home), true, None);
-                for _ in 0..32 {
-                    App::handle_wol_key(state, Some(KeyCode::Delete), true, None);
-                }
-                App::handle_wol_key(state, None, true, Some(&self.online_config().account));
+                let chooser = crate::app::shell_wol::login_layout(state)
+                    .entry_choice()
+                    .context("online entry chooser")?;
+                click(state, chooser.guest);
+                // The live clients locate each other's games by their agreed
+                // command-line names. Set that fixture identity before the
+                // normal slide-out commits the guest's Connect request.
                 ensure!(
-                    state
-                        .frontend
-                        .wol
-                        .as_ref()
-                        .and_then(|visit| visit.login())
-                        .is_some_and(|login| login.button_enabled(crate::ui::wol_login::PLAY)),
-                    "the online username did not enable Play"
+                    state.frontend.shell_exit.is_some(),
+                    "Play as Guest did not start the login slide-out"
                 );
-                App::handle_wol_key(state, Some(KeyCode::Enter), true, None);
-                self.record(frame, "Username submitted through Play");
+                let identity = &mut state.frontend.wol_account;
+                identity.nickname.clone_from(&self.online_config().account);
+                identity.generated_guest = false;
+                self.record(
+                    frame,
+                    "Play as Guest selected; using coordinated capture nickname",
+                );
                 self.phase = RoundPhase::Lobby;
             }
             RoundPhase::Lobby if lobby_ready(state, rendered) => {
@@ -1054,7 +1048,7 @@ impl LiveRoundFlow {
                         .frontend
                         .score_page
                         .as_ref()
-                        .is_some_and(|page| page.reveals_terminal()) =>
+                        .is_some_and(|page| page.statics.is_terminal()) =>
             {
                 let page = state.frontend.score_page.as_ref().context("score page")?;
                 let visible = page.visible_row_texts();
@@ -1085,9 +1079,9 @@ impl LiveRoundFlow {
                         .paging_button(crate::ui::score_shell::NEXT_PAGE)
                         .context("score Next")?;
                     set_window_pointer_to_rect_center(state, rect);
-                    App::handle_score_shell_mouse_move(state);
-                    App::handle_score_shell_mouse_down(state);
-                    App::handle_score_shell_mouse_up(state);
+                    App::handle_score_shell_mouse(state, None);
+                    App::handle_score_shell_mouse(state, Some(true));
+                    App::handle_score_shell_mouse(state, Some(false));
                     MoviesCapture::restore_neutral_pointer(state);
                     self.record(frame, "Next results page displayed through normal button");
                     return Ok(());
@@ -1115,9 +1109,9 @@ impl LiveRoundFlow {
                     .button_rect(crate::ui::score_shell::CONTINUE_BUTTON)
                     .context("score Continue")?;
                 set_window_pointer_to_rect_center(state, rect);
-                App::handle_score_shell_mouse_move(state);
-                App::handle_score_shell_mouse_down(state);
-                App::handle_score_shell_mouse_up(state);
+                App::handle_score_shell_mouse(state, None);
+                App::handle_score_shell_mouse(state, Some(true));
+                App::handle_score_shell_mouse(state, Some(false));
                 MoviesCapture::restore_neutral_pointer(state);
                 self.record(frame, "Real multiplayer results acknowledged");
                 self.phase = RoundPhase::Returning;
@@ -1292,13 +1286,26 @@ impl LiveRoundFlow {
                 if rendered == PresentedShell::WolLogin
                     && MoviesCapture::slide_settled(state, ShellSlideKind::WolLogin) =>
             {
-                let rect = crate::app::shell_wol::login_layout(state)
+                let layout = crate::app::shell_wol::login_layout(state);
+                let rect = layout
                     .page
                     .button_rect(crate::ui::wol_login::BACK)
                     .context("WOL sign-in Back button")?;
                 click(state, rect);
-                self.record(frame, "WOL sign-in Back clicked through ordinary input");
-                self.phase = RoundPhase::MainReturn;
+                if layout.entry_choice().is_some() {
+                    self.record(
+                        frame,
+                        "Online entry chooser Back clicked through ordinary input",
+                    );
+                    self.phase = RoundPhase::MainReturn;
+                } else {
+                    ensure!(
+                        crate::app::shell_wol::login_layout(state)
+                            .entry_choice()
+                            .is_some(),
+                        "Back did not return to the online entry chooser"
+                    );
+                }
             }
             RoundPhase::MainReturn
                 if rendered == PresentedShell::MainMenu
@@ -1487,12 +1494,15 @@ fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
         .as_ref()
         .and_then(|visit| visit.lobby())
         .context("online lobby")?;
-    let geometry =
-        lobby
-            .ui
-            .game_list
-            .geometry(layout.games, lobby.ui.game_rows.len(), layout.page.scale);
-    let top = lobby.ui.game_list.top_index;
+    let geometry = lobby.ui.shown_geometry(
+        crate::ui::wol_lobby::GAMES,
+        layout
+            .control_rect(crate::ui::wol_lobby::GAMES)
+            .unwrap_or_default(),
+        lobby.ui.game_rows.len(),
+        layout.page.scale,
+    );
+    let top = lobby.ui.list_top(crate::ui::wol_lobby::GAMES);
     if row < top || row >= top + geometry.visible_rows {
         let rect = if let Some(bar) = geometry.scrollbar {
             let y = if row < top {
@@ -1509,7 +1519,10 @@ fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
                 top > geometry.max_top,
                 "offscreen online game has no ordinary scroll input"
             );
-            RectPx::new(layout.games.x, layout.games.y, layout.games.w, 1)
+            let games = layout
+                .control_rect(crate::ui::wol_lobby::GAMES)
+                .unwrap_or_default();
+            RectPx::new(games.x, games.y, games.w, 1)
         };
         click(state, rect);
         return Ok(false);

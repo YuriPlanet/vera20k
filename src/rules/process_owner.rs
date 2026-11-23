@@ -351,8 +351,10 @@ impl NativeScenarioRulesLoad {
 
 impl NativeRulesProcessOwner {
     /// Enter native cold startup from the already-selected INI snapshots, for
-    /// the fixture game `ares_switch::game_ships_ares` says; the game's
-    /// startup says whether `ares.mix` ships (`RetailRulesSources::into_owner`).
+    /// the game this thread reads (`ares_switch::ares_way`: it ships
+    /// `ares.mix` exactly when the thread reads the Ares way) with the Ares
+    /// setting Auto; the game's startup takes both from its asset manager
+    /// (`RetailRulesSources::into_owner`).
     ///
     /// gamemd provenance: `Load_Game_Rules @ 0x0052CD70` followed by
     /// `Init_Game @ 0x0052BA60`.
@@ -371,8 +373,8 @@ impl NativeRulesProcessOwner {
             fixed_eva,
             ["RULESMD.INI".into(), "ARTMD.INI".into()],
             PersonalRules::default(),
-            crate::rules::ares_switch::game_ships_ares(false),
-            crate::rules::ares_switch::launch_keys_off(),
+            crate::rules::ares_switch::ares_way(),
+            false,
         )
     }
 
@@ -747,7 +749,7 @@ impl NativeRulesProcessOwner {
     }
 
     /// VERA: play the switches `rules` from the next scenario on, as a network
-    /// room plays its host's. Scenario roots compose them, so the one registry
+    /// match plays its room's. Scenario roots compose them, so the one registry
     /// and everything the shell read into it stay as they are.
     pub fn use_personal_rules(&mut self, rules: PersonalRules) {
         self.sources.personal_rules = rules;
@@ -870,6 +872,16 @@ impl NativeRulesProcessOwner {
         &self,
         processed: &ProcessedRulesLayers,
     ) -> Result<RuleSet, RulesError> {
+        // A game reads its Rules one way, the way it says by shipping
+        // `ares.mix` or not (`AssetManager::ships_ares`): Rules read the other
+        // way are another game's.
+        if processed.native_registry_state().reads_ares_way() != self.sources.ships_ares {
+            return Err(RulesError::InvalidSavedState(if self.sources.ships_ares {
+                "saved Rules are from a game without Ares, and the game now open ships ares.mix"
+            } else {
+                "saved Rules are from a game with Ares (ares.mix), which the game now open is not"
+            }));
+        }
         processed.validate_saved_state()?;
         let mut rules = RuleSet::from_processed_rules(processed)?;
         self.bind_type_audio_references(&mut rules, processed);
@@ -1339,6 +1351,9 @@ impl NativeRulesProcessOwner {
         };
         self.bind_type_audio_references(&mut rules, &processed);
         debug_assert_eq!(rules.source_ini_hash(), processed.content_hash());
+        // An owned copy, once per scenario load: the registry keeps
+        // `processed` for the save and for map TerrainType allocation, and the
+        // loader keeps this INI as the scenario's rules for its own readers.
         let processed_ini = processed.ini().clone();
         let (post_reset_events, post_reset_super_count) = processed.take_constructor_events();
         self.registry = Some(NativeRulesRegistryOwner::Scenario(Box::new(processed)));

@@ -106,7 +106,7 @@ fn execute(
             &mut effects,
             rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     });
     assert!(draws.is_empty() && effects.is_empty());
@@ -258,7 +258,7 @@ fn superweapon_reset_releases_a_production_chrono_placement_without_destroying_i
         id,
         (10, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     let held = sim.super_placement_anims();

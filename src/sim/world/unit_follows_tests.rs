@@ -121,7 +121,7 @@ fn authored_follows_peer_changes_house_with_only_head_tagged() {
     sim.advance_triggers(
         rules,
         Some(rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.entities().get(head).unwrap().owner(), target);
     assert_eq!(
@@ -158,7 +158,7 @@ fn authored_follows_peer_changes_house_with_only_head_tagged() {
                 rules,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(output.tick.frame_committed);
@@ -220,8 +220,14 @@ fn uninit_clears_incoming_unit_link_but_preserves_orphan_follower_byte_after_res
     sim.uninit_with_context(middle, UninitContext::new(rules));
     assert_eq!(sim.entities().get(head).unwrap().unit_follower(), None);
     assert!(sim.entities().get(tail).unwrap().is_unit_follower());
-    sim.advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())
-        .unwrap();
+    sim.advance_app_frame(
+        &[],
+        rules,
+        67,
+        TickLane::Ordinary,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
     assert!(
         sim.entities().get(middle).is_none(),
         "ordinary pending-delete drain"
@@ -273,7 +279,7 @@ fn a_follower_cycle_does_not_stop_the_frame() {
             rules,
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         routed |= sim.entities().get(head).unwrap().navigation.nav_com()

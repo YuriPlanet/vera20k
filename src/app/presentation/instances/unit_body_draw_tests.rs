@@ -255,6 +255,7 @@ fn latch_unloading_image(sim: &mut Simulation, id: u64, image: &str) {
     let image = sim.intern(image);
     sim.entity_mut_for_test(id)
         .expect("the object was just built")
+        .seldom
         .display_type_override
         .set_for_test(Some(image));
 }
@@ -513,7 +514,9 @@ fn unit_hva_frames_match_native_selected_model_remainders() {
 #[test]
 #[ignore = "requires GPU and retail assets; ordinary SpyPlane flight counters reach both physical HVA atlas frames and the production voxel backend"]
 fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
-    use crate::app::presentation::render::draw_plan_lowering::lower_object_instances;
+    use crate::app::presentation::render::draw_plan_lowering::{
+        OwnedPlannedObject, lower_object_instances,
+    };
     use crate::assets::{hva_file::HvaFile, pal_file::Palette, vxl_file::VxlFile};
     use crate::render::batch::{BatchRenderer, InstanceBufferPool};
     use crate::render::palette_light::PaletteLight;
@@ -588,7 +591,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         }
         scene
             .runtime
-            .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
     }
     assert!(
@@ -610,7 +613,12 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         let commands = scene.runtime.simulation.take_due_commands();
         scene
             .runtime
-            .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                22,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         let sim = scene.sim();
         let Some(plane) = sim
@@ -644,7 +652,8 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
             .unwrap();
         let record = crate::app::presentation::frame::PresentationFrame::capture(
             &scene.runtime,
-            &Default::default(), false,
+            &Default::default(),
+            false,
         )
         .object(plane.stable_id())
         .cloned()
@@ -786,7 +795,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
                 &mut pieces,
             );
             let layers =
-                lower_object_instances(vec![PlannedObjectInstance::object(*parent, pieces)]);
+                lower_object_instances(vec![OwnedPlannedObject::object(*parent, pieces)].into());
             let layer = &layers[parent.layer.0 as usize];
             assert_eq!(layer.owners, [plane.stable_id()]);
             assert_eq!(layer.runs.len(), 1);
@@ -896,6 +905,7 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
             .slots_mut_for_test()
             .clear();
         entity
+            .seldom
             .disguise
             .get_or_insert_with(Default::default)
             .acquire(0, Some(disguise), None);
@@ -926,6 +936,7 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
     assert_eq!(model(&sim, id), "GUNNED");
     sim.entity_mut_for_test(id)
         .unwrap()
+        .seldom
         .disguise
         .as_mut()
         .unwrap()
@@ -938,6 +949,7 @@ fn deployed_model_overrides_disguise_no_spawn_alt_and_miner_display_hints() {
 
     let entity = sim.entity_mut_for_test(no_model).unwrap();
     entity
+        .seldom
         .disguise
         .get_or_insert_with(Default::default)
         .acquire(0, Some(disguise), None);
@@ -1104,7 +1116,7 @@ fn retail_mirage_unit_route_matches_original_observer_dispatch() {
             continue;
         }
         let actor = sim.entity_mut_for_test(id).unwrap();
-        let disguise = actor.disguise.as_mut().unwrap();
+        let disguise = actor.seldom.disguise.as_mut().unwrap();
         if input["raw_disguised"].as_bool().unwrap() {
             disguise.acquire(
                 input["creation"].as_i64().unwrap() as u32,
@@ -1208,7 +1220,12 @@ fn retail_mirage_body_frame_matches_original_unit_shp() {
         let input = &row["input"];
         let body_frame = crate::sim::animation::resolve_shp_vehicle_body_frame(
             set,
-            (input["facing_u16"].as_u64().unwrap() >> 8) as u8,
+            crate::sim::animation::shp_vehicle_facing_slot(
+                8,
+                input["facing_u16"].as_u64().unwrap() as u16,
+                true,
+                false,
+            ),
             input["body_counter"].as_u64().unwrap() as u32,
             -1,
             -1,
@@ -1330,4 +1347,24 @@ fn a_tanks_body_draw_looks_no_type_up_by_name() {
     .expect("a Grizzly draws a voxel body");
     assert_eq!(model, "MTNK");
     assert_eq!(RuleSet::type_name_lookups() - before, 0);
+}
+
+#[test]
+fn retail_no_spawn_alt_draw_borrows_the_rules_wo_name() {
+    let Some(retail) = retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut checked = 0;
+    for id in &rules.vehicle_ids {
+        let object = rules.object(id).expect("listed vehicle");
+        if !object.no_spawn_alt() {
+            continue;
+        }
+        let drawn = no_spawn_alt_type_id(id, Some(object), Some(0)).expect("empty rack");
+        assert!(matches!(drawn, Cow::Borrowed(_)), "{id} borrows its name");
+        assert_eq!(drawn, format!("{id}WO"), "{id}");
+        checked += 1;
+    }
+    assert!(checked > 0, "retail rules carry NoSpawnAlt vehicles");
 }

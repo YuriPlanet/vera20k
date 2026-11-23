@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::sim::intern::InternedId;
 use crate::sim::production::ProductionCategory;
+use crate::util::read_helpers::array_at;
 
 /// Fixed byte width of one synchronized command record.
 pub const COMMAND_RECORD_LEN: usize = 0x6f;
@@ -426,16 +427,25 @@ impl CommandRecord {
 
     #[inline]
     pub fn frame_stamp(&self) -> i32 {
-        i32::from_le_bytes(
-            self.bytes[COMMAND_RECORD_FRAME_OFFSET..COMMAND_RECORD_PAYLOAD_OFFSET]
-                .try_into()
-                .expect("frame stamp is four bytes"),
-        )
+        i32::from_le_bytes(array_at::<COMMAND_RECORD_FRAME_OFFSET, 4, _>(&self.bytes))
     }
 
     #[inline]
     pub fn payload(&self) -> &[u8] {
         &self.bytes[COMMAND_RECORD_PAYLOAD_OFFSET..]
+    }
+
+    /// The `N` payload bytes at `AT`. A field that would run past the
+    /// payload fails the build, as [`array_at`] does.
+    #[inline]
+    pub fn payload_field<const AT: usize, const N: usize>(&self) -> [u8; N] {
+        const {
+            assert!(
+                AT + N <= COMMAND_RECORD_PAYLOAD_LEN,
+                "a field past the payload"
+            )
+        };
+        std::array::from_fn(|index| self.bytes[COMMAND_RECORD_PAYLOAD_OFFSET + AT + index])
     }
 
     #[inline]
@@ -538,6 +548,33 @@ pub const VERA_CYCLE_PRODUCER_OPCODE: u8 = 0x32;
 pub const VERA_PAID_SUPER_PAYLOAD_LEN: u8 = 21;
 pub const TARGET_HOUSE_OPCODE: u8 = 0x33;
 pub const TARGET_HOUSE_PAYLOAD_LEN: u8 = 2 + VERA_PAID_SUPER_PAYLOAD_LEN;
+/// `CycleProducerRecord`'s one category byte.
+pub const VERA_CYCLE_PRODUCER_PAYLOAD_LEN: u8 = 1;
+
+/// Original byte table8208EC, indexed by the 47 Event opcodes (0..2E).
+/// RESPONSE_TIME1B starts at Event+0D; ADDPLAYER1F carries external storage.
+const NATIVE_EVENT_BODY_LENGTHS: [u8; 47] = [
+    0, 5, 5, 4, 23, 24, 5, 5, 0, 5, 5, 16, 0, 4, 12, 12, 12, 5, 8, 0, 16, 5, 5, 4, 4, 0, 0, 1, 7,
+    0, 10, 4, 5, 2, 0, 4, 4, 104, 64, 0, 4, 5, 10, 0, 5, 4, 12,
+];
+
+/// The payload bytes an Event carries on the wire: its8208EC row, or a VERA
+/// or Ares record's fixed length; `None` for an opcode nothing defines. The
+/// packet codec (`net::event_packet`) and `TargetHouseRecord` both size a
+/// body from here.
+pub(crate) fn event_body_len(opcode: u8) -> Option<u8> {
+    match opcode {
+        VERA_PAID_SUPER_OPCODE => Some(VERA_PAID_SUPER_PAYLOAD_LEN),
+        // Constructor4C65E0's object token, as SELL carries.
+        VERA_EJECT_BUNKER_OPCODE => event_body_len(ObjectAction::Sell.opcode()),
+        VERA_CYCLE_PRODUCER_OPCODE => Some(VERA_CYCLE_PRODUCER_PAYLOAD_LEN),
+        TARGET_HOUSE_OPCODE => Some(TARGET_HOUSE_PAYLOAD_LEN),
+        // Ares 3.0 1006A130: TrenchRedirectClick (0x60) carries 10 bytes. Only
+        // a game Ares plays in raises one (`context_order`'s trench Enter).
+        ARES_TRENCH_REDIRECT_OPCODE => Some(ARES_TRENCH_REDIRECT_PAYLOAD_LEN),
+        _ => NATIVE_EVENT_BODY_LENGTHS.get(usize::from(opcode)).copied(),
+    }
+}
 
 /// An explicit third-party House for a VERA economic event. The enclosing
 /// record retains the issuing source in its native header.
@@ -548,15 +585,23 @@ pub struct TargetHouseRecord {
 }
 
 impl TargetHouseRecord {
+    /// The economic events that may name a third-party House, each with its
+    /// own body length.
     fn inner_payload_len(opcode: u8) -> Option<usize> {
-        match opcode {
-            PRODUCE_OPCODE | SUSPEND_OPCODE | ABANDON_OPCODE | ABANDON_ALL_OPCODE => Some(12),
-            PLACE_OPCODE => Some(16),
-            SpecialPlaceRecord::OPCODE => Some(8),
-            VERA_PAID_SUPER_OPCODE => Some(usize::from(VERA_PAID_SUPER_PAYLOAD_LEN)),
-            VERA_CYCLE_PRODUCER_OPCODE => Some(1),
-            _ => None,
-        }
+        matches!(
+            opcode,
+            PRODUCE_OPCODE
+                | SUSPEND_OPCODE
+                | ABANDON_OPCODE
+                | ABANDON_ALL_OPCODE
+                | PLACE_OPCODE
+                | SpecialPlaceRecord::OPCODE
+                | VERA_PAID_SUPER_OPCODE
+                | VERA_CYCLE_PRODUCER_OPCODE
+        )
+        .then(|| event_body_len(opcode))
+        .flatten()
+        .map(usize::from)
     }
 
     pub fn encode(target_house: u8, command: &CommandRecord) -> Option<CommandRecord> {
@@ -668,10 +713,10 @@ impl SpecialPlaceRecord {
         (record.opcode() == Self::OPCODE).then(|| Self {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
-            type_index: i32::from_le_bytes(record.payload()[..4].try_into().unwrap()),
+            type_index: i32::from_le_bytes(record.payload_field::<0, 4>()),
             cell: (
-                i16::from_le_bytes(record.payload()[4..6].try_into().unwrap()),
-                i16::from_le_bytes(record.payload()[6..8].try_into().unwrap()),
+                i16::from_le_bytes(record.payload_field::<4, 2>()),
+                i16::from_le_bytes(record.payload_field::<6, 2>()),
             ),
         })
     }
@@ -1220,11 +1265,10 @@ fn write_production_fields(record: &mut CommandRecord, rtti: i32, index: i32, na
 }
 
 fn read_production_fields(record: &CommandRecord) -> (i32, i32, u32) {
-    let payload = record.payload();
     (
-        i32::from_le_bytes(payload[..4].try_into().expect("RTTI DWORD")),
-        i32::from_le_bytes(payload[4..8].try_into().expect("type index DWORD")),
-        u32::from_le_bytes(payload[8..12].try_into().expect("Naval DWORD")),
+        i32::from_le_bytes(record.payload_field::<0, 4>()),
+        i32::from_le_bytes(record.payload_field::<4, 4>()),
+        u32::from_le_bytes(record.payload_field::<8, 4>()),
     )
 }
 

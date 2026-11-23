@@ -169,7 +169,7 @@ mod tests {
             id,
             UnitFireOutcome::Code(FireError::Rearm),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         let state = sim.entities().get(id).unwrap().gattling;
         assert_eq!((state.stage(), state.value()), (1, 8));

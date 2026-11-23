@@ -47,7 +47,7 @@ fn original_conversion_health_corpus() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let destination = sim
@@ -59,7 +59,7 @@ fn original_conversion_health_corpus() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         damage(&mut sim, source, value("current"));
@@ -123,7 +123,7 @@ fn building_conversion_reads_health_when_animation_finishes() {
         false,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     damage(&mut sim, source, 250);
     sim.substrate
@@ -150,7 +150,7 @@ fn deploy(sim: &mut Simulation, rules: &RuleSet, source: u64, into: &str) -> u64
         source,
         rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.substrate
         .entities
@@ -176,7 +176,7 @@ fn undeploy(sim: &mut Simulation, rules: &RuleSet, building: u64, into: &str) ->
         false,
         rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.substrate
         .entities
@@ -307,7 +307,7 @@ fn mcv_building_slots_wait_for_completion_and_use_converted_health() {
         source,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let destination = sim.entities().get(destination_id).unwrap();
     assert_eq!(destination.health.current(), 250);

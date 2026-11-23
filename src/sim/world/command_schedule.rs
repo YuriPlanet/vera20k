@@ -657,7 +657,7 @@ impl Simulation {
         &mut self,
         commands: &[CommandEnvelope],
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Vec<CommandEnvelope> {
         crate::sim::production::publish_production_changes(self, rules, effects);
         for command in commands {
@@ -722,7 +722,7 @@ impl Simulation {
         cmd: &CommandEnvelope,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> (bool, bool) {
         // Scatter's found-cell arm immediately runs the locomotor. Its
         // authoritative bridge flag can change before the ordinary movement
@@ -1100,7 +1100,7 @@ impl Simulation {
                     if !matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-                    ) || entity.low_bridge_tube_state.is_some()
+                    ) || entity.active_tube().is_some()
                     {
                         continue;
                     }
@@ -1273,7 +1273,7 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> usize {
         let mut executed_commands = 0usize;
         let is_network = self.session.execution_topology().is_lockstep();
@@ -1322,7 +1322,7 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> (usize, bool) {
         self.dispatch_owned_commands(commands, rules, execute_tick, frame_effects)
             .expect("component command dispatch must succeed")
@@ -1344,7 +1344,7 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(usize, bool), (super::NetworkCommandError, usize, bool)> {
         let is_network = self.session.execution_topology().is_lockstep();
         for command in commands
@@ -1398,7 +1398,7 @@ impl Simulation {
         let mut host = WorldCommandHost {
             sim: self,
             rules,
-            frame_effects,
+            frame_effects: frame_effects.reborrow(),
             execute_tick,
             spawned: false,
             executed: 0,
@@ -1589,7 +1589,7 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
                 &command,
                 self.rules,
                 Some(self.rules.overlay_registry()),
-                self.frame_effects,
+                &mut self.frame_effects,
             );
             if let Some(record) = entry.record() {
                 self.frame_effects
@@ -1609,14 +1609,17 @@ struct GroupMemberTarget {
 }
 
 /// The spread's height of a Cell: its signed level (`+0x11B`), plus
-/// `BRIDGE_DECK_HEIGHT_LEVELS` on the bridge flag (`+0x140 & 0x100`). The
-/// target's is EBX (`0x0064D2AA..0x0064D2DF`), which Can_Enter_Cell receives;
+/// `BRIDGE_DECK_HEIGHT_LEVELS` on the bridge flag (`+0x140 & 0x100`) in the
+/// absence of a fixed deck. The target's is EBX (`0x0064D2AA..0x0064D2DF`),
+/// which Can_Enter_Cell receives;
 /// a candidate's is measured against it (`0x0064D55F..0x0064D592`).
 /// Native executions: tools/spatial_oracle/group_spread_gates.{py,json,meta.json}.
 fn spread_height(terrain: &ResolvedTerrainGrid, cell: NativeCellIdentity) -> i32 {
     let level = i32::from(terrain.native_cell_ground_fields(cell).0 as i8);
     if terrain.native_cell_flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0 {
-        level + BRIDGE_DECK_HEIGHT_LEVELS
+        terrain
+            .corrected_high_bridge_deck_at(cell)
+            .map_or(level + BRIDGE_DECK_HEIGHT_LEVELS, i32::from)
     } else {
         level
     }

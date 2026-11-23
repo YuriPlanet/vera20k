@@ -1,347 +1,474 @@
-//! Descriptor-driven shell dialog input controller (substrate Slice 2).
+//! Shell dialog stack and pointer input, run on the `vera20k-gui` tree.
 //!
-//! Owns the press/hover/enable state for the active front-end shell dialog and
-//! the press-must-match-release gesture, plus a dialog stack and a keyboard route
-//! in registration order for the wider lifecycle contract. Render-agnostic:
-//! operates on the button rects the layout pass produced (`LaidOutControl`) and
-//! plain resource ids, so it honors the ui/ layering rule (no render/assets/sim).
-//!
-//! The two migrated shells (main menu 0xE2, single player 0x100) feed only their
-//! owner-draw BUTTON rects in. Statics (title/monitor) are never fed, so they are
-//! never hit-tested or hover-tracked — matching the current per-shell hit-tests
-//! that scan only the button array, and keeping `pressed` button-only so the
-//! main-menu mouse-down sound never trips on a static. Two hit-tests are
-//! kept: the press path skips runtime-disabled controls (single-player Load Saved
-//! Game when no saves exist); the hover path does NOT, so a disabled button still
-//! drives its tooltip/timer exactly as before.
+//! Each pushed dialog is a `Dialog` node; a screen builds its controls under
+//! it as nodes keyed by resource id, so hit-testing, capture and hover are
+//! the GUI crate's (612B70: release activates only on the captured, enabled
+//! control; a disabled control still hovers, so it keeps driving its
+//! tooltip).
 
-use std::collections::BTreeSet;
-use crate::util::time::Instant;
+use vera20k_gui::{Gui, InputEvent, Key, MouseButton, NodeId, NodeKind, Prop, UiEvent, Value};
+use winit::keyboard::KeyCode;
 
-use super::descriptor::DialogId;
-use super::layout::LaidOutControl;
+use super::descriptor::DialogResourceId;
+use crate::util::time::{Duration, Instant};
 
-/// Keyboard key the controller routes (contract C3). The two migrated shells
-/// register no keyboard controls, so these are inert for Slice 2; the plumbing
-/// exists so stacked modals (Slice 5) and skirmish (Slice 4) inherit it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShellKey {
-    Tab,
-    Enter,
-    Escape,
+/// The shell's one keyboard adapter: the GUI key a physical key gives
+/// (`shift` turns Tab into Shift+Tab), none for a key the widgets do not
+/// read.
+pub fn gui_key(code: KeyCode, shift: bool) -> Option<Key> {
+    Some(match code {
+        KeyCode::Enter | KeyCode::NumpadEnter => Key::Enter,
+        KeyCode::Escape => Key::Escape,
+        KeyCode::Tab if shift => Key::BackTab,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::Backspace => Key::Backspace,
+        KeyCode::Delete => Key::Delete,
+        KeyCode::ArrowLeft => Key::Left,
+        KeyCode::ArrowRight => Key::Right,
+        KeyCode::ArrowUp => Key::Up,
+        KeyCode::ArrowDown => Key::Down,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::PageUp => Key::PageUp,
+        KeyCode::PageDown => Key::PageDown,
+        _ => return None,
+    })
 }
 
-/// One live dialog: its id plus the per-control runtime state the descriptor does
-/// not carry (descriptor `enabled` is the static template default only).
-#[derive(Debug, Clone)]
-struct DialogInstance {
-    id: DialogId,
-    /// Control pressed but not yet released — the press-must-match-release identity.
-    pressed: Option<u16>,
-    /// Control under the cursor (drives the bottom-left tooltip/status line).
-    hovered: Option<u16>,
-    /// Wall-clock of the last hover transition (single-player hover-delay parity).
-    hover_started_at: Option<Instant>,
-    /// Runtime-disabled control ids (single-player Load Saved Game when no saves).
-    disabled: BTreeSet<u16>,
-    /// Whether this dialog registered into the keyboard route on push.
-    accepts_keys: bool,
-}
-
-impl DialogInstance {
-    fn new(id: DialogId, accepts_keys: bool) -> Self {
-        Self {
-            id,
-            pressed: None,
-            hovered: None,
-            hover_started_at: None,
-            disabled: BTreeSet::new(),
-            accepts_keys,
-        }
+/// One input per `WM_CHAR`: typed text a character at a time, so an edit's
+/// parent runs its `EN_CHANGE` handler after each.
+pub fn per_char(event: InputEvent) -> Vec<InputEvent> {
+    match event {
+        InputEvent::Text(text) => text.chars().map(|c| InputEvent::Text(c.into())).collect(),
+        event => vec![event],
     }
 }
 
-/// The shared shell input router.
-#[derive(Debug, Default)]
+/// [`gui_input`] as [`per_char`] inputs.
+pub fn gui_inputs(code: Option<KeyCode>, shift: bool, text: Option<&str>) -> Vec<InputEvent> {
+    gui_input(code, shift, text).map_or_else(Vec::new, per_char)
+}
+
+/// [`gui_key`], else the text the key typed, as one GUI input.
+pub fn gui_input(code: Option<KeyCode>, shift: bool, text: Option<&str>) -> Option<InputEvent> {
+    match (code.and_then(|code| gui_key(code, shift)), text) {
+        (Some(key), _) => Some(InputEvent::Key(key)),
+        (None, Some(text)) if !text.is_empty() => Some(InputEvent::Text(text.to_owned())),
+        _ => None,
+    }
+}
+
+/// Native list notifications use the host's double-click policy.
+#[cfg(windows)]
+pub fn host_double_click_limits() -> (Duration, i32, i32) {
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetDoubleClickTime() -> u32;
+        fn GetSystemMetrics(index: i32) -> i32;
+    }
+    // SAFETY: pointer-free Win32 queries with no ownership effects.
+    unsafe {
+        (
+            Duration::from_millis(u64::from(GetDoubleClickTime())),
+            GetSystemMetrics(36),
+            GetSystemMetrics(37),
+        )
+    }
+}
+#[cfg(not(windows))]
+pub fn host_double_click_limits() -> (Duration, i32, i32) {
+    (Duration::from_millis(500), 4, 4)
+}
+
+struct Instance {
+    id: DialogResourceId,
+    dialog: vera20k_gui::DialogId,
+    /// A box over whatever screen is up (the WOL page dialogs): it stays on
+    /// top, with its widgets, through the screen's pushes, pops and resets,
+    /// until its owner [`DialogController::close`]s it.
+    overlay: bool,
+}
+
+/// LIFO dialog stack. Keys go to the top dialog's widgets through
+/// [`Self::on_input`]: its `Default`/`Cancel` buttons take Enter and Escape.
 pub struct DialogController {
-    /// LIFO dialog stack: top = focused dialog. Push on open, pop on teardown.
-    stack: Vec<DialogInstance>,
-    /// Keyboard route in REGISTRATION order (C3) — NOT stack order. Maintained as
-    /// a separate list appended on push and pruned on pop.
-    kbd_route: Vec<DialogId>,
+    gui: Gui,
+    stack: Vec<Instance>,
+    epoch: Instant,
+    /// Events of the screen's nodes, waiting for that screen to drain them.
+    pending: Vec<UiEvent>,
+}
+
+impl Default for DialogController {
+    fn default() -> Self {
+        let mut gui = Gui::new(4096);
+        gui.set_base_scale(crate::ui::shell::geom::RETAIL_SCALE);
+        let (time, width, height) = host_double_click_limits();
+        gui.set_double_click(time.as_millis() as u64, width, height);
+        gui.set_byte_len(|text| crate::util::native_string::acp_encode(text).len());
+        Self { gui, stack: Vec::new(), epoch: Instant::now(), pending: Vec::new() }
+    }
+}
+
+impl std::fmt::Debug for DialogController {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.stack.iter().map(|i| i.id)).finish()
+    }
 }
 
 impl DialogController {
-    /// Push a new dialog (C1): append to the LIFO stack and register the keyboard
-    /// route if it accepts keys. Pressed/hover start clear.
-    pub fn push(&mut self, id: DialogId, accepts_keys: bool) {
-        self.stack.push(DialogInstance::new(id, accepts_keys));
-        if accepts_keys {
-            self.kbd_route.push(id);
+    pub fn push(&mut self, id: DialogResourceId) {
+        self.push_kind(id, vera20k_gui::DialogKind::Page, false);
+    }
+
+    /// [`Self::push`] as a modal: it blocks every dialog beneath it.
+    pub fn push_modal(&mut self, id: DialogResourceId) {
+        self.push_kind(id, vera20k_gui::DialogKind::Modal, false);
+    }
+
+    /// [`Self::push`] as an overlay: it stays on top until [`Self::close`].
+    pub fn push_overlay(&mut self, id: DialogResourceId) {
+        self.push_kind(id, vera20k_gui::DialogKind::Page, true);
+    }
+
+    /// [`Self::push_overlay`] as a modal: it takes every input over the
+    /// screen, which keeps its own stack beneath (VERA's enlarged preview).
+    pub fn push_modal_overlay(&mut self, id: DialogResourceId) {
+        self.push_kind(id, vera20k_gui::DialogKind::Modal, true);
+    }
+
+    /// A dialog goes under the overlays, an overlay on top.
+    fn push_kind(&mut self, id: DialogResourceId, kind: vera20k_gui::DialogKind, overlay: bool) {
+        let root = self.gui.create(NodeKind::Dialog, None).expect("the shell stack stays far below the node budget");
+        let dialog = self.gui.push_dialog(root, kind).expect("a fresh Dialog node");
+        let at = match overlay {
+            true => self.stack.len(),
+            false => self.stack.iter().position(|i| i.overlay).unwrap_or(self.stack.len()),
+        };
+        self.stack.insert(at, Instance { id, dialog, overlay });
+        for inst in &self.stack[at + 1..] {
+            let _ = self.gui.raise_dialog(inst.dialog);
         }
     }
 
-    /// Pop the top dialog (C5): LIFO compact + prune its keyboard-route entry.
-    /// Focus implicitly returns to the new top (or the game window if empty).
-    pub fn pop(&mut self) -> Option<DialogId> {
-        let inst = self.stack.pop()?;
-        if inst.accepts_keys
-            && let Some(pos) = self.kbd_route.iter().rposition(|d| *d == inst.id)
-        {
-            self.kbd_route.remove(pos);
+    /// Pops the topmost dialog under the overlays.
+    pub fn pop(&mut self) -> Option<DialogResourceId> {
+        let at = self.stack.iter().rposition(|i| !i.overlay)?;
+        Some(self.remove(at))
+    }
+
+    /// Closes the topmost instance of `id`, an overlay included.
+    pub fn close(&mut self, id: DialogResourceId) {
+        if let Some(at) = self.stack.iter().rposition(|i| i.id == id) {
+            self.remove(at);
         }
-        Some(inst.id)
     }
 
-    /// Replace the whole stack with a single base dialog.
-    pub fn reset_to(&mut self, id: DialogId, accepts_keys: bool) {
-        self.stack.clear();
-        self.kbd_route.clear();
-        self.push(id, accepts_keys);
+    fn remove(&mut self, at: usize) -> DialogResourceId {
+        let inst = self.stack.remove(at);
+        let _ = self.gui.pop_dialog(inst.dialog);
+        self.pending.clear();
+        inst.id
     }
 
-    /// Make `id` the active (top) dialog, resetting input state ONLY if the active
-    /// dialog actually changed. A no-op when `id` is already on top, so press/hover
-    /// state survives across the down/up of a single gesture (and the single-player
-    /// disabled override is not cleared mid-gesture).
-    pub fn ensure_active(&mut self, id: DialogId, accepts_keys: bool) {
+    /// The GUI tree the dialogs live in. A screen builds its own widgets
+    /// under [`Self::root_in`] and reads them back for painting.
+    pub fn gui(&self) -> &Gui {
+        &self.gui
+    }
+
+    pub fn gui_mut(&mut self) -> &mut Gui {
+        &mut self.gui
+    }
+
+    /// Gives the top dialog's keyboard focus to `node` (an `Edit`), or none;
+    /// an edit taking it restarts its caret blink.
+    pub fn focus_edit(&mut self, node: Option<NodeId>) {
+        let now = self.now();
+        let _ = self.gui.focus_edit(node, now);
+    }
+
+    /// Whether `node`'s caret shows now (focused, in the blink's shown half).
+    /// An overlay keeps the caret of the screen under it.
+    pub fn caret_visible(&self, node: NodeId) -> bool {
+        let from = self.stack.iter().rposition(|i| !i.overlay).unwrap_or(0);
+        self.stack[from..].iter().any(|i| self.gui.caret_visible_in(i.dialog, node, self.now()))
+    }
+
+    /// [`Self::caret_visible`] for `dialog`'s own focus, under a box too
+    /// (BB keeps painting its edits' caret under its message box).
+    pub fn caret_visible_in(&self, dialog: DialogResourceId, node: NodeId) -> bool {
+        self.instance(dialog)
+            .is_some_and(|inst| self.gui.caret_visible_in(inst.dialog, node, self.now()))
+    }
+
+    /// Control `id` under the topmost live instance of `dialog`.
+    pub fn control(&self, dialog: DialogResourceId, id: u16) -> Option<NodeId> {
+        self.gui.find_id(self.root_in(dialog)?, i32::from(id))
+    }
+
+    /// Control `id`'s `prop` on `dialog`.
+    pub fn prop(&self, dialog: DialogResourceId, id: u16, prop: Prop) -> Option<&Value> {
+        self.gui.get(self.control(dialog, id)?, prop).ok().flatten()
+    }
+
+    /// Control `id`'s boolean `prop` on `dialog` (`default` when unset).
+    pub fn flag(&self, dialog: DialogResourceId, id: u16, prop: Prop, default: bool) -> bool {
+        match self.prop(dialog, id, prop) {
+            Some(Value::Bool(on)) => *on,
+            _ => default,
+        }
+    }
+
+    /// Sets `prop` on control `id` of `dialog`.
+    pub fn set_prop(&mut self, dialog: DialogResourceId, id: u16, prop: Prop, value: Value) {
+        if let Some(node) = self.control(dialog, id) {
+            let _ = self.gui.set(node, prop, value);
+        }
+    }
+
+    /// Control `id`'s text on `dialog` ("" when it has none).
+    pub fn text(&self, dialog: DialogResourceId, id: u16) -> String {
+        match self.prop(dialog, id, Prop::Text) {
+            Some(Value::Text(text)) => text.clone(),
+            _ => String::new(),
+        }
+    }
+
+    /// Control `id`'s text as a program assigns it (`SetWindowTextW`): the
+    /// caret goes to the end and the view to the start.
+    pub fn set_text(&mut self, dialog: DialogResourceId, id: u16, text: &str) {
+        self.set_prop(dialog, id, Prop::Text, Value::Text(text.to_owned()));
+        self.set_prop(dialog, id, Prop::Caret, Value::Int(text.chars().count() as i32));
+        self.set_prop(dialog, id, Prop::Top, Value::Int(0));
+    }
+
+    /// `SetFocus` on edit `id` of `dialog` (none clears it), on top or not.
+    pub fn focus_control(&mut self, dialog: DialogResourceId, id: Option<u16>) {
+        let now = self.now();
+        let node = id.and_then(|id| self.control(dialog, id));
+        if let Some(inst) = self.instance(dialog).map(|inst| inst.dialog) {
+            let _ = self.gui.focus_edit_in(inst, node, now);
+        }
+    }
+
+    /// The control id of the edit holding `dialog`'s focus.
+    pub fn focused_control(&self, dialog: DialogResourceId) -> Option<u16> {
+        let node = self.gui.focus_in(self.instance(dialog)?.dialog)?;
+        self.gui.id_of(node).and_then(|id| u16::try_from(id).ok())
+    }
+
+    /// Drops `dialog`'s capture and hover only; a box over it keeps its own.
+    pub fn drop_pointer_in(&mut self, dialog: DialogResourceId) {
+        if let Some(inst) = self.instance(dialog).map(|inst| inst.dialog) {
+            self.gui.drop_pointer_in(inst);
+        }
+    }
+
+    /// The root node of the topmost live instance of `id`.
+    pub fn root_in(&self, id: DialogResourceId) -> Option<NodeId> {
+        self.gui.dialog_root(self.instance(id)?.dialog)
+    }
+
+    /// Sets the device-to-authored mapping the top dialog's widgets use.
+    pub fn set_scale(&mut self, scale: crate::ui::shell::geom::ShellScale) {
+        if let Some(inst) = self.base() {
+            self.gui.set_dialog_scale(inst.dialog, scale);
+        }
+    }
+
+    /// [`Self::set_scale`] of dialog `id`, an overlay included.
+    pub fn set_scale_in(&mut self, id: DialogResourceId, scale: crate::ui::shell::geom::ShellScale) {
+        if let Some(inst) = self.instance(id) {
+            self.gui.set_dialog_scale(inst.dialog, scale);
+        }
+    }
+
+    /// Events of the screen's own widgets since the last drain, in order.
+    pub fn drain_events(&mut self) -> Vec<UiEvent> {
+        std::mem::take(&mut self.pending)
+    }
+
+    /// Drops the edits' pending `Cancelled` reports: an Escape the screen
+    /// took for itself was no edit's cancel.
+    pub fn discard_cancelled(&mut self) {
+        self.pending.retain(|event| !matches!(event, UiEvent::Cancelled { .. }));
+    }
+
+    /// Wheel, keys and text for the top dialog's widgets; true when consumed.
+    pub fn on_input(&mut self, event: InputEvent) -> bool {
+        if self.stack.is_empty() {
+            return false;
+        }
+        let consumed = self.gui.input(event, self.now()).consumed;
+        self.collect();
+        consumed
+    }
+
+    /// Widget timers (list scroll repeat); the next deadline.
+    pub fn poll(&mut self) -> Option<Instant> {
+        let next = self.gui.poll(self.now());
+        self.collect();
+        next.map(|ms| self.epoch + Duration::from_millis(ms))
+    }
+
+    /// [`Self::poll`] for a screen that only repaints when a timer fired:
+    /// `redraw` runs on any event, which is dropped; the next deadline.
+    pub fn poll_then(&mut self, redraw: impl FnOnce()) -> Option<Instant> {
+        let next = self.poll();
+        if !self.drain_events().is_empty() {
+            redraw();
+        }
+        next
+    }
+
+    /// Moves the GUI's new events to `pending`.
+    fn collect(&mut self) {
+        vera20k_gui::append_events(&mut self.pending, self.gui.drain_events());
+    }
+
+    /// Clear the stack and make `id` the sole active dialog (a shell transition).
+    pub fn reset_to(&mut self, id: DialogResourceId) {
+        while self.pop().is_some() {}
+        self.pending.clear();
+        self.push(id);
+    }
+
+    /// Make `id` the active dialog, resetting only when it is not already on top,
+    /// so an in-progress press survives across the gesture.
+    pub fn ensure_active(&mut self, id: DialogResourceId) {
         if self.top_id() != Some(id) {
-            self.reset_to(id, accepts_keys);
+            self.reset_to(id);
         }
     }
 
-    pub fn top_id(&self) -> Option<DialogId> {
-        self.stack.last().map(|i| i.id)
+    /// The screen's top dialog: overlays over it do not count, as a box
+    /// kept beside the stack would not.
+    pub fn top_id(&self) -> Option<DialogResourceId> {
+        self.base().map(|i| i.id)
     }
 
-    /// The pressed control on the top dialog (button-only by construction, since
-    /// only button rects are fed in).
-    pub fn pressed(&self) -> Option<u16> {
-        self.stack.last().and_then(|i| i.pressed)
+    /// The topmost overlay, which takes the input over the screen.
+    pub fn overlay_id(&self) -> Option<DialogResourceId> {
+        self.stack.iter().rev().find(|i| i.overlay).map(|i| i.id)
     }
 
-    pub fn hovered(&self) -> Option<u16> {
-        self.stack.last().and_then(|i| i.hovered)
+    fn base(&self) -> Option<&Instance> {
+        self.stack.iter().rev().find(|i| !i.overlay)
     }
 
-    /// The press of the topmost live `id` instance, wherever it sits in the
-    /// stack: a dialog under a modal keeps painting its own state.
-    pub fn pressed_in(&self, id: DialogId) -> Option<u16> {
-        self.instance(id).and_then(|i| i.pressed)
+    /// The node captured in the topmost live instance of `id`.
+    pub fn pressed_node_in(&self, id: DialogResourceId) -> Option<NodeId> {
+        self.gui.pressed_in(self.instance(id)?.dialog)
     }
 
-    /// The hover of the topmost live `id` instance (see [`Self::pressed_in`]).
-    pub fn hovered_in(&self, id: DialogId) -> Option<u16> {
-        self.instance(id).and_then(|i| i.hovered)
+    /// The node under the pointer in the topmost live instance of `id`.
+    pub fn hovered_node_in(&self, id: DialogResourceId) -> Option<NodeId> {
+        self.gui.hovered_in(self.instance(id)?.dialog)
     }
 
-    fn instance(&self, id: DialogId) -> Option<&DialogInstance> {
+    fn instance(&self, id: DialogResourceId) -> Option<&Instance> {
         self.stack.iter().rev().find(|i| i.id == id)
     }
 
-    /// `id` was destroyed and its next instance starts with no press, hover or
-    /// runtime-disabled control. Every live `id` instance restarts in place, so
-    /// the stack and keyboard route above and below it stay as they are.
-    pub fn restart_instance(&mut self, id: DialogId) {
-        for inst in self.stack.iter_mut().filter(|i| i.id == id) {
-            *inst = DialogInstance::new(id, inst.accepts_keys);
+    /// Give every live instance of `id` fresh press/hover state (a new
+    /// dialog instance in the same stack slot).
+    pub fn restart_instance(&mut self, id: DialogResourceId) {
+        for inst in self.stack.iter().filter(|i| i.id == id) {
+            self.gui.reset_pointer(inst.dialog);
         }
     }
 
-    pub fn hover_started_at(&self) -> Option<Instant> {
-        self.stack.last().and_then(|i| i.hover_started_at)
+    pub fn on_pointer_down(&mut self, x: i32, y: i32) {
+        self.pointer(InputEvent::PointerDown { x, y, button: MouseButton::Left });
     }
 
-    /// The keyboard route in registration order (contract C3).
-    pub fn kbd_route(&self) -> &[DialogId] {
-        &self.kbd_route
+    pub fn on_pointer_up(&mut self, x: i32, y: i32) {
+        self.pointer(InputEvent::PointerUp { x, y, button: MouseButton::Left });
     }
 
-    /// Runtime enable/disable of one control on the top dialog. Layers over the
-    /// descriptor's static default (single-player Load Saved Game guard).
-    pub fn set_disabled(&mut self, control: u16, disabled: bool) {
-        if let Some(inst) = self.stack.last_mut() {
-            if disabled {
-                inst.disabled.insert(control);
-            } else {
-                inst.disabled.remove(&control);
-            }
+    pub fn on_pointer_move(&mut self, x: i32, y: i32) {
+        self.pointer(InputEvent::PointerMove { x, y });
+    }
+
+    /// A pointer message for the widgets, while a screen dialog is up.
+    fn pointer(&mut self, event: InputEvent) {
+        if self.base().is_some() {
+            self.gui.input(event, self.now());
+            self.collect();
         }
     }
 
-    /// Pointer-down on the top dialog: record the pressed control (enable-filtered).
-    pub fn on_pointer_down(&mut self, x: i32, y: i32, buttons: &[LaidOutControl]) {
-        if let Some(inst) = self.stack.last_mut() {
-            inst.pressed = Self::hit_press(inst, x, y, buttons);
-        }
-    }
-
-    /// Pointer-up on the top dialog. Fires (returns the control id) ONLY when the
-    /// release lands on the same control that was pressed and that control is not
-    /// runtime-disabled. Down/Move never fire.
-    pub fn on_pointer_up(&mut self, x: i32, y: i32, buttons: &[LaidOutControl]) -> Option<u16> {
-        let inst = self.stack.last_mut()?;
-        // Release is hit-tested UNfiltered (matching the per-shell mouse_up); the
-        // disabled control is rejected by the explicit guard below, exactly as the
-        // single-player release re-guard does.
-        let released = Self::hit_any(x, y, buttons);
-        let pressed = inst.pressed.take();
-        if pressed.is_some() && pressed == released {
-            let control = released.expect("pressed/released checked above");
-            if inst.disabled.contains(&control) {
-                None
-            } else {
-                Some(control)
-            }
-        } else {
-            None
-        }
-    }
-
-    /// Pointer-move on the top dialog: update hover (UNfiltered — a disabled button
-    /// still hover-tracks and arms its timer, matching the single-player move path).
-    pub fn on_pointer_move(&mut self, x: i32, y: i32, buttons: &[LaidOutControl]) {
-        if let Some(inst) = self.stack.last_mut() {
-            let new_hover = Self::hit_any(x, y, buttons);
-            if inst.hovered != new_hover {
-                inst.hovered = new_hover;
-                inst.hover_started_at = new_hover.map(|_| Instant::now());
-            }
-        }
-    }
-
-    /// Keyboard event routed in `kbd_route` registration order (C3), independent of
-    /// the LIFO focus stack. Message-box modals consume Enter/Escape through this
-    /// route; the host app resolves the resulting dialog action.
-    pub fn on_key(&mut self, key: ShellKey) -> bool {
-        matches!(key, ShellKey::Enter | ShellKey::Escape) && !self.kbd_route.is_empty()
-    }
-
-    /// Press-path hit-test: the FIRST button containing the point, then suppressed
-    /// to `None` if that button is runtime-disabled. Byte-identical to the per-shell
-    /// mouse-down — it finds the first containing control and drops it when disabled;
-    /// it does NOT skip a disabled control to a later one beneath the same point
-    /// (which would only differ if button rects overlapped, but it stays faithful).
-    fn hit_press(inst: &DialogInstance, x: i32, y: i32, buttons: &[LaidOutControl]) -> Option<u16> {
-        match Self::hit_any(x, y, buttons) {
-            Some(id) if inst.disabled.contains(&id) => None,
-            other => other,
-        }
-    }
-
-    /// Hover/release hit-test: first button containing the point, INCLUDING
-    /// disabled (a disabled button still hover-tracks for its tooltip).
-    fn hit_any(x: i32, y: i32, buttons: &[LaidOutControl]) -> Option<u16> {
-        buttons.iter().find(|c| c.rect.contains(x, y)).map(|c| c.id)
+    /// The widgets' clock (ms since the controller started).
+    pub fn now(&self) -> u64 {
+        Instant::now().saturating_duration_since(self.epoch).as_millis() as u64
     }
 }
 
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
-    use crate::ui::shell::geom::RectPx;
 
-    const A: DialogId = DialogId(0x00E2);
-    const B: DialogId = DialogId(0x0100);
-
-    fn two_buttons() -> Vec<LaidOutControl> {
-        vec![
-            LaidOutControl {
-                id: 1,
-                rect: RectPx::new(0, 0, 10, 10),
-            },
-            LaidOutControl {
-                id: 2,
-                rect: RectPx::new(10, 0, 10, 10),
-            },
-        ]
-    }
+    const A: DialogResourceId = DialogResourceId(0x00E2);
+    const B: DialogResourceId = DialogResourceId(0x0100);
 
     #[test]
-    fn press_must_match_release() {
-        let b = two_buttons();
+    fn keys_reach_the_top_dialogs_cancel_button_through_the_one_adapter() {
         let mut c = DialogController::default();
-        c.ensure_active(A, false);
-        // Press button 1, release on button 2 -> no fire.
-        c.on_pointer_down(5, 5, &b);
-        assert_eq!(c.pressed(), Some(1));
-        assert_eq!(c.on_pointer_up(15, 5, &b), None);
-        // Press and release same button -> fire.
-        c.on_pointer_down(5, 5, &b);
-        assert_eq!(c.on_pointer_up(5, 5, &b), Some(1));
-        // Release outside all buttons -> no fire.
-        c.on_pointer_down(5, 5, &b);
-        assert_eq!(c.on_pointer_up(50, 50, &b), None);
-    }
-
-    #[test]
-    fn disabled_control_suppresses_press_but_still_hovers() {
-        let b = two_buttons();
-        let mut c = DialogController::default();
-        c.ensure_active(B, false);
-        c.set_disabled(2, true);
-        // Press over disabled button 2 -> no pressed state, no fire.
-        c.on_pointer_down(15, 5, &b);
-        assert_eq!(c.pressed(), None);
-        assert_eq!(c.on_pointer_up(15, 5, &b), None);
-        // ...but hover still tracks the disabled button and arms its timer.
-        c.on_pointer_move(15, 5, &b);
-        assert_eq!(c.hovered(), Some(2));
-        assert!(c.hover_started_at().is_some());
-        // Re-enable -> fires.
-        c.set_disabled(2, false);
-        c.on_pointer_down(15, 5, &b);
-        assert_eq!(c.on_pointer_up(15, 5, &b), Some(2));
-    }
-
-    #[test]
-    fn kbd_route_is_registration_order_and_pruned_on_pop() {
-        let mut c = DialogController::default();
-        c.push(A, true);
-        c.push(B, true);
-        assert_eq!(c.kbd_route(), &[A, B]); // registration order, not LIFO
+        c.ensure_active(A);
+        let back = c.gui.create(NodeKind::Button, c.root_in(A)).unwrap();
+        c.gui.set(back, Prop::Cancel, Value::Bool(true)).unwrap();
+        c.push(B);
+        let escape = gui_input(Some(KeyCode::Escape), false, Some("\u{1b}")).unwrap();
+        assert!(!c.on_input(escape.clone()), "the box over it has no Cancel");
         c.pop();
-        assert_eq!(c.kbd_route(), &[A]);
-        assert!(c.on_key(ShellKey::Escape));
-        c.pop();
-        assert!(!c.on_key(ShellKey::Escape));
+        assert!(c.on_input(escape));
+        assert_eq!(c.drain_events(), [UiEvent::Activated { node: back }]);
+        assert_eq!(gui_key(KeyCode::Tab, true), Some(Key::BackTab));
+        assert_eq!(gui_input(Some(KeyCode::KeyA), false, Some("a")), Some(InputEvent::Text("a".into())));
     }
 
     #[test]
-    fn key_route_consumes_modal_enter_and_escape_only() {
+    fn an_overlay_stays_on_top_with_its_widgets_through_resets() {
+        let page = DialogResourceId(0x00CF);
         let mut c = DialogController::default();
-        assert!(!c.on_key(ShellKey::Enter));
-        c.ensure_active(A, false);
-        assert!(!c.on_key(ShellKey::Enter));
-        c.ensure_active(B, true);
-        assert!(c.on_key(ShellKey::Enter));
-        assert!(c.on_key(ShellKey::Escape));
-        assert!(!c.on_key(ShellKey::Tab));
+        c.ensure_active(A);
+        c.push_overlay(page);
+        let edit = c.gui.create(NodeKind::Edit, c.root_in(page)).unwrap();
+        c.ensure_active(B);
+        c.push(A);
+        // The screen's own queries see its box, as when the page lived
+        // beside the stack; the GUI routes the input to the page.
+        assert_eq!((c.top_id(), c.overlay_id()), (Some(A), Some(page)));
+        assert_eq!(c.gui.top_dialog(), c.instance(page).map(|i| i.dialog));
+        assert_eq!(c.pop(), Some(A));
+        assert!(c.gui.tree().kind(edit).is_ok(), "the overlay kept its widgets");
+        c.close(page);
+        assert_eq!((c.top_id(), c.root_in(page)), (Some(B), None));
     }
 
     #[test]
     fn push_over_base_pops_back_to_it() {
-        let modal = DialogId(0x0120);
+        let modal = DialogResourceId(0x0120);
         let mut c = DialogController::default();
-        c.ensure_active(A, false);
-        c.push(modal, true);
+        c.ensure_active(A);
+        c.push(modal);
         assert_eq!(c.top_id(), Some(modal));
-        assert_eq!(c.kbd_route(), &[modal], "accepts_keys registers the route");
         assert_eq!(c.pop(), Some(modal));
         assert_eq!(c.top_id(), Some(A), "LIFO pop restores the shell beneath");
-        assert!(c.kbd_route().is_empty(), "route pruned on pop");
     }
 
     #[test]
     fn ensure_active_resets_only_on_dialog_change() {
-        let b = two_buttons();
         let mut c = DialogController::default();
-        c.ensure_active(A, false);
-        c.on_pointer_down(5, 5, &b);
-        assert_eq!(c.pressed(), Some(1));
-        c.ensure_active(A, false); // same dialog -> no reset
-        assert_eq!(c.pressed(), Some(1)); // press survives the gesture
-        c.ensure_active(B, false); // changed -> reset
-        assert_eq!(c.pressed(), None);
+        c.ensure_active(A);
+        let button = c.gui.create(NodeKind::Button, c.root_in(A)).unwrap();
+        let _ = c.gui.set(button, Prop::Rect, Value::Rect(vera20k_gui::Rect::new(0, 0, 10, 10)));
+        c.on_pointer_down(5, 5);
+        assert_eq!(c.pressed_node_in(A), Some(button));
+        c.ensure_active(A); // same dialog -> no reset
+        assert_eq!(c.pressed_node_in(A), Some(button), "the press survives the gesture");
+        c.ensure_active(B); // changed -> reset
+        assert_eq!(c.pressed_node_in(B), None);
     }
 }

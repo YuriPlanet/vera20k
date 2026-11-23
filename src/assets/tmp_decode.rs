@@ -2,6 +2,17 @@
 //! Handles per-tile cell parsing, diamond pixel unpacking, and extra data overlay.
 //! Part of assets/ — no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use crate::assets::error::AssetError;
 use crate::assets::tmp_file::TmpTile;
 use crate::util::read_helpers::{read_i32_le, read_u32_le};
@@ -15,6 +26,11 @@ const TILE_HEADER_SIZE: usize = 52;
 /// dimensions trigger oversized allocations). The diamond accumulator checks
 /// the same budget, which also bounds its per-row loop on absurd heights.
 const MAX_DECODED_TILE_BYTES: usize = 64 * 1024 * 1024;
+/// The longest side a decoded tile may have. Retail's tallest cliff and
+/// bridge tiles stay under 512 px; the decoded image spans the diamond and
+/// the extra image, so an extra origin thousands of pixels away would ask
+/// for planes of gigabytes with one extra byte in the file.
+const MAX_DECODED_TILE_SIDE: u32 = 2048;
 
 /// Bit flag: tile has extra pixel data (cliff faces, shadows).
 const FLAG_HAS_EXTRA_DATA: u32 = 0x01;
@@ -176,6 +192,14 @@ pub(crate) fn parse_tile_cell(
     } else {
         (tile_width, tile_height, 0, 0)
     };
+    // The template header clamps the tile itself; only the extra image can
+    // push the decoded size out.
+    if has_extra && (pixel_width > MAX_DECODED_TILE_SIDE || pixel_height > MAX_DECODED_TILE_SIDE) {
+        return Err(invalid_tmp(format!(
+            "Decoded tile dimensions {}x{} exceed {} px a side: the extra image's origin is nowhere near its tile",
+            pixel_width, pixel_height, MAX_DECODED_TILE_SIDE
+        )));
+    }
 
     // Validate every payload slice before reserving the decoded planes: a
     // malformed header's dimensions and offsets must prove the bytes they
@@ -537,6 +561,24 @@ mod tests {
         let mut data = vec![0u8; TILE_HEADER_SIZE];
         data[36..40].copy_from_slice(&extra.to_le_bytes());
         data
+    }
+
+    /// An extra image whose origin sits 8000 px away from a 60x30 tile with
+    /// one extra byte behind it would pass the byte budget and zero two
+    /// 128 MiB planes; the side cap refuses it first.
+    #[test]
+    fn a_far_extra_origin_is_refused_before_its_planes_are_reserved() {
+        let mut data = header_only_cell(FLAG_HAS_EXTRA_DATA);
+        data[20..24].copy_from_slice(&(-8000i32).to_le_bytes());
+        data[24..28].copy_from_slice(&(-8000i32).to_le_bytes());
+        data[28..32].copy_from_slice(&1u32.to_le_bytes());
+        data[32..36].copy_from_slice(&1u32.to_le_bytes());
+        let err = parse_tile_cell(&data, 0, 60, 30)
+            .expect_err("an extra image thousands of pixels away must not decode");
+        let AssetError::InvalidTmpFile { reason } = err else {
+            panic!("expected a TMP parse error: {err:?}");
+        };
+        assert!(reason.contains("a side"), "unexpected reason: {reason}");
     }
 
     #[test]

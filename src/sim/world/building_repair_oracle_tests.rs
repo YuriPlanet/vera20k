@@ -118,7 +118,7 @@ fn repair_click_retains_the_retail_cue_after_an_unknown_map_override() {
                 } => {
                     assert_eq!(*audible_to, Some([owner, owner]));
                     assert_eq!((*rx, *ry), (12, 12));
-                    Some(sound_id.as_str())
+                    Some(sound_id.name_in(&rules))
                 }
                 _ => None,
             })
@@ -141,7 +141,7 @@ fn yes_no(value: bool) -> &'static str {
 
 /// The building's sound events as the oracle records them: `EVA_Repairing`
 /// and each `VocClass::PlayAt` with its sound index, coordinate and handle.
-fn sounds(sim: &Simulation, owner: crate::sim::intern::InternedId) -> Vec<Value> {
+fn sounds(rules: &RuleSet, sim: &Simulation, owner: crate::sim::intern::InternedId) -> Vec<Value> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
@@ -161,9 +161,9 @@ fn sounds(sim: &Simulation, owner: crate::sim::intern::InternedId) -> Vec<Value>
                 assert_eq!(*audible_to, Some([owner, owner]), "the owner's player");
                 let index = SOUNDS
                     .iter()
-                    .find(|(_, name)| name == sound_id)
+                    .find(|(_, name)| *name == sound_id.name_in(rules))
                     .map(|(index, _)| *index)
-                    .unwrap_or_else(|| panic!("sound {sound_id}"));
+                    .unwrap_or_else(|| panic!("sound {}", sound_id.name_in(rules)));
                 Some(json!([
                     "play_at",
                     index,
@@ -363,7 +363,7 @@ fn toggle_repair_matches_the_original() {
         );
         let native = native_sounds(row);
         if local_player(input) {
-            assert_eq!(sounds(&sim, owner), native, "{name}: sounds");
+            assert_eq!(sounds(&rules, &sim, owner), native, "{name}: sounds");
         } else {
             assert!(native.is_empty(), "{name}: not the local player");
         }
@@ -463,9 +463,11 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
         .has_been_captured
         .set_for_test(flag("captured", false));
     building
+        .seldom
         .ai_sell_repair
         .set_ai_repairable_for_test(flag("ai_repairable", true));
     building
+        .seldom
         .ai_sell_repair
         .set_was_attacked_by_enemy_for_test(flag("attacked", false));
     building
@@ -506,6 +508,7 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .set_for_test(Some(smoke));
         smoke
@@ -547,7 +550,7 @@ fn update_repair_and_power_matches_the_original() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let owner = sim.interner.get("AI").unwrap();
         let building = sim.substrate.entities.get(1).unwrap();
@@ -615,7 +618,7 @@ fn update_repair_and_power_matches_the_original() {
         );
         let native = native_sounds(row);
         if local_player(input) {
-            assert_eq!(sounds(&sim, owner), native, "{name}: sounds");
+            assert_eq!(sounds(&rules, &sim, owner), native, "{name}: sounds");
         } else {
             assert!(native.is_empty(), "{name}: not the local player");
         }
@@ -680,7 +683,11 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
                 .unwrap()
                 .building_art
                 .actually_placed();
-            sim.object_ai_visit_one(1, Some(&rules), super::techno_ai::ObjectAiCtx::default());
+            sim.object_ai_visit_one(
+                1,
+                Some(&rules),
+                &mut super::techno_ai::ObjectAiCtx::default(),
+            );
             let after = cursors(&sim);
             let completed = !placed_before
                 && sim
@@ -725,7 +732,7 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
             assert_eq!(after, frame["random_indices"]["after"], "{name} {now}");
             let native = native_sounds(frame);
             if local_player(input) {
-                assert_eq!(sounds(&sim, owner), native, "{name} {now}: sounds");
+                assert_eq!(sounds(&rules, &sim, owner), native, "{name} {now}: sounds");
             } else {
                 assert!(native.is_empty(), "{name} {now}: not the local player");
             }
@@ -881,7 +888,7 @@ fn the_repair_step_keeps_signed_adds_and_the_live_strength() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let building = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
@@ -953,7 +960,7 @@ fn a_sale_s_first_visit_stops_the_repair() {
                 .sound_events
                 .iter()
                 .filter(|event| {
-                    matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == SOUNDS[0].1)
+                    matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&s.rules) == SOUNDS[0].1)
                 })
                 .count();
             frames.push((
@@ -1015,7 +1022,7 @@ fn ares_broke_human_repair_stays_on_without_repair_stop() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let building = sim.substrate.entities.get(1).unwrap();
         assert_eq!(

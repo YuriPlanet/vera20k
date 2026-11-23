@@ -122,7 +122,7 @@ finish/leave 收尾完成后发送 `match-ended`，随即请求退出引擎，�
 `engine-exited`。普通菜单启动仍保留结算和返回菜单流程。未开始对局的启动
 失败不生成虚假的对局结束事件。
 
-旧的 `spawn:finished:<json>` 状态通知保留一次。
+旧的 `spawn:finished:<json>` 状态通知保留一次。因 `ExpectedRulesDigest` 不符而被拒的启动，会在该报告中加上 `"failure": "rules_mismatch"` 和本游戏的 `rules_parts`（[规则分项](spawn.md#rules-parts)）。
 
 `engine-exited` 回调返回后，同一页面可以再次调用 `start_spawn`：先用
 `import_spawn_file` 导入下一局的文件，调用 `prepare_audio`，并传入新的画布。

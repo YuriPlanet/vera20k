@@ -3,8 +3,8 @@
 A game that ships `ares.mix` uses this Rust-native prerequisite subset in every
 build ([Ares](ares.md)). Other games keep retail prerequisites, including
 `PrerequisiteProcAlternate`, and ignore `[GenericPrerequisites]` and Ares's other
-generic alternate lists. This support supplies no Mental Omega adapter, rules,
-maps or resources.
+generic alternate lists. This support supplies no mod's rules, maps or
+resources.
 
 ```ini
 [GenericPrerequisites]

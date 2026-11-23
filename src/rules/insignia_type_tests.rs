@@ -404,3 +404,20 @@ mod layered_rules {
         assert_eq!(insignia.base.frames, [6, 6, 6]);
     }
 }
+
+#[test]
+fn passenger_variants_clamp_at_the_insignia_limit() {
+    let mut insignia = PhobosInsignia::default();
+    apply(
+        &mut insignia,
+        &section("[TEST]\nPassengers=1000000\n"),
+        None,
+        0,
+        false,
+    );
+    assert_eq!(insignia.passengers_capacity, 1_000_000);
+    assert_eq!(
+        insignia.passengers.len(),
+        super::PASSENGER_INSIGNIA_LIMIT as usize + 1
+    );
+}

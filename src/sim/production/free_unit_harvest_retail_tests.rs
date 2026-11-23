@@ -30,7 +30,12 @@ fn frame(scene: &mut HeadlessScenario, owner: InternedId, command: Option<Comman
         .collect();
     let output = scene
         .runtime
-        .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(
+            &commands,
+            22,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
         .expect("ordinary bound-resource frame");
     assert!(output.tick.frame_committed);
 }

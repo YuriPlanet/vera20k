@@ -12,22 +12,25 @@
 //! whose reveals start together at the entry slide's end (`0x4EC`). The proc's
 //! init (`0x497`, `0x005C9B70..0x005CA04A`) sets the texts and each row's
 //! colour and gives the band statics their PCX bars; its `WM_PAINT` darkens
-//! the table's rectangle to 37.5 % (`0x005CA07F..0x005CA0FB`).
+//! the table's rectangle to 37.5 % (`0x005CA07F..0x005CA0FB`). The table's
+//! windows are `shell_layout.ini`'s `[0x108]`.
 //!
 //! Render-agnostic: geometry, the resolved model and the statics' reveal
-//! state. The app resolves strings and colours when it opens the page.
+//! state, which the campaign score dialogs share ([`ScoreStatics`]). The app
+//! resolves strings and colours when it opens the page.
 
 use crate::util::time::{Duration, Instant};
 
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale, child_window,
-};
-use crate::ui::shell::layout::status_line_rect;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellAlign;
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::paging::RowPage;
 use crate::ui::shell::static_reveal::{Kind1Params, Kind1RevealWindow, PresentedKind1Static};
 
-pub const SCORE_DIALOG: DialogId = DialogId(0x0108);
+pub const SCORE_DIALOG: DialogResourceId = DialogResourceId(0x0108);
 pub const CONTINUE_BUTTON: u16 = 0x06D1;
 /// VERA paging controls; omitted for native-sized result tables.
 pub const PREVIOUS_PAGE: u16 = 0xF201;
@@ -39,14 +42,25 @@ pub const SCORE_PAGE: MenuPageSpec = MenuPageSpec {
     // The template caption; the proc replaces it (`0x005C9BEC..0x005C9C34`).
     title_key: "GUI:MultiplayerScore",
     stacked: &[],
-    back: MenuPageButtonSpec {
-        id: CONTINUE_BUTTON,
-        dlu_top: 326,
-        csf_key: "GUI:Continue",
-        tooltip_key: "STT:MPScoreButtonContinue",
-        result: Some(1),
-    },
+    back: MenuPageButtonSpec::new(
+        CONTINUE_BUTTON,
+        326,
+        "GUI:Continue",
+        "STT:MPScoreButtonContinue",
+    )
+    .returning(1),
 };
+
+/// Continue and VERA's paging pair as nodes; only Continue has help.
+pub fn nodes() -> vera20k_gui::NodeSpec {
+    use vera20k_gui::{NodeKind, NodeSpec};
+    let paging = [(PREVIOUS_PAGE, "VERA:Previous"), (NEXT_PAGE, "VERA:Next")];
+    SCORE_PAGE.nodes().children(paging.map(|(id, label)| {
+        NodeSpec::new(NodeKind::Button)
+            .id(i32::from(id))
+            .label(label)
+    }))
+}
 
 /// Player rows the template declares.
 pub const SCORE_ROW_SLOTS: usize = 8;
@@ -67,6 +81,11 @@ const ROW_CELL_IDS: [[u16; 5]; SCORE_ROW_SLOTS] = [
     [0x0416, 0x041E, 0x06B2, 0x06B3, 0x06B4],
     [0x0417, 0x041F, 0x06B5, 0x06B6, 0x06B7],
     [0x0418, 0x0420, 0x06B8, 0x06B9, 0x06BA],
+];
+/// The band statics in the proc's band order (`0x0082FDFC`): the Game and
+/// Time row, the header row, then the player rows.
+pub const BAND_IDS: [u16; 10] = [
+    0x790, 0x791, 0x78F, 0x792, 0x793, 0x794, 0x795, 0x796, 0x797, 0x798,
 ];
 
 /// Native ceiling on the displayed time: `99:59:59`. gamemd clamps the raw
@@ -100,6 +119,19 @@ pub struct ScoreRow {
     pub losses: u32,
     pub built: u32,
     pub score: i32,
+}
+
+impl ScoreRow {
+    /// The row's five cells: name, Kills, Losses, Built and Score.
+    pub fn cells(&self) -> [String; 5] {
+        [
+            self.name.clone(),
+            self.kills.to_string(),
+            self.losses.to_string(),
+            self.built.to_string(),
+            self.score.to_string(),
+        ]
+    }
 }
 
 /// Everything the score screen displays, resolved once when the match ends.
@@ -142,20 +174,11 @@ pub struct ScoreBackground {
     pub palette: Option<String>,
 }
 
-impl ScoreScreenModel {
-    /// Split the elapsed time into the `h, m, s` triple the time format string
-    /// consumes, applying the native clamp first.
-    pub fn elapsed_hms(&self) -> (u32, u32, u32) {
-        let total = self.elapsed_seconds.min(MAX_DISPLAY_SECONDS);
-        (total / 3600, (total % 3600) / 60, total % 60)
-    }
-}
-
 /// Format the elapsed time through `TXT_TIME_FORMAT_HOURS`, whose entry
-/// carries the `Time:` prefix and three `%02d` fields.
+/// carries the `Time:` prefix and three `%02d` fields, after the native clamp.
 pub fn format_elapsed(model: &ScoreScreenModel, format: &str) -> String {
-    let (h, m, s) = model.elapsed_hms();
-    substitute_numbers(format, &[h, m, s], 2)
+    let total = model.elapsed_seconds.min(MAX_DISPLAY_SECONDS);
+    substitute_numbers(format, &[total / 3600, (total % 3600) / 60, total % 60], 2)
 }
 
 /// Format the `Game: n` label through `TXT_GAME`.
@@ -205,158 +228,55 @@ fn substitute_numbers(format: &str, values: &[u32], default_pad: usize) -> Strin
     out
 }
 
-/// A row's five cells: name, Kills, Losses, Built and Score (the proc's table
-/// at `0x0082FD5C`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ScoreRowRects {
-    pub name: RectPx,
-    pub kills: RectPx,
-    pub losses: RectPx,
-    pub built: RectPx,
-    pub score: RectPx,
-}
-
-impl ScoreRowRects {
-    /// Template columns at DLU x 66, 147, 202, 257 and 308.
-    fn at(dlu_y: i32) -> Self {
-        Self {
-            name: child_window(66, dlu_y, 75, 10),
-            kills: child_window(147, dlu_y, 45, 10),
-            losses: child_window(202, dlu_y, 45, 10),
-            built: child_window(257, dlu_y, 45, 10),
-            score: child_window(308, dlu_y, 45, 10),
-        }
-    }
-
-    fn cells(self) -> [RectPx; 5] {
-        [self.name, self.kills, self.losses, self.built, self.score]
-    }
-}
-
-/// The table's windows. They keep their template places at every screen
-/// size (`0x0060B950`, executed for 640x480, 800x600 and 1024x768).
+/// Dialog `0x108` at one screen size: the right panel, heading, monitor,
+/// status line and Continue follow the family rules; the table's windows
+/// (`[0x108]`) do not move.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScoreTableLayout {
-    pub game_label: RectPx,
-    pub time_label: RectPx,
-    pub header: ScoreRowRects,
-    pub rows: [ScoreRowRects; SCORE_ROW_SLOTS],
-    /// The band statics in the proc's band order (`0x0082FDFC`): the Game
-    /// and Time row (`0x790`), the header row (`0x791`), then the player rows
-    /// (`0x78F`, `0x792..0x798`). The executed relayout stacks them on a
-    /// 36-pixel pitch from (96, 117), 441x37; the retail still at 800x600
-    /// shows the first four bars exactly there.
-    pub bands: [RectPx; 10],
+pub struct ScoreLayout {
+    pub page: MenuPageLayout,
+    pub table: RectTable,
 }
 
-impl ScoreTableLayout {
-    pub fn template() -> Self {
-        Self {
-            game_label: child_window(66, 76, 115, 10),
-            time_label: child_window(248, 76, 105, 10),
-            header: ScoreRowRects::at(98),
-            rows: std::array::from_fn(|row| ScoreRowRects::at(120 + 22 * row as i32)),
-            bands: std::array::from_fn(|band| RectPx::new(96, 117 + 36 * band as i32, 441, 37)),
-        }
-    }
+vera20k_gui::scaled_rects!(ScoreLayout { page, table });
 
+pub fn compute_layout(screen_w: u32, screen_h: u32) -> ScoreLayout {
+    let (w, h) = (screen_w as i32, screen_h as i32);
+    let (page, table) = layout_data::menu_page(
+        &SCORE_PAGE,
+        "0x108",
+        crate::ui::shell::geom::RETAIL_SCALE,
+        w,
+        h,
+    );
+    ScoreLayout { page, table }
+}
+
+impl ScoreLayout {
     /// The rectangle the proc darkens: from Game's window's top-left to the
     /// bottom-right of the last player row's Score cell (`0x0082FD58` indexed
     /// by the row count), grown by 4 pixels sideways and 8 vertically
     /// (`0x0072AA10`). With no rows the proc looks up a non-control id and
     /// darkens nothing. On a stretched page the growth stays authored, so the
     /// shaded band matches the stretched background it sits on.
-    pub fn shaded_rect(&self, rows: usize, scale: ShellScale) -> Option<RectPx> {
-        let last = self.rows.get(rows.checked_sub(1)?)?.score;
-        let (game, last) = (scale.base_rect(self.game_label), scale.base_rect(last));
-        let left = game.x - 4;
-        let top = game.y - 8;
-        let right = last.x + last.w + 4;
-        let bottom = last.y + last.h + 8;
+    pub fn shaded_rect(&self, rows: usize) -> Option<RectPx> {
+        let scale = self.page.scale;
+        let last = ROW_CELL_IDS.get(rows.checked_sub(1)?)?[4];
+        let game = scale.base_rect(self.table.get(GAME_LABEL)?);
+        let last = scale.base_rect(self.table.get(last)?);
+        let (left, top) = (game.x - 4, game.y - 8);
+        let (right, bottom) = (last.x + last.w + 4, last.y + last.h + 8);
         Some(scale.scale_rect(RectPx::new(left, top, right - left, bottom - top)))
     }
-}
 
-impl ScaledRects for ScoreRowRects {
-    fn scaled_rects(&self, scale: ShellScale) -> Self {
-        Self {
-            name: self.name.scaled_rects(scale),
-            kills: self.kills.scaled_rects(scale),
-            losses: self.losses.scaled_rects(scale),
-            built: self.built.scaled_rects(scale),
-            score: self.score.scaled_rects(scale),
-        }
-    }
-}
-
-impl ScaledRects for ScoreTableLayout {
-    fn scaled_rects(&self, scale: ShellScale) -> Self {
-        Self {
-            game_label: self.game_label.scaled_rects(scale),
-            time_label: self.time_label.scaled_rects(scale),
-            header: self.header.scaled_rects(scale),
-            rows: self.rows.scaled_rects(scale),
-            bands: self.bands.scaled_rects(scale),
-        }
-    }
-}
-
-/// Dialog `0x108` at one screen size: the right panel, heading, monitor,
-/// status line and Continue follow the family rules; the table does not move.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScoreLayout {
-    pub page: MenuPageLayout,
-    pub table: ScoreTableLayout,
-}
-
-/// `0x695` on this dialog is 303x14 DLU; the menu pages' is 303x12.
-fn score_status_help(screen_w: u32, screen_h: u32, scale: ShellScale) -> RectPx {
-    let window = RectPx::new(2, 353, 303, 14);
-    if scale.is_retail() {
-        return status_line_rect(window, screen_w as i32, screen_h as i32);
-    }
-    scale.scale_rect(status_line_rect(window, SHELL_BASE_W, SHELL_BASE_H))
-}
-
-pub fn compute_layout(screen_w: u32, screen_h: u32) -> ScoreLayout {
-    let mut page = menu_page::compute_layout(&SCORE_PAGE, screen_w, screen_h);
-    page.status_help = score_status_help(screen_w, screen_h, page.scale);
-    ScoreLayout {
-        page,
-        table: ScoreTableLayout::template(),
-    }
-}
-
-/// The responsive variant of [`compute_layout`]: the verified 800x600 `0x108`
-/// scaled to fit the window, keeping its shape. Identity at the base size. The
-/// table's cells, shaded rectangle, band windows and bars all scale with the
-/// page; each bar stays centred in its band window.
-pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> ScoreLayout {
-    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    let mut page = menu_page::compute_responsive_layout(&SCORE_PAGE, screen_w, screen_h);
-    page.status_help = score_status_help(screen_w, screen_h, scale);
-    let base = ScoreTableLayout::template();
-    ScoreLayout {
-        page,
-        table: base.scaled_rects(scale),
-    }
-}
-
-impl ScoreLayout {
     /// VERA's Previous or Next, placed above Continue on the 800x600 page and
     /// scaled with it.
     pub fn paging_button(&self, id: u16) -> Option<RectPx> {
-        let slot = match id {
-            PREVIOUS_PAGE => 0,
-            NEXT_PAGE => 1,
-            _ => return None,
-        };
+        let slot = [PREVIOUS_PAGE, NEXT_PAGE].iter().position(|&p| p == id)?;
+        let rects = |continue_button| crate::ui::shell::paging::button_rects(continue_button);
         Some(
             self.page
                 .scale
-                .derive_rect(self.continue_button(), |continue_button| {
-                    crate::ui::shell::paging::button_rects(continue_button)[slot]
-                }),
+                .derive_rect(self.continue_button(), |c| rects(c)[slot]),
         )
     }
 
@@ -372,6 +292,13 @@ impl ScoreLayout {
             })
     }
 
+    /// Continue, and VERA's paging pair when the result spans pages.
+    pub fn control_rect(&self, id: u16, paged: bool) -> Option<RectPx> {
+        self.page
+            .button_rect(id)
+            .or_else(|| paged.then(|| self.paging_button(id)).flatten())
+    }
+
     pub fn continue_button(&self) -> RectPx {
         self.page
             .button_rect(CONTINUE_BUTTON)
@@ -379,31 +306,22 @@ impl ScoreLayout {
     }
 }
 
-/// Text alignment of a table static: `SS_LEFT` or `SS_RIGHT`. Kind-1 text is
-/// top-aligned (`0x00615A81..0x00615AE8`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScoreAlign {
-    Left,
-    Right,
-}
-
-/// One kind-1 table static: its window, alignment, colour and text reveal.
+/// One kind-1 static of a score dialog (`0x108`, `0x103`, `0xBC7`): its
+/// control id, alignment (`SS_LEFT`/`SS_CENTER`/`SS_RIGHT`; kind-1 text is
+/// top-aligned, `0x00615A81..0x00615AE8`), the colour a `0x498` set (`None`
+/// for the shell's text colour) and its text reveal.
 #[derive(Debug, Clone)]
-pub struct ScoreTableStatic {
-    /// The template control id.
+pub struct ScoreStatic {
     pub id: u16,
-    pub window: RectPx,
-    pub align: ScoreAlign,
-    /// The row colour from `0x498`, or `None` for the shell's text colour.
+    pub align: ShellAlign,
     pub rgb: Option<[u8; 3]>,
     reveal: PresentedKind1Static,
 }
 
-impl ScoreTableStatic {
-    fn new(
+impl ScoreStatic {
+    pub fn new(
         id: u16,
-        window: RectPx,
-        align: ScoreAlign,
+        align: ShellAlign,
         rgb: Option<[u8; 3]>,
         params: Kind1Params,
         text: &str,
@@ -413,7 +331,6 @@ impl ScoreTableStatic {
         reveal.set_text(text, now);
         Self {
             id,
-            window,
             align,
             rgb,
             reveal,
@@ -424,9 +341,54 @@ impl ScoreTableStatic {
         self.reveal.text()
     }
 
+    #[cfg(test)]
+    pub(crate) fn params(&self) -> Kind1Params {
+        self.reveal.params()
+    }
+
     /// Reveal window for this recomposition, `None` before the slide ends.
     pub(crate) fn paint(&mut self, now: Instant) -> Option<Kind1RevealWindow> {
         self.reveal.paint(now)
+    }
+}
+
+/// A score dialog's kind-1 statics. The entry slide's end
+/// (`0x4EC -> 0x0060AA60 -> 0x4EE`) starts every reveal at once.
+#[derive(Debug, Clone, Default)]
+pub struct ScoreStatics(pub Vec<ScoreStatic>);
+
+impl ScoreStatics {
+    pub fn start(&mut self, now: Instant) {
+        for text in &mut self.0 {
+            text.reveal.start(now);
+        }
+    }
+
+    /// The latest recomposition was presented.
+    pub fn commit_presented(&mut self) {
+        for text in &mut self.0 {
+            text.reveal.commit_presented();
+        }
+    }
+
+    /// Every reveal ran to completion and its final paint is shown.
+    pub fn is_terminal(&self) -> bool {
+        self.0.iter().all(|text| text.reveal.is_terminal())
+    }
+
+    /// Control `id`'s text.
+    pub fn text(&self, id: u16) -> Option<&str> {
+        self.0
+            .iter()
+            .find(|text| text.id == id)
+            .map(ScoreStatic::text)
+    }
+
+    /// `0x4B2` to control `id`: replace its text.
+    pub fn set_text(&mut self, id: u16, text: &str, now: Instant) {
+        if let Some(static_text) = self.0.iter_mut().find(|static_text| static_text.id == id) {
+            static_text.reveal.set_text(text, now);
+        }
     }
 }
 
@@ -445,9 +407,9 @@ pub struct ScoreTexts {
 #[derive(Debug, Clone)]
 pub struct ScorePage {
     pub model: ScoreScreenModel,
-    table: Vec<ScoreTableStatic>,
+    pub statics: ScoreStatics,
     texts: ScoreTexts,
-    page: crate::ui::shell::paging::RowPage,
+    page: RowPage,
 }
 
 impl ScorePage {
@@ -457,106 +419,55 @@ impl ScorePage {
     pub fn open(model: ScoreScreenModel, texts: &ScoreTexts, now: Instant) -> Self {
         let mut page = Self {
             model,
-            table: Vec::new(),
+            statics: ScoreStatics::default(),
             texts: texts.clone(),
-            page: Default::default(),
+            page: RowPage::default(),
         };
         page.rebuild_table(now);
         page
     }
 
     fn rebuild_table(&mut self, now: Instant) {
-        let model = &self.model;
+        let (left, right) = (ShellAlign::NONE, ShellAlign::H_RIGHT);
         let texts = &self.texts;
-        let layout = ScoreTableLayout::template();
+        let label =
+            |id, align, text: &str| ScoreStatic::new(id, align, None, LABEL_KIND1, text, now);
         let mut table = vec![
-            ScoreTableStatic::new(
-                GAME_LABEL,
-                layout.game_label,
-                ScoreAlign::Left,
-                None,
-                LABEL_KIND1,
-                &texts.game,
-                now,
-            ),
-            ScoreTableStatic::new(
-                TIME_LABEL,
-                layout.time_label,
-                ScoreAlign::Right,
-                None,
-                LABEL_KIND1,
-                &texts.time,
-                now,
-            ),
+            label(GAME_LABEL, left, &texts.game),
+            label(TIME_LABEL, right, &texts.time),
         ];
-        for (column, ((id, window), text)) in HEADER_IDS
-            .into_iter()
-            .zip(layout.header.cells())
-            .zip(&texts.headers)
-            .enumerate()
-        {
-            let align = if column == 0 {
-                ScoreAlign::Left
-            } else {
-                ScoreAlign::Right
-            };
-            table.push(ScoreTableStatic::new(
-                id,
-                window,
-                align,
-                None,
-                LABEL_KIND1,
-                text,
-                now,
-            ));
+        for (column, (id, text)) in HEADER_IDS.into_iter().zip(&texts.headers).enumerate() {
+            table.push(label(id, if column == 0 { left } else { right }, text));
         }
-        for ((row, rects), ids) in model.rows[self.visible_range()]
-            .iter()
-            .zip(layout.rows)
-            .zip(ROW_CELL_IDS)
-        {
-            let rgb = Some(row.rgb);
-            let [name, kills, losses, built, score] = rects.cells();
-            table.push(ScoreTableStatic::new(
-                ids[0],
-                name,
-                ScoreAlign::Left,
-                rgb,
-                LABEL_KIND1,
-                &row.name,
-                now,
-            ));
-            for ((id, window), value) in ids[1..].iter().zip([kills, losses, built, score]).zip([
-                row.kills.to_string(),
-                row.losses.to_string(),
-                row.built.to_string(),
-                row.score.to_string(),
-            ]) {
-                table.push(ScoreTableStatic::new(
-                    *id,
-                    window,
-                    ScoreAlign::Right,
-                    rgb,
-                    NUMBER_KIND1,
-                    &value,
+        let rows = self.model.rows[self.visible_range()].iter();
+        for (row, ids) in rows.zip(ROW_CELL_IDS) {
+            for (column, (id, text)) in ids.into_iter().zip(row.cells()).enumerate() {
+                let (align, params) = if column == 0 {
+                    (left, LABEL_KIND1)
+                } else {
+                    (right, NUMBER_KIND1)
+                };
+                table.push(ScoreStatic::new(
+                    id,
+                    align,
+                    Some(row.rgb),
+                    params,
+                    &text,
                     now,
                 ));
             }
         }
-        self.table = table;
+        self.statics = ScoreStatics(table);
     }
 
     pub fn page_index(&self) -> usize {
         self.page.index(self.model.rows.len(), SCORE_ROW_SLOTS)
     }
     pub fn page_count(&self) -> usize {
-        crate::ui::shell::paging::RowPage::count(self.model.rows.len(), SCORE_ROW_SLOTS)
+        RowPage::count(self.model.rows.len(), SCORE_ROW_SLOTS)
     }
     pub fn visible_range(&self) -> std::ops::Range<usize> {
         self.page.range(self.model.rows.len(), SCORE_ROW_SLOTS)
-    }
-    pub fn visible_row_count(&self) -> usize {
-        self.visible_range().len()
     }
 
     /// VERA extension: rebuild only visible statics from the already sorted
@@ -569,43 +480,17 @@ impl ScorePage {
             return false;
         }
         self.rebuild_table(now);
-        self.start_reveals(now);
+        self.statics.start(now);
         true
     }
 
     /// Text held by the actual visible table, for presentation diagnostics.
     pub fn visible_row_texts(&self) -> Vec<[String; 5]> {
-        self.table
-            .iter()
-            .skip(2 + HEADER_IDS.len())
-            .collect::<Vec<_>>()
+        let cells = &self.statics.0[2 + HEADER_IDS.len()..];
+        cells
             .chunks_exact(5)
             .map(|cells| std::array::from_fn(|column| cells[column].text().to_owned()))
             .collect()
-    }
-
-    /// The entry slide's end (`0x4EC -> 0x0060AA60 -> 0x4EE`) starts every
-    /// table reveal at once.
-    pub fn start_reveals(&mut self, now: Instant) {
-        for text in &mut self.table {
-            text.reveal.start(now);
-        }
-    }
-
-    pub fn table_mut(&mut self) -> &mut [ScoreTableStatic] {
-        &mut self.table
-    }
-
-    /// The latest recomposition was presented.
-    pub fn commit_presented(&mut self) {
-        for text in &mut self.table {
-            text.reveal.commit_presented();
-        }
-    }
-
-    /// Every table reveal ran to completion and its final paint is shown.
-    pub fn reveals_terminal(&self) -> bool {
-        self.table.iter().all(|text| text.reveal.is_terminal())
     }
 }
 
@@ -619,6 +504,7 @@ pub fn sort_rows(rows: &mut [ScoreRow]) {
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    use crate::ui::shell::geom::fit_window;
 
     #[test]
     fn thirty_results_are_presented_in_order_through_the_existing_table() {
@@ -655,7 +541,7 @@ mod tests {
             rows.iter().map(|row| row.name.clone()).collect::<Vec<_>>()
         );
         assert_eq!(page.model, model);
-        assert_eq!(page.visible_row_count(), 6);
+        assert_eq!(page.visible_range().len(), 6);
         assert_eq!(
             ScorePage::open(model, &texts, Instant::now()).page_index(),
             0
@@ -666,10 +552,7 @@ mod tests {
     fn every_window_matches_the_executed_relayout() {
         // tools/storage_oracle/shell_relayout.py: the right-panel children
         // move with the screen, the table keeps its template windows.
-        use crate::ui::shell::layout::tests::executed_child_window as executed;
-        const BANDS: [u16; 10] = [
-            0x790, 0x791, 0x78F, 0x792, 0x793, 0x794, 0x795, 0x796, 0x797, 0x798,
-        ];
+        use crate::ui::shell::native_fixtures::executed_child_window as executed;
         for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
             let layout = compute_layout(w as u32, h as u32);
             let at = |control| executed(0x108, control, w, h);
@@ -677,14 +560,13 @@ mod tests {
             assert_eq!(layout.page.warning_monitor, at(0x71C), "{w}x{h}");
             assert_eq!(layout.page.status_help, at(0x695), "{w}x{h}");
             assert_eq!(layout.continue_button(), at(CONTINUE_BUTTON), "{w}x{h}");
-            let table = layout.table;
-            assert_eq!(table.game_label, at(GAME_LABEL), "{w}x{h}");
-            assert_eq!(table.time_label, at(TIME_LABEL), "{w}x{h}");
-            assert_eq!(table.header.cells(), HEADER_IDS.map(&at), "{w}x{h}");
-            for (row, ids) in table.rows.iter().zip(ROW_CELL_IDS) {
-                assert_eq!(row.cells(), ids.map(&at), "{w}x{h}");
+            let table = [GAME_LABEL, TIME_LABEL].into_iter().chain(HEADER_IDS);
+            let table = table
+                .chain(ROW_CELL_IDS.into_iter().flatten())
+                .chain(BAND_IDS);
+            for id in table {
+                assert_eq!(layout.table.get(id), Some(at(id)), "{w}x{h} {id:#x}");
             }
-            assert_eq!(table.bands, BANDS.map(at), "{w}x{h}");
         }
     }
 
@@ -693,7 +575,7 @@ mod tests {
         // At 1600x1200 the 800x600 page doubles; the caption's text does too,
         // and it is clipped to its rect.
         let base = compute_layout(800, 600);
-        let scaled = compute_responsive_layout(1600, 1200);
+        let scaled = fit_window(1600, 1200, compute_layout);
         let doubled = |r: RectPx| RectPx::new(2 * r.x, 2 * r.y, 2 * r.w, 2 * r.h);
         assert_eq!(scaled.page_label(), doubled(base.page_label()));
         for id in [PREVIOUS_PAGE, NEXT_PAGE] {
@@ -706,25 +588,19 @@ mod tests {
 
     #[test]
     fn the_shaded_rect_ends_eight_pixels_under_the_last_row() {
-        let layout = ScoreTableLayout::template();
+        let layout = compute_layout(800, 600);
         // Two rows: x 95..534 and y 116..255, as the retail still measures.
-        assert_eq!(
-            layout.shaded_rect(2, ShellScale::RETAIL),
-            Some(RectPx::new(95, 116, 440, 140))
-        );
-        assert_eq!(layout.shaded_rect(0, ShellScale::RETAIL), None);
+        assert_eq!(layout.shaded_rect(2), Some(RectPx::new(95, 116, 440, 140)));
+        assert_eq!(layout.shaded_rect(0), None);
         // Row 7's Score cell ends at y 462.
-        assert_eq!(
-            layout.shaded_rect(8, ShellScale::RETAIL),
-            Some(RectPx::new(95, 116, 440, 354))
-        );
+        assert_eq!(layout.shaded_rect(8), Some(RectPx::new(95, 116, 440, 354)));
     }
 
     #[test]
     fn every_table_static_reveals_with_its_native_parameters() {
         // tools/storage_oracle/shell_static_timers.py executes the getters for
         // each 0x108 control; the page's statics must carry what they return.
-        let cases = crate::ui::shell::static_reveal::tests::native_static_timer_cases();
+        let cases = crate::ui::shell::native_fixtures::native_static_timer_cases();
         let native = |control: u16| {
             let case = cases
                 .iter()
@@ -752,13 +628,13 @@ mod tests {
             },
             Instant::now(),
         );
-        assert_eq!(page.table.len(), 47);
-        let mut ids: Vec<u16> = page.table.iter().map(|text| text.id).collect();
+        assert_eq!(page.statics.0.len(), 47);
+        let mut ids: Vec<u16> = page.statics.0.iter().map(|text| text.id).collect();
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), 47, "every template static once");
-        for text in &page.table {
-            assert_eq!(text.reveal.params(), native(text.id), "{:#x}", text.id);
+        for text in &page.statics.0 {
+            assert_eq!(text.params(), native(text.id), "{:#x}", text.id);
         }
     }
 
@@ -841,42 +717,23 @@ mod tests {
             headers: ["Player", "Kills", "Losses", "Built", "Score"].map(String::from),
         };
         let page = ScorePage::open(model, &texts, Instant::now());
-        let shown: Vec<(&str, RectPx, ScoreAlign, Option<[u8; 3]>)> = page
-            .table
+        let shown: Vec<(u16, &str, ShellAlign, Option<[u8; 3]>)> = page
+            .statics
+            .0
             .iter()
-            .map(|text| (text.text(), text.window, text.align, text.rgb))
+            .map(|text| (text.id, text.text(), text.align, text.rgb))
             .collect();
         assert_eq!(shown.len(), 2 + 5 + 2 * 5);
-        assert_eq!(
-            shown[0],
-            (
-                "Game: 1",
-                RectPx::new(99, 124, 174, 17),
-                ScoreAlign::Left,
-                None
-            )
-        );
+        assert_eq!(shown[0], (GAME_LABEL, "Game: 1", ShellAlign::NONE, None));
         assert_eq!(
             shown[1],
-            (
-                "Time: 00:01:19",
-                RectPx::new(372, 124, 159, 17),
-                ScoreAlign::Right,
-                None
-            )
+            (TIME_LABEL, "Time: 00:01:19", ShellAlign::H_RIGHT, None)
         );
-        assert_eq!(shown[7].0, "Computer");
+        assert_eq!(shown[7].1, "Computer");
         assert_eq!(shown[7].3, Some([255, 25, 25]));
         // Row 1: name, Kills, then Losses.
-        assert_eq!(
-            shown[14],
-            (
-                "15",
-                RectPx::new(303, 231, 69, 17),
-                ScoreAlign::Right,
-                Some([34, 107, 212])
-            )
-        );
+        let losses = (0x06A4, "15", ShellAlign::H_RIGHT, Some([34, 107, 212]));
+        assert_eq!(shown[14], losses);
     }
 
     #[test]
@@ -885,9 +742,8 @@ mod tests {
             elapsed_seconds: 3661,
             ..Default::default()
         };
-        assert_eq!(model.elapsed_hms(), (1, 1, 1));
+        assert_eq!(format_elapsed(&model, "%d:%d:%d"), "01:01:01");
         model.elapsed_seconds = 10_000_000;
-        assert_eq!(model.elapsed_hms(), (99, 59, 59));
         assert_eq!(
             format_elapsed(&model, "Time: %02d:%02d:%02d"),
             "Time: 99:59:59"

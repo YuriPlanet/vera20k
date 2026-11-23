@@ -22,7 +22,8 @@ use crate::render::bink_movie::BinkMovieSurface;
 use crate::render::bit_font::BitFont;
 use crate::render::native_surface_format::{ACTIVE_RETAIL_RGB565_PRESENTATION, RGB565};
 use crate::render::shell_paint::{MOVIE_DEPTH, TEXT_DEPTH};
-use crate::render::shell_text::{ScissorRect, ShellAlign, ShellTextDraw, TextRect};
+use crate::render::shell_text::{ScissorRect, ShellTextDraw, TextRect};
+use crate::ui::shell::geom::ShellAlign;
 
 /// `Init_Game` `0x0052C5E2..0x0052C5EE`: the logo Play_Movie plays on every
 /// launch, before the startup splash (name `0x825F20`).
@@ -133,6 +134,9 @@ impl FullscreenMovie {
     }
     pub(crate) fn into_return(self) -> MovieReturn {
         self.return_to
+    }
+    pub(crate) fn return_to(&self) -> &MovieReturn {
+        &self.return_to
     }
     pub(crate) fn set_active(&mut self, active: bool) {
         self.playback.set_active(active);

@@ -189,10 +189,6 @@ impl BridgeRecalcCatalog {
         Ok(self.file(tile, variant)?.tactical(sub).clone())
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "distinct native retained/draw subtile and Main continuation inputs"
-    )]
     fn presentation(
         &self,
         tile: u16,

@@ -34,14 +34,13 @@ impl Simulation {
         type_id: &str,
         count: i32,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> AirstrikeAircraftSpawn {
         let mut result = AirstrikeAircraftSpawn::default();
         let Some(boris) = self.substrate.entities.get(owner) else {
             return result;
         };
         let house_id = boris.owner();
-        let owner_name = self.interner.resolve(house_id).to_owned();
         let Some(target_entity) = self.substrate.entities.get(target) else {
             return result;
         };
@@ -73,16 +72,7 @@ impl Simulation {
         };
         for _ in 0..count {
             let plane = self.with_object_placement_scope(|sim| {
-                sim.construct_object_limbo_at_height(
-                    type_id,
-                    &owner_name,
-                    0,
-                    0,
-                    0,
-                    0,
-                    rules,
-                    effects,
-                )
+                sim.construct_object_limbo_at_height(type_id, house_id, 0, 0, 0, 0, rules, effects)
             });
             let Some(plane) = plane else {
                 break;
@@ -92,6 +82,7 @@ impl Simulation {
                 .entities
                 .get_mut(plane)
                 .unwrap()
+                .seldom
                 .mission_only
                 .mark();
             //65E91C..65E94F: Winged, zone -1, Normal, bridge-zone false,
@@ -182,7 +173,7 @@ mod tests {
             "BPLN",
             3,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(sortie.count, 3);
         assert_eq!(sortie.aircraft.len(), 3);
@@ -193,7 +184,7 @@ mod tests {
             let plane = sim.substrate.entities.get(id).unwrap();
             assert_eq!(plane.owner(), owner);
             assert_eq!(plane.airstrike_link(), Some(boris));
-            assert!(plane.spawn_owner_id.owner().is_none());
+            assert!(plane.seldom.spawn_owner_id.owner().is_none());
             assert!(plane.is_mission_only());
             assert_eq!(
                 plane.attack_target.target(),
@@ -228,7 +219,7 @@ mod tests {
             "BPLN",
             1,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(sortie.count, 1);
         let plane = sim.substrate.entities.get(sortie.aircraft[0]).unwrap();
@@ -260,7 +251,7 @@ mod tests {
             "BPLN",
             0,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(sortie.count, 0);
         assert!(sortie.aircraft.is_empty());
@@ -278,7 +269,7 @@ mod tests {
                     .spawn_object(name, "Russians", 30, 30, 0, &rules)
                     .unwrap();
                 let plane = sim.substrate.entities.get_mut(id).unwrap();
-                assert!(plane.spawn_owner_id.owner().is_none());
+                assert!(plane.seldom.spawn_owner_id.owner().is_none());
                 plane
                     .attack_target
                     .set_for_test(Some(TargetKind::Cell(40, 40)));
@@ -286,7 +277,7 @@ mod tests {
                     .mission
                     .set_current_for_test(MissionId::from_known(MissionType::Attack), 5);
                 plane.ammo_mut().unwrap().set_current_for_test(2);
-                sim.assign_target_represented(id, target, &rules, FrameEffects::default())
+                sim.assign_target_represented(id, target, &rules, &mut FrameEffects::default())
                     .unwrap();
                 let plane = sim.substrate.entities.get(id).unwrap();
                 // A NULL request jumps to the store (0x006FCDF3), keeping

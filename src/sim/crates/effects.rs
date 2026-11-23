@@ -163,8 +163,8 @@ pub(crate) fn apply_multiplier_crate(
             continue;
         };
         let slot = match which {
-            Multiplier::Armor => &mut entity.crate_multipliers.armor,
-            Multiplier::Firepower => &mut entity.crate_multipliers.firepower,
+            Multiplier::Armor => &mut entity.seldom.crate_multipliers.armor,
+            Multiplier::Firepower => &mut entity.seldom.crate_multipliers.firepower,
         };
         if *slot != NativeF64Bits::ONE {
             continue;
@@ -259,7 +259,7 @@ pub(super) fn apply_heal_base_crate(
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     collector: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let warhead = sim.interner.intern(&rules.bridge_warheads.c4_name);
     let mut index = 0;
@@ -342,7 +342,7 @@ pub(super) fn apply_gas_crate(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     cell: (i16, i16),
     magnitude: NativeF64Bits,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     // `0x00481DE7..0x00481E06` walks the 0x8874C4 WarheadType array for
     // "GAS" through the `strcasecmp` finder 0x75E4A0; the WarheadType
@@ -399,7 +399,7 @@ pub(super) fn apply_tiberium_crate(
     registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     cell: (i16, i16),
     base: DriveCoord,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Result<(), crate::sim::crates::RuntimeOverlayError> {
     // `0x00481EAD..0x00481ED1`: `RandomRanged(0, Tiberiums.Count - 1)` picks
     // the ore type, and a drawn 1 clamps it to 0 (`cmp edi,1`/`jne`/`xor
@@ -497,7 +497,7 @@ pub(super) fn apply_explosion_crate(
     actor_id: u64,
     center: DriveCoord,
     magnitude: NativeF64Bits,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     // `0x00482572`: Rules+0xFA8. A null C4Warhead leaves ReceiveDamage
     // (701BF6), SelectAnim (48A4FF), Flash (48A652) and Apply_area_damage
@@ -597,7 +597,7 @@ pub(super) fn apply_napalm_crate(
     actor_id: u64,
     cell_center: DriveCoord,
     magnitude: NativeF64Bits,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let mid = sim.substrate.entities.get(actor_id).map(|entity| {
         let picker = position_world_coord(&entity.position);
@@ -842,7 +842,7 @@ pub(super) fn place_unit_crate(
     type_id: &str,
     cell: (i16, i16),
     center: DriveCoord,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> UnitCrateOutcome {
     use crate::rules::locomotor_type::MovementZone;
     use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
@@ -850,12 +850,11 @@ pub(super) fn place_unit_crate(
     let (Ok(rx), Ok(ry)) = (u16::try_from(cell.0), u16::try_from(cell.1)) else {
         return UnitCrateOutcome::NoObject;
     };
-    let owner_name = sim.interner.resolve(owner).to_owned();
     let level =
         u8::try_from(center.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS).unwrap_or(0);
     let Some(id) = sim.construct_object_limbo_at_height(
         type_id,
-        &owner_name,
+        owner,
         rx,
         ry,
         0,

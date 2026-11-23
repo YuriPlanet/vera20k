@@ -71,8 +71,8 @@ fn stock_tank_bunker_entry_contacts_before_arrival_then_installs() {
     let unit = sim.substrate.entities.get(tank).unwrap();
     let building = sim.substrate.entities.get(bunker).unwrap();
     assert_eq!((unit.position.rx(), unit.position.ry()), (4, 10));
-    assert_eq!(unit.radio_contacts.slot(0), Some(bunker));
-    assert_eq!(building.radio_contacts.slot(0), Some(tank));
+    assert_eq!(unit.seldom.radio_contacts.slot(0), Some(bunker));
+    assert_eq!(building.seldom.radio_contacts.slot(0), Some(tank));
     assert_eq!(
         unit.navigation.nav_com(),
         Some(NavTargetRef::object(bunker)),
@@ -104,6 +104,7 @@ fn stock_tank_bunker_entry_contacts_before_arrival_then_installs() {
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(bunker)
@@ -113,6 +114,7 @@ fn stock_tank_bunker_entry_contacts_before_arrival_then_installs() {
             .entities
             .get(bunker)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(tank)
@@ -152,7 +154,7 @@ fn stock_tank_bunker_entry_contacts_before_arrival_then_installs() {
         BunkerState::Occupied,
     );
     assert_eq!(unit.mission.effective().known(), Some(MissionType::Guard));
-    assert!(!unit.selection.is_selected());
+    assert!(!unit.seldom.selection.is_selected());
 }
 
 #[test]
@@ -186,6 +188,7 @@ fn stock_tank_bunker_stop_releases_the_approach_for_another_tank() {
             .entities
             .get(bunker)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(first)
@@ -200,6 +203,7 @@ fn stock_tank_bunker_stop_releases_the_approach_for_another_tank() {
             .entities
             .get(first)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         None
@@ -218,6 +222,7 @@ fn stock_tank_bunker_stop_releases_the_approach_for_another_tank() {
             .entities
             .get(bunker)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         None
@@ -236,6 +241,7 @@ fn stock_tank_bunker_stop_releases_the_approach_for_another_tank() {
             .entities
             .get(second)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(bunker)
@@ -245,6 +251,7 @@ fn stock_tank_bunker_stop_releases_the_approach_for_another_tank() {
             .entities
             .get(bunker)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(second)
@@ -457,7 +464,7 @@ impl NativeScene {
                     ai_counter: 0,
                     dispatch_timer: MissionDispatchTimer::from_raw(0, 0),
                 });
-            entity.radio_contacts.clear_all();
+            entity.seldom.radio_contacts.clear_all();
         }
         for id in [unit, second] {
             let entity = sim.substrate.entities.get(id).unwrap();
@@ -482,7 +489,7 @@ impl NativeScene {
                 .navigation
                 .path_replay_mut()
                 .set_directions_for_test(vec![u8::MAX, 0, 0, 0]);
-            assert!(!entity.mega_mission.is_attack_move());
+            assert!(!entity.seldom.mega_mission.is_attack_move());
             assert_eq!(inputs["unit"]["mega_mission"], -1);
             assert!(
                 entity
@@ -554,18 +561,18 @@ impl NativeScene {
             .collect();
         json!({
             "unit_mission":unit.mission.current().raw(), "unit_queued":unit.mission.queued().raw(),
-            "unit_nav":self.nav(unit.navigation.nav_com()), "unit_contact":self.name(unit.radio_contacts.slot(0)),
-            "bunker_contact":self.name(bunker.radio_contacts.slot(0)), "other_contact":self.name(other.radio_contacts.slot(0)),
+            "unit_nav":self.nav(unit.navigation.nav_com()), "unit_contact":self.name(unit.seldom.radio_contacts.slot(0)),
+            "bunker_contact":self.name(bunker.seldom.radio_contacts.slot(0)), "other_contact":self.name(other.seldom.radio_contacts.slot(0)),
             "bunker_mission":bunker.mission.current().raw(), "bunker_queued":bunker.mission.queued().raw(),
             "bunker_state":bunker.building.bunker_runtime.unwrap().state() as u8,
             "unit_coord":[position.x,position.y,position.z],
             "drive_destination":xyz(drive.destination()), "drive_head":xyz(drive.head_to()),
             "drive_power":u8::from(unit.locomotor.as_ref().unwrap().is_powered()),
             "drive_track":drive.track().turn_index(), "drive_cursor":drive.track().cursor(),
-            "mega_mission":if unit.mega_mission.is_attack_move() {29} else {-1},
-            "unit_tether":u8::from(unit.tether.partner().is_some()), "bunker_tether":u8::from(bunker.tether.partner().is_some()),
+            "mega_mission":if unit.seldom.mega_mission.is_attack_move() {29} else {-1},
+            "unit_tether":u8::from(unit.seldom.tether.partner().is_some()), "bunker_tether":u8::from(bunker.seldom.tether.partner().is_some()),
             "archive":self.nav(unit.archive_target().map(Into::into)), "pending_entry":self.name(unit.pending_entry()),
-            "second_nav":self.nav(second.navigation.nav_com()), "second_contact":self.name(second.radio_contacts.slot(0)),
+            "second_nav":self.nav(second.navigation.nav_com()), "second_contact":self.name(second.seldom.radio_contacts.slot(0)),
             "unit_bunker":self.name(unit.bunker.link().installed_in()), "bunker_occupant":self.name(bunker.bunker.occupant()),
             "nav_aux":self.nav(unit.navigation.nav_com_aux()), "path":path,
             "rng_indices":[rng.index_a,rng.index_b],
@@ -597,7 +604,7 @@ impl NativeScene {
 
     fn step(&mut self, step: &Value) {
         use crate::sim::world::FrameEffects;
-        let effects = FrameEffects::default();
+        let mut effects = FrameEffects::default();
         let mut answer = None;
         match step["op"].as_str().unwrap() {
             "set_destination" | "other_set_destination" | "replace_destination" => {
@@ -616,7 +623,7 @@ impl NativeScene {
                     NavTargetRef::object(target),
                     &self.rules,
                     true,
-                    effects,
+                    &mut effects,
                 );
             }
             "enter" => {
@@ -625,7 +632,7 @@ impl NativeScene {
                     &self.rules,
                     None,
                     self.unit,
-                    effects,
+                    &mut effects,
                 ))
             }
             "radio_docking" => {
@@ -637,7 +644,7 @@ impl NativeScene {
                         crate::sim::radio::RadioMessage::CanDock,
                         crate::sim::radio::RadioPayload::default(),
                         &self.rules,
-                        effects,
+                        &mut effects,
                     )
                     .code() as i32,
                 )
@@ -657,18 +664,23 @@ impl NativeScene {
             "supply_arrival" => self.supply_position(coord(&step["coordinate"])),
             "per_cell" => {
                 self.sim
-                    .unit_dock_now(self.unit, &self.rules, None, effects);
+                    .unit_dock_now(self.unit, &self.rules, None, &mut effects);
             }
             "cancel_destination" => {
                 self.sim
-                    .set_unit_null_destination(self.unit, &self.rules, None, effects);
+                    .set_unit_null_destination(self.unit, &self.rules, None, &mut effects);
             }
             "idle_event_calls" => {
-                crate::sim::radio::broadcast_break(&mut self.sim, self.unit, &self.rules, effects);
+                crate::sim::radio::broadcast_break(
+                    &mut self.sim,
+                    self.unit,
+                    &self.rules,
+                    &mut effects,
+                );
                 self.sim
-                    .set_unit_null_destination(self.unit, &self.rules, None, effects);
+                    .set_unit_null_destination(self.unit, &self.rules, None, &mut effects);
                 self.sim
-                    .assign_target_represented(self.unit, None, &self.rules, effects)
+                    .assign_target_represented(self.unit, None, &self.rules, &mut effects)
                     .unwrap();
             }
             "update_bunker" => crate::sim::docking::bunker_install::update_bunker(
@@ -676,13 +688,13 @@ impl NativeScene {
                 &self.rules,
                 None,
                 self.bunker,
-                effects,
+                &mut effects,
             ),
             "seek_bunker" => {
                 answer = Some(i32::from(self.sim.foot_enter_tank_bunker(
                     self.unit,
                     &self.rules,
-                    effects,
+                    &mut effects,
                 )))
             }
             "prepare_state3_destination" => {

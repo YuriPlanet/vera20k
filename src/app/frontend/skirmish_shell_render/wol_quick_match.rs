@@ -3,14 +3,17 @@
 //! `0x50014151`). The WOL page compositor draws them over its own art and
 //! chrome.
 
-use super::controls::list_controls;
+use super::controls::list_view_controls;
 use super::text::rect_to_text_rect;
-use super::wol_lobby::{WolLobbyPaint, label, row_rgb};
+use super::wol_lobby::{WolLobbyPaint, row_rgb};
 use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
-use crate::render::shell_text::{self, ShellAlign};
-use crate::ui::shell::geom::RectPx;
-use crate::ui::wol_quick_match::{MATCH_STATUS_KEY, WolQuickMatchLayout, WolQuickMatchPage};
+use crate::render::shell_text;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
+use crate::ui::wol_quick_match::{
+    CAPTION, DIALOG, MATCH_STATUS_KEY, TRANSCRIPT, WolQuickMatchLayout, WolQuickMatchPage,
+};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 pub(crate) fn paint_wol_quick_match_children(
     state: &AppState,
@@ -36,16 +39,35 @@ pub(crate) fn paint_wol_quick_match_children(
         )
     };
     paint.texts.push(text(
-        &label(state, MATCH_STATUS_KEY),
-        layout.caption,
+        &state.csf_text(MATCH_STATUS_KEY),
+        layout.rect_of(CAPTION).unwrap_or_default(),
         SHELL_LABEL_TEXT_RGB,
     ));
-    let geometry = ui.list.geometry(layout.transcript, ui.lines.len(), scale);
-    list_controls(&mut paint.controls, atlas, geometry, &ui.list, false, scale);
+    // The list widget's top and pushed arrow.
+    let controller = &state.frontend.shell_controller;
+    let gui = controller.gui();
+    let view = controller
+        .root_in(DIALOG)
+        .and_then(|root| gui.find_id(root, TRANSCRIPT.into()))
+        .and_then(|list| gui.list_view(list));
+    let (top, pressed) = view.map_or((0, None), |view| (view.top, view.pressed));
+    let geometry = ShellListGeometry::new(
+        layout.rect_of(TRANSCRIPT).unwrap_or_default(),
+        ui.lines.len(),
+        top,
+        ListMetrics::scaled(scale),
+    );
+    list_view_controls(
+        &mut paint.controls,
+        atlas,
+        geometry,
+        (None, top, pressed),
+        scale,
+    );
     for (visible, line) in ui
         .lines
         .iter()
-        .skip(ui.list.top_index)
+        .skip(top)
         .take(geometry.visible_rows)
         .enumerate()
     {

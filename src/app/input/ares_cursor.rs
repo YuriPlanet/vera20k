@@ -9,8 +9,9 @@
 //! empties it every frame, and `DisplayClass_SetAction_CustomCursor @
 //! 10057F10` (hook `0x4AB35A`) replaces `SetCursorFromAction`'s switches with
 //! one that reads it before the action's own cursor. VERA asks the What_Action
-//! port once per cursor query, so [`begin_query`] empties the table at the
-//! start of each one; the table lives on the client thread only.
+//! port once per cursor query, so each query starts from an empty
+//! [`CursorOverrides`] ([`what_action_entry`]) and returns the table it wrote
+//! beside its answer, for the cursor readers to take.
 //!
 //! The writers are the hooks that name a cursor:
 //! - `TechnoClass_GetActionOnObject_Cursors @ 1004C990` (`0x6FFEC0`) and
@@ -50,8 +51,6 @@
 //! Cursor choice is presentation only: the table and its readers stay in the
 //! client, and no simulation state, RNG draw or hash depends on them.
 
-use std::cell::Cell;
-
 use crate::app::input::cursor::ActionQuery;
 use crate::app::input::entity_pick::HoverObject;
 use crate::app::types::{CursorFeedbackKind, CursorId};
@@ -75,6 +74,7 @@ pub(crate) mod action {
     pub(crate) const SABOTAGE: u8 = 0x10;
     pub(crate) const TOTE: u8 = 0x11;
     pub(crate) const GUARD_AREA: u8 = 0x1A;
+    pub(crate) const HEAL: u8 = 0x1B;
     pub(crate) const DAMAGE: u8 = 0x1C;
     pub(crate) const GREPAIR: u8 = 0x1D;
     pub(crate) const NO_DEPLOY: u8 = 0x1E;
@@ -101,99 +101,113 @@ pub(crate) fn draws_through_list(rules: &RuleSet) -> bool {
     rules.ares() || rules.ares_form()
 }
 
-thread_local! {
+/// The override table one What_Action query wrote
+/// (`Actions::CursorOverrides`), returned beside its answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CursorOverrides {
     /// The cursor of each action's entry, 0 for none. The What_Action hooks
     /// write shroud mode 0 only; the superweapon's global entry 0 (modes 1
     /// and 2) is applied by its callers ([`super_weapon_cursor`]).
-    static OVERRIDES: Cell<[i32; TABLE_LEN]> = const { Cell::new([0; TABLE_LEN]) };
+    table: [i32; TABLE_LEN],
     /// VERA's own mark: the What_Action port answered Capture (9) where its
     /// feedback says Enter ([`CursorFeedbackKind::Enter`] covers both).
-    static ANSWERED_CAPTURE: Cell<bool> = const { Cell::new(false) };
+    answered_capture: bool,
 }
 
-/// `MouseClass_Update_Reset @ 100583C0` (hook `0x5BDDC0`): empty the table
-/// before a What_Action query writes it.
-pub(crate) fn begin_query() {
-    OVERRIDES.with(|table| table.set([0; TABLE_LEN]));
-    ANSWERED_CAPTURE.with(|capture| capture.set(false));
+impl Default for CursorOverrides {
+    /// `MouseClass_Update_Reset @ 100583C0` (hook `0x5BDDC0`): the empty
+    /// table a What_Action query starts from.
+    fn default() -> Self {
+        Self {
+            table: [0; TABLE_LEN],
+            answered_capture: false,
+        }
+    }
 }
 
-/// `Actions::SetCursor @ 10057E20`: override `action`'s cursor (entry
-/// `action + 1`), shroud mode 0.
-pub(crate) fn set_cursor(cursor: i32, action: u8) {
-    OVERRIDES.with(|table| {
-        let mut entries = table.get();
-        if let Some(entry) = entries.get_mut(usize::from(action) + 1) {
+impl CursorOverrides {
+    /// `Actions::SetCursor @ 10057E20`: override `action`'s cursor (entry
+    /// `action + 1`), shroud mode 0.
+    pub(crate) fn set_cursor(&mut self, cursor: i32, action: u8) {
+        if let Some(entry) = self.table.get_mut(usize::from(action) + 1) {
             *entry = cursor;
         }
-        table.set(entries);
-    });
-}
+    }
 
-/// Mark that the answer being built is Capture (9), not Enter (3).
-pub(crate) fn note_capture() {
-    ANSWERED_CAPTURE.with(|capture| capture.set(true));
-}
+    /// Mark that the answer being built is Capture (9), not Enter (3).
+    pub(crate) fn note_capture(&mut self) {
+        self.answered_capture = true;
+    }
 
-/// `GetCursorOverride` (inlined twice in 10057F10) without the global
-/// entry: the action's cursor, unless it holds none.
-fn override_for(action: u8) -> Option<i32> {
-    OVERRIDES
-        .with(|table| table.get().get(usize::from(action) + 1).copied())
-        .filter(|&cursor| cursor != 0)
-}
+    /// `GetCursorOverride` (inlined twice in 10057F10) without the global
+    /// entry: the action's cursor, unless it holds none.
+    fn override_for(&self, action: u8) -> Option<i32> {
+        self.table
+            .get(usize::from(action) + 1)
+            .copied()
+            .filter(|&cursor| cursor != 0)
+    }
 
-/// The native action of a What_Action answer, as 10057F10 receives it.
-/// With more than one object selected an out-of-range Attack reaches its
-/// switch as action 6, the vanilla fall-through into Harvest's cursor.
-pub(crate) fn native_action(kind: CursorFeedbackKind, selected_count: usize) -> Option<u8> {
-    use CursorFeedbackKind as Kind;
-    use action::*;
-    Some(match kind {
-        Kind::Default => NONE,
-        Kind::Select | Kind::FriendlyUnit | Kind::FriendlyStructure => SELECT,
-        Kind::Move => MOVE,
-        Kind::AttackMove => ATTACK_MOVE_NAV,
-        Kind::GuardArea => GUARD_AREA,
-        Kind::EnemyUnit | Kind::EnemyStructure => ATTACK,
-        Kind::EnemyOutOfRange if selected_count == 1 => ATTACK,
-        Kind::EnemyOutOfRange | Kind::Harvest => HARVEST,
-        Kind::Invalid => NO_MOVE,
-        Kind::NoIvanBomb => NO_IVAN_BOMB,
-        Kind::Enter if ANSWERED_CAPTURE.with(Cell::get) => CAPTURE,
-        Kind::Enter => ENTER,
-        Kind::Grind => REPAIR,
-        Kind::NoEnter => NO_ENTER,
-        Kind::Tote => TOTE,
-        Kind::EngineerDamage => DAMAGE,
-        Kind::RepairAction(true) => GREPAIR,
-        Kind::RepairAction(false) => NO_GREPAIR,
-        Kind::Demolish => SABOTAGE,
-        Kind::WeaponDemolish => DEMOLISH,
-        Kind::AirStrike => AIRSTRIKE,
-        Kind::IvanBomb => IVAN_BOMB,
-        Kind::DisarmBomb => DISARM_BOMB,
-        Kind::Detonate => DETONATE,
-        Kind::Deploy => SELF_DEPLOY,
-        Kind::NoDeploy => NO_DEPLOY,
-        // DetermineAction's own modes and the cursor's, never a What_Action
-        // answer.
-        _ => return None,
-    })
-}
+    /// 10057F10, past its Attack range test (made where the table is
+    /// written): the cursor of `action` over a shrouded cell or not. Over
+    /// shroud a mode-0 override, like none, lets the shroud switch remap the
+    /// action first; the override of the resulting action wins over its table
+    /// cursor.
+    pub(crate) fn cursor_from_action(
+        &self,
+        action: u8,
+        shrouded: bool,
+        lead_moves_to_shroud: bool,
+    ) -> i32 {
+        let action = if shrouded {
+            shrouded_action(action, lead_moves_to_shroud)
+        } else {
+            action
+        };
+        self.override_for(action)
+            .unwrap_or_else(|| action_cursor(action))
+    }
 
-/// `DisplayClass_SetAction_CustomCursor @ 10057F10`, past its Attack range
-/// test (made where the table is written): the cursor of `action` over a
-/// shrouded cell or not. Over shroud a mode-0 override, like none, lets the
-/// shroud switch remap the action first; the override of the resulting
-/// action wins over its table cursor.
-pub(crate) fn cursor_from_action(action: u8, shrouded: bool, lead_moves_to_shroud: bool) -> i32 {
-    let action = if shrouded {
-        shrouded_action(action, lead_moves_to_shroud)
-    } else {
-        action
-    };
-    override_for(action).unwrap_or_else(|| action_cursor(action))
+    /// The native action of a What_Action answer, as 10057F10 receives it.
+    /// With more than one object selected an out-of-range Attack reaches its
+    /// switch as action 6, the vanilla fall-through into Harvest's cursor.
+    fn native_action(&self, kind: CursorFeedbackKind, selected_count: usize) -> Option<u8> {
+        use CursorFeedbackKind as Kind;
+        use action::*;
+        Some(match kind {
+            Kind::Default => NONE,
+            Kind::Select | Kind::FriendlyUnit | Kind::FriendlyStructure => SELECT,
+            Kind::Move => MOVE,
+            Kind::AttackMove => ATTACK_MOVE_NAV,
+            Kind::GuardArea => GUARD_AREA,
+            Kind::EnemyUnit | Kind::EnemyStructure => ATTACK,
+            Kind::EnemyOutOfRange if selected_count == 1 => ATTACK,
+            Kind::EnemyOutOfRange | Kind::Harvest => HARVEST,
+            Kind::Invalid => NO_MOVE,
+            Kind::NoIvanBomb => NO_IVAN_BOMB,
+            Kind::Enter if self.answered_capture => CAPTURE,
+            Kind::Enter => ENTER,
+            Kind::EnterTunnel => 0x23,
+            Kind::Grind => REPAIR,
+            Kind::NoEnter => NO_ENTER,
+            Kind::Tote => TOTE,
+            Kind::Heal => HEAL,
+            Kind::EngineerDamage => DAMAGE,
+            Kind::RepairAction(true) => GREPAIR,
+            Kind::RepairAction(false) => NO_GREPAIR,
+            Kind::Demolish => SABOTAGE,
+            Kind::WeaponDemolish => DEMOLISH,
+            Kind::AirStrike => AIRSTRIKE,
+            Kind::IvanBomb => IVAN_BOMB,
+            Kind::DisarmBomb => DISARM_BOMB,
+            Kind::Detonate => DETONATE,
+            Kind::Deploy => SELF_DEPLOY,
+            Kind::NoDeploy => NO_DEPLOY,
+            // DetermineAction's own modes and the cursor's, never a What_Action
+            // answer.
+            _ => return None,
+        })
+    }
 }
 
 /// 10057F10's shroud switch (`10058230`/`1005825C`): NoMove moves when the
@@ -281,20 +295,22 @@ fn action_cursor(action: u8) -> i32 {
 /// The tactical cursor of a What_Action answer: the Ares cursor 10057F10
 /// picks when it draws other frames than the row the stock id draws, else
 /// `kind`. A `none` cursor (-1) faults in Ares; VERA keeps the stock cursor.
-/// `kind` without Ares.
+/// `kind` without Ares. `overrides` is the table the query answering `kind`
+/// wrote.
 pub(crate) fn tactical(
     kind: CursorFeedbackKind,
+    overrides: &CursorOverrides,
     selected_count: usize,
     rules: Option<&RuleSet>,
 ) -> CursorFeedbackKind {
     let (Some(action), Some(rules)) = (
-        native_action(kind, selected_count),
+        overrides.native_action(kind, selected_count),
         rules.filter(|rules| rules.ares()),
     ) else {
         return kind;
     };
     let cursors = rules.ares_mouse_cursors();
-    let cursor = cursor_from_action(action, false, false);
+    let cursor = overrides.cursor_from_action(action, false, false);
     let (Ok(index), Some(drawn_set)) = (u16::try_from(cursor), drawn(cursors, cursor, false))
     else {
         return kind;
@@ -326,19 +342,21 @@ fn drawn(cursors: &MouseCursors, cursor: i32, mini: bool) -> Option<[i32; 5]> {
 /// when its cursor has radar frames (`MiniFrame >= 0`) and draws the cursor
 /// 10057F10 picks; without one `vanilla`, the stock keep table (`0x653CAB`),
 /// decides. A kept action that draws the stock frames stays `vanilla`.
-/// `vanilla` without Ares.
+/// `vanilla` without Ares. `overrides` is the table the query answering
+/// `kind` wrote.
 pub(crate) fn radar_action(
     query: &ActionQuery<'_>,
     kind: CursorFeedbackKind,
+    overrides: &CursorOverrides,
     vanilla: Option<crate::app::input::radar::RadarAction>,
 ) -> Option<crate::app::input::radar::RadarAction> {
     if !query.rules.is_some_and(|rules| rules.ares()) {
         return vanilla;
     }
-    let Some(action) = native_action(kind, query.selected.len()) else {
+    let Some(action) = overrides.native_action(kind, query.selected.len()) else {
         return vanilla;
     };
-    let Some(cursor) = override_for(action) else {
+    let Some(cursor) = overrides.override_for(action) else {
         return vanilla;
     };
     let cursors = query.rules?.ares_mouse_cursors();
@@ -347,8 +365,8 @@ pub(crate) fn radar_action(
     }
     let lead = query.lead_moves_to_shroud();
     let (main, shrouded) = (
-        cursor_from_action(action, false, lead),
-        cursor_from_action(action, true, lead),
+        overrides.cursor_from_action(action, false, lead),
+        overrides.cursor_from_action(action, true, lead),
     );
     let stock = |shrouded: bool| {
         let (row, mini) =
@@ -440,15 +458,17 @@ pub(crate) fn radar_super_weapon(
 /// The hooks the best object's What_Action reaches before its own rungs:
 /// the Techno entry's Move/NoMove and Enter/Repair/NoEnter (`0x6FFEC0`,
 /// `0x700600`) and, over itself as the lone selection, the self-deploy
-/// cursors (`0x7000CD`, `0x7400F0`).
+/// cursors (`0x7000CD`, `0x7400F0`). The query's table starts empty
+/// (`MouseClass_Update_Reset @ 100583C0`, hook `0x5BDDC0`) and holds what
+/// these hooks wrote.
 pub(crate) fn what_action_entry(
     query: &ActionQuery<'_>,
     best_id: Option<u64>,
     hover_object: Option<HoverObject>,
-) {
-    begin_query();
+) -> CursorOverrides {
+    let mut overrides = CursorOverrides::default();
     let (Some(actor_id), Some(rules)) = (best_id, query.rules) else {
-        return;
+        return overrides;
     };
     let sim = query.sim;
     let cursors_of = |id: u64| {
@@ -458,34 +478,50 @@ pub(crate) fn what_action_entry(
             .map(|object| *object.ares_cursors())
     };
     let Some(actor) = cursors_of(actor_id) else {
-        return;
+        return overrides;
     };
-    set_cursor(actor.move_, action::MOVE);
-    set_cursor(actor.no_move, action::NO_MOVE);
+    // Ares' EMP deployer hook returns at Infantry What_Action's entry
+    // (`0x0051E3B0`), before the Techno What_Action that holds these hooks.
+    if hover_object
+        .and_then(HoverObject::techno)
+        .is_some_and(|hover| {
+            crate::app::input::context_order::ares_emp_deployer_refuses_itself(
+                sim,
+                rules,
+                actor_id,
+                hover.stable_id,
+            )
+        })
+    {
+        return overrides;
+    }
+    overrides.set_cursor(actor.move_, action::MOVE);
+    overrides.set_cursor(actor.no_move, action::NO_MOVE);
     let Some(target_id) = hover_object
         .and_then(HoverObject::techno)
         .map(|hover| hover.stable_id)
     else {
-        return;
+        return overrides;
     };
     if let Some(target) = cursors_of(target_id) {
-        set_cursor(target.enter, action::REPAIR);
-        set_cursor(target.enter, action::ENTER);
-        set_cursor(target.no_enter, action::NO_ENTER);
+        overrides.set_cursor(target.enter, action::REPAIR);
+        overrides.set_cursor(target.enter, action::ENTER);
+        overrides.set_cursor(target.no_enter, action::NO_ENTER);
     }
     if target_id == actor_id && query.selected.len() == 1 {
-        set_cursor(actor.deploy, action::AREA_ATTACK);
-        set_cursor(actor.deploy, action::SELF_DEPLOY);
-        set_cursor(actor.no_deploy, action::NO_DEPLOY);
+        overrides.set_cursor(actor.deploy, action::AREA_ATTACK);
+        overrides.set_cursor(actor.deploy, action::SELF_DEPLOY);
+        overrides.set_cursor(actor.no_deploy, action::NO_DEPLOY);
         let bunker = sim
             .entities()
             .get(actor_id)
             .filter(|entity| entity.category() == crate::map::entities::EntityCategory::Unit)
             .and_then(|entity| entity.bunker.link().installed_in());
         if let Some(bunker) = bunker.and_then(cursors_of) {
-            set_cursor(bunker.deploy, action::SELF_DEPLOY);
+            overrides.set_cursor(bunker.deploy, action::SELF_DEPLOY);
         }
     }
+    overrides
 }
 
 /// The Attack cursors of the best object's answer: its weapon's
@@ -497,6 +533,7 @@ pub(crate) fn what_action_attack(
     best_id: Option<u64>,
     target: TargetKind,
     kind: CursorFeedbackKind,
+    overrides: &mut CursorOverrides,
 ) {
     let out_of_range = match kind {
         CursorFeedbackKind::EnemyUnit | CursorFeedbackKind::EnemyStructure => false,
@@ -506,12 +543,12 @@ pub(crate) fn what_action_attack(
     let (Some(actor_id), Some(rules)) = (best_id, query.rules) else {
         return;
     };
-    set_cursor(
+    overrides.set_cursor(
         attack_cursor(query, rules, actor_id, target, false),
         action::ATTACK,
     );
     if out_of_range && query.selected.len() == 1 {
-        set_cursor(
+        overrides.set_cursor(
             attack_cursor(query, rules, actor_id, target, true),
             action::ATTACK,
         );
@@ -563,6 +600,7 @@ pub(crate) fn infiltration(
     rules: &RuleSet,
     infantry_id: u64,
     building_id: u64,
+    overrides: &mut CursorOverrides,
 ) {
     use crate::sim::world::InfiltrateAction;
     if !rules.ares() {
@@ -575,13 +613,13 @@ pub(crate) fn infiltration(
                 .get(building_id)
                 .and_then(|entity| sim.interner().object_type(entity.type_ref(), rules))
             {
-                set_cursor(building.ares_cursors().spy, action::CAPTURE);
+                overrides.set_cursor(building.ares_cursors().spy, action::CAPTURE);
             }
         }
-        InfiltrateAction::Sabotage => set_cursor(index::SABOTAGE, action::CAPTURE),
+        InfiltrateAction::Sabotage => overrides.set_cursor(index::SABOTAGE, action::CAPTURE),
         _ => {}
     }
-    note_capture();
+    overrides.note_capture();
 }
 
 /// The cursor a [`CursorFeedbackKind::AresAction`] or superweapon override

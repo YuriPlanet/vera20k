@@ -47,7 +47,7 @@ fn integer(value: &Value) -> i32 {
 
 fn supply_rng(sim: &mut Simulation, state: &Value) {
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(state["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(state["mapgen"].as_str().unwrap());
 }
 
@@ -100,7 +100,7 @@ fn install(sim: &mut Simulation, rules: &RuleSet, body: &str) -> crate::map::map
 }
 
 fn poll(sim: &mut Simulation, rules: &RuleSet, registry: &OverlayTypeRegistry) {
-    let _ = sim.advance_triggers(rules, Some(registry), FrameEffects::default());
+    let _ = sim.advance_triggers(rules, Some(registry), &mut FrameEffects::default());
 }
 
 /// Steam gamemd Execute6DF69B ->68BCC0 ->56BEC0. The native
@@ -229,7 +229,7 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
             &mut Vec::new(),
             &rules,
             Some(&registry),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             i32::from(result),
@@ -316,7 +316,7 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
             // this compares Overlay lifetime, not whole-frame parity.
             sim.process_pending_delete_with(
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
                 1,
                 sim.session.started(),
             );
@@ -422,7 +422,7 @@ fn money_pickup_matches_original_reentrant_owner_alive_and_notification_controls
             (10, 10),
             &rules,
             Some(&registry),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(i32::from(result), integer(&case["returned"]), "{name}");
         let entity = sim.substrate.entities.get(actor);
@@ -716,7 +716,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
         .unwrap();
     let observer = &sim.trigger_runtime.definitions.trigger_types[observer_type];
     assert_eq!(observer.events.len(), 1);
-    assert_eq!(observer.events[0].kind, 50);
+    assert_eq!(observer.events[0].condition.kind, 50);
     assert_eq!(observer.actions.len(), 1);
     assert_eq!(observer.actions[0].entry.kind, 28);
     assert_eq!(observer.actions[0].value, Some(7));
@@ -733,11 +733,11 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     let typ = sim.trigger_runtime.definitions.trigger_type(id).unwrap();
     let definition = &sim.trigger_runtime.definitions.trigger_types[typ];
     assert_eq!(
-        definition.events[0].kind,
+        definition.events[0].condition.kind,
         integer(&retail["native_events"]["kind"])
     );
     assert_eq!(
-        definition.events[0].value,
+        definition.events[0].condition.value,
         integer(&retail["native_events"]["value"])
     );
     assert_eq!(definition.actions.len(), 2);
@@ -832,7 +832,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
         (16, 15),
         &rules,
         Some(&registry),
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     let ordinary = native["pickup_controls"]
         .as_array()

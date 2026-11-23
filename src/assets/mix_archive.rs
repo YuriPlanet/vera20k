@@ -39,6 +39,17 @@
 //! - Part of assets/ — no dependencies on game modules.
 //! - Uses mix_crypto for decryption and mix_hash for filename lookup.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use std::fs::File;
 use std::path::Path;
@@ -307,6 +318,10 @@ impl MixArchive {
         )))]
         let data = {
             let file = File::open(path)?;
+            // SAFETY: memmap2 cannot stop another process from changing the
+            // file under the map. Nothing in the game writes an archive it has
+            // open; a file changed outside it mid-game is the residual memmap2
+            // documents, taken for reads without copies.
             let data = unsafe { memmap2::MmapOptions::new().map(&file)? };
             MixData::from_mapped(data)
         };

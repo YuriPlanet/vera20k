@@ -11,9 +11,11 @@
 //! `0x0053029E`). Retail data holds neither, so a retail game plays as
 //! gamemd. The player's Ares setting (`util::ares_launch::AresSetting`) can
 //! replace that answer for a whole launch: On makes every game an Ares game,
-//! as a mounted `ares.mix` does, and Off keeps every key from turning Ares on
-//! ([`launch_keys_off`]). Every build lets the switch turn on, the release
-//! build too.
+//! as a mounted `ares.mix` does, and Off keeps every key from turning Ares on.
+//! The game's asset manager holds both answers (`AssetManager::ships_ares`,
+//! `AssetManager::ares_setting`), and its Rules owner takes them from it
+//! (`RetailRulesSources::select`). Every build lets the switch turn on, the
+//! release build too.
 //!
 //! Which keys count comes from the readers, not from a list. Every reader
 //! lookup of a present key (`IniSection`'s reader path in `ini_parser.rs`)
@@ -55,29 +57,43 @@
 //! ([`read_ares_way`]); the game's later readers (its fixed ART, the asset
 //! closures, SOUNDMD and EVAMD) open it from the RuleSet
 //! (`RuleSet::reads_ares_way`) or from whether the game ships `ares.mix`.
-//! Outside every scope a thread reads by its launch, the game the asset
-//! manager opened for play (`util::ares_launch`), as Ares.dll patches a whole
+//! Outside every scope a thread reads by its launch, the game the launch
+//! opened for play (`util::ares_launch`), as Ares.dll patches a whole
 //! launch: the INI text loads of a game that ships `ares.mix` take Ares'
 //! syntax wherever they run. A game turned on by its keys alone, without
 //! `ares.mix`, still loads its INIs and reads its Rules the stock way.
+//!
+//! Why the reads are recorded on the reading thread, not handed down: the
+//! stock readers (`IniSection::read_*`, thousands of call sites) take only
+//! the section, and which keys count depends on who asked, an Ares, a Phobos
+//! or a stock reader, so neither a scan of the INI data nor a context in the
+//! readers' signatures can say it without rewriting every reader. One
+//! thread-local `Recorder` keeps the open scopes and the record instead.
+//! Its invariant: the reads a [`record`] run counts, and the reads a
+//! [`read_ares_way`] scope governs, run on the thread that opened them. The
+//! scope guards are `!Send`, so a scope cannot leave its thread, and
+//! `ares_switch_tests` checks that the Rules code under `src/rules` spawns no
+//! thread and uses no thread pool. Code outside it that a scope covers and
+//! that starts threads (the random map generator's workers) hands them their
+//! inputs already read and passes `ares` explicitly: a thread outside every
+//! scope reads by the launch's answer (`util::ares_launch`), never by this
+//! thread's. Two loads on two threads keep their own records; a load nested
+//! in another keeps its reads to itself.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::marker::PhantomData;
 
-/// Whether this launch restores Rules a saved registry says were read
-/// `ares_way`. A launch reads one way, the way its game says by shipping
-/// `ares.mix` or not ([`launch_ships_ares`]). Rules read the other way belong
-/// to another game. A test has no launch and restores both.
-pub(crate) fn launch_reads(ares_way: bool) -> bool {
-    cfg!(any(test, feature = "test-support")) || ares_way == launch_ships_ares()
-}
+/// Makes a scope guard `!Send`: the scope it closes lives in this thread's
+/// [`Recorder`], so it must drop on the thread that opened it.
+type OnThisThread = PhantomData<*const ()>;
 
 /// Whether the game this launch opened for play ships `ares.mix`
-/// (`util::ares_launch`). A test has no launch: its fixtures stand for the
-/// game its thread's scope says ([`read_ares_way`]), whatever another test
-/// on another thread opened.
+/// (`util::ares_launch`): the answer for a thread outside every scope. A
+/// process that opened no game for play (a test, a tool before its game
+/// opens) reads the stock way there.
 fn launch_ships_ares() -> bool {
-    !cfg!(any(test, feature = "test-support")) && crate::util::ares_launch::game_ships_ares()
+    crate::util::ares_launch::game_ships_ares()
 }
 
 /// Whether the reads on this thread follow Ares.dll: its INI syntax, list
@@ -85,19 +101,14 @@ fn launch_ships_ares() -> bool {
 /// call and RuleSet projection sets it from the retained Rules registry
 /// ([`read_ares_way`]); outside every scope it is the launch's answer
 /// ([`launch_ships_ares`]). Ares readers that only fill Ares state do not
-/// ask. A fixture built without saying stands for a game that ships
-/// `ares.mix` exactly when its thread reads the Ares way
-/// ([`game_ships_ares`]), so an Ares test opens [`read_ares_way`] first.
+/// ask. A Rules fixture built without saying (`RulesLayerStack::new`, a
+/// cold-started owner) stands for a game that ships `ares.mix` exactly when
+/// its thread reads the Ares way, so an Ares test opens [`read_ares_way`]
+/// first.
 pub(crate) fn ares_way() -> bool {
-    ARES_WAY.get().unwrap_or_else(launch_ships_ares)
-}
-
-/// Whether the game ships `ares.mix`: startup mounted it
-/// (`AssetManager::ships_ares`), or, in a test, the thread reads the Ares way,
-/// so a fixture (a `RulesLayerStack`, a cold-started owner, the retail
-/// install) stands for an Ares game.
-pub(crate) fn game_ships_ares(mounted: bool) -> bool {
-    mounted || (cfg!(any(test, feature = "test-support")) && ares_way())
+    RECORDER
+        .with_borrow(|recorder| recorder.ares_way)
+        .unwrap_or_else(launch_ships_ares)
 }
 
 /// Reads the Rules on this thread the Ares way (or not) while it lives, and
@@ -106,18 +117,20 @@ pub(crate) fn game_ships_ares(mounted: bool) -> bool {
 pub struct AresWay {
     /// The scope this one opened inside, or none.
     outer: Option<bool>,
+    _thread: OnThisThread,
 }
 
 /// Open a Rules-reading scope in the given mode (see [`ares_way`]).
 pub fn read_ares_way(on: bool) -> AresWay {
     AresWay {
-        outer: ARES_WAY.replace(Some(on)),
+        outer: RECORDER.with_borrow_mut(|recorder| recorder.ares_way.replace(on)),
+        _thread: PhantomData,
     }
 }
 
 impl Drop for AresWay {
     fn drop(&mut self) {
-        ARES_WAY.set(self.outer);
+        RECORDER.with_borrow_mut(|recorder| recorder.ares_way = self.outer);
     }
 }
 
@@ -125,12 +138,12 @@ impl Drop for AresWay {
 /// body that reads through the stock readers opens one; the `read_ares_*`
 /// parsers open their own.
 #[must_use = "the scope ends when the guard drops"]
-pub(crate) struct AresReads(());
+pub(crate) struct AresReads(OnThisThread);
 
 /// Open an Ares reader scope (see [`AresReads`]).
 pub(crate) fn ares_reads() -> AresReads {
     RECORDER.with_borrow_mut(|recorder| recorder.ares_depth += 1);
-    AresReads(())
+    AresReads(PhantomData)
 }
 
 /// One Ares read written inline in a stock reader (a struct field or a call
@@ -152,12 +165,12 @@ impl Drop for AresReads {
 /// `DebrisMaximums`), or an RA2 or TS key retail data already holds
 /// (`TiberiumProof`, the IFV turret keys). They count as stock reads.
 #[must_use = "the scope ends when the guard drops"]
-pub(crate) struct NotAresReads(());
+pub(crate) struct NotAresReads(OnThisThread);
 
 /// Open a not-Ares reader scope (see [`NotAresReads`]).
 pub(crate) fn not_ares_reads() -> NotAresReads {
     RECORDER.with_borrow_mut(|recorder| recorder.not_ares_depth += 1);
-    NotAresReads(())
+    NotAresReads(PhantomData)
 }
 
 /// One read written inline, marked as [`not_ares_reads`] marks a body.
@@ -172,19 +185,40 @@ impl Drop for NotAresReads {
     }
 }
 
+/// Marks the reads made while it lives as a Phobos reader's
+/// (`phobos_switch::phobos_read`).
+#[must_use = "the scope ends when the guard drops"]
+pub(crate) struct PhobosReads(OnThisThread);
+
+/// Open a Phobos reader scope (see [`PhobosReads`]).
+pub(crate) fn phobos_reads() -> PhobosReads {
+    RECORDER.with_borrow_mut(|recorder| recorder.phobos_depth += 1);
+    PhobosReads(PhantomData)
+}
+
+impl Drop for PhobosReads {
+    fn drop(&mut self) {
+        RECORDER.with_borrow_mut(|recorder| recorder.phobos_depth -= 1);
+    }
+}
+
+/// This thread's reading state: the open scopes and the [`record`] run they
+/// note into (see the module notes for why it is per thread).
 #[derive(Default)]
 struct Recorder {
+    /// The open [`read_ares_way`] scope's mode, or none outside every scope.
+    ares_way: Option<bool>,
     ares_depth: u32,
-    /// Open [`not_ares_reads`] scopes, which win over `ares_depth`.
+    /// Open [`not_ares_reads`] scopes, which win over the other two.
     not_ares_depth: u32,
+    /// Open [`phobos_reads`] scopes, which win over `ares_depth`.
+    phobos_depth: u32,
     /// The innermost [`record`] run, if one is open on this thread.
     active: Option<KeyReads>,
 }
 
 thread_local! {
     static RECORDER: RefCell<Recorder> = RefCell::default();
-    /// The open reading scope's mode, or none outside every scope.
-    static ARES_WAY: Cell<Option<bool>> = const { Cell::new(None) };
 }
 
 /// A reader found `key` in `section`. Called by the INI store's reader
@@ -194,7 +228,7 @@ pub(crate) fn note_found(section: &str, key: &str) {
         // A not-Ares scope wins over the reader that opened it.
         let reader = if recorder.not_ares_depth > 0 {
             Reader::Stock
-        } else if crate::rules::phobos_switch::reading() {
+        } else if recorder.phobos_depth > 0 {
             Reader::Phobos
         } else if recorder.ares_depth > 0 {
             Reader::Ares
@@ -303,57 +337,68 @@ pub(crate) struct AresInputs {
     /// `(section, key)` pairs only an Ares reader of the passes found.
     keys: BTreeSet<(String, String)>,
     ships_ares: bool,
-    /// VERA: the player's Ares setting was Off (`util::ares_launch`), so no
+    /// VERA: the player's Ares setting was Off (`AssetManager::ares_setting`), so no
     /// key turns Ares on. Saved with the Rules, so a save plays as it was
     /// started.
     keys_off: bool,
 }
 
-/// Whether the launch's Ares setting is Off (`util::ares_launch`): then no
-/// Ares key turns Ares on. A test has no launch; its fixtures read as Auto.
-pub(crate) fn launch_keys_off() -> bool {
-    !cfg!(any(test, feature = "test-support"))
-        && crate::util::ares_launch::setting() == crate::util::ares_launch::AresSetting::Off
-}
-
 impl AresInputs {
     pub(crate) fn from_passes(reads: &KeyReads, ships_ares: bool, keys_off: bool) -> Self {
         Self {
-            keys: if keys_off {
-                BTreeSet::new()
-            } else {
-                reads
-                    .ares_only()
-                    .map(|(section, key)| (section.to_owned(), key.to_owned()))
-                    .collect()
-            },
+            // Kept under the setting Off too, which only stops them from
+            // turning Ares on ([`Self::kept_off`]).
+            keys: reads
+                .ares_only()
+                .map(|(section, key)| (section.to_owned(), key.to_owned()))
+                .collect(),
             ships_ares,
             keys_off: keys_off && !ships_ares,
         }
     }
 
+    /// The Ares key that turns Ares on once the projection's own reads are
+    /// in: the first that only Ares readers found and that remains after the
+    /// projection's stock and Phobos reads.
+    fn deciding_key<'a>(&'a self, projection: &'a KeyReads) -> Option<(&'a str, &'a str)> {
+        self.keys
+            .iter()
+            .map(|(section, key)| (section.as_str(), key.as_str()))
+            .filter(|(section, key)| !projection.read_outside_ares(section, key))
+            .chain(projection.ares_only())
+            .min()
+    }
+
     /// Whether Ares plays once the projection's own reads are in: `ares.mix`
-    /// ships, or a key only Ares readers found remains after the
-    /// projection's stock and Phobos reads. The deciding input goes to the
-    /// log, so a modder can see why.
+    /// ships, or a key only Ares readers found remains
+    /// ([`Self::deciding_key`]) and the player's Ares setting is not Off. The
+    /// deciding input goes to the log, so a modder can see why.
     pub(crate) fn decide(&self, projection: &KeyReads) -> bool {
         if self.ships_ares {
             log::info!("Ares plays in this game: ares.mix is installed or the Ares setting is On");
             return true;
         }
-        if self.keys_off {
-            return false;
+        match self.deciding_key(projection) {
+            Some((section, key)) if self.keys_off => {
+                log::info!(
+                    "Ares stays off in this game, as the Ares setting Off says: [{section}] {key} \
+                     is an Ares key"
+                );
+                false
+            }
+            Some((section, key)) => {
+                log::info!("Ares plays in this game: [{section}] {key} is an Ares key");
+                true
+            }
+            None => false,
         }
-        let key = self
-            .keys
-            .iter()
-            .map(|(section, key)| (section.as_str(), key.as_str()))
-            .filter(|(section, key)| !projection.read_outside_ares(section, key))
-            .chain(projection.ares_only())
-            .min();
-        if let Some((section, key)) = key {
-            log::info!("Ares plays in this game: [{section}] {key} is an Ares key");
-        }
-        key.is_some()
+    }
+
+    /// VERA: whether the player's Ares setting Off is what keeps Ares from
+    /// playing: the game holds a key that turns Ares on under Auto. Such a
+    /// game is another than the one a player set to Auto plays from the same
+    /// files; with no such key the two are the same game.
+    pub(crate) fn kept_off(&self, projection: &KeyReads) -> bool {
+        self.keys_off && self.deciding_key(projection).is_some()
     }
 }

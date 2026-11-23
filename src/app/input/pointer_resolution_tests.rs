@@ -2,7 +2,7 @@
 
 use super::MatchInputState;
 use crate::app::input::hotkeys::HotkeyBindings;
-use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
+use crate::ui::main_menu_dialogs::options::{FrameShape, ZoomGeometry};
 
 fn input() -> MatchInputState {
     MatchInputState::new(HotkeyBindings::default())

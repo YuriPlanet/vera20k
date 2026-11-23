@@ -1030,6 +1030,8 @@ fn smudge_shp_candidates(name: &str, theater_ext: &str) -> Vec<String> {
 }
 
 fn forced_tiberium_image_name() -> Option<&'static str> {
+    // A process-wide debug switch, read once from the environment (listed with
+    // the render toggles in tools/telemetry-dashboard/README.md).
     static FORCED: OnceLock<Option<String>> = OnceLock::new();
     FORCED
         .get_or_init(|| {
@@ -1319,7 +1321,12 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
             max_texture_dim
         );
     }
-    let atlas_height = used_height.min(max_texture_dim);
+    // A page of empty frames has no rows; the device wants at least one. A
+    // sprite placed past a clamped page would sample outside it: it is left
+    // out instead, and the log says how many.
+    let atlas_height = used_height.min(max_texture_dim).max(1);
+    let atlas_width = atlas_width.max(1);
+    let mut left_out = 0usize;
 
     let mut rgba: Vec<u8> = vec![0u8; (atlas_width * atlas_height * 4) as usize];
     let mut source_indices = vec![0u8; (atlas_width * atlas_height) as usize];
@@ -1333,6 +1340,10 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
         let spr: &RenderedOverlay = &sprites[placed.index];
         let w: u32 = spr.width;
         let h: u32 = spr.height;
+        if py.saturating_add(h) > atlas_height || px.saturating_add(w) > atlas_width {
+            left_out += 1;
+            continue;
+        }
 
         for y in 0..h {
             let src_start: usize = (y * w * 4) as usize;
@@ -1360,6 +1371,11 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
         );
     }
 
+    if left_out > 0 {
+        log::error!(
+            "Overlay atlas: {left_out} sprites past the {atlas_width}x{atlas_height} px page this GPU allows are left out"
+        );
+    }
     PackedOverlaySprites {
         rgba,
         source_indices,

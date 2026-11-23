@@ -155,6 +155,7 @@ pub(crate) enum ScenarioExitDestination {
     CooperativeResult {
         victory: bool,
     },
+    AuthoredCampaignResult(crate::sim::house_state::HouseOutcomeKind),
     MainMenu,
 }
 
@@ -290,10 +291,9 @@ impl ScenarioExitCascade {
         Self::start_holding_banner(wall_ms, destination, false)
     }
 
-    /// `hold_banner` gives the verdict its beat before the retail fade starts.
-    /// It is set for a match whose own win/lose card is on screen
-    /// (`[EndGameScreens]` behind the player's switch); every other exit —
-    /// campaign, abort, no card — is the retail one.
+    /// `hold_banner` keeps the verdict on the battlefield before the retail
+    /// fade starts. A custom country card or an undrawn skirmish verdict uses
+    /// this hold. Other exits enter the retail fade immediately.
     pub(crate) fn start_holding_banner(
         wall_ms: u64,
         destination: ScenarioExitDestination,

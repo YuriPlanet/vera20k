@@ -122,7 +122,7 @@ fn health_after_hit(rules: &RuleSet, health: i32, elite_attacker: bool) -> i32 {
         rules,
         None,
         event,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.substrate
         .entities
@@ -264,7 +264,7 @@ fn kill_human_vehicle(rules: &RuleSet, damage: i32) -> (Simulation, u64) {
         rules,
         None,
         event,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     (sim, target)
 }
@@ -310,7 +310,7 @@ fn non_malicious_hits_raise_no_own_building_alert() {
             malicious,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(ping.is_some());
         sim.sound_events

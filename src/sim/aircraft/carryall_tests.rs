@@ -209,7 +209,7 @@ fn a_tethered_unit_refuses_want_ride() {
             RadioMessage::WantRide,
             RadioPayload::default(),
             &fx.rules,
-            Default::default(),
+            &mut Default::default(),
         )
     };
     assert_eq!(want_ride(&mut fx), RadioResponse::Roger);
@@ -218,6 +218,7 @@ fn a_tethered_unit_refuses_want_ride() {
         .entities
         .get_mut(tank)
         .unwrap()
+        .seldom
         .tether
         .set_for_test(Some(carryall));
     assert_eq!(want_ride(&mut fx), RadioResponse::Negatory);

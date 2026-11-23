@@ -60,24 +60,30 @@ const FAR: (u16, u16) = (1, 5);
 /// for a MoveToShroud lead). Ares' own rows answer Tote, Detonate and Damage.
 #[test]
 fn the_override_table_follows_the_shroud_switch() {
-    begin_query();
-    set_cursor(0x60, action::MOVE);
-    set_cursor(0x61, action::ATTACK);
-    assert_eq!(cursor_from_action(action::ATTACK, false, false), 0x61);
-    assert_eq!(cursor_from_action(action::ATTACK, true, false), 0x60);
-    assert_eq!(cursor_from_action(action::NO_MOVE, true, true), 0x60);
+    let mut table = CursorOverrides::default();
+    table.set_cursor(0x60, action::MOVE);
+    table.set_cursor(0x61, action::ATTACK);
+    assert_eq!(table.cursor_from_action(action::ATTACK, false, false), 0x61);
+    assert_eq!(table.cursor_from_action(action::ATTACK, true, false), 0x60);
+    assert_eq!(table.cursor_from_action(action::NO_MOVE, true, true), 0x60);
     assert_eq!(
-        cursor_from_action(action::NO_MOVE, true, false),
+        table.cursor_from_action(action::NO_MOVE, true, false),
         index::NO_MOVE
     );
-    assert_eq!(cursor_from_action(0x11, false, false), index::TOTE);
-    assert_eq!(cursor_from_action(0x37, false, false), index::DETONATE);
+    assert_eq!(table.cursor_from_action(0x11, false, false), index::TOTE);
     assert_eq!(
-        cursor_from_action(action::DAMAGE, false, false),
+        table.cursor_from_action(0x37, false, false),
+        index::DETONATE
+    );
+    assert_eq!(
+        table.cursor_from_action(action::DAMAGE, false, false),
         index::DEFAULT
     );
-    begin_query();
-    assert_eq!(cursor_from_action(action::ATTACK, true, false), index::MOVE);
+    let empty = CursorOverrides::default();
+    assert_eq!(
+        empty.cursor_from_action(action::ATTACK, true, false),
+        index::MOVE
+    );
 }
 
 /// The tank's `Cursor.Move` (`0x6FFEC0`/`0x700600`) shows over ground, and
@@ -93,23 +99,51 @@ fn cursor_keys_name_the_tactical_cursors() {
     let cursors = rules.ares_mouse_cursors();
     let [spin, still] = ["Spin", "Still"].map(|name| cursors.find(name).unwrap() as u16);
     let selected = [tank];
-    let moving = query(&sim, &rules, &selected).selection_action(GROUND, None);
+    let (moving, moving_table) = query(&sim, &rules, &selected).selection_action(GROUND, None);
     assert_eq!(moving, Some(CursorFeedbackKind::Move));
-    assert_eq!(
-        tactical(moving.unwrap(), 1, Some(&rules)),
-        CursorFeedbackKind::AresAction(spin)
-    );
     let forced = ActionQuery {
         modifier: OrderModifier::ForceFire,
         ..query(&sim, &rules, &selected)
     };
-    let firing = forced.selection_action(FAR, None);
+    let (firing, firing_table) = forced.selection_action(FAR, None);
     assert_eq!(firing, Some(CursorFeedbackKind::EnemyOutOfRange));
     assert_eq!(
-        tactical(firing.unwrap(), 1, Some(&rules)),
+        tactical(firing.unwrap(), &firing_table, 1, Some(&rules)),
         CursorFeedbackKind::AresAction(still)
     );
+    // Each query's table is its own: the forced query asked after the Move
+    // one leaves the Move answer's cursor as its own query chose it.
+    assert_eq!(
+        tactical(moving.unwrap(), &moving_table, 1, Some(&rules)),
+        CursorFeedbackKind::AresAction(spin)
+    );
     assert_eq!(sim.state_hash(), before);
+}
+
+/// Ares' EMP deployer hook (`0x0051E3B0`) returns before the Techno
+/// What_Action whose entry hooks write the table (`0x7000CD`), so an EMP'd
+/// GI over himself shows the stock NoDeploy, not his `Cursor.NoDeploy`.
+#[test]
+fn an_emped_deployer_shows_the_stock_no_deploy() {
+    let patch = "[MouseCursors]\nStill=110,1,0,63,1\n[E1]\nCursor.NoDeploy=Still\n";
+    let Some((mut sim, rules)) = scene(patch) else {
+        return;
+    };
+    let gi = sim
+        .spawn_object("E1", "Local", 12, 5, 0, &rules)
+        .expect("GI");
+    sim.resolve_type_handles(&rules);
+    sim.entity_mut_for_test(gi)
+        .unwrap()
+        .set_emp_remaining_for_test(150);
+    let selected = [gi];
+    let hover = crate::app::input::entity_pick::hover_object_by_id(&sim, gi, "Local");
+    let (kind, table) = query(&sim, &rules, &selected).selection_action((12, 5), hover);
+    assert_eq!(kind, Some(CursorFeedbackKind::NoDeploy));
+    assert_eq!(
+        tactical(kind.unwrap(), &table, 1, Some(&rules)),
+        CursorFeedbackKind::NoDeploy
+    );
 }
 
 /// `0x653CA6`: the radar keeps an overridden action only when its cursor has

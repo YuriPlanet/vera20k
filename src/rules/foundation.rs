@@ -133,12 +133,46 @@ impl Foundation {
         i32::from(self.dimensions().1) + i32::from(include_bib && bib)
     }
 
-    /// Type+DFC, returned by45EC20. Custom cells have the executed Ares
-    /// 1000DF78 sort/unique order (X first, then Y); stock rows are unchanged.
-    pub fn cell_offsets(&self) -> Vec<(i16, i16)> {
+    /// Type+DFC, returned by45EC20, read in place: a stock rectangle row by
+    /// row, the refinery's special list, or a custom foundation's cells in
+    /// the executed Ares 1000DF78 sort/unique order (X first, then Y).
+    pub fn cell_offsets(&self) -> impl Iterator<Item = (i16, i16)> + '_ {
+        let (rectangle, listed): (Option<(u16, u16)>, &[(i16, i16)]) = match self {
+            Self::Stock(id) => {
+                let def = &FOUNDATION_TABLE[usize::from(*id)];
+                if def.id == REFINERY_FOUNDATION_ID {
+                    (None, &REFINERY_CELL_OFFSETS)
+                } else {
+                    (Some((def.width, def.height)), &[])
+                }
+            }
+            Self::Custom(custom) => (None, &custom.cells),
+            Self::InvalidCustom => unreachable!("invalid foundation rejected before projection"),
+        };
+        rectangle
+            .into_iter()
+            .flat_map(|(width, height)| {
+                (0..height).flat_map(move |dy| (0..width).map(move |dx| (dx as i16, dy as i16)))
+            })
+            .chain(listed.iter().copied())
+    }
+
+    /// Whether [`Self::cell_offsets`] yields `offset`, without walking it: a
+    /// stock rectangle by its bounds, the refinery's eight-entry list, and a
+    /// custom list by binary search over its sorted, unique cells.
+    pub fn contains_cell_offset(&self, offset: (i16, i16)) -> bool {
         match self {
-            Self::Stock(_) => foundation_cell_offsets(self.name()),
-            Self::Custom(custom) => custom.cells.clone(),
+            Self::Stock(id) => {
+                let def = &FOUNDATION_TABLE[usize::from(*id)];
+                if def.id == REFINERY_FOUNDATION_ID {
+                    REFINERY_CELL_OFFSETS.contains(&offset)
+                } else {
+                    let (dx, dy) = offset;
+                    (0..i32::from(def.width)).contains(&i32::from(dx))
+                        && (0..i32::from(def.height)).contains(&i32::from(dy))
+                }
+            }
+            Self::Custom(custom) => custom.cells.binary_search(&offset).is_ok(),
             Self::InvalidCustom => unreachable!("invalid foundation rejected before projection"),
         }
     }
@@ -153,16 +187,12 @@ impl Foundation {
     ///4A94F0 / Ares10011980 and6D50FB: cursor bounds come from the actual
     /// terminated cell list, independently of declared width/height.
     pub fn cell_bounds(&self) -> (i16, i16, i16, i16) {
-        let cells = self.cell_offsets();
-        if cells.is_empty() {
-            return (0, 0, 0, 0);
-        }
-        cells.iter().fold(
-            (512, 512, -512, -512),
-            |(min_x, min_y, max_x, max_y), &(x, y)| {
-                (min_x.min(x), min_y.min(y), max_x.max(x), max_y.max(y))
-            },
-        )
+        self.cell_offsets()
+            .fold(None, |bounds, (x, y)| {
+                let (min_x, min_y, max_x, max_y) = bounds.unwrap_or((512, 512, -512, -512));
+                Some((min_x.min(x), min_y.min(y), max_x.max(x), max_y.max(y)))
+            })
+            .unwrap_or((0, 0, 0, 0))
     }
 
     pub fn placement_origin_at_cursor(&self, cursor: (u16, u16)) -> (u16, u16) {
@@ -478,33 +508,28 @@ pub fn placement_origin_at_cursor(value: &str, cursor: (u16, u16)) -> (u16, u16)
     Foundation::from(value).placement_origin_at_cursor(cursor)
 }
 
+/// `3x3Refinery`'s table id.
+const REFINERY_FOUNDATION_ID: u8 = 9;
+
+/// `3x3Refinery`'s native list, which deliberately omits `(2, 1)`.
+const REFINERY_CELL_OFFSETS: [(i16, i16); 8] = [
+    (0, 0),
+    (1, 0),
+    (2, 0),
+    (0, 1),
+    (1, 1),
+    (0, 2),
+    (1, 2),
+    (2, 2),
+];
+
 /// Exact sentinel-list contents for one native foundation, without the final
-/// `(0x7FFF, 0x7FFF)` terminator.
+/// `(0x7FFF, 0x7FFF)` terminator ([`Foundation::cell_offsets`]).
 ///
 /// All table entries are row-major rectangles except `3x3Refinery`, whose
 /// native list deliberately omits `(2, 1)`. `0x0` has no cell offsets.
 pub fn foundation_cell_offsets(value: &str) -> Vec<(i16, i16)> {
-    let def = foundation_def(value);
-    if def.id == 9 {
-        return vec![
-            (0, 0),
-            (1, 0),
-            (2, 0),
-            (0, 1),
-            (1, 1),
-            (0, 2),
-            (1, 2),
-            (2, 2),
-        ];
-    }
-
-    let mut offsets = Vec::with_capacity(usize::from(def.width) * usize::from(def.height));
-    for dy in 0..def.height {
-        for dx in 0..def.width {
-            offsets.push((dx as i16, dy as i16));
-        }
-    }
-    offsets
+    Foundation::from(value).cell_offsets().collect()
 }
 
 #[cfg(all(test, tests_rules_a_n))]
@@ -528,6 +553,30 @@ mod tests {
             rules.object("TEST").unwrap().foundation,
             Foundation::default()
         );
+    }
+
+    /// The membership search relies on the reader keeping a custom list
+    /// sorted and unique, whatever order the art lists its cells in.
+    #[test]
+    fn custom_cells_are_found_whatever_order_the_art_lists_them_in() {
+        use crate::rules::ini_parser::IniFile;
+        let art = IniFile::from_str(
+            "[ART]\nFoundation=Custom\nFoundation.X=3\nFoundation.Y=2\n\
+            Foundation.0=2,1\nFoundation.1=0,0\nFoundation.2=1,0\nFoundation.3=0,0\n",
+        );
+        let mut foundation = Foundation::default();
+        foundation.read_custom_pass(art.section_or_empty("ART"));
+        let listed = [(0, 0), (1, 0), (2, 1)];
+        assert_eq!(foundation.cell_offsets().collect::<Vec<_>>(), listed);
+        for dx in -1..4 {
+            for dy in -1..3 {
+                assert_eq!(
+                    foundation.contains_cell_offset((dx, dy)),
+                    listed.contains(&(dx, dy)),
+                    "({dx}, {dy})"
+                );
+            }
+        }
     }
 
     #[test]

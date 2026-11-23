@@ -2,7 +2,7 @@
 
 `country_veterancy.py` reuses the shared `BulletReader` native runtime and
 `native_oracle` checked runner. All fixture names and object priors are
-synthetic. No game asset, MO rule or configuration is included.
+synthetic. No game asset, mod rule or configuration is included.
 
 ```sh
 python -m tools.rules_oracle.country_veterancy --check

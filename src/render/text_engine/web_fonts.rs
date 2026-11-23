@@ -23,7 +23,7 @@
 //! fetched there.
 #![cfg_attr(
     not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")),
-    allow(dead_code)
+    expect(dead_code, reason = "only the browser build fetches fonts")
 )]
 
 use std::path::Path;
@@ -78,6 +78,11 @@ enum Fetch {
 
 /// Every font asked for, by its place in [`fonts::bundled`]. A font is asked
 /// for once a session; one that fails stays out.
+///
+/// Process-wide because every [`super::TextEngine`] (shell, loading, match)
+/// registers the same fetched fonts, and a browser fetch completes in a
+/// promise continuation that holds none of them; a `static` must be `Sync`,
+/// hence this lock and [`ARRIVALS`]'s atomic.
 static FETCHES: Mutex<Vec<(usize, Fetch)>> = Mutex::new(Vec::new());
 /// Fonts fetched so far: an engine that saw fewer looks for new ones.
 static ARRIVALS: AtomicUsize = AtomicUsize::new(0);
@@ -99,7 +104,10 @@ pub(super) fn fetched(place: usize) -> Option<Blob<u8>> {
 /// browser package, or elsewhere from `folder`.
 #[cfg_attr(
     all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
-    allow(unused_variables)
+    expect(
+        unused_variables,
+        reason = "the browser build fetches from its package"
+    )
 )]
 pub(super) fn fetch(place: usize, folder: Option<&Path>) {
     {
@@ -200,7 +208,9 @@ mod browser {
     }
 
     thread_local! {
-        /// [`preload`]'s promise, made once.
+        /// [`preload`]'s promise, made once. A thread-local because a JS
+        /// promise is a `!Send` handle on the browser's main thread, and the
+        /// host asks for it through a `#[wasm_bindgen]` export with no receiver.
         static PRELOAD: std::cell::OnceCell<js_sys::Promise> = const { std::cell::OnceCell::new() };
     }
 

@@ -1,6 +1,7 @@
 //! Walk75C240 retained head and Infantry5217C0/521850 raw subcell leaves.
 //! The raw bits and mark-time house are canonical; no later occupancy rebuild
 //! reconstructs the history from the path or a changed terrain layer.
+use super::ground_pose;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::sim::{
     components::DriveCoord,
@@ -16,15 +17,15 @@ pub(crate) fn selected_head(
     input_ground_z: i32,
     bridge: bool,
 ) -> DriveCoord {
+    head_at_surface(input, slot, ground_pose::z_at_height(input_ground_z, 0, bridge))
+}
+
+fn head_at_surface(input: DriveCoord, slot: u8, z: i32) -> DriveCoord {
     let (x, y) = crate::util::lepton::subcell_offset(slot);
     DriveCoord {
         x: (input.x & !255).wrapping_add(x),
         y: (input.y & !255).wrapping_add(y),
-        z: input_ground_z.wrapping_add(if bridge {
-            crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-        } else {
-            0
-        }),
+        z,
     }
 }
 
@@ -44,9 +45,8 @@ pub(crate) fn raw_at(
         .map_or(RawCellKey::Real(cell.0, cell.1), |(t, c)| {
             RawCellKey::from_native(t, c)
         });
-    let ground =
-        super::ground_pose::ground_surface_z_at([coord.x, coord.y], false, terrain, fallback)
-            .unwrap_or(coord.z);
+    let deck_surface = ground_pose::ground_surface_z_at([coord.x, coord.y], true, terrain, fallback)
+        .unwrap_or_else(|| ground_pose::z_at_height(coord.z, 0, true));
     let structural = terrain.zip(identity).map_or_else(
         || {
             fallback
@@ -55,8 +55,7 @@ pub(crate) fn raw_at(
         },
         |(t, c)| t.native_cell_flags(c) & 0x100 != 0,
     );
-    let deck = coord.z >= ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
-        && (!put || structural);
+    let deck = coord.z >= deck_surface && (!put || structural);
     let mask = infantry_raw_occupation_mask(
         SimFixed::from_num(coord.x % 256),
         SimFixed::from_num(coord.y % 256),
@@ -79,7 +78,8 @@ pub(super) fn finish_fresh_head(
     let Some(loco) = entity.locomotor.as_mut() else {
         return false;
     };
-    if loco.active_kind() != crate::rules::locomotor_type::LocomotorKind::Walk {
+    let mech = loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Mech;
+    if !mech && loco.active_kind() != crate::rules::locomotor_type::LocomotorKind::Walk {
         return false;
     }
     let Some(head) = loco.step_head() else {
@@ -92,7 +92,15 @@ pub(super) fn finish_fresh_head(
             head.x.wrapping_sub(current.x),
             head.y.wrapping_sub(current.y),
         );
-        super::locomotor_turn::walk_do_turn(entity, facing, native_frame);
+        if mech {
+            // Mech 5B10F7..5B111C sets the target and waits for its hull.
+            super::drive_do_turn(entity, facing, native_frame);
+            if entity.body_facing.is_rotating(native_frame) {
+                return true;
+            }
+        } else {
+            super::locomotor_turn::walk_do_turn(entity, facing, native_frame);
+        }
         entity
             .foot_speed
             .set_speed_fraction(crate::util::fixed_math::SIM_ONE);
@@ -151,8 +159,17 @@ impl crate::sim::world::Simulation {
         request: Option<DriveCoord>,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: crate::sim::world::FrameEffects<'_>,
+        frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<bool, String> {
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|a| a.locomotor.as_ref())
+            .is_some_and(|l| l.active_kind() == crate::rules::locomotor_type::LocomotorKind::Mech)
+        {
+            return self.mech_set_head(id, request, rules, registry, frame_effects);
+        }
         let grid = self.path_grid_snapshot();
         let selection = select_step_head_at(
             &mut self.substrate.entities,
@@ -210,17 +227,29 @@ impl crate::sim::world::Simulation {
     /// (+0x30), runs [`Self::walk_find_sub_cell_dest`] on `coord` (`None` is
     /// the null coordinate) and then, with both its head and its destination
     /// null, clears IsMoving and calls the owner's +0x54C when the byte had
-    /// been set (`0x0075AE5B..0x0075AE9A`). Every other VERA locomotor holds
-    /// the base slot, `ret 0x10` (`0x0055AC00`); Mech's (`0x005B01A0`) has no
-    /// VERA locomotor.
+    /// been set (`0x0075AE5B..0x0075AE9A`). Mech (0x005B01A0) stores all three supplied
+    /// coordinate words in its head. The other installed classes have the base no-op.
     pub(crate) fn foot_force_immediate_destination(
         &mut self,
         id: u64,
         coord: Option<DriveCoord>,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: crate::sim::world::FrameEffects<'_>,
+        frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<(), String> {
+        if let Some(loco) = self
+            .substrate
+            .entities
+            .get_mut_if(id, |actor| {
+                actor.locomotor.as_ref().is_some_and(|loco| {
+                    loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Mech
+                })
+            })
+            .and_then(|actor| actor.locomotor.as_mut())
+        {
+            loco.set_step_head(coord.filter(|c| *c != super::foot_coordinate::NULL_COORD));
+            return Ok(());
+        }
         let Some(was_moving) = self
             .substrate
             .entities
@@ -352,7 +381,7 @@ mod tests {
                 0,
                 Some((3, 4)),
             ));
-        slave.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), Vec::new());
+        slave.seldom.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), Vec::new());
         let current = super::super::ground_pose::position_world_coord(&slave.position);
         entities.insert(slave);
         let terrain = ResolvedTerrainGrid::from_cells(
@@ -844,7 +873,7 @@ mod tests {
             Some(DriveCoord::cell(7, 5, 0)),
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let actor = sim.substrate.entities.get(id).unwrap();
@@ -1005,12 +1034,13 @@ pub(super) fn select_step_head_at(
         priority |= slave_priority;
     }
     //75C4C8 reloads input Cell after the complete priority corridor.
-    let (structural, raw_key) = terrain.map_or_else(
+    let (structural, raw_key, corrected_deck) = terrain.map_or_else(
         || {
             (
                 grid.and_then(|g| g.cell(next.0, next.1))
                     .is_some_and(|c| c.bridge_structural),
                 RawCellKey::Real(next.0, next.1),
+                None,
             )
         },
         |t| {
@@ -1018,14 +1048,29 @@ pub(super) fn select_step_head_at(
             (
                 t.native_cell_flags(selected) & 0x100 != 0,
                 RawCellKey::from_native(t, selected),
+                ground_pose::corrected_deck_z(t, selected),
             )
         },
     );
-    let bridge = structural
-        && current.z
-            > super::ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
-                .unwrap_or(current.z)
-                .wrapping_add(312);
+    let sample_ground = || {
+        ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
+            .unwrap_or(current.z)
+    };
+    let bridge = structural && {
+        let ground = sample_ground();
+        if let Some(deck) = corrected_deck {
+            // Walk75C4C8's stock threshold assumes a four-level gap. Follow
+            // the nearer surface of a corrected Cell and retain the current
+            // layer when the elevations are equally close.
+            match current.z.abs_diff(deck).cmp(&current.z.abs_diff(ground)) {
+                std::cmp::Ordering::Less => true,
+                std::cmp::Ordering::Equal => entity.on_bridge(),
+                std::cmp::Ordering::Greater => false,
+            }
+        } else {
+            current.z > ground.wrapping_add(312)
+        }
+    };
     let layer = if bridge {
         MovementLayer::Bridge
     } else {
@@ -1049,9 +1094,11 @@ pub(super) fn select_step_head_at(
         raw_at(raw, owner, current, true, terrain, grid);
         return StepHead::Done(false);
     };
-    let ground = super::ground_pose::ground_surface_z_at([input.x, input.y], false, terrain, grid)
-        .unwrap_or(current.z);
-    let head = selected_head(input, slot, ground, bridge);
+    let head = if let Some(deck) = corrected_deck.filter(|_| bridge) {
+        head_at_surface(input, slot, deck)
+    } else {
+        selected_head(input, slot, sample_ground(), bridge)
+    };
     let Some(loco) = entities.get_mut(id).and_then(|e| e.locomotor.as_mut()) else {
         return StepHead::Done(false);
     };

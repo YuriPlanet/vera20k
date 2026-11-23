@@ -309,18 +309,35 @@ impl LoadingRequest {
         startup: &crate::sim::replay::ReplayStartup,
         map_beside: Option<&str>,
     ) -> anyhow::Result<Self> {
-        let launch = startup.launch_descriptor(map_beside.unwrap_or(startup.map_name()))?;
+        let map_file = map_beside.unwrap_or(startup.map_name());
+        let seed = crate::app::match_bootstrap::MatchSeed {
+            value: startup.seed(),
+            source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
+            seed_authority_certifying: false,
+        };
+        let game_mode = startup.game_mode();
+        let native_id_prefix = startup.native_id_prefix()?;
+        let loading_startup = if let Some(start) = startup.authored_campaign() {
+            LoadingStartup::AuthoredCampaignReplay {
+                start: Box::new(start.clone()),
+                logical_map: startup.map_name().to_owned(),
+                local_map: map_file.to_owned(),
+                map_sha256: startup.map_sha256().to_owned(),
+                game_speed: startup.game_speed(),
+                seed,
+                game_mode,
+                native_id_prefix,
+            }
+        } else {
+            LoadingStartup::Replay {
+                launch: Box::new(startup.launch_descriptor(map_file)?),
+                game_mode,
+                native_id_prefix,
+                seed,
+            }
+        };
         Ok(Self {
-            startup: LoadingStartup::Replay {
-                launch: Box::new(launch),
-                game_mode: startup.game_mode(),
-                native_id_prefix: startup.native_id_prefix()?,
-                seed: crate::app::match_bootstrap::MatchSeed {
-                    value: startup.seed(),
-                    source: crate::app::match_bootstrap::MatchSeedSource::SavedScenario,
-                    seed_authority_certifying: false,
-                },
-            },
+            startup: loading_startup,
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
@@ -423,16 +440,31 @@ impl LoadingRequest {
         map_additions: Option<&crate::app::mod_additions::MapAdditions>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<MapLoadInitial> {
+        let replay_map = match self.startup() {
+            LoadingStartup::AuthoredCampaignReplay { logical_map, local_map, map_sha256, .. }
+                if local_map == logical_map =>
+            {
+                crate::map::source::matching_loose_map_path(
+                    &ra2_dir, asset_manager.mod_dir(), logical_map, map_sha256,
+                )
+            }
+            _ => None,
+        };
+        let map_file = replay_map
+            .as_deref()
+            .and_then(Path::to_str)
+            .unwrap_or_else(|| self.startup().physical_map_file());
         let mut loaded = init::load_map_initial_with_assets(
             ra2_dir,
             asset_manager,
             native_rules,
             resident,
-            Some(self.startup().physical_map_file()),
+            Some(map_file),
             self.startup()
                 .launch_session()
                 .map(|launch| launch.mode.override_file.as_str()),
             self.startup().session_mode(),
+            self.startup().ai_file(asset_manager),
             self.the_team_enabled,
             self.startup().match_seed(),
             progress,
@@ -480,10 +512,14 @@ impl LoadingRequest {
         {
             loaded = loaded.with_mod_additions(&additions)?;
         }
-        match map_additions {
-            Some(additions) => loaded.with_mod_additions(additions),
-            None => Ok(loaded),
+        let mut loaded = match map_additions {
+            Some(additions) => loaded.with_mod_additions(additions)?,
+            None => loaded,
+        };
+        if !matches!(self.startup(), LoadingStartup::Network(_)) {
+            loaded = loaded.with_ra2_campaign_fixups(map_file)?;
         }
+        Ok(loaded)
     }
 
     fn skirmish_launch_session(&self) -> Option<&SkirmishLaunchSession> {
@@ -661,7 +697,7 @@ impl PreparedScenarioLoad {
     }
 }
 
-#[allow(
+#[expect(
     clippy::large_enum_variant,
     reason = "one stage per loading session; Prepared carries the Selected request onward"
 )]
@@ -1116,7 +1152,15 @@ fn bind_early_country_loading(
             index.0
         )
     })?;
-    let palette_name = country.files().1.to_owned();
+    // `-ra2`: original game.exe binds one MPLS.PAL for every Country (only
+    // the observer uses MPLSOBS.PAL). The YR per-country MPLSU/MPLSR/... PALs
+    // in the Country table are absent from an RA2 install, so keep them out
+    // of the frozen early observation and let the SHP render with MPLS.PAL.
+    let palette_name = if crate::util::ra2_launch::enabled() {
+        "MPLS.PAL".to_owned()
+    } else {
+        country.files().1.to_owned()
+    };
     let palette = if palette_name.is_empty() {
         None
     } else {
@@ -1330,6 +1374,9 @@ fn prepare_session_for_loading(
         LoadingStartup::Replay {
             launch, game_mode, ..
         } => session.begin_replay(*game_mode, launch.session().local_player().name.clone()),
+        LoadingStartup::AuthoredCampaignReplay { game_mode, .. } => {
+            session.begin_replay(*game_mode, String::new())
+        }
         startup => session.begin_offline(
             startup.session_mode(),
             startup
@@ -1339,30 +1386,33 @@ fn prepare_session_for_loading(
     }
 }
 
-/// VERA: a network match plays the rules its room took from its host
-/// (`HostRules`), which the room's agreement already compared. A replay
-/// applies the exact simulation switches recorded by its blueprint.
+/// VERA: a network match plays the switches its room agreed on
+/// ([`MatchSession::network_personal_rules`]); the session holds this start
+/// frozen. A replay applies the exact simulation switches recorded by its
+/// blueprint; an offline game plays the player's own.
+///
+/// [`MatchSession::network_personal_rules`]: crate::app::match_runtime::session::MatchSession::network_personal_rules
 fn play_startup_personal_rules(
     process_assets: &mut crate::app::process_assets::ProcessAssets,
+    session: &crate::app::match_runtime::session::MatchSession,
     startup: &LoadingStartup,
 ) {
-    let room = match startup {
-        LoadingStartup::Network(startup) => &startup.launch_session().options.host_rules,
+    let rules = match startup {
+        LoadingStartup::Network(_) => session
+            .network_personal_rules()
+            .unwrap_or_else(|| Err("the start has no room setup".into()))
+            .unwrap_or_else(|error| {
+                // The room's agreement refused these before its start.
+                log::error!("The room's rules do not read: {error}");
+                Default::default()
+            }),
+        LoadingStartup::AuthoredCampaignReplay { .. } => Default::default(),
         LoadingStartup::Replay { launch, .. } => {
-            return process_assets
-                .use_personal_rules(launch.personal_rules().cloned().unwrap_or_default());
+            launch.personal_rules().cloned().unwrap_or_default()
         }
         _ => return process_assets.use_own_personal_rules(),
     };
-    match room.personal_rules() {
-        Ok(rules) => process_assets.use_personal_rules(rules),
-        // A network room refused these before its start; a replay plays on
-        // without them and its check reports the difference.
-        Err(error) => {
-            log::error!("The room's rules do not read: {error}");
-            process_assets.use_personal_rules(Default::default());
-        }
-    }
+    process_assets.use_personal_rules(rules);
 }
 
 pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
@@ -1375,10 +1425,14 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
-    play_startup_personal_rules(&mut state.process_assets, request.startup());
     // The shell writes GameMode before the loading screen (`0x0052E10F`
     // Skirmish, `0x0052E175` campaign); the session owner is live from here.
     prepare_session_for_loading(&mut state.match_state.session, request.startup());
+    play_startup_personal_rules(
+        &mut state.process_assets,
+        &state.match_state.session,
+        request.startup(),
+    );
     let mut request = request.with_skirmish_colors(
         state
             .rules()
@@ -2300,13 +2354,17 @@ fn ensure_session_job_asset_manager(
                 );
             }
             process_assets.note_lease_ended_without_return();
-            process_assets.reconstruct_manager(
+            let rebuilt = process_assets.reconstruct_manager(
                 session
                     .job
                     .ra2_dir
                     .as_deref()
                     .expect("RA2 directory was initialized above"),
-            )?
+            )?;
+            // The rebuilt manager is the game's from here on, so its answer
+            // is the launch's again, whatever another command published since.
+            rebuilt.open_for_play();
+            rebuilt
         };
         session.job.asset_manager = Some(asset_manager);
     }
@@ -2372,8 +2430,7 @@ fn poll_network_load_wait(
             // failure path before the world can be installed.
             state.frontend.loading_session = Some(session);
             let text =
-                crate::app::frontend::shell_pass::resolve_csf(state, "TXT_SYSTEM_NOT_RESPONDING")
-                    .into_owned();
+                state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             return Ok(LoadingPump::Failed(anyhow::anyhow!(text)));
         }
         let LoadingStage::AwaitingPeers { result, .. } = session.stage else {
@@ -2730,6 +2787,9 @@ fn ensure_loading_composition_snapshot(state: &mut AppState) {
         let LoadingStage::Prepared(prepared) = &session.stage else {
             return;
         };
+        if prepared.request.startup().authored_campaign().is_some() {
+            return;
+        }
         let context = &prepared.context;
         let initial = &prepared.initial;
         let launch_session = context.stock_offline_launch().session();
@@ -3332,6 +3392,21 @@ fn fail_loading_with(
     notify: bool,
 ) {
     log::warn!("Could not load map: {err:#}");
+    let campaign_room = state.match_state.session.campaign_room().is_some();
+    let campaign_replay = state
+        .frontend
+        .loading_session
+        .as_ref()
+        .is_some_and(|loading| {
+            matches!(loading.stage.startup(), LoadingStartup::AuthoredCampaignReplay { .. })
+        });
+    let campaign_notice = if campaign_room {
+        Some("VERA:CampaignRoomUnavailable")
+    } else if campaign_replay {
+        Some("VERA:CampaignReplayUnavailable")
+    } else {
+        None
+    };
     let policy = retire_failed_loading_attempt(
         &mut state.frontend.loading_session,
         &mut state.match_state.startup,
@@ -3340,7 +3415,10 @@ fn fail_loading_with(
     );
     reset_loading_presentation(state);
     if state.frontend.external_launch {
-        state.frontend.external_launch_error = Some(format!("CnCNet map loading failed: {err:#}"));
+        state.frontend.external_launch_error = Some(campaign_notice.map_or_else(
+            || format!("CnCNet map loading failed: {err:#}"),
+            crate::i18n::tr,
+        ));
         crate::app::App::return_to_main_menu(state);
         return;
     }
@@ -3353,13 +3431,13 @@ fn fail_loading_with(
         // network StartScenario call52E745 follows the same retry at52E75F;
         // GameMode3 re-enters LAN at52DAEF/52E356, so retain its lobby context.
         crate::app::App::return_to_main_menu(state);
-        if notify && let Some(text) = failed_load_notice(policy, &err) {
+        if notify && let Some(text) = campaign_notice.map(crate::i18n::tr).or_else(|| failed_load_notice(policy, &err)) {
             crate::app::App::open_shell_notice(state, text);
         }
     } else if policy == LoadingFailurePolicy::ReportNativeFailure {
         state.frontend.screen = GameScreen::MissionResult {
             title: crate::i18n::tr("VERA:LoadingFailed"),
-            detail: format!("{err:#}"),
+            detail: campaign_notice.map_or_else(|| format!("{err:#}"), crate::i18n::tr),
         };
     } else {
         super::transitions::apply_map_load_result(

@@ -96,12 +96,12 @@ pub(crate) struct ObjectGroupCopy {
 /// getters and changes it through that module's functions.
 ///
 /// Every object's turn walks this record, so it holds only what a turn reads
-/// each step. State read less often is the [`Seldom`] part, stored apart.
-/// State that few objects hold sits behind a pointer: a [`Sparse`] for a
-/// Building's own state ([`BuildingPart`]), its art and its damage fires, a
-/// `Box` for a manager only some types construct. A new field goes in this
-/// record only if an object's own turn reads or writes it each step;
-/// otherwise in `Seldom`. A `BuildingClass` field goes in `BuildingPart`.
+/// each step. State read less often is the [`Seldom`] part, stored apart and
+/// reached as `entity.seldom.field`. State that few objects hold sits behind
+/// a pointer: a [`Sparse`] for a Building's own state ([`BuildingPart`]), its
+/// art and its damage fires, a `Box` for a manager only some types
+/// construct. A new field goes in this record only if an object's own turn
+/// reads or writes it each step; otherwise in `Seldom`. A `BuildingClass` field goes in `BuildingPart`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameEntity {
     // --- Always present (every entity has these) ---
@@ -326,10 +326,9 @@ pub struct GameEntity {
     /// Instance stealth grant; sim::cloak_disguise owns its mutations.
     #[serde(default)]
     pub(crate) stealth_ability: StealthAbility,
-    /// Active low-bridge TubeClass movement. Active YR behaviour — not to be
-    /// confused with the subterranean tunnel locomotor, which is Tiberian Sun
-    /// legacy and was removed as unreachable in stock YR.
-    /// `movement::tube_movement` owns it.
+    /// Foot's retained map tunnel byte, cursor and target. DrawIt and radio
+    /// test presence. [`Self::active_tube`] applies the signed movement gate.
+    /// `movement::tube_movement` owns the payload.
     #[serde(default)]
     pub low_bridge_tube_state: Option<LowBridgeTubeMovementState>,
     /// Controller-owned reversible mind-control manager (`TechnoClass+0x2BC`),
@@ -463,7 +462,7 @@ pub struct GameEntity {
     #[serde(default)]
     pub(crate) cached_spatial_threat: crate::sim::house_threat::SpatialThreat,
     /// The state this object's turn does not read each step, stored apart.
-    seldom: Box<Seldom>,
+    pub seldom: Box<Seldom>,
 }
 
 /// The `BuildingClass` state. A [`Sparse`] in [`GameEntity::building`] holds
@@ -616,8 +615,8 @@ impl crate::util::sparse::SparseDefault for BuildingPart {
 /// The part of an object's record its own turn does not read each step:
 /// state read on orders, on events, by other objects or when drawing. It is
 /// stored apart from [`GameEntity`], so a turn's walk of the main part stays
-/// small. `GameEntity` derefs to it, so a field here reads and writes as
-/// `entity.field`.
+/// small. Code reaches a field here through the named part, as
+/// `entity.seldom.field`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Seldom {
     /// Bounded optional observations; absent from saves and normal builds.
@@ -690,9 +689,8 @@ pub struct Seldom {
     barrel_elevation: crate::sim::movement::FacingClass,
     /// UnitClass+6C8. The constructor clears this next-Unit reference at
     /// 7353EC; the map reader74368C, ChangeOwner7463A0 and Find_Path4D3920
-    /// share it (original gamemd.exe instructions). Not yet ported: the
-    /// Accelerates speed hand-off in Process_Drive_Track 4B1218 / Ship 6A08F0
-    /// and the IsTrain-gated Stop_Moving/track consumers (no retail IsTrain).
+    /// share it with the accelerating Drive/Ship speed hand-off (4B1218 /
+    /// 6A08E0) and IsTrain Stop_Moving (4AFE4D / 69F55D).
     unit_follower: Option<u64>,
     /// UnitClass+6D0, constructed false at7353F8. This retained byte is
     /// independent of incoming links: PointerExpired7446E0 clears only the
@@ -1139,20 +1137,6 @@ impl crate::util::sparse::SparseDefault for AresPart {
     }
 }
 
-impl std::ops::Deref for GameEntity {
-    type Target = Seldom;
-
-    fn deref(&self) -> &Seldom {
-        &self.seldom
-    }
-}
-
-impl std::ops::DerefMut for GameEntity {
-    fn deref_mut(&mut self) -> &mut Seldom {
-        &mut self.seldom
-    }
-}
-
 mod behind_indicator;
 mod construction_stage;
 mod gunner;
@@ -1184,76 +1168,76 @@ impl GameEntity {
     /// shield owner retain simulation-side mutation authority.
     #[cfg(feature = "phobos")]
     pub fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
-        self.shield.as_ref()
+        self.seldom.shield.as_ref()
     }
 
     /// Infantry+6D9: building survivor identity, not Type.Nominal.
     /// Added_To_Game502C3C skips its active counter; UI-name51F2C0 uses
     /// TXT_TECHNICIAN. The flag persists across placement and capture.
     pub fn is_nominal_survivor(&self) -> bool {
-        self.nominal_survivor
+        self.seldom.nominal_survivor
     }
 
     /// The two building crew producers' stores443127 and44A747.
     pub(crate) fn mark_nominal_survivor(&mut self) {
         debug_assert_eq!(self.category, EntityCategory::Infantry);
-        self.nominal_survivor = true;
+        self.seldom.nominal_survivor = true;
     }
 
     /// Whether an Ares ChronoWarp holds this building warped out. Only Ares
     /// code writes it, so in a game Ares doesn't play in it stays false.
     pub(crate) fn ares_chronoshifting(&self) -> bool {
-        self.ares.ares_chronoshifting
+        self.seldom.ares.ares_chronoshifting
     }
 
     /// The ChronoWarp's Building arm (Ares 3.0 `1006F4D0`) warps it out.
     pub(crate) fn begin_ares_chronoshift(&mut self) {
-        self.ares.ares_chronoshifting = true;
+        self.seldom.ares.ares_chronoshifting = true;
     }
 
     /// ChronoWarpStateMachine::Update (Ares 3.0 `10070230`) puts it back.
     pub(crate) fn end_ares_chronoshift(&mut self) {
-        self.ares.ares_chronoshifting = false;
+        self.seldom.ares.ares_chronoshifting = false;
     }
 
     /// The DropPod locomotor carrying this Foot, if any.
     pub(crate) fn ares_drop_pod(&self) -> Option<crate::sim::superweapon::drop_pod::DropPodFlight> {
-        self.ares.ares_drop_pod
+        self.seldom.ares.ares_drop_pod
     }
 
     /// LocomotionClass::ChangeLocomotorTo(DropPod) (`10044083..100440FA`):
     /// a fresh DropPod locomotor piggybacks the Foot's own.
     pub(crate) fn begin_ares_drop_pod(&mut self) {
-        self.ares.ares_drop_pod = Some(Default::default());
+        self.seldom.ares.ares_drop_pod = Some(Default::default());
     }
 
     /// The DropPod locomotor's own fields, for its Move_To.
     pub(crate) fn ares_drop_pod_mut(
         &mut self,
     ) -> Option<&mut crate::sim::superweapon::drop_pod::DropPodFlight> {
-        self.ares.ares_drop_pod.as_mut()
+        self.seldom.ares.ares_drop_pod.as_mut()
     }
 
     /// The landed pod's End_Piggyback (`0x004B5CEE`): the Foot's own
     /// locomotor is current again.
     pub(crate) fn end_ares_drop_pod(&mut self) {
-        self.ares.ares_drop_pod = None;
+        self.seldom.ares.ares_drop_pod = None;
     }
 
     /// The plane this Unit's last raw mark chose (TechnoExt `AltOccupation`),
     /// `true` for the deck, while that mark stands.
     pub(crate) fn ares_alt_occupation(&self) -> Option<bool> {
-        self.ares.ares_alt_occupation
+        self.seldom.ares.ares_alt_occupation
     }
 
     /// A raw mark (vt+0xF0) records the plane it chose.
     pub(crate) fn mark_ares_alt_occupation(&mut self, on_deck: bool) {
-        self.ares.ares_alt_occupation = Some(on_deck);
+        self.seldom.ares.ares_alt_occupation = Some(on_deck);
     }
 
     /// The unmark reads the recorded plane and forgets it.
     pub(crate) fn take_ares_alt_occupation(&mut self) -> Option<bool> {
-        self.ares.ares_alt_occupation.take()
+        self.seldom.ares.ares_alt_occupation.take()
     }
 
     /// Ares PlaceUnits' (10075A60) `Deliver.BaseNormal=no` mark. Only Ares
@@ -1324,7 +1308,7 @@ impl GameEntity {
 
     /// Retained scoring and house-count inputs for this actor's type.
     pub(in crate::sim) fn tracking_facts(&self) -> &crate::sim::house_tracking::TrackingFacts {
-        &self.tracking_facts
+        &self.seldom.tracking_facts
     }
 
     /// The lifecycle and scoring paths read these inputs without a RuleSet.
@@ -1335,12 +1319,12 @@ impl GameEntity {
         object: Option<&crate::rules::object_type::ObjectType>,
         rules: &crate::rules::ruleset::RuleSet,
     ) {
-        self.tracking_facts =
+        self.seldom.tracking_facts =
             crate::sim::house_tracking::TrackingFacts::of(self.category(), object, rules);
         if let Some(multiplier) =
             crate::sim::house_tracking::retained_plant_multiplier(self.category(), object, rules)
         {
-            self.ares.factory_plant_multiplier = Some(multiplier);
+            self.seldom.ares.factory_plant_multiplier = Some(multiplier);
         }
     }
 
@@ -1348,7 +1332,7 @@ impl GameEntity {
     pub(in crate::sim) fn tracking_facts_mut_for_test(
         &mut self,
     ) -> &mut crate::sim::house_tracking::TrackingFacts {
-        &mut self.tracking_facts
+        &mut self.seldom.tracking_facts
     }
 
     /// The infantry house-total latches (`Techno+0x438/+0x439`). Only
@@ -1357,24 +1341,24 @@ impl GameEntity {
     pub(crate) fn house_tracking_latches(
         &self,
     ) -> crate::sim::house_tracking::InfantryTrackingLatches {
-        self.house_tracking_latches
+        self.seldom.house_tracking_latches
     }
 
     pub(super) fn house_tracking_latches_mut(
         &mut self,
         _: crate::sim::house_tracking::TrackingWrite,
     ) -> &mut crate::sim::house_tracking::InfantryTrackingLatches {
-        &mut self.house_tracking_latches
+        &mut self.seldom.house_tracking_latches
     }
 
     /// The shared signed Techno ammo, including negative/unlimited counts.
     pub fn ammo(&self) -> Option<&TechnoAmmo> {
-        self.ammo.as_ref()
+        self.seldom.ammo.as_ref()
     }
 
     /// Mutations remain on the shared ammo owner, rather than a caller's copy.
     pub(crate) fn ammo_mut(&mut self) -> Option<&mut TechnoAmmo> {
-        self.ammo.as_mut()
+        self.seldom.ammo.as_mut()
     }
 
     /// Building442C81, Unit735592, Infantry517D69 and Aircraft414033 writes.
@@ -1382,18 +1366,18 @@ impl GameEntity {
         &mut self,
         object: &crate::rules::object_type::ObjectType,
     ) {
-        self.ammo = Some(TechnoAmmo::from_type(object));
+        self.seldom.ammo = Some(TechnoAmmo::from_type(object));
     }
 
     /// The authoritative Techno reload clock, preserved verbatim in saves.
     pub fn ammo_reload_timer(&self) -> crate::sim::timer::CdTimer {
-        self.ammo_reload_timer
+        self.seldom.ammo_reload_timer
     }
 
     /// Ares BuildingClass_FireLaser (10016490) starts this clock (YRpp's
     /// `ReloadTimer`, Techno+1FC) with a Prism support beam's downtime.
     pub(crate) fn start_prism_support_downtime(&mut self, now: i32, duration: i32) {
-        self.ammo_reload_timer.start(now, duration);
+        self.seldom.ammo_reload_timer.start(now, duration);
     }
 
     /// Techno ReceiveDamage701ADB..701B62, after the early immunity gates
@@ -1439,9 +1423,11 @@ impl GameEntity {
             let quotient = if object.pip_wrap() == 0 {
                 1
             } else {
-                // Native IDIV likewise faults for MIN/-1; the ordinary
-                // signed quotient truncates toward zero.
-                current / object.pip_wrap()
+                // IDIV's signed quotient, truncated toward zero. Native
+                // faults on the one overflowing pair (Ammo=-2147483648 with
+                // PipWrap=-1); outside data never stops the game, so that
+                // pair wraps to i32::MIN instead.
+                current.wrapping_div(object.pip_wrap())
             };
             object.reload.wrapping_add(
                 object
@@ -1450,7 +1436,7 @@ impl GameEntity {
                     .wrapping_mul(quotient),
             )
         };
-        self.ammo_reload_timer.start(now, duration);
+        self.seldom.ammo_reload_timer.start(now, duration);
     }
 
     /// UnitClass::Reload736CA0, reached at UnitAI736689 only. MobileFire=no
@@ -1467,9 +1453,11 @@ impl GameEntity {
             let moving = crate::sim::movement::motion_query::is_moving(self).ok_or_else(|| {
                 "Unit Reload736CA0 requires ILocomotion+10 (E_POINTER)".to_owned()
             })?;
-            let remaining = self.ammo_reload_timer.remaining(now);
+            let remaining = self.seldom.ammo_reload_timer.remaining(now);
             if moving && remaining > 0 {
-                self.ammo_reload_timer.start(now, remaining.wrapping_add(1));
+                self.seldom
+                    .ammo_reload_timer
+                    .start(now, remaining.wrapping_add(1));
             }
         }
         self.reload_techno_ammo(object, now, ares);
@@ -1486,7 +1474,7 @@ impl GameEntity {
     ) -> bool {
         (!object.mobile_fire
             && crate::sim::movement::motion_query::is_moving(self)
-                .is_none_or(|moving| moving && self.ammo_reload_timer.remaining(now) > 0))
+                .is_none_or(|moving| moving && self.seldom.ammo_reload_timer.remaining(now) > 0))
             || self.techno_ammo_reloads(object, now)
     }
 
@@ -1498,7 +1486,7 @@ impl GameEntity {
     ) -> bool {
         object.ammo != -1
             && self.ammo().is_some_and(|ammo| ammo.current() < object.ammo)
-            && self.ammo_reload_timer.remaining(now) == 0
+            && self.seldom.ammo_reload_timer.remaining(now) == 0
     }
 
     /// gamemd.exe TechnoClass::Reload0x006FB010, shared by Unit's override
@@ -1531,18 +1519,18 @@ impl GameEntity {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn install_ammo_for_test(&mut self, ammo: Option<TechnoAmmo>) {
-        self.ammo = ammo;
+        self.seldom.ammo = ammo;
     }
 
     /// Techno+0x284, the Chronosphere warp-in's frames.
     pub(crate) fn chrono_warp_delay(&self) -> i32 {
-        self.chrono_warp_delay.get()
+        self.seldom.chrono_warp_delay.get()
     }
 
     /// A fixture's delay.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_chrono_warp_delay(&mut self, frames: i32) {
-        self.chrono_warp_delay.store(frames);
+        self.seldom.chrono_warp_delay.store(frames);
     }
 }
 
@@ -1785,20 +1773,20 @@ impl GameEntity {
     /// VERA-only: the `InfantrySpot` placement cache; natively the coordinate's
     /// in-cell offset carries the spot (`0x00481180`).
     pub(crate) fn sub_cell(&self) -> Option<u8> {
-        self.sub_cell.get()
+        self.seldom.sub_cell.get()
     }
 
     /// A fixture's spot: held, or released for `None`.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_sub_cell(&mut self, sub_cell: Option<u8>) {
         match sub_cell {
-            Some(spot) => self.sub_cell.hold(spot),
-            None => self.sub_cell.release(),
+            Some(spot) => self.seldom.sub_cell.hold(spot),
+            None => self.seldom.sub_cell.release(),
         }
     }
 
     /// `Foot+0x6B6`, the occupation enable; see the field.
-    pub(crate) fn foot_occupation_enabled(&self) -> bool {
+    pub fn foot_occupation_enabled(&self) -> bool {
         self.foot_occupation_enabled.get()
     }
 
@@ -1817,19 +1805,19 @@ impl GameEntity {
     /// rally point share this one field, stored in
     /// [`BaseDefenseResponseState`].
     pub fn archive_target(&self) -> Option<crate::sim::combat::TargetKind> {
-        self.base_defense_response.archive_target()
+        self.seldom.base_defense_response.archive_target()
     }
 
     /// `TechnoClass::Set_ArchiveTarget @ 0x0070C610`, a plain store.
     pub fn set_archive_target(&mut self, target: Option<crate::sim::combat::TargetKind>) {
-        self.base_defense_response.set_archive_target(target);
+        self.seldom.base_defense_response.set_archive_target(target);
     }
 
     /// Techno `+0x4F8`; see [`DeployVoiceSuppression`].
     ///
     /// [`DeployVoiceSuppression`]: crate::sim::world::DeployVoiceSuppression
     pub fn deploy_voice_suppressed(&self) -> bool {
-        self.suppress_deploy_voice.get()
+        self.seldom.suppress_deploy_voice.get()
     }
 
     /// A factory's rally point is its ArchiveTarget: `BuildingClass::
@@ -1849,13 +1837,13 @@ impl GameEntity {
     ///
     /// [`MissionOnly`]: crate::sim::aircraft::MissionOnly
     pub fn is_mission_only(&self) -> bool {
-        self.mission_only.get()
+        self.seldom.mission_only.get()
     }
 
     /// Foot `+0x424` IsOnCarryall: a Carryall carries this object
     /// (`sim::aircraft::carryall`).
     pub fn is_on_carryall(&self) -> bool {
-        self.on_carryall.get()
+        self.seldom.on_carryall.get()
     }
 
     /// AircraftUnlimbo4143A8..4143F2, only after Foot placement succeeds.
@@ -1878,7 +1866,7 @@ impl GameEntity {
                 .and_then(|id| rules.weapon(id))
                 .is_some_and(|weapon| weapon.camera);
         if !object.selectable || !object.landable || camera {
-            self.mission_only.mark();
+            self.seldom.mission_only.mark();
         }
     }
 
@@ -1911,20 +1899,20 @@ impl GameEntity {
 
     /// Constructor House identity, preserved across ownership transfers and load.
     pub(crate) fn initial_owner(&self) -> InternedId {
-        self.initial_owner
+        self.seldom.initial_owner
     }
 
     pub(crate) fn original_factory_country(&self) -> Option<crate::rules::ruleset::CountryIdx> {
-        self.ares.original_factory_country
+        self.seldom.ares.original_factory_country
     }
 
     pub(crate) fn ares_wave_weapon_slot(&self) -> u8 {
-        self.ares.ares_wave_weapon_slot
+        self.seldom.ares.ares_wave_weapon_slot
     }
 
     /// CreateWave 10055160's write, by the wave's own creator only.
     pub(crate) fn record_ares_wave_weapon_slot(&mut self, slot: u8) {
-        self.ares.ares_wave_weapon_slot = slot;
+        self.seldom.ares.ares_wave_weapon_slot = slot;
     }
 
     /// InitManagers1004A776 and the conversion10045B54 use the same retained
@@ -1933,7 +1921,7 @@ impl GameEntity {
         &mut self,
         country: Option<crate::rules::ruleset::CountryIdx>,
     ) {
-        self.ares.original_factory_country = country;
+        self.seldom.ares.original_factory_country = country;
     }
 
     pub(crate) fn building_loss_index(&self) -> i32 {
@@ -1975,12 +1963,12 @@ impl GameEntity {
     }
 
     pub(crate) fn ares_secret_lab_placed(&self) -> bool {
-        self.ares.ares_secret_lab_placed
+        self.seldom.ares.ares_secret_lab_placed
     }
 
     /// UpdateSecretLab's roll (10013700) sets BuildingExt+0x50.
     pub(in crate::sim) fn mark_ares_secret_lab_placed(&mut self) {
-        self.ares.ares_secret_lab_placed = true;
+        self.seldom.ares.ares_secret_lab_placed = true;
     }
 
     /// One rules-to-model binding for construction and live type changes.
@@ -2040,26 +2028,26 @@ impl GameEntity {
 
     /// AbstractClass+10, the native UniqueID.
     pub(crate) fn native_unique_id(&self) -> i32 {
-        self.native_unique_id
+        self.seldom.native_unique_id
     }
 
     /// The TechnoClass constructor's retained Scenario word (`+0x3C8`).
     pub fn techno_ctor_random_word(&self) -> u16 {
-        self.techno_ctor_random_word
+        self.seldom.techno_ctor_random_word
     }
 
     /// The native signed Techno+214 value, shared by Recruit6EAA90 and
     /// TeamAssign731060. It is independent of live Team membership.
     pub fn object_group(&self) -> i32 {
-        self.object_group
+        self.seldom.object_group
     }
 
     /// The group the local player's keys see: +214, or the network game slot
     /// a key wrote since the last +214 write.
     pub fn control_group(&self) -> i32 {
-        match self.local_control_group {
+        match self.seldom.local_control_group {
             Some(group) => group,
-            None => self.object_group,
+            None => self.seldom.object_group,
         }
     }
 
@@ -2067,59 +2055,59 @@ impl GameEntity {
     /// TeamType::Get_Group6F1870 supply raw signed values. Replaces a network
     /// game's local slot, as the native store overwrites the key's value.
     pub(crate) fn assign_object_group(&mut self, group: i32) {
-        self.object_group = group;
-        self.local_control_group = None;
+        self.seldom.object_group = group;
+        self.seldom.local_control_group = None;
     }
 
     /// A network game's TeamAssign731060 store (`local_control_group`).
     pub(crate) fn assign_local_control_group(&mut self, group: i32) {
-        self.local_control_group = Some(group);
+        self.seldom.local_control_group = Some(group);
     }
 
     /// Techno+214 as Deploy7397CC and Mission_Selling44A052 copy it to the
     /// new object, carrying a network game's local slot along.
     pub(crate) fn object_group_copy(&self) -> ObjectGroupCopy {
         ObjectGroupCopy {
-            object_group: self.object_group,
-            local_control_group: self.local_control_group,
+            object_group: self.seldom.object_group,
+            local_control_group: self.seldom.local_control_group,
         }
     }
 
     pub(crate) fn assign_object_group_copy(&mut self, copy: ObjectGroupCopy) {
-        self.object_group = copy.object_group;
-        self.local_control_group = copy.local_control_group;
+        self.seldom.object_group = copy.object_group;
+        self.seldom.local_control_group = copy.local_control_group;
     }
 
     /// UnitClass+6C8, the next Unit in the authored FOLLOWS chain.
     pub(crate) fn unit_follower(&self) -> Option<u64> {
-        self.unit_follower
+        self.seldom.unit_follower
     }
 
     /// UnitClass+6D0; this is saved state, not a derived incoming-link count.
     pub(crate) fn is_unit_follower(&self) -> bool {
-        self.is_unit_follower
+        self.seldom.is_unit_follower
     }
 
     /// The map/owner/expiry callers own admission and ordering. In particular,
     /// changing this reference does not change either Unit's follower byte.
     pub(crate) fn set_unit_follower(&mut self, follower: Option<u64>) {
         assert_eq!(self.category, EntityCategory::Unit);
-        self.unit_follower = follower;
+        self.seldom.unit_follower = follower;
     }
 
     pub(crate) fn set_is_unit_follower(&mut self, is_follower: bool) {
         assert_eq!(self.category, EntityCategory::Unit);
-        self.is_unit_follower = is_follower;
+        self.seldom.is_unit_follower = is_follower;
     }
 
     pub(crate) fn production_start_price(&self) -> i32 {
-        self.production_start_price
+        self.seldom.production_start_price
     }
 
     /// Factory StartProduction4C9DED writes this once on a newly created
     /// product. Hold/resume, placement and owner changes retain it (gamemd).
     pub(crate) fn record_production_start_price(&mut self, price: i32) {
-        self.production_start_price = price;
+        self.seldom.production_start_price = price;
     }
 }
 
@@ -2140,11 +2128,11 @@ impl GameEntity {
     }
 
     pub(crate) fn set_native_unique_id_for_test(&mut self, native_unique_id: i32) {
-        self.native_unique_id = native_unique_id;
+        self.seldom.native_unique_id = native_unique_id;
     }
 
     pub(crate) fn set_techno_ctor_random_word_for_test(&mut self, word: u16) {
-        self.techno_ctor_random_word = word;
+        self.seldom.techno_ctor_random_word = word;
     }
 
     /// Before insertion only: supply the constructor and current House
@@ -2153,7 +2141,7 @@ impl GameEntity {
     /// which keeps the store's owner column.
     pub fn set_owner_for_test(&mut self, owner: InternedId) {
         self.owner = owner;
-        self.initial_owner = owner;
+        self.seldom.initial_owner = owner;
     }
 
     pub fn set_type_ref_for_test(&mut self, type_ref: InternedId) {
@@ -2173,13 +2161,19 @@ impl GameEntity {
     ///
     /// [`RetargetAfterStop`]: crate::sim::combat::greatest_threat::RetargetAfterStop
     pub fn foot_retarget_after_stop(&self) -> bool {
-        self.foot_retarget_after_stop.get()
+        self.seldom.foot_retarget_after_stop.get()
     }
 
     /// The body heading at `frame`: `FacingClass::Current @ 0x004C93D0` on
     /// `+0x388`.
     pub fn body_facing_current(&self, frame: u32) -> u16 {
         self.body_facing.current(frame)
+    }
+
+    /// The body heading at `frame` as Ares reads it: its own copy of Current
+    /// (Ares.dll `0x10009CC0`) on `+0x388`.
+    pub fn body_facing_current_ares(&self, frame: u32) -> u16 {
+        self.body_facing.current_ares(frame)
     }
 
     /// The body heading's high byte at `frame`, the 8-bit direction a reader
@@ -2200,25 +2194,26 @@ impl GameEntity {
     /// The barrel elevation (`+0x370`); its readers sample `current(frame)`
     /// (`FacingClass::Current @ 0x004C93D0`).
     pub fn barrel_elevation(&self) -> &crate::sim::movement::FacingClass {
-        &self.barrel_elevation
+        &self.seldom.barrel_elevation
     }
 
     /// `FacingClass::Set_Desired @ 0x004C9220` on the barrel (`+0x370`), as
     /// an EMP cannon's Missile mission aims it.
     pub(crate) fn set_barrel_elevation(&mut self, desired: u16, frame: u32) {
-        self.barrel_elevation.set(desired, frame);
+        self.seldom.barrel_elevation.set(desired, frame);
     }
 
     /// Install a fixture's barrel elevation.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_barrel_elevation_for_test(&mut self, facing: crate::sim::movement::FacingClass) {
-        self.barrel_elevation = facing;
+        self.seldom.barrel_elevation = facing;
     }
 
     /// Whether the barrel elevation still holds its constructor value, which
     /// an object that never unlimboed keeps.
     pub(crate) fn barrel_elevation_is_constructed(&self) -> bool {
-        self.barrel_elevation == crate::sim::movement::FacingClass::new(0, BARREL_ELEVATION_ROT)
+        self.seldom.barrel_elevation
+            == crate::sim::movement::FacingClass::new(0, BARREL_ELEVATION_ROT)
     }
 
     /// `TechnoClass::Unlimbo`'s barrel writes, right after its body snap
@@ -2226,8 +2221,9 @@ impl GameEntity {
     /// `0x006F6DC3`), then turns toward the type's `FireAngle=` (`Set` at
     /// `0x006F6DF5`, [`unlimbo_barrel_target`]).
     pub(crate) fn unlimbo_barrel_elevation(&mut self, fire_angle: i32, frame: u32) {
-        self.barrel_elevation.snap(BARREL_LEVEL, frame);
-        self.barrel_elevation
+        self.seldom.barrel_elevation.snap(BARREL_LEVEL, frame);
+        self.seldom
+            .barrel_elevation
             .set(unlimbo_barrel_target(fire_angle), frame);
     }
 
@@ -2241,6 +2237,7 @@ impl GameEntity {
     /// objects go through [`crate::sim::world::Simulation::flash_object`].
     pub(crate) fn flash_base(&mut self, frames: i32) {
         if !self
+            .seldom
             .disguise
             .as_ref()
             .is_some_and(|disguise| disguise.is_disguised())
@@ -2310,24 +2307,24 @@ impl GameEntity {
 
     /// The native Techno+3D0 useless latch read by Repair depots.
     pub(crate) fn is_useless(&self) -> bool {
-        self.useless
+        self.seldom.useless
     }
 
     /// Whether `house` spied this building's production (Ares
     /// DisplayProductionTo, `sim::spy_infiltration`).
     pub fn shows_production_to(&self, house: InternedId) -> bool {
-        self.ares.display_production_to.contains(house)
+        self.seldom.ares.display_production_to.contains(house)
     }
 
     /// Ares TechnoExt+9C. Gameplay and drawing read the same driver state.
     pub fn driver_killed(&self) -> bool {
-        self.ares.vehicle_driver.killed()
+        self.seldom.ares.vehicle_driver.killed()
     }
 
     /// `Mission_Harvest`'s two writes to Techno+3D0 (`0x0073E8FA`,
     /// `0x0073E925`). Other systems only read this shared Techno state.
     pub(crate) fn set_useless(&mut self, useless: bool) {
-        self.useless = useless;
+        self.seldom.useless = useless;
     }
 
     /// The committed mission read at TechnoAI6FA697, before its class's
@@ -2704,7 +2701,7 @@ impl GameEntity {
     pub(crate) fn attached_anim_expired(&mut self, animation: u64) {
         self.expire_behind_anim(animation);
         self.drain.expire_anim(animation);
-        self.mind_control.anim_pointer_expired(animation);
+        self.seldom.mind_control.anim_pointer_expired(animation);
         self.expire_deploy_anim(animation);
         self.parachute_animation_expired(animation);
     }
@@ -2791,20 +2788,20 @@ impl GameEntity {
     /// `RadioClass+0xE4`/`+0xE8`, the contact slots; see the field.
     #[cfg(test)]
     pub fn mark_live_contact_with(&mut self, other_stable_id: u64) {
-        self.radio_contacts.insert(other_stable_id);
+        self.seldom.radio_contacts.insert(other_stable_id);
     }
 
     /// Whether this entity has a live RadioClass-style contact with another entity.
     /// `RadioClass+0xE4`/`+0xE8`, the contact slots; see the field.
     pub fn has_live_contact_with(&self, other_stable_id: u64) -> bool {
-        self.radio_contacts.contains(other_stable_id)
+        self.seldom.radio_contacts.contains(other_stable_id)
     }
 
     /// Clear a live RadioClass-style contact with another entity (BREAK: nulls
     /// the slot in place, no compaction).
     /// `RadioClass+0xE4`/`+0xE8`, the contact slots; see the field.
     pub fn clear_live_contact_with(&mut self, other_stable_id: u64) {
-        self.radio_contacts.remove(other_stable_id);
+        self.seldom.radio_contacts.remove(other_stable_id);
     }
 
     /// Runtime movement/path layer with Ground as the fallback.
@@ -2865,9 +2862,9 @@ impl GameEntity {
     /// `+0x314`) as they are linked now.
     pub(crate) fn live_particles(&self) -> crate::sim::combat::rof::LiveParticles {
         crate::sim::combat::rof::LiveParticles {
-            spark: self.spark_particle_system.system().is_some(),
-            fire: self.fire_particle_system.system().is_some(),
-            railgun: self.railgun_particle_system.system().is_some(),
+            spark: self.seldom.spark_particle_system.system().is_some(),
+            fire: self.seldom.fire_particle_system.system().is_some(),
+            railgun: self.seldom.railgun_particle_system.system().is_some(),
         }
     }
 
@@ -2879,7 +2876,7 @@ impl GameEntity {
     /// reads that byte, so the system applies the release there
     /// ([`crate::sim::particles::ParticleSystem::apply_fire_link_release`]).
     pub(crate) fn release_fire_particle_system(&mut self) {
-        self.fire_particle_system.forget();
+        self.seldom.fire_particle_system.forget();
     }
 
     /// Wave (0x75F3F3) and area damage (0x4899F1) both require a live,
@@ -2904,7 +2901,7 @@ impl GameEntity {
     /// `TechnoClass::AI_Update`'s `+0xC4` increment (`0x006FA646`) once per
     /// visit. A sleeping building's relight sample (`0x00450A47`) is current
     /// (`BuildingArt::tint_sample_is_current`), which its visits keep as it is.
-    pub(crate) fn settle_sleep(&self, owed: u32) {
+    pub(crate) fn settle_sleep(&mut self, owed: u32) {
         self.mission.add_owed_ai_visits(owed);
     }
 
@@ -2992,14 +2989,14 @@ impl GameEntity {
     ///
     /// [`CrushImmunity`]: crate::sim::deploy::CrushImmunity
     pub(crate) fn native_crush_immunity(&self) -> u8 {
-        self.native_crush_immunity.get()
+        self.seldom.native_crush_immunity.get()
     }
 
     /// A fixture infantryman's raw crush-immunity byte.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_infantry_deploy_crush_immunity(&mut self, raw: u8) {
         assert_eq!(self.category, EntityCategory::Infantry);
-        self.native_crush_immunity = crate::sim::deploy::CrushImmunity::from_raw(raw);
+        self.seldom.native_crush_immunity = crate::sim::deploy::CrushImmunity::from_raw(raw);
     }
 
     /// Native Get_Mission(vt184) reads current, otherwise queued. The
@@ -3061,10 +3058,10 @@ impl GameEntity {
     /// the state hash.
     pub(crate) fn hash_capture_infantry_type(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
-        self.capture_infantry_type_index.get().hash(hasher);
-        if self.ares.vehicle_driver != Default::default() {
+        self.seldom.capture_infantry_type_index.get().hash(hasher);
+        if self.seldom.ares.vehicle_driver != Default::default() {
             b"ares-vehicle-driver-v1".hash(hasher);
-            self.ares.vehicle_driver.hash(hasher);
+            self.seldom.ares.vehicle_driver.hash(hasher);
         }
     }
 }
@@ -3099,6 +3096,32 @@ mod tests {
             (4, 3, 5)
         );
         assert_eq!((reload("DRAIN", 4), reload("DRAIN", 2)), (1, 0));
+    }
+
+    /// StartReloading6FB080's `Reload + ReloadIncrement * q * q` with `q` the
+    /// ammo count over `PipWrap=`: the overflowing pair (`i32::MIN` over -1)
+    /// no longer panics, and an ordinary pair keeps IDIV's quotient.
+    #[test]
+    fn reload_duration_divides_by_pip_wrap_without_overflow() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=ODD\n1=WRAP\n\
+                 [ODD]\nAmmo=5\nReload=10\nReloadIncrement=1\nPipWrap=-1\n\
+                 [WRAP]\nAmmo=9\nReload=10\nReloadIncrement=1\nPipWrap=2\n",
+            ))
+            .unwrap();
+        let duration = |name: &str, current: i32| {
+            let mut entity = GameEntity::test_default(1, name, "Americans", 10, 20);
+            let mut ammo = TechnoAmmo::new(5);
+            ammo.set_current_for_test(current);
+            entity.install_ammo_for_test(Some(ammo));
+            entity.start_reloading_ammo(rules.object(name).unwrap(), 0);
+            entity.seldom.ammo_reload_timer.remaining(0)
+        };
+        // i32::MIN wraps; MIN * MIN wraps to 0, so the clock runs Reload.
+        assert_eq!(duration("ODD", i32::MIN), 10);
+        // -7 / 2 truncates toward zero to -3: 10 + 9.
+        assert_eq!(duration("WRAP", -7), 19);
     }
 
     fn native_cloak_fixture() -> &'static serde_json::Value {
@@ -3140,7 +3163,7 @@ mod tests {
         contacted.mark_live_contact_with(100);
         contacted.mark_live_contact_with(100);
 
-        assert_eq!(contacted.radio_contacts.len(), 1); // idempotent — one slot used
+        assert_eq!(contacted.seldom.radio_contacts.len(), 1); // idempotent — one slot used
         assert!(contacted.has_live_contact_with(100));
         assert!(!unrelated.has_live_contact_with(100));
 
@@ -3157,16 +3180,16 @@ mod lifecycle_tests {
     fn lifecycle_authority_state_axes_are_independent() {
         let mut e = GameEntity::test_default(1, "E1", "Americans", 3, 3);
         assert_eq!(e.lifecycle, ObjectLifecycle::default());
-        assert!(!e.in_logic_vector.is_member());
-        assert!(!e.removal_facts.dirty_rect_eligible());
-        assert!(!e.kill_record.is_recorded());
+        assert!(!e.seldom.in_logic_vector.is_member());
+        assert!(!e.seldom.removal_facts.dirty_rect_eligible());
+        assert!(!e.seldom.kill_record.is_recorded());
 
         // Exercise every combination without deriving one fact from another.
         for bits in 0u8..64 {
             e.lifecycle.set_object_alive_for_test(bits & 0b00_0001 != 0);
             e.lifecycle.set_in_limbo_for_test(bits & 0b00_0010 != 0);
             e.lifecycle.set_cell_marked_for_test(bits & 0b00_0100 != 0);
-            e.in_logic_vector.set_for_test(bits & 0b00_1000 != 0);
+            e.seldom.in_logic_vector.set_for_test(bits & 0b00_1000 != 0);
             e.death.set_dying_for_test(bits & 0b01_0000 != 0);
             e.health
                 .set_for_test(if bits & 0b10_0000 != 0 { 1 } else { 0 });
@@ -3174,7 +3197,7 @@ mod lifecycle_tests {
             assert_eq!(e.is_object_alive(), bits & 0b00_0001 != 0);
             assert_eq!(e.lifecycle.in_limbo(), bits & 0b00_0010 != 0);
             assert_eq!(e.lifecycle.cell_marked(), bits & 0b00_0100 != 0);
-            assert_eq!(e.in_logic_vector.is_member(), bits & 0b00_1000 != 0);
+            assert_eq!(e.seldom.in_logic_vector.is_member(), bits & 0b00_1000 != 0);
             assert_eq!(e.death.is_dying(), bits & 0b01_0000 != 0);
             assert_eq!(e.is_alive(), bits & 0b10_0000 != 0);
             assert_eq!(
@@ -3231,13 +3254,13 @@ impl GameEntity {
     /// list for animation draw offsets and tint; only `sim::attach_effect`
     /// writes it.
     pub fn phobos_attach_effects(&self) -> &crate::sim::attach_effect::AttachEffectList {
-        &self.phobos_attach_effects
+        &self.seldom.phobos_attach_effects
     }
 
     pub(crate) fn phobos_attach_effects_mut(
         &mut self,
     ) -> &mut crate::sim::attach_effect::AttachEffectList {
-        &mut self.phobos_attach_effects
+        &mut self.seldom.phobos_attach_effects
     }
 
     /// The stat fold `sim::attach_effect` recomputes from the instance list
@@ -3245,7 +3268,7 @@ impl GameEntity {
     pub(crate) fn phobos_stat_multipliers(
         &self,
     ) -> &crate::sim::attach_effect::PhobosStatMultipliers {
-        &self.phobos_stat_multipliers
+        &self.seldom.phobos_stat_multipliers
     }
 
     /// `TechnoExt::RecalculateStatMultipliers` (Body.Update.cpp:1124): refolds
@@ -3255,16 +3278,17 @@ impl GameEntity {
         &mut self,
         effects: &[crate::rules::attach_effect::AttachEffectType],
     ) {
-        self.phobos_stat_multipliers = self.phobos_attach_effects.stat_multipliers(effects);
+        self.seldom.phobos_stat_multipliers =
+            self.seldom.phobos_attach_effects.stat_multipliers(effects);
     }
 
     /// A live effect drives future frames, so it joins the state hash; an
     /// entity with none contributes nothing.
     pub(crate) fn hash_phobos_attach_effects<H: std::hash::Hasher>(&self, hasher: &mut H) {
         use std::hash::Hash;
-        if !self.phobos_attach_effects.is_empty() {
+        if !self.seldom.phobos_attach_effects.is_empty() {
             b"phobos-attach-effects-v1".hash(hasher);
-            self.phobos_attach_effects.hash(hasher);
+            self.seldom.phobos_attach_effects.hash(hasher);
         }
     }
 }
@@ -3276,7 +3300,7 @@ impl GameEntity {
     pub(crate) fn phobos_speed_multiplier(&self) -> f64 {
         #[cfg(feature = "phobos")]
         {
-            self.phobos_stat_multipliers.speed
+            self.seldom.phobos_stat_multipliers.speed
         }
         #[cfg(not(feature = "phobos"))]
         {
@@ -3288,7 +3312,7 @@ impl GameEntity {
     pub(crate) fn phobos_armor_multiplier(&self) -> f64 {
         #[cfg(feature = "phobos")]
         {
-            self.phobos_stat_multipliers.armor
+            self.seldom.phobos_stat_multipliers.armor
         }
         #[cfg(not(feature = "phobos"))]
         {
@@ -3300,7 +3324,7 @@ impl GameEntity {
     pub(crate) fn phobos_rof_multiplier(&self) -> f64 {
         #[cfg(feature = "phobos")]
         {
-            self.phobos_stat_multipliers.rof
+            self.seldom.phobos_stat_multipliers.rof
         }
         #[cfg(not(feature = "phobos"))]
         {
@@ -3312,7 +3336,7 @@ impl GameEntity {
     pub(crate) fn phobos_cloakable(&self) -> bool {
         #[cfg(feature = "phobos")]
         {
-            self.phobos_stat_multipliers.cloakable
+            self.seldom.phobos_stat_multipliers.cloakable
         }
         #[cfg(not(feature = "phobos"))]
         {
@@ -3324,7 +3348,7 @@ impl GameEntity {
     pub(crate) fn phobos_force_decloak(&self) -> bool {
         #[cfg(feature = "phobos")]
         {
-            self.phobos_stat_multipliers.force_decloak
+            self.seldom.phobos_stat_multipliers.force_decloak
         }
         #[cfg(not(feature = "phobos"))]
         {
@@ -3336,7 +3360,7 @@ impl GameEntity {
     pub(crate) fn phobos_unkillable(&self) -> bool {
         #[cfg(feature = "phobos")]
         {
-            self.phobos_stat_multipliers.unkillable
+            self.seldom.phobos_stat_multipliers.unkillable
         }
         #[cfg(not(feature = "phobos"))]
         {

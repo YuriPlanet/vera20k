@@ -6,11 +6,17 @@
 //! its column covers the battle's.
 
 use crate::app::AppState;
+use crate::app::input::dialog_page::InGameDialog;
 use crate::render::batch::SpriteInstance;
 use crate::render::scaled_copy::ScaledSurface;
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::in_game_shell::{InGameShellLayout, InGameShellSizes};
+use crate::ui::shell::geom::ShellAlign;
+use crate::ui::shell::in_game_shell::{
+    InGameShellLayout, InGameShellSizes, right_panel_title_rect, status_line_rect,
+};
+use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::sidebar::command_bar::spacer_pieces;
 
 pub(super) fn shell_layout(
@@ -77,6 +83,17 @@ pub(crate) struct InGameShellGeometry {
     pub(crate) button_size: [i32; 2],
 }
 
+impl InGameShellGeometry {
+    /// A dialog's `layout` on this shell, from its pixel size, native layout
+    /// and button canvas.
+    pub(crate) fn place<L>(
+        self,
+        layout: impl FnOnce(i32, i32, InGameShellLayout, [i32; 2]) -> L,
+    ) -> L {
+        layout(self.width, self.height, self.layout, self.button_size)
+    }
+}
+
 /// Shared active-game art gate for the implemented full-screen modals.
 pub(crate) fn native_in_game_shell_active(state: &AppState) -> bool {
     state.frontend.screen == crate::app::GameScreen::InGame
@@ -132,6 +149,177 @@ pub(super) fn push_art(
 ) {
     let [w, h] = entry.pixel_size.map(|v| v as i32);
     push_art_scaled(out, entry, RectPx::new(rect.x, rect.y, w, h), clip);
+}
+
+/// What an in-game shell dialog draws over the shell art, in order.
+pub(super) struct InGamePaint<'a> {
+    pub(super) state: &'a AppState,
+    pub(super) atlas: &'a SidebarChromeAtlas,
+    pub(super) shell: InGameShellGeometry,
+    /// The side whose colours the buttons' captions take.
+    pub(super) theme: crate::ui::sidebar::SidebarTheme,
+    pub(super) art: Vec<SpriteInstance>,
+    pub(super) controls: Vec<SpriteInstance>,
+    pub(super) texts: Vec<crate::render::shell_text::ShellTextDraw>,
+    /// The status line's text: the hovered control's help (`0x006040B0`)
+    /// unless the dialog puts its own.
+    pub(super) help: Option<String>,
+}
+
+impl<'a> InGamePaint<'a> {
+    /// The active-game shell's art, nothing over it yet.
+    pub(super) fn new(state: &'a AppState) -> Self {
+        let shell = current_in_game_shell_layout(state).expect("active-game shell geometry");
+        let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
+            .expect("active-game shell art");
+        InGamePaint {
+            state,
+            atlas,
+            shell,
+            theme: crate::app::presentation::sidebar_render::current_sidebar_theme(state),
+            art: background_instances(atlas, shell.layout, shell.width, shell.height),
+            controls: Vec::new(),
+            texts: Vec::new(),
+            help: None,
+        }
+    }
+
+    pub(super) fn finish(self, label: &'static str) -> InGameShellFrame {
+        InGameShellFrame {
+            art: self.art,
+            controls: self.controls,
+            texts: self.texts,
+            label,
+        }
+    }
+
+    pub(super) fn screen(&self) -> RectPx {
+        RectPx::new(0, 0, self.shell.width, self.shell.height)
+    }
+
+    pub(super) fn label(&self, (key, fallback): (&str, &str)) -> String {
+        self.state.csf_label(key, fallback)
+    }
+
+    /// A right-panel owner-draw button (`0x00612B70`), pushed in while
+    /// `pressed`.
+    pub(super) fn button(&mut self, rect: RectPx, caption: &str, pressed: bool) {
+        self.owner_button(
+            rect,
+            caption,
+            PauseMenuButtonState {
+                pressed,
+                ..Default::default()
+            },
+        );
+    }
+
+    /// A right-panel owner-draw button in `look`: its SIDEBTTN frame
+    /// ([`super::pause_menu::button_frame`]) and centred caption, in the
+    /// side's colour while disabled or lit.
+    pub(super) fn owner_button(&mut self, rect: RectPx, caption: &str, look: PauseMenuButtonState) {
+        let (buttons, screen) = (&self.atlas.in_game_shell.buttons, self.screen());
+        if let Some(entry) = buttons[super::pause_menu::button_frame(look)].or(buttons[0]) {
+            push_art(&mut self.art, entry, rect, screen);
+        }
+        // A lit face takes the art's dark label colour, as a disabled one
+        // does: yellow is hard to read on it.
+        let rgb = super::pause_menu::button_text_rgb(self.theme, look.enabled && !look.highlighted);
+        let at = super::pause_menu::button_text_rect(rect, look.pressed);
+        self.text_rgb(
+            caption,
+            at,
+            rgb,
+            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+        );
+    }
+
+    /// A static's text in the label colour.
+    pub(super) fn text(&mut self, value: &str, rect: RectPx, align: ShellAlign) {
+        self.text_rgb(value, rect, super::SHELL_LABEL_TEXT_RGB, align);
+    }
+
+    pub(super) fn text_rgb(&mut self, value: &str, rect: RectPx, rgb: [f32; 3], align: ShellAlign) {
+        let at = super::text::rect_to_text_rect(rect);
+        let depth = super::SHELL_CONTROL_TEXT_DEPTH;
+        super::text::push_text_draw(
+            &mut self.texts,
+            self.state,
+            value,
+            at,
+            rgb,
+            align,
+            depth,
+            1.0,
+        );
+    }
+
+    /// VERA's Previous/Next page buttons and "page n of m" over the first.
+    pub(super) fn paging(
+        &mut self,
+        rects: [RectPx; 2],
+        pressed: [bool; 2],
+        page: usize,
+        pages: usize,
+    ) {
+        for ((rect, pressed), label) in rects
+            .into_iter()
+            .zip(pressed)
+            .zip(["VERA:Previous", "VERA:Next"])
+        {
+            self.button(rect, &crate::i18n::tr(label), pressed);
+        }
+        let first = rects[0];
+        let shown = crate::i18n::tr_fill("VERA:PageOf", &[("page", &page), ("pages", &pages)]);
+        self.text(
+            &shown,
+            RectPx::new(first.x, first.y - 24, first.w, 20),
+            ShellAlign::H_CENTER,
+        );
+    }
+}
+
+/// Paints `dialog` over the active-game shell (`0x00621E90` -> `0x0072F540`):
+/// the shell art, its lower right-panel button and title 0x694, what
+/// `extras` adds, then the status line 0x695.
+pub(super) fn paint_dialog(
+    state: &mut AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+    dialog: &InGameDialog,
+    extras: impl FnOnce(&mut InGamePaint<'_>, &DialogController),
+) -> anyhow::Result<()> {
+    let frame = {
+        let state: &AppState = state;
+        let ui = (dialog.ui)(state).expect("the open dialog's controls");
+        let mut paint = InGamePaint::new(state);
+        paint.help = crate::app::input::dialog_page::help(ui).map(|key| state.csf_label(key, ""));
+        let shell = paint.shell;
+        let (id, caption) = dialog.lower;
+        let rect = shell
+            .layout
+            .lower_button_rect(shell.width, shell.button_size);
+        let caption = paint.label(caption);
+        paint.button(
+            rect,
+            &caption,
+            crate::app::input::dialog_page::pressed(ui, id),
+        );
+        if let Some(title) = dialog.title {
+            let title = paint.label(title);
+            paint.text(
+                &title,
+                right_panel_title_rect(shell.width),
+                ShellAlign::PANEL_TITLE,
+            );
+        }
+        extras(&mut paint, ui);
+        if let Some(help) = paint.help.take() {
+            paint.text(&help, status_line_rect(shell.height), ShellAlign::NONE);
+        }
+        paint.finish(dialog.label)
+    };
+    render_in_game_shell_frame(state, encoder, destination, frame)
 }
 
 /// The whole canvas drawn over `rect`, scaled to its size, then clipped as

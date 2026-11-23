@@ -180,9 +180,14 @@ pub(super) fn raw_occupation_plane(
     path_grid: Option<&PathGrid>,
 ) -> ((u16, u16), MovementLayer) {
     let at = ((coord.x / 256) as u16, (coord.y / 256) as u16);
-    let ground = ground_pose::ground_surface_z_at([coord.x, coord.y], false, terrain, path_grid)
-        .unwrap_or(coord.z);
-    let deck = coord.z >= ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+    let deck_surface =
+        ground_pose::ground_surface_z_at([coord.x, coord.y], true, terrain, path_grid)
+            .unwrap_or_else(|| {
+                coord
+                    .z
+                    .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+            });
+    let deck = coord.z >= deck_surface
         && (!needs_structural
             || terrain
                 .and_then(|terrain| terrain.cell(at.0, at.1))
@@ -223,13 +228,13 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.tether.partner().is_some())
+            .is_some_and(|entity| entity.seldom.tether.partner().is_some())
         {
             crate::sim::radio::transmit_to_contact(
                 self,
@@ -249,7 +254,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
@@ -300,7 +305,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.foot_mark_put_observed(id, rules, registry, &mut |_, _| {}, frame_effects)
     }
@@ -314,7 +319,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
@@ -342,7 +347,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
             return;

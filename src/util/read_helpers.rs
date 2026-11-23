@@ -1,4 +1,5 @@
-//! Little-endian binary reading helpers shared across asset parsers.
+//! Little-endian binary reading helpers shared across asset parsers and
+//! wire decoders.
 //!
 //! RA2 asset formats (.mix, .shp, .vxl, .pal, .tmp, .hva) all use
 //! little-endian byte ordering for multi-byte integers. These helpers read
@@ -13,11 +14,29 @@
 //!
 //! ## Dependency rules
 //! - Part of util/ — no dependencies on game modules.
-//! - Any asset parser may use these.
+//! - Any asset parser or decoder may use these.
+
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 
 /// Read `N` bytes at `offset`, or `None` when the slice ends first.
 fn read_array<const N: usize>(data: &[u8], offset: usize) -> Option<[u8; N]> {
     data.get(offset..)?.first_chunk::<N>().copied()
+}
+
+/// The `N` bytes at `AT` of a fixed-size buffer. A field that would run past
+/// the buffer's end fails the build, so the read has no failure to handle.
+pub fn array_at<const AT: usize, const N: usize, const L: usize>(bytes: &[u8; L]) -> [u8; N] {
+    const { assert!(AT + N <= L, "a fixed field past the end of its buffer") };
+    std::array::from_fn(|index| bytes[AT + index])
 }
 
 /// Read a little-endian u16 at `offset`, or `None` when the slice ends first.

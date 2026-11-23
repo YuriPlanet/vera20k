@@ -8,10 +8,12 @@ use crate::map::source::{LoadedTransferAsset, TransferResource};
 use crate::util::time::{Duration, Instant};
 use anyhow::{Result, anyhow, ensure};
 use std::path::PathBuf;
+use std::sync::Arc;
 /// The lobby's map transfer chunk (docs/lobby-protocol.md, `map_upload`):
 /// each chunk but a transfer's last holds exactly this many bytes, which
 /// [`Transfer::append_chunk`] alone checks.
 const MAP_CHUNK_BYTES: usize = 32768;
+const MAP_PROGRESS_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(PartialEq, Eq)]
 struct Key {
@@ -37,6 +39,8 @@ enum Direction {
     Download,
 }
 struct Transfer {
+    /// Dropping the selection cancels map work still waiting for its turn.
+    active: Arc<()>,
     resource: TransferResource,
     direction: Direction,
     bytes: Vec<u8>,
@@ -46,6 +50,17 @@ struct Transfer {
     deadline: Instant,
     retries: u8,
     directory: PathBuf,
+}
+impl LiveService {
+    fn request_map(&self, transfer: u64, active: &Arc<()>, io: http::MapIo) -> Result<()> {
+        self.requests.send(http::Request::Map {
+            transfer,
+            active: Arc::downgrade(active),
+            io,
+            completed: self.requests.clone(),
+        })?;
+        Ok(())
+    }
 }
 impl Transfer {
     fn append_chunk(
@@ -69,12 +84,15 @@ impl Transfer {
             "invalid map chunk"
         );
         self.bytes.extend_from_slice(bytes);
-        self.offset += bytes.len();
-        self.in_flight = false;
-        self.retries = 0;
+        self.advanced_to(self.offset + bytes.len());
         Ok(())
     }
 }
+enum FailureNotice<'a> {
+    Retry(&'a str),
+    Notice(&'static str),
+}
+
 #[derive(Default)]
 pub(super) struct Transfers {
     active: bool,
@@ -144,19 +162,22 @@ pub(super) fn poll(state: &mut AppState, service: &mut LiveService) {
 }
 impl Transfers {
     pub(super) fn current_verified(&self, state: &AppState) -> bool {
+        self.complete && self.matches_selection(state)
+    }
+
+    fn matches_selection(&self, state: &AppState) -> bool {
         let Some(metadata) = state.match_state.session.network_map_metadata() else {
             return false;
         };
-        self.complete
-            && self.key.as_ref().is_some_and(|key| {
-                key.digest == metadata.source_sha256
-                    && key.total == usize::try_from(metadata.byte_length).unwrap_or(0)
-                    && key.effective_digest == metadata.effective_digest
-                    && key.random == self.generated
-                    && self.scope(state).is_some_and(|scope| scope == key.room)
-            })
+        self.key.as_ref().is_some_and(|key| {
+            key.digest == metadata.source_sha256
+                && key.total == usize::try_from(metadata.byte_length).unwrap_or(0)
+                && key.effective_digest == metadata.effective_digest
+                && key.random == self.generated
+                && self.scope(state).is_some_and(|scope| scope == key.room)
+        })
     }
-    /// The transfer failed and will not retry.
+    /// The current attempt failed and cannot advance.
     pub(super) fn failed(&self) -> bool {
         self.failed
     }
@@ -168,30 +189,61 @@ impl Transfers {
         })
     }
     fn fail(&mut self, state: &mut AppState) {
-        // Retried failures and the deadline are the connection, not the map.
-        let interrupted = self
-            .transfer
-            .as_ref()
-            .is_some_and(|transfer| transfer.retries > 0 || Instant::now() > transfer.deadline);
-        if !self.failed {
-            super::notice(
-                state,
-                &crate::i18n::tr(if interrupted {
-                    "VERA:MapTransferInterrupted"
-                } else {
-                    "VERA:MapTransferFailed"
-                }),
-            );
+        let can_retry = !state.match_state.session.host()
+            && !crate::app::shell_network_setup::quick_match(state)
+            && !crate::app::shell_network_setup::external(state)
+            && self.matches_selection(state);
+        let map = state
+            .match_state
+            .session
+            .network_map_metadata()
+            .filter(|_| can_retry)
+            .map(|map| map.display_name.as_str());
+        match self.stop_failed(map) {
+            Some(FailureNotice::Retry(name)) => {
+                let name = name.to_owned();
+                let message = crate::i18n::tr_fill("VERA:RoomMapRetryPrompt", &[("map", &name)]);
+                crate::app::shell_network_setup::offer_missing_map(
+                    state,
+                    name,
+                    message,
+                    "VERA:RoomMapRetry",
+                );
+            }
+            Some(FailureNotice::Notice(key)) => {
+                crate::app::shell_network_setup::close_missing_map_offer(state);
+                super::notice(state, &crate::i18n::tr(key));
+            }
+            None => {}
         }
+        set_network_map_progress(state, None);
+    }
+
+    fn stop_failed<'a>(&mut self, retry_map: Option<&'a str>) -> Option<FailureNotice<'a>> {
+        if self.failed {
+            return None;
+        }
+        let notice = match retry_map {
+            // The guest's source lookup and final verification can fail on either
+            // side of the chunk phase, when no transfer buffer exists.
+            Some(name) => FailureNotice::Retry(name),
+            _ if self
+                .transfer
+                .as_ref()
+                .is_some_and(|t| t.retries > 0 || Instant::now() > t.deadline) =>
+            {
+                FailureNotice::Notice("VERA:MapTransferInterrupted")
+            }
+            _ => FailureNotice::Notice("VERA:MapTransferFailed"),
+        };
         self.failed = true;
         self.complete = false;
         self.transfer = None;
         self.next_resource = None;
-        // The offer closes whether it still asks or shows the download.
         self.asking = false;
-        crate::app::shell_network_setup::close_missing_map_offer(state);
-        set_network_map_progress(state, None);
+        Some(notice)
     }
+
     fn poll(&mut self, state: &mut AppState, service: &mut LiveService) -> Result<()> {
         if !self.active {
             return Ok(());
@@ -218,21 +270,11 @@ impl Transfers {
             effective_digest: metadata.effective_digest.clone(),
             random: self.generated.clone(),
         };
-        if self.key.as_ref() != Some(&key) {
-            self.forget_other_available(&key);
-            // An offer for the previous map closes, asking or downloading.
-            self.asking = false;
+        if self.select_map(
+            key,
+            crate::app::shell_network_setup::missing_map_download_agreed(state),
+        ) {
             crate::app::shell_network_setup::close_missing_map_offer(state);
-            self.generation = self.generation.wrapping_add(1);
-            self.transfer = None;
-            self.complete = false;
-            self.failed = false;
-            self.next_resource = Some(if seed {
-                TransferResource::Seed
-            } else {
-                TransferResource::Map
-            });
-            self.key = Some(key);
         }
         self.recheck_lost_source(&state.match_state.session, seed);
         if self.failed || self.complete {
@@ -265,8 +307,7 @@ impl Transfers {
                 let end = (transfer.offset + MAP_CHUNK_BYTES).min(total);
                 let id = service.next_request;
                 service.next_request = service.next_request.wrapping_add(1);
-                http::Request::UploadMapChunk {
-                    transfer: self.generation,
+                http::MapIo::UploadMapChunk {
                     resource: transfer.resource,
                     id,
                     digest: digest.to_owned(),
@@ -275,8 +316,7 @@ impl Transfers {
                     bytes: transfer.bytes[transfer.offset..end].to_vec(),
                 }
             }
-            Direction::Download => http::Request::MapChunk {
-                transfer: self.generation,
+            Direction::Download => http::MapIo::MapChunk {
                 resource: transfer.resource,
                 seed_digest: key.digest.clone(),
                 digest: digest.to_owned(),
@@ -284,9 +324,28 @@ impl Transfers {
                 match_id: self.watching.clone(),
             },
         };
-        service.requests.send(request)?;
+        service.request_map(self.generation, &transfer.active, request)?;
         transfer.in_flight = true;
         Ok(())
+    }
+    /// A changed selection dismisses any prompt for the previous map.
+    fn select_map(&mut self, key: Key, retry: bool) -> bool {
+        let changed = self.key.as_ref() != Some(&key);
+        if changed || self.failed && retry {
+            self.forget_other_available(&key);
+            self.asking = false;
+            self.generation = self.generation.wrapping_add(1);
+            self.transfer = None;
+            self.complete = false;
+            self.failed = false;
+            self.next_resource = Some(if key.random.is_some() {
+                TransferResource::Seed
+            } else {
+                TransferResource::Map
+            });
+            self.key = Some(key);
+        }
+        changed
     }
     fn begin_resource(
         &mut self,
@@ -342,7 +401,9 @@ impl Transfers {
             }
         }
         let now = Instant::now();
+        let active = Arc::new(());
         self.transfer = Some(Transfer {
+            active: Arc::clone(&active),
             resource,
             direction: if host {
                 Direction::Upload
@@ -353,27 +414,26 @@ impl Transfers {
             offset: 0,
             in_flight: true,
             retry_at: now,
-            deadline: now + Duration::from_secs(300),
+            deadline: now + MAP_PROGRESS_TIMEOUT,
             retries: 0,
             directory: directory.clone(),
         });
         set_network_map_progress(state, Some((0, total as u32)));
-        if let Some(source) = upload {
-            service.requests.send(http::Request::ReadMapUpload {
-                transfer: self.generation,
+        let io = if let Some(source) = upload {
+            http::MapIo::ReadMapUpload {
                 source,
                 digest: digest.to_owned(),
                 total,
-            })?;
+            }
         } else {
-            service.requests.send(http::Request::CachedMap {
-                transfer: self.generation,
+            http::MapIo::CachedMap {
                 resource,
                 directory,
                 digest: digest.to_owned(),
                 total,
-            })?;
-        }
+            }
+        };
+        service.request_map(self.generation, &active, io)?;
         Ok(())
     }
     /// A finished transfer stands only while the session holds the map it
@@ -483,6 +543,13 @@ impl Transfers {
         shared_maps::accept_transfer_asset(state, loaded, resource, self.generated.as_ref())?;
         self.finish_resource(state, resource)
     }
+    /// A previous attempt can finish its cache lookup or install after a new
+    /// attempt has already started on this connection.
+    fn transfer_for_response(&self, generation: u64) -> Option<&Transfer> {
+        self.transfer
+            .as_ref()
+            .filter(|_| generation == self.generation)
+    }
     fn response(
         &mut self,
         state: &mut AppState,
@@ -499,21 +566,13 @@ impl Transfers {
             | http::Response::MapFailure { transfer, .. } => *transfer,
             _ => return Ok(()),
         };
-        if generation != self.generation || self.transfer.is_none() {
-            return Ok(());
-        }
-        let Some(expected) = state.match_state.session.network_map_metadata() else {
+        let Some(resource) = self.transfer_for_response(generation).map(|t| t.resource) else {
             return Ok(());
         };
-        let key = self.key.as_ref().expect("transfer key");
-        if key.digest != expected.source_sha256
-            || key.total != expected.byte_length as usize
-            || key.effective_digest != expected.effective_digest
-            || key.random != self.generated
-        {
+        if !self.matches_selection(state) {
             return Ok(());
         }
-        let resource = self.transfer.as_ref().expect("active").resource;
+        let key = self.key.as_ref().expect("current transfer key");
         let (digest, total) = key.asset(resource);
         match response {
             http::Response::MapUploadPrepared { bytes, .. } => {
@@ -534,7 +593,10 @@ impl Transfers {
                 // Quick Match and launcher-started games show no room to ask in.
                 let dialog = !crate::app::shell_network_setup::quick_match(state)
                     && !crate::app::shell_network_setup::external(state);
-                if dialog && self.ask_before_download() {
+                if dialog
+                    && !crate::app::shell_network_setup::missing_map_download_agreed(state)
+                    && self.ask_before_download()
+                {
                     set_network_map_progress(state, None);
                     let metadata = state
                         .match_state
@@ -556,7 +618,12 @@ impl Transfers {
                         ],
                     );
                     let name = metadata.display_name.clone();
-                    crate::app::shell_network_setup::offer_missing_map(state, name, message);
+                    crate::app::shell_network_setup::offer_missing_map(
+                        state,
+                        name,
+                        message,
+                        "VERA:Download",
+                    );
                 }
             }
             http::Response::MapUploaded { completed, .. } => {
@@ -565,9 +632,7 @@ impl Transfers {
                     completed == (transfer.offset + MAP_CHUNK_BYTES).min(total),
                     "upload offset differs"
                 );
-                transfer.offset = completed;
-                transfer.in_flight = false;
-                transfer.retries = 0;
+                transfer.advanced_to(completed);
                 set_network_map_progress(state, Some((completed as u32, total as u32)));
                 if completed == total {
                     if resource == TransferResource::Preview {
@@ -605,14 +670,17 @@ impl Transfers {
                 transfer.append_chunk(key, &received, received_total, offset, &bytes, complete)?;
                 set_network_map_progress(state, Some((transfer.offset as u32, total as u32)));
                 if complete {
-                    service.requests.send(http::Request::InstallMap {
-                        transfer: self.generation,
-                        resource,
-                        directory: transfer.directory.clone(),
-                        digest: digest.to_owned(),
-                        total,
-                        bytes: std::mem::take(&mut transfer.bytes),
-                    })?;
+                    service.request_map(
+                        self.generation,
+                        &transfer.active,
+                        http::MapIo::InstallMap {
+                            resource,
+                            directory: transfer.directory.clone(),
+                            digest: digest.to_owned(),
+                            total,
+                            bytes: std::mem::take(&mut transfer.bytes),
+                        },
+                    )?;
                     transfer.in_flight = true;
                 }
             }
@@ -685,12 +753,20 @@ impl Transfers {
         if let Some(transfer) = self.transfer.as_mut() {
             let now = Instant::now();
             transfer.retry_at = now;
-            transfer.deadline = now + Duration::from_secs(300);
+            transfer.deadline = now + MAP_PROGRESS_TIMEOUT;
         }
     }
 }
 
 impl Transfer {
+    /// Only an accepted chunk gives the next chunk another full idle interval.
+    fn advanced_to(&mut self, completed: usize) {
+        self.offset = completed;
+        self.in_flight = false;
+        self.retries = 0;
+        self.deadline = Instant::now() + MAP_PROGRESS_TIMEOUT;
+    }
+
     /// A dropped connection retries, less often each time, until the
     /// transfer's deadline rather than failing on a short drop.
     fn retry_after_failure(&mut self, retryable: bool) -> Result<()> {
@@ -815,10 +891,9 @@ mod tests {
         assert_eq!(maps.next_resource, Some(TransferResource::Map));
         assert!(maps.lobby_holds(TransferResource::Map));
     }
-    #[test]
-    fn a_guest_missing_the_map_waits_for_its_answer_before_downloading() {
+    fn download(resource: TransferResource) -> Transfer {
         let now = Instant::now();
-        let transfer = |resource| Transfer {
+        Transfer {
             resource,
             direction: Direction::Download,
             bytes: Vec::new(),
@@ -827,8 +902,13 @@ mod tests {
             retry_at: now,
             deadline: now,
             retries: 0,
+            active: Arc::new(()),
             directory: PathBuf::new(),
-        };
+        }
+    }
+    #[test]
+    fn a_guest_missing_the_map_waits_for_its_answer_before_downloading() {
+        let now = Instant::now();
         let mut maps = Transfers {
             key: Some(Key {
                 room: "room".into(),
@@ -837,7 +917,7 @@ mod tests {
                 effective_digest: "b".repeat(64),
                 random: None,
             }),
-            transfer: Some(transfer(TransferResource::Map)),
+            transfer: Some(download(TransferResource::Map)),
             ..Default::default()
         };
         assert!(maps.ask_before_download());
@@ -849,20 +929,57 @@ mod tests {
         maps.transfer.as_mut().unwrap().direction = Direction::Upload;
         assert!(!maps.ask_before_download());
         // Nor does a generated map's seed.
-        maps.transfer = Some(transfer(TransferResource::Seed));
+        maps.transfer = Some(download(TransferResource::Seed));
         assert!(!maps.ask_before_download());
+    }
+    #[test]
+    fn retry_in_the_same_room_starts_a_fresh_attempt_for_the_selected_map() {
+        let map = |room: &str| Key {
+            room: room.into(),
+            digest: "a".repeat(64),
+            total: 9,
+            effective_digest: "b".repeat(64),
+            random: None,
+        };
+        let mut maps = Transfers::default();
+        assert!(maps.select_map(map("room"), false));
+        let first = maps.generation;
+        // Source checking and final verification can fail outside the chunk phase.
+        assert!(maps.transfer.is_none());
+        assert!(matches!(
+            maps.stop_failed(Some("Room map")),
+            Some(FailureNotice::Retry("Room map"))
+        ));
+        assert!(!maps.select_map(map("room"), false));
+        assert!(maps.failed && maps.next_resource.is_none());
+        assert!(!maps.select_map(map("room"), true));
+        assert!(!maps.failed && maps.next_resource == Some(TransferResource::Map));
+        let retried = maps.generation;
+        maps.transfer = Some(download(TransferResource::Map));
+        assert!(maps.transfer_for_response(first).is_none());
+        assert!(maps.transfer_for_response(retried).is_some());
+        let mut replacement = map("room");
+        replacement.digest = "c".repeat(64);
+        assert!(
+            maps.select_map(replacement, true),
+            "dismiss the old map's offer"
+        );
+        maps.transfer = Some(download(TransferResource::Map));
+        assert!(maps.transfer_for_response(retried).is_none());
+        assert!(maps.select_map(map("other room"), true));
     }
     #[test]
     fn a_dropped_connection_keeps_a_map_transfer_retrying() {
         let now = Instant::now();
         let mut transfer = Transfer {
+            active: Arc::new(()),
             resource: TransferResource::Map,
             direction: Direction::Download,
             bytes: Vec::new(),
             offset: 0,
             in_flight: true,
             retry_at: now,
-            deadline: now + Duration::from_secs(300),
+            deadline: now + MAP_PROGRESS_TIMEOUT,
             retries: 0,
             directory: PathBuf::new(),
         };
@@ -884,6 +1001,7 @@ mod tests {
         };
         let now = Instant::now();
         let mut transfer = Transfer {
+            active: Arc::new(()),
             resource: TransferResource::Map,
             direction: Direction::Download,
             bytes: Vec::new(),
@@ -901,9 +1019,17 @@ mod tests {
                 .append_chunk(&key, digest, total, 0, &oversized, false)
                 .is_err()
         );
+        assert_eq!(
+            transfer.deadline, now,
+            "invalid data cannot extend the transfer"
+        );
         transfer
             .append_chunk(&key, digest, total, 0, &full, false)
             .unwrap();
+        assert!(
+            transfer.deadline >= now + MAP_PROGRESS_TIMEOUT,
+            "verified progress renews the full wait"
+        );
         assert!(
             transfer
                 .append_chunk(&key, digest, total, 0, &full, false)

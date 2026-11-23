@@ -95,7 +95,12 @@ impl Scene {
         let commands = self.0.simulation.take_due_commands();
         let output = self
             .0
-            .advance_frame(&commands, 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                33,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         assert!(output.tick.frame_committed);
         output

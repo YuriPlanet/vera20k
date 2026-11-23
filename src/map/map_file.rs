@@ -11,6 +11,17 @@
 //! ## Dependency rules
 //! - Part of map/ — depends on assets/ (MIX archives), rules/ (INI parser), util/ (base64, lzo).
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 #[cfg(any(test, feature = "test-support"))]
@@ -622,18 +633,19 @@ fn pick_map_ini(archive: &MixArchive, transferred: bool) -> Result<IniFile, MapE
             validate_transfer_text(data)?;
         }
         match IniFile::from_bytes(data) {
-            Ok(ini) if ini.section("Map").is_some() => {
-                if !transferred {
-                    return Ok(ini);
+            Ok(ini) => match ini.section("Map").map(|map| map.name == "Map") {
+                Some(_) if !transferred => return Ok(ini),
+                Some(exact_name) => {
+                    if selected.is_some() || !exact_name {
+                        return Err(MapError::InvalidTransferContent("Ambiguous MIX map member"));
+                    }
+                    selected = Some(ini);
                 }
-                if selected.is_some() || ini.section("Map").unwrap().name != "Map" {
-                    return Err(MapError::InvalidTransferContent("Ambiguous MIX map member"));
-                }
-                selected = Some(ini);
-            }
-            Ok(ini) if transferred => validate_map_description(&ini)?,
+                None if transferred => validate_map_description(&ini)?,
+                None => {}
+            },
             Err(error) if transferred => return Err(error.into()),
-            _ => {}
+            Err(_) => {}
         }
     }
     selected.ok_or(MapError::MissingIsoMapPack)

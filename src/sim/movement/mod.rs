@@ -37,7 +37,7 @@ use crate::map::entities::EntityCategory;
 #[cfg(any(test, feature = "test-support"))]
 use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::locomotor_type::{MovementZone, SpeedType};
+use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::sim::cell_rect::PlayfieldBounds;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::entity_store::EntityStore;
@@ -64,9 +64,9 @@ mod foot_path_window_tests;
 pub(crate) use drive_locomotion::drive_do_turn;
 #[cfg(test)] // shared by test groups
 pub(crate) mod approach_oracle_seam;
+pub(crate) use foot_path::Code2Chain;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use foot_path::FindPathResult;
-pub(crate) use foot_path::Code2Chain;
 pub(crate) use foot_path::FootPathOutcome;
 pub(crate) use foot_path::coord_cell;
 pub(crate) use track_fresh::{BlockingObject, ProcessMovementArgs};
@@ -75,11 +75,13 @@ mod foot_speed;
 pub mod ground_pose;
 pub(crate) mod infantry_action;
 pub(crate) mod infantry_entry;
+mod infantry_jumpjet_destination;
 mod infantry_scatter;
 pub(crate) mod locomotor_owner;
 pub(crate) mod locomotor_ready;
 mod locomotor_turn;
 pub(crate) use locomotor_turn::locomotor_do_turn;
+mod mech;
 pub mod motion_query;
 pub(crate) mod movement_bridge;
 mod movement_commands;
@@ -118,12 +120,12 @@ mod track_host;
 mod track_path;
 pub(crate) use track_path::SetterForceReassign;
 pub mod track_process;
+mod track_speed;
+pub(crate) mod track_turn;
 pub mod tunnel_movement;
 mod tunnel_process;
 #[cfg(all(test, tests_sim_movement))]
 mod tunnel_tests;
-mod track_speed;
-pub(crate) mod track_turn;
 mod walk_admission;
 pub(crate) mod walk_head;
 mod walk_host;
@@ -158,9 +160,13 @@ pub use foot_speed::owner_speed_bonus;
 pub use foot_speed::{SpeedRules, owner_current_speed};
 
 pub use movement_commands::DestinationTiming;
+pub(crate) use movement_commands::can_accept_destination;
 pub use movement_commands::movement_goal_cell;
-pub(crate) use movement_commands::{can_accept_destination, prepare_walk_destination};
-pub(crate) use navcom::{target_cell_coord, track_stop_moving};
+#[cfg(test)]
+pub(crate) use movement_commands::prepare_walk_destination;
+pub(crate) use navcom::target_cell_coord;
+#[cfg(test)]
+pub(crate) use navcom::track_stop_moving;
 // Legacy batch tick used by focused movement fixtures.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use movement_tick::tick_movement_with_grids;
@@ -189,7 +195,8 @@ pub(super) struct MoverSnapshot {
     pub movement_zone: MovementZone,
     pub omni_crusher: bool,
     pub regular_crusher: bool,
-    pub locomotor: Option<locomotor::LocomotorState>,
+    /// The installed locomotor's active kind.
+    pub locomotor_kind: Option<LocomotorKind>,
     /// Native AStar hierarchy admission reads the stored TechnoClass+0x3D5
     /// byte. False under live MapClass authority bypasses hierarchy and runs
     /// the plain cell A*; headless fixtures without authority retain hierarchy.

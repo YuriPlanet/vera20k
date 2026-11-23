@@ -198,16 +198,12 @@ pub(crate) fn foundation_cells(
     rx: u16,
     ry: u16,
     foundation: &crate::rules::foundation::Foundation,
-) -> Vec<(u16, u16)> {
-    foundation
-        .cell_offsets()
-        .into_iter()
-        .filter_map(|(dx, dy)| {
-            let x = u16::try_from(i32::from(rx) + i32::from(dx)).ok()?;
-            let y = u16::try_from(i32::from(ry) + i32::from(dy)).ok()?;
-            Some((x, y))
-        })
-        .collect()
+) -> impl Iterator<Item = (u16, u16)> + '_ {
+    foundation.cell_offsets().filter_map(move |(dx, dy)| {
+        let x = u16::try_from(i32::from(rx) + i32::from(dx)).ok()?;
+        let y = u16::try_from(i32::from(ry) + i32::from(dy)).ok()?;
+        Some((x, y))
+    })
 }
 
 /// The unit gate against `CrewEscape=` (`0x00738218..0x0073822D`: FILD,
@@ -398,7 +394,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         building_id: u64,
         mut commit_cell_smudge: impl FnMut(&mut Simulation, (u16, u16)),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
@@ -409,7 +405,7 @@ impl Simulation {
         let owner = entity.owner();
         let origin = (entity.position.rx(), entity.position.ry());
         let captured = entity.building.has_been_captured.is_set();
-        let cells = foundation_cells(origin.0, origin.1, &object.foundation);
+        let cells: Vec<_> = foundation_cells(origin.0, origin.1, &object.foundation).collect();
         // C4AppliedBy (+0x540); the pointer-expiry broadcast clears it when
         // the planter leaves play.
         let c4_source = entity
@@ -491,7 +487,7 @@ impl Simulation {
         building_id: u64,
         cell: (u16, u16),
         c4_source: Option<u64>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(building) = self.substrate.entities.get(building_id) else {
             return false;
@@ -584,7 +580,7 @@ impl Simulation {
         building_id: u64,
         killer: Option<u64>,
         cells: &[(u16, u16)],
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> usize {
         let Some(building) = self.substrate.entities.get(building_id) else {
             return 0;
@@ -630,7 +626,6 @@ impl Simulation {
     /// SpawnSurvivors UnInits it (`0x00442FE5`, vt+0xF8), Mission_Selling
     /// deletes it (`0x0044A573`, vt+0x20, whose destructor also leaves its
     /// team), and VERA UnInits both.
-    #[allow(clippy::too_many_arguments)]
     fn eject_absorbed_passenger(
         &mut self,
         rules: &RuleSet,
@@ -640,7 +635,7 @@ impl Simulation {
         cell: Option<(u16, u16)>,
         no_survivor: bool,
         killer: Option<u64>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(infantry) = self
             .substrate
@@ -693,8 +688,8 @@ impl Simulation {
                 entity.passenger_role_mut().clear_carrier_relation();
                 entity.on_bridge.store(on_bridge);
                 match spot_offset {
-                    Some((sub_x, sub_y)) => entity.sub_cell.hold_offset(sub_x, sub_y),
-                    None => entity.sub_cell.release(),
+                    Some((sub_x, sub_y)) => entity.seldom.sub_cell.hold_offset(sub_x, sub_y),
+                    None => entity.seldom.sub_cell.release(),
                 }
             }
             let revealed = !no_survivor
@@ -759,7 +754,7 @@ impl Simulation {
         unit_id: u64,
         prevent_escape: bool,
         selected_by_player: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
@@ -767,7 +762,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        let captor_type = entity.capture_infantry_type_index.get();
+        let captor_type = entity.seldom.capture_infantry_type_index.get();
         if captor_type == -1 && (prevent_escape || !object.crewed || object.passengers != 0) {
             return;
         }
@@ -879,7 +874,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         unit_id: u64,
         dying: DyingTransport,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
@@ -924,7 +919,7 @@ impl Simulation {
             rules,
             unit_id,
             crate::sim::passenger::DepartureRoute::DeathEscape,
-            |sim, passenger| {
+            |sim, passenger, effects| {
                 sim.escape_dying_unit(rules, registry, unit_id, passenger, dying, effects);
                 Ok(())
             },
@@ -950,7 +945,7 @@ impl Simulation {
         unit_id: u64,
         passenger: u64,
         dying: DyingTransport,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::movement::ground_pose::{ground_surface_z_at, position_world_coord};
         // VERA's carrier relation keeps the passenger off its cell's
@@ -1113,7 +1108,7 @@ impl Simulation {
         crew: &str,
         owner: InternedId,
         unlimbo: CrewUnlimbo,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let (rx, ry, z) = unlimbo.cell_level();
         let id = self.construct_crew_limbo(rules, crew, owner, (rx, ry), z, effects)?;
@@ -1133,19 +1128,9 @@ impl Simulation {
         owner: InternedId,
         cell: (u16, u16),
         z: u8,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
-        let owner_name = self.interner.resolve(owner).to_string();
-        self.construct_object_limbo_at_height(
-            crew,
-            &owner_name,
-            cell.0,
-            cell.1,
-            0,
-            z,
-            rules,
-            effects,
-        )
+        self.construct_object_limbo_at_height(crew, owner, cell.0, cell.1, 0, z, rules, effects)
     }
 
     /// Unlimbo a Foot in limbo as `unlimbo` says; an infantryman takes the
@@ -1160,7 +1145,7 @@ impl Simulation {
         id: u64,
         unlimbo: CrewUnlimbo,
         facing: Option<u8>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let infantry = self
             .substrate
@@ -1219,9 +1204,9 @@ impl Simulation {
         };
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if holds_spot {
-                entity.sub_cell.hold_offset(sub_x, sub_y);
+                entity.seldom.sub_cell.hold_offset(sub_x, sub_y);
             } else {
-                entity.sub_cell.release();
+                entity.seldom.sub_cell.release();
             }
             // The OnBridge the native caller copies from the object being left
             // before this Unlimbo: `BuildingClass::SpawnSurvivors`
@@ -1286,7 +1271,7 @@ impl Simulation {
         building_id: u64,
         count: i32,
         cells: &[(u16, u16)],
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(owner) = self
             .substrate
@@ -1421,7 +1406,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         id: u64,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if let Err(cause) = self.scatter(
             id,

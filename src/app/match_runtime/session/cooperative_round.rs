@@ -201,6 +201,7 @@ impl MatchSession {
             startup,
             connections,
             room_return,
+            ..
         } = &network.phase
         else {
             anyhow::bail!("the co-op round follows a frozen match");
@@ -341,7 +342,7 @@ impl MatchSession {
         } = round_parts(self)?;
         anyhow::ensure!(round.outcome.is_none(), "the result dialog has closed");
         if online && round.can_continue {
-            if let NetworkRoomReturn::Wol { cooperative } = room_return {
+            if let NetworkRoomReturn::Wol { cooperative, .. } = room_return {
                 *cooperative = Some(CooperativeResume {
                     mode_id: launch.mode.id,
                     scenario: round.next_scenario,
@@ -673,6 +674,7 @@ impl MatchSession {
             startup: Arc::clone(&startup),
             connections,
             room_return,
+            campaign_abort_pending: false,
         };
         self.latency_fudge = latency_fudge;
         Ok(crate::app::match_bootstrap::LoadingStartup::Network(
@@ -758,6 +760,8 @@ fn apply_round_options(
     options: &CooperativeRoundOptions,
     difficulty: i32,
 ) -> anyhow::Result<bool> {
+    // Validated on a copy, committed on success: a refused change leaves the
+    // session as it was.
     let mut candidate = launch.clone();
     let mut changed = options.difficulty != difficulty;
     for (row, choices) in &options.humans {
@@ -821,7 +825,8 @@ mod tests {
             .unwrap();
         session.set_network_start_seed(SEED).unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
-        let LoadingStartup::Network(startup) = session.freeze_network_start(SEED).unwrap() else {
+        let LoadingStartup::Network(startup) = session.freeze_network_start(SEED, None).unwrap()
+        else {
             panic!("network start");
         };
         (session, startup)
@@ -854,7 +859,7 @@ mod tests {
             .accept_network_setup(launch, true, Some(7), false)
             .unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
-        session.freeze_network_start(SEED).unwrap();
+        session.freeze_network_start(SEED, None).unwrap();
         session
             .enter_cooperative_round(Some("C2S02MD.MAP".into()), true, 1, 1, None)
             .unwrap();
@@ -1250,7 +1255,10 @@ mod tests {
     #[test]
     fn an_online_round_continues_in_its_room() {
         let (mut session, _) = frozen_in(NetworkReturnContext::Wol, 0);
-        session.set_network_room_return(NetworkRoomReturn::Wol { cooperative: None });
+        session.set_network_room_return(NetworkRoomReturn::Wol {
+            cooperative: None,
+            campaign: None,
+        });
         let mode_id = session.network_setup().unwrap().mode.id;
         session
             .enter_cooperative_round(Some("C2S02MD.MAP".into()), true, 2, 1, None)
@@ -1270,7 +1278,8 @@ mod tests {
                 cooperative: Some(CooperativeResume {
                     mode_id,
                     scenario: 1
-                })
+                }),
+                campaign: None,
             }
         );
         assert!(!session.awaiting_wol_room_return());
@@ -1296,7 +1305,7 @@ mod tests {
             session.accept_network_setup(launch, true, None, false)?;
             session.set_network_start_seed(SEED)?;
             session.prepare_network_timing(2, || 0)?;
-            session.freeze_network_start(SEED).map(|_| session)
+            session.freeze_network_start(SEED, None).map(|_| session)
         };
         let mut session = freeze(7).unwrap();
         session

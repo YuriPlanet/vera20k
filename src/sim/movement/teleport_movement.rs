@@ -574,7 +574,7 @@ impl crate::sim::world::Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         is_harvester: bool,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<bool, String> {
         use crate::map::entities::EntityCategory;
         use crate::map::resolved_terrain::NativeCellQuery;
@@ -1266,7 +1266,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        ctx: crate::sim::world::ObjectAiCtx<'_>,
+        ctx: &mut crate::sim::world::ObjectAiCtx<'_>,
     ) -> bool {
         let frame = self.session.binary_frame() as i32;
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -1322,7 +1322,7 @@ impl crate::sim::world::Simulation {
                     id,
                     rules,
                     Some(rules.overlay_registry()),
-                    ctx.effects,
+                    &mut ctx.effects,
                 );
             }
         }
@@ -1350,7 +1350,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        ctx: crate::sim::world::ObjectAiCtx<'_>,
+        ctx: &mut crate::sim::world::ObjectAiCtx<'_>,
     ) -> Option<SpecialMovementOutcome> {
         let phase = self
             .substrate
@@ -1429,9 +1429,10 @@ impl crate::sim::world::Simulation {
                     entity
                         .on_bridge
                         .store(terrain.native_cell_flags(cell) & 0x100 != 0);
-                    entity.position.store_cell_level(
+                    entity.position.store_cell_level_on_deck(
                         terrain.native_cell_ground_fields(cell).0,
                         entity.on_bridge(),
+                        terrain.corrected_high_bridge_deck_at(cell),
                     );
                 }
                 let on_bridge = entity.on_bridge();
@@ -1537,7 +1538,7 @@ mod tests {
             assert!(!sim.temporal_ai_prologue(
                 1,
                 &rules,
-                crate::sim::world::ObjectAiCtx::default(),
+                &mut crate::sim::world::ObjectAiCtx::default(),
                 &mut bridge_changed,
             ));
             let actor = sim.substrate.entities.get(1).unwrap();
@@ -1587,7 +1588,7 @@ mod tests {
         sim.process_teleport(
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
         );
         let owner = sim.substrate.entities.get_mut(1).unwrap();
         assert!(owner.is_warping_in());
@@ -1656,7 +1657,7 @@ mod tests {
         sim.process_teleport(
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
         );
 
         let entity = sim.substrate.entities.get(1).expect("should exist");
@@ -1666,6 +1667,49 @@ mod tests {
             entity.teleport_state().is_none(),
             "harvester teleport should clean up in one frame"
         );
+    }
+
+    /// Process (`0x00719631..0x007196B2`) resolves the destination's bridge
+    /// before SetHeight(0): an arrival on a fixed high-bridge deck over a dip
+    /// stores that deck as its level, not the dip's ground plus four.
+    #[test]
+    fn an_arrival_over_a_dip_stores_the_decks_level() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+        use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+        let mut sim = crate::sim::world::Simulation::new();
+        // The anchor at level 5 puts the deck at 9; its lane (10, 9) is a dip.
+        let mut terrain = test_grid(32, 32, |x, y| {
+            let mut cell = test_flat_cell(x, y);
+            cell.level = if (x, y) == (10, 9) { 0 } else { 5 };
+            cell
+        });
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((10, 8), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+        sim.install_resolved_terrain_for_new_map(terrain);
+        sim.substrate
+            .entities
+            .insert(teleport_owner(1, "CMIN", 20, 20));
+        assert!(arm_teleport(
+            sim.substrate.entities.get_mut(1).unwrap(),
+            DriveCoord::cell(10, 9, 0),
+            None,
+            &default_rules(),
+            true
+        ));
+
+        sim.process_teleport(
+            1,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
+        );
+
+        let entity = sim.substrate.entities.get(1).unwrap();
+        assert_eq!((entity.position.rx(), entity.position.ry()), (10, 9));
+        assert!(entity.on_bridge());
+        assert_eq!(entity.position.z(), 9);
     }
 
     /// Regression: non-harvester (Chrono Legionnaire path) still goes through the
@@ -1700,7 +1744,7 @@ mod tests {
         sim.process_teleport(
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
         );
         let ts = sim
             .substrate

@@ -1,209 +1,168 @@
 //! Full-screen B8, original6B6300 and shared native shell/control owners.
 use super::controls::{ControlPaint, paint_control};
-use super::in_game_shell::{self, InGameShellFrame};
-use super::pause_menu::{button_frame, button_text_rect};
-use super::text::{localized_label, push_text_draw, rect_to_text_rect};
-use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
+use super::pause_menu::button_text_rect;
+use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH};
 use crate::app::AppState;
-use crate::render::{shell_paint, shell_text::ShellAlign};
-use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::list::ListMetrics;
-use crate::ui::shell::list::ShellListGeometry;
-use crate::ui::shell::pause_menu::PauseMenuButtonState;
-use crate::ui::shell::sound::{SoundButton, SoundLayout, SoundSlider};
+use crate::app::input::dialog_page;
+use crate::app::input::sound::DIALOG;
+use crate::render::shell_paint;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
+use crate::ui::shell::sound::{SoundButton, SoundControl, SoundLayout, SoundSlider};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 pub(crate) fn render_sound_shell(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    let in_game_shell::InGameShellGeometry {
-        width,
-        height,
-        layout: shell,
-        button_size: size,
-    } = in_game_shell::current_in_game_shell_layout(state).expect("active B8 geometry");
-    let layout = SoundLayout::new(width, height, shell, size);
-    let dialog = state
-        .match_state
-        .match_presentation
-        .sound_dialog
-        .as_ref()
-        .expect("active B8 state");
-    let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-        .expect("active B8 art");
-    let mut art = in_game_shell::background_instances(atlas, shell, width, height);
-    let pressed = dialog.buttons.is_pressed(SoundButton::Back);
-    let frame = button_frame(PauseMenuButtonState {
-        pressed,
-        ..Default::default()
-    });
-    if let Some(entry) = atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0]) {
-        in_game_shell::push_art(
-            &mut art,
-            entry,
-            layout.back,
-            RectPx::new(0, 0, width, height),
-        );
-    }
-    let atlas = state
-        .frontend
-        .skirmish_shell_chrome
-        .as_ref()
-        .expect("active B8 controls");
-    let mut controls = Vec::new();
-    let chrome = atlas.control_chrome();
-    for id in SoundSlider::ALL {
-        let rect = layout.sliders[id as usize];
-        paint_control(
-            &mut controls,
-            &chrome,
-            ControlPaint::Trackbar {
+    super::in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
+        let state = paint.state;
+        let layout = paint.shell.place(SoundLayout::new);
+        let dialog = state
+            .match_state
+            .match_presentation
+            .sound_dialog
+            .as_ref()
+            .expect("active B8 state");
+        let pressed_of = |id: SoundButton| dialog_page::pressed(ui, SoundControl::Button(id).id());
+        let list = dialog.list().expect("B8's list");
+        let positions = dialog.positions();
+        // B8 reads the control under the pointer on every move, a held
+        // trackbar's drag included.
+        let (x, y) = super::in_game_shell_cursor(state);
+        let hovered = match dialog_page::held_trackbar(ui) {
+            Some(_) => dialog_page::hit(ui, x, y),
+            None => dialog_page::hovered(ui),
+        };
+        let help = hovered
+            .and_then(SoundControl::from_id)
+            .map(|control| paint.label(control.help()));
+        paint.help = help;
+        let atlas = state
+            .frontend
+            .skirmish_shell_chrome
+            .as_ref()
+            .expect("active B8 controls");
+        let chrome = atlas.control_chrome();
+        let controls = &mut paint.controls;
+        for id in SoundSlider::ALL {
+            let rect = layout.sliders[id as usize];
+            // B8 opens only with an output device ([`SoundState`]).
+            let trackbar = ControlPaint::Trackbar {
                 rect,
                 thumb_left: dialog.thumb_left(id, rect),
                 plaque: true,
-                // B8 opens only with an output device ([`SoundState`]).
                 disabled: false,
-            },
-            ShellScale::RETAIL,
+            };
+            paint_control(
+                controls,
+                &chrome,
+                trackbar,
+                crate::ui::shell::geom::RETAIL_SCALE,
+            );
+        }
+        let profile = &state.persistence.options_profile;
+        for (rect, checked) in [
+            (layout.shuffle, profile.is_score_shuffle),
+            (layout.repeat, profile.is_score_repeat),
+        ] {
+            paint_control(
+                controls,
+                &chrome,
+                ControlPaint::Checkbox { rect, checked },
+                crate::ui::shell::geom::RETAIL_SCALE,
+            );
+        }
+        let geometry = ShellListGeometry::new(
+            layout.list,
+            dialog.rows.len(),
+            list.top,
+            ListMetrics::RETAIL,
         );
-    }
-    let profile = &state.persistence.options_profile;
-    for (rect, checked) in [
-        (layout.shuffle, profile.is_score_shuffle),
-        (layout.repeat, profile.is_score_repeat),
-    ] {
-        paint_control(
-            &mut controls,
-            &chrome,
-            ControlPaint::Checkbox { rect, checked },
-            ShellScale::RETAIL,
+        let (top, selected, held) = (list.top, list.selected, list.pressed);
+        super::list::paint_list(
+            controls,
+            atlas,
+            geometry,
+            top,
+            selected,
+            held,
+            false,
+            crate::ui::shell::geom::RETAIL_SCALE,
         );
-    }
-    let geometry = ShellListGeometry::new(
-        layout.list,
-        dialog.rows.len(),
-        dialog.top,
-        ListMetrics::RETAIL,
-    );
-    super::list::paint_list(
-        &mut controls,
-        atlas,
-        geometry,
-        dialog.top,
-        dialog.selected,
-        dialog.scroll.pressed_part(),
-        false,
-        ShellScale::RETAIL,
-    );
-    // 609FC7..609FE2/60A330 selects type3. MNBTTN uses native canvas
-    // centered on the resource control, not the side column's SIDEBTTN.
-    let buttons = [SoundButton::Play, SoundButton::Stop].map(|id| shell_paint::ModalButton {
-        rect: layout.button(id),
-        pressed: dialog.buttons.is_pressed(id),
-        enabled: true,
-    });
-    controls.extend(shell_paint::paint_modal_sprites(
-        None,
-        super::chrome::type3_button_frames(atlas),
-        RectPx::new(0, 0, width, height),
-        &buttons,
-        ShellScale::RETAIL,
-        shell_paint::ModalDepths {
+        // 609FC7..609FE2/60A330 selects type3. MNBTTN uses native canvas
+        // centered on the resource control, not the side column's SIDEBTTN.
+        let buttons = [SoundButton::Play, SoundButton::Stop].map(|id| shell_paint::ModalButton {
+            rect: layout.button(id),
+            pressed: pressed_of(id),
+            enabled: true,
+        });
+        let depths = shell_paint::ModalDepths {
             background: SHELL_CONTROL_DEPTH,
             button: SHELL_CONTROL_DEPTH,
             text: SHELL_CONTROL_TEXT_DEPTH,
-        },
-    ));
-    let mut texts = Vec::new();
-    let mut text = |value: &str, rect: RectPx, align: ShellAlign| {
-        push_text_draw(
-            &mut texts,
-            state,
-            value,
-            rect_to_text_rect(rect),
-            SHELL_LABEL_TEXT_RGB,
-            align,
-            SHELL_CONTROL_TEXT_DEPTH,
-            1.0,
-        )
-    };
-    text(
-        &localized_label(state, "GUI:SoundOptions", "Sound Options"),
-        layout.title,
-        ShellAlign::PANEL_TITLE,
-    );
-    for (id, key, fallback) in [
-        (SoundButton::Back, "GUI:Back", "Back"),
-        (SoundButton::Play, "GUI:Play", "Play"),
-        (SoundButton::Stop, "GUI:Stop", "Stop"),
-    ] {
-        text(
-            &localized_label(state, key, fallback),
-            button_text_rect(layout.button(id), dialog.buttons.is_pressed(id)),
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+        };
+        let frames = super::chrome::type3_button_frames(atlas);
+        let screen = paint.screen();
+        let sprites = shell_paint::paint_modal_sprites(
+            None,
+            frames,
+            screen,
+            &buttons,
+            crate::ui::shell::geom::RETAIL_SCALE,
+            depths,
         );
-    }
-    for (index, (key, fallback)) in [
-        ("GUI:MusicVolume", "Music Volume"),
-        ("GUI:SoundVolume", "Sound Volume"),
-        ("GUI:VoiceVolume", "Voice Volume"),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        text(
-            &localized_label(state, key, fallback),
-            layout.labels[index],
-            ShellAlign::H_RIGHT,
-        );
-        text(
-            &dialog.positions[index].to_string(),
-            crate::ui::shell::trackbar::value_text_rect(layout.sliders[index], ShellScale::RETAIL),
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-        );
-    }
-    for (rect, key, fallback) in [
-        (layout.shuffle, "GUI:Shuffle", "Shuffle"),
-        (layout.repeat, "GUI:Repeat", "Repeat"),
-    ] {
-        text(
-            &localized_label(state, key, fallback),
-            RectPx::new(rect.x + 26, rect.y, rect.w - 26, rect.h),
-            ShellAlign::V_CENTER,
-        );
-    }
-    for (visible, row) in dialog
-        .rows
-        .iter()
-        .skip(dialog.top)
-        .take(geometry.visible_rows)
-        .enumerate()
-    {
-        let r = geometry.row(visible);
-        text(
-            &row.text,
-            RectPx::new(r.x + 2, r.y, r.w - 2, r.h),
-            ShellAlign::NONE,
-        );
-    }
-    if let Some(control) = dialog.hovered {
-        let (key, fallback) = control.help();
-        text(
-            &localized_label(state, key, fallback),
-            layout.footer,
-            ShellAlign::NONE,
-        );
-    }
-    in_game_shell::render_in_game_shell_frame(
-        state,
-        encoder,
-        destination,
-        InGameShellFrame {
-            art,
-            controls,
-            texts,
-            label: "Active Sound B8",
-        },
-    )
+        paint.controls.extend(sprites);
+        let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+        for (id, label) in [
+            (SoundButton::Play, ("GUI:Play", "Play")),
+            (SoundButton::Stop, ("GUI:Stop", "Stop")),
+        ] {
+            let caption = paint.label(label);
+            paint.text(
+                &caption,
+                button_text_rect(layout.button(id), pressed_of(id)),
+                centred,
+            );
+        }
+        let labels = [
+            ("GUI:MusicVolume", "Music Volume"),
+            ("GUI:SoundVolume", "Sound Volume"),
+            ("GUI:VoiceVolume", "Voice Volume"),
+        ];
+        for (index, label) in labels.into_iter().enumerate() {
+            let caption = paint.label(label);
+            paint.text(&caption, layout.labels[index], ShellAlign::H_RIGHT);
+            let value = vera20k_gui::shell::trackbar::value_text_rect(
+                layout.sliders[index],
+                crate::ui::shell::geom::RETAIL_SCALE,
+            );
+            paint.text(&positions[index].to_string(), value, centred);
+        }
+        for (rect, label) in [
+            (layout.shuffle, ("GUI:Shuffle", "Shuffle")),
+            (layout.repeat, ("GUI:Repeat", "Repeat")),
+        ] {
+            let caption = paint.label(label);
+            paint.text(
+                &caption,
+                RectPx::new(rect.x + 26, rect.y, rect.w - 26, rect.h),
+                ShellAlign::V_CENTER,
+            );
+        }
+        for (visible, row) in dialog
+            .rows
+            .iter()
+            .skip(list.top)
+            .take(geometry.visible_rows)
+            .enumerate()
+        {
+            let r = geometry.row(visible);
+            paint.text(
+                &row.text,
+                RectPx::new(r.x + 2, r.y, r.w - 2, r.h),
+                ShellAlign::NONE,
+            );
+        }
+    })
 }

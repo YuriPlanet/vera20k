@@ -13,16 +13,23 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::util::native_x87::adjust_for_z_standard;
 
-/// Cell578080's floor height at a world X/Y and the selected Cell's raw
-/// `+0x140 & 0x100` bridge flag, without its shared dummy-coordinate write.
+/// Cell578080's floor height at world X/Y and, on a structural cell, its
+/// bridge Z, without the shared dummy-coordinate write.
 /// Rendering must not change a retained DummyCell target or future
 /// gameplay/RNG state. `None` for a cell slope the map data gives that has no
 /// native height: the object is not drawn there.
-pub(super) fn floor_probe(terrain: &ResolvedTerrainGrid, x: i32, y: i32) -> Option<(i32, bool)> {
+pub(super) fn floor_probe(
+    terrain: &ResolvedTerrainGrid,
+    x: i32,
+    y: i32,
+) -> Option<(i32, Option<i32>)> {
     let cell = depth_cell(terrain, None, None, [(x / 256) as i16, (y / 256) as i16]);
     let ground =
         crate::util::lepton::ground_height_leptons(cell.level as u8, cell.ramp, x, y).ok()?;
-    Some((ground, cell.flags & 0x100 != 0))
+    Some((
+        ground,
+        (cell.flags & 0x100 != 0).then(|| cell.deck_z(ground)),
+    ))
 }
 
 /// Exact fixed-slot aliases and fallback values, without GetCell's simulation
@@ -46,6 +53,10 @@ pub(crate) fn depth_cell(
         DepthCell {
             coord: [cell.rx as i16, cell.ry as i16],
             level: cell.level as i8,
+            fixed_deck_z: crate::sim::movement::ground_pose::corrected_deck_z(
+                terrain,
+                crate::map::cell_index::NativeCellIdentity::Real(index),
+            ),
             ramp: cell.slope_type,
             flags: cell.bridge_facts.raw_flags,
             iso_tile_index: cell.final_tile_index,
@@ -118,7 +129,16 @@ pub(crate) fn unit_bridge_split(
     entity: &ObjectRecord,
     unloading_body: bool,
 ) -> bool {
-    unit_bridge_condition(DepthWorld::of(state), entity, unloading_body, true)
+    unit_bridge_split_in(DepthWorld::of(state), entity, unloading_body)
+}
+
+/// [`unit_bridge_split`] in a given world.
+pub(super) fn unit_bridge_split_in(
+    world: DepthWorld<'_>,
+    entity: &ObjectRecord,
+    unloading_body: bool,
+) -> bool {
+    unit_bridge_condition(world, entity, unloading_body, true)
 }
 
 /// Direct SHP Unit no-turret branch 0x73CE0D..0x73CE7F (stock SQD).
@@ -231,11 +251,11 @@ pub(super) fn shp_z_adjust(world: DepthWorld<'_>, entity: &ObjectRecord) -> f32 
     else {
         return height_only as f32;
     };
-    let surface = ground.wrapping_add(if entity.on_bridge() {
-        crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+    let surface = if entity.on_bridge() {
+        cell.deck_z(ground)
     } else {
-        0
-    });
+        ground
+    };
     // Ordinary ground movement supplies exact sampled ramp Z. Legacy or
     // independent-altitude inputs can still lack that coordinate; retain their
     // semantic altitude for the grounded gate. Exact coordinates use the full
@@ -277,7 +297,7 @@ pub(crate) fn unit_z_adjust(
     )
 }
 
-fn unit_z_adjust_in(
+pub(super) fn unit_z_adjust_in(
     world: DepthWorld<'_>,
     entity: &ObjectRecord,
     unloading_body: bool,

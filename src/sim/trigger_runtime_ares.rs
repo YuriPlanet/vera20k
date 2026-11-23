@@ -260,7 +260,7 @@ impl Simulation {
         source: AresEventSource,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         self.raise_house_tags_forward(
             owner,
@@ -285,7 +285,7 @@ impl Simulation {
         effects: &mut Vec<TriggerEffect>,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<bool> {
         let value = action.value;
         Some(match action.entry.kind {
@@ -373,7 +373,7 @@ impl Simulation {
         value: Option<i32>,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(live) = context.live_index else {
             return false;

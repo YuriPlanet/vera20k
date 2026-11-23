@@ -42,48 +42,46 @@
 use super::frame_pacer::{FRAME_BUCKET, SERVICE_WAKE};
 use crate::app::AppState;
 use crate::app::input::precedence::ScreenPage;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::pause_menu::InGameMenuState;
 use crate::util::time::{Duration, Instant};
 
-/// The shortest time between two draws of a changing picture: about 62 draws
-/// a second, which a 60 Hz screen never reaches.
+/// Default interval between draws of a changing battlefield, about 62 per second.
 const PICTURE_INTERVAL: Duration = FRAME_BUCKET;
 
-/// The battlefield's limit with VSync on a screen that refreshes `millihertz`
-/// thousandths of a time a second: [`PICTURE_INTERVAL`], or every refresh
-/// while the view scrolls.
-///
-/// A view that does not scroll keeps the plain interval on every screen. A
-/// battlefield that changes once per game frame draws once per game frame
-/// under either limit (see the module notes); the limit sets how often a
-/// picture that keeps changing between game frames draws: a network match's
-/// battlefield with effects or lines, or an owner that has not settled. A
-/// limit fitted to whole refreshes drew those on every second refresh of a
-/// 144 Hz screen, 72 times a second instead of about 62, more work for a slow
-/// PC.
-///
-/// `scrolling_draw` is the recent draw work while the view scrolls
-/// (`input::camera::scrolling`), the one time every refresh has something new
-/// to show: the view moves by the time passed, while the rest of the
-/// battlefield changes once per game frame and the window system draws the
-/// cursor. A scrolling view then draws every refresh, as long as a draw's
-/// work (`LocalFramePacer::draw_work`, without its wait for a free picture)
-/// takes no more than half of one, which leaves the other half to the match.
-///
-/// A picture every refresh gets a limit a little under one, so the screen
-/// sets the pace: a limit of exactly one refresh would skip a refresh
-/// whenever its clock ran behind the screen's. A rate the window system does
-/// not report, or reports outside 30 to 1,000 Hz, keeps the plain interval.
-fn screen_picture_interval(millihertz: Option<u32>, scrolling_draw: Option<Duration>) -> Duration {
-    let Some(millihertz) = millihertz.filter(|rate| (30_000..=1_000_000).contains(rate)) else {
+/// With high refresh enabled, a changing battlefield can use each monitor
+/// refresh. The default also allows this while scrolling with VSync. Recent
+/// draw work excludes the wait for the screen and must fit in half a refresh
+/// to leave time for the match. Ask the window for its rate only when needed.
+fn screen_picture_interval(
+    profile: &RetailOptionsProfile,
+    scrolling: bool,
+    draw_work: Duration,
+    monitor_rate: impl FnOnce() -> Option<u32>,
+) -> Duration {
+    if !profile.high_refresh_rate_in_battle && !(profile.vsync && scrolling) {
+        return PICTURE_INTERVAL;
+    }
+    let Some(millihertz) = monitor_rate().filter(|rate| (30_000..=1_000_000).contains(rate)) else {
         return PICTURE_INTERVAL;
     };
-    let refresh_ns = 1_000_000_000_000 / u64::from(millihertz);
-    if scrolling_draw.is_some_and(|draw| draw.as_nanos() as u64 <= refresh_ns / 2) {
-        Duration::from_nanos(refresh_ns - refresh_ns / 16)
+    let refresh = Duration::from_nanos(1_000_000_000_000 / u64::from(millihertz));
+    if draw_work > refresh / 2 {
+        // FIFO already limits slow displays. A software-paced fallback must
+        // also stay within the monitor's refresh rate.
+        return if profile.vsync {
+            PICTURE_INTERVAL
+        } else {
+            PICTURE_INTERVAL.max(refresh)
+        };
+    }
+    // FIFO waits for the screen. Admit the draw slightly early to avoid
+    // missing a refresh. Without VSync the software deadline sets the pace.
+    if profile.vsync {
+        refresh - refresh / 16
     } else {
-        PICTURE_INTERVAL
+        refresh
     }
 }
 
@@ -181,9 +179,7 @@ pub(crate) fn still_frame(
                     && presentation
                         .saved_game_browser
                         .as_ref()
-                        .is_some_and(|browser| {
-                            browser.description_edit.focused && browser.caret_blink_on()
-                        }),
+                        .is_some_and(|browser| browser.caret_visible()),
                 panel_due,
                 fonts,
             })
@@ -201,7 +197,7 @@ pub(crate) fn still_frame(
                 || presentation.power_bar_anim.in_motion()
                 || presentation.message_list.revealing()
                 || detail.threshold_wraps()
-                || (state.use_software_cursor() && crate::app::input::cursor::animation_step_due())
+                || (state.use_software_cursor() && input.software_cursor_step_due())
                 || crate::app::presentation::super_timers::blink_due(state);
             (!moving).then(|| StillFrame::Battlefield {
                 revision,
@@ -236,23 +232,23 @@ pub(crate) struct DrawLimits {
 /// new step of a status-line reveal.
 pub(crate) fn draw_limits(state: &AppState, status_step: bool) -> DrawLimits {
     let (_, page) = crate::app::input::precedence::presented(state);
-    // In step with the screen only while the surface presents in step with
-    // it (`App::sync_present_mode`); a sealed capture keeps the plain limit.
-    let picture_interval = if state.persistence.options_profile.vsync
-        && state.platform.capture_client_size.is_none()
-    {
-        screen_picture_interval(
-            state
-                .platform
-                .window
-                .current_monitor()
-                .and_then(|monitor| monitor.refresh_rate_millihertz()),
-            crate::app::input::camera::scrolling(&state.match_state.input)
-                .then(|| state.platform.frame_pacer.draw_work()),
-        )
-    } else {
-        PICTURE_INTERVAL
-    };
+    let picture_interval =
+        if page == ScreenPage::Battlefield && state.platform.capture_client_size.is_none() {
+            screen_picture_interval(
+                &state.persistence.options_profile,
+                crate::app::input::camera::scrolling(&state.match_state.input),
+                state.platform.frame_pacer.draw_work(),
+                || {
+                    state
+                        .platform
+                        .window
+                        .current_monitor()?
+                        .refresh_rate_millihertz()
+                },
+            )
+        } else {
+            PICTURE_INTERVAL
+        };
     page_limits(
         page,
         status_step,
@@ -896,38 +892,52 @@ mod tests {
         );
     }
 
-    /// With VSync a battlefield that does not scroll keeps the plain limit on
-    /// a fast screen too: a picture that keeps changing between game frames
-    /// draws about 62 times a second, not on every second refresh of a 144 Hz
-    /// screen. Menus keep their own.
     #[test]
-    fn a_still_battlefield_keeps_the_plain_limit_on_a_fast_screen() {
-        let still = |millihertz| screen_picture_interval(millihertz, None);
-        assert_eq!(still(Some(144_000)), PICTURE_INTERVAL);
-        assert_eq!(still(Some(60_000)), PICTURE_INTERVAL);
-        assert_eq!(still(None), PICTURE_INTERVAL);
-
-        let screen = still(Some(144_000));
+    fn a_still_battlefield_keeps_the_plain_limit_by_default() {
+        let profile = RetailOptionsProfile::default();
+        let screen = screen_picture_interval(&profile, false, Duration::ZERO, || Some(144_000));
+        assert_eq!(screen, PICTURE_INTERVAL);
         let limits = |page| page_limits(page, false, true, Some(48.0), screen).picture;
         assert_eq!(limits(ScreenPage::Battlefield), PICTURE_INTERVAL);
         assert_eq!(limits(ScreenPage::MainMenu), MENU_INTERVAL);
     }
 
-    /// A scrolling view draws every refresh of a fast screen while a draw
-    /// takes no more than half of one.
     #[test]
     fn a_scrolling_view_draws_every_refresh_while_draws_are_quick() {
+        let profile = RetailOptionsProfile::default();
         let refresh = Duration::from_nanos(1_000_000_000_000 / 144_000);
-        let scrolling = |draw| screen_picture_interval(Some(144_000), Some(draw));
+        let scrolling = |draw| screen_picture_interval(&profile, true, draw, || Some(144_000));
         assert_eq!(scrolling(refresh / 2), refresh - refresh / 16);
         assert_eq!(
             scrolling(refresh / 2 + Duration::from_micros(1)),
-            screen_picture_interval(Some(144_000), None),
-            "a slow draw keeps the still view's limit"
+            PICTURE_INTERVAL
         );
         assert_eq!(
-            screen_picture_interval(None, Some(Duration::ZERO)),
+            screen_picture_interval(&profile, true, Duration::ZERO, || None),
             PICTURE_INTERVAL
+        );
+    }
+
+    #[test]
+    fn high_refresh_paces_a_parked_battlefield_with_either_vsync_setting() {
+        let mut profile = RetailOptionsProfile {
+            high_refresh_rate_in_battle: true,
+            ..Default::default()
+        };
+        let refresh = Duration::from_millis(10);
+        let parked = |profile: &RetailOptionsProfile, draw| {
+            screen_picture_interval(profile, false, draw, || Some(100_000))
+        };
+        assert_eq!(parked(&profile, refresh / 2), refresh - refresh / 16);
+        profile.vsync = false;
+        assert_eq!(parked(&profile, refresh / 2), refresh);
+        assert_eq!(
+            parked(&profile, refresh / 2 + Duration::from_nanos(1)),
+            PICTURE_INTERVAL
+        );
+        assert_eq!(
+            screen_picture_interval(&profile, false, Duration::from_millis(18), || Some(30_000)),
+            Duration::from_nanos(1_000_000_000 / 30),
         );
     }
 

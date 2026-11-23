@@ -57,7 +57,7 @@ fn tethered_infantry() -> Simulation {
                 message,
                 RadioPayload::default(),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             RadioResponse::Roger
         );
@@ -82,7 +82,7 @@ fn a_tethered_foot_marks_before_radio13_and_changes_its_list_after_the_receiver(
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(
         radio::take_test_trace(),
@@ -101,7 +101,7 @@ fn a_tethered_foot_marks_before_radio13_and_changes_its_list_after_the_receiver(
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(
         radio::take_test_trace(),
@@ -123,8 +123,8 @@ fn a_tethered_foot_marks_before_radio13_and_changes_its_list_after_the_receiver(
     }));
     for (id, contact) in [(1, 2), (2, 1)] {
         let entity = sim.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.radio_contacts.slot(0), Some(contact));
-        assert_eq!(entity.tether.partner(), Some(contact));
+        assert_eq!(entity.seldom.radio_contacts.slot(0), Some(contact));
+        assert_eq!(entity.seldom.tether.partner(), Some(contact));
     }
     assert_eq!(sim.rng_state(), rng_before);
 }
@@ -153,7 +153,7 @@ fn foot_mark_refresh_is_immediate_and_does_not_reenter_techno_mark() {
                 RadioMessage::AnimStop,
                 RadioPayload::default(),
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             RadioResponse::Roger
         );
@@ -178,7 +178,7 @@ fn a_refused_mark_and_a_null_first_contact_do_not_emit_radio13() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.substrate
         .entities
@@ -190,20 +190,20 @@ fn a_refused_mark_and_a_null_first_contact_do_not_emit_radio13() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(radio::take_transmit_log().is_empty());
 
     let actor = sim.substrate.entities.get_mut(1).unwrap();
     actor.lifecycle.set_in_limbo_for_test(false);
-    actor.radio_contacts.set_capacity(2);
-    assert_eq!(actor.radio_contacts.remove(2), Some(0));
-    actor.radio_contacts.set_slot(1, 2);
+    actor.seldom.radio_contacts.set_capacity(2);
+    assert_eq!(actor.seldom.radio_contacts.remove(2), Some(0));
+    actor.seldom.radio_contacts.set_slot(1, 2);
     assert!(sim.foot_mark_put(
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(radio::take_transmit_log().is_empty());
     assert!(radio::take_test_trace().is_empty());
@@ -212,6 +212,7 @@ fn a_refused_mark_and_a_null_first_contact_do_not_emit_radio13() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(1),
         Some(2)
@@ -257,7 +258,7 @@ fn mark_writes_the_unit_and_aircraft_raw_bits_and_never_an_infantrymans() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(sim.substrate.occupancy.contains_entity(4, 4, 1));
         assert_eq!(
@@ -269,7 +270,7 @@ fn mark_writes_the_unit_and_aircraft_raw_bits_and_never_an_infantrymans() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate
@@ -281,7 +282,7 @@ fn mark_writes_the_unit_and_aircraft_raw_bits_and_never_an_infantrymans() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(!sim.substrate.occupancy.contains_entity(4, 4, 1));
         assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(4, 4), 0);
@@ -312,7 +313,7 @@ fn an_airborne_fly_object_is_marked_without_joining_its_cell() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(
         sim.substrate
@@ -328,7 +329,7 @@ fn an_airborne_fly_object_is_marked_without_joining_its_cell() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(
         !sim.substrate
@@ -364,7 +365,7 @@ fn a_cruising_jumpjet_clears_the_deck_bit_on_remove_and_joins_nothing_on_put() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(4, 4), 0);
     assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(4, 4), 0x20);
@@ -373,7 +374,7 @@ fn a_cruising_jumpjet_clears_the_deck_bit_on_remove_and_joins_nothing_on_put() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(
         sim.substrate
@@ -402,7 +403,7 @@ fn a_limbo_object_is_refused() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(
         !sim.substrate
@@ -431,7 +432,7 @@ fn a_location_outside_the_map_is_marked_without_a_cell() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(
         sim.substrate
@@ -471,7 +472,7 @@ fn put_receiver_observes_mark_and_link_before_raw_and_can_change_live_enable() {
                 .unwrap()
                 .set_foot_occupation_enabled(false);
         },
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(called);
     assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(4, 4), 0);
@@ -480,7 +481,7 @@ fn put_receiver_observes_mark_and_link_before_raw_and_can_change_live_enable() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(!sim.substrate.occupancy.contains_entity(4, 4, 1));
 }
@@ -502,7 +503,7 @@ fn a_list_walk_passes_through_a_listed_landed_jumpjet() {
             id,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
     }
     assert!(sim.substrate.occupancy.contains_entity(4, 4, 2));
@@ -520,7 +521,7 @@ fn a_listed_landed_jumpjet_units_mark_writes_its_vehicle_bit() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(sim.substrate.occupancy.contains_entity(4, 4, 1));
     assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(4, 4), 0x20);

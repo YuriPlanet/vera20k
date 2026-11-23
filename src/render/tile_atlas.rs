@@ -120,7 +120,12 @@ pub fn build_atlas(
             atlas_width
         );
     }
-    let atlas_height = used_height.min(max_texture_dim);
+    // A page of empty tiles has no rows; the device wants at least one. A
+    // tile placed past a clamped page would sample outside it: it is left
+    // out instead, and the log says how many.
+    let atlas_height = used_height.min(max_texture_dim).max(1);
+    let atlas_width = atlas_width.max(1);
+    let mut left_out = 0usize;
 
     // Allocate RGBA color buffer and R8 depth buffer (same layout), then blit tiles.
     let mut rgba: Vec<u8> = vec![0u8; (atlas_width * atlas_height * 4) as usize];
@@ -134,6 +139,12 @@ pub fn build_atlas(
         let [px, py] = placed.origin;
         let key = sorted_keys[placed.index];
         let tile: &TileImage = &tiles[&key];
+        if py.saturating_add(tile.height) > atlas_height
+            || px.saturating_add(tile.width) > atlas_width
+        {
+            left_out += 1;
+            continue;
+        }
         blit_tile(&mut rgba, atlas_width, px, py, tile);
         blit_depth(&mut depth_buf, atlas_width, px, py, tile);
 
@@ -158,6 +169,11 @@ pub fn build_atlas(
 
     let texture: BatchTexture =
         batch.create_encoded_texture_on_device(device, queue, &rgba, atlas_width, atlas_height);
+    if left_out > 0 {
+        log::error!(
+            "Tile atlas: {left_out} tiles past the {atlas_width}x{atlas_height} px page this GPU allows are left out"
+        );
+    }
     let depth_texture_view =
         create_r8_texture(device, queue, &depth_buf, atlas_width, atlas_height);
     let zdepth_bind_group =

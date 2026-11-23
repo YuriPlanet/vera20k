@@ -89,7 +89,6 @@ pub(crate) struct CritRoll {
 /// `DamageArea` without one takes the owner's (`0x489286`). Returns
 /// `Crit_Active`, which the damage-animation selection reads.
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn detonate(
     world: &mut Simulation,
     run: &mut ReceiverRun<'_>,
@@ -145,8 +144,8 @@ pub(crate) fn detonate(
                 i32::try_from(crit.active_chance_anims().len() - 1)
                     .expect("native anim count fits i32"),
             );
-            let name = crit.active_chance_anims()[index as usize].clone();
-            spawn_anim_at_world_coord(world, rules, &name, impact, house);
+            let name = &crit.active_chance_anims()[index as usize];
+            spawn_anim_at_world_coord(world, rules, name, impact, house);
         }
     }
     let invoker = (source_id != 0).then_some(source_id);
@@ -333,7 +332,6 @@ fn has_phobos_ability(rank: VeterancyRank, object: &ObjectType, slot: usize) -> 
 /// One `ApplyCrit`: dice, immunity/health/house/cell/techno gates in native
 /// order, then the crit's animations and damage.
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 fn apply_one(
     world: &mut Simulation,
     run: &mut ReceiverRun<'_>,
@@ -379,7 +377,7 @@ fn apply_one(
     }) {
         return false;
     }
-    if target.shield.as_ref().is_some_and(|state| {
+    if target.seldom.shield.as_ref().is_some_and(|state| {
         state.is_active()
             && rules
                 .shield_type(state.type_name())
@@ -440,7 +438,6 @@ fn apply_one(
 }
 
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 fn crit_effects(
     world: &mut Simulation,
     run: &mut ReceiverRun<'_>,
@@ -493,8 +490,8 @@ fn crit_effects(
             } else {
                 0
             };
-            let name = crit.anim_list()[index as usize].clone();
-            spawn_anim_at_coord(world, rules, &name, anim_coord, owner_house);
+            let name = &crit.anim_list()[index as usize];
+            spawn_anim_at_coord(world, rules, name, anim_coord, owner_house);
         }
     }
 
@@ -540,19 +537,22 @@ fn crit_effects(
             // `DamageAreaTarget` when the crit warhead does not spread.
             let crit_ref = world.interner.intern(name);
             let impact = ProjectileCoord::new(coord.x, coord.y, coord.z);
-            let (nested, mut pings, _crit_active, _area_result) =
-                apply_area_damage_in_run_with_target(
-                    world,
-                    run,
-                    rules,
-                    overlay_registry,
-                    impact,
-                    damage,
-                    crit_warhead,
-                    true,
-                    (source_id, source_house, crit_ref),
-                    Some(target_id),
-                );
+            // The pings follow the area's effects in `effects`, so they
+            // gather apart first.
+            let mut pings = Vec::new();
+            let (nested, _crit_active, _area_result) = apply_area_damage_in_run_with_target(
+                world,
+                run,
+                rules,
+                overlay_registry,
+                impact,
+                damage,
+                crit_warhead,
+                true,
+                (source_id, source_house, crit_ref),
+                Some(target_id),
+                &mut pings,
+            );
             effects.append(nested);
             effects.under_attack_events.append(&mut pings);
         }
@@ -561,8 +561,16 @@ fn crit_effects(
             // false, house)` with the ORIGINAL warhead's id.
             let event =
                 EntityDamageEvent::area(target_id, damage, 0, source_id, source_house, warhead_ref);
-            let (nested, mut pings) =
-                commit_entities(world, run, &[event], None, rules, overlay_registry);
+            let mut pings = Vec::new();
+            let nested = commit_entities(
+                world,
+                run,
+                &[event],
+                None,
+                rules,
+                overlay_registry,
+                &mut pings,
+            );
             effects.append(nested);
             effects.under_attack_events.append(&mut pings);
         }

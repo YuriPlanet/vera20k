@@ -293,7 +293,7 @@ fn assert_move_voice_request(corpus: &serde_json::Value, row: &serde_json::Value
     // A declared native action boundary, before event encoding/audio. These
     // complete states are installed once, never reseeded between draws.
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(output["main_before_hex"].as_str().unwrap()).into();
+        SimRng::from_native_state_hex_for_test(output["main_before_hex"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(output["scenario_before_hex"].as_str().unwrap());
     sim.mapgen_rng =
@@ -729,7 +729,7 @@ fn attack_voice_selects_for_the_committed_target_without_retargeting_the_actor()
         actor,
         Some(TargetKind::Entity(2)),
         &rules,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     )
     .unwrap();
     for (target, expected) in [
@@ -785,7 +785,7 @@ fn capture_enter_and_harvest_preserve_scalar_precedence_and_move_fallback() {
             ("VoiceEnter", enter),
             ("VoiceHarvest", harvest),
         ] {
-            let (sim, rules, id) = scene(body);
+            let (mut sim, rules, id) = scene(body);
             let (request, draws) =
                 trace_draws(|| sim.order_voice_request(&rules, id, field, None, true));
             assert_eq!(request, expected, "{field} with {body:?}");
@@ -805,7 +805,7 @@ fn capture_enter_and_harvest_preserve_scalar_precedence_and_move_fallback() {
 
 #[test]
 fn disabled_order_voice_rejects_before_move_or_fallback_is_reached() {
-    let (sim, rules, id) = scene("VoiceMove=Move\n");
+    let (mut sim, rules, id) = scene("VoiceMove=Move\n");
     for field in [
         "VoiceMove",
         "VoiceAttack",
@@ -850,7 +850,7 @@ fn allied_object_move_voice_matches_native_rng_and_queue() {
         assert!(matches!(entry, 0x006f_fbe0 | 0x0070_8fc0), "{name}");
         let is_direct = entry == 0x0070_8fc0;
         let body = format!("VoiceMove={}\n", voices.join(","));
-        let (sim, rules, id) = scene_with_input(&body, input);
+        let (mut sim, rules, id) = scene_with_input(&body, input);
         let human = sim.house_is_human_player(sim.entities().get(id).unwrap().owner());
         assert_eq!(
             sim.main_rng.native_state_hex(),

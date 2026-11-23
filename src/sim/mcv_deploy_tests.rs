@@ -82,7 +82,7 @@ fn finish(sim: &mut Simulation, rules: &RuleSet, id: u64) -> usize {
                 .and_then(|r| r.retained())
                 .cloned(),
             &e.body_facing,
-            e.mcv_deploy_pending.is_pending(),
+            e.seldom.mcv_deploy_pending.is_pending(),
             &e.mission,
             &e.foot_speed
         ))
@@ -273,7 +273,7 @@ fn turn_completion_converts_before_the_next_mission_retry() {
     tick(&mut sim, &rules, Some(Command::DeployMcv { entity_id: id }));
     tick(&mut sim, &rules, None);
     let e = sim.substrate.entities.get(id).unwrap();
-    assert!(e.mcv_deploy_pending.is_pending());
+    assert!(e.seldom.mcv_deploy_pending.is_pending());
     // Still turning toward DeployFacing=4 (0x8000) at ROT 10.
     assert_eq!(e.body_facing.destination(), 0x8000);
     assert!(e.body_facing.is_rotating(sim.session.binary_frame()));
@@ -315,6 +315,7 @@ fn pending_turn_roundtrips_through_save_and_hashes_its_latches() {
         .entities
         .get_mut(id)
         .unwrap()
+        .seldom
         .mcv_deploy_pending
         .set_for_test(false);
     assert_ne!(hash, sim.state_hash());
@@ -322,6 +323,7 @@ fn pending_turn_roundtrips_through_save_and_hashes_its_latches() {
         .entities
         .get_mut(id)
         .unwrap()
+        .seldom
         .mcv_deploy_pending
         .set_for_test(true);
     assert!(rules.object("AMCV").unwrap().move_sound.is_empty());
@@ -430,7 +432,7 @@ fn placement_is_rechecked_on_turn_completion() {
         .entities
         .get(id)
         .expect("blocked MCV survives");
-    assert!(!mcv.death.is_dying() && !mcv.mcv_deploy_pending.is_pending());
+    assert!(!mcv.death.is_dying() && !mcv.seldom.mcv_deploy_pending.is_pending());
     assert_eq!(yards(&sim), 1, "only the blocking building exists");
     sim.uninit_with_rules(blocker, &rules);
     for _ in 0..35 {
@@ -475,7 +477,8 @@ fn continuation_result_and_rotation_edge_match_original_blocks() {
         let e = sim.substrate.entities.get_mut(id).unwrap();
         e.death
             .set_dying_for_test(row["alive"].as_u64().unwrap() == 0);
-        e.mcv_deploy_pending
+        e.seldom
+            .mcv_deploy_pending
             .set_for_test(row["flag"].as_u64().unwrap() != 0);
         e.navigation.set_nav_com_for_test(
             (row["nav"].as_u64().unwrap() != 0)
@@ -499,7 +502,7 @@ fn continuation_result_and_rotation_edge_match_original_blocks() {
             "{row}"
         );
         assert_eq!(
-            e.mcv_deploy_pending.is_pending(),
+            e.seldom.mcv_deploy_pending.is_pending(),
             row["out_flag"].as_u64().unwrap() != 0,
             "{row}"
         );
@@ -621,7 +624,7 @@ fn cell_building_query_deploy_ignores_a_stored_unmarked_factory() {
         &mut sim,
         mcv,
         &rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(
         sim.entities().get(mcv).unwrap().mission.queued().known(),
@@ -633,7 +636,7 @@ fn cell_building_query_deploy_ignores_a_stored_unmarked_factory() {
 fn active_track_and_same_cell_destination_preserve_the_rotation_latch() {
     let (mut sim, rules, id) = fixture("AMCV", 128, 5, 4);
     let e = sim.substrate.entities.get_mut(id).unwrap();
-    e.mcv_deploy_pending.set_for_test(true);
+    e.seldom.mcv_deploy_pending.set_for_test(true);
     let drive = e.locomotor.as_mut().unwrap();
     assert!(drive.ensure_installed_track_state());
     assert!(drive.store_track_turn_latched(
@@ -745,13 +748,23 @@ fn deploy_refuses_while_any_locomotor_is_moving() {
         Some(crate::sim::components::DriveCoord::cell(24, 22, 0)),
     );
     assert!(
-        !sim.deploy_mcv(id, &rules, None, crate::sim::world::FrameEffects::default()),
+        !sim.deploy_mcv(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default()
+        ),
         "a moving Hover refuses"
     );
     assert_eq!(yards(&sim), 0);
     set_hover(&mut sim, None);
     assert!(
-        sim.deploy_mcv(id, &rules, None, crate::sim::world::FrameEffects::default()),
+        sim.deploy_mcv(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default()
+        ),
         "a stopped Hover deploys"
     );
     assert_eq!(yards(&sim), 1);
@@ -906,9 +919,20 @@ fn deploy_admission_matches_the_original_rows() {
         assert_eq!(sim.can_deploy_slash_unload(id, &rules), allowed, "{row}");
         if row["entry"] == "unit_deploy" && !allowed {
             let unit = sim.substrate.entities.get_mut(id).unwrap();
-            unit.mcv_deploy_pending.set_for_test(true);
-            assert!(!sim.deploy_mcv(id, &rules, None, crate::sim::world::FrameEffects::empty()));
-            let pending = sim.substrate.entities.get(id).unwrap().mcv_deploy_pending;
+            unit.seldom.mcv_deploy_pending.set_for_test(true);
+            assert!(!sim.deploy_mcv(
+                id,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::empty()
+            ));
+            let pending = sim
+                .substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .seldom
+                .mcv_deploy_pending;
             assert_eq!(
                 i32::from(pending.is_pending()),
                 int(&row["result"]["deploy_retry"]),
@@ -949,7 +973,7 @@ fn try_to_deploy_drives_to_the_first_clear_site_in_table_order() {
         id,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let mcv = sim.substrate.entities.get(id).unwrap();
     assert_eq!(
@@ -969,7 +993,7 @@ fn with_no_site_a_computer_mcv_scatters_and_a_human_one_waits() {
             id,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let mcv = sim.substrate.entities.get(id).unwrap();
         let scattered = crate::sim::movement::motion_query::is_moving(&mcv) == Some(true)
@@ -1310,7 +1334,7 @@ fn retail_frame(scenario: &mut crate::headless_scenario::HeadlessScenario) {
             &[],
             crate::headless_scenario::SIM_TICK_MS,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("retail frame");
 }
@@ -1688,7 +1712,7 @@ fn retail_dustbowl_a_computer_without_its_yard_sells_off_and_hunts() {
             &resources.rules,
             None,
             hit,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     let lost = scenario.sim().session.binary_frame() as i32;

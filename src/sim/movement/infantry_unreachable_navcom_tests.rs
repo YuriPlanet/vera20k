@@ -77,7 +77,7 @@ fn visit(type_id: &str, nav: NavTargetRef, case: Case) -> Option<bool> {
             Some(true),
             "the Move got him walking"
         ),
-        Case::Tethered => man.tether.set_for_test(Some(partner)),
+        Case::Tethered => man.seldom.tether.set_for_test(Some(partner)),
         Case::OffPlayfield => man.set_in_playfield(false),
         Case::Entering => man.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Enter),
@@ -97,7 +97,7 @@ fn visit(type_id: &str, nav: NavTargetRef, case: Case) -> Option<bool> {
             "the stopped Move prefix stays out of these rows"
         );
     }
-    sim.infantry_movement_actions(id, &rules, None, FrameEffects::default());
+    sim.infantry_movement_actions(id, &rules, None, &mut FrameEffects::default());
     let after = sim.substrate.entities.get(id).unwrap().navigation.nav_com();
     assert!(
         after.is_none() || after == Some(nav),

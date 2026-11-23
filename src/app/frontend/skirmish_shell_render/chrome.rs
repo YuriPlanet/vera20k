@@ -5,8 +5,13 @@
 
 use crate::app::frontend::shell_transition::{ColumnDraw, PanelArt};
 use crate::render::batch::SpriteInstance;
+use crate::render::shell_paint::{push_column_frames, push_panel_art, push_right_panel_column};
+pub(super) use crate::render::shell_paint::{
+    push_entry, push_entry_fitted, push_entry_grown, push_entry_native, push_entry_sized,
+    push_entry_sized_alpha, push_entry_top_clipped, push_entry_wrapped_centered,
+    push_flag_entry_clipped_centered, push_tinted_entry,
+};
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
-use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::slide::panel_art_origin;
 use crate::ui::skirmish_shell::{RectPx, SkirmishShellLayout, SkirmishShellState};
 
@@ -32,7 +37,7 @@ pub(crate) fn type3_button_frames(
         atlas.modal_button_mnbttn_frame1,
         atlas.modal_button_mnbttn_frame2,
     ];
-    let index = crate::ui::shell::button::owner_button_frame;
+    let index = vera20k_gui::shell::button::owner_button_frame;
     crate::render::shell_paint::ModalButtonFrames {
         up: frames[index(false, false)],
         disabled: frames[index(false, false)],
@@ -131,230 +136,6 @@ pub(super) fn button_art_y(rect: RectPx, art_h: f32, pressed: bool, disabled: bo
     (rect.y + (rect.h - art_h) / 2 + pressed_offset) as f32
 }
 
-pub(super) fn push_entry(
-    out: &mut Vec<SpriteInstance>,
-    entry: SkirmishShellChromeEntry,
-    rect: RectPx,
-    depth: f32,
-) {
-    out.push(SpriteInstance {
-        position: [rect.x as f32, rect.y as f32],
-        size: [rect.w as f32, rect.h as f32],
-        uv_origin: entry.uv_origin,
-        uv_size: entry.uv_size,
-        depth,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    });
-}
-
-pub(super) fn push_entry_sized(
-    out: &mut Vec<SpriteInstance>,
-    entry: SkirmishShellChromeEntry,
-    x: f32,
-    y: f32,
-    size: [f32; 2],
-    depth: f32,
-) {
-    out.push(SpriteInstance {
-        position: [x, y],
-        size,
-        uv_origin: entry.uv_origin,
-        uv_size: entry.uv_size,
-        depth,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    });
-}
-
-/// `0x006BA3E0`: an opaque copy of `entry` into `rect` that starts the
-/// source at the centred offset `max(0, (source - rect) / 2)` on each axis
-/// and wraps past its end, so a smaller source tiles and a larger one shows
-/// its middle.
-///
-/// `rect` is the device rect and `scale` stretches it: the tiling runs on the
-/// authored numbers and each piece is emitted scaled, so a wider plaque grows
-/// TROFM's gradient instead of repeating it. `ShellScale::RETAIL` reproduces
-/// the plain tiling.
-pub(super) fn push_entry_wrapped_centered(
-    out: &mut Vec<SpriteInstance>,
-    entry: SkirmishShellChromeEntry,
-    rect: RectPx,
-    scale: ShellScale,
-    depth: f32,
-) {
-    let src_w = entry.pixel_size[0].round() as i32;
-    let src_h = entry.pixel_size[1].round() as i32;
-    if src_w <= 0 || src_h <= 0 {
-        return;
-    }
-    let base = scale.base_rect(rect);
-    let offset_x = ((src_w - base.w) / 2).max(0);
-    let offset_y = ((src_h - base.h) / 2).max(0);
-    let mut dy = 0;
-    while dy < base.h {
-        let sy = (offset_y + dy) % src_h;
-        let h = (src_h - sy).min(base.h - dy);
-        let mut dx = 0;
-        while dx < base.w {
-            let sx = (offset_x + dx) % src_w;
-            let w = (src_w - sx).min(base.w - dx);
-            let mut piece = entry;
-            piece.uv_origin[0] += entry.uv_size[0] * sx as f32 / src_w as f32;
-            piece.uv_origin[1] += entry.uv_size[1] * sy as f32 / src_h as f32;
-            piece.uv_size[0] *= w as f32 / src_w as f32;
-            piece.uv_size[1] *= h as f32 / src_h as f32;
-            let piece_rect = scale.scale_rect(RectPx::new(base.x + dx, base.y + dy, w, h));
-            push_entry_sized(
-                out,
-                piece,
-                piece_rect.x as f32,
-                piece_rect.y as f32,
-                [piece_rect.w as f32, piece_rect.h as f32],
-                depth,
-            );
-            dx += w;
-        }
-        dy += h;
-    }
-}
-
-pub(super) fn push_entry_native(
-    out: &mut Vec<SpriteInstance>,
-    entry: SkirmishShellChromeEntry,
-    x: i32,
-    y: i32,
-    depth: f32,
-) {
-    push_entry_sized(out, entry, x as f32, y as f32, entry.pixel_size, depth);
-}
-
-/// Chrome art authored at its native size, grown by the layout's scale.
-/// `x`/`y` are the window-space point the art is placed at, so a scaled page
-/// grows the art without moving it twice. Identity on the retail layout. The
-/// shared-chrome form is [`crate::render::shell_paint::push_entry_grown`].
-pub(super) fn push_entry_grown(
-    out: &mut Vec<SpriteInstance>,
-    entry: SkirmishShellChromeEntry,
-    x: i32,
-    y: i32,
-    scale: ShellScale,
-    depth: f32,
-) {
-    let [w, h] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
-    push_entry_sized(
-        out,
-        entry,
-        x as f32,
-        y as f32,
-        [w.round(), h.round()],
-        depth,
-    );
-}
-
-/// The top `rect.h / scale_y` source rows of `entry` across the whole of `rect`.
-///
-/// At `scale_y == 1` this is gamemd's 1:1 top-left crop, which the SDBTM cap
-/// needs: the SHP is 168x65 native and the cap region is 23 px tall. On a
-/// stretched panel the same 23 source rows fill the taller cap.
-pub(super) fn push_entry_top_clipped(
-    out: &mut Vec<SpriteInstance>,
-    mut entry: SkirmishShellChromeEntry,
-    rect: RectPx,
-    scale_y: f32,
-    depth: f32,
-) {
-    let src_h = entry.pixel_size[1].round();
-    if rect.w <= 0 || rect.h <= 0 || src_h <= 0.0 {
-        return;
-    }
-    let source_h = (rect.h as f32 / scale_y).min(src_h).max(1.0);
-    entry.uv_size[1] *= source_h / src_h;
-    push_entry_sized(
-        out,
-        entry,
-        rect.x as f32,
-        rect.y as f32,
-        [rect.w as f32, rect.h as f32],
-        depth,
-    );
-}
-
-pub(super) fn push_entry_sized_alpha(
-    out: &mut Vec<SpriteInstance>,
-    entry: SkirmishShellChromeEntry,
-    x: f32,
-    y: f32,
-    size: [f32; 2],
-    depth: f32,
-    alpha: f32,
-) {
-    out.push(SpriteInstance {
-        position: [x, y],
-        size,
-        uv_origin: entry.uv_origin,
-        uv_size: entry.uv_size,
-        depth,
-        tint: [1.0, 1.0, 1.0],
-        alpha,
-        ..Default::default()
-    });
-}
-
-/// Flag and icon art authored at its native size, grown by the layout's stretch,
-/// clipped to and centred in `rect`. Identity on the retail layout.
-/// `entry` whole, shrunk to fit `rect` where it is larger, centred in it.
-pub(super) fn push_entry_fitted(
-    out: &mut Vec<SpriteInstance>,
-    entry: SkirmishShellChromeEntry,
-    rect: RectPx,
-    scale: ShellScale,
-    depth: f32,
-) {
-    let [art_w, art_h] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
-    if art_w <= 0.0 || art_h <= 0.0 || rect.w <= 0 || rect.h <= 0 {
-        return;
-    }
-    let fit = (rect.w as f32 / art_w).min(rect.h as f32 / art_h).min(1.0);
-    let (w, h) = ((art_w * fit).round(), (art_h * fit).round());
-    let x = rect.x as f32 + ((rect.w as f32 - w) / 2.0).floor();
-    let y = rect.y as f32 + ((rect.h as f32 - h) / 2.0).floor();
-    push_entry_sized(out, entry, x, y, [w, h], depth);
-}
-
-pub(super) fn push_flag_entry_clipped_centered(
-    out: &mut Vec<SpriteInstance>,
-    mut entry: SkirmishShellChromeEntry,
-    rect: RectPx,
-    scale: ShellScale,
-    depth: f32,
-) {
-    let [art_w, art_h] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
-    if art_w <= 0.0 || art_h <= 0.0 || rect.w <= 0 || rect.h <= 0 {
-        return;
-    }
-
-    let (art_w_px, art_h_px) = (art_w.round() as i32, art_h.round() as i32);
-    let draw_w = art_w.min(rect.w as f32);
-    let draw_h = art_h.min(rect.h as f32);
-    let x = if art_w_px < rect.w {
-        (rect.x + (rect.w - art_w_px) / 2) as f32
-    } else {
-        rect.x as f32
-    };
-    let y = if art_h_px < rect.h {
-        (rect.y + (rect.h - art_h_px) / 2) as f32
-    } else {
-        rect.y as f32
-    };
-
-    entry.uv_size[0] *= draw_w / art_w;
-    entry.uv_size[1] *= draw_h / art_h;
-    push_entry_sized(out, entry, x, y, [draw_w, draw_h], depth);
-}
-
 pub(super) fn button_entries(
     atlas: &SkirmishShellChromeAtlas,
     pressed: bool,
@@ -424,7 +205,7 @@ pub(super) fn push_right_panel_button_shp(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     rect: RectPx,
-    visual: impl Into<crate::ui::shell::button::ButtonVisual>,
+    visual: impl Into<vera20k_gui::shell::button::ButtonVisual>,
     disabled: bool,
     depth: f32,
 ) {
@@ -455,7 +236,7 @@ pub(super) fn push_right_panel_button_shp(
 }
 
 pub(super) fn right_panel_button_sdbtnanm_frame_index(
-    visual: impl Into<crate::ui::shell::button::ButtonVisual>,
+    visual: impl Into<vera20k_gui::shell::button::ButtonVisual>,
     disabled: bool,
 ) -> usize {
     let visual = visual.into();
@@ -466,38 +247,6 @@ pub(super) fn right_panel_button_sdbtnanm_frame_index(
     } else {
         2
     }
-}
-
-/// Look up a baked SDBTNANM frame by index for the slide-in wave path.
-/// Returns `None` when the SHP lacks the frame so callers can clamp.
-pub(super) fn right_panel_button_sdbtnanm_frame(
-    atlas: &SkirmishShellChromeAtlas,
-    frame: usize,
-) -> Option<SkirmishShellChromeEntry> {
-    atlas
-        .right_panel_button_sdbtnanm_frames
-        .get(frame)
-        .copied()
-        .flatten()
-}
-
-pub(super) fn push_tinted_entry(
-    out: &mut Vec<SpriteInstance>,
-    entry: SkirmishShellChromeEntry,
-    rect: RectPx,
-    tint: [f32; 3],
-    depth: f32,
-) {
-    out.push(SpriteInstance {
-        position: [rect.x as f32, rect.y as f32],
-        size: [rect.w as f32, rect.h as f32],
-        uv_origin: entry.uv_origin,
-        uv_size: entry.uv_size,
-        depth,
-        tint,
-        alpha: 1.0,
-        ..Default::default()
-    });
 }
 
 pub(super) fn push_solid_rect_px(
@@ -669,15 +418,6 @@ pub(super) fn lower_strip_rect(
     RectPx::new(origin_x, origin_y + layout.shell_height() - h, w, h)
 }
 
-pub(super) fn right_panel_overlay_rect(
-    layout: &SkirmishShellLayout,
-    row: i32,
-    entry: SkirmishShellChromeEntry,
-) -> RectPx {
-    let [w, h] = entry.pixel_size.map(|side| side.round() as i32);
-    layout.right_panel.row_cell(row, w, h)
-}
-
 pub(super) fn sdmpbtn_rect(
     layout: &SkirmishShellLayout,
     entry: SkirmishShellChromeEntry,
@@ -695,38 +435,21 @@ pub(super) fn push_right_panel_base_instances(
     layout: &SkirmishShellLayout,
     overlay_frame10_active: bool,
 ) {
-    if let Some(top) = atlas.right_panel_top_sdtp {
-        push_entry(out, top, layout.right_panel.top, RIGHT_PANEL_TOP_DEPTH);
-    }
-    if let Some(tile) = atlas.right_panel_tile_sdbtnbkgd {
-        for row in 0..layout.right_panel.tile_count {
-            push_entry(
-                out,
-                tile,
-                layout.right_panel.tile_row(row),
-                RIGHT_PANEL_TILE_DEPTH,
-            );
-        }
-    }
-    if overlay_frame10_active && let Some(overlay) = atlas.right_panel_overlay_sdbtnanm_frame10 {
-        for row in 0..layout.right_panel.tile_count {
-            push_entry(
-                out,
-                overlay,
-                right_panel_overlay_rect(layout, row, overlay),
-                RIGHT_PANEL_OVERLAY_DEPTH,
-            );
-        }
-    }
-    if let Some(bottom) = atlas.right_panel_bottom_sdbtm {
-        push_entry_top_clipped(
-            out,
-            bottom,
-            layout.right_panel.bottom,
-            layout.right_panel.stretch().1,
-            RIGHT_PANEL_BOTTOM_DEPTH,
-        );
-    }
+    let column = [
+        atlas.right_panel_top_sdtp,
+        atlas.right_panel_tile_sdbtnbkgd,
+        atlas
+            .right_panel_overlay_sdbtnanm_frame10
+            .filter(|_| overlay_frame10_active),
+        atlas.right_panel_bottom_sdbtm,
+    ];
+    let depths = [
+        RIGHT_PANEL_TOP_DEPTH,
+        RIGHT_PANEL_TILE_DEPTH,
+        RIGHT_PANEL_OVERLAY_DEPTH,
+        RIGHT_PANEL_BOTTOM_DEPTH,
+    ];
+    push_right_panel_column(out, layout.right_panel, column, depths);
 }
 
 pub(super) fn push_lower_strip_instance(
@@ -782,29 +505,16 @@ pub(super) fn push_slide_panel_art(
     layout: &SkirmishShellLayout,
     art: &[PanelArt],
 ) {
-    for (index, art) in art.iter().enumerate() {
-        let entry = match *art {
-            PanelArt::Sdtp(0) => atlas.right_panel_top_sdtp,
-            PanelArt::Sdtp(_) => atlas.right_panel_top_highlight_sdtp_frame1,
-            PanelArt::Warning(frame) => atlas.sd_warning_frames.get(frame).copied().flatten(),
-            PanelArt::MapButton(frame) => atlas.sd_map_button_frames.get(frame).copied().flatten(),
-            // Campaign score art is composited by its own renderer.
-            PanelArt::Scrt(_) | PanelArt::ScrBackdrop => None,
-        };
-        let Some(entry) = entry else {
-            continue;
-        };
-        let (scale_x, scale_y) = layout.right_panel.stretch();
-        let w = (entry.pixel_size[0] * scale_x).round() as i32;
-        let h = (entry.pixel_size[1] * scale_y).round().max(1.0) as i32;
-        let (x, y) = panel_art_origin(layout.right_panel, *art, w, h);
-        push_entry(
-            out,
-            entry,
-            RectPx::new(x, y, w, h),
-            SHELL_LOWER_STRIP_DEPTH - 0.00001 - index as f32 * 1e-6,
-        );
-    }
+    let entry = |art| match art {
+        PanelArt::Sdtp(0) => atlas.right_panel_top_sdtp,
+        PanelArt::Sdtp(_) => atlas.right_panel_top_highlight_sdtp_frame1,
+        PanelArt::Warning(frame) => atlas.sd_warning_frames.get(frame).copied().flatten(),
+        PanelArt::MapButton(frame) => atlas.sd_map_button_frames.get(frame).copied().flatten(),
+        // Campaign score art is composited by its own renderer.
+        PanelArt::Scrt(_) | PanelArt::ScrBackdrop => None,
+    };
+    let depth = SHELL_LOWER_STRIP_DEPTH - 0.00001;
+    push_panel_art(out, layout.right_panel, art, entry, depth);
 }
 
 /// The slide engine's SDBTNANM draws of one tick: each frame right-aligned
@@ -816,18 +526,8 @@ pub(super) fn push_slide_column(
     draws: &[ColumnDraw],
     depth: f32,
 ) {
-    for (index, draw) in draws.iter().enumerate() {
-        let Some(entry) = right_panel_button_sdbtnanm_frame(atlas, draw.frame) else {
-            continue;
-        };
-        let [w, h] = entry.pixel_size.map(|side| side.round() as i32);
-        push_entry(
-            out,
-            entry,
-            layout.right_panel.row_cell(draw.row as i32, w, h),
-            depth - index as f32 * 1e-7,
-        );
-    }
+    let frames = &atlas.right_panel_button_sdbtnanm_frames;
+    push_column_frames(out, layout.right_panel, frames, draws, depth);
 }
 
 pub(super) fn right_panel_frame10_overlay_active(_shell: &SkirmishShellState) -> bool {

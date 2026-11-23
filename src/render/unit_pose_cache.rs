@@ -474,7 +474,6 @@ impl VxlPoseFrameCache {
     /// are cached too, and the match/asset owner replaces this entire cache.
     /// `depth` is the shared depth map the draw reads and writes, whose image
     /// no other draw shares; None draws on a clear one.
-    #[allow(clippy::too_many_arguments)]
     pub fn render_matrix(
         &mut self,
         asset_manager: &AssetManager,

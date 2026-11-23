@@ -719,7 +719,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;

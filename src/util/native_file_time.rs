@@ -166,6 +166,7 @@ struct TimeLocale(libc::locale_t);
 // it, and POSIX allows a locale object to be used from any thread.
 #[cfg(unix)]
 unsafe impl Send for TimeLocale {}
+// SAFETY: as for `Send`: every user only reads the handle.
 #[cfg(unix)]
 unsafe impl Sync for TimeLocale {}
 

@@ -332,6 +332,9 @@ pub struct WarheadType {
     /// General Airburst child emission (`0x00469EBA..0x0046A28A`) is a
     /// separate later mechanism.
     pub debris_types: Vec<String>,
+    /// Derived: `debris_types` as the RuleSet that holds the warhead
+    /// resolved it (`RuleSet::resolve_handles`).
+    resolved_debris: crate::rules::ruleset::ResolvedDebris,
     /// Per-type debris count cap.
     ///
     /// gamemd-derived: `WarheadTypeClass::ReadINI` "DebrisMaximums" @
@@ -513,6 +516,20 @@ impl WarheadAttachEffectRules {
 }
 
 impl WarheadType {
+    /// `debris_types` as its RuleSet resolved it; reads go through
+    /// `RuleSet::warhead_debris_types`, which checks the resolving set.
+    pub(crate) fn resolved_debris(&self) -> &crate::rules::ruleset::ResolvedDebris {
+        &self.resolved_debris
+    }
+
+    /// Store `debris_types` resolved against the current `[VoxelAnims]`.
+    pub(crate) fn project_resolved_debris(
+        &mut self,
+        debris: crate::rules::ruleset::ResolvedDebris,
+    ) {
+        self.resolved_debris = debris;
+    }
+
     pub(crate) fn ares_rules(&self) -> Option<&crate::rules::ares_warhead::AresWarheadRules> {
         self.ares.as_ref()
     }
@@ -706,6 +723,7 @@ impl WarheadType {
 
             // List fields
             debris_types: Vec::new(),
+            resolved_debris: Default::default(),
             debris_maximums,
             min_debris,
             max_debris,

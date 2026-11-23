@@ -4,7 +4,7 @@
 //! whether one outer event-loop iteration may admit a gameplay frame, while the
 //! scenario elapsed clock supplies the score screen's match duration.
 
-use crate::net::live_commands::SequencedTiming;
+use crate::net::live_commands::{SUSTAIN_PERCENT, SequencedTiming};
 use crate::util::time::{Duration, Instant};
 
 const FRAME_BUCKET_SHIFT: u32 = 4;
@@ -27,11 +27,6 @@ const CADENCE_SLACK_BUCKETS: u32 = 2;
 /// The shortest time an online continuation may leave the picture standing
 /// (`defer_online_render`).
 const MIN_RENDER_STANDING: Duration = Duration::from_millis(50);
-/// An online continuation may leave the picture standing this many recent
-/// draw times, so the simulation may take four fifths of the time between
-/// presents: the share the relay expects a player's tick cost to hold before
-/// it slows the match (services/relay/README.md, Pace).
-const RENDER_STANDING_DRAWS: u32 = 4;
 /// Half the native 256-frame checksum history (`CHECKSUM_HISTORY_LEN`): the
 /// LAN live capture reads that history once per presented frame.
 const MAX_TICKS_BETWEEN_PRESENTS: u32 = 128;
@@ -909,12 +904,16 @@ impl LocalFramePacer {
         self.render_deferred
     }
 
-    /// How long a continuation may leave the picture standing:
-    /// `RENDER_STANDING_DRAWS` recent draw times, at least
-    /// `MIN_RENDER_STANDING`.
+    /// How long a continuation may leave the picture standing, at least
+    /// `MIN_RENDER_STANDING`: long enough that the simulation may take
+    /// `SUSTAIN_PERCENT` of the time between presents, the share the relay
+    /// expects a player's tick cost to hold before it slows the match, and a
+    /// recent draw time the rest.
     fn online_render_standing(&self) -> Duration {
         self.draw_cost
-            .map_or(MIN_RENDER_STANDING, |cost| cost * RENDER_STANDING_DRAWS)
+            .map_or(MIN_RENDER_STANDING, |cost| {
+                cost * SUSTAIN_PERCENT / (100 - SUSTAIN_PERCENT)
+            })
             .max(MIN_RENDER_STANDING)
     }
 

@@ -8,19 +8,20 @@
 //! mirror, the ladder table and the runner belong to the app's WOL owners,
 //! which run each returned [`WolBuddyAction`].
 
-use crate::ui::lan_shell::{LanEditKey, LanListState};
-use crate::ui::shell::button::ShellButtonInteraction;
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
-};
-use crate::ui::shell::layout::status_line_rect;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
+use vera20k_gui::{Gui, InputEvent, Key, NodeId, NodeKind, NodeSpec, Prop, Value};
+
+use crate::ui::shell::controller::DialogController;
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::ShellAlign;
+use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::page;
 use crate::ui::wol_lobby::{AdmissionContext, LOBBY_PREFIX, WolChannel, WolLobbyRow, admit};
 
-pub(crate) const DIALOG: DialogId = DialogId(0x0116);
-pub(crate) const ADD_DIALOG: DialogId = DialogId(0x0115);
+pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x0116);
+pub(crate) const ADD_DIALOG: DialogResourceId = DialogResourceId(0x0115);
 pub(crate) const CREATE: u16 = 0x062B;
 pub(crate) const JOIN: u16 = 0x062D;
 pub(crate) const PAGE_BUTTON: u16 = 0x05C2;
@@ -39,6 +40,8 @@ pub(crate) const OBSERVER_IMAGE: u16 = 0x075F;
 pub(crate) const OBSERVER_TOGGLE: u16 = 0x0760;
 /// `0x115`'s name edit.
 pub(crate) const NAME: u16 = 0x0540;
+/// `0x115`'s caption static (no control id in gamemd; VERA's handle).
+pub(crate) const NICKNAME_CAPTION: u16 = 0xF001;
 
 /// The value statics in template order.
 pub(crate) const STATS: [u16; 5] = [WINS, LOSSES, DISCONNECTS, RANK, POINTS];
@@ -71,13 +74,7 @@ const fn button(
     csf_key: &'static str,
     tooltip_key: &'static str,
 ) -> MenuPageButtonSpec {
-    MenuPageButtonSpec {
-        id,
-        dlu_top,
-        csf_key,
-        tooltip_key,
-        result: None,
-    }
+    MenuPageButtonSpec::new(id, dlu_top, csf_key, tooltip_key)
 }
 
 /// RT_DIALOG `0x116`: Create Game, Join, Page, Add and Remove stacked by
@@ -96,16 +93,20 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     back: button(BACK, 256, "GUI:Back", "STT:WOLBuddyBack"),
 };
 
-/// The captions: the two column headers, then the statistics' labels.
-pub(crate) const LABELS: [(&str, [i32; 4]); 7] = [
-    ("GUI:BuddyName", [27, 9, 135, 11]),
-    ("GUI:Status", [177, 9, 100, 11]),
-    ("GUI:LadderWins", [89, 237, 115, 13]),
-    ("GUI:LadderLosses", [89, 255, 115, 13]),
-    ("GUI:Disconnects", [89, 273, 115, 13]),
-    ("GUI:LadderRank", [89, 290, 115, 13]),
-    ("GUI:LadderPoints", [89, 309, 115, 13]),
+/// The captions: the two column headers, then the statistics' labels (ids
+/// `0xFF00..`; their rects are `shell_layout.ini`'s).
+pub(crate) const LABELS: [&str; 7] = [
+    "GUI:BuddyName",
+    "GUI:Status",
+    "GUI:LadderWins",
+    "GUI:LadderLosses",
+    "GUI:Disconnects",
+    "GUI:LadderRank",
+    "GUI:LadderPoints",
 ];
+
+/// The statistics' group box (template static `0xFFFF#2`).
+pub(crate) const GROUP_BOX: u16 = 0xFF07;
 
 /// The statistics' template caption, kept until the first fill.
 pub(crate) const UNKNOWN_STATS_KEY: &str = "GUI:UnknownStats";
@@ -321,75 +322,67 @@ pub(crate) enum WolBuddyAction {
     CloseAdd,
 }
 
-/// The Add Buddy popup `0x115` while it runs.
+/// The Add Buddy popup `0x115` while it runs. Its edit and Add's enable
+/// live in its widgets ([`add_spec`]) under [`ADD_DIALOG`], the top dialog.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct WolAddBuddy {
-    pub(crate) edit: SavedSeedDescriptionEdit,
-    /// `0x702`, created disabled; `0x0079C520` of the text.
-    pub(crate) add_enabled: bool,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) focus_at: Option<crate::util::time::Instant>,
-}
+pub(crate) struct WolAddBuddy;
 
 /// `EM_LIMITTEXT 9` and `0x4D1(1)` (byte characters only). VERA deviation:
 /// the lobby's names run to 24 characters.
 const NAME_LIMIT: usize = crate::ui::wol_account::NAME_LIMIT;
 
+/// `0x115`'s widgets (`0x497`): the empty edit, which takes the focus, and
+/// Add created disabled.
+pub(crate) fn add_spec() -> NodeSpec {
+    use crate::ui::wol_page::{button, static_text};
+    NodeSpec::new(NodeKind::Dialog)
+        .child(static_text(
+            NICKNAME_CAPTION,
+            Some("GUI:BuddyNickname"),
+            ShellAlign::H_CENTER,
+        ))
+        .child(button(ADD, "GUI:AddBuddy").with(Prop::Enabled, Value::Bool(false)))
+        .child(button(BACK, "GUI:Back"))
+        .child(
+            NodeSpec::new(NodeKind::Edit)
+                .id(NAME.into())
+                .with(Prop::MaxLen, Value::Int(NAME_LIMIT as i32))
+                .with(Prop::ByteOnly, Value::Bool(true)),
+        )
+}
+
 impl WolAddBuddy {
-    /// `0x497`: an empty edit with the focus, Add disabled.
-    pub(crate) fn new() -> Self {
-        let mut popup = Self {
-            focus_at: Some(crate::util::time::Instant::now()),
-            ..Self::default()
-        };
-        popup.edit.focused = true;
-        popup
+    pub(crate) fn text(c: &DialogController) -> String {
+        c.text(ADD_DIALOG, NAME)
     }
 
-    pub(crate) fn text(&self) -> String {
-        self.edit.narrow_text(usize::MAX)
-    }
-
-    /// Every edit notification re-reads the text: Add follows `valid`.
-    pub(crate) fn insert_text(&mut self, text: &str, valid: &dyn Fn(&str) -> bool) {
-        for unit in text.encode_utf16() {
-            if self.edit.insert_unit_filtered(unit, NAME_LIMIT, true, &[]) {
-                self.add_enabled = valid(&self.text());
-            }
-        }
-    }
-
-    /// Enter (`0x4DA`) posts `BM_CLICK` to Add, which a disabled button
-    /// ignores.
-    pub(crate) fn key(
-        &mut self,
-        key: LanEditKey,
+    /// A key or typed text into the edit: every edit notification re-reads
+    /// the text, and Add follows `valid`. Enter (`0x4DA`) posts `BM_CLICK`
+    /// to Add, which a disabled button ignores.
+    pub(crate) fn input(
+        c: &mut DialogController,
+        event: InputEvent,
         valid: &dyn Fn(&str) -> bool,
     ) -> Option<WolBuddyAction> {
-        let before = self.edit.units.clone();
-        match key {
-            LanEditKey::Enter => return self.activate(ADD),
-            LanEditKey::Backspace => self.edit.backspace(),
-            LanEditKey::Delete => self.edit.delete(),
-            LanEditKey::Left => self.edit.left(),
-            LanEditKey::Right => self.edit.right(),
-            LanEditKey::Home => self.edit.home(),
-            LanEditKey::End => self.edit.end(),
-            LanEditKey::Tab => {}
-        }
-        if self.edit.units != before {
-            self.add_enabled = valid(&self.text());
+        match event {
+            InputEvent::Key(Key::Enter) => return Self::activate(c, ADD),
+            InputEvent::Key(Key::Escape | Key::Tab | Key::BackTab) => {}
+            event => page::edit_input(c, event, |c| {
+                let enabled = Value::Bool(valid(&Self::text(c)));
+                c.set_prop(ADD_DIALOG, ADD, Prop::Enabled, enabled);
+            }),
         }
         None
     }
 
     /// `0x702` reads and clears the edit and always ends the dialog; Back
     /// ends it.
-    pub(crate) fn activate(&mut self, control: u16) -> Option<WolBuddyAction> {
+    pub(crate) fn activate(c: &mut DialogController, control: u16) -> Option<WolBuddyAction> {
+        c.root_in(ADD_DIALOG)?;
         match control {
-            ADD if self.add_enabled => {
-                let text = self.text();
-                self.edit.set_units_limited([], 0);
+            ADD if c.flag(ADD_DIALOG, ADD, Prop::Enabled, true) => {
+                let text = Self::text(c);
+                c.set_text(ADD_DIALOG, NAME, "");
                 Some(WolBuddyAction::Add(text))
             }
             BACK => Some(WolBuddyAction::CloseAdd),
@@ -402,8 +395,8 @@ impl WolAddBuddy {
 #[derive(Debug, Clone)]
 pub(crate) struct WolBuddyPage {
     pub(crate) rows: Vec<WolBuddyRow>,
-    pub(crate) list: LanListState,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
+    /// The list's selection; its scroll is the list widget's.
+    pub(crate) selected: Option<usize>,
     disabled: Vec<u16>,
     /// `[0xAC10C8]`'s view; the multiplayer preference owner keeps it.
     pub(crate) observer: bool,
@@ -419,8 +412,7 @@ impl WolBuddyPage {
     pub(crate) fn new(observer: bool) -> Self {
         Self {
             rows: Vec::new(),
-            list: LanListState::default(),
-            buttons: ShellButtonInteraction::default(),
+            selected: None,
             disabled: vec![JOIN, PAGE_BUTTON, REMOVE],
             observer,
             texts: None,
@@ -436,18 +428,40 @@ impl WolBuddyPage {
         self.disabled.retain(|known| *known != control);
         if !enabled {
             self.disabled.push(control);
-            if self.buttons.pressed == Some(control) {
-                self.buttons.pressed = None;
-            }
         }
     }
 
-    pub(crate) fn cancel_pointer(&mut self) {
-        self.buttons = ShellButtonInteraction::default();
-        self.list.scroll.cancel();
-        self.list.last_press = None;
-        if let Some(add) = self.add.as_mut() {
-            add.buttons = ShellButtonInteraction::default();
+    /// Shows the page in its widgets: the list's rows and selection, the
+    /// enables, the observer boxes and the heading and statistics (the
+    /// template's `GUI:UnknownStats`, `unknown`, until the first fill).
+    pub(crate) fn present(&self, gui: &mut Gui, root: NodeId, unknown: &str) {
+        let mut set = |id: u16, prop: Prop, value: Value| page::set(gui, root, id, prop, value);
+        set(LIST, Prop::RowCount, Value::Int(self.rows.len() as i32));
+        set(
+            LIST,
+            Prop::Selected,
+            Value::Int(self.selected.map_or(-1, |row| row as i32)),
+        );
+        for id in [JOIN, PAGE_BUTTON, REMOVE, REFRESH] {
+            set(id, Prop::Enabled, Value::Bool(self.enabled(id)));
+        }
+        for id in [OBSERVER_TOGGLE, OBSERVER_IMAGE] {
+            set(id, Prop::Checked, Value::Bool(self.observer));
+        }
+        for id in std::iter::once(HEADING).chain(STATS) {
+            let text = match &self.texts {
+                Some(texts) => texts
+                    .iter()
+                    .find(|(control, _)| *control == id)
+                    .map(|(_, text)| text.as_str()),
+                None if id == HEADING => None,
+                None => Some(unknown),
+            };
+            set(
+                id,
+                Prop::Text,
+                Value::Text(text.unwrap_or_default().to_owned()),
+            );
         }
     }
 
@@ -466,14 +480,13 @@ impl WolBuddyPage {
                 None => self.rows.push(row),
             }
         }
-        self.list.selected = (!selected.is_empty())
+        self.selected = (!selected.is_empty())
             .then(|| {
                 self.rows
                     .iter()
                     .position(|row| row.name.eq_ignore_ascii_case(selected))
             })
             .flatten();
-        self.list.hot_row = None;
     }
 
     /// The enables `0x0079AF10` and LBN_SELCHANGE end with.
@@ -484,8 +497,7 @@ impl WolBuddyPage {
     }
 
     pub(crate) fn selected_name(&self) -> Option<&str> {
-        self.list
-            .selected
+        self.selected
             .and_then(|row| self.rows.get(row))
             .map(|row| row.name.as_str())
     }
@@ -493,7 +505,7 @@ impl WolBuddyPage {
     /// A press on a row (`LBN_SELCHANGE`).
     pub(crate) fn select(&mut self, row: usize) -> Option<WolBuddyAction> {
         let name = self.rows.get(row)?.name.clone();
-        self.list.selected = Some(row);
+        self.selected = Some(row);
         Some(WolBuddyAction::Select(name))
     }
 
@@ -515,7 +527,7 @@ impl WolBuddyPage {
         if let Some(index) = self.rows.iter().position(|row| row.name == name) {
             self.rows.remove(index);
         }
-        self.list.selected = None;
+        self.selected = None;
     }
 
     /// A released button or picture.
@@ -547,85 +559,59 @@ impl WolBuddyPage {
 #[derive(Debug, Clone)]
 pub(crate) struct WolBuddyLayout {
     pub(crate) page: MenuPageLayout,
-    pub(crate) status_help: RectPx,
-    /// [`LABELS`] order.
-    pub(crate) labels: [RectPx; 7],
-    pub(crate) list: RectPx,
-    pub(crate) refresh: RectPx,
-    pub(crate) heading: RectPx,
-    pub(crate) group_box: RectPx,
-    /// [`STATS`] order.
-    pub(crate) stats: [RectPx; 5],
-    pub(crate) observer_image: RectPx,
-    pub(crate) observer_toggle: RectPx,
+    pub(crate) rects: RectTable,
 }
 
 impl WolBuddyLayout {
-    pub(crate) fn new(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::RETAIL)
+    pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
+        let (page, rects) = layout_data::menu_page(&PAGE, "0x116", scale, width, height);
+        Self { page, rects }
     }
 
-    pub(crate) fn responsive(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::from_screen(width, height))
+    /// Where control `id` sits.
+    pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
+        self.rects.get(id).or_else(|| self.page.button_rect(id))
     }
+}
 
-    fn build(width: i32, height: i32, scale: ShellScale) -> Self {
-        let status_template = RectPx::new(2, 355, 316, 12);
-        let (mut page, status_help) = if scale.is_retail() {
-            (
-                menu_page::compute_layout(&PAGE, width as u32, height as u32),
-                status_line_rect(status_template, width, height),
-            )
+/// `0x116`'s widgets: the column's buttons, Refresh (its picture is the
+/// page's to paint), the list (its rows too), the observer box (toggled on
+/// its icon's press), the captions (the column headers left-aligned, the
+/// statistics' labels SS_RIGHT), the heading and the statistics with their
+/// status help. The observer image `0x75F` (no help) is a box toggled
+/// anywhere on it, which the page paints as its image.
+pub(crate) fn spec() -> NodeSpec {
+    let align = |a: ShellAlign| Value::Int(i32::from(a.0));
+    let help = |kind: NodeKind, id: u16| {
+        let node = NodeSpec::new(kind).id(id.into());
+        match tooltip_key(id) {
+            Some(key) => node.tooltip(key),
+            None => node,
+        }
+    };
+    let labels = LABELS.iter().enumerate().map(|(index, key)| {
+        let a = if index < 2 {
+            ShellAlign::NONE
         } else {
-            (
-                menu_page::compute_responsive_layout(&PAGE, width as u32, height as u32),
-                scale.scale_rect(status_line_rect(
-                    status_template,
-                    SHELL_BASE_W,
-                    SHELL_BASE_H,
-                )),
-            )
+            ShellAlign::H_RIGHT
         };
-        // Heading 0x694 is 108x11 DLU, one row taller than the family's.
-        let mut title =
-            menu_page::compute_layout(&PAGE, SHELL_BASE_W as u32, SHELL_BASE_H as u32).title;
-        title.h = dlu_rect(426, 4, 108, 11).h + 1;
-        if scale.is_retail() {
-            page.title.h = title.h;
-        } else {
-            page.title = scale.scale_rect(title);
-        }
-        let px = |[x, y, w, h]: [i32; 4]| scale.scale_rect(child_window(x, y, w, h));
-        Self {
-            page,
-            status_help,
-            labels: LABELS.map(|(_, rect)| px(rect)),
-            list: px([6, 22, 408, 182]),
-            refresh: px([5, 6, 17, 14]),
-            heading: px([80, 213, 255, 15]),
-            group_box: px([80, 227, 255, 97]),
-            stats: [237, 255, 273, 290, 309].map(|top| px([216, top, 110, 13])),
-            observer_image: px([395, 8, 18, 12]),
-            observer_toggle: px([383, 9, 10, 10]),
-        }
-    }
-
-    /// The child under `(x, y)`: buttons first, then the template's other
-    /// children with input or help.
-    pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
-        if let Some(button) = self.page.buttons.iter().find(|b| b.rect.contains(x, y)) {
-            return Some(button.id);
-        }
-        [
-            (REFRESH, self.refresh),
-            (OBSERVER_TOGGLE, self.observer_toggle),
-            (OBSERVER_IMAGE, self.observer_image),
-            (LIST, self.list),
-        ]
-        .into_iter()
-        .chain(STATS.iter().copied().zip(self.stats))
-        .find_map(|(id, rect)| rect.contains(x, y).then_some(id))
-    }
+        NodeSpec::new(NodeKind::Text)
+            .id(0xFF00 + index as i32)
+            .label(key)
+            .with(Prop::Align, align(a))
+    });
+    let observer = help(NodeKind::Checkbox, OBSERVER_TOGGLE);
+    NodeSpec::new(NodeKind::Dialog)
+        .children(page::menu_buttons(&PAGE))
+        .child(help(NodeKind::Button, REFRESH))
+        .child(observer)
+        .child(NodeSpec::new(NodeKind::Checkbox).id(OBSERVER_IMAGE.into()))
+        .child(help(NodeKind::List, LIST).with(Prop::RowCount, Value::Int(0)))
+        .children(labels)
+        .child(help(NodeKind::Text, HEADING).with(Prop::Align, align(ShellAlign::H_CENTER)))
+        .children(
+            STATS.map(|id| help(NodeKind::Text, id).with(Prop::Align, align(ShellAlign::NONE))),
+        )
 }
 
 #[cfg(all(test, tests_ui))]
@@ -651,18 +637,17 @@ mod tests {
         let mut checked = 0;
         for (size, case) in corpus["layouts"]["0x116"]["sizes"].as_object().unwrap() {
             let (width, height) = size.split_once('x').unwrap();
-            let layout = WolBuddyLayout::new(width.parse().unwrap(), height.parse().unwrap());
+            let layout = WolBuddyLayout::new(
+                width.parse().unwrap(),
+                height.parse().unwrap(),
+                crate::ui::shell::geom::RETAIL_SCALE,
+            );
             for (control, child) in case["controls"].as_object().unwrap() {
                 let actual = match control.as_str() {
                     "0x71C" => layout.page.warning_monitor,
                     "0x694" => layout.page.title,
-                    "0x695" => layout.status_help,
-                    "0x6EF" => layout.heading,
-                    "0x689" => layout.list,
-                    "0x704" => layout.refresh,
-                    "0x75F" => layout.observer_image,
-                    "0x760" => layout.observer_toggle,
-                    "0xFFFF#2" => layout.group_box,
+                    "0x695" => layout.page.status_help,
+                    "0xFFFF#2" => layout.rect_of(GROUP_BOX).unwrap(),
                     key if key.starts_with("0xFFFF") => {
                         let index = key
                             .strip_prefix("0xFFFF#")
@@ -670,20 +655,14 @@ mod tests {
                         let index = if index > 2 { index - 1 } else { index };
                         assert_eq!(
                             child["caption"].as_str(),
-                            Some(LABELS[index].0),
+                            Some(LABELS[index]),
                             "{size} {key}"
                         );
-                        layout.labels[index]
+                        layout.rect_of(0xFF00 + index as u16).unwrap()
                     }
                     key => {
                         let id = u16::from_str_radix(&key[2..], 16).unwrap();
-                        match STATS.iter().position(|s| *s == id) {
-                            Some(index) => layout.stats[index],
-                            None => layout
-                                .page
-                                .button_rect(id)
-                                .unwrap_or_else(|| panic!("{size} {key}")),
-                        }
+                        layout.rect_of(id).unwrap_or_else(|| panic!("{size} {key}"))
                     }
                 };
                 assert_eq!(actual, rect(&child["rect"]), "{size} {control}");
@@ -821,12 +800,12 @@ mod tests {
         assert!(!page.enabled(JOIN) && !page.enabled(REMOVE) && page.enabled(ADD));
         let row = |name: &str, status| buddy_row(name, status, None, &[], &texts);
         page.update_rows(vec![row("A", None), row("B", None)], "b");
-        assert_eq!(page.list.selected, Some(1));
+        assert_eq!(page.selected, Some(1));
         page.update_rows(vec![row("B", Some(2)), row("C", Some(3))], "");
         let names: Vec<_> = page.rows.iter().map(|row| row.name.as_str()).collect();
         assert_eq!(names, ["A", "B", "C"]);
         assert_eq!(page.rows[1].status, "offline");
-        assert_eq!(page.list.selected, None);
+        assert_eq!(page.selected, None);
         assert_eq!(page.select(2), Some(WolBuddyAction::Select("C".into())));
         page.set_enables(true, false, true);
         assert_eq!(
@@ -844,20 +823,35 @@ mod tests {
     #[test]
     fn add_buddy_enables_by_validity_and_always_closes() {
         let valid = |name: &str| name != "Tester" && !name.contains(',');
-        let mut add = WolAddBuddy::new();
-        assert_eq!(add.key(LanEditKey::Enter, &valid), None);
-        add.insert_text("Tester", &valid);
-        assert!(!add.add_enabled);
-        add.key(LanEditKey::Backspace, &valid);
-        assert!(add.add_enabled);
-        // The edit keeps VERA's 24 characters.
-        add.insert_text("ABCDEFGHIJKLMNOPQRSTU", &valid);
-        assert_eq!(add.text(), "TesteABCDEFGHIJKLMNOPQRS");
+        let mut c = DialogController::default();
+        c.push(ADD_DIALOG);
+        let root = c.root_in(ADD_DIALOG).unwrap();
+        page::ensure_built(c.gui_mut(), root, add_spec);
+        c.focus_control(ADD_DIALOG, Some(NAME));
+        let add_enabled = |c: &DialogController| c.flag(ADD_DIALOG, ADD, Prop::Enabled, true);
         assert_eq!(
-            add.key(LanEditKey::Enter, &valid),
+            WolAddBuddy::input(&mut c, InputEvent::Key(Key::Enter), &valid),
+            None
+        );
+        WolAddBuddy::input(&mut c, InputEvent::Text("Tester".into()), &valid);
+        assert!(!add_enabled(&c));
+        WolAddBuddy::input(&mut c, InputEvent::Key(Key::Backspace), &valid);
+        assert!(add_enabled(&c));
+        // The edit keeps VERA's 24 characters.
+        WolAddBuddy::input(
+            &mut c,
+            InputEvent::Text("ABCDEFGHIJKLMNOPQRSTU".into()),
+            &valid,
+        );
+        assert_eq!(WolAddBuddy::text(&c), "TesteABCDEFGHIJKLMNOPQRS");
+        assert_eq!(
+            WolAddBuddy::input(&mut c, InputEvent::Key(Key::Enter), &valid),
             Some(WolBuddyAction::Add("TesteABCDEFGHIJKLMNOPQRS".into()))
         );
-        assert_eq!(add.text(), "");
-        assert_eq!(add.activate(BACK), Some(WolBuddyAction::CloseAdd));
+        assert_eq!(WolAddBuddy::text(&c), "");
+        assert_eq!(
+            WolAddBuddy::activate(&mut c, BACK),
+            Some(WolBuddyAction::CloseAdd)
+        );
     }
 }

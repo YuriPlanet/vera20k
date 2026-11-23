@@ -18,6 +18,17 @@
 //! save header is read that way without decoding the body behind it.
 //! [`layout`] describes what a type reads, so saves can name their layout.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::fmt;
 
 use serde::de::{self, DeserializeSeed, Deserializer as _, IntoDeserializer, Visitor};
@@ -69,6 +80,17 @@ pub fn serialize<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
 /// Decode a `T` from the start of `bytes`; any bytes after it are ignored.
 pub fn deserialize<'de, T: serde::Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
     T::deserialize(&mut Deserializer { input: bytes })
+}
+
+/// Decode a value and return the bytes that its decoder did not read. Kept
+/// apart from [`deserialize`], which every load calls: handing the value back
+/// in a pair costs an unoptimized build another copy of it on the stack.
+pub(crate) fn deserialize_with_remainder<'de, T: serde::Deserialize<'de>>(
+    bytes: &'de [u8],
+) -> Result<(T, &'de [u8]), Error> {
+    let mut decoder = Deserializer { input: bytes };
+    let value = T::deserialize(&mut decoder)?;
+    Ok((value, decoder.input))
 }
 
 struct Serializer {

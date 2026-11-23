@@ -37,7 +37,7 @@
 //! (overlay grid, bridge topology; Ares: cell occupancy and entities). Does
 //! NOT depend on render/ui/audio/net.
 
-use crate::map::resolved_terrain::NativeCellQuery;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::projectile_type::ProjectileType;
 use crate::rules::ruleset::RuleSet;
@@ -48,6 +48,7 @@ use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
 use crate::sim::overlay_grid::OverlayGrid;
+use crate::sim::projectile::fixed_deck_z_for_cell_ref;
 
 /// Leptons per cell — the divisor in the `CDQ; AND EDX,0xFF; ADD; SAR 8`
 /// idiom the walk uses at 0x004CC12F, 0x004CC28A and 0x004CC371.
@@ -197,11 +198,12 @@ pub(crate) fn trace_line_samples<T>(run: impl FnOnce() -> T) -> (T, Vec<DriveCoo
 }
 
 /// Retained inputs to native4CC360. Cell identities remain live through
-/// nested lookups, which can restamp an aliased shared Dummy.
-pub(crate) struct CellObstructionProbe<'a> {
-    pub source: CellRef<'a>,
-    pub target: CellRef<'a>,
-    pub previous: CellRef<'a>,
+/// nested lookups, which can restamp an aliased shared Dummy. The probe
+/// borrows the walk's cells, so a step copies none of them.
+pub(crate) struct CellObstructionProbe<'p, 'a> {
+    pub source: &'p CellRef<'a>,
+    pub target: &'p CellRef<'a>,
+    pub previous: &'p CellRef<'a>,
     pub sample: DriveCoord,
     pub shot: LineOfFireShot,
 }
@@ -251,10 +253,11 @@ fn houses_allied(
 /// While Ares plays, `GetObstacle 1006E540` answers instead
 /// (`ares_obstacle`).
 pub(crate) fn cell_blocks_line_of_fire<'a>(
-    probe: CellObstructionProbe<'a>,
+    probe: CellObstructionProbe<'_, 'a>,
     interner: &StringInterner,
     rules: &RuleSet,
     los: &LineOfFireInputs<'_>,
+    terrain: Option<&ResolvedTerrainGrid>,
     mut lookup: impl FnMut((i16, i16)) -> CellRef<'a>,
 ) -> Option<CellRef<'a>> {
     #[cfg(any(test, feature = "test-support"))]
@@ -269,34 +272,41 @@ pub(crate) fn cell_blocks_line_of_fire<'a>(
     );
     let cell = lookup(packed);
     if rules.ares() {
-        ares_obstacle(&probe, cell, interner, rules, los)
+        ares_obstacle(&probe, cell, interner, rules, los, terrain)
     } else {
-        native_obstacle(probe, cell, packed, interner, rules, los, lookup)
+        native_obstacle(probe, cell, packed, interner, rules, los, terrain, lookup)
     }
 }
 
 /// 0x004CC360's verdict and geometry tail for the sampled `cell`.
 fn native_obstacle<'a>(
-    probe: CellObstructionProbe<'a>,
+    probe: CellObstructionProbe<'_, 'a>,
     cell: CellRef<'a>,
     packed: (i16, i16),
     interner: &StringInterner,
     rules: &RuleSet,
     los: &LineOfFireInputs<'_>,
+    terrain: Option<&ResolvedTerrainGrid>,
     mut lookup: impl FnMut((i16, i16)) -> CellRef<'a>,
 ) -> Option<CellRef<'a>> {
     let effective = |cell: &CellRef<'_>| {
-        crate::sim::map::bridge_topology::CellBridgeView::from_cell_ref(cell).effective_height()
+        let view = crate::sim::map::bridge_topology::CellBridgeView::from_cell_ref(cell);
+        if view.is_anchor()
+            && let Some(deck) = fixed_deck_z_for_cell_ref(terrain, cell)
+        {
+            return deck / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+        }
+        view.effective_height()
     };
     let blocks = |cell: &CellRef<'_>| {
         if probe.shot.subject_to_cliffs
-            && effective(cell).wrapping_sub(effective(&probe.previous)) >= CLIFF_STEP_LEVELS
-            && effective(cell) > effective(&probe.source)
+            && effective(cell).wrapping_sub(effective(probe.previous)) >= CLIFF_STEP_LEVELS
+            && effective(cell) > effective(probe.source)
         {
             return true;
         }
         if !probe.shot.subject_to_walls
-            || cell == &probe.target
+            || cell == probe.target
             || probe.source.signed_level() > probe.target.signed_level()
         {
             return false;
@@ -358,25 +368,29 @@ fn native_obstacle<'a>(
 ///   of 256 leptons over `MapClass::GetCellFloorHeight @ 0x00578080` at the
 ///   sample, is at or above the sample.
 fn ares_obstacle<'a>(
-    probe: &CellObstructionProbe<'a>,
+    probe: &CellObstructionProbe<'_, 'a>,
     cell: CellRef<'a>,
     interner: &StringInterner,
     rules: &RuleSet,
     los: &LineOfFireInputs<'_>,
+    terrain: Option<&ResolvedTerrainGrid>,
 ) -> Option<CellRef<'a>> {
     let level = |cell: &CellRef<'_>| {
+        if let Some(deck) = fixed_deck_z_for_cell_ref(terrain, cell) {
+            return deck / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+        }
         let bridge = cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
         i32::from(cell.signed_level() as u8) + if bridge != 0 { 4 } else { 0 }
     };
     let shot = &probe.shot;
     let cliff = || {
         shot.subject_to_cliffs
-            && level(&cell) - level(&probe.previous) >= CLIFF_STEP_LEVELS
-            && level(&cell) - level(&probe.source) > 0
+            && level(&cell) - level(probe.previous) >= CLIFF_STEP_LEVELS
+            && level(&cell) - level(probe.source) > 0
     };
     let wall = || {
         if !shot.subject_to_walls
-            || cell == probe.target
+            || &cell == probe.target
             || probe.source.signed_level() as u8 > probe.target.signed_level() as u8
         {
             return false;
@@ -508,15 +522,16 @@ pub(crate) fn walk_line_for_blocking_cell<'a>(
         let source = lookup((sx, sy));
         (source, lookup((tx, ty)))
     };
-    let mut previous = source.clone();
+    let mut previous = None;
     let mut offset = [0i32; 3];
     for _ in 0..steps {
         let sample = std::array::from_fn::<_, 3, _>(|i| src[i].wrapping_add(offset[i]));
         if let Some(hit) = cell_blocks_line_of_fire(
             CellObstructionProbe {
-                source: source.clone(),
-                target: target.clone(),
-                previous: previous.clone(),
+                source: &source,
+                target: &target,
+                // The source cell before the first step (0x004CC22F).
+                previous: previous.as_ref().unwrap_or(&source),
                 sample: DriveCoord {
                     x: sample[0],
                     y: sample[1],
@@ -527,12 +542,13 @@ pub(crate) fn walk_line_for_blocking_cell<'a>(
             interner,
             rules,
             los,
+            Some(cells.terrain()),
             lookup,
         ) {
             return Some(hit);
         }
         //4CC2C2 reads previous before XYZ accumulators advance.
-        previous = lookup(packed(sample));
+        previous = Some(lookup(packed(sample)));
         for i in 0..3 {
             offset[i] = offset[i].wrapping_add(delta[i]);
         }

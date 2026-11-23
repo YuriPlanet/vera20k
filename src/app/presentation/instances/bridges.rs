@@ -22,6 +22,7 @@ use crate::render::bridge_atlas::{BridgeAtlasLookup, is_high_bridge_body_identit
 use crate::render::cell_window::{AnchorBounds, ArtExtent, CellWindow};
 use crate::render::overlay_atlas::OverlaySpriteEntry;
 use crate::render::tactical_draw_plan::RenderZPolicy;
+use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
 
 use super::helpers::{compute_sprite_depth_params, in_view};
 use super::{CellBody, CellBodyAtlas, CellBodyDraw, cell_sweep_key};
@@ -124,14 +125,18 @@ pub(crate) fn build_bridge_body_instances_inner(
             let frame = compute_bridge_body_shp_frame(live.overlay_data, rx, ry);
             let y_offset =
                 cell_overlay_y_offset(overlay, cell.bridge_facts.raw_flags, live.overlay_data);
-            let (sx, sy) = terrain::iso_to_screen(rx, ry, cell.level);
+            // Get_Draw_Offset (0x00480110) projects the signed base level.
+            // On a corrected span the artwork retains its built-in deck lift.
+            let base_level = cell.high_bridge_art_base_level();
+            let (sx, sy) = terrain::iso_to_screen(rx, ry, base_level);
             let sy = sy + y_offset;
             in_view(sx, sy, 120.0, 120.0, cam_x, cam_y, sw, sh, 120.0)
-                .then_some((cell, name, frame, sx, sy))
+                .then_some((cell, name, frame, sx, sy, base_level))
         })
     };
     // The cull above admits anchors inside its 120 px box and margin, moved
-    // up by at most the state 9..=17 body offset.
+    // up by at most the state 9..=17 body offset from the projected base.
+    // The grid's level span includes retained bases after terrain restore.
     let window = CellWindow::covering(
         AnchorBounds {
             left: cam_x - 240.0,
@@ -147,8 +152,8 @@ pub(crate) fn build_bridge_body_instances_inner(
             .eq(admitted(CellWindow::Whole).map(|(cell, ..)| (cell.rx, cell.ry))),
         "the bridge body window dropped an admitted cell"
     );
-    for (cell, name, frame, sx, sy) in admitted(window) {
-        let (rx, ry, z) = (cell.rx, cell.ry, cell.level);
+    for (cell, name, frame, sx, sy, base_level) in admitted(window) {
+        let (rx, ry) = (cell.rx, cell.ry);
         let Some(spr) = atlas.body_entry(name, u16::from(frame)) else {
             log::warn!("bridge body atlas miss: name={name} frame={frame} cell=({rx},{ry})");
             continue;
@@ -156,13 +161,14 @@ pub(crate) fn build_bridge_body_instances_inner(
 
         let body_x = sx + TILE_WIDTH / 2.0 + spr.offset_x;
         let body_y = sy + TILE_HEIGHT / 2.0 + spr.offset_y;
-        // 0047F7DA..0047F80B: signed live Cell.level + 4, gradient 0,
-        // no z-shape. The shared SHP row kernel supplies per-pixel depth.
+        // 0047F7DA..0047F80B: signed base + four levels, gradient 0,
+        // no z-shape. Matching the base's screen lift in both depth paths
+        // preserves the native row depth and the body's extra deck bias.
         let z_adjust = crate::render::native_z::ground_anchored_z_adjust(
-            i32::from(z as i8) + 4,
+            i32::from(base_level as i8) + BRIDGE_DECK_HEIGHT_LEVELS,
             crate::render::native_z::SHP_DRAW_Z_ADJUST_PX,
         );
-        let depth = compute_sprite_depth_params(origin_y, world_height, body_y, z);
+        let depth = compute_sprite_depth_params(origin_y, world_height, body_y, base_level);
         let tint: [f32; 3] = lighting_grid.bridge_body_tint_at((rx, ry));
         out.push(CellBody {
             cell: (rx, ry),
@@ -264,7 +270,7 @@ pub(crate) fn bridge_shadow_window(
 }
 
 /// CellClass::DrawOverlay_Shadow @ 0047F510, called by the second
-/// Tactical cell sweep (006D7031..006D71CD). Read raw live overlay/state/level;
+/// Tactical cell sweep (006D7031..006D71CD). Read live overlay/state;
 /// structural deck admission and body frame jitter do not apply to shadows.
 /// Native execution: tools/spatial_oracle/bridge_shadow_render.py.
 ///
@@ -290,10 +296,12 @@ pub(crate) fn build_bridge_shadow_instances_inner(
     sh: f32,
     out: &mut Vec<SpriteInstance>,
 ) {
-    // The shadow's anchor: the Cell draw offset, plus the EW shift on a
-    // flagged high-bridge state 9..=17.
-    let anchor = |cell: &ResolvedTerrainCell, overlay: u8, raw_state: u8| {
-        let (mut sx, mut sy) = terrain::iso_to_screen(cell.rx, cell.ry, cell.level);
+    // 0047F510 pairs the stencil's projection level with its Z adjustment.
+    // For a raised bridge, use the same base as the body for both terms so
+    // adjoining stencils align while keeping the native per-row depth test.
+    // Ordinary overlays still project from the live ground.
+    let anchor = |cell: &ResolvedTerrainCell, overlay: u8, raw_state: u8, level: u8| {
+        let (mut sx, mut sy) = terrain::iso_to_screen(cell.rx, cell.ry, level);
         sy += cell_overlay_y_offset(overlay, cell.bridge_facts.raw_flags, raw_state);
         if cell.bridge_facts.raw_flags & crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF != 0 {
             if (9..=17).contains(&raw_state) {
@@ -313,7 +321,14 @@ pub(crate) fn build_bridge_shadow_instances_inner(
                 return None;
             }
             let sprite = atlas.shadow_entry(name, u16::from(live.overlay_data))?;
-            Some((cell, anchor(cell, overlay, live.overlay_data), sprite, None))
+            let level = cell.high_bridge_art_base_level();
+            Some((
+                cell,
+                anchor(cell, overlay, live.overlay_data, level),
+                sprite,
+                None,
+                level,
+            ))
         })
         .collect();
     // Wall damage owns its current identity/data in OverlayGrid. The published
@@ -386,12 +401,18 @@ pub(crate) fn build_bridge_shadow_instances_inner(
         // Empty resource shadow frames do not enter the diagonal sort. The
         // atlas owns this immutable stencil; retain its entry rather than a
         // second name/frame lookup or a per-frame image copy.
-        cells.push((cell, anchor(cell, overlay, frame), sprite, proxy));
+        cells.push((
+            cell,
+            anchor(cell, overlay, frame, cell.level),
+            sprite,
+            proxy,
+            cell.level,
+        ));
     }
     // Tactical6D70D0 -> 47FDE0 -> 421B60 requires positive intersection.
     // A crate uses the same forced-data0 crop for this gate and drawing;
     // rubble additionally has an independent overlay-image proxy.
-    cells.retain(|&(_, [sx, sy], spr, proxy)| {
+    cells.retain(|&(_, [sx, sy], spr, proxy, _)| {
         let intersects_view = |entry: &OverlaySpriteEntry| {
             let x = sx + TILE_WIDTH / 2.0 + entry.offset_x;
             let y = sy + TILE_HEIGHT / 2.0 + entry.offset_y;
@@ -416,13 +437,13 @@ pub(crate) fn build_bridge_shadow_instances_inner(
         }),
         "two shadow candidates share a cell"
     );
-    for (cell, [sx, sy], spr, _) in cells {
+    for (_, [sx, sy], spr, _, level) in cells {
         let position = [
             sx + TILE_WIDTH / 2.0 + spr.offset_x,
             sy + TILE_HEIGHT / 2.0 + spr.offset_y,
         ];
         let z_adjust = crate::render::native_z::ground_anchored_z_adjust(
-            i32::from(cell.level as i8),
+            i32::from(level as i8),
             crate::render::native_z::SHP_DRAW_Z_ADJUST_PX,
         );
         out.push(SpriteInstance {
@@ -430,7 +451,7 @@ pub(crate) fn build_bridge_shadow_instances_inner(
             size: spr.pixel_size,
             uv_origin: spr.uv_origin,
             uv_size: spr.uv_size,
-            depth: compute_sprite_depth_params(origin_y, world_height, position[1], cell.level),
+            depth: compute_sprite_depth_params(origin_y, world_height, position[1], level),
             z_adjust: z_adjust as f32,
             z_gradient: crate::render::native_z::ZGradient::Flat as u32,
             ..Default::default()
@@ -526,10 +547,10 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
         )
     };
     let start = out.len();
-    let entries: Vec<_> = overlays.entries_in(window).filter(shown).cloned().collect();
+    let entries: Vec<_> = overlays.entries_in(window).filter(shown).copied().collect();
     build(window, &entries, out);
     if cfg!(debug_assertions) && window != CellWindow::Whole {
-        let entries: Vec<_> = overlays.iter().filter(shown).cloned().collect();
+        let entries: Vec<_> = overlays.iter().filter(shown).copied().collect();
         let mut whole = Vec::new();
         build(CellWindow::Whole, &entries, &mut whole);
         assert!(
@@ -858,12 +879,12 @@ mod tests {
         }
     }
 
-    /// The view windows keep a body that only its cell's level lifts into
-    /// view from rows below it, and a shadow that only its sprite's width
-    /// brings in from columns left of the view; the windowed shadow sweep
-    /// equals the whole-grid sweep.
+    /// A fixed deck can lift the body into view even above the grid's
+    /// ground-level span. Its shadow stays on the ground. A wide stock
+    /// shadow still reaches into the view from columns to its left.
     #[test]
     fn view_windows_keep_level_lifted_and_wide_boundary_bridges() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
         use crate::render::overlay_atlas::OverlaySpriteEntry;
         struct Atlas(OverlaySpriteEntry);
         impl BridgeAtlasLookup for Atlas {
@@ -879,7 +900,7 @@ mod tests {
         // anchor sits 240 px left of the view, where only its 300 px shadow
         // reaches in.
         let bridges = [((26, 16), 8, 9), ((3, 10), 0, 0)];
-        let terrain = crate::map::resolved_terrain::test_grid(40, 40, |rx, ry| {
+        let mut terrain = crate::map::resolved_terrain::test_grid(40, 40, |rx, ry| {
             let mut cell = crate::map::resolved_terrain::test_flat_cell(rx, ry);
             if let Some(&(_, level, _)) = bridges.iter().find(|(at, ..)| *at == (rx, ry)) {
                 cell.level = level;
@@ -888,10 +909,27 @@ mod tests {
             }
             cell
         });
+        let lifted = bridges[0].0;
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new(lifted, 6, true),
+            BridgeStampFamily::Nesw,
+        );
+        // Rebuild the level span from the lowered ground, as on terrain
+        // restore. The stamped bridge facts carry the old base level.
+        let mut cells: Vec<_> = terrain.iter().cloned().collect();
+        cells
+            .iter_mut()
+            .find(|cell| (cell.rx, cell.ry) == lifted)
+            .unwrap()
+            .level = 0;
+        let terrain = ResolvedTerrainGrid::from_cells(40, 40, cells);
+        assert_eq!(terrain.level_span().max, 8);
+        assert_eq!(terrain.corrected_high_bridge_deck_level(lifted), Some(12));
+
         let mut live = crate::sim::overlay_grid::OverlayGrid::new(40, 40);
         for ((rx, ry), _, state) in bridges {
             let cell = live.cell_mut_for_test(rx, ry);
-            cell.overlay_id = Some(0x18);
+            cell.overlay_id = Some(if state == 9 { 0x19 } else { 0x18 });
             cell.overlay_data = state;
         }
         let atlas = Atlas(OverlaySpriteEntry {
@@ -903,7 +941,7 @@ mod tests {
             draw_point_offset: [0; 2],
             extended: false,
         });
-        let names = BTreeMap::from([(0x18, "BRIDGE1".into())]);
+        let names = BTreeMap::from([(0x18, "BRIDGE1".into()), (0x19, "BRIDGE2".into())]);
         let [cam_x, cam_y, sw, sh] = [0.0, 0.0, 600.0, 400.0];
         let mut bodies = Vec::new();
         build_bridge_body_instances_inner(
@@ -924,6 +962,14 @@ mod tests {
             bodies.iter().map(|body| body.cell).collect::<Vec<_>>(),
             [(3, 10), (26, 16)]
         );
+        let body = &bodies[1].instance;
+        assert_eq!(body.position, [240.0, 359.0]);
+        assert_eq!(body.z_adjust, -182.0);
+        assert_eq!(
+            body.depth,
+            crate::render::native_z::depth_for_row(479.0, 0.0, 5000.0)
+        );
+
         let shadows = |window| {
             let mut out = Vec::new();
             build_bridge_shadow_instances_inner(
@@ -950,6 +996,10 @@ mod tests {
         assert!(!window.contains(0, 39), "the window is a strict subset");
         let windowed = shadows(window);
         assert_eq!(windowed.len(), 2);
+        assert_eq!(windowed[0].position, [225.0, 366.0]);
+        assert_eq!(windowed[0].z_adjust, -122.0);
+        assert_eq!(windowed[1].position, [-270.0, 59.0]);
+        assert_eq!(windowed[1].z_adjust, -2.0);
         assert!(
             bytemuck::cast_slice::<_, u8>(&windowed)
                 == bytemuck::cast_slice::<_, u8>(&shadows(CellWindow::Whole))

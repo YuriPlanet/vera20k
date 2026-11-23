@@ -23,7 +23,7 @@ fn scene(owner: &str) -> (Simulation, RuleSet, u64, u64) {
 
 fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, frame: u32) {
     sim.session.set_binary_frame_for_test(frame);
-    sim.object_ai_visit_one(id, Some(rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(id, Some(rules), &mut ObjectAiCtx::default());
 }
 
 #[test]
@@ -39,6 +39,7 @@ fn ares_powered_by_scans_every_fifteen_frames_and_toggles_through_the_shared_own
         .entities
         .get(drone)
         .unwrap()
+        .seldom
         .ares
         .powered_by
         .unwrap();
@@ -62,7 +63,7 @@ fn ares_powered_by_scans_every_fifteen_frames_and_toggles_through_the_shared_own
     visit(&mut sim, &rules, drone, 30);
     let entity = sim.substrate.entities.get(drone).unwrap();
     assert!(entity.deactivated.is_offline());
-    assert!(!entity.ares.powered_by.unwrap().powered());
+    assert!(!entity.seldom.ares.powered_by.unwrap().powered());
     assert!(!sim.ares_is_powered(drone, &rules));
     assert_eq!(
         entity.mission.current().known(),
@@ -112,6 +113,7 @@ fn ares_deactivated_units_spark_only_without_power() {
         .entities
         .get_mut(drone)
         .unwrap()
+        .seldom
         .ares
         .powered_by = Some(PoweredBySource {
         last_scan: 0,
@@ -158,7 +160,7 @@ fn ares_powered_by_power_loss_updates_team_selection_and_slaves() {
     let entity = sim.substrate.entities.get(drone).unwrap();
     assert!(entity.deactivated.is_offline());
     assert!(
-        entity.selection.is_selected(),
+        entity.seldom.selection.is_selected(),
         "reselected after Deactivate"
     );
     assert!(sim.team_script_vm.team_for_member(drone).is_none());

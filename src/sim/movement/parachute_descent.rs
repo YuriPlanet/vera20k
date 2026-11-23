@@ -61,7 +61,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(bool, bool), crate::sim::world::FrameAdvanceError> {
         if self
             .substrate
@@ -329,7 +329,7 @@ fn parachute_anim_name<'r>(
     if let Some(override_) = rules.side_parachute_override(side) {
         return Some(override_.unwrap_or("PARACH"));
     }
-    if !crate::rules::NPATCH_ENABLED
+    let canopy = if !crate::rules::NPATCH_ENABLED
         || entity.category() == crate::map::entities::EntityCategory::Infantry
     {
         rules.general.parachute_shp.as_deref()
@@ -339,7 +339,14 @@ fn parachute_anim_name<'r>(
             .vehicle_parachute
             .as_deref()
             .or(rules.general.parachute_shp.as_deref())
+    };
+    // Under Ares a house with no side (`0x1001BBD7`), or no canopy from its
+    // side and `[General] Parachute=` (`0x1002E0FA`), gets `Find("PARACH")`
+    // (`0x1001BC09`) rather than none.
+    if rules.ares() && (side < 0 || canopy.is_none()) {
+        return Some("PARACH");
     }
+    canopy
 }
 
 impl crate::sim::world::Simulation {
@@ -367,7 +374,7 @@ impl crate::sim::world::Simulation {
         stable_id: u64,
         max_fall_rate: i32,
         rules: &crate::rules::ruleset::RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
@@ -381,9 +388,9 @@ impl crate::sim::world::Simulation {
         )
         .wrapping_add(rate);
         let marked = entity.lifecycle.cell_marked();
-        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
+        let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         if marked {
-            self.unmark_entity_remove(stable_id, context);
+            self.unmark_entity_remove(stable_id, context.reborrow());
         }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.position.put_z(z);
@@ -559,7 +566,7 @@ mod canopy_tests {
                 id,
                 -3,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         let lower = sim.anim_owner_coords(id).unwrap().z;
@@ -606,6 +613,22 @@ mod canopy_tests {
         let entity = GameEntity::test_default(1, "E1", "Americans", 10, 11);
         assert_eq!(
             parachute_anim_name(&rules, &entity, None, 3, None),
+            Some("PARACH")
+        );
+        // A house with no side skips `[General] Parachute=`, and an unset
+        // side with no `[General] Parachute=` also gets `PARACH`.
+        assert_eq!(
+            parachute_anim_name(&rules, &entity, None, -1, None),
+            Some("PARACH")
+        );
+        assert_eq!(
+            parachute_anim_name(&rules, &entity, None, 0, None),
+            Some("OTHER")
+        );
+        let mut empty = rules.clone();
+        empty.general.parachute_shp = None;
+        assert_eq!(
+            parachute_anim_name(&empty, &entity, None, 0, None),
             Some("PARACH")
         );
     }

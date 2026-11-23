@@ -121,7 +121,7 @@ fn flight(patch: &str, block: Block) -> Option<(Simulation, u64, Option<u32>)> {
                     coord,
                     rules,
                     None,
-                    crate::sim::world::FrameEffects::empty(),
+                    &mut crate::sim::world::FrameEffects::empty(),
                 );
             } else {
                 sim.spawn_object("MTNK", "Americans", LANDING.0, LANDING.1, 0, rules)

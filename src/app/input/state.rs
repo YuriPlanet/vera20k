@@ -5,11 +5,11 @@
 //! shells that reuse the same cursor/key plumbing). Sim-authoritative input —
 //! queued commands — lives in the simulation, never here.
 
-use crate::render::upscale_pass::ZoomGeometry;
 use crate::sim::intern::InternedId;
 use crate::sim::snapshot::saved_local_view::{
     SavedCursorModes, SavedLocalView, SavedLocalViewError, SavedTargeting,
 };
+use crate::ui::main_menu_dialogs::options::ZoomGeometry;
 use std::collections::HashSet;
 use winit::event::MouseButton;
 use winit::keyboard::{KeyCode, ModifiersState};
@@ -166,6 +166,7 @@ impl PreparedSavedLocalView {
         sidebar.sell_mode_on = modes.sell;
         sidebar.command_bar_closed = modes.command_bar_closed;
         input.targeting_mode = self.targeting;
+        input.skirmish_spawn = None;
         // The preview is derived from the cursor; the next tactical frame
         // recomputes it. RESIDUAL: the BandBoxLeftUp retry copy (+1190..+1198)
         // loads raw and MouseLoad 0x005BDF70 never swizzles it, so natively it
@@ -196,10 +197,22 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_visibility: crate::app::input::cursor::CursorVisibility,
     /// The cursor the last drawn frame showed. Native's SetCursor writes are
     /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
+    /// A `Cell` for the reason at `software_cursor_animation`: the draw that
+    /// chooses the cursor notes it there.
     shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
+    /// The drawn software cursor's phase (`MouseClass` `CurrentCursor` /
+    /// `CursorFrame`). A `Cell` because the phase steps where the frame is
+    /// chosen, inside the shell and match draws (`shell_pass`,
+    /// `ui_overlays::build_software_cursor_instances`), and those hold the app
+    /// state by `&`: the sprite they build borrows the cursor's texture and
+    /// the rest of the frame's draw state from it until the frame is drawn.
+    /// Stepping it before the draw under `&mut` would choose the frame apart
+    /// from the targets and planning-node test that pick the sequence.
+    software_cursor_animation: std::cell::Cell<crate::app::input::cursor::CursorAnimation>,
     /// The cursor's targets and feedback as last read with the world home
     /// (`sim_host::home_answer`): both walk the live objects, which a draw
-    /// beside a lent tick may not read.
+    /// beside a lent tick may not read. Cells, like `tactical_tip_seen` and
+    /// `cursor_feedback_seen`: the asking draws hold the app state through `&`.
     pub(crate) cursor_targets_seen: std::cell::RefCell<crate::app::input::cursor::CursorTargets>,
     pub(crate) tactical_tip_seen: super::tooltips::TacticalTipAnswer,
     pub(crate) cursor_feedback_seen:
@@ -229,7 +242,7 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_y: f32,
     /// The match zoom `cursor_x`/`cursor_y` are in; `None` is window pixels.
     /// `AppState::sync_cursor_space` keeps it matching the current screen.
-    pub(crate) cursor_zoom: Option<crate::render::upscale_pass::ZoomGeometry>,
+    pub(crate) cursor_zoom: Option<crate::ui::main_menu_dialogs::options::ZoomGeometry>,
     /// Last physical window event, used only to measure confined cursor motion.
     /// The source cursor above remains authoritative; this anchor is neither
     /// saved nor simulation state and is discarded when pointer focus changes.
@@ -311,6 +324,9 @@ pub(crate) struct MatchInputState {
     /// placement OR superweapon). Right-click clears; Options preserves it. Arming one
     /// kind clears the other.
     pub(crate) targeting_mode: Option<crate::app::types::TargetingMode>,
+    /// An unconfirmed offline chat order temporarily owns the mouse without
+    /// disturbing selected units or a ready sidebar product.
+    pub(crate) skirmish_spawn: Option<super::chat::SpawnOrder>,
     /// Current placement preview for the armed building, if any.
     pub(crate) building_placement_preview: Option<crate::sim::production::BuildingPlacementPreview>,
     pub(crate) foundation_latch: FoundationLatch,
@@ -519,18 +535,45 @@ impl MatchInputState {
             self.last_selection_click = None;
             return false;
         }
-        crate::ui::shell::list::is_double_click(
+        vera20k_gui::shell::list::is_double_click(
             &mut self.last_selection_click,
             now,
             point.0,
             point.1,
-            crate::ui::shell::saved_file_input::host_double_click_limits(),
+            crate::ui::shell::controller::host_double_click_limits(),
         )
     }
 
     /// Record the cursor a drawn frame shows (`None` is the normal arrow).
     pub(crate) fn note_shown_cursor(&self, kind: Option<crate::app::types::CursorFeedbackKind>) {
         self.shown_cursor.set(kind);
+    }
+
+    /// The index of the frame of `sequence` the software cursor draws for
+    /// `id` right now, stepping its phase
+    /// ([`crate::app::input::cursor::CursorAnimation::frame_index`]).
+    pub(crate) fn software_cursor_frame_index(
+        &self,
+        id: crate::app::types::CursorId,
+        sequence: &crate::app::types::SoftwareCursorSequence,
+    ) -> Option<usize> {
+        let mut animation = self.software_cursor_animation.get();
+        let index = animation.frame_index(id, sequence);
+        self.software_cursor_animation.set(animation);
+        index
+    }
+
+    /// Whether the drawn software cursor's next frame is due.
+    pub(crate) fn software_cursor_step_due(&self) -> bool {
+        self.software_cursor_animation.get().step_due()
+    }
+
+    /// DisplayCancel4AEAD0 resets the cursor shape through its animation
+    /// owner (its `SetDefaultCursor(0, 0)`, `0x005BDA80`). The next ordinary
+    /// draw starts the default shape at frame 0.
+    pub(crate) fn reset_cursor_shape(&mut self) {
+        *self.software_cursor_animation.get_mut() =
+            crate::app::input::cursor::CursorAnimation::new();
     }
 
     /// The cursor the last drawn frame showed, which stays where nothing
@@ -576,6 +619,9 @@ impl MatchInputState {
         Self {
             cursor_visibility: Default::default(),
             shown_cursor: Default::default(),
+            software_cursor_animation: std::cell::Cell::new(
+                crate::app::input::cursor::CursorAnimation::new(),
+            ),
             cursor_targets_seen: Default::default(),
             tactical_tip_seen: Default::default(),
             cursor_feedback_seen: Default::default(),
@@ -593,6 +639,7 @@ impl MatchInputState {
             build_repeat: Default::default(),
             follow_target: None,
             targeting_mode: None,
+            skirmish_spawn: None,
             building_placement_preview: None,
             foundation_latch: FoundationLatch::default(),
             saved_building_placement: None,
@@ -857,6 +904,7 @@ impl MatchInputState {
         // reuses the same object ids or has the same buildable types.
         self.ferry = Default::default();
         self.build_repeat = Default::default();
+        self.skirmish_spawn = None;
         // The double-click chain belongs to the outgoing tactical view.
         self.last_selection_click = None;
         self.targeting_mode = None;

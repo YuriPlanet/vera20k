@@ -143,6 +143,15 @@ exchange keeps [Networking](docs/Networking.md) current and says in its PR what 
 released game, a mixed room and a rollback do with it: the older side is refused with
 a message or the feature stays off, and nothing hangs or crashes.
 
+Multiplayer rules: whatever a player's game can set that changes what a match plays (a
+file, an Options switch such as `PersonalRules`, an Ares or mod setting, a resource
+selection) enters the rules digest (`ProcessAssets::multiplayer_rules_digest`) and,
+in the same PR, the rules parts (`app::rules_parts`, docs/spawn.md "Rules parts"),
+named for players, so a refused start says what differs and not only that something
+does. A new part or setting keeps the parts' old form for a game without it (left
+out while off), and its PR says what the launcher's `src/lib/rulesDiff.ts` must add
+to name it; `every_personal_rules_switch_is_a_setting` holds `PersonalRules` to this.
+
 ## Architecture and delivery
 
 Use the simplest implementation that fully satisfies the required behavior. Avoid
@@ -291,8 +300,9 @@ fix: write it first, or run it once with the fix reverted, and say so in the PR.
 Skip `cargo check` when a planned test answers the same question. A test run does not
 show that the game builds, though: tests switch on core's `test-support` code. When
 production code touches anything behind `test-support` or `#[cfg(test)]`, also run
-`python -m tools.cargo_run -- check -p vera20k --lib --bins`; for a file listed in
-`.github/workflows/wasm.yml`, the wasm check in the [Wasm guide](docs/wasm.md#checks).
+`python -m tools.cargo_run -- check -p vera20k --lib --bins`; for a file holding a
+browser switch (`feature = "wasm"` or `target_arch = "wasm32"`), the wasm check in the
+[Wasm guide](docs/wasm.md#checks). No pull request builds the browser package.
 
 - Working Rust: start with focused
   `python -m tools.cargo_run -- test -p <crate> --lib <module_path>::`, where `<crate>`

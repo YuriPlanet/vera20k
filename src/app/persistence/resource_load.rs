@@ -15,7 +15,7 @@ use crate::map::theater::{self, BridgeMiddleTiles};
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::rules::native_processing::ProcessedRulesLayers;
 use crate::rules::process_owner::NativeRulesProcessOwner;
-use crate::sim::rng::{MainRng, MainRngDraws};
+use crate::sim::rng::{MainRng, SimRng};
 use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::snapshot::scenario_resources::SavedMapMetadata;
 use crate::sim::snapshot::{GameSnapshot, SnapshotError};
@@ -216,7 +216,7 @@ impl PreparedSavedGame {
             );
         let mut tile_cache = view.tile_cache.detached();
         let mut bind_loaded_cells =
-            |terrain: &mut ResolvedTerrainGrid, main: MainRngDraws, size_width: i32| {
+            |terrain: &mut ResolvedTerrainGrid, main: &mut SimRng, size_width: i32| {
                 let mut draw = || main.next_u32();
                 let mut selector = tile_cache.begin_load(&mut draw);
                 terrain
@@ -341,7 +341,8 @@ impl PreparedSavedGame {
             map.house_colors(),
             Some(&theater.unit_palette),
             Some(&theater.iso_palette),
-        );
+        )
+        .map_err(|error| PreparedLoadError::Resources(format!("{error:#}")))?;
         let overlays = crate::app::frontend::skirmish::build_overlay_presentation(
             &world.map_restore.occupied_overlays,
             map.terrain_objects(),

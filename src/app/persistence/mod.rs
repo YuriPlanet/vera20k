@@ -15,6 +15,7 @@ pub(crate) mod phobos_settings;
 pub(crate) mod profile_file;
 mod resource_load;
 pub(crate) mod rules_profile;
+mod save_migration;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) mod startup_backend;
 pub(crate) mod wol_profile;
@@ -99,6 +100,8 @@ impl PersistenceState {
 pub(crate) enum PreparedLoadError {
     #[error("could not read save file: {0}")]
     ReadFile(#[source] std::io::Error),
+    #[error(transparent)]
+    SaveMigration(#[from] save_migration::SaveMigrationError),
     #[error("a network match cannot load a saved game")]
     NetworkMatch,
     // The three `#[cfg(test)]` variants belong to the headless same-content
@@ -134,6 +137,15 @@ pub(crate) enum PreparedLoadError {
     LocalView(#[from] crate::sim::snapshot::saved_local_view::SavedLocalViewError),
     #[error(transparent)]
     RadarEvents(#[from] crate::render::radar::SavedRadarEventsError),
+}
+
+impl PreparedLoadError {
+    pub(crate) fn migration_message_key(&self) -> Option<&'static str> {
+        match self {
+            Self::SaveMigration(error) => Some(error.message_key()),
+            _ => None,
+        }
+    }
 }
 
 impl From<SnapshotRestoreError> for PreparedLoadError {
@@ -267,7 +279,7 @@ impl PreparedLoad {
             crate::sim::world::SnapshotProcessState::Live(current_simulation),
             rules,
             terrain_template,
-            current_simulation.terrain_speed_config().clone(),
+            *current_simulation.terrain_speed_config(),
             crate::sim::snapshot::PlayerSaveCells::FixtureBaseline,
         )
     }
@@ -359,9 +371,11 @@ impl PreparedLoad {
         self,
         runtime: &mut crate::sim::runtime::SimRuntime,
     ) -> CommittedLoadPresentation {
+        // These fixtures keep no app process cell: the install writes a
+        // stand-in one that nothing reads.
         let (simulation, presentation) = self.into_committed(
             runtime.simulation.effective_shared_cell_dummy(),
-            runtime.simulation.main_rng(),
+            &crate::sim::rng::MainRng::new(0),
         );
         runtime.replace_simulation(simulation);
         presentation
@@ -522,6 +536,7 @@ impl SaveRepository {
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         {
+            // A process-unique serial for staging file names.
             static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let directory = path
                 .parent()
@@ -1232,7 +1247,7 @@ mod tests {
                 &[],
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert_eq!(runtime.simulation.session().tick(), tick_before + 1);
@@ -1315,7 +1330,7 @@ mod tests {
                 &[],
                 1,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("restored current-house frame");
         assert_eq!(runtime.simulation.session().tick(), tick + 1);
@@ -1387,7 +1402,7 @@ mod tests {
                     &[],
                     1,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("restored collision-safe current-house frame");
             assert_eq!(runtime.simulation.session().tick(), tick + 1);

@@ -229,7 +229,7 @@ fn a_destroyed_building_explodes_per_foundation_cell_then_plays_its_destroy_anim
             false,
             &mut recorded,
             |_, request| marks.push(request),
-            FrameEffects::empty(),
+            &mut FrameEffects::empty(),
         );
 
         let mut expected = Vec::new();
@@ -291,7 +291,7 @@ fn a_single_destroy_anim_still_draws_and_no_lists_draw_nothing() {
         false,
         &mut recorded,
         |_, _| {},
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     let _pick = replay.next_u32();
     assert_eq!(sim.scenario_rng.state(), replay.state());
@@ -305,7 +305,7 @@ fn a_single_destroy_anim_still_draws_and_no_lists_draw_nothing() {
         false,
         &mut recorded,
         |_, _| {},
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     assert!(recorded.is_empty());
     assert_eq!(sim.scenario_rng.state(), before);
@@ -328,7 +328,13 @@ fn a_dying_vehicle_plays_its_explosion_then_its_destroy_anim() {
         };
         let mut replay = sim.scenario_rng.clone();
         let mut recorded = Vec::new();
-        sim.unit_death_explosion(&rules, unit, &mut recorded, None, FrameEffects::empty());
+        sim.unit_death_explosion(
+            &rules,
+            unit,
+            &mut recorded,
+            None,
+            &mut FrameEffects::empty(),
+        );
         let explosion = pick(&mut replay, &["EXPA", "EXPB", "EXPC"]);
         let destroy = pick(&mut replay, &["DESTA"]);
         assert_eq!(
@@ -388,7 +394,13 @@ fn an_exploding_vehicle_with_ammo_dies_with_its_last_explosion() {
             }
             let mut replay = sim.scenario_rng.clone();
             let mut recorded = Vec::new();
-            sim.unit_death_explosion(&rules, unit, &mut recorded, None, FrameEffects::empty());
+            sim.unit_death_explosion(
+                &rules,
+                unit,
+                &mut recorded,
+                None,
+                &mut FrameEffects::empty(),
+            );
             let picked = pick(&mut replay, &["EXPA", "EXPB", "EXPC"]);
             let expected = if last { "EXPC".to_string() } else { picked };
             let played: Vec<_> = anims(&sim).into_iter().map(|anim| anim.0).collect();
@@ -446,7 +458,7 @@ fn kill_with(
         rules,
         None,
         &[hit],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -555,7 +567,7 @@ fn a_low_dropped_bomb_over_water_fires_no_death_weapon() {
             apoc,
             crate::sim::passenger::BoardingArm::InfantryTransport,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         drop_at_height(&mut sim, apoc, bomb, height);
 
@@ -874,7 +886,8 @@ fn a_killed_building_draws_its_death_anims_before_its_survivors() {
         let mut replay = sim.scenario_rng.clone();
         kill(&mut sim, &rules, depot);
 
-        let cells = crate::sim::crew_survival::foundation_cells(10, 20, &"2x2".into());
+        let cells: Vec<_> =
+            crate::sim::crew_survival::foundation_cells(10, 20, &"2x2".into()).collect();
         let mut expected = Vec::new();
         for &(rx, ry) in &cells {
             let (x, y) = super::super::inviso_scatter::random_direction_coord(
@@ -1035,7 +1048,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
             );
             assert!(retained.lifecycle.object_alive());
             assert!(!retained.lifecycle.in_limbo());
-            assert!(retained.in_logic_vector.is_member());
+            assert!(retained.seldom.in_logic_vector.is_member());
             assert!(!sim.substrate.pending_delete.contains_object(&ship));
             assert!(
                 !retained.lifecycle.cell_marked(),
@@ -1054,7 +1067,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
             // Match the native control's complete ambient streams after
             // setup. The physical Super section above is parsed by the same
             // production reader; ignoreDefenses bypasses armor calculation.
-            sim.main_rng = SimRng::new(1).into();
+            sim.main_rng = SimRng::new(1);
             sim.scenario_rng = SimRng::new(1);
             sim.mapgen_rng = SimRng::new(1);
             replay = sim.scenario_rng.clone();
@@ -1096,7 +1109,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                 &rules,
                 None,
                 direct_hit,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let retained = sim.substrate.entities.get(ship).unwrap();
             assert_eq!(i64::from(retained.health.current()), repeat["health"]);
@@ -1110,7 +1123,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                 repeat["losses"]
             );
             assert!(!retained.lifecycle.cell_marked());
-            assert!(retained.in_logic_vector.is_member());
+            assert!(retained.seldom.in_logic_vector.is_member());
             for (stream, rng) in [
                 ("main", sim.main_rng.native_state_hex()),
                 ("scenario", sim.scenario_rng.native_state_hex()),
@@ -1130,7 +1143,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                 ship,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             assert_eq!(sim.houses[&owner].stats().units_lost(), 3);
             assert!(sim.substrate.pending_delete.contains_object(&ship));
@@ -1139,6 +1152,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                     .entities
                     .get(ship)
                     .unwrap()
+                    .seldom
                     .in_logic_vector
                     .is_member()
             );
@@ -1404,7 +1418,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                 rules,
                 Some(resources.rules.overlay_registry()),
                 &[hit],
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             // (type, coordinate, delay, flags, zAdjust, launch bits), in
             // construction order.
@@ -1609,7 +1623,7 @@ fn kill_retail(sim: &mut Simulation, rules: &RuleSet, id: u64, ignore_defenses: 
         rules,
         None,
         &[hit],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -1626,7 +1640,7 @@ fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
         cues: RefCell<Vec<SimSoundEvent>>,
     }
     impl SoundBoundary for Heard {
-        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, _: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 let name = match event {
                     SimSoundEvent::VocAt { sound_id, .. }
@@ -1634,7 +1648,7 @@ fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
                     SimSoundEvent::EntityDied { die_sound_id, .. } => die_sound_id,
                     _ => continue,
                 };
-                if matches!(name.as_str(), "ConscriptDie" | "BuildingGenericDie") {
+                if matches!(name.name_in(rules), "ConscriptDie" | "BuildingGenericDie") {
                     self.cues.borrow_mut().push(event.clone());
                 }
             }
@@ -1690,8 +1704,8 @@ fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
         },
     );
     sim.take_sound_events_for_test();
-    let heard = Heard::default();
-    sim.commit_direct_damage_receiver(&rules, None, hit, FrameEffects::for_sound(&heard));
+    let mut heard = Heard::default();
+    sim.commit_direct_damage_receiver(&rules, None, hit, &mut FrameEffects::for_sound(&mut heard));
     let inline = heard.cues.borrow().len();
     // The ordinary app suffix must neither supply a missing cue nor duplicate one.
     heard.consume(&sim, &rules, sim.sound_events());
@@ -1706,7 +1720,7 @@ fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
         matches!(cues.as_slice(), [
         SimSoundEvent::VocAt { sound_id: child, .. },
         SimSoundEvent::VocAtCoord { sound_id: parent, coordinate, flags: 0 },
-    ] if child == "ConscriptDie" && parent == "BuildingGenericDie"
+    ] if child.name_in(&rules) == "ConscriptDie" && parent.name_in(&rules) == "BuildingGenericDie"
         && *coordinate == location),
         "unexpected death cue order/API: {cues:?}"
     );
@@ -2099,7 +2113,7 @@ fn destroy_smoke_picks_once_from_the_reversed_smoke_types() {
             false,
             &mut Vec::new(),
             |_, _| {},
-            FrameEffects::empty(),
+            &mut FrameEffects::empty(),
         );
     };
     pass(&mut sim);
@@ -2163,7 +2177,7 @@ fn a_yellow_hit_slows_the_natural_particle_system() {
                 arg6: false,
             },
         );
-        sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+        sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
         sim.particle_systems().get(system).unwrap().spawn_timer()
     };
     assert_eq!(hit(&mut sim, 10), start, "still green");

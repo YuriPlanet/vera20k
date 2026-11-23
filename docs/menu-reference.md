@@ -37,9 +37,13 @@ Launch
     │   │   ├─ Sliders: Game Speed (incl. 90 ticks/s and Unlimited), Credits (5000–10000, plus 30000 and 100000), Unit Count
     │   │   ├─ Checkboxes: Short Game, MCV Repacks, Crates Appear, Super Weapons, Build Off Ally
     │   │   │     【all of the above in [Skirmish]; the rows in SkirmishSetups.ini】
+    │   │   ├─ Quick Team Setup list: Team Starts, Team Colors, Balance teams, Players vs AI, AIs in 2/3/4 teams, Free-for-all;
+    │   │   │     Bulk Seat Actions list: Fill with AI (Easy/Normal/Hard/random), Open closed seats, Remove all AI (VERA)
     │   │   ├─ Map preview (click enlarges)
     │   │   ├─ Start Game / Back
-    │   │   ├─ Game Options box: Superweapon Limit (Off, 2–20)【[VERA] SuperweaponLimit】, Terrain Deformation【[VERA] TerrainDeformation】, OK
+    │   │   ├─ Game Options box: Superweapon Limit (Off, 2–20)【[VERA] SuperweaponLimit】, Tech Level (1–10), Bases, Fog of War,
+    │   │   │     Multi-Engineer, Harvester Truce【[Skirmish] TechLevel / Bases / FogOfWar / MultiEngineer / HarvesterTruce】,
+    │   │   │     Terrain Deformation【[VERA] TerrainDeformation】, Allow cheat codes【[VERA] SkirmishCheats】, OK
     │   │   └─ Choose Map
     │   │       ├─ Game type list (incl. Favorites), map list, search field, Add/Remove Favorite【MapFavorites.txt】
     │   │       ├─ Use Map / Cancel
@@ -49,7 +53,7 @@ Launch
     │   │           │     Tech Buildings, Derelicts, Damage, Civilians, Animals, Neutral Defenders
     │   │           ├─ Extras (3 pages): Share Code, Use a Code, Previous Map, My Preset【Maps/VeraPreset1..5.vpr】;
     │   │           │     Ore Fields, Towns, Base Room, Sea Access, Fair Derricks, Centre Gems, Roads, Mood, War Damage, Countryside, Landmark, Town Fences
-    │   │           ├─ Buttons: Surprise Me, Preview Map, Use Map, Save/Load/Delete Map, Export Map (.yrm),
+    │   │           ├─ Buttons: Surprise Me, Preview Map, Use Map, Save/Load/Delete Map, Export Map (.map),
     │   │           │         Fair Starts On/Off, Presets (1v1 Duel / 30-Player Brawl / City War / Islands / Team Battle / My Preset),
     │   │           │         Basic/Advanced/Extras switch, Cancel
     │   │           └─ Seed browser: list, description, Load/Save/Delete, Back【*.SED in the Maps folder】
@@ -61,12 +65,15 @@ Launch
     │   └─ Game room (see below)
     │
     ├─ WW Online
-    │   ├─ Sign-in: Username【[VERA] OnlineName】, Password, Remember password【Account.json】, Play, Back
-    │   │   └─ Popups: Create Account → verification code; Forgot Password → reset password; Delete Account
+    │   ├─ Entry: Play as Guest (a generated GuestNNNNN name, no account), Sign In and Play
+    │   │   └─ Sign In and Play → Sign-in: Username【[VERA] OnlineName】, Password, Remember password【Account.json】, Play, Back
+    │   │       └─ Popups: Create Account → verification code; Forgot Password → reset password; Delete Account
     │   └─ Online lobby
     │       ├─ Games list, players list (click opens the player card), Name/Ping sort, Refresh, Observe checkbox, chat, Emote
     │       ├─ Create Game: room name, password, max players, allow spectators, limit screen resolution, ranked game, lobby watching (Delayed/Off/Live) (all this run only)
     │       ├─ Join Game (a password-protected room opens the channel password box)
+    │       ├─ Join Any Game: joins the first listed game with a free seat and no password, else opens Create Game
+    │       ├─ Under the games: search (game name or map), Hide full, Hide locked (this run only)
     │       ├─ Quick Match: progress and Cancel only, no preferences
     │       ├─ WOL Options: Play Music【[WOnline] LobMusic】, Translate chat into【[VERA] TranslateChat】,
     │       │     Translate in matches【[VERA] TranslateMatches】, Sound Options, OK/Cancel
@@ -76,12 +83,15 @@ Launch
     │   Game room (shared by LAN and online)
     │   ├─ Right-hand buttons: Start Game (host), Game Options, Choose Map (host), Lobby (online only), Back
     │   ├─ Each roster row: Player (Open/Closed/AI/Kick/Give Seat/Move to Spectators), Side, Color, Start, Team; host can drag rows between teams; Previous/Next page
-    │   ├─ Team bar (host): Teams, Room size, Team Starts, Team Colors, Balance (online only);
+    │   ├─ Team bar (host): Teams, Room size, Quick Team Setup list (Team Starts, Team Colors, Balance teams online,
+    │   │     the quick teams), Bulk Seat Actions list (Fill with AI, Close all, Open closed seats, Remove all AI);
     │   │     each group has a Join/Watch/Join Queue button, and the host also gets Add AI
     │   ├─ Co-op difficulty, chat; with a missing map: Download / Leave
-    │   └─ Room Game Options popup: speed, credits, unit count, Superweapon Limit, the five retail checkboxes,
-    │       Destroyable Bridges, In-game Allying, No Yuri, No France, No Spy, No Stolen Tech, Terrain Deformation,
-    │       Building Production Queue
+    │   └─ Room Game Options popup, two pages:
+    │       ├─ speed, credits, unit count, Tech Level, the five retail checkboxes, Bases, Fog of War,
+    │       │     Multi-Engineer, Harvester Truce; More Options
+    │       └─ Superweapon Limit, Destroyable Bridges, In-game Allying, No Yuri, No France, No Spy, No Stolen Tech,
+    │             Terrain Deformation, Building Production Queue; Main Options
     │       【retail items in [LAN] or [WonlinePref]; VERA's additions this run only】
     │
     ├─ Movies & Credits: Sneak Peeks, Play Movies → movie list (Play Movie/Back), View Credits, Main Menu
@@ -103,12 +113,16 @@ Launch
 
 | Page | Settings【storage】 |
 |---|---|
-| **Display** | Zoom【[VERA] Zoom】, Display (monitor)【[VERA] Display】, Team Color Strength 1–10【[VERA] HouseColorStrength】*(locked in a match)*, Color Vision【[VERA] ColorVisionMode】, Visual Details (Low/High)【[Options] DetailLevel】, Full Screen【[VERA] FullScreen】, VSync【[VERA] VSync】*(not in the web build)*, Original 4:3 Shape【[VERA] OriginalShape】, Performance Stats *(not saved)* |
+| **Display** | Zoom【[VERA] Zoom】, Display (monitor)【[VERA] Display】, Graphics API【[VERA] GraphicsAPI】*(Windows only, next start)*, Color Vision【[VERA] ColorVisionMode】, Team Color Strength 1–10【[VERA] HouseColorStrength】*(locked in a match)*, Visual Details (Low/High)【[Options] DetailLevel】, Full Screen【[VERA] FullScreen】, VSync【[VERA] VSync】*(not in the web build)*, High refresh rate in battle【[VERA] HighRefreshRateInBattle】*(not in the web build)*, Original 4:3 Shape【[VERA] OriginalShape】, Performance Stats *(not saved)* |
 | **Game Options** | Difficulty【[Options] Difficulty】*(locked in a match)*, Shift-Click Batch Queue【[VERA] ShiftQueue】, Building Production Queue【[VERA] BuildingProductionQueue】*(next game)*, Auto Repair【[VERA] AutoRepair】, Ares (Auto/On/Off)【[VERA] Ares】*(next launch)*, Custom End Game Banner / Score / Movie【[VERA] CustomEndGameBanner / Score / Movie】, Commander Clips【[VERA] CommanderFeedback】 |
 | **UI Options** | Sidebar size (Normal/Large/XL)【[VERA] Sidebar】, Sidebar Columns 2–5【[VERA] SidebarColumns】, HD Radar【[VERA] HdRadar】, Smooth Sidebar【[VERA] SmoothSidebar】, Health Bars (Original/All Units/All Units Not Full)【[VERA] HealthBars】, Tooltips【[Options] ToolTips】, Target Lines【[Options] UnitActionLines】, See Hidden Objects【[Options] ShowHidden】, Compact Super Timers【[VERA] CompactSuperTimers】, Grouped Super Timers【[VERA] GroupedSuperTimers】, Detailed EVA Text【[VERA] DetailedEvaText】, Convenience Help【[VERA] ConvenienceHelp】; button: Edit Layout *(match only)* |
 | **Audio Options** | Music Volume【[Audio] ScoreVolume】, Sound Volume【[Audio] SoundVolume】, Voice Volume【[Audio] VoiceVolume】 |
 | **Controls** | Scroll Rate【[Options] ScrollRate】, Right-Click Orders【[VERA] RightClickOrders】, Minimap Beacons【[VERA] MinimapBeacons】, Mouse Wheel Zoom【[VERA] MouseWheelZoom】, Lock Cursor to Window【[VERA] LockCursor】 |
 | **General** | Language【[VERA] Language】, Original YR Style【[VERA] YROriginalStyle】, Smooth Online Menus【[VERA] SmoothOnlineMenus】, HD Map Previews【[VERA] HdMapPreviews】*(not in the web build)*, VERA Icon【[VERA] VeraIcon】, Skip Intro【[VERA] SkipIntro】*(next launch)*, Show String Keys【[VERA] ShowStringKeys】; button: Check for Updates *(locked in a match, not in the web build)* |
+
+High refresh rate in battle is off by default. Turn it on in Display or set `HighRefreshRateInBattle=yes` under `[VERA]` in `VERA.INI`. With VSync on or off, the battlefield can draw at the monitor's refresh rate when drawing is fast enough. This can make unit movement smoother and use more GPU time.
+
+On Windows, the Display page's Graphics API list, or `GraphicsAPI=` under `[VERA]` in `VERA.INI`, picks the renderer for the next start: `opengl` starts in OpenGL compatibility mode, and `vulkan` or `dx12` asks for that API alone. If the API you name cannot start, the game says so in a box and starts on another, skipping one that failed at an earlier start. The default, `auto`, lets the game choose. If a Vulkan or DirectX 12 startup hangs or loses the graphics device, the next automatic start tries the other API and records the failure in `GraphicsLostAtStart.txt` beside `VERA.INI`. If neither API finds a hardware GPU, the game tries OpenGL. The `WGPU_BACKEND` environment variable takes precedence. The Language list above writes `[VERA] Language=`, which you can also edit by hand.
 
 ## 2. In a match
 

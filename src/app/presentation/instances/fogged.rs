@@ -159,7 +159,8 @@ struct FrozenDrawInputs<'a> {
     building_zshape: Option<(i32, i32)>,
     /// The world column of the tactical view's left edge.
     view_left: i32,
-    /// The skip table the left-edge building bodies of this picture fill.
+    /// The skip table the left-edge building bodies of this picture fill
+    /// (`MatchPresentationState::zshape_skips`).
     zshape_skips: &'a std::cell::RefCell<crate::render::zshape_skips::ZShapeSkips>,
     detail_level: i32,
 }

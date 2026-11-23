@@ -15,18 +15,21 @@ use std::borrow::Cow;
 
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::PhysicalKey;
 
+use vera20k_gui::{DialogId, DialogKind, Gui, InputEvent, NodeKind, Prop, UiEvent, Value};
+
+use crate::app::frontend::shell_pass::{TexturedDraw, encode_sprite_pass};
 use crate::app::input::precedence::{InputLayer, ModalPage, ScreenPage};
 use crate::app::{App, AppState, BUILD_STAMP};
-use crate::render::batch::{BatchRenderer, BatchTexture, DepthAxis, SpriteInstance};
+use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 use crate::render::text_engine::fonts::{BASELINE, CAP_HEIGHT};
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
 use crate::ui::shell::geom::RectPx;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Action {
     Quit,
     BackToMenu,
@@ -65,6 +68,14 @@ impl Action {
             .as_ref()
             .and_then(|csf| csf.get(key))
             .map_or(Cow::Borrowed(fallback), Cow::Borrowed)
+    }
+
+    /// Escape's button: the one that backs out of the card.
+    fn cancels(self) -> bool {
+        matches!(
+            self,
+            Self::Resume | Self::Quit | Self::BackToMenu | Self::CancelImport | Self::CloseImport
+        )
     }
 
     fn commit(self, state: &mut AppState, event_loop: &ActiveEventLoop) {
@@ -170,6 +181,111 @@ impl Buttons {
 /// that paints the same decision `handle_event` acts on.
 pub(crate) fn shell_error_buttons(state: &AppState) -> Buttons {
     Buttons::for_shell_error(state)
+}
+
+/// The card's buttons as gui nodes, in click order: the gui runs hover, press
+/// capture and Enter (the first button) / Escape (the first that backs out);
+/// the card only paints them.
+pub(crate) struct CardUi {
+    gui: Gui,
+    dialog: Option<DialogId>,
+    /// The actions and rects the nodes were built from.
+    built: Vec<(Action, RectPx)>,
+    /// The window-pixel pointer the gui last saw.
+    pointer: Option<(i32, i32)>,
+}
+
+impl Default for CardUi {
+    fn default() -> Self {
+        Self {
+            gui: Gui::new(4),
+            dialog: None,
+            built: Vec::new(),
+            pointer: None,
+        }
+    }
+}
+
+impl CardUi {
+    /// Rebuilds the nodes when the card's buttons or size changed, and moves
+    /// the gui's pointer to `cursor`: a card that appears under a still
+    /// pointer shows its hover at once.
+    fn sync(&mut self, actions: &[Action], layout: &CardLayout, cursor: (i32, i32)) {
+        let wanted: Vec<(Action, RectPx)> = actions
+            .iter()
+            .copied()
+            .zip(layout.button_rects(actions.len()))
+            .collect();
+        if self.dialog.is_none() || wanted != self.built {
+            if let Some(dialog) = self.dialog.take() {
+                let _ = self.gui.pop_dialog(dialog);
+            }
+            self.dialog = self.build(&wanted);
+            self.built = wanted;
+            self.pointer = None;
+        }
+        if self.pointer != Some(cursor) {
+            self.pointer = Some(cursor);
+            let (x, y) = cursor;
+            self.gui.input(InputEvent::PointerMove { x, y }, 0);
+        }
+    }
+
+    fn build(&mut self, buttons: &[(Action, RectPx)]) -> Option<DialogId> {
+        let root = self.gui.create(NodeKind::Dialog, None).ok()?;
+        let mut nodes = Vec::new();
+        for (_, rect) in buttons {
+            let node = self.gui.create(NodeKind::Button, Some(root)).ok()?;
+            let _ = self.gui.set(node, Prop::Rect, Value::Rect(*rect));
+            // The card acts on a left release over a button alone: a press
+            // dragged onto it, or one held since before the card showed.
+            let _ = self
+                .gui
+                .set(node, Prop::ReleaseActivates, Value::Bool(true));
+            nodes.push(node);
+        }
+        let cancel = buttons
+            .iter()
+            .zip(&nodes)
+            .find(|((action, _), _)| action.cancels())
+            .map(|(_, node)| *node);
+        for (node, prop) in [
+            (nodes.first().copied(), Prop::Default),
+            (cancel, Prop::Cancel),
+        ] {
+            let _ = node.map(|n| self.gui.set(n, prop, Value::Bool(true)));
+        }
+        self.gui.push_dialog(root, DialogKind::Page).ok()
+    }
+
+    fn index_of(&self, node: vera20k_gui::NodeId) -> Option<usize> {
+        let root = self.gui.dialog_root(self.dialog?)?;
+        self.gui
+            .tree()
+            .children(root)
+            .ok()?
+            .iter()
+            .position(|n| *n == node)
+    }
+
+    /// The button under the pointer, by click order.
+    fn hovered(&self) -> Option<usize> {
+        self.index_of(self.gui.hovered()?)
+    }
+
+    /// Feeds one input; the actions its buttons activated.
+    fn input(&mut self, event: InputEvent) -> Vec<Action> {
+        self.gui.input(event, 0);
+        self.gui
+            .drain_events()
+            .into_iter()
+            .filter_map(|event| match event {
+                UiEvent::Activated { node } => self.index_of(node),
+                _ => None,
+            })
+            .filter_map(|index| self.built.get(index).map(|(action, _)| *action))
+            .collect()
+    }
 }
 
 /// Move the importing thread's progress and outcome into the dialog.
@@ -308,65 +424,61 @@ pub(crate) fn handle_event(
     let Some(buttons) = Buttons::for_state(state) else {
         return false;
     };
-    let actions = buttons.actions();
-    match event {
+    let input = match event {
         WindowEvent::CursorMoved { position, .. } => {
             // Match input keeps source pixels even while a card covers a
             // zoomed match; the card maps back through `window_cursor_position`.
             state.set_cursor_from_window(position.x as f32, position.y as f32);
-            state.platform.window.request_redraw();
-            true
+            None
         }
         WindowEvent::MouseInput {
-            state: ElementState::Released,
+            state: pressed,
             button: MouseButton::Left,
             ..
         } => {
-            let layout = CardLayout::new(
-                state.renderer.gpu.config.width,
-                state.renderer.gpu.config.height,
-            );
             let (x, y) = state.window_cursor_position();
-            if let Some((_, action)) = layout
-                .button_rects(actions.len())
-                .into_iter()
-                .zip(actions)
-                .find(|(rect, _)| rect.contains(x as i32, y as i32))
-            {
-                action.commit(state, event_loop);
-            }
-            state.platform.window.request_redraw();
-            true
+            let (x, y) = (x as i32, y as i32);
+            Some(match pressed {
+                ElementState::Pressed => InputEvent::PointerDown {
+                    x,
+                    y,
+                    button: vera20k_gui::MouseButton::Left,
+                },
+                ElementState::Released => InputEvent::PointerUp {
+                    x,
+                    y,
+                    button: vera20k_gui::MouseButton::Left,
+                },
+            })
         }
         WindowEvent::KeyboardInput { event, .. } => {
-            if event.state.is_pressed() && !event.repeat {
-                let action = match event.physical_key {
-                    PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => {
-                        actions.first().copied()
-                    }
-                    PhysicalKey::Code(KeyCode::Escape) => actions.iter().copied().find(|action| {
-                        matches!(
-                            action,
-                            Action::Resume
-                                | Action::Quit
-                                | Action::BackToMenu
-                                | Action::CancelImport
-                                | Action::CloseImport
-                        )
-                    }),
-                    _ => None,
-                };
-                if let Some(action) = action {
-                    action.commit(state, event_loop);
-                }
-                state.platform.window.request_redraw();
+            if !event.state.is_pressed() || event.repeat {
+                return true;
             }
-            true
+            match event.physical_key {
+                PhysicalKey::Code(code) => {
+                    crate::ui::shell::controller::gui_key(code, false).map(InputEvent::Key)
+                }
+                _ => None,
+            }
         }
-        WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. } => true,
+        WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. } => return true,
         // Focus, resize and close retain the platform lifecycle handler.
-        _ => false,
+        _ => return false,
+    };
+    let layout = CardLayout::new(
+        state.renderer.gpu.config.width,
+        state.renderer.gpu.config.height,
+    );
+    let (x, y) = state.window_cursor_position();
+    let card = &mut state.frontend.status_card;
+    card.sync(&buttons.actions(), &layout, (x as i32, y as i32));
+    let activated = input.map_or_else(Vec::new, |input| card.input(input));
+    for action in activated {
+        action.commit(state, event_loop);
     }
+    state.platform.window.request_redraw();
+    true
 }
 
 /// Push one solid rectangle.
@@ -497,6 +609,9 @@ pub(crate) fn render(
         .map(|action| action.label(state).to_uppercase())
         .collect();
     let (cursor_x, cursor_y) = state.window_cursor_position();
+    let card = &mut state.frontend.status_card;
+    card.sync(&actions, &layout, (cursor_x as i32, cursor_y as i32));
+    let hovered = card.hovered();
     let button_rects = layout.button_rects(actions.len());
     let thickness = (layout.scale.round() as i32).max(1);
 
@@ -504,8 +619,8 @@ pub(crate) fn render(
     // Buttons are the only ornamented element: the field behind them is plain
     // black until the card gets a background of its own.
     let mut glows: Vec<SpriteInstance> = Vec::new();
-    for rect in &button_rects {
-        let hovered = rect.contains(cursor_x as i32, cursor_y as i32);
+    for (index, rect) in button_rects.iter().enumerate() {
+        let hovered = hovered == Some(index);
         glows.push(SpriteInstance {
             position: [rect.x as f32, rect.y as f32],
             size: [rect.w as f32, rect.h as f32],
@@ -521,32 +636,22 @@ pub(crate) fn render(
             ..Default::default()
         });
         // Black edging outside a #FF0000 line, and the same inside it.
-        push_frame(&mut shapes, *rect, thickness, FRAME_BLACK);
-        push_frame(
-            &mut shapes,
-            RectPx::new(
-                rect.x + thickness,
-                rect.y + thickness,
-                rect.w - thickness * 2,
-                rect.h - thickness * 2,
-            ),
-            thickness,
-            FRAME_RED,
-        );
-        push_frame(
-            &mut shapes,
-            RectPx::new(
-                rect.x + thickness * 2,
-                rect.y + thickness * 2,
-                rect.w - thickness * 4,
-                rect.h - thickness * 4,
-            ),
-            thickness,
-            FRAME_BLACK,
-        );
+        for (ring, color) in [FRAME_BLACK, FRAME_RED, FRAME_BLACK]
+            .into_iter()
+            .enumerate()
+        {
+            let inset = thickness * ring as i32;
+            let ring = RectPx::new(
+                rect.x + inset,
+                rect.y + inset,
+                rect.w - inset * 2,
+                rect.h - inset * 2,
+            );
+            push_frame(&mut shapes, ring, thickness, color);
+        }
     }
 
-    let renderer = &mut state.renderer;
+    let renderer = &state.renderer;
     let gpu = &renderer.gpu;
     let batch = &renderer.batch_renderer;
     let inner_w = (layout.width - layout.pad * 2) as f32;
@@ -704,58 +809,28 @@ pub(crate) fn render(
         text
     };
 
-    let fill: &BatchTexture = &renderer.status_screen_fill;
-    let glow: &BatchTexture = &renderer.status_card_glow;
-    batch.update_camera(
-        gpu,
-        layout.width as f32,
-        layout.height as f32,
-        0.0,
-        0.0,
-        1.0,
-        DepthAxis::NONE,
-    );
-    let glow_buffer = batch.create_instance_buffer(gpu, &glows);
-    let shape_buffer = batch.create_instance_buffer(gpu, &shapes);
-    let text_buffer = batch.create_instance_buffer(gpu, &text);
-
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("Utility status card"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            view: &renderer.depth_view,
-            depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(1.0),
-                store: wgpu::StoreOp::Store,
-            }),
-            stencil_ops: None,
-        }),
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        multiview_mask: None,
-    });
-    if let Some((buffer, count)) = &glow_buffer {
-        batch.draw_with_buffer_passthrough(&mut pass, glow, buffer, *count);
-    }
-    if let Some((buffer, count)) = &shape_buffer {
-        batch.draw_with_buffer_passthrough(&mut pass, fill, buffer, *count);
-    }
-    if let Some((buffer, count)) = &text_buffer {
-        batch.draw_with_buffer_passthrough(&mut pass, renderer.bit_font.atlas(), buffer, *count);
-    }
+    let draws = [
+        TexturedDraw {
+            texture: &renderer.status_card_glow,
+            instances: glows,
+        },
+        TexturedDraw {
+            texture: &renderer.status_screen_fill,
+            instances: shapes,
+        },
+        TexturedDraw {
+            texture: renderer.bit_font.atlas(),
+            instances: text,
+        },
+    ];
+    let targets = (view, &renderer.depth_view);
+    encode_sprite_pass(gpu, batch, encoder, targets, "Utility status card", &draws);
 }
 
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
+    use vera20k_gui::Key;
 
     #[test]
     fn buttons_are_centred_and_never_overlap() {
@@ -770,6 +845,43 @@ mod tests {
         assert!(two[0].x + two[0].w <= two[1].x);
         let span = two[1].x + two[1].w - two[0].x;
         assert!((two[0].x + span / 2 - layout.width / 2).abs() <= 1);
+    }
+
+    #[test]
+    fn card_buttons_take_hover_clicks_and_enter_escape_from_the_gui() {
+        let layout = CardLayout::new(800, 600);
+        let actions = [Action::Leave, Action::Resume];
+        let [leave, resume] = layout.button_rects(2)[..] else {
+            unreachable!()
+        };
+        let mut card = CardUi::default();
+        // A card shown under a still pointer hovers at once.
+        card.sync(&actions, &layout, (resume.x + 1, resume.y + 1));
+        assert_eq!(card.hovered(), Some(1));
+        assert_eq!(card.input(InputEvent::Key(Key::Enter)), [Action::Leave]);
+        assert_eq!(card.input(InputEvent::Key(Key::Escape)), [Action::Resume]);
+        let (x, y) = (leave.x + 2, leave.y + 2);
+        card.sync(&actions, &layout, (x, y));
+        let button = vera20k_gui::MouseButton::Left;
+        assert!(
+            card.input(InputEvent::PointerDown { x, y, button })
+                .is_empty()
+        );
+        assert_eq!(
+            card.input(InputEvent::PointerUp { x, y, button }),
+            [Action::Leave]
+        );
+        // A press off the buttons, dragged onto Resume, still resumes.
+        assert!(
+            card.input(InputEvent::PointerDown { x: 1, y: 1, button })
+                .is_empty()
+        );
+        let (x, y) = (resume.x + 2, resume.y + 2);
+        card.sync(&actions, &layout, (x, y));
+        assert_eq!(
+            card.input(InputEvent::PointerUp { x, y, button }),
+            [Action::Resume]
+        );
     }
 
     #[test]

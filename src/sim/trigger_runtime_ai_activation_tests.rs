@@ -103,7 +103,7 @@ fn authored_ai_trigger_actions_change_only_the_selected_house_latch() {
             sim.main_rng.native_state_hex(),
             sim.mapgen_rng.native_state_hex(),
         );
-        let _ = sim.advance_triggers(&rules, Some(&registry), FrameEffects::default());
+        let _ = sim.advance_triggers(&rules, Some(&registry), &mut FrameEffects::default());
         for (index, owner) in houses.iter().enumerate() {
             let house = &sim.houses[owner];
             let wanted = HouseAiActivationLatches {
@@ -162,7 +162,7 @@ fn latches(value: &serde_json::Value) -> HouseAiActivationLatches {
 fn supply_rng(sim: &mut Simulation, states: &serde_json::Value) {
     use crate::sim::rng::SimRng;
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
 }
 
@@ -285,7 +285,7 @@ fn run_native_action(
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(result, number(&row["result"]) != 0, "{context}: AL");
     for (index, owner) in houses.iter().enumerate() {
@@ -504,7 +504,7 @@ fn ai_activation_replays_original_action_to_timer_selector_histories() {
                 &mut sim,
                 &rules,
                 owner,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             assert_eq!(
                 sim.scenario_rng.native_state_hex(),
@@ -704,7 +704,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
     }
     assert!(
@@ -723,7 +723,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
         &mut Vec::new(),
         &rules,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert!(
         targets
@@ -758,7 +758,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
         assert_eq!(
             candidate
@@ -817,7 +817,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
         assert!(candidate.team_script_vm.teams_in_order().count() > count);
         let frame = candidate.session.binary_frame() as i32;
@@ -831,7 +831,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
                 candidate,
                 &rules,
                 *id,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             let timer = candidate.houses[id].team_creation().timer();
             assert_eq!(
@@ -901,7 +901,7 @@ fn house_control_action(
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -1234,7 +1234,7 @@ fn house_trigger_ratio_original_writer_and_due_selector_keep_signed_values_timer
             &mut sim,
             &rules,
             owner,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_rng(&sim, &corpus()["actions"]["rng_full_seed31"], "not yet due");
         sim.session.set_binary_frame_for_test(10);
@@ -1244,7 +1244,7 @@ fn house_trigger_ratio_original_writer_and_due_selector_keep_signed_values_timer
             &mut sim,
             &rules,
             owner,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         // Original seed31: ratio request(1,100)->84 from raw2026076499;
         // admitted weight request(1,100)->22 from raw2287577493. The native
@@ -1352,7 +1352,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
     let main_before = sim.main_rng.native_state_hex();
     let mapgen_before = sim.mapgen_rng.native_state_hex();
     let untouched = save_codec::serialize(&sim.houses[&houses[2]]).unwrap();
-    sim.advance_triggers(&rules, Some(&registry), FrameEffects::default());
+    sim.advance_triggers(&rules, Some(&registry), &mut FrameEffects::default());
     // Original consecutive Read/Execute13/77/78/79, Steam gamemd:
     // 13 selects Country7, while all three ratio actions use incoming House0.
     assert_eq!(
@@ -1403,7 +1403,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
         &mut sim,
         &rules,
         houses[0],
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     // Same original history: only the independent +565C/AITriggersActive
     // gate participates. Draws are (1,100)->84, then weight(1,100)->22;

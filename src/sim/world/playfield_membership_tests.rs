@@ -80,7 +80,7 @@ fn foot_ai_promotes_a_stationary_balloon_using_the_retained_physical_cell() {
                 entity.position.set_ry_for_test(11);
             }
             let before = position_world_coord(&entity.position);
-            sim.advance_live_object_turn(actor, &retail.rules, ObjectAiCtx::default())
+            sim.advance_live_object_turn(actor, &retail.rules, &mut ObjectAiCtx::default())
                 .unwrap();
             let entity = sim.entities().get(actor).unwrap();
             assert_eq!(position_world_coord(&entity.position), before);
@@ -127,7 +127,7 @@ fn reinforcement_scene(
     sim.session.install_waypoints(&map.waypoints);
     sim.initialize_trigger_definitions(&map, &registry, None, None, None);
     sim.classify_map_triggers(&retail.rules);
-    sim.advance_triggers(&retail.rules, Some(&overlays), FrameEffects::default());
+    sim.advance_triggers(&retail.rules, Some(&overlays), &mut FrameEffects::default());
     let actor = sim
         .entities()
         .values()

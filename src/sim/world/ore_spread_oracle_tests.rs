@@ -82,7 +82,7 @@ fn ore_rung_publishes_native_cell_attributes_before_live_object_turns() {
     sim.tick_ore_growth_rungs(
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     compare_overlay_state(&sim, &row["steps"][0]["state"], name);
@@ -151,7 +151,7 @@ fn app_frames_match_original_ore_driver_histories_and_rng_continuation() {
                     &rules,
                     67,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap()
             });
@@ -215,7 +215,7 @@ fn app_ore_constructor_terminal_cleanup_matches_original_deferred_drain() {
                 &rules,
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
         });
@@ -306,7 +306,7 @@ fn ore_rung_spreads_no_ore_under_a_landed_aircraft() {
         sim.tick_ore_growth_rungs(
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         sim.overlay_grid

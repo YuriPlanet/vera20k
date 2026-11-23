@@ -324,6 +324,28 @@ fn player_at_supports_one_hundred_twenty_slots_without_constructing_countries() 
 }
 
 #[test]
+fn multiplayer_side_constructs_no_country_past_vera_bound() {
+    let mut full = NativeRulesRegistryState::default();
+    full.families.insert(
+        RulesTypeFamily::Country,
+        (0..1usize << u16::BITS)
+            .map(|index| ProcessedType::new(format!("C{index}")))
+            .collect(),
+    );
+    let settings = IniFile::from_str("[MultiPlayer]\nSide=Newcomer\n");
+    let (index, trace) = read_native_multiplayer_country(full, &IniFile::empty(), &settings, 3);
+    assert_eq!(index, 3, "the current index stays");
+    assert_eq!(
+        trace
+            .into_registry_state_discarding_events()
+            .country_projection()
+            .count(),
+        1 << u16::BITS,
+        "no Country past CountryIdx"
+    );
+}
+
+#[test]
 fn airburst_retained_flag_matches_native_reads_and_registry_restore() {
     let native = crate::test_fixture::json("tools/projectile_oracle/airburst_retained.json");
     let initial = IniFile::from_str(
@@ -4473,4 +4495,37 @@ fn ares_country_reads_start_in_multiplayer_with_const() {
     };
     assert!(with_const("PARENT"));
     assert!(!with_const("CHILD") && !with_const("PLAIN"));
+}
+
+/// Original RA2 stores the 36 moved type references (incl. Parachute) under
+/// [AudioVisual]; YR moved them to [General]. The RA2 launch profile must read
+/// them from AudioVisual, while the YR profile ignores an AudioVisual-only key.
+#[test]
+fn ra2_reads_moved_general_references_from_audiovisual() {
+
+    let build = |section: &str| {
+        let layers = RulesLayerStack::new(IniFile::from_str(&format!(
+            "[Animations]\n0=PARACH\n[General]\n\n[{section}]\nParachute=PARACH\nDropZoneAnim=PARACH\n"
+        )));
+        let processed = layers.process().unwrap();
+        RuleSet::from_processed_rules(&processed).unwrap()
+    };
+
+    crate::util::ra2_launch::set_override(true);
+    let ra2 = build("AudioVisual");
+    assert_eq!(ra2.general.parachute_shp.as_deref(), Some("PARACH"));
+
+    crate::util::ra2_launch::set_override(false);
+    let yr = build("AudioVisual");
+    assert_eq!(
+        yr.general.parachute_shp, None,
+        "YR ignores an AudioVisual-only Parachute"
+    );
+    let yr_general = build("General");
+    assert_eq!(
+        yr_general.general.parachute_shp.as_deref(),
+        Some("PARACH")
+    );
+
+    crate::util::ra2_launch::clear_override();
 }

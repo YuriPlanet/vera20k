@@ -1383,6 +1383,14 @@ impl AresParaDropPlane {
     }
 }
 
+/// VERA's bound on a `ParaDrop*.Count=` and on `SpyPlane.Count=`. Ares
+/// resizes the plane list by the raw value (`SW_ParaDrop::LoadFromINI`'s
+/// GetParadropPlane, no upper bound), so a value near `i32::MAX` exhausts
+/// memory there, and a Spy Plane launch flies its planes one at a time.
+/// Outside data never stops the game: the count clamps here, far above any
+/// flight a mod sends.
+const PARADROP_PLANE_LIMIT: i32 = 1024;
+
 impl AresParaDropRules {
     /// The planes kept for `owner`, if LoadFromINI inserted its list.
     pub(crate) fn planes(&self, owner: &AresParaDropOwner) -> Option<&[AresParaDropPlane]> {
@@ -1435,7 +1443,8 @@ impl AresParaDropRules {
     /// many as its Side's). Each goes through GetParadropPlane (100739E0):
     /// `.Count` (ReadInteger, default the list's size, or the count above
     /// for a new list) resizes the list, a negative count to none, and each
-    /// plane is parsed in place ([`AresParaDropPlane::read`]). Keys are
+    /// plane is parsed in place ([`AresParaDropPlane::read`]); VERA clamps the
+    /// count at [`PARADROP_PLANE_LIMIT`]. Keys are
     /// composed in 0x40-byte buffers, which 25-byte type IDs cannot fill.
     pub(crate) fn read_pass(
         &mut self,
@@ -1449,8 +1458,11 @@ impl AresParaDropRules {
         let mut read = |owner, base: &str, new_count: usize| {
             let (planes, inserted) = self.try_emplace(owner);
             let current = if inserted { new_count } else { planes.len() };
-            let count = section.read_int(&format!("{base}.Count"), current as i32);
-            planes.resize(count.max(0) as usize, AresParaDropPlane::default());
+            let current = i32::try_from(current).unwrap_or(PARADROP_PLANE_LIMIT);
+            let count = section
+                .read_int(&format!("{base}.Count"), current)
+                .clamp(0, PARADROP_PLANE_LIMIT);
+            planes.resize(count as usize, AresParaDropPlane::default());
             for (index, plane) in planes.iter_mut().enumerate() {
                 plane.read(section, base, index, &aircraft, &types);
             }
@@ -1714,6 +1726,20 @@ pub(crate) struct AresLightningRules {
     pub(crate) radar_outage_affects: crate::rules::superweapon_targeting::HouseMask,
 }
 
+/// VERA's bound on `Lightning.ScatterCount=`: the tries a scattered cloud
+/// makes for a free cell, each a random draw, so a value near `i32::MAX`
+/// hangs the tick while every candidate is refused. Ares reads it with no
+/// upper bound (LoadFromINI10072CF0); its default is 1. Every value below
+/// the bound draws as before.
+const LIGHTNING_SCATTER_COUNT_LIMIT: i32 = 1024;
+
+/// VERA's bound on `Lightning.DebrisMin=` and `Lightning.DebrisMax=`: a
+/// striking bolt draws its debris count between them and spawns one anim per
+/// piece, so a value near `i32::MAX` hangs the tick. Ares reads them with no
+/// upper bound (LoadFromINI10072CF0); its defaults are 2 and 4. Every pair
+/// below the bound draws as before.
+const LIGHTNING_DEBRIS_LIMIT: i32 = 256;
+
 impl Default for AresLightningRules {
     fn default() -> Self {
         Self {
@@ -1758,13 +1784,19 @@ impl AresLightningRules {
         self.hit_delay = section.read_ares_nullable_int("Lightning.HitDelay", self.hit_delay);
         self.scatter_delay =
             section.read_ares_nullable_int("Lightning.ScatterDelay", self.scatter_delay);
-        self.scatter_count = section.read_ares_int("Lightning.ScatterCount", self.scatter_count);
+        self.scatter_count = section
+            .read_ares_int("Lightning.ScatterCount", self.scatter_count)
+            .min(LIGHTNING_SCATTER_COUNT_LIMIT);
         self.separation = section.read_ares_nullable_int("Lightning.Separation", self.separation);
         self.print_text = section.read_ares_nullable_bool("Lightning.PrintText", self.print_text);
         self.ignore_lightning_rod =
             section.read_ares_bool("Lightning.IgnoreLightningRod", self.ignore_lightning_rod);
-        self.debris_min = section.read_ares_int("Lightning.DebrisMin", self.debris_min);
-        self.debris_max = section.read_ares_int("Lightning.DebrisMax", self.debris_max);
+        self.debris_min = section
+            .read_ares_int("Lightning.DebrisMin", self.debris_min)
+            .min(LIGHTNING_DEBRIS_LIMIT);
+        self.debris_max = section
+            .read_ares_int("Lightning.DebrisMax", self.debris_max)
+            .min(LIGHTNING_DEBRIS_LIMIT);
         self.cloud_height = section.read_ares_int("Lightning.CloudHeight", self.cloud_height);
         if reads.bolt_explosion.is_some() {
             self.bolt_explosion = reads.bolt_explosion;
@@ -2232,7 +2264,11 @@ impl AresSuperWeaponLaunch {
         } else if is("SpyPlane") {
             // 10075880: Count, Type, Mission. An unknown mission keeps it.
             let spy_plane = &mut self.spy_plane;
-            spy_plane.count = section.read_ares_int("SpyPlane.Count", spy_plane.count);
+            // Each plane flies one at a time from the launch loop, so the
+            // count stops at the paradrop plane bound.
+            spy_plane.count = section
+                .read_ares_int("SpyPlane.Count", spy_plane.count)
+                .min(PARADROP_PLANE_LIMIT);
             if let Some(plane) = reads.spy_plane_type {
                 spy_plane.plane = plane;
             }
@@ -2577,6 +2613,63 @@ impl PhobosSuperWeaponAvailability {
 mod tests {
     use super::*;
 
+    /// `ParaDrop.Count=` and its Side and Country variants clamp at VERA's
+    /// plane bound instead of sizing the list by the raw value.
+    #[test]
+    fn paradrop_counts_clamp_at_the_plane_limit() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str(
+            "[Drop]\nParaDrop.Count=1000000\nParaDrop.Soviet.Count=-5\n\
+             ParaDrop.Russians.Count=1000000\n",
+        );
+        let mut paradrop = AresParaDropRules::default();
+        paradrop.read_pass(
+            ini.section_or_empty("Drop"),
+            &["Soviet".to_owned()],
+            &[("Russians".to_owned(), 0)],
+            |_| None,
+            |_| None,
+        );
+        let count = |owner| paradrop.planes(&owner).map(<[_]>::len);
+        let limit = Some(PARADROP_PLANE_LIMIT as usize);
+        assert_eq!(count(AresParaDropOwner::Default), limit);
+        assert_eq!(count(AresParaDropOwner::Side(0)), Some(0));
+        assert_eq!(
+            count(AresParaDropOwner::Country("Russians".to_owned())),
+            limit
+        );
+    }
+
+    #[test]
+    fn huge_lightning_counts_clamp_at_their_limits() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str(
+            "[Storm]\nLightning.ScatterCount=2147483647\n\
+             Lightning.DebrisMin=2147483647\nLightning.DebrisMax=2147483647\n",
+        );
+        let mut lightning = AresLightningRules::default();
+        lightning.read_pass(ini.section_or_empty("Storm"), AresLightningReads::default());
+        assert_eq!(lightning.scatter_count, LIGHTNING_SCATTER_COUNT_LIMIT);
+        assert_eq!(
+            (lightning.debris_min, lightning.debris_max),
+            (LIGHTNING_DEBRIS_LIMIT, LIGHTNING_DEBRIS_LIMIT)
+        );
+    }
+
+    #[test]
+    fn a_huge_spy_plane_count_clamps_at_the_plane_limit() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str("[Spy]\nSpyPlane.Count=2147483647\n");
+        let mut launch = AresSuperWeaponLaunch::default();
+        launch.read_pass(
+            ini.section_or_empty("Spy"),
+            Some("SpyPlane"),
+            true,
+            AresHandlerReads::default(),
+        );
+        assert_eq!(launch.spy_plane().count, PARADROP_PLANE_LIMIT);
+    }
+
     #[test]
     fn ares_superweapon_eva_uses_fixed_catalog_defaults_and_ordered_retention() {
         use crate::rules::ini_parser::IniFile;
@@ -2890,22 +2983,22 @@ Type=BogusType
     }
 
     /// The Ares PsychicReveal handler (LoadFromINI `0x10075360`) writes the
-    /// custom action whatever `Action=` says, so Mental Omega's Satellite Scan
-    /// (`Action=Custom`, `SW.Range=12`) asks for a target; a negative
+    /// custom action whatever `Action=` says, so a reveal with
+    /// `Action=Custom` and `SW.Range=12` asks for a target; a negative
     /// `SW.Range` is a whole-map reveal with none.
     #[test]
     fn ares_psychic_reveal_targets_unless_its_range_is_the_whole_map() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
-            "[CombatDamage]\nPsychicRevealRadius=2\n[SuperWeaponTypes]\n0=SpySatSpecial\n1=Plain\n2=Whole\n3=DefaultRange\n\
-             [SpySatSpecial]\nType=PsychicReveal\nAction=Custom\nSW.Range=12\n\
+            "[CombatDamage]\nPsychicRevealRadius=2\n[SuperWeaponTypes]\n0=ScanSpecial\n1=Plain\n2=Whole\n3=DefaultRange\n\
+             [ScanSpecial]\nType=PsychicReveal\nAction=Custom\nSW.Range=12\n\
              [Plain]\nType=PsychicReveal\nAction=None\n\
              [Whole]\nType=PsychicReveal\nAction=PsychicReveal\nSW.Range=-1\n\
              [DefaultRange]\nType=PsychicReveal\nSW.Range=-1,-1\n",
         );
         let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
         let action = |id| rules.super_weapon(id).unwrap().action.as_deref();
-        assert_eq!(action("SpySatSpecial"), Some("PsychicReveal"));
+        assert_eq!(action("ScanSpecial"), Some("PsychicReveal"));
         assert_eq!(action("Plain"), Some("PsychicReveal"));
         assert_eq!(action("Whole"), None);
         assert_eq!(action("DefaultRange"), Some("PsychicReveal"));

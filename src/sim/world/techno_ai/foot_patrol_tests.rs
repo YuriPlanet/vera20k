@@ -40,7 +40,7 @@ fn map_authored_patrol_acquires_and_returns_during_ordinary_frames() {
             id,
             Some(NavTargetRef::cell(12, 14)),
             &rules,
-            Default::default(),
+            &mut Default::default(),
         )
         .is_ok()
     );
@@ -59,7 +59,7 @@ fn map_authored_patrol_acquires_and_returns_during_ordinary_frames() {
                 actor.attack_target.target(),
                 Some(TargetKind::Entity(enemy))
             );
-            assert!(actor.patrol_post.cell().is_some());
+            assert!(actor.seldom.patrol_post.cell().is_some());
             assert_eq!(actor.archive_target(), Some(TargetKind::Cell(12, 14)));
             acquired = true;
             break;
@@ -77,7 +77,7 @@ fn map_authored_patrol_acquires_and_returns_during_ordinary_frames() {
                 .frame_committed
         );
         let actor = sim.substrate.entities.get(id).unwrap();
-        if actor.patrol_post.cell().is_none()
+        if actor.seldom.patrol_post.cell().is_none()
             && actor.archive_target().is_none()
             && actor.navigation.nav_com().is_none()
             && (actor.position.rx(), actor.position.ry()) == (12, 14)
@@ -138,7 +138,7 @@ fn stock_sniper_patrol_scans_then_approaches_through_the_existing_owners() {
             &mut sim,
             id,
             &rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
         )
         .unwrap();
         let actor = sim.substrate.entities.get(id).unwrap();
@@ -148,7 +148,7 @@ fn stock_sniper_patrol_scans_then_approaches_through_the_existing_owners() {
             Some(TargetKind::Entity(enemy)),
             "{kind}"
         );
-        let post = actor.patrol_post.cell();
+        let post = actor.seldom.patrol_post.cell();
         assert!(post.is_some());
         assert_eq!(actor.archive_target(), Some(TargetKind::Cell(10, 10)));
         set_patrol(&mut sim, id, 1);
@@ -156,7 +156,7 @@ fn stock_sniper_patrol_scans_then_approaches_through_the_existing_owners() {
             &mut sim,
             id,
             &rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
         )
         .unwrap();
         let actor = sim.substrate.entities.get(id).unwrap();
@@ -166,7 +166,7 @@ fn stock_sniper_patrol_scans_then_approaches_through_the_existing_owners() {
             Some(TargetKind::Entity(enemy)),
             "{kind}"
         );
-        assert_eq!(actor.patrol_post.cell(), post);
+        assert_eq!(actor.seldom.patrol_post.cell(), post);
     }
 }
 
@@ -193,7 +193,7 @@ fn continuation_world(state: u32) -> (Simulation, RuleSet, u64, u64) {
         .map(NativeCellIdentity::Real);
     set_patrol(&mut sim, id, state);
     let actor = sim.substrate.entities.get_mut(id).unwrap();
-    actor.patrol_post.cell = post;
+    actor.seldom.patrol_post.cell = post;
     actor
         .attack_target
         .set_for_test((state == 1).then_some(TargetKind::Entity(target)));
@@ -226,8 +226,14 @@ fn patrol_saved_pursuit_and_return_continue_in_independent_worlds() {
         restored.rebuild_caches_after_load(terrain, Default::default(), &rules);
         assert!(restored.rebuild_dynamic_navigation(&rules));
         assert_eq!(
-            restored.substrate.entities.get(id).unwrap().patrol_post,
-            live.substrate.entities.get(id).unwrap().patrol_post
+            restored
+                .substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .seldom
+                .patrol_post,
+            live.substrate.entities.get(id).unwrap().seldom.patrol_post
         );
         assert!(
             !live
@@ -241,14 +247,14 @@ fn patrol_saved_pursuit_and_return_continue_in_independent_worlds() {
                 &mut live,
                 id,
                 &rules,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
             )
             .unwrap();
             super::super::mission_handlers::dispatch_foot_mission(
                 &mut restored,
                 id,
                 &rules,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
             )
             .unwrap();
             let a = live.substrate.entities.get(id).unwrap();
@@ -257,7 +263,7 @@ fn patrol_saved_pursuit_and_return_continue_in_independent_worlds() {
                 b.mission.dispatch_timer().delay() > 0,
                 "the due Patrol handler must actually run"
             );
-            assert_eq!(a.patrol_post, b.patrol_post, "state{state}");
+            assert_eq!(a.seldom.patrol_post, b.seldom.patrol_post, "state{state}");
             assert_eq!(a.attack_target.target(), b.attack_target.target());
             assert_eq!(a.archive_target(), b.archive_target());
             assert_eq!(a.navigation.nav_com(), b.navigation.nav_com());

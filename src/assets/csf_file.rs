@@ -13,6 +13,12 @@
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
+
 use std::borrow::Cow;
 
 use crate::assets::error::AssetError;
@@ -160,15 +166,54 @@ impl CsfFile {
     /// appends its fixed candidates, for a game whose files take Ares' forms
     /// (`ares`, `AssetManager::ships_ares`); native controls:
     /// tools/rules_oracle/ares_csf.
+    /// The base CSF this process uses. YR reads `ra2md.csf`; `-ra2` reads the
+    /// original RA2 `ra2.csf` shipped inside `language.mix`.
+    pub fn active_csf_name() -> &'static str {
+        if crate::util::ra2_launch::enabled() {
+            "ra2.csf"
+        } else {
+            "ra2md.csf"
+        }
+    }
+
     pub fn load_active<'a>(
         ares: bool,
         mut lookup: impl FnMut(&str) -> Option<&'a [u8]>,
     ) -> Result<(Self, Vec<String>), AssetError> {
-        let bytes = lookup("ra2md.csf").ok_or_else(|| AssetError::AssetNotFound {
-            name: "ra2md.csf".to_string(),
+        let csf_name = Self::active_csf_name();
+        let bytes = lookup(csf_name).ok_or_else(|| AssetError::AssetNotFound {
+            name: csf_name.to_string(),
         })?;
         let mut table = Self::from_bytes(bytes)?;
         let mut admitted = Vec::new();
+        // `-ra2` reads the original ra2.csf. The YR table is installed beside
+        // it and carries labels the base table does not (e.g. UI strings added
+        // for the expansion). Adopt those as fallbacks: a label ra2.csf has
+        // keeps its original value, missing ones answer from ra2md.csf.
+        if crate::util::ra2_launch::enabled()
+            && let Some(md_bytes) = lookup("ra2md.csf")
+            && let Ok(md_table) = Self::from_bytes(md_bytes)
+        {
+            // Absorb missing labels into the base table itself, not into the
+            // localization fallbacks: `i18n::apply` clears those right after
+            // this load, while entries survive. A label ra2.csf already has
+            // keeps its original value.
+            let mut added = 0usize;
+            if let (CsfEntries::Raw(base), CsfEntries::Raw(md)) =
+                (&mut table.entries, md_table.entries)
+            {
+                for (key, value) in md {
+                    if !base.contains_key(&key) {
+                        base.insert(key, value);
+                        added += 1;
+                    }
+                }
+            }
+            if added > 0 {
+                log::info!("RA2 CSF fallback: adopted {added} labels from ra2md.csf");
+                admitted.push("ra2md.csf".to_string());
+            }
+        }
         if !ares {
             return Ok((table, admitted));
         }
@@ -444,12 +489,17 @@ pub fn format_csf(fmt: &str, args: &[CsfArg]) -> String {
 /// (`%02d` in `TXT_TIME_FORMAT_HOURS`). Anything else in the flag run is
 /// ignored, matching how the retail formats actually use it.
 fn push_padded_int(out: &mut String, flags: &[char], value: i64) {
+    /// Retail formats pad to two digits; a string table is outside data, and
+    /// `%0999999999999d` would otherwise push a terabyte of zeros.
+    const MAX_PAD_WIDTH: usize = 64;
     let zero_pad = flags.first() == Some(&'0');
     let width: usize = flags
         .iter()
         .skip(usize::from(zero_pad))
         .take_while(|c| c.is_ascii_digit())
-        .fold(0usize, |acc, c| acc * 10 + (*c as usize - '0' as usize));
+        .fold(0usize, |acc, c| {
+            (acc * 10 + (*c as usize - '0' as usize)).min(MAX_PAD_WIDTH)
+        });
     let digits = value.to_string();
     if digits.len() < width {
         let pad = if zero_pad { '0' } else { ' ' };
@@ -633,6 +683,13 @@ fn build_test_csf(label: &str, value: &str) -> Vec<u8> {
 }
 
 /// Authored localization fixture using the CSF owner's binary encoder.
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::unwrap_used,
+        reason = "a test fixture: a bad fixture is a bug in the test that built it"
+    )
+)]
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
     assert!(!entries.is_empty());
@@ -868,6 +925,13 @@ mod tests {
         // The engine's wide call sites carry %hs / %ls.
         assert_eq!(format_csf("%hs", &[CsfArg::Str("ok")]), "ok");
         assert_eq!(format_csf("%ls", &[CsfArg::Str("ok")]), "ok");
+    }
+
+    #[test]
+    fn format_csf_caps_a_hostile_pad_width() {
+        let out = format_csf("%0999999999999d", &[CsfArg::Int(5)]);
+        assert_eq!(out.len(), 64, "{out}");
+        assert!(out.ends_with('5') && out.starts_with("000"), "{out}");
     }
 
     #[test]

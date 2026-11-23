@@ -19,7 +19,7 @@ fn complete(
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -36,7 +36,7 @@ fn cancel(
         &Command::CancelPaidSuperWeapon { selection },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -54,7 +54,12 @@ fn superweapon_money_two_stage_settles_source_once_not_destination() {
         let ticket = sim.paid_super_weapon_selection(owner).unwrap();
         sim.session
             .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-        superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner, Default::default());
+        superweapon::tick_house_superweapon_instances(
+            &mut sim,
+            &rules,
+            owner,
+            &mut Default::default(),
+        );
         assert!(complete(&mut sim, &rules, owner, ticket, (15, 15)));
         assert_eq!(sim.houses[&owner].economy().credits(), 1000 + amount);
         assert_eq!(
@@ -194,7 +199,7 @@ fn superweapon_money_two_stage_reset_and_defeat_invalidate_pending_selection() {
                 .get_mut(&owner)
                 .unwrap()
                 .set_is_defeated_for_test(true);
-            superweapon::update_owned_supers(&mut sim, &rules, owner, Default::default());
+            superweapon::update_owned_supers(&mut sim, &rules, owner, &mut Default::default());
         } else {
             superweapon::reset_super(
                 &sim.interner,
@@ -301,7 +306,7 @@ fn superweapon_money_two_stage_provider_loss_and_power_hold_retire_ticket() {
         }
         // Recheck at final activation as well as at the ordinary dirty tail.
         assert!(!complete(&mut sim, &rules, owner, ticket, (15, 15)));
-        superweapon::update_owned_supers(&mut sim, &rules, owner, Default::default());
+        superweapon::update_owned_supers(&mut sim, &rules, owner, &mut Default::default());
         assert!(sim.paid_super_weapon_selection(owner).is_none());
         sim.power_states
             .house_mut(owner)
@@ -387,7 +392,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
                 &command.payload,
                 &rules,
                 None,
-                FrameEffects::default()
+                &mut FrameEffects::default()
             ),
             index != 4
         );
@@ -402,7 +407,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
         &commands[0].payload,
         &rules,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert_eq!(loaded.state_hash(), hash);
 }
@@ -484,7 +489,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
         &request,
         &rules,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert!(sim.paid_super_weapon_selection(owner).is_none());
     assert!(sim.super_weapons[&owner][&source].is_ready);
@@ -506,7 +511,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
         &request,
         &rules,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert!(!cancel(&mut sim, &rules, owner, old));
     assert!(!complete(&mut sim, &rules, owner, old, (15, 15)));

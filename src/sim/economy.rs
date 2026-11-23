@@ -86,21 +86,22 @@ impl Economy {
         self.score
     }
 
-    /// House ReadScenarioINI500B40: wrapping Credits*100 sets +1DC and the
-    /// wallet. Only campaign PlayerControl houses apply the option0/2 delta,
-    /// then clamp signed values <=0. Later Basic.Player forcing does not rerun
-    /// this reader. Executed controls: input_oracle/campaign_start --houses.
+    /// House ReadScenarioINI500B40 (0x00500BB9..0x00500C57): wrapping
+    /// Credits*100 sets +1DC and the wallet. Apply the option0/2 delta and
+    /// clamp signed values <=0 for admitted campaign players. Native uses
+    /// PlayerControl here; authored lockstep campaigns admit role Houses.
+    /// Later Basic.Player forcing does not rerun this reader. Executed
+    /// controls: input_oracle/campaign_start --houses.
     pub(crate) fn initialize_scenario_credits(
         &mut self,
         raw_credits: i32,
-        campaign_difficulty: Option<crate::sim::house_state::HouseDifficulty>,
-        player_control: bool,
+        campaign_player_difficulty: Option<crate::sim::house_state::HouseDifficulty>,
         money_delta_easy: i32,
         money_delta_hard: i32,
     ) {
         self.scenario_credits = raw_credits.wrapping_mul(100);
         self.credits = self.scenario_credits;
-        if let Some(difficulty) = campaign_difficulty.filter(|_| player_control) {
+        if let Some(difficulty) = campaign_player_difficulty {
             self.credits = match difficulty as i32 {
                 0 => self.credits.wrapping_add(money_delta_easy),
                 2 => self.credits.wrapping_add(money_delta_hard),

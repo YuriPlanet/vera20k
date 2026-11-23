@@ -80,7 +80,7 @@ fn mission_state(actor: &crate::sim::game_entity::GameEntity) -> Value {
         "queued":actor.mission.queued().raw(),"status":actor.mission.handler_state(),
         "mission_visit_count":actor.mission.ai_counter(),
         "dispatch":[dispatch.start_frame(),dispatch.delay()],
-        "rearm":[actor.rearm_timer.start_frame(),actor.rearm_timer.duration()]})
+        "rearm":[actor.seldom.rearm_timer.start_frame(),actor.seldom.rearm_timer.duration()]})
 }
 
 fn passive_scan_state(actor: &crate::sim::game_entity::GameEntity) -> Value {
@@ -187,7 +187,7 @@ fn paid_snapshot(
             "health":actor.health.current(),"mission":actor.mission.current().raw(),
             "queued":actor.mission.queued().raw(),
             "dispatch":[dispatch.start_frame(),dispatch.delay()],
-            "rearm":[actor.rearm_timer.start_frame(),actor.rearm_timer.duration()]},
+            "rearm":[actor.seldom.rearm_timer.start_frame(),actor.seldom.rearm_timer.duration()]},
         "nav_cell":nav(actor.navigation.nav_com()),
         "drive_destination":coordinate(actor.locomotor.as_ref().and_then(|l| l.selected_drive_runtime()).and_then(|r| r.retained()).and_then(|d| d.destination())),
         "drive_head":coordinate(actor.locomotor.as_ref().and_then(|l| l.selected_drive_runtime()).and_then(|r| r.retained()).and_then(|d| d.head_to())),
@@ -284,7 +284,7 @@ fn prepared_paid_scene(stage: &str, map_path: Option<&Path>) -> (HeadlessScenari
                 &[],
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
     }
@@ -323,7 +323,7 @@ fn command_paid_fv(
             .game_options_mut_for_test()
             .apply_in_game_speed(game_speed)
     );
-    sim.main_rng = crate::sim::rng::SimRng::new(0).into();
+    sim.main_rng = crate::sim::rng::SimRng::new(0);
     sim.mapgen_rng = crate::sim::rng::SimRng::new(0);
     sim.scenario_rng = crate::sim::rng::SimRng::new(scenario_seed);
     let id = spawn_fv(scene, xyz);
@@ -344,7 +344,7 @@ fn command_paid_fv(
         },
         &runtime.resources.rules,
         Some(runtime.resources.rules.overlay_registry()),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     id
 }
@@ -431,7 +431,7 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                             &Command::Stop { entity_id: id },
                             &runtime.resources.rules,
                             Some(runtime.resources.rules.overlay_registry()),
-                            crate::sim::world::FrameEffects::default(),
+                            &mut crate::sim::world::FrameEffects::default(),
                         ));
                     }
                     let calls = &outside_frames[frame as usize - 1];
@@ -455,7 +455,7 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
                             &[],
                             SIM_TICK_MS,
                             TickLane::Ordinary,
-                            crate::sim::world::FrameEffects::default(),
+                            &mut crate::sim::world::FrameEffects::default(),
                         )
                         .unwrap()
                 };
@@ -617,7 +617,7 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
                     NavTargetRef::cell(rx, ry),
                     rules,
                     true,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
             }
             if let Some(values) = row["input"].get("nav_queue") {
@@ -679,7 +679,7 @@ fn retail_fv_approach_matches_native_candidates_admission_and_queue() {
                     id,
                     rules,
                     Some(runtime.resources.rules.overlay_registry()),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             let actor = sim.substrate.entities.get(id).unwrap();
@@ -839,7 +839,7 @@ fn retail_fv_approaches_a_firing_cell_before_its_first_paid_step() {
             &[command],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     runtime
@@ -847,7 +847,7 @@ fn retail_fv_approaches_a_firing_cell_before_its_first_paid_step() {
             &[],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let actor = runtime.simulation.substrate.entities.get(id).unwrap();

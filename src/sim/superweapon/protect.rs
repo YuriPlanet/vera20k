@@ -44,7 +44,7 @@ pub(super) fn launch(
     sw: &SuperWeaponType,
     (rx, ry): (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if !super::is_charged(sim, owner, sw_type) {
         return;

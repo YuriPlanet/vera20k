@@ -23,9 +23,12 @@ mod startup;
 mod timing;
 pub use sequenced::{
     CommandDeliveryTrace, DeliveryCounters, MatchConnectionChange, MatchPauseChange,
-    MatchSpeedChange, MultiplayerPauseStatus, SequencedError, SequencedTiming,
+    MatchSpeedChange, MultiplayerPauseStatus, NarrativeHold, SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
+/// The share of each second the relay lets a player's simulation take,
+/// which online render pacing leaves it.
+pub use vera20k_relay_protocol::SUSTAIN_PERCENT;
 /// The relay's turn length, which online playout follows.
 pub use vera20k_relay_protocol::turn_frames;
 /// The relay link measurements a match's network report reads.
@@ -466,6 +469,14 @@ impl LiveCommandSession {
             .is_some_and(|session| session.request_pause(paused))
     }
 
+    /// Authored presentation is a deliberate local hold on every player.
+    /// Only the host controls the shared relay clock for this boundary.
+    pub fn set_narrative_hold(&mut self, hold: Option<NarrativeHold>) {
+        if let Some(session) = &mut self.sequenced {
+            session.set_narrative_hold(hold);
+        }
+    }
+
     /// Called only after a confirmed UI exit has queued its native EXIT.
     /// Keep that command dispatchable even if a shared pause is in flight.
     pub fn keep_running_for_exit(&mut self) {
@@ -610,6 +621,14 @@ impl LiveCommandSession {
         )
     }
 
+    pub fn send_terminal_global(
+        &mut self,
+        payload: &[u8],
+        recipients: &[SocketAddrV4],
+    ) -> io::Result<()> {
+        self.transport.send_terminal_global(payload, recipients)
+    }
+
     pub fn peers(&self) -> &[CommandPeerProgress] {
         self.exchange.peers()
     }
@@ -672,6 +691,9 @@ impl LiveCommandSession {
     }
 
     /// Keep the private connection and its progress row in the same lifetime.
+    /// `new` builds the progress rows from the transport's connections, and
+    /// this session owns that transport and removes a connection only here,
+    /// so a row this removed always had its connection.
     pub fn remove_peer(&mut self, house: i8) -> bool {
         if !self.exchange.remove_peer(house) {
             return false;
@@ -679,10 +701,12 @@ impl LiveCommandSession {
         if !self.uses_sequenced_lockstep() {
             self.startup.abort();
         }
+        let connected = self
+            .transport
+            .connections_mut()
+            .remove_peer(i32::from(house));
         assert!(
-            self.transport
-                .connections_mut()
-                .remove_peer(i32::from(house)),
+            connected,
             "the admitted connection and command progress share one roster"
         );
         true
@@ -917,11 +941,14 @@ impl LiveCommandSession {
                     last_probe,
                 } => {
                     if probe_due(last_probe, now, self.mode.wait_timing().initial_probe) {
-                        self.current.as_mut().unwrap().phase = FramePhase::InitialBarrier {
-                            entered_at,
-                            response_time_at_entry,
-                            last_probe: now,
-                        };
+                        self.current = Some(CurrentFrame {
+                            phase: FramePhase::InitialBarrier {
+                                entered_at,
+                                response_time_at_entry,
+                                last_probe: now,
+                            },
+                            ..current
+                        });
                         self.send_probe(context.frame, max_ahead)?;
                     }
                     self.service_and_receive(now, queues)?;
@@ -934,11 +961,14 @@ impl LiveCommandSession {
                     //647B2E/647B32: only a successful initial wait clears
                     //manager response histories, after the peer-frame clear.
                     self.transport.reset_response_time(true);
-                    self.current.as_mut().unwrap().phase = FramePhase::Sending {
-                        entered_at: now,
-                        response_time_at_entry: self.transport.response_time(),
-                        last_probe: now,
-                    };
+                    self.current = Some(CurrentFrame {
+                        phase: FramePhase::Sending {
+                            entered_at: now,
+                            response_time_at_entry: self.transport.response_time(),
+                            last_probe: now,
+                        },
+                        ..current
+                    });
                 }
                 FramePhase::Sending {
                     entered_at,
@@ -981,11 +1011,14 @@ impl LiveCommandSession {
                     match sent {
                         SendPoll::Backpressure => {
                             if probe_due(last_probe, now, ORDINARY_PROBE_INTERVAL) {
-                                self.current.as_mut().unwrap().phase = FramePhase::Sending {
-                                    entered_at,
-                                    response_time_at_entry,
-                                    last_probe: now,
-                                };
+                                self.current = Some(CurrentFrame {
+                                    phase: FramePhase::Sending {
+                                        entered_at,
+                                        response_time_at_entry,
+                                        last_probe: now,
+                                    },
+                                    ..current
+                                });
                                 self.send_probe(context.frame, max_ahead)?;
                             }
                             self.service_and_receive(now, queues)?;
@@ -1004,11 +1037,14 @@ impl LiveCommandSession {
                             return Ok(self.finish(NetworkQueuePass::SkipDispatch));
                         }
                         SendPoll::Complete { .. } => {
-                            self.current.as_mut().unwrap().phase = FramePhase::Waiting {
-                                entered_at,
-                                response_time_at_entry,
-                                last_probe,
-                            };
+                            self.current = Some(CurrentFrame {
+                                phase: FramePhase::Waiting {
+                                    entered_at,
+                                    response_time_at_entry,
+                                    last_probe,
+                                },
+                                ..current
+                            });
                         }
                     }
                 }
@@ -1018,11 +1054,14 @@ impl LiveCommandSession {
                     last_probe,
                 } => {
                     if probe_due(last_probe, now, ORDINARY_PROBE_INTERVAL) {
-                        self.current.as_mut().unwrap().phase = FramePhase::Waiting {
-                            entered_at,
-                            response_time_at_entry,
-                            last_probe: now,
-                        };
+                        self.current = Some(CurrentFrame {
+                            phase: FramePhase::Waiting {
+                                entered_at,
+                                response_time_at_entry,
+                                last_probe: now,
+                            },
+                            ..current
+                        });
                         self.send_probe(context.frame, max_ahead)?;
                     }
                     self.service_and_receive(now, queues)?;
@@ -1072,7 +1111,7 @@ impl LiveCommandSession {
         // Local scheduling remains fixed by the original solo admission.
         if self.policy != NetworkSendPolicy::Local {
             self.policy = NetworkSendPolicy::FrameSendRate2 {
-                frame_send_rate: NonZeroU32::new(u32::from(rate.get())).unwrap(),
+                frame_send_rate: NonZeroU32::from(rate),
             };
         }
         if frame != 0 && frame & 127 == 0 {

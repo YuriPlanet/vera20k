@@ -34,6 +34,9 @@ const WONLINE_SECTION: &str = "WOnline";
 const NETWORK_SECTION: &str = "Network";
 /// VERA's own display preferences. gamemd never reads this section.
 const VERA_SECTION: &str = "VERA";
+
+/// `[VERA] GraphicsAPI=`: the type lives with the Options window's list.
+pub(crate) use crate::ui::main_menu_dialogs::options::GraphicsApi;
 /// Destination units `OptionsClass__ReadFromINI` passes for NetID (`push 0xC8`).
 const NET_ID_UNITS: usize = 0xC8;
 /// Destination units `[VERA] Display=`'s ReadString copies into. A VERA key, so
@@ -175,6 +178,8 @@ pub(crate) struct RetailOptionsProfile {
     /// instead of Red Alert 2's red star. Off by default; the installed
     /// program's own icon stays the red star either way.
     pub(crate) vera_icon: bool,
+    /// `[VERA] GraphicsAPI=`: see [`GraphicsApi`]. `auto` by default.
+    pub(crate) graphics_api: GraphicsApi,
     /// `[VERA] HdRadar=`: when the sidebar draws at a whole multiple of its
     /// pixels, the radar draws at that multiple too (`render::radar::hd`).
     /// Off by default; presentation only.
@@ -192,6 +197,8 @@ pub(crate) struct RetailOptionsProfile {
     /// (`GpuContext::set_vsync`). On by default; untick it for lower input
     /// latency, with tearing. Presentation only.
     pub(crate) vsync: bool,
+    /// `[VERA] HighRefreshRateInBattle=`: allow battlefield draws at the monitor's refresh rate.
+    pub(crate) high_refresh_rate_in_battle: bool,
     /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
     /// own drawing of the whole map (`app::map_picture`) in place of
     /// the map's `[PreviewPack]` picture. On by default; presentation only.
@@ -284,6 +291,11 @@ pub(crate) struct RetailOptionsProfile {
     /// change applies from the next start. Auto keeps the game's data in
     /// charge; an unknown value reads as Auto.
     pub(crate) ares: crate::util::ares_launch::AresSetting,
+    /// `[VERA] RA2Mode=`: the Options page's RA2 Mode box (docs/ra2-mode.md).
+    /// On, the game plays original Red Alert 2 from the installation's
+    /// non-md files (`util::ra2_launch`). Read at start, like the Ares
+    /// setting: a change applies from the next start. Off by default.
+    pub(crate) ra2_mode: bool,
     /// `[VERA] ColorVisionMode=`: the whole-viewport colour-vision filter, as
     /// a [`ColorVisionMode`](crate::ui::main_menu_dialogs::options::ColorVisionMode)
     /// value. `Off` keeps the retail image. Client presentation only: the
@@ -418,14 +430,17 @@ impl Default for RetailOptionsProfile {
             right_click_orders: false,
             lock_cursor: false,
             vera_icon: false,
+            graphics_api: GraphicsApi::Auto,
             hd_radar: false,
             smooth_sidebar: false,
             smooth_online_menus: false,
             vsync: true,
+            high_refresh_rate_in_battle: false,
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             auto_repair: false,
+            ra2_mode: false,
             minimap_beacons: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             terrain_deformation: false,
@@ -467,7 +482,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 41],
+    pub(crate) vera: [(&'static str, String); 44],
 }
 
 impl RetailOptionsLoad {
@@ -566,6 +581,16 @@ impl RetailOptionsLoad {
 }
 
 impl RetailOptionsProfile {
+    /// The YR Original Style box as this start plays it. RA2 Mode paints the
+    /// shell with RA2 art: the YR style (GLSMD.PAL / GLSLMD.SHP, the
+    /// Cooperative setup art, the YR menu movie) lives in md archives RA2
+    /// Mode does not mount, so honouring `YROriginalStyle=yes` would leave the
+    /// splash, menu and lobby without their art. The saved choice is kept for
+    /// a start without RA2 Mode.
+    pub(crate) fn plays_yr_original_style(&self) -> bool {
+        self.yr_original_style && !crate::util::ra2_launch::enabled()
+    }
+
     /// `OptionsClass::Set_Score_Volume` at `0x005FA4A0` stores an upper-only
     /// clamped f32. Reuse the INI reader's normalization so live setters retain
     /// negative and unordered inputs instead of copying the output clamp.
@@ -676,11 +701,16 @@ impl RetailOptionsProfile {
             self.right_click_orders = vera.read_bool("RightClickOrders", self.right_click_orders);
             self.lock_cursor = vera.read_bool("LockCursor", self.lock_cursor);
             self.vera_icon = vera.read_bool("VeraIcon", self.vera_icon);
+            if let Some(value) = vera.read_name("GraphicsAPI", 32) {
+                self.graphics_api = GraphicsApi::from_ini_value(value);
+            }
             self.hd_radar = vera.read_bool("HdRadar", self.hd_radar);
             self.smooth_sidebar = vera.read_bool("SmoothSidebar", self.smooth_sidebar);
             self.smooth_online_menus =
                 vera.read_bool("SmoothOnlineMenus", self.smooth_online_menus);
             self.vsync = vera.read_bool("VSync", self.vsync);
+            self.high_refresh_rate_in_battle =
+                vera.read_bool("HighRefreshRateInBattle", self.high_refresh_rate_in_battle);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -700,6 +730,7 @@ impl RetailOptionsProfile {
                 vera.read_int("SuperweaponLimit", i32::from(self.superweapon_limit)),
             );
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
+            self.ra2_mode = vera.read_bool("RA2Mode", self.ra2_mode);
             self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
@@ -887,6 +918,7 @@ impl RetailOptionsProfile {
                 ("Display", self.display.ini_value().to_owned()),
                 ("LockCursor", format_bool(self.lock_cursor).to_string()),
                 ("VeraIcon", format_bool(self.vera_icon).to_string()),
+                ("GraphicsAPI", self.graphics_api.ini_value().to_owned()),
                 ("HealthBars", self.health_bars.ini_value().to_string()),
                 ("Ares", self.ares.ini_value().to_string()),
                 ("HdRadar", format_bool(self.hd_radar).to_string()),
@@ -899,6 +931,10 @@ impl RetailOptionsProfile {
                     format_bool(self.smooth_online_menus).to_string(),
                 ),
                 ("VSync", format_bool(self.vsync).to_string()),
+                (
+                    "HighRefreshRateInBattle",
+                    format_bool(self.high_refresh_rate_in_battle).to_string(),
+                ),
                 (
                     "HdMapPreviews",
                     format_bool(self.hd_map_previews).to_string(),
@@ -938,6 +974,7 @@ impl RetailOptionsProfile {
                     format_bool(self.skirmish_cheats).to_string(),
                 ),
                 ("AutoRepair", format_bool(self.auto_repair).to_string()),
+                ("RA2Mode", format_bool(self.ra2_mode).to_string()),
                 (
                     "MinimapBeacons",
                     format_bool(self.minimap_beacons).to_string(),
@@ -1879,9 +1916,11 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(!unset.lock_cursor && !unset.vera_icon);
         assert!(!unset.hd_radar && !unset.smooth_sidebar && unset.hd_map_previews);
         assert!(!unset.smooth_online_menus);
+        assert_eq!(unset.graphics_api, GraphicsApi::Auto);
         let changed = RetailOptionsProfile {
             lock_cursor: true,
             vera_icon: true,
+            graphics_api: GraphicsApi::DirectX12,
             hd_radar: true,
             smooth_sidebar: true,
             smooth_online_menus: true,
@@ -1893,6 +1932,27 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(changed.lock_cursor && changed.vera_icon);
         assert!(changed.hd_radar && changed.smooth_sidebar && !changed.hd_map_previews);
         assert!(changed.smooth_online_menus);
+        assert_eq!(changed.graphics_api, GraphicsApi::DirectX12);
+        // A hand-typed key reads in any case and spelling the player may use;
+        // nonsense means auto.
+        let typed = load_snapshot(&startup, b"[VERA]\nGraphicsAPI=DirectX12\n").retained_profile;
+        assert_eq!(typed.graphics_api, GraphicsApi::DirectX12);
+        assert_eq!(typed.graphics_api.backend(), Some(wgpu::Backend::Dx12));
+        let typed = load_snapshot(&startup, b"[VERA]\nGraphicsAPI= Vulkan \n").retained_profile;
+        assert_eq!(typed.graphics_api.backend(), Some(wgpu::Backend::Vulkan));
+        let typed = load_snapshot(&startup, b"[VERA]\nGraphicsAPI=unknown\n").retained_profile;
+        assert_eq!(typed.graphics_api, GraphicsApi::Auto);
+    }
+
+    #[test]
+    fn opengl_in_vera_ini_selects_gl_and_survives_a_settings_save() {
+        let startup = RetailStartupOptions::default();
+        let input = b"[VERA]\nGraphicsAPI=OpenGL\n";
+        let profile = load_snapshot(&startup, input).retained_profile;
+        assert_eq!(profile.graphics_api.backend(), Some(wgpu::Backend::Gl));
+        let saved = profile.transform_settings(b"");
+        let reloaded = load_snapshot(&startup, &saved).retained_profile;
+        assert_eq!(reloaded.graphics_api.backend(), Some(wgpu::Backend::Gl));
     }
 
     #[test]
@@ -1908,6 +1968,30 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let ini = IniFile::from_bytes(&off).unwrap();
         assert!(!ini.section(VERA_SECTION).unwrap().read_bool("VSync", true));
         assert!(!load_snapshot(&startup, &off).retained_profile.vsync);
+    }
+
+    #[test]
+    fn high_refresh_rate_in_battle_round_trips_independently_of_vsync() {
+        let startup = RetailStartupOptions::default();
+        let saved = b"[VERA]\nVSync=no\n";
+        let mut profile = load_snapshot(&startup, saved).retained_profile;
+        assert!(!profile.high_refresh_rate_in_battle);
+
+        profile.high_refresh_rate_in_battle = true;
+        let enabled = profile.transform_settings(saved);
+        let mut profile = load_snapshot(&startup, &enabled).retained_profile;
+        assert!(profile.high_refresh_rate_in_battle);
+        assert!(!profile.vsync);
+
+        profile.high_refresh_rate_in_battle = false;
+        let disabled = profile.transform_settings(&enabled);
+        let vera = IniFile::from_bytes(&disabled).unwrap();
+        assert!(
+            !vera
+                .section(VERA_SECTION)
+                .unwrap()
+                .read_bool("HighRefreshRateInBattle", true)
+        );
     }
 
     #[test]
@@ -2291,6 +2375,22 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             explicit_new_key.retained_profile.yr_original_style,
             "the YR-original preference must be read from its own key"
         );
+    }
+
+    /// RA2 Mode comes from its own key and is saved under it, and saving
+    /// keeps the player's YR Original Style choice, which RA2 Mode only sets
+    /// aside while it plays (`plays_yr_original_style`).
+    #[test]
+    fn ra2_mode_round_trips_and_keeps_the_yr_original_style_choice() {
+        let on = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[VERA]\nRA2Mode=yes\nYROriginalStyle=yes\n",
+        )
+        .retained_profile;
+        assert!(on.ra2_mode);
+        let output = String::from_utf8(on.transform_settings(b"[VERA]\n")).unwrap();
+        assert!(output.contains("RA2Mode=yes"), "{output}");
+        assert!(output.contains("YROriginalStyle=yes"), "{output}");
     }
 
     #[test]

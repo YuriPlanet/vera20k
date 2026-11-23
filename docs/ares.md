@@ -51,8 +51,10 @@ With On, the original game plays unlike gamemd wherever Ares itself does, such a
 [gameplay bugfixes](ares-bugfixes.md). A `-SPAWN` launch file's `[Settings] Ares=Auto|On|Off`
 replaces the setting for that launch, and `vera20k --probe --ares <setting>` reports
 the digest such a launch is checked against. The effective launch policy is part of
-the network agreement ([Networking](Networking.md#room-rules)); a save keeps the
-answer it was started with.
+the network agreement where it decides the game ([Networking](Networking.md#room-rules)):
+a player set to Off plays the original game with players set to Auto, and is refused
+only where an Ares key would turn Ares on for them. A save keeps the answer it was
+started with.
 
 A save records no Ares capability; a save from an older build with the retired `ares`
 feature does not load.
@@ -86,7 +88,7 @@ complete mission loading or all downstream campaign extensions.
 
 Supported extensions:
 
-- [Ground, airborne and building EMP](ares-emp.md) (every Foot mover but Tunnel, human or AI,
+- [Ground, airborne and building EMP](ares-emp.md) (every Foot mover, Tunnel included, human or AI,
   miners, falling and mind-controlled victims, every EMP-prone building with its factory, gap,
   superweapon, PowersUnit, clone, Prism and undeploy effects, the Tank Bunker exemption,
   and the player's miner and base warnings; team members and spawners in
@@ -100,6 +102,17 @@ Supported extensions:
   game loading and default `asset csf-get` / `csf-grep` queries (`--ares On` for
   an Ares game).
 - [Per-type SHP building palettes](ares-building-palettes.md)
+- [SHP vehicle art](../src/app/presentation/instances/shp.rs): `Facings=` above 8
+  (body buckets and the turret block), the `WaterImage=` type's frames and turret, and
+  the shadow drawn before a turreted body (`Ext/Techno/Hooks.Art.cpp`). A weapon's
+  `Anim=` list of 8 or more picks its muzzle anim by facing the same way
+  ([fire_coord.rs](../src/sim/combat/fire_coord.rs))
+- [Moving Alpha Lights](../src/sim/world/alpha_shape.rs): `AlphaImage=` glows follow
+  their Technos, Terrain, Bullets and Anims, go while the object is cloaked, deactivated,
+  unpowered or under ground, and draw a Techno's facing frame
+  (`Ext/Techno/Hooks.Alpha.cpp`). As in Ares, a Techno the player sees as hidden draws
+  no glow, so a mod's `InvisibleInGame=yes` lamp with an `AlphaImage=` stays dark unless
+  the player owns it (no retail lamp has both; retail `TSTLAMP` still glows)
 - [PCX sidebar icons](ares-pcx-cameos.md) (`CameoPCX`, `AltCameoPCX`, `SidebarPCX`)
 - [EVA voice tags and Side selection](ares-eva.md)
 - [Per-type promotion sounds](ares-promotion-sounds.md)

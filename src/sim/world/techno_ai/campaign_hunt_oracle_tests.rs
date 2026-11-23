@@ -192,7 +192,7 @@ fn campaign_hunt_no_target_join_matches_original_destination_queue_and_cadence()
         assert_eq!(sim.scenario_rng.native_state_hex(), row["rng_before"]);
         let main = sim.main_rng.state();
         let mapgen = sim.mapgen_rng.state();
-        let result = super::evaluate_foot_hunt(&mut sim, ACTOR, &rules, Default::default());
+        let result = super::evaluate_foot_hunt(&mut sim, ACTOR, &rules, &mut Default::default());
         assert_eq!(state(&sim), row["after"], "{name}: branch effects");
         assert!(
             sim.entities()

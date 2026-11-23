@@ -235,24 +235,40 @@ pub(crate) fn cell_target_coord(
     rx: u16,
     ry: u16,
 ) -> ProjectileCoord {
-    cell_ref_target_coord(&crate::sim::cell_rect::get_cellclass_fallback(
-        terrain,
-        i32::from(rx),
-        i32::from(ry),
-    ))
+    let cell = crate::sim::cell_rect::get_cellclass_fallback(terrain, i32::from(rx), i32::from(ry));
+    cell_ref_target_coord(terrain, &cell)
 }
 
-/// CellClass virtual +0x58 of a cell already looked up: its +0x48 ground
-/// coordinate plus 416 leptons iff its own structural bit is live.
-pub(crate) fn cell_ref_target_coord(cell: &crate::sim::cell_rect::CellRef<'_>) -> ProjectileCoord {
+/// CellClass virtual +0x58 @ 0x00486890 of a cell already looked up.
+/// Its structural bit selects the deck, with the native +416 rise as fallback.
+pub(crate) fn cell_ref_target_coord(
+    terrain: Option<&ResolvedTerrainGrid>,
+    cell: &crate::sim::cell_rect::CellRef<'_>,
+) -> ProjectileCoord {
     let ground = cell.get_coords();
     let mut coord = ProjectileCoord::new(ground.x, ground.y, ground.z);
-    if cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0 {
-        coord.z = coord
-            .z
-            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+    if is_structural_bridge_cell(cell) {
+        coord.z = fixed_deck_z_for_cell_ref(terrain, cell)
+            .unwrap_or_else(|| crate::sim::movement::ground_pose::z_at_height(ground.z, 0, true));
     }
     coord
+}
+
+/// Resolve a retained real CellClass's deck without making another Map
+/// lookup. The shared Dummy may have the same XY as a real cell.
+pub(crate) fn fixed_deck_z_for_cell_ref(
+    terrain: Option<&ResolvedTerrainGrid>,
+    cell: &crate::sim::cell_rect::CellRef<'_>,
+) -> Option<i32> {
+    let crate::sim::cell_rect::CellRef::Real(cell) = cell else {
+        return None;
+    };
+    let terrain = terrain?;
+    let index = terrain.native_fixed_cell_index(cell.rx as i16, cell.ry as i16)?;
+    crate::sim::movement::ground_pose::corrected_deck_z(
+        terrain,
+        crate::map::cell_index::NativeCellIdentity::Real(index),
+    )
 }
 
 /// The shared fallback CellClass's +0x48 coordinate. Read the retained dummy
@@ -269,9 +285,12 @@ pub(crate) fn dummy_cell_ground_coord(dummy: &SharedCellDummy) -> ProjectileCoor
 /// shared fallback CellClass. Unlike a stable allocated cell, every later miss
 /// can change the coordinate observed through this retained identity.
 pub(crate) fn dummy_cell_target_coord(dummy: &SharedCellDummy) -> ProjectileCoord {
-    cell_ref_target_coord(&crate::sim::cell_rect::CellRef::Dummy {
-        cell: dummy.clone(),
-    })
+    cell_ref_target_coord(
+        None,
+        &crate::sim::cell_rect::CellRef::Dummy {
+            cell: dummy.clone(),
+        },
+    )
 }
 
 /// The original target retained by a projectile after weapon fire.
@@ -2858,6 +2877,34 @@ pub(crate) fn projectile_ground_z(
     ground.expect("projectile ground probe requires a supported CellClass slope")
 }
 
+/// Object::GetHeight (0x005F5F40) and SetHeight (0x005F5FA0) use the bullet's
+/// retained OnBridge byte to select the surface. Mapless probes retain the
+/// same dummy as the ground-only query.
+pub(crate) fn projectile_surface_z(
+    terrain: Option<&ResolvedTerrainGrid>,
+    shared_cell_dummy: &SharedCellDummy,
+    coord: ProjectileCoord,
+    on_bridge: bool,
+) -> i32 {
+    if on_bridge && let Some(terrain) = terrain {
+        return crate::sim::movement::ground_pose::query_surface_z(
+            &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+            crate::sim::components::DriveCoord {
+                x: coord.x,
+                y: coord.y,
+                z: coord.z,
+            },
+            true,
+        )
+        .expect("projectile surface probe requires a supported CellClass slope");
+    }
+    crate::sim::movement::ground_pose::z_at_height(
+        projectile_ground_z(terrain, shared_cell_dummy, coord),
+        0,
+        on_bridge,
+    )
+}
+
 /// BulletType virtual +6C @ 0x0046C4F0, called by ObjectUnlimbo5F4F88
 /// before SetLocation: a coordinate at/below ground is placed one lepton
 /// above it. The strict signed comparison has no Level or bridge-deck gate.
@@ -2932,7 +2979,9 @@ pub fn projectile_gravity(
 ) -> crate::util::native_x87::NativeF64Bits {
     use crate::util::native_x87::{NativeF64Bits, X87Chop53};
     let gravity = match type_gravity {
-        Some(bits) => X87Chop53::load_f64(bits).expect("finite type gravity"),
+        Some(bits) => {
+            X87Chop53::load_f64(bits).expect("the Phobos Gravity= reader drops a non-finite value")
+        }
         None => X87Chop53::load_i32(rules_gravity),
     };
     let gravity = if floater {
@@ -3149,46 +3198,50 @@ pub(crate) fn projectile_velocity_magnitude_double(
     f64::from(f32::from_bits(bits.bits()))
 }
 
-/// Vertical AI 467371..4673C2 queries candidate floor first, then candidate
-/// Cell, then old Cell only if needed. The floor always belongs to candidate.
-fn structural_bridge_at(
-    terrain: Option<&ResolvedTerrainGrid>,
+pub(crate) fn projectile_cell_at<'a>(
+    terrain: Option<&'a ResolvedTerrainGrid>,
     shared_cell_dummy: &SharedCellDummy,
     coord: ProjectileCoord,
-) -> bool {
+) -> crate::sim::cell_rect::CellRef<'a> {
     use crate::sim::cell_rect::{CellRef, get_cellclass_fallback_leptons};
-    let cell = if terrain.is_some() {
+    if terrain.is_some() {
         get_cellclass_fallback_leptons(terrain, coord.x, coord.y)
     } else {
         shared_cell_dummy.stamp_coord(coord.x / 256, coord.y / 256);
         CellRef::Dummy {
             cell: shared_cell_dummy.clone(),
         }
-    };
+    }
+}
+
+pub(crate) fn is_structural_bridge_cell(cell: &crate::sim::cell_rect::CellRef<'_>) -> bool {
     cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0
 }
 
+/// Vertical AI 467371..4673C2 queries candidate floor first, then candidate
+/// Cell, then old Cell only if needed. The native fallback always uses the
+/// candidate's ground, even when the old cell supplies the structural bit.
 fn bridge_surface_z(
     terrain: Option<&ResolvedTerrainGrid>,
     shared_cell_dummy: &SharedCellDummy,
     previous: ProjectileCoord,
     candidate: ProjectileCoord,
 ) -> Option<i32> {
-    use crate::sim::cell_rect::{CellRef, get_cellclass_fallback_leptons};
     let floor = projectile_ground_z(terrain, shared_cell_dummy, candidate);
-    let structural = |coord: ProjectileCoord| -> bool {
-        let cell = if terrain.is_some() {
-            get_cellclass_fallback_leptons(terrain, coord.x, coord.y)
-        } else {
-            shared_cell_dummy.stamp_coord(coord.x / 256, coord.y / 256);
-            CellRef::Dummy {
-                cell: shared_cell_dummy.clone(),
-            }
-        };
-        cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0
+    let cell = projectile_cell_at(terrain, shared_cell_dummy, candidate);
+    let bridge = if is_structural_bridge_cell(&cell) {
+        cell
+    } else {
+        let previous = projectile_cell_at(terrain, shared_cell_dummy, previous);
+        if !is_structural_bridge_cell(&previous) {
+            return None;
+        }
+        previous
     };
-    (structural(candidate) || structural(previous))
-        .then(|| floor.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS))
+    Some(
+        fixed_deck_z_for_cell_ref(terrain, &bridge)
+            .unwrap_or_else(|| crate::sim::movement::ground_pose::z_at_height(floor, 0, true)),
+    )
 }
 
 /// YR `BulletClass_GetAnimFrame` @ 0x00468000; `frame` is the frame counter
@@ -3269,11 +3322,9 @@ fn raise_to_ground(
     shared_cell_dummy: &SharedCellDummy,
     on_bridge: bool,
 ) -> ProjectileCoord {
-    use crate::sim::movement::ground_pose::{height_at_z, z_at_height};
-    let floor = projectile_ground_z(terrain, shared_cell_dummy, location);
-    if height_at_z(location.z, floor, on_bridge) < 0 {
-        let floor = projectile_ground_z(terrain, shared_cell_dummy, location);
-        location.z = z_at_height(floor, 0, on_bridge);
+    let surface = projectile_surface_z(terrain, shared_cell_dummy, location, on_bridge);
+    if location.z.wrapping_sub(surface) < 0 {
+        location.z = projectile_surface_z(terrain, shared_cell_dummy, location, on_bridge);
     }
     location
 }
