@@ -1,399 +1,236 @@
-//! `veraui.ini`: the match interface as a layout a mod defines.
+//! `veraui.ini`: the match interface as a tree of parts a mod lays out.
 //!
 //! A game-folder file, loose or inside a mod MIX, names a layout for each
-//! side. A layout starts as that side's original interface, and each part
-//! section of the file changes the numbers it writes.
-//! `docs/interface-layout.md` is the modder's reference and the promise this
-//! reader keeps: a key it documents keeps its meaning in later versions.
+//! side. Each `[Layout.Part]` section is one part of the interface and its
+//! keys the part's properties; the original interface is the built-in
+//! `veraui_default.ini`, which the mod's file and the player's own write over
+//! (`ui::match_layout_tree`). `docs/interface-layout.md` is the modder's
+//! reference.
 //!
 //! The file is the player's own display. It never reaches the simulation and
 //! is not one of the sources online players' rules are compared by.
 //!
 //! A bad file never stops the game: every refusal is a [`LayoutProblem`] and
-//! the original value stays. A VERA file, not a gamemd one, so section and
+//! the value under it stays. A VERA file, not a gamemd one, so section and
 //! key names match without regard to capitals and a missing last line break
 //! loses nothing; values still go through the native INI readers.
 //!
 //! ## Dependency rules
 //! - Part of ui/ — reads the rules/ INI store; no app/ or render/.
 
+use std::sync::{Arc, LazyLock};
+
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::ui::added_parts::{AddedKind, AddedPart, Holder, TextValue};
-use crate::ui::field_layout::{FieldLayout, FieldPart, Hold, PartBox};
-use crate::ui::sidebar::{Edge, SidebarChromeLayoutSpec, SidebarPart};
+use crate::ui::field_layout::{FieldLayout, FieldPart, Hold, PartBox, TooltipPlace};
+use crate::ui::match_layout_tree::{TABLES, Tree, TreeProblem, exists, part_of};
+use crate::ui::sidebar::{Edge, PanelPlaces, SidebarChromeLayoutSpec, SidebarPart};
 
 /// The file's name in the game folder or a mod MIX.
 pub const FILE_NAME: &str = "VERAUI.INI";
-
-/// The newest `Version=` this build reads.
-const FORMAT_VERSION: i32 = 1;
 
 /// `[Layouts]`: one `Side=Layout` line per `[Sides]` name, and `Default=`
 /// for every side without a line.
 const LAYOUTS_SECTION: &str = "Layouts";
 const DEFAULT_SIDE: &str = "Default";
 
-/// ReadString capacities: one name, and a list of part names.
+/// ReadString capacity of a layout's name.
 const NAME_CAPACITY: usize = 0x80;
-const LIST_CAPACITY: usize = 0x800;
 
-/// One number of the sidebar's layout table a part key writes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Number {
-    SideWidth,
-    SideHeight,
-    CreditsX,
-    CreditsY,
-    MoneyX,
-    MoneyY,
-    TopX,
-    TopY,
-    DiplomacyX,
-    DiplomacyY,
-    OptionsX,
-    OptionsY,
-    RadarX,
-    RadarY,
-    RadarMapX,
-    RadarMapY,
-    RadarMapWidth,
-    RadarMapHeight,
-    MiddleX,
-    MiddleY,
-    RepairX,
-    RepairY,
-    SellX,
-    SellY,
-    TabsX,
-    TabsY,
-    TabsStep,
-    CameosX,
-    CameosY,
-    CameosColumns,
-    CameosCellX,
-    CameosCellY,
-    CameosColumnWidth,
-    CameosRowHeight,
-    CameosFooter,
-    CameosScrollX,
-    CameosScrollY,
-    CameosScrollStep,
-    PowerX,
-    PowerY,
+/// The built-in file, the bottom layer.
+static BUILT_IN: LazyLock<IniFile> = LazyLock::new(|| {
+    parse(include_bytes!("veraui_default.ini")).expect("veraui_default.ini is an INI file")
+});
+
+/// The two position tables as they are built in, by [`TABLES`] order.
+static ORIGINAL: LazyLock<[MatchLayout; 2]> = LazyLock::new(|| {
+    TABLES.map(|table| {
+        let (layout, problems) = read_layout(&[&BUILT_IN], table, table);
+        debug_assert!(problems.is_empty(), "{problems:?}");
+        layout
+    })
+});
+
+/// `LoadFromStraw` drops a last line that has no line break.
+fn parse(bytes: &[u8]) -> Option<IniFile> {
+    let mut complete = Vec::with_capacity(bytes.len() + 1);
+    complete.extend_from_slice(bytes);
+    complete.push(b'\n');
+    IniFile::from_bytes(&complete).ok()
 }
 
-impl Number {
-    fn slot(self, spec: &mut SidebarChromeLayoutSpec) -> &mut f32 {
-        match self {
-            Self::SideWidth => &mut spec.sidebar_width,
-            Self::SideHeight => &mut spec.side_height,
-            Self::CreditsX => &mut spec.credits_x,
-            Self::CreditsY => &mut spec.credits_y,
-            Self::MoneyX => &mut spec.money_x,
-            Self::MoneyY => &mut spec.money_y,
-            Self::TopX => &mut spec.top_x,
-            Self::TopY => &mut spec.top_y,
-            Self::DiplomacyX => &mut spec.top_buttons[0][0],
-            Self::DiplomacyY => &mut spec.top_buttons[0][1],
-            Self::OptionsX => &mut spec.top_buttons[1][0],
-            Self::OptionsY => &mut spec.top_buttons[1][1],
-            Self::RadarX => &mut spec.radar_housing_x,
-            Self::RadarY => &mut spec.radar_housing_y,
-            Self::RadarMapX => &mut spec.radar_x,
-            Self::RadarMapY => &mut spec.radar_y,
-            Self::RadarMapWidth => &mut spec.radar_width,
-            Self::RadarMapHeight => &mut spec.radar_height,
-            Self::MiddleX => &mut spec.side1_x,
-            Self::MiddleY => &mut spec.side1_y,
-            Self::RepairX => &mut spec.repair_x,
-            Self::RepairY => &mut spec.repair_y,
-            Self::SellX => &mut spec.sell_x,
-            Self::SellY => &mut spec.sell_y,
-            Self::TabsX => &mut spec.tab_x,
-            Self::TabsY => &mut spec.tab_y,
-            Self::TabsStep => &mut spec.tab_pitch,
-            Self::CameosX => &mut spec.strip_x,
-            Self::CameosY => &mut spec.strip_y,
-            Self::CameosColumns => &mut spec.cameo_columns,
-            Self::CameosCellX => &mut spec.cameo_inset_x,
-            Self::CameosCellY => &mut spec.cameo_inset_y,
-            Self::CameosColumnWidth => &mut spec.cameo_column_pitch,
-            Self::CameosRowHeight => &mut spec.cameo_row_height,
-            Self::CameosFooter => &mut spec.strip_footer,
-            Self::CameosScrollX => &mut spec.scroll_x,
-            Self::CameosScrollY => &mut spec.scroll_y,
-            Self::CameosScrollStep => &mut spec.scroll_pitch,
-            Self::PowerX => &mut spec.power_bar_x,
-            Self::PowerY => &mut spec.power_bar_y,
-        }
-    }
+/// A position table's index: the allied one (`GDI`) or the other.
+fn table(gdi_positions: bool) -> usize {
+    usize::from(!gdi_positions)
 }
 
-/// A key that sets one number, and the range it is clamped to.
+/// How far a part may be placed: further than any screen reaches.
+const FAR: i32 = 8192;
+
+/// One number of the sidebar's table, the part key that writes it and the
+/// range it is clamped to.
 struct NumberKey {
+    node: &'static str,
     key: &'static str,
-    number: Number,
     min: i32,
     max: i32,
+    slot: fn(&mut SidebarChromeLayoutSpec) -> &mut f32,
 }
 
-/// A place or a step, in sidebar pixels: further than any screen reaches.
-const fn place(key: &'static str, number: Number) -> NumberKey {
+/// A place or a step: any whole number within [`FAR`].
+const fn place(
+    node: &'static str,
+    key: &'static str,
+    slot: fn(&mut SidebarChromeLayoutSpec) -> &mut f32,
+) -> NumberKey {
     NumberKey {
+        node,
         key,
-        number,
-        min: -8192,
-        max: 8192,
+        min: -FAR,
+        max: FAR,
+        slot,
     }
 }
 
-/// A size that something is divided by or drawn into: never below `min`.
-const fn size(key: &'static str, number: Number, min: i32) -> NumberKey {
+/// A size something is divided by or drawn into: never below `min`.
+const fn size(
+    node: &'static str,
+    key: &'static str,
+    min: i32,
+    slot: fn(&mut SidebarChromeLayoutSpec) -> &mut f32,
+) -> NumberKey {
     NumberKey {
+        node,
         key,
-        number,
         min,
-        max: 8192,
+        max: FAR,
+        slot,
     }
 }
 
-/// One part of the original interface: what the file may say about it now
-/// (`numbers`), and what it has to leave as it is until a later version
-/// (`fixed`, each key with the only value accepted; `None` accepts no value).
-struct StockPart {
-    name: &'static str,
-    numbers: &'static [NumberKey],
-    fixed: &'static [(&'static str, Option<&'static str>)],
-}
-
-/// The original screen's top-level parts, in `Parts=` order.
-const SCREEN_PARTS: &str = "Field,Side,Bar";
-
-/// Keys every part has. `Art=` has no accepted value yet: the pictures a
-/// part draws still come from the side's own files.
-const ART_KEY: (&str, Option<&str>) = ("Art", None);
-
-/// A part whose place the engine cannot move yet.
-const UNMOVED: [(&str, Option<&str>); 2] = [("X", Some("0")), ("Y", Some("0"))];
-
-const STOCK_PARTS: &[StockPart] = &[
-    StockPart {
-        name: "Field",
-        numbers: &[],
-        fixed: &[
-            ("Type", Some("Battlefield")),
-            ("Hold", Some("TopLeft")),
-            ("Width", Some("Rest")),
-            ("Height", Some("Rest")),
-            ("Parts", None),
-            UNMOVED[0],
-            UNMOVED[1],
-            ART_KEY,
-        ],
+const NUMBERS: [NumberKey; 39] = [
+    // The battlefield and the bar take what the sidebar leaves. Its width
+    // counts on the left or the right edge, its height on the top or the
+    // bottom; `Rest` is the other one, the screen's own.
+    size("Side", "Width", 16, |spec| &mut spec.sidebar_width),
+    size("Side", "Height", 16, |spec| &mut spec.side_height),
+    place("Credits", "X", |spec| &mut spec.credits_x),
+    place("Credits", "Y", |spec| &mut spec.credits_y),
+    place("Money", "X", |spec| &mut spec.money_x),
+    place("Money", "Y", |spec| &mut spec.money_y),
+    place("Top", "X", |spec| &mut spec.top_x),
+    place("Top", "Y", |spec| &mut spec.top_y),
+    place("Diplomacy", "X", |spec| &mut spec.top_buttons[0][0]),
+    place("Diplomacy", "Y", |spec| &mut spec.top_buttons[0][1]),
+    place("Options", "X", |spec| &mut spec.top_buttons[1][0]),
+    place("Options", "Y", |spec| &mut spec.top_buttons[1][1]),
+    place("Radar", "X", |spec| &mut spec.radar_housing_x),
+    place("Radar", "Y", |spec| &mut spec.radar_housing_y),
+    place("Minimap", "X", |spec| &mut spec.radar_x),
+    place("Minimap", "Y", |spec| &mut spec.radar_y),
+    size("Minimap", "Width", 1, |spec| &mut spec.radar_width),
+    size("Minimap", "Height", 1, |spec| &mut spec.radar_height),
+    place("Middle", "X", |spec| &mut spec.side1_x),
+    place("Middle", "Y", |spec| &mut spec.side1_y),
+    place("Repair", "X", |spec| &mut spec.repair_x),
+    place("Repair", "Y", |spec| &mut spec.repair_y),
+    place("Sell", "X", |spec| &mut spec.sell_x),
+    place("Sell", "Y", |spec| &mut spec.sell_y),
+    place("Cameos", "X", |spec| &mut spec.strip_x),
+    place("Cameos", "Y", |spec| &mut spec.strip_y),
+    // Each visible cameo is a gadget, so a row stays a row.
+    NumberKey {
+        node: "Cameos",
+        key: "Columns",
+        min: 1,
+        max: 8,
+        slot: |spec| &mut spec.cameo_columns,
     },
-    StockPart {
-        name: "Side",
-        // The battlefield and the bar take what the sidebar leaves. Its
-        // width counts on the left or the right edge, its height on the top
-        // or the bottom; `Rest` is the other one, the screen's own.
-        numbers: &[
-            size("Width", Number::SideWidth, 16),
-            size("Height", Number::SideHeight, 16),
-        ],
-        fixed: &[
-            ("Type", Some("Panel")),
-            ("Width", Some("Rest")),
-            ("Height", Some("Rest")),
-            UNMOVED[0],
-            UNMOVED[1],
-            ART_KEY,
-        ],
-    },
-    StockPart {
-        name: "Bar",
-        numbers: &[],
-        fixed: &[
-            ("Type", Some("Panel")),
-            ("Width", Some("Rest")),
-            ("Height", Some("32")),
-            ("Parts", None),
-            UNMOVED[0],
-            UNMOVED[1],
-            ART_KEY,
-        ],
-    },
-    StockPart {
-        name: "Credits",
-        numbers: &[place("X", Number::CreditsX), place("Y", Number::CreditsY)],
-        fixed: &[
-            ("Type", Some("Panel")),
-            ("Hold", Some("TopLeft")),
-            ("Width", None),
-            ("Height", None),
-            ART_KEY,
-        ],
-    },
-    StockPart {
-        name: "Money",
-        numbers: &[place("X", Number::MoneyX), place("Y", Number::MoneyY)],
-        fixed: &[
-            ("Type", Some("Text")),
-            ("Hold", Some("Top")),
-            ("Width", None),
-            ("Height", None),
-            ("Parts", None),
-            // The value it shows; names come with the step that adds text parts.
-            ("Value", None),
-            ART_KEY,
-        ],
-    },
-    StockPart {
-        name: "Top",
-        numbers: &[place("X", Number::TopX), place("Y", Number::TopY)],
-        fixed: &[
-            ("Type", Some("Panel")),
-            ("Hold", Some("TopLeft")),
-            ("Width", None),
-            ("Height", None),
-            ART_KEY,
-        ],
-    },
-    StockPart {
-        name: "Diplomacy",
-        numbers: &[
-            place("X", Number::DiplomacyX),
-            place("Y", Number::DiplomacyY),
-        ],
-        fixed: &BUTTON_FIXED,
-    },
-    StockPart {
-        name: "Options",
-        numbers: &[place("X", Number::OptionsX), place("Y", Number::OptionsY)],
-        fixed: &BUTTON_FIXED,
-    },
-    StockPart {
-        name: "Radar",
-        numbers: &[
-            place("X", Number::RadarX),
-            place("Y", Number::RadarY),
-            place("MapX", Number::RadarMapX),
-            place("MapY", Number::RadarMapY),
-            size("MapWidth", Number::RadarMapWidth, 1),
-            size("MapHeight", Number::RadarMapHeight, 1),
-        ],
-        fixed: &[
-            ("Type", Some("Radar")),
-            ("Hold", Some("TopLeft")),
-            ("Width", None),
-            ("Height", None),
-            ("Parts", None),
-            ART_KEY,
-        ],
-    },
-    StockPart {
-        name: "Middle",
-        numbers: &[place("X", Number::MiddleX), place("Y", Number::MiddleY)],
-        fixed: &[
-            ("Type", Some("Panel")),
-            ("Hold", Some("TopLeft")),
-            ("Width", None),
-            ("Height", None),
-            ART_KEY,
-        ],
-    },
-    StockPart {
-        name: "Repair",
-        numbers: &[place("X", Number::RepairX), place("Y", Number::RepairY)],
-        fixed: &BUTTON_FIXED,
-    },
-    StockPart {
-        name: "Sell",
-        numbers: &[place("X", Number::SellX), place("Y", Number::SellY)],
-        fixed: &BUTTON_FIXED,
-    },
-    StockPart {
-        name: "Tabs",
-        numbers: &[
-            place("X", Number::TabsX),
-            place("Y", Number::TabsY),
-            place("Step", Number::TabsStep),
-        ],
-        fixed: &[
-            ("Type", Some("Tabs")),
-            ("Hold", Some("TopLeft")),
-            ("Width", None),
-            ("Height", None),
-            ("Parts", None),
-            ART_KEY,
-        ],
-    },
-    StockPart {
-        name: "Cameos",
-        numbers: &[
-            place("X", Number::CameosX),
-            place("Y", Number::CameosY),
-            // Each visible cameo is a gadget, so a row stays a row.
-            NumberKey {
-                key: "Columns",
-                number: Number::CameosColumns,
-                min: 1,
-                max: 8,
-            },
-            place("CellX", Number::CameosCellX),
-            place("CellY", Number::CameosCellY),
-            place("ColumnWidth", Number::CameosColumnWidth),
-            // The row height divides the strip into rows.
-            size("RowHeight", Number::CameosRowHeight, 16),
-            size("Footer", Number::CameosFooter, 0),
-            place("ScrollX", Number::CameosScrollX),
-            place("ScrollY", Number::CameosScrollY),
-            place("ScrollStep", Number::CameosScrollStep),
-        ],
-        fixed: &[
-            ("Type", Some("CameoGrid")),
-            ("Hold", Some("TopLeft")),
-            ("Width", None),
-            ("Height", Some("Rest")),
-            ("Parts", None),
-            ("CellWidth", Some("60")),
-            ("CellHeight", Some("48")),
-            ART_KEY,
-        ],
-    },
-    StockPart {
-        name: "Power",
-        numbers: &[place("X", Number::PowerX), place("Y", Number::PowerY)],
-        fixed: &[
-            ("Type", Some("PowerBar")),
-            ("Hold", Some("TopLeft")),
-            ("Width", None),
-            ("Height", None),
-            ("Parts", None),
-            ART_KEY,
-        ],
-    },
+    size("Cameos", "CellWidth", 1, |spec| &mut spec.cameo_width),
+    size("Cameos", "CellHeight", 1, |spec| &mut spec.cameo_height),
+    place("Cameos", "CellX", |spec| &mut spec.cameo_inset_x),
+    place("Cameos", "CellY", |spec| &mut spec.cameo_inset_y),
+    place("Cameos", "ColumnWidth", |spec| &mut spec.cameo_column_pitch),
+    // The row height divides the strip into rows.
+    size("Cameos", "RowHeight", 16, |spec| &mut spec.cameo_row_height),
+    size("Cameos", "Footer", 0, |spec| &mut spec.strip_footer),
+    place("ScrollDown", "X", |spec| &mut spec.scroll_x),
+    place("ScrollDown", "Y", |spec| &mut spec.scroll_y),
+    place("Power", "X", |spec| &mut spec.power_bar_x),
+    place("Power", "Y", |spec| &mut spec.power_bar_y),
+    // The rows the bar's tiles take, one picture each.
+    size("Power", "Step", 1, |spec| &mut spec.power_bar_tile_height),
 ];
 
-/// A button's keys. `Command=` is the command it gives; its names come with
-/// the step that lets a layout add buttons.
-const BUTTON_FIXED: [(&str, Option<&str>); 7] = [
-    ("Type", Some("Button")),
-    ("Hold", Some("TopLeft")),
-    ("Width", None),
-    ("Height", None),
-    ("Parts", None),
-    ("Command", None),
-    ART_KEY,
+/// The four tabs, in the tab buttons' order.
+const TABS: [&str; 4] = ["Buildings", "Defenses", "Infantry", "Vehicles"];
+
+/// The four tabs' names for a cameo grid's `Tab=`, in the tabs' order.
+const GRID_TABS: [&str; 4] = ["Building", "Defense", "Infantry", "Vehicle"];
+
+/// The word a `Parts=` list uses for "no parts"; the INI store drops a key
+/// with no value.
+const NO_PARTS: &str = "None";
+
+/// The keys every part may have, then the keys of each type.
+const COMMON_KEYS: [&str; 12] = [
+    "Type", "Base", "Parts", "Hold", "X", "Y", "Width", "Height", "Art", "Frames", "Palette",
+    "Color",
 ];
+const TYPE_KEYS: &[(&str, &[&str])] = &[
+    ("Screen", &[]),
+    ("Battlefield", &[]),
+    ("Box", &[]),
+    ("Tooltip", &[]),
+    ("Panel", &["Float"]),
+    ("Image", &[]),
+    ("Text", &["Value", "Align", "Font"]),
+    ("Button", &["Command", "Label"]),
+    ("Tab", &["Tab"]),
+    ("Radar", &[]),
+    ("Minimap", &[]),
+    (
+        "CameoGrid",
+        &[
+            "Tab",
+            "Columns",
+            "Rows",
+            "CellWidth",
+            "CellHeight",
+            "CellX",
+            "CellY",
+            "ColumnWidth",
+            "RowHeight",
+            "Footer",
+            "RowArt",
+            "EmptyRowArt",
+            "EndArt",
+            "FootArt",
+            "Clock",
+            "Darken",
+            "LabelColor",
+            "LabelStrip",
+        ],
+    ),
+    ("PowerBar", &["Step"]),
+    ("CommandBar", &["Rail", "LeftCap", "RightCap", "Slot"]),
+    ("Row", &["Gap"]),
+    ("Column", &["Gap"]),
+];
+
+/// The types a layout can add a part of.
+const ADDED_TYPES: [&str; 5] = ["Button", "Text", "Row", "Column", "CameoGrid"];
 
 /// Why a line of the file was not used as written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LayoutProblemKind {
-    /// `[Layouts]` names a layout the file has no section for.
+    /// `[Layouts]` or a `Base=` names a layout the file has no section for,
+    /// or a `Base=` a part the layout does not have.
     MissingLayout,
-    /// The layout's `Version=` is newer than this build reads.
-    NewerVersion,
-    /// A section for a part the original interface does not have.
+    /// `Base=` lines that come back to where they started.
+    Loop,
+    /// A section for no part the interface has or a layout can add, or a
+    /// `Parts=` list naming one.
     UnknownPart,
     UnknownKey,
     NotANumber,
@@ -403,7 +240,7 @@ pub enum LayoutProblemKind {
     },
     /// A yes-or-no key with another word.
     NotYesOrNo,
-    /// A documented key this version cannot change yet.
+    /// A key of the part's type this version cannot change yet.
     NotYet,
     /// A button's `Command=` is no command the game has, or is missing.
     UnknownCommand,
@@ -438,15 +275,14 @@ impl std::fmt::Display for LayoutProblem {
         match &self.kind {
             LayoutProblemKind::MissingLayout => write!(
                 f,
-                "{place}: the file has no section for this layout; the original interface is used"
+                "{place}: names nothing the file has; the original is used"
             ),
-            LayoutProblemKind::NewerVersion => write!(
-                f,
-                "{place}: made for a newer VERA20k (this one reads Version={FORMAT_VERSION}); the original interface is used"
-            ),
+            LayoutProblemKind::Loop => {
+                write!(f, "{place}: the Base= lines go round in a loop")
+            }
             LayoutProblemKind::UnknownPart => write!(
                 f,
-                "{place}: not a part of the interface; the section is ignored"
+                "{place}: not a part of the interface; it is ignored"
             ),
             LayoutProblemKind::UnknownKey => write!(f, "{place}: unknown key, ignored"),
             LayoutProblemKind::NotANumber => {
@@ -477,92 +313,50 @@ impl std::fmt::Display for LayoutProblem {
     }
 }
 
-/// The word a `Parts=` list uses for "no parts"; the INI store drops a key
-/// with no value.
-const NO_PARTS: &str = "None";
-
-/// One of the sidebar's panels: the sidebar itself (`None`) or a part that
-/// holds parts.
-type Panel = Option<SidebarPart>;
-
-/// A panel's section name: `Side` for the sidebar itself.
-fn panel_of(section_part: &str) -> Option<Panel> {
-    if section_part.eq_ignore_ascii_case("Side") {
-        return Some(None);
-    }
-    SidebarPart::STOCK_ORDER
-        .into_iter()
-        .find(|part| part.name().eq_ignore_ascii_case(section_part))
-        .filter(|&part| stock_children(Some(part)).next().is_some())
-        .map(Some)
-}
-
-/// The parts a panel holds in the original interface, in draw order.
-fn stock_children(panel: Panel) -> impl Iterator<Item = SidebarPart> {
-    SidebarPart::STOCK_ORDER
-        .into_iter()
-        .filter(move |part| part.panel() == panel)
-}
-
-/// One layout of the file: the numbers and part lists it changes on the
-/// side's original.
+/// One layout of the file, its bases written in: the sidebar's numbers and
+/// parts, where the panels sit, the battlefield's pieces and what it adds.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MatchLayout {
-    numbers: Vec<(Number, f32)>,
-    /// Each panel whose `Parts=` the layout writes, with its parts in order.
-    parts: Vec<(Panel, Vec<SidebarPart>)>,
-    /// `[Side] Hold=` and `Float=`, `[Bar] Hold=`, and whether the screen's
-    /// `Parts=` has the bar; `None` keeps the original's.
-    side_edge: Option<Edge>,
-    side_floats: Option<bool>,
-    bar_edge: Option<Edge>,
-    has_bar: Option<bool>,
-    /// The pieces over the battlefield, the original's where the layout
-    /// says nothing.
+    /// Each read number of [`NUMBERS`], by its index there.
+    numbers: Vec<(usize, f32)>,
+    /// Where the first tab sits in the middle panel, and the step to each
+    /// next one; the step between the two scroll buttons.
+    tabs: Option<[f32; 3]>,
+    scroll_step: Option<f32>,
+    parts: [Option<SidebarPart>; 12],
+    places: PanelPlaces,
     field: FieldLayout,
     /// The buttons and texts the layout adds, in the order their holders
     /// list them.
-    added: std::sync::Arc<[AddedPart]>,
+    added: Arc<[AddedPart]>,
 }
 
 impl MatchLayout {
     /// The buttons and texts this layout adds.
-    pub fn added(&self) -> &std::sync::Arc<[AddedPart]> {
+    pub fn added(&self) -> &Arc<[AddedPart]> {
         &self.added
     }
 
-    /// Write this layout's numbers and part lists over the side's original
-    /// sidebar table.
+    /// A position table as it is built in: the allied one (`GDI`) or the
+    /// one of the Soviets and Yuri (`Nod`).
+    pub fn original(gdi_positions: bool) -> &'static Self {
+        &ORIGINAL[table(gdi_positions)]
+    }
+
+    /// Write this layout over the sidebar's table.
     pub fn apply_to_sidebar(&self, spec: &mut SidebarChromeLayoutSpec) {
         for &(number, value) in &self.numbers {
-            *number.slot(spec) = value;
+            *(NUMBERS[number].slot)(spec) = value;
         }
+        if let Some([x, y, step]) = self.tabs {
+            (spec.tab_x, spec.tab_y, spec.tab_pitch) = (x, y, step);
+        }
+        if let Some(step) = self.scroll_step {
+            spec.scroll_pitch = step;
+        }
+        spec.parts = self.parts;
+        spec.places = self.places;
         spec.field = self.field;
-        let places = &mut spec.places;
-        places.side = self.side_edge.unwrap_or(places.side);
-        places.side_floats = self.side_floats.unwrap_or(places.side_floats);
-        places.bar = match self.has_bar {
-            Some(false) => None,
-            _ => self.bar_edge.or(places.bar).or(Some(Edge::Bottom)),
-        };
-        if self.parts.is_empty() {
-            return;
-        }
-        // A panel's own list, else the original's; a part goes with its panel.
-        let children = |panel: Panel| -> Vec<SidebarPart> {
-            self.parts
-                .iter()
-                .rev()
-                .find(|(listed, _)| *listed == panel)
-                .map_or_else(
-                    || stock_children(panel).collect(),
-                    |(_, parts)| parts.clone(),
-                )
-        };
-        let mut order = children(None)
-            .into_iter()
-            .flat_map(|part| std::iter::once(part).chain(children(Some(part))));
-        spec.parts = std::array::from_fn(|_| order.next());
     }
 }
 
@@ -572,7 +366,8 @@ pub struct MatchLayoutFile {
     /// `[Layouts]` lines in file order: the side and its layout, `None` when
     /// that layout was refused and the side keeps the original.
     sides: Vec<(String, Option<usize>)>,
-    layouts: Vec<MatchLayout>,
+    /// Each layout read over either position table, in [`TABLES`] order.
+    layouts: Vec<[MatchLayout; 2]>,
     /// Each layout's name, as `[Layouts]` writes it.
     names: Vec<String>,
     problems: Vec<LayoutProblem>,
@@ -585,14 +380,7 @@ impl MatchLayoutFile {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        // `LoadFromStraw` drops a last line that has no line break.
-        let mut complete = Vec::with_capacity(bytes.len() + 1);
-        complete.extend_from_slice(bytes);
-        complete.push(b'\n');
-        match IniFile::from_bytes(&complete) {
-            Ok(ini) => Self::from_ini(&ini),
-            Err(_) => Self::none(),
-        }
+        parse(bytes).map_or_else(Self::none, |ini| Self::from_ini(&ini))
     }
 
     pub fn from_ini(ini: &IniFile) -> Self {
@@ -600,6 +388,7 @@ impl MatchLayoutFile {
         let Some(layouts) = find_section(ini, LAYOUTS_SECTION) else {
             return file;
         };
+        let files = [&*BUILT_IN, ini];
         // Each layout is read once, however many sides use it.
         let mut read: Vec<(&str, Option<usize>)> = Vec::new();
         for side in layouts.keys() {
@@ -612,11 +401,13 @@ impl MatchLayoutFile {
             let index = match known {
                 Some(&(_, index)) => index,
                 None => {
-                    let index = read_layout(ini, layout, side, &mut file.problems).map(|read| {
-                        file.layouts.push(read);
-                        file.names.push(layout.to_owned());
-                        file.layouts.len() - 1
-                    });
+                    let index = if exists(&files, layout) {
+                        file.read(&files, layout);
+                        Some(file.layouts.len() - 1)
+                    } else {
+                        file.problem(LAYOUTS_SECTION, side, LayoutProblemKind::MissingLayout);
+                        None
+                    };
                     read.push((layout, index));
                     index
                 }
@@ -624,6 +415,38 @@ impl MatchLayoutFile {
             file.sides.push((side.to_owned(), index));
         }
         file
+    }
+
+    /// Read `layout` over both position tables, with what was refused.
+    fn read(&mut self, files: &[&IniFile], layout: &str) {
+        // The layout's own section has nothing but its base.
+        for ini in &files[1..] {
+            for section in ini.section_names() {
+                if section.eq_ignore_ascii_case(layout)
+                    && let Some(own) = ini.section(section)
+                {
+                    for key in own.keys().filter(|key| !key.eq_ignore_ascii_case("Base")) {
+                        self.problem(section, key, LayoutProblemKind::UnknownKey);
+                    }
+                }
+            }
+        }
+        let read = TABLES.map(|table| read_layout(files, layout, table));
+        for problem in read.iter().flat_map(|(_, problems)| problems) {
+            if !self.problems.contains(problem) {
+                self.problems.push(problem.clone());
+            }
+        }
+        self.layouts.push(read.map(|(layout, _)| layout));
+        self.names.push(layout.to_owned());
+    }
+
+    fn problem(&mut self, section: &str, key: &str, kind: LayoutProblemKind) {
+        self.problems.push(LayoutProblem {
+            section: section.to_owned(),
+            key: key.to_owned(),
+            kind,
+        });
     }
 
     /// The mod's file with the player's own laid over it: the player's keys
@@ -643,10 +466,13 @@ impl MatchLayoutFile {
         Self::from_ini(&merged)
     }
 
-    /// The layout `[Layouts]` gives this `[Sides]` name: its own line, else
-    /// `Default=`. `None` keeps the original interface.
-    pub fn for_side(&self, side: Option<&str>) -> Option<&MatchLayout> {
-        self.layouts.get(self.layout_index(side)?)
+    /// The layout `[Layouts]` gives this `[Sides]` name (its own line, else
+    /// `Default=`), over the position table the side uses. `None` keeps the
+    /// original interface.
+    pub fn for_side(&self, side: Option<&str>, gdi_positions: bool) -> Option<&MatchLayout> {
+        self.layouts
+            .get(self.layout_index(side)?)
+            .map(|layouts| &layouts[table(gdi_positions)])
     }
 
     /// The name of the layout [`Self::for_side`] gives, as the file writes
@@ -671,10 +497,14 @@ impl MatchLayoutFile {
         self.sides.is_empty() && self.problems.is_empty()
     }
 
+    fn all_layouts_mut(&mut self) -> impl Iterator<Item = &mut MatchLayout> {
+        self.layouts.iter_mut().flatten()
+    }
+
     /// The picture files the layouts' added buttons name (`Art=`), each once.
     pub fn art_names(&self) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for part in self.layouts.iter().flat_map(|layout| layout.added.iter()) {
+        for part in self.layouts.iter().flatten().flat_map(|layout| layout.added.iter()) {
             if let AddedKind::Button { art: Some(art), .. } = &part.kind
                 && !names.iter().any(|name| name.eq_ignore_ascii_case(art))
             {
@@ -688,7 +518,8 @@ impl MatchLayoutFile {
     /// line for each. The command lists belong to the input code, so the
     /// loader asks them once the file is read.
     pub fn check_commands(&mut self, known: impl Fn(&str) -> bool) {
-        for layout in &mut self.layouts {
+        let mut refused: Vec<LayoutProblem> = Vec::new();
+        for layout in self.all_layouts_mut() {
             let keep: Vec<bool> = layout
                 .added
                 .iter()
@@ -722,18 +553,22 @@ impl MatchLayoutFile {
                     }
                     kept.push(part);
                 } else {
-                    self.problems.push(LayoutProblem {
+                    let problem = LayoutProblem {
                         section: part.section.clone(),
                         key: "Command".to_owned(),
                         kind: LayoutProblemKind::UnknownCommand,
-                    });
+                    };
+                    if !refused.contains(&problem) {
+                        refused.push(problem);
+                    }
                 }
             }
             layout.added = kept.into();
         }
+        self.problems.extend(refused);
     }
 
-    /// Every refused line, in file order.
+    /// Every refused line.
     pub fn problems(&self) -> &[LayoutProblem] {
         &self.problems
     }
@@ -744,14 +579,8 @@ impl MatchLayoutFile {
     /// The edit mode's Reset takes the player's changes out this way.
     pub fn without_layout(text: &[u8], layout: &str) -> Vec<u8> {
         use crate::util::ini_writer::{remove_ini_keys, remove_ini_sections};
-        // `LoadFromStraw` drops a last line that has no line break.
-        let parsed = |text: &[u8]| {
-            let mut complete = text.to_vec();
-            complete.push(b'\n');
-            IniFile::from_bytes(&complete).ok()
-        };
         let text = remove_ini_sections(text, |name| part_of(name, layout).is_some());
-        let sides: Vec<String> = parsed(&text)
+        let sides: Vec<String> = parse(&text)
             .and_then(|ini| {
                 let layouts = find_section(&ini, LAYOUTS_SECTION)?;
                 Some(
@@ -772,7 +601,7 @@ impl MatchLayoutFile {
         }
         let sides: Vec<&str> = sides.iter().map(String::as_str).collect();
         let text = remove_ini_keys(&text, LAYOUTS_SECTION, &sides);
-        let emptied = parsed(&text).is_none_or(|ini| {
+        let emptied = parse(&text).is_none_or(|ini| {
             find_section(&ini, LAYOUTS_SECTION)
                 .is_none_or(|layouts| layouts.keys().next().is_none())
         });
@@ -791,210 +620,416 @@ fn find_section<'a>(ini: &'a IniFile, name: &str) -> Option<&'a IniSection> {
         .and_then(|section| ini.section(section))
 }
 
-/// Split `Layout.Part` section names of `layout`; the layout's own section
-/// gives an empty part.
-fn part_of<'a>(section: &'a str, layout: &str) -> Option<&'a str> {
-    let head = section.get(..layout.len())?;
-    if !head.eq_ignore_ascii_case(layout) {
-        return None;
-    }
-    match &section[layout.len()..] {
-        "" => Some(""),
-        rest => rest.strip_prefix('.'),
-    }
+/// What reading one value gives: the value, with a problem to report when it
+/// had to be changed; or the problem that keeps the value under it, `None`
+/// for a value that silently keeps it.
+type Parsed<T> = Result<(T, Option<LayoutProblemKind>), Option<LayoutProblemKind>>;
+
+/// The properties of one layout's tree as they are read, which keys were,
+/// and what was refused.
+struct Reader<'a> {
+    tree: &'a Tree,
+    /// Each read key: the node's index and the key.
+    read: Vec<(usize, &'static str)>,
+    problems: Vec<LayoutProblem>,
 }
 
-fn layout_exists(ini: &IniFile, layout: &str) -> bool {
-    ini.section_names()
-        .into_iter()
-        .any(|section| part_of(section, layout).is_some())
-}
-
-/// Read one layout's sections. `None` when the whole layout is refused.
-fn read_layout(
-    ini: &IniFile,
-    layout: &str,
-    side: &str,
-    problems: &mut Vec<LayoutProblem>,
-) -> Option<MatchLayout> {
-    let mut problem = |section: &str, key: &str, kind| {
-        problems.push(LayoutProblem {
+impl<'a> Reader<'a> {
+    fn problem(&mut self, section: &str, key: &str, kind: LayoutProblemKind) {
+        let problem = LayoutProblem {
             section: section.to_owned(),
             key: key.to_owned(),
             kind,
-        });
-    };
-    if !layout_exists(ini, layout) {
-        problem(LAYOUTS_SECTION, side, LayoutProblemKind::MissingLayout);
+        };
+        if !self.problems.contains(&problem) {
+            self.problems.push(problem);
+        }
+    }
+
+    /// The value of `key` on part `node` that `parse` takes: the last one
+    /// written that it can, each later one a problem when a file over the
+    /// built-in one wrote it. With it, the section of a file's own value.
+    fn pick<T>(
+        &mut self,
+        node: &str,
+        key: &'static str,
+        parse: impl Fn(&str) -> Parsed<T>,
+    ) -> Option<(T, Option<String>)> {
+        let tree = self.tree;
+        let (index, node) = tree
+            .nodes
+            .iter()
+            .enumerate()
+            .find(|(_, known)| known.name.eq_ignore_ascii_case(node))?;
+        self.read.push((index, key));
+        for value in node.values(key).iter().rev().filter(|value| value.theme.is_none()) {
+            match parse(&value.text) {
+                Ok((parsed, note)) => {
+                    if let (Some(kind), true) = (note, value.own) {
+                        self.problem(&value.section, key, kind);
+                    }
+                    return Some((parsed, value.own.then(|| value.section.clone())));
+                }
+                Err(Some(kind)) if value.own => self.problem(&value.section, key, kind),
+                Err(_) => {}
+            }
+        }
+        None
+    }
+
+    fn value<T>(&mut self, node: &str, key: &'static str, parse: impl Fn(&str) -> Parsed<T>) -> Option<T> {
+        self.pick(node, key, parse).map(|(value, _)| value)
+    }
+
+    /// A whole number in `min..=FAR`.
+    fn number(&mut self, node: &str, key: &'static str, min: i32) -> Option<i32> {
+        self.value(node, key, |text| number_in(text, min, FAR))
+    }
+
+    /// Refuse a part's key as not yet readable: its last own value.
+    fn not_yet(&mut self, node: &str, key: &str) {
+        let section = self
+            .tree
+            .node(node)
+            .and_then(|node| node.values(key).iter().rev().find(|value| value.own))
+            .map(|value| value.section.clone());
+        if let Some(section) = section {
+            self.problem(&section, key, LayoutProblemKind::NotYet);
+        }
+    }
+}
+
+/// A key's value as a whole number: ReadInt's result, for text that is
+/// nothing but an optional minus sign and up to nine digits. ReadInt alone
+/// reads other text as zero, which would move a part to the corner without a
+/// word.
+fn whole_number(text: &str) -> Option<i32> {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    if digits.is_empty() || digits.len() > 9 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    let mut read = MatchLayout::default();
-    // Names a holder's `Parts=` lists that the original does not have, each
-    // with the line that lists it, and the sections that define such parts.
-    let mut listed: Vec<(ListedIn, String, String, String)> = Vec::new();
-    let mut defined: Vec<(String, AddedPart)> = Vec::new();
-    let names = ini.section_names();
-    for (position, &name) in names.iter().enumerate() {
-        let Some(part) = part_of(name, layout) else {
-            continue;
-        };
-        // A repeated section name reads as its first copy, once.
-        if names[..position].contains(&name) {
-            continue;
-        }
-        let Some(section) = ini.section(name) else {
-            continue;
-        };
-        if part.is_empty() {
-            for key in section.keys() {
-                if key.eq_ignore_ascii_case("Version") {
-                    match whole_number(section, key) {
-                        Some(version) if version > FORMAT_VERSION => {
-                            problem(name, key, LayoutProblemKind::NewerVersion);
-                            return None;
-                        }
-                        Some(_) => {}
-                        None => problem(name, key, LayoutProblemKind::NotANumber),
-                    }
-                } else if key.eq_ignore_ascii_case("Parts") {
-                    // The battlefield and the sidebar stay; the bar may go.
-                    let names: Vec<_> = section
-                        .read_list(key, LIST_CAPACITY)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(str::trim)
-                        .collect();
-                    let has = |part: &str| names.iter().any(|name| name.eq_ignore_ascii_case(part));
-                    if names.iter().any(|name| {
-                        !SCREEN_PARTS
-                            .split(',')
-                            .any(|part| name.eq_ignore_ascii_case(part))
-                    }) {
-                        problem(name, key, LayoutProblemKind::UnknownPart);
-                    }
-                    if has("Field") && has("Side") {
-                        read.has_bar = Some(has("Bar"));
-                    } else {
-                        problem(name, key, LayoutProblemKind::NotYet);
-                    }
-                } else {
-                    problem(name, key, LayoutProblemKind::UnknownKey);
-                }
-            }
-            continue;
-        }
-        if read_field_part(&mut read.field, section, part, |key, kind| {
-            problem(name, key, kind)
-        }) {
-            continue;
-        }
-        let Some(stock) = STOCK_PARTS
+    text.parse().ok()
+}
+
+/// A whole number kept inside `min..=max`.
+fn number_in(text: &str, min: i32, max: i32) -> Parsed<i32> {
+    let value = whole_number(text).ok_or(Some(LayoutProblemKind::NotANumber))?;
+    let used = value.clamp(min, max);
+    Ok((used, (used != value).then_some(LayoutProblemKind::Clamped { used })))
+}
+
+/// A size: a whole number of at least one, or `Rest`, what is left.
+fn size_or_rest(text: &str) -> Parsed<Option<i32>> {
+    if text.eq_ignore_ascii_case("Rest") {
+        return Ok((None, None));
+    }
+    number_in(text, 1, FAR).map(|(value, note)| (Some(value), note))
+}
+
+fn yes_no(text: &str) -> Parsed<bool> {
+    match text.bytes().next().map(|byte| byte.to_ascii_lowercase()) {
+        Some(b'y' | b't' | b'1') => Ok((true, None)),
+        Some(b'n' | b'f' | b'0') => Ok((false, None)),
+        _ => Err(Some(LayoutProblemKind::NotYesOrNo)),
+    }
+}
+
+fn hold(text: &str) -> Parsed<Hold> {
+    Hold::named(text).map(|hold| (hold, None)).ok_or(Some(LayoutProblemKind::NotYet))
+}
+
+/// A word of `words`, without regard to capitals; another is refused as
+/// `kind`.
+fn one_of<'a, T: Copy>(words: &'a [(&'a str, T)], kind: LayoutProblemKind) -> impl Fn(&str) -> Parsed<T> + 'a {
+    move |text| {
+        words
             .iter()
-            .find(|stock| stock.name.eq_ignore_ascii_case(part))
-        else {
-            // A section with a `Type=` this version can add is a new part.
-            let mut children = Vec::new();
-            match read_added_part(section, name, &mut children, |key, kind| {
-                problem(name, key, kind)
-            }) {
-                Some(Some(added)) => {
-                    listed.extend(children.into_iter().map(|child| {
-                        (
-                            ListedIn::Group(part.to_owned()),
-                            child,
-                            name.to_owned(),
-                            "Parts".to_owned(),
-                        )
-                    }));
-                    defined.push((part.to_owned(), added));
-                }
-                Some(None) => {}
-                None => problem(name, "", LayoutProblemKind::UnknownPart),
+            .find(|(word, _)| word.eq_ignore_ascii_case(text))
+            .map(|&(_, value)| (value, None))
+            .ok_or(Some(kind.clone()))
+    }
+}
+
+/// A comma list of names, without empty names and the word for none.
+fn names(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty() && !name.eq_ignore_ascii_case(NO_PARTS))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn list(text: &str) -> Parsed<Vec<String>> {
+    Ok((names(text), None))
+}
+
+/// The list that names an added part: the sidebar's, the battlefield's, or
+/// the `Parts=` of a row or a column the layout adds, by that group's name.
+enum ListedIn {
+    Side,
+    Field,
+    Group(String),
+}
+
+/// Read layout `layout` of `files` over position table `table`.
+fn read_layout(files: &[&IniFile], layout: &str, table: &str) -> (MatchLayout, Vec<LayoutProblem>) {
+    let mut tree_problems = Vec::new();
+    let tree = Tree::read(files, layout, table, &mut tree_problems);
+    let mut reader = Reader {
+        tree: &tree,
+        read: Vec::new(),
+        problems: Vec::new(),
+    };
+    for problem in tree_problems {
+        match problem {
+            TreeProblem::MissingBase { section } => {
+                reader.problem(&section, "Base", LayoutProblemKind::MissingLayout)
             }
-            continue;
-        };
-        let panel = panel_of(part);
-        for key in section.keys() {
-            if let Some(read_place) = read_place(&mut read, section, part, key) {
-                if let Err(kind) = read_place {
-                    problem(name, key, kind);
-                }
-            } else if part.eq_ignore_ascii_case("Field") && key.eq_ignore_ascii_case("Parts") {
-                // The pieces the battlefield holds; one left out is not shown.
-                let words = section.read_list(key, LIST_CAPACITY).unwrap_or_default();
-                let mut shown = [false; 4];
-                for word in words.into_iter().map(str::trim) {
-                    match FieldPart::named(word) {
-                        Some(part) => shown[part as usize] = true,
-                        None if word.eq_ignore_ascii_case(NO_PARTS) || word.is_empty() => {}
-                        None => listed.push((
-                            ListedIn::Field,
-                            word.to_owned(),
-                            name.to_owned(),
-                            key.to_owned(),
-                        )),
-                    }
-                }
-                read.field.shown = shown;
-            } else if let (Some(panel), true) = (panel, key.eq_ignore_ascii_case("Parts")) {
-                let (parts, unknown, elsewhere) = part_list(section, key, panel);
-                if panel.is_none() {
-                    // The sidebar itself can hold parts a layout adds.
-                    listed.extend(
-                        unknown
-                            .into_iter()
-                            .map(|word| (ListedIn::Side, word, name.to_owned(), key.to_owned())),
-                    );
-                } else if !unknown.is_empty() {
-                    problem(name, key, LayoutProblemKind::UnknownPart);
-                }
-                if elsewhere {
-                    problem(name, key, LayoutProblemKind::NotYet);
-                }
-                read.parts.push((panel, parts));
-            } else if let Some(number) = stock
-                .numbers
-                .iter()
-                .find(|number| number.key.eq_ignore_ascii_case(key))
-            {
-                // A size may say its word instead of a number (`Rest`).
-                let word = stock.fixed.iter().any(|(fixed, accepted)| {
-                    fixed.eq_ignore_ascii_case(key)
-                        && accepted.is_some_and(|accepted| same_list(section, key, accepted))
-                });
-                if word {
-                    continue;
-                }
-                let Some(value) = whole_number(section, key) else {
-                    problem(name, key, LayoutProblemKind::NotANumber);
-                    continue;
-                };
-                let used = value.clamp(number.min, number.max);
-                if used != value {
-                    problem(name, key, LayoutProblemKind::Clamped { used });
-                }
-                read.numbers.push((number.number, used as f32));
-            } else if let Some((_, accepted)) = stock
-                .fixed
-                .iter()
-                .find(|(fixed, _)| fixed.eq_ignore_ascii_case(key))
-            {
-                if !accepted.is_some_and(|accepted| same_list(section, key, accepted)) {
-                    problem(name, key, LayoutProblemKind::NotYet);
-                }
-            } else {
-                problem(name, key, LayoutProblemKind::UnknownKey);
+            TreeProblem::Loop { section } => reader.problem(&section, "Base", LayoutProblemKind::Loop),
+            TreeProblem::UnknownSide { section, key } => {
+                reader.problem(&section, &key, LayoutProblemKind::UnknownKey)
             }
         }
     }
-    // A listed name is a part once a section defines it; each part is added
-    // once, where its first list puts it. The sidebar's and the
-    // battlefield's lists come first, so a group has its place in the list
-    // before the parts it holds.
+    let mut read = MatchLayout::default();
+    for (index, number) in NUMBERS.iter().enumerate() {
+        // A size may say `Rest` instead of a number: the screen's own.
+        let value = reader.value(number.node, number.key, |text| {
+            if text.eq_ignore_ascii_case("Rest") {
+                return Err(None);
+            }
+            number_in(text, number.min, number.max)
+        });
+        if let Some(value) = value {
+            read.numbers.push((index, value as f32));
+        }
+    }
+    read_tabs(&mut reader, &mut read);
+    read_places(&mut reader, &mut read);
+    read_field(&mut reader, &mut read.field);
+    let mut listed: Vec<(ListedIn, String, String)> = Vec::new();
+    read_parts(&mut reader, &mut read, &mut listed);
+    read.added = read_added(&mut reader, listed).into();
+    read_leftovers(&mut reader);
+    (read, reader.problems)
+}
+
+/// The tabs: the first's place and the step to each next one, and the
+/// scroll buttons' step. Each tab is a part of its own; this version places
+/// them at one step from each other in a line.
+fn read_tabs(reader: &mut Reader, read: &mut MatchLayout) {
+    let at = |reader: &mut Reader, node: &str| {
+        [
+            reader.number(node, "X", -FAR).unwrap_or_default(),
+            reader.number(node, "Y", -FAR).unwrap_or_default(),
+        ]
+    };
+    let tabs = at(reader, "Tabs");
+    let places = TABS.map(|tab| at(reader, tab));
+    let step = places[1][0] - places[0][0];
+    for (index, tab) in TABS.iter().enumerate().skip(2) {
+        if places[index][0] != places[0][0] + index as i32 * step {
+            reader.not_yet(tab, "X");
+        }
+    }
+    for (index, tab) in TABS.iter().enumerate().skip(1) {
+        if places[index][1] != places[0][1] {
+            reader.not_yet(tab, "Y");
+        }
+    }
+    read.tabs = Some([
+        (tabs[0] + places[0][0]) as f32,
+        (tabs[1] + places[0][1]) as f32,
+        step as f32,
+    ]);
+    let down = at(reader, "ScrollDown");
+    let up = at(reader, "ScrollUp");
+    if up[1] != down[1] {
+        reader.not_yet("ScrollUp", "Y");
+    }
+    read.scroll_step = Some((up[0] - down[0]) as f32);
+}
+
+/// Where the sidebar and the bar sit: `[Side] Hold=` (any edge) and
+/// `Float=`, and `[Bar] Hold=` (`Top` or `Bottom`).
+fn read_places(reader: &mut Reader, read: &mut MatchLayout) {
+    use Edge::{Bottom, Left, Right, Top};
+    let edges = [("Left", Left), ("Right", Right), ("Top", Top), ("Bottom", Bottom)];
+    let places = &mut read.places;
+    places.side = reader
+        .value("Side", "Hold", one_of(&edges, LayoutProblemKind::NotYet))
+        .unwrap_or(Right);
+    places.side_floats = reader.value("Side", "Float", yes_no).unwrap_or(false);
+    places.bar = reader.value("Bar", "Hold", one_of(&edges[2..], LayoutProblemKind::NotYet));
+}
+
+/// The pieces over the battlefield: `Messages`, `Timers` and `Banner` (a
+/// box: `Hold`, `X`, `Y`, `Width`, `Height`), `Powers` (`X`, `Y`) and
+/// `Tooltip` (`Hold`: `Cursor` or a corner, and `X`, `Y`).
+fn read_field(reader: &mut Reader, field: &mut FieldLayout) {
+    for (part, part_box) in [
+        ("Messages", &mut field.messages),
+        ("Timers", &mut field.timers),
+        ("Banner", &mut field.banner),
+    ] {
+        *part_box = PartBox {
+            hold: reader.value(part, "Hold", hold).unwrap_or_default(),
+            x: reader.number(part, "X", -FAR).unwrap_or_default(),
+            y: reader.number(part, "Y", -FAR).unwrap_or_default(),
+            width: reader.value(part, "Width", size_or_rest).flatten(),
+            height: reader.value(part, "Height", size_or_rest).flatten(),
+        };
+    }
+    field.powers = ["X", "Y"].map(|key| reader.number("Powers", key, -FAR).unwrap_or_default());
+    let cursor_or_hold = |text: &str| -> Parsed<Option<Hold>> {
+        if text.eq_ignore_ascii_case("Cursor") {
+            return Ok((None, None));
+        }
+        hold(text).map(|(hold, note)| (Some(hold), note))
+    };
+    field.tooltip = TooltipPlace {
+        hold: reader.value("Tooltip", "Hold", cursor_or_hold).flatten(),
+        x: reader.number("Tooltip", "X", -FAR).unwrap_or_default(),
+        y: reader.number("Tooltip", "Y", -FAR).unwrap_or_default(),
+    };
+}
+
+/// The `Parts=` lists: the screen's (the battlefield and the sidebar stay;
+/// the bar may go), the sidebar's and its panels' (the parts the sidebar
+/// draws, in order), the battlefield's (the pieces it shows). Each name
+/// that is no part of the original goes to `listed`, with the list's
+/// section.
+fn read_parts(reader: &mut Reader, read: &mut MatchLayout, listed: &mut Vec<(ListedIn, String, String)>) {
+    let screen = reader.pick("Screen", "Parts", |text| {
+        let names = names(text);
+        let has = |part: &str| names.iter().any(|name| name.eq_ignore_ascii_case(part));
+        if !(has("Field") && has("Side")) {
+            return Err(Some(LayoutProblemKind::NotYet));
+        }
+        let unknown = names
+            .iter()
+            .any(|name| !["Field", "Side", "Bar"].iter().any(|part| name.eq_ignore_ascii_case(part)));
+        Ok((has("Bar"), unknown.then_some(LayoutProblemKind::UnknownPart)))
+    });
+    if let Some((false, _)) = screen {
+        read.places.bar = None;
+    }
+
+    // The sidebar's parts, each panel followed by the parts it holds.
+    let mut order: Vec<SidebarPart> = Vec::new();
+    let named = |name: &str| {
+        SidebarPart::STOCK_ORDER
+            .into_iter()
+            .find(|part| part.name().eq_ignore_ascii_case(name))
+    };
+    // Each panel's own parts, in its list's order.
+    let mut held: Vec<(SidebarPart, Vec<SidebarPart>)> = Vec::new();
+    for panel in SidebarPart::STOCK_ORDER {
+        if !SidebarPart::STOCK_ORDER.iter().any(|part| part.panel() == Some(panel)) {
+            continue;
+        }
+        let Some((children, section)) = reader.pick(panel.name(), "Parts", list) else {
+            continue;
+        };
+        let (mut parts, mut unknown, mut moved) = (Vec::new(), false, false);
+        for child in children {
+            match named(&child) {
+                Some(child) if child.panel() == Some(panel) => {
+                    if !parts.contains(&child) {
+                        parts.push(child);
+                    }
+                }
+                Some(_) => moved = true,
+                None => unknown |= reader.tree.node(&child).is_none_or(|node| !node.built_in()),
+            }
+        }
+        if let Some(section) = section {
+            if unknown {
+                reader.problem(&section, "Parts", LayoutProblemKind::UnknownPart);
+            }
+            if moved {
+                reader.problem(&section, "Parts", LayoutProblemKind::NotYet);
+            }
+        }
+        held.push((panel, parts));
+    }
+    let (side, section) = reader.pick("Side", "Parts", list).unwrap_or_default();
+    let mut elsewhere = false;
+    for name in side {
+        match named(&name) {
+            Some(part) if part.panel().is_none() => {
+                if order.contains(&part) {
+                    continue;
+                }
+                order.push(part);
+                if let Some((_, parts)) = held.iter().find(|(panel, _)| *panel == part) {
+                    order.extend(parts.iter().copied().filter(|child| !order.contains(child)).collect::<Vec<_>>());
+                }
+            }
+            Some(_) => elsewhere = true,
+            None => {
+                if let Some(section) = &section {
+                    listed.push((ListedIn::Side, name, section.clone()));
+                }
+            }
+        }
+    }
+    if let (true, Some(section)) = (elsewhere, &section) {
+        reader.problem(section, "Parts", LayoutProblemKind::NotYet);
+    }
+    let mut order = order.into_iter();
+    read.parts = std::array::from_fn(|_| order.next());
+
+    // The pieces the battlefield holds; one left out is not shown.
+    let (field, section) = reader.pick("Field", "Parts", list).unwrap_or_default();
+    read.field.shown = [false; 4];
+    let mut tooltip = false;
+    for name in field {
+        match FieldPart::named(&name) {
+            Some(part) => read.field.shown[part as usize] = true,
+            None if name.eq_ignore_ascii_case("Tooltip") => tooltip = true,
+            None => {
+                if let Some(section) = &section {
+                    listed.push((ListedIn::Field, name, section.clone()));
+                }
+            }
+        }
+    }
+    if let (false, Some(section)) = (tooltip, &section) {
+        reader.problem(section, "Parts", LayoutProblemKind::NotYet);
+    }
+}
+
+/// The parts the layout adds: each node of a type a layout can add that no
+/// built-in layout has, once a list names it, where its first list puts
+/// it. The sidebar's and the battlefield's lists come first, so a group has
+/// its place in the list before the parts it holds.
+fn read_added(reader: &mut Reader, mut listed: Vec<(ListedIn, String, String)>) -> Vec<AddedPart> {
+    let tree = reader.tree;
+    let mut defined: Vec<(String, AddedPart)> = Vec::new();
+    for node in tree.nodes.iter().filter(|node| !node.built_in()) {
+        let section = node.section().unwrap_or_default().to_owned();
+        let Some(kind) = node.text("Type") else {
+            reader.problem(&section, "", LayoutProblemKind::UnknownPart);
+            continue;
+        };
+        if !ADDED_TYPES.iter().any(|added| added.eq_ignore_ascii_case(kind)) {
+            let known = TYPE_KEYS.iter().any(|(known, _)| known.eq_ignore_ascii_case(kind));
+            if known {
+                reader.problem(&section, "Type", LayoutProblemKind::NotYet);
+            } else {
+                reader.problem(&section, "", LayoutProblemKind::UnknownPart);
+            }
+            continue;
+        }
+        if let Some(part) = read_added_part(reader, &node.name, kind, &section, &mut listed) {
+            defined.push((node.name.clone(), part));
+        }
+    }
     let mut added: Vec<AddedPart> = Vec::new();
     let mut names: Vec<String> = Vec::new();
     for in_groups in [false, true] {
-        for (list, word, section, key) in &listed {
+        for (list, word, section) in &listed {
             let holder = match list {
                 ListedIn::Side if !in_groups => Holder::Side,
                 ListedIn::Field if !in_groups => Holder::Field,
@@ -1014,7 +1049,10 @@ fn read_layout(
                 .iter()
                 .position(|(part, _)| part.eq_ignore_ascii_case(word))
             else {
-                problem(section, key, LayoutProblemKind::UnknownPart);
+                // A built-in part in a list of its own is no added part.
+                if tree.node(word).is_none_or(|node| !node.built_in()) {
+                    reader.problem(section, "Parts", LayoutProblemKind::UnknownPart);
+                }
                 continue;
             };
             // A group holds buttons and texts, not other groups, and build
@@ -1024,7 +1062,7 @@ fn read_layout(
             if (in_groups && (grid || matches!(kind, AddedKind::Group { .. })))
                 || (grid && holder != Holder::Side)
             {
-                problem(section, key, LayoutProblemKind::NotYet);
+                reader.problem(section, "Parts", LayoutProblemKind::NotYet);
                 continue;
             }
             let (name, part) = defined.remove(index);
@@ -1033,424 +1071,129 @@ fn read_layout(
         }
     }
     for (_, part) in defined {
-        problem(&part.section, "", LayoutProblemKind::NotListed);
+        reader.problem(&part.section, "", LayoutProblemKind::NotListed);
     }
-    read.added = added.into();
-    Some(read)
+    added
 }
 
-/// The keys that say where the sidebar and the bar sit: `[Side] Hold=` (any
-/// edge) and `Float=`, and `[Bar] Hold=` (`Top` or `Bottom`). `None` for any
-/// other key; an edge the panel cannot sit on yet is refused as not yet.
-fn read_place(
-    read: &mut MatchLayout,
-    section: &IniSection,
-    part: &str,
-    key: &str,
-) -> Option<Result<(), LayoutProblemKind>> {
-    let side = part.eq_ignore_ascii_case("Side");
-    let bar = part.eq_ignore_ascii_case("Bar");
-    if side && key.eq_ignore_ascii_case("Float") {
-        return Some(match section.read_bool_value(key) {
-            Some(floats) => {
-                read.side_floats = Some(floats);
-                Ok(())
-            }
-            None => Err(LayoutProblemKind::NotYesOrNo),
-        });
-    }
-    if !(side || bar) || !key.eq_ignore_ascii_case("Hold") {
-        return None;
-    }
-    let word = section.read_name(key, NAME_CAPACITY).unwrap_or_default();
-    let edge = [
-        ("Left", Edge::Left),
-        ("Right", Edge::Right),
-        ("Top", Edge::Top),
-        ("Bottom", Edge::Bottom),
-    ]
-    .into_iter()
-    .find(|(name, _)| name.eq_ignore_ascii_case(word))
-    .map(|(_, edge)| edge);
-    Some(match edge {
-        Some(edge) if side => {
-            read.side_edge = Some(edge);
-            Ok(())
-        }
-        Some(edge @ (Edge::Top | Edge::Bottom)) if bar => {
-            read.bar_edge = Some(edge);
-            Ok(())
-        }
-        _ => Err(LayoutProblemKind::NotYet),
-    })
-}
-
-/// A key's whole number kept inside `min..=max`, with the problem to report
-/// when it had to be moved there.
-fn number_in(
-    section: &IniSection,
-    key: &str,
-    min: i32,
-    max: i32,
-) -> Result<(i32, Option<LayoutProblemKind>), LayoutProblemKind> {
-    let value = whole_number(section, key).ok_or(LayoutProblemKind::NotANumber)?;
-    let used = value.clamp(min, max);
-    Ok((
-        used,
-        (used != value).then_some(LayoutProblemKind::Clamped { used }),
-    ))
-}
-
-/// The sections of the pieces over the battlefield: `[Messages]`, `[Timers]`
-/// and `[Banner]` (a box: `Hold`, `X`, `Y`, `Width`, `Height`), `[Powers]`
-/// (`X`, `Y`) and `[Tooltip]` (`Hold`: `Cursor` or a corner, and `X`, `Y`).
-/// `false` for any other part.
-fn read_field_part(
-    field: &mut FieldLayout,
-    section: &IniSection,
-    part: &str,
-    mut problem: impl FnMut(&str, LayoutProblemKind),
-) -> bool {
-    let tooltip = part.eq_ignore_ascii_case("Tooltip");
-    let field_part = FieldPart::named(part);
-    if !tooltip && field_part.is_none() {
-        return false;
-    }
-    let is = |key: &str, name: &str| key.eq_ignore_ascii_case(name);
-    for key in section.keys() {
-        // A place: how far in from the edge the part holds.
-        let place =
-            |slot: &mut i32, problem: &mut dyn FnMut(&str, LayoutProblemKind)| match number_in(
-                section, key, -8192, 8192,
-            ) {
-                Ok((value, clamped)) => {
-                    *slot = value;
-                    if let Some(kind) = clamped {
-                        problem(key, kind);
-                    }
-                }
-                Err(kind) => problem(key, kind),
-            };
-        let hold = || Hold::named(section.read_name(key, NAME_CAPACITY).unwrap_or_default());
-        let boxed: Option<&mut PartBox> = match field_part {
-            Some(FieldPart::Messages) => Some(&mut field.messages),
-            Some(FieldPart::Timers) => Some(&mut field.timers),
-            Some(FieldPart::Banner) => Some(&mut field.banner),
-            Some(FieldPart::Powers) | None => None,
-        };
-        if let Some(part_box) = boxed {
-            if is(key, "X") {
-                place(&mut part_box.x, &mut problem);
-            } else if is(key, "Y") {
-                place(&mut part_box.y, &mut problem);
-            } else if is(key, "Hold") {
-                match hold() {
-                    Some(hold) => part_box.hold = hold,
-                    None => problem(key, LayoutProblemKind::NotYet),
-                }
-            } else if is(key, "Width") || is(key, "Height") {
-                // `Rest` is what is left of the battlefield.
-                let size = if same_list(section, key, "Rest") {
-                    None
-                } else {
-                    match number_in(section, key, 1, 8192) {
-                        Ok((value, clamped)) => {
-                            if let Some(kind) = clamped {
-                                problem(key, kind);
-                            }
-                            Some(value)
-                        }
-                        Err(kind) => {
-                            problem(key, kind);
-                            continue;
-                        }
-                    }
-                };
-                if is(key, "Width") {
-                    part_box.width = size;
-                } else {
-                    part_box.height = size;
-                }
-            } else if FIELD_PART_LATER.iter().any(|later| is(key, later)) {
-                problem(key, LayoutProblemKind::NotYet);
-            } else {
-                problem(key, LayoutProblemKind::UnknownKey);
-            }
-        } else if is(key, "X") {
-            let slot = if tooltip {
-                &mut field.tooltip.x
-            } else {
-                &mut field.powers[0]
-            };
-            place(slot, &mut problem);
-        } else if is(key, "Y") {
-            let slot = if tooltip {
-                &mut field.tooltip.y
-            } else {
-                &mut field.powers[1]
-            };
-            place(slot, &mut problem);
-        } else if tooltip && is(key, "Hold") {
-            if same_list(section, key, "Cursor") {
-                field.tooltip.hold = None;
-            } else {
-                match hold() {
-                    Some(hold) => field.tooltip.hold = Some(hold),
-                    None => problem(key, LayoutProblemKind::NotYet),
-                }
-            }
-        } else if is(key, "Hold")
-            || is(key, "Width")
-            || is(key, "Height")
-            || FIELD_PART_LATER.iter().any(|later| is(key, later))
-        {
-            problem(key, LayoutProblemKind::NotYet);
-        } else {
-            problem(key, LayoutProblemKind::UnknownKey);
-        }
-    }
-    true
-}
-
-/// A section for a part the original does not have: with `Type=Button`,
-/// `Type=Text`, `Type=Row`, `Type=Column` or `Type=CameoGrid` it is a part
-/// the layout adds. A row's or a column's `Parts=` names go to `children`. `None` when it has no `Type=`
-/// this version knows, `Some(None)` when it has one but cannot be built
-/// (its problem is reported), else the part, in the battlefield until a
-/// `Parts=` list says where it goes.
+/// A part of type `kind` (one of [`ADDED_TYPES`]) the layout adds, in the
+/// battlefield until a `Parts=` list says where it goes; a row's or a
+/// column's own list goes to `listed`. `None` when it cannot be built (its
+/// problem is reported).
 fn read_added_part(
-    section: &IniSection,
-    name: &str,
-    children: &mut Vec<String>,
-    mut problem: impl FnMut(&str, LayoutProblemKind),
-) -> Option<Option<AddedPart>> {
-    let word = |key: &str| section.read_name(key, NAME_CAPACITY).map(str::trim);
-    let type_key = section
-        .keys()
-        .find(|key| key.eq_ignore_ascii_case("Type"))?;
-    let kind = word(type_key)?;
-    let (button, text) = (
-        kind.eq_ignore_ascii_case("Button"),
-        kind.eq_ignore_ascii_case("Text"),
-    );
-    // A row or a column: `Some(column)`.
-    let group = if kind.eq_ignore_ascii_case("Row") {
-        Some(false)
-    } else if kind.eq_ignore_ascii_case("Column") {
-        Some(true)
-    } else {
-        None
+    reader: &mut Reader,
+    node: &str,
+    kind: &str,
+    section: &str,
+    listed: &mut Vec<(ListedIn, String, String)>,
+) -> Option<AddedPart> {
+    let is = |name: &str| kind.eq_ignore_ascii_case(name);
+    let word = |text: &str| -> Parsed<String> { Ok((text.to_owned(), None)) };
+    reader.read.push((reader.tree.nodes.iter().position(|known| known.name == node)?, "Type"));
+    let place = PartBox {
+        hold: reader.value(node, "Hold", hold).unwrap_or_default(),
+        x: reader.number(node, "X", -FAR).unwrap_or_default(),
+        y: reader.number(node, "Y", -FAR).unwrap_or_default(),
+        width: reader.number(node, "Width", 1),
+        height: reader.number(node, "Height", 1),
     };
-    let grid = kind.eq_ignore_ascii_case("CameoGrid");
-    if !(button || text || grid || group.is_some()) {
-        return None;
-    }
-    let is = |key: &str, name: &str| key.eq_ignore_ascii_case(name);
-    let mut place = PartBox::WHOLE;
-    let (mut command, mut label, mut value, mut art) = (None, None, None, None);
-    let mut gap = 0;
-    let (mut tab, mut columns, mut rows) = (None, None, 2);
-    for key in section.keys() {
-        if is(key, "Type") {
-        } else if grid && is(key, "Tab") {
-            // The four tabs, by the names of the tab commands' strips.
-            tab = word(key).and_then(|name| {
-                crate::ui::sidebar::SidebarTab::all()
+    let kind = if is("Row") || is("Column") {
+        if let Some((children, Some(section))) = reader.pick(node, "Parts", list) {
+            listed.extend(
+                children
                     .into_iter()
-                    .zip(GRID_TABS)
-                    .find(|(_, known)| known.eq_ignore_ascii_case(name))
-                    .map(|(tab, _)| tab)
-            });
-        } else if grid && (is(key, "Columns") || is(key, "Rows")) {
-            let most = if is(key, "Columns") { 8 } else { 60 };
-            match number_in(section, key, 1, most) {
-                Ok((number, clamped)) => {
-                    if is(key, "Columns") {
-                        columns = Some(number as usize);
-                    } else {
-                        rows = number as usize;
-                    }
-                    if let Some(kind) = clamped {
-                        problem(key, kind);
-                    }
-                }
-                Err(kind) => problem(key, kind),
-            }
-        } else if group.is_some() && is(key, "Gap") {
-            match number_in(section, key, 0, 8192) {
-                Ok((number, clamped)) => {
-                    gap = number;
-                    if let Some(kind) = clamped {
-                        problem(key, kind);
-                    }
-                }
-                Err(kind) => problem(key, kind),
-            }
-        } else if group.is_some() && is(key, "Parts") {
-            // The buttons and texts the group holds, in the order it places
-            // them.
-            children.extend(
-                section
-                    .read_list(key, LIST_CAPACITY)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(str::trim)
-                    .filter(|child| !child.is_empty() && !child.eq_ignore_ascii_case(NO_PARTS))
-                    .map(str::to_owned),
+                    .map(|child| (ListedIn::Group(node.to_owned()), child, section.clone())),
             );
-        } else if is(key, "X") || is(key, "Y") {
-            match number_in(section, key, -8192, 8192) {
-                Ok((number, clamped)) => {
-                    if is(key, "X") {
-                        place.x = number;
-                    } else {
-                        place.y = number;
-                    }
-                    if let Some(kind) = clamped {
-                        problem(key, kind);
-                    }
-                }
-                Err(kind) => problem(key, kind),
-            }
-        } else if is(key, "Width") || is(key, "Height") {
-            match number_in(section, key, 1, 8192) {
-                Ok((number, clamped)) => {
-                    if is(key, "Width") {
-                        place.width = Some(number);
-                    } else {
-                        place.height = Some(number);
-                    }
-                    if let Some(kind) = clamped {
-                        problem(key, kind);
-                    }
-                }
-                Err(kind) => problem(key, kind),
-            }
-        } else if is(key, "Hold") {
-            match Hold::named(word(key).unwrap_or_default()) {
-                Some(hold) => place.hold = hold,
-                None => problem(key, LayoutProblemKind::NotYet),
-            }
-        } else if button && is(key, "Command") {
-            command = word(key).filter(|name| !name.is_empty());
-        } else if button && is(key, "Label") {
-            label = word(key);
-        } else if text && is(key, "Value") {
-            value = word(key).and_then(TextValue::named);
-        } else if button && is(key, "Art") {
-            art = word(key).filter(|name| !name.is_empty());
-        } else if is(key, "Art") || is(key, "Parts") {
-            problem(key, LayoutProblemKind::NotYet);
-        } else {
-            problem(key, LayoutProblemKind::UnknownKey);
         }
-    }
-    let kind = if let Some(column) = group {
-        AddedKind::Group { column, gap }
-    } else if grid {
+        AddedKind::Group {
+            column: is("Column"),
+            gap: reader.value(node, "Gap", |text| number_in(text, 0, FAR)).unwrap_or(0),
+        }
+    } else if is("CameoGrid") {
+        // The four tabs, by the names of the tab commands' strips.
+        let tabs: Vec<(&str, crate::ui::sidebar::SidebarTab)> = GRID_TABS
+            .into_iter()
+            .zip(crate::ui::sidebar::SidebarTab::all())
+            .collect();
+        let tab = reader.value(node, "Tab", one_of(&tabs, LayoutProblemKind::UnknownValue));
+        let columns = reader.value(node, "Columns", |text| number_in(text, 1, 8));
+        let rows = reader.value(node, "Rows", |text| number_in(text, 1, 60));
         // A grid shows one tab; without a tab it has nothing to show.
         let Some(tab) = tab else {
-            problem("Tab", LayoutProblemKind::UnknownValue);
-            return Some(None);
+            reader.problem(section, "Tab", LayoutProblemKind::UnknownValue);
+            return None;
         };
-        AddedKind::CameoGrid { tab, columns, rows }
-    } else if button {
+        AddedKind::CameoGrid {
+            tab,
+            columns: columns.map(|columns| columns as usize),
+            rows: rows.map_or(2, |rows| rows as usize),
+        }
+    } else if is("Button") {
+        let command = reader.value(node, "Command", word);
+        let label = reader.value(node, "Label", word);
+        let art = reader.value(node, "Art", word);
         let Some(command) = command else {
-            problem("Command", LayoutProblemKind::UnknownCommand);
-            return Some(None);
+            reader.problem(section, "Command", LayoutProblemKind::UnknownCommand);
+            return None;
         };
         AddedKind::Button {
-            command: command.to_owned(),
-            label: label.unwrap_or(command).to_owned(),
-            art: art.map(str::to_owned),
+            label: label.unwrap_or_else(|| command.clone()),
+            art,
+            command,
         }
     } else {
-        let Some(value) = value else {
-            problem("Value", LayoutProblemKind::UnknownValue);
-            return Some(None);
+        let values: Vec<(&str, TextValue)> =
+            TextValue::ALL.into_iter().map(|value| (value.name(), value)).collect();
+        let Some(value) = reader.value(node, "Value", one_of(&values, LayoutProblemKind::UnknownValue))
+        else {
+            reader.problem(section, "Value", LayoutProblemKind::UnknownValue);
+            return None;
         };
         AddedKind::Text { value }
     };
-    Some(Some(AddedPart {
-        section: name.to_owned(),
+    Some(AddedPart {
+        section: section.to_owned(),
         holder: Holder::Field,
         kind,
         place,
-    }))
+    })
 }
 
-/// The four tabs' names for a cameo grid's `Tab=`, in the tabs' order.
-const GRID_TABS: [&str; 4] = ["Building", "Defense", "Infantry", "Vehicle"];
-
-/// The list that names an added part: the sidebar's, the battlefield's, or
-/// the `Parts=` of a row or a column the layout adds, by that group's name.
-enum ListedIn {
-    Side,
-    Field,
-    Group(String),
-}
-
-/// Keys of the format a piece over the battlefield cannot take yet.
-const FIELD_PART_LATER: [&str; 5] = ["Type", "Art", "Parts", "Command", "Value"];
-
-/// A panel's `Parts=`: the parts it names that the original holds in that
-/// panel, in the order written and each once, then whether it named something
-/// that is no part at all, and a part that belongs to another panel (moving a
-/// part between panels comes with a later version).
-fn part_list(
-    section: &IniSection,
-    key: &str,
-    panel: Panel,
-) -> (Vec<SidebarPart>, Vec<String>, bool) {
-    let mut listed = Vec::new();
-    let (mut unknown, mut elsewhere) = (Vec::new(), false);
-    let names = section.read_list(key, LIST_CAPACITY).unwrap_or_default();
-    for name in names.into_iter().map(str::trim) {
-        if name.is_empty() || name.eq_ignore_ascii_case(NO_PARTS) {
+/// Every value a file wrote that nothing read: a key the part's type does
+/// not have is unknown; one it has, that this version cannot change yet,
+/// unless it says what the built-in file says.
+fn read_leftovers(reader: &mut Reader) {
+    let tree = reader.tree;
+    for (index, node) in tree.nodes.iter().enumerate() {
+        let Some(keys) = node
+            .text("Type")
+            .and_then(|kind| TYPE_KEYS.iter().find(|(known, _)| known.eq_ignore_ascii_case(kind)))
+            .map(|(_, keys)| *keys)
+        else {
             continue;
-        }
-        let part = SidebarPart::STOCK_ORDER
-            .into_iter()
-            .find(|part| part.name().eq_ignore_ascii_case(name));
-        match part {
-            Some(part) if part.panel() == panel => {
-                if !listed.contains(&part) {
-                    listed.push(part);
+        };
+        for (key, values) in &node.keys {
+            let known = COMMON_KEYS.iter().chain(keys).any(|known| known.eq_ignore_ascii_case(key));
+            let read = reader
+                .read
+                .iter()
+                .any(|&(read, name)| read == index && name.eq_ignore_ascii_case(key));
+            for (at, value) in values.iter().enumerate().filter(|(_, value)| value.own) {
+                if key.eq_ignore_ascii_case("Base") || (read && value.theme.is_none()) {
+                    continue;
+                }
+                if !known {
+                    reader.problem(&value.section, key, LayoutProblemKind::UnknownKey);
+                    continue;
+                }
+                let built_in = values[..at]
+                    .iter()
+                    .rev()
+                    .find(|under| !under.own && under.theme == value.theme);
+                if built_in.is_none_or(|under| !under.text.eq_ignore_ascii_case(&value.text)) {
+                    reader.problem(&value.section, key, LayoutProblemKind::NotYet);
                 }
             }
-            Some(_) => elsewhere = true,
-            None => unknown.push(name.to_owned()),
-        }
-    }
-    (listed, unknown, elsewhere)
-}
-
-/// A key's value as a whole number: ReadInt's result, for text that is
-/// nothing but an optional minus sign and up to nine digits. ReadInt alone
-/// reads other text as zero, which would move a part to the corner without a
-/// word.
-fn whole_number(section: &IniSection, key: &str) -> Option<i32> {
-    let text = section.read_name(key, NAME_CAPACITY)?;
-    let digits = text.strip_prefix('-').unwrap_or(text);
-    if digits.is_empty() || digits.len() > 9 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    section.read_int_value(key)
-}
-
-/// Whether a key's comma list names the same things as `accepted`, in the
-/// same order, without regard to capitals or spaces.
-fn same_list(section: &IniSection, key: &str, accepted: &str) -> bool {
-    let Some(given) = section.read_list(key, LIST_CAPACITY) else {
-        return false;
-    };
-    let mut given = given.into_iter().map(str::trim);
-    let mut accepted = accepted.split(',');
-    loop {
-        match (given.next(), accepted.next()) {
-            (None, None) => return true,
-            (Some(given), Some(accepted)) if given.eq_ignore_ascii_case(accepted) => {}
-            _ => return false,
         }
     }
 }
@@ -1483,6 +1226,27 @@ mod tests {
             })
             .collect();
         (options, interner)
+    }
+
+    /// Each problem as `([Section] Key, kind)`, sorted: the reader's order
+    /// is not part of what it promises.
+    fn problems(file: &MatchLayoutFile) -> Vec<(String, LayoutProblemKind)> {
+        let mut problems: Vec<_> = file
+            .problems()
+            .iter()
+            .map(|problem| (problem.place(), problem.kind.clone()))
+            .collect();
+        problems.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+        problems
+    }
+
+    fn expect(expected: &[(&str, LayoutProblemKind)]) -> Vec<(String, LayoutProblemKind)> {
+        let mut expected: Vec<_> = expected
+            .iter()
+            .map(|(place, kind)| ((*place).to_owned(), kind.clone()))
+            .collect();
+        expected.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+        expected
     }
 
     /// The side's sidebar at 800x600 with `layout` over its original table.
@@ -1532,20 +1296,21 @@ mod tests {
 
     #[test]
     fn a_side_layout_changes_only_the_numbers_it_writes() {
-        // Keys that repeat the original (`Parts`, `type`, `CellWidth`) are
+        // Keys that repeat the original (`Parts`, `type`, `Art`) are
         // accepted, capitals do not count, and the last line has no break.
         let file = MatchLayoutFile::from_bytes(
             b"[Layouts]\nNod=Steel\nDefault=Plain\n\
-              [Steel]\nVersion=1\nParts=Field,Side,Bar\n\
+              [Steel.Screen]\nParts=Field,Side,Bar\n\
               [Steel.Middle]\nY=170\n\
-              [Steel.Tabs]\nStep=40\n\
-              [Steel.Radar]\ntype=radar\nMapX=10\nMapWidth=120\n\
+              [Steel.Defenses]\nX=40\n[Steel.Infantry]\nX=80\n[Steel.Vehicles]\nX=120\n\
+              [Steel.Radar]\ntype=radar\nArt=radar.shp\n\
+              [Steel.Minimap]\nX=10\nWidth=120\n\
               [Steel.Cameos]\nCellWidth=60\nRowHeight=60\n\
               [Plain.Power]\nX=9",
         );
         assert!(file.problems().is_empty(), "{:?}", file.problems());
 
-        let (spec, view) = sidebar(SidebarTheme::Soviet, file.for_side(Some("nod")));
+        let (spec, view) = sidebar(SidebarTheme::Soviet, file.for_side(Some("nod"), false));
         // SIDE1 moved from 158 to 170 and took Repair and the tabs with it.
         assert_eq!(view.repair_button.rect.y, 177.0);
         assert_eq!((view.tabs[0].rect.x, view.tabs[0].rect.y), (652.0, 209.0));
@@ -1562,7 +1327,7 @@ mod tests {
         assert_eq!(view.layout.cameo_grid_bottom, 527.0);
 
         // A side without a line takes `Default=`; no file changes nothing.
-        let (plain, _) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        let (plain, _) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
         let stock = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
         assert_eq!(
             plain,
@@ -1571,48 +1336,52 @@ mod tests {
                 ..stock
             }
         );
-        assert!(MatchLayoutFile::none().for_side(Some("GDI")).is_none());
+        assert!(MatchLayoutFile::none().for_side(Some("GDI"), true).is_none());
         assert!(MatchLayoutFile::none().is_original() && !file.is_original());
     }
 
     #[test]
     fn a_broken_file_keeps_the_original_and_names_each_line() {
         let file = MatchLayoutFile::from_bytes(
-            b"[Layouts]\nGDI=Broken\nNod=Missing\nThirdSide=Future\n\
-              [Broken]\nParts=Side,Clock,Field,Bar\nColour=red\n\
-              [Broken.Radar]\nMapWidth=wide\nMapHeight=0\nHold=Left\nSpeed=3\n\
-              [Broken.Cameos]\nRowHeight=1\nCellHeight=30\nColumns=0\n\
+            b"[Layouts]\nGDI=Broken\nNod=Missing\nThirdSide=Looped\n\
+              [Broken]\nColour=red\nVersion=1\n\
+              [Broken.Screen]\nParts=Side,Clock,Field,Bar\n\
+              [Broken.Minimap]\nWidth=wide\nHeight=0\n\
+              [Broken.Radar]\nHold=Left\nSpeed=3\nArt@Martian=x.shp\nX@Yuri=4\n\
+              [Broken.Cameos]\nRowHeight=1\nCellHeight=x\nColumns=0\n\
               [Broken.Clock]\nX=4\n\
-              [Future]\nVersion=2\n\
-              [Future.Radar]\nY=10\n",
+              [Broken.Infantry]\nX=50\n\
+              [Broken.Sell]\nBase=Nothing\n\
+              [Looped]\nBase=Round\n[Round]\nBase=Looped\n[Round.Radar]\nY=10\n",
         );
         use LayoutProblemKind::*;
-        let problems: Vec<_> = file
-            .problems()
-            .iter()
-            .map(|problem| (problem.place(), problem.kind.clone()))
-            .collect();
-        let expected = [
-            ("[Broken] Parts", UnknownPart),
-            ("[Broken] Colour", UnknownKey),
-            ("[Broken.Radar] MapWidth", NotANumber),
-            ("[Broken.Radar] MapHeight", Clamped { used: 1 }),
-            ("[Broken.Radar] Hold", NotYet),
-            ("[Broken.Radar] Speed", UnknownKey),
-            ("[Broken.Cameos] RowHeight", Clamped { used: 16 }),
-            ("[Broken.Cameos] CellHeight", NotYet),
-            ("[Broken.Cameos] Columns", Clamped { used: 1 }),
-            ("[Broken.Clock]", UnknownPart),
-            ("[Layouts] Nod", MissingLayout),
-            ("[Future] Version", NewerVersion),
-        ];
         assert_eq!(
-            problems,
-            expected.map(|(place, kind)| (place.to_owned(), kind))
+            problems(&file),
+            expect(&[
+                ("[Broken] Colour", UnknownKey),
+                ("[Broken] Version", UnknownKey),
+                ("[Broken.Screen] Parts", UnknownPart),
+                ("[Broken.Minimap] Width", NotANumber),
+                ("[Broken.Minimap] Height", Clamped { used: 1 }),
+                ("[Broken.Radar] Hold", NotYet),
+                ("[Broken.Radar] Speed", UnknownKey),
+                ("[Broken.Radar] Art", UnknownKey),
+                // A side's own place is not there yet.
+                ("[Broken.Radar] X", NotYet),
+                ("[Broken.Cameos] RowHeight", Clamped { used: 16 }),
+                ("[Broken.Cameos] CellHeight", NotANumber),
+                ("[Broken.Cameos] Columns", Clamped { used: 1 }),
+                ("[Broken.Clock]", UnknownPart),
+                // The tabs stand one step apart in a line.
+                ("[Broken.Infantry] X", NotYet),
+                ("[Broken.Sell] Base", MissingLayout),
+                ("[Layouts] Nod", MissingLayout),
+                ("[Round] Base", Loop),
+            ])
         );
 
         // The lines that could be read still apply; the rest stay original.
-        let (spec, _) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        let (spec, _) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
         assert_eq!(
             spec,
             SidebarChromeLayoutSpec {
@@ -1622,9 +1391,17 @@ mod tests {
                 ..SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied)
             }
         );
-        // A missing layout and one from a newer version leave the side alone.
-        assert!(file.for_side(Some("Nod")).is_none());
-        assert!(file.for_side(Some("ThirdSide")).is_none());
+        // A missing layout leaves the side alone; a loop of bases still
+        // starts from the table.
+        assert!(file.for_side(Some("Nod"), false).is_none());
+        let (spec, _) = sidebar(SidebarTheme::Yuri, file.for_side(Some("ThirdSide"), false));
+        assert_eq!(
+            spec,
+            SidebarChromeLayoutSpec {
+                radar_housing_y: 10.0,
+                ..SidebarChromeLayoutSpec::for_theme(SidebarTheme::Yuri)
+            }
+        );
     }
 
     #[test]
@@ -1637,25 +1414,17 @@ mod tests {
               [NoButtons.Top]\nParts=None\n",
         );
         // Clock is no part, and Sell belongs to another panel.
-        let problems: Vec<_> = file
-            .problems()
-            .iter()
-            .map(|problem| (problem.place(), problem.kind.clone()))
-            .collect();
         assert_eq!(
-            problems,
-            [
-                (
-                    "[Bare.Top] Parts".to_owned(),
-                    LayoutProblemKind::UnknownPart
-                ),
-                ("[Bare.Top] Parts".to_owned(), LayoutProblemKind::NotYet),
-            ]
+            problems(&file),
+            expect(&[
+                ("[Bare.Top] Parts", LayoutProblemKind::UnknownPart),
+                ("[Bare.Top] Parts", LayoutProblemKind::NotYet),
+            ])
         );
 
         use SidebarPart::*;
         let (stock_spec, stock) = sidebar(SidebarTheme::Allied, None);
-        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
         // The strip's part Top is not in Side's list, so its Options goes too.
         assert_eq!(
             spec.parts_in_order().collect::<Vec<_>>(),
@@ -1680,7 +1449,7 @@ mod tests {
         assert!(stock.repair_button.rect.w > 0.0 && stock.top_buttons[1].rect.w > 0.0);
 
         // `None` empties a panel that stays.
-        let (spec, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod")));
+        let (spec, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod"), false));
         assert!(spec.shows(Top) && !spec.shows(Diplomacy) && !spec.shows(Options));
         assert!(spec.shows(Credits) && spec.shows(Money) && spec.shows(Power));
     }
@@ -1691,7 +1460,7 @@ mod tests {
             b"[Layouts]\nGDI=Wide\n[Wide.Cameos]\nColumns=3\nColumnWidth=40\n",
         );
         assert!(file.problems().is_empty(), "{:?}", file.problems());
-        let (spec, view) = sidebar_with(SidebarTheme::Allied, file.for_side(Some("GDI")), 7);
+        let (spec, view) = sidebar_with(SidebarTheme::Allied, file.for_side(Some("GDI"), true), 7);
         // Three to a row and 40 apart: the fourth cameo starts the next row.
         let x: Vec<f32> = view.items.iter().map(|item| item.rect.x).collect();
         assert_eq!(x[..4], [654.0, 694.0, 734.0, 654.0]);
@@ -1711,7 +1480,7 @@ mod tests {
     fn a_layout_sets_the_sidebar_width_the_frame_takes() {
         let file = MatchLayoutFile::from_bytes(b"[Layouts]\nGDI=Wide\n[Wide.Side]\nWidth=200\n");
         assert!(file.problems().is_empty(), "{:?}", file.problems());
-        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
         assert_eq!((view.panel_rect.x, view.panel_rect.w), (600.0, 200.0));
         // The frame gives the battlefield and the bottom bar what is left.
         let frame = SidebarFrame::native(800, 600).with_column_width(spec.sidebar_width as u32);
@@ -1726,29 +1495,21 @@ mod tests {
         let file = MatchLayoutFile::from_bytes(
             b"[Layouts]\nGDI=Lefty\nNod=Over\n\
               [Lefty.Side]\nHold=left\n[Lefty.Bar]\nHold=Top\n\
-              [Over]\nParts=Field,Side\n[Over.Side]\nFloat=yes\nHold=Middle\n\
+              [Over.Screen]\nParts=Field,Side\n[Over.Side]\nFloat=yes\nHold=Middle\n\
               [Over.Bar]\nHold=Left\n[Over.Radar]\nFloat=maybe\n",
         );
         // A sidebar in the middle and a bar on the left are not there yet,
         // and only the sidebar can float.
-        let problems: Vec<_> = file
-            .problems()
-            .iter()
-            .map(|problem| (problem.place(), problem.kind.clone()))
-            .collect();
         assert_eq!(
-            problems,
-            [
-                ("[Over.Side] Hold".to_owned(), LayoutProblemKind::NotYet),
-                ("[Over.Bar] Hold".to_owned(), LayoutProblemKind::NotYet),
-                (
-                    "[Over.Radar] Float".to_owned(),
-                    LayoutProblemKind::UnknownKey
-                ),
-            ]
+            problems(&file),
+            expect(&[
+                ("[Over.Side] Hold", LayoutProblemKind::NotYet),
+                ("[Over.Bar] Hold", LayoutProblemKind::NotYet),
+                ("[Over.Radar] Float", LayoutProblemKind::UnknownKey),
+            ])
         );
 
-        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
         let frame = SidebarFrame::native(800, 600).with_places(spec.places);
         // The sidebar's parts follow it to the left edge, and the battlefield
         // starts beside it and under the bar.
@@ -1757,7 +1518,7 @@ mod tests {
         assert_eq!(frame.tactical_rect(), (168, 32, 632, 568));
 
         // A floating sidebar and no bar leave the battlefield the whole frame.
-        let (spec, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod")));
+        let (spec, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod"), false));
         let frame = SidebarFrame::native(800, 600).with_places(spec.places);
         assert_eq!(frame.tactical_rect(), (0, 0, 800, 600));
         assert_eq!(frame.column(), (632, 0, 168, 600));
@@ -1772,7 +1533,7 @@ mod tests {
         );
         assert!(file.problems().is_empty(), "{:?}", file.problems());
         let mut spec = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
-        file.for_side(Some("GDI"))
+        file.for_side(Some("GDI"), true)
             .unwrap()
             .apply_to_sidebar(&mut spec);
         let frame = SidebarFrame::native(800, 600)
@@ -1793,36 +1554,25 @@ mod tests {
     fn a_layout_places_the_pieces_over_the_battlefield() {
         let file = MatchLayoutFile::from_bytes(
             b"[Layouts]\nGDI=Hud\n\
-              [Hud.Field]\nParts=Messages,Timers,Powers\n\
+              [Hud.Field]\nParts=Messages,Timers,Powers,Tooltip\n\
               [Hud.Messages]\nX=200\nWidth=300\n\
               [Hud.Timers]\nhold=topright\nY=8\nHeight=120\n\
               [Hud.Tooltip]\nHold=BottomLeft\nX=8\nY=4\n\
               [Hud.Powers]\nX=6\nSpeed=2\n\
               [Hud.Banner]\nHold=Sideways\nWidth=wide\nHeight=Rest\nArt=x.shp\n",
         );
-        let problems: Vec<_> = file
-            .problems()
-            .iter()
-            .map(|problem| (problem.place(), problem.kind.clone()))
-            .collect();
         assert_eq!(
-            problems,
-            [
-                (
-                    "[Hud.Powers] Speed".to_owned(),
-                    LayoutProblemKind::UnknownKey
-                ),
-                ("[Hud.Banner] Hold".to_owned(), LayoutProblemKind::NotYet),
-                (
-                    "[Hud.Banner] Width".to_owned(),
-                    LayoutProblemKind::NotANumber
-                ),
-                ("[Hud.Banner] Art".to_owned(), LayoutProblemKind::NotYet),
-            ]
+            problems(&file),
+            expect(&[
+                ("[Hud.Powers] Speed", LayoutProblemKind::UnknownKey),
+                ("[Hud.Banner] Hold", LayoutProblemKind::NotYet),
+                ("[Hud.Banner] Width", LayoutProblemKind::NotANumber),
+                ("[Hud.Banner] Art", LayoutProblemKind::NotYet),
+            ])
         );
         let mut spec = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
         assert_eq!(spec.field, FieldLayout::ORIGINAL);
-        file.for_side(Some("GDI"))
+        file.for_side(Some("GDI"), true)
             .unwrap()
             .apply_to_sidebar(&mut spec);
         let battlefield = [0, 0, 632, 568];
@@ -1853,7 +1603,7 @@ mod tests {
         let mut file = MatchLayoutFile::from_bytes(
             b"[Layouts]\nGDI=Hud\n\
               [Hud.Side]\nParts=Credits,Top,Radar,Middle,Cameos,Power,Halt,Missing\n\
-              [Hud.Field]\nParts=Messages,Timers,Banner,Powers,Clock,Fly\n\
+              [Hud.Field]\nParts=Messages,Timers,Banner,Powers,Tooltip,Clock,Fly\n\
               [Hud.Halt]\nType=Button\nCommand=StopObject\nLabel=Stop\nArt=button08.shp\nX=10\nY=300\n\
               [Hud.Clock]\ntype=text\nValue=time\nHold=TopRight\nX=6\nY=6\n\
               [Hud.Fly]\nType=Button\nCommand=Levitate\n\
@@ -1863,32 +1613,19 @@ mod tests {
         );
         // The input code owns the command names; the loader asks it.
         file.check_commands(|name| name.eq_ignore_ascii_case("StopObject"));
-        let problems: Vec<_> = file
-            .problems()
-            .iter()
-            .map(|problem| (problem.place(), problem.kind.clone()))
-            .collect();
         assert_eq!(
-            problems,
-            [
-                (
-                    "[Hud.Gold] Value".to_owned(),
-                    LayoutProblemKind::UnknownValue
-                ),
-                ("[Hud.Dish]".to_owned(), LayoutProblemKind::UnknownPart),
-                (
-                    "[Hud.Side] Parts".to_owned(),
-                    LayoutProblemKind::UnknownPart
-                ),
-                ("[Hud.Loose]".to_owned(), LayoutProblemKind::NotListed),
-                (
-                    "[Hud.Fly] Command".to_owned(),
-                    LayoutProblemKind::UnknownCommand
-                ),
-            ]
+            problems(&file),
+            expect(&[
+                ("[Hud.Gold] Value", LayoutProblemKind::UnknownValue),
+                // A radar of its own is a type a layout cannot add yet.
+                ("[Hud.Dish] Type", LayoutProblemKind::NotYet),
+                ("[Hud.Side] Parts", LayoutProblemKind::UnknownPart),
+                ("[Hud.Loose]", LayoutProblemKind::NotListed),
+                ("[Hud.Fly] Command", LayoutProblemKind::UnknownCommand),
+            ])
         );
         assert_eq!(file.art_names(), ["button08.shp"]);
-        let layout = file.for_side(Some("GDI")).unwrap();
+        let layout = file.for_side(Some("GDI"), true).unwrap();
         let [halt, clock] = &layout.added()[..] else {
             panic!("two parts are added: {:?}", layout.added());
         };
@@ -1923,7 +1660,7 @@ mod tests {
     fn a_layout_lines_buttons_up_in_a_row() {
         let mut file = MatchLayoutFile::from_bytes(
             b"[Layouts]\nGDI=Hud\n\
-              [Hud.Field]\nParts=Messages,Timers,Banner,Powers,Bad,Orders\n\
+              [Hud.Field]\nParts=Messages,Timers,Banner,Powers,Tooltip,Bad,Orders\n\
               [Hud.Bad]\nType=Button\nCommand=Levitate\n\
               [Hud.Orders]\nType=row\nHold=Bottom\nY=4\nGap=2\nParts=Halt,Fly,Guard,Orders,Ghost\n\
               [Hud.Halt]\nType=Button\nCommand=Stop\n\
@@ -1933,39 +1670,21 @@ mod tests {
               [Hud.Lone]\nType=Text\nValue=Time\n",
         );
         file.check_commands(|name| !name.eq_ignore_ascii_case("Levitate"));
-        let problems: Vec<_> = file
-            .problems()
-            .iter()
-            .map(|problem| (problem.place(), problem.kind.clone()))
-            .collect();
         assert_eq!(
-            problems,
-            [
+            problems(&file),
+            expect(&[
                 // A row can't hold itself, and Ghost has no section.
-                (
-                    "[Hud.Orders] Parts".to_owned(),
-                    LayoutProblemKind::UnknownPart
-                ),
-                (
-                    "[Hud.Orders] Parts".to_owned(),
-                    LayoutProblemKind::UnknownPart
-                ),
+                ("[Hud.Orders] Parts", LayoutProblemKind::UnknownPart),
                 // A column no list names shows nothing, nor does its text.
-                ("[Hud.Stray]".to_owned(), LayoutProblemKind::NotListed),
-                ("[Hud.Lone]".to_owned(), LayoutProblemKind::NotListed),
-                (
-                    "[Hud.Bad] Command".to_owned(),
-                    LayoutProblemKind::UnknownCommand
-                ),
-                (
-                    "[Hud.Fly] Command".to_owned(),
-                    LayoutProblemKind::UnknownCommand
-                ),
-            ]
+                ("[Hud.Stray]", LayoutProblemKind::NotListed),
+                ("[Hud.Lone]", LayoutProblemKind::NotListed),
+                ("[Hud.Bad] Command", LayoutProblemKind::UnknownCommand),
+                ("[Hud.Fly] Command", LayoutProblemKind::UnknownCommand),
+            ])
         );
         // The row and its two real buttons are left, and the buttons still
         // name the row after the refused button before it is gone.
-        let added = file.for_side(Some("GDI")).unwrap().added();
+        let added = file.for_side(Some("GDI"), true).unwrap().added();
         assert_eq!(added.len(), 3);
         assert_eq!(
             added[0].kind,
@@ -1994,33 +1713,22 @@ mod tests {
         let file = MatchLayoutFile::from_bytes(
             b"[Layouts]\nGDI=Wide\n\
               [Wide.Side]\nParts=Credits,Top,Radar,Middle,Cameos,Power,More,Lost\n\
-              [Wide.Field]\nParts=Messages,Timers,Banner,Powers,Stray\n\
+              [Wide.Field]\nParts=Messages,Timers,Banner,Powers,Tooltip,Stray\n\
               [Wide.More]\nType=CameoGrid\nTab=building\nColumns=3\nRows=1\nX=0\nY=500\n\
               [Wide.Lost]\nType=CameoGrid\nRows=2\n\
               [Wide.Stray]\nType=CameoGrid\nTab=Vehicle\n",
         );
-        let problems: Vec<_> = file
-            .problems()
-            .iter()
-            .map(|problem| (problem.place(), problem.kind.clone()))
-            .collect();
         assert_eq!(
-            problems,
-            [
+            problems(&file),
+            expect(&[
                 // A grid needs a tab, and draws only in the sidebar.
-                (
-                    "[Wide.Lost] Tab".to_owned(),
-                    LayoutProblemKind::UnknownValue
-                ),
-                (
-                    "[Wide.Side] Parts".to_owned(),
-                    LayoutProblemKind::UnknownPart
-                ),
-                ("[Wide.Field] Parts".to_owned(), LayoutProblemKind::NotYet),
-                ("[Wide.Stray]".to_owned(), LayoutProblemKind::NotListed),
-            ]
+                ("[Wide.Lost] Tab", LayoutProblemKind::UnknownValue),
+                ("[Wide.Side] Parts", LayoutProblemKind::UnknownPart),
+                ("[Wide.Field] Parts", LayoutProblemKind::NotYet),
+                ("[Wide.Stray]", LayoutProblemKind::NotListed),
+            ])
         );
-        let added = file.for_side(Some("GDI")).unwrap().added();
+        let added = file.for_side(Some("GDI"), true).unwrap().added();
         assert_eq!(added.len(), 1);
         assert_eq!(
             added[0].kind,
@@ -2104,8 +1812,9 @@ mod tests {
     #[test]
     fn a_players_file_changes_only_what_it_writes_over_the_mods() {
         let mod_file = IniFile::from_str(
-            "[Layouts]\nNod=Low\n[Low.Radar]\nX=4\nY=60\n[Low.Tabs]\nStep=40\n\
-             [Low.Field]\nParts=Messages,Timers,Banner,Powers,Halt\n\
+            "[Layouts]\nNod=Low\n[Low.Radar]\nX=4\nY=60\n\
+             [Low.Defenses]\nX=40\n[Low.Infantry]\nX=80\n[Low.Vehicles]\nX=120\n\
+             [Low.Field]\nParts=Messages,Timers,Banner,Powers,Tooltip,Halt\n\
              [Low.Halt]\nType=Button\nCommand=Stop\nX=10\nY=20\n",
         );
         // The player moved the radar and the mod's button, tried to give the
@@ -2119,7 +1828,7 @@ mod tests {
         assert!(file.problems().is_empty(), "{:?}", file.problems());
         assert_eq!(file.layout_name_for_side(Some("Nod")), Some("Low"));
         let mut soviet = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Soviet);
-        file.for_side(Some("Nod"))
+        file.for_side(Some("Nod"), false)
             .unwrap()
             .apply_to_sidebar(&mut soviet);
         // The radar keeps the mod's X and takes the player's Y; the tabs
@@ -2132,12 +1841,12 @@ mod tests {
             ),
             (4.0, 70.0, 40.0)
         );
-        let halt = &file.for_side(Some("Nod")).unwrap().added()[0];
+        let halt = &file.for_side(Some("Nod"), false).unwrap().added()[0];
         assert_eq!((halt.place.x, halt.place.y), (300, 20));
         // The Allies get the player's own layout.
         assert_eq!(file.layout_name_for_side(Some("GDI")), Some("OwnGDI"));
         let mut allied = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
-        file.for_side(Some("GDI"))
+        file.for_side(Some("GDI"), true)
             .unwrap()
             .apply_to_sidebar(&mut allied);
         assert_eq!(
@@ -2163,7 +1872,7 @@ mod tests {
         // Repair and Sell swapped, and the tabs right to left over the same
         // four places.
         let (_, stock) = sidebar(SidebarTheme::Allied, None);
-        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI")));
+        let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
         let frame = SidebarFrame::native(800, 600).with_places(spec.places);
         assert_eq!(frame.tactical_rect(), (168, 32, 632, 568));
         let from_side = |view: &SidebarView, x: f32| x - view.panel_rect.x;
@@ -2187,7 +1896,7 @@ mod tests {
         // The Soviets' lies along the bottom, two rows of cameos beside the
         // middle panel beside the radar.
         let mut spec = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Soviet);
-        file.for_side(Some("Nod"))
+        file.for_side(Some("Nod"), false)
             .unwrap()
             .apply_to_sidebar(&mut spec);
         let frame = SidebarFrame::native(800, 600)
@@ -2202,7 +1911,7 @@ mod tests {
         );
         assert_eq!(layout.side2_tile_count, 2);
         // Two buttons and the match clock sit in the band's empty half.
-        let added = file.for_side(Some("Nod")).unwrap().added();
+        let added = file.for_side(Some("Nod"), false).unwrap().added();
         assert_eq!(added.len(), 5);
         // A grid for the infantry tab, three rows of three.
         assert_eq!(
@@ -2237,7 +1946,7 @@ mod tests {
                 .all(|part| part.holder == Holder::Group(0))
         );
         // Yuri's is wider, three cameos to a row, with an empty top strip.
-        let (spec, view) = sidebar_with(SidebarTheme::Yuri, file.for_side(Some("ThirdSide")), 4);
+        let (spec, view) = sidebar_with(SidebarTheme::Yuri, file.for_side(Some("ThirdSide"), false), 4);
         assert_eq!((view.panel_rect.w, spec.columns()), (232.0, 3));
         assert_eq!(view.items[3].rect.x, view.items[0].rect.x);
         assert!(spec.shows(SidebarPart::Top) && !spec.shows(SidebarPart::Options));
@@ -2260,7 +1969,7 @@ mod tests {
         // The player's own Soviet layout, also named by `Default=`, and an
         // Allied one that stays.
         let text = b"; mine\r\n[Layouts]\r\nNod=OwnNod\r\nDefault=ownnod\r\nGDI=OwnGDI\r\n\
-                     [OwnNod]\r\nVersion=1\r\n[OwnNod.Radar]\r\nX=-3\r\nY=35\r\n\
+                     [OwnNod]\r\nBase=Nod\r\n[OwnNod.Radar]\r\nX=-3\r\nY=35\r\n\
                      [OwnNodTwo.Radar]\r\nX=1\r\n[OwnGDI.Radar]\r\nY=52";
         let reset = MatchLayoutFile::without_layout(text, "OwnNod");
         assert_eq!(
@@ -2274,5 +1983,133 @@ mod tests {
         // Once no side names a layout, `[Layouts]` goes too: nothing is left.
         let text = b"[Layouts]\nNod=OwnNod\n[OwnNod.Radar]\nX=-3\n[OwnNod.Power]\nY=194\n";
         assert_eq!(MatchLayoutFile::without_layout(text, "OwnNod"), b"");
+    }
+
+    /// The built-in file is a layout file like any other: read as a mod's,
+    /// every line of it is one this version reads, and it gives the
+    /// original interface.
+    #[test]
+    fn the_built_in_file_reads_cleanly_as_a_mods() {
+        let text = format!(
+            "{}\n[Layouts]\nGDI=GDI\nNod=Nod\n",
+            String::from_utf8_lossy(include_bytes!("veraui_default.ini"))
+        );
+        let file = MatchLayoutFile::from_bytes(text.as_bytes());
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        for (side, gdi, theme) in [
+            ("GDI", true, SidebarTheme::Allied),
+            ("Nod", false, SidebarTheme::Soviet),
+        ] {
+            let (spec, _) = sidebar(theme, file.for_side(Some(side), gdi));
+            assert_eq!(spec, SidebarChromeLayoutSpec::for_theme(theme));
+        }
+    }
+
+    /// The two tables hold the numbers the original's code has
+    /// (0x006A5090, 0x006A5130, 0x00652E50), as the format before the tree
+    /// wrote them.
+    #[test]
+    fn the_position_tables_keep_the_originals_numbers() {
+        let numbers = |spec: SidebarChromeLayoutSpec| {
+            [
+                spec.sidebar_width,
+                spec.side_height,
+                spec.credits_x,
+                spec.credits_y,
+                spec.money_x,
+                spec.money_y,
+                spec.top_x,
+                spec.top_y,
+                spec.top_buttons[0][0],
+                spec.top_buttons[0][1],
+                spec.top_buttons[1][0],
+                spec.top_buttons[1][1],
+                spec.radar_housing_x,
+                spec.radar_housing_y,
+                spec.radar_x,
+                spec.radar_y,
+                spec.radar_width,
+                spec.radar_height,
+                spec.side1_x,
+                spec.side1_y,
+                spec.repair_x,
+                spec.repair_y,
+                spec.sell_x,
+                spec.sell_y,
+                spec.tab_x,
+                spec.tab_y,
+                spec.tab_pitch,
+                spec.strip_x,
+                spec.strip_y,
+                spec.cameo_columns,
+                spec.cameo_width,
+                spec.cameo_height,
+                spec.cameo_inset_x,
+                spec.cameo_inset_y,
+                spec.cameo_column_pitch,
+                spec.cameo_row_height,
+                spec.strip_footer,
+                spec.scroll_x,
+                spec.scroll_y,
+                spec.scroll_pitch,
+                spec.power_bar_x,
+                spec.power_bar_y,
+                spec.power_bar_tile_height,
+                spec.cameo_cell_source_width,
+            ]
+        };
+        let gdi = [
+            168., 168., 0., 0., 0., 2., 0., 16., 11., 4., 83., 4., 0., 48., 16., 1., 140., 108.,
+            0., 158., 20., 8., 84., 8., 26., 39., 29., 0., 227., 2., 60., 48., 22., 1., 63., 50.,
+            33., 39., 7., 46., 5., 227., 3., 63.,
+        ];
+        let nod = [
+            168., 168., 0., 0., 0., 2., 0., 16., 14., 5., 86., 5., 0., 48., 16., 1., 140., 108.,
+            0., 158., 33., 7., 85., 7., 20., 39., 32., 0., 227., 2., 60., 48., 22., 1., 64., 50.,
+            25., 39., 7., 45., 0., 227., 3., 64.,
+        ];
+        for theme in [SidebarTheme::Allied, SidebarTheme::Soviet, SidebarTheme::Yuri] {
+            for (gdi_positions, expected) in [(true, gdi), (false, nod)] {
+                let spec = SidebarChromeLayoutSpec::for_theme_and_positions(theme, gdi_positions);
+                assert_eq!(numbers(spec), expected, "{theme:?} {gdi_positions}");
+                assert_eq!(spec.parts, SidebarPart::STOCK_ORDER.map(Some));
+                assert_eq!(spec.places, PanelPlaces::ORIGINAL);
+                assert_eq!(spec.field, FieldLayout::ORIGINAL);
+            }
+        }
+    }
+
+    /// A layout starts from its `Base=` layout, and a part from its `Base=`
+    /// part: what it does not write comes from there.
+    #[test]
+    fn a_layout_and_a_part_start_from_their_bases() {
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Child\n\
+              [Child]\nBase=Parent\n\
+              [Parent.Repair]\nX=1\nY=12\n[Parent.Radar]\nY=60\n\
+              [Child.Radar]\nY=70\n\
+              [Child.Clock]\nType=Text\nValue=Time\nX=4\nY=5\n\
+              [Child.Kills]\nBase=Clock\nValue=Kills\nY=20\n\
+              [Child.Field]\nParts=Messages,Timers,Banner,Powers,Tooltip,Clock,Kills\n",
+        );
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        let (spec, _) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
+        // The child's own Y over the parent's, and the parent's Repair. Sell,
+        // whose base is Repair, has its own place.
+        assert_eq!(
+            (spec.radar_housing_y, spec.repair_x, spec.repair_y, spec.sell_x, spec.sell_y),
+            (70.0, 1.0, 12.0, 84.0, 8.0)
+        );
+        let added = file.for_side(Some("GDI"), true).unwrap().added();
+        assert_eq!(
+            added
+                .iter()
+                .map(|part| (part.kind.clone(), part.place.x, part.place.y))
+                .collect::<Vec<_>>(),
+            [
+                (AddedKind::Text { value: TextValue::Time }, 4, 5),
+                (AddedKind::Text { value: TextValue::Kills }, 4, 20),
+            ]
+        );
     }
 }

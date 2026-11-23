@@ -20,6 +20,7 @@ pub mod main_menu_shell;
 pub mod added_parts;
 pub mod field_layout;
 pub mod match_layout;
+mod match_layout_tree;
 pub mod messages;
 pub(crate) mod mods_shell;
 pub mod movies_credits_shell;

@@ -681,7 +681,7 @@ mod tests {
         assert!(!written.contains("[Layouts]"), "{written}");
         let mut soviet = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Soviet);
         read(&text)
-            .for_side(Some("Nod"))
+            .for_side(Some("Nod"), false)
             .unwrap()
             .apply_to_sidebar(&mut soviet);
         assert_eq!(
@@ -694,7 +694,7 @@ mod tests {
         assert!(file.problems().is_empty(), "{:?}", file.problems());
         assert_eq!(file.layout_name_for_side(Some("GDI")), Some("OwnGDI"));
         let mut allied = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
-        file.for_side(Some("GDI"))
+        file.for_side(Some("GDI"), true)
             .unwrap()
             .apply_to_sidebar(&mut allied);
         assert_eq!(

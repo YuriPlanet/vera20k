@@ -215,31 +215,16 @@ impl SidebarChromeLayoutSpec {
     pub fn for_theme_and_positions(theme: SidebarTheme, gdi_positions: bool) -> Self {
         let mut spec = Self {
             theme,
-            parts: SidebarPart::STOCK_ORDER.map(Some),
-            places: super::PanelPlaces::ORIGINAL,
-            field: crate::ui::field_layout::FieldLayout::ORIGINAL,
             side2_height: 50.0,
             side3_height: 26.0,
-            cameo_width: 60.0,
-            cameo_height: 48.0,
-            power_bar_tile_height: 3.0,
             ..Self::default()
         };
-        let layout = ORIGINAL
-            .for_side(Some(if gdi_positions { "GDI" } else { "Nod" }))
-            .expect("veraui_default.ini has both position tables");
-        layout.apply_to_sidebar(&mut spec);
+        crate::ui::match_layout::MatchLayout::original(gdi_positions).apply_to_sidebar(&mut spec);
         // SIDE2 paints two cells of the table's own column width.
         spec.cameo_cell_source_width = spec.cameo_column_pitch;
         spec
     }
 }
-
-/// The original sidebar's numbers, read once.
-static ORIGINAL: std::sync::LazyLock<crate::ui::match_layout::MatchLayoutFile> =
-    std::sync::LazyLock::new(|| {
-        crate::ui::match_layout::MatchLayoutFile::from_bytes(include_bytes!("veraui_default.ini"))
-    });
 
 impl SidebarChromeLayoutSpec {
     /// Where a radar movie's top-left corner sits in the radar housing:

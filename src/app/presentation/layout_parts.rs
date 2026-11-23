@@ -580,7 +580,7 @@ mod tests {
         file.check_commands(|name| command_named(name).is_some());
         assert!(file.problems().is_empty(), "{:?}", file.problems());
         let buttons = file
-            .for_side(Some("Nod"))
+            .for_side(Some("Nod"), false)
             .unwrap()
             .added()
             .iter()

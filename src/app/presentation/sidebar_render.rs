@@ -162,15 +162,10 @@ pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::Sideb
     // VERA-only: a map picture is taken with the original interface, whose
     // battlefield its tiles are cut for.
     let map_picture = state.platform.capture_presentation.map_picture;
-    #[cfg(feature = "phobos")]
-    let gdi_positions = state.rules().map_or(
-        theme == crate::render::sidebar_chrome::SidebarTheme::Allied,
-        |rules| rules.side_gdi_positions(current_sidebar_side(state)),
+    let mut spec = crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme_and_positions(
+        theme,
+        gdi_positions(state),
     );
-    #[cfg(not(feature = "phobos"))]
-    let gdi_positions = theme == crate::render::sidebar_chrome::SidebarTheme::Allied;
-    let mut spec =
-        crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme_and_positions(theme, gdi_positions);
     if let Some(atlas) = current_sidebar_chrome(state) {
         spec.side2_height = atlas.side2.pixel_size[1];
         spec.side3_height = atlas.side3.pixel_size[1];
@@ -198,6 +193,18 @@ pub(crate) fn local_side_name(state: &AppState) -> Option<&str> {
     rules.side_name(crate::rules::ruleset::SideIdx(side))
 }
 
+/// Whether the local side uses the allied position table: Phobos'
+/// `Sidebar.GDIPositions=`, else whether its pictures are the Allies'.
+fn gdi_positions(state: &AppState) -> bool {
+    let allied = current_sidebar_theme(state) == crate::render::sidebar_chrome::SidebarTheme::Allied;
+    #[cfg(feature = "phobos")]
+    return state.rules().map_or(allied, |rules| {
+        rules.side_gdi_positions(current_sidebar_side(state))
+    });
+    #[cfg(not(feature = "phobos"))]
+    allied
+}
+
 /// The `veraui.ini` layout of the local player's side, if the file gives it
 /// one.
 fn side_layout(state: &AppState) -> Option<&crate::ui::match_layout::MatchLayout> {
@@ -205,7 +212,7 @@ fn side_layout(state: &AppState) -> Option<&crate::ui::match_layout::MatchLayout
         .match_state
         .match_presentation
         .match_layouts
-        .for_side(local_side_name(state))
+        .for_side(local_side_name(state), gdi_positions(state))
 }
 
 /// The grids of build pictures the local side's layout adds to the sidebar,
