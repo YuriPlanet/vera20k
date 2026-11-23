@@ -75,6 +75,8 @@ mod initialize;
 pub(crate) mod input;
 pub(crate) mod lan_service;
 pub(crate) mod loading;
+#[cfg(target_os = "macos")]
+mod mac_title_bar;
 pub(crate) mod map_library;
 pub mod map_picture;
 pub(crate) mod match_audio;

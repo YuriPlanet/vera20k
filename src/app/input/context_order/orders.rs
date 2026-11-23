@@ -2,10 +2,11 @@
 //! a queued order: selection dispatch order, order voice and context-order filtering.
 
 use super::{
-    AttackAction, AttackDispatch, InfantryAttackAction, OrderModifier, armed_action_with,
-    attack_action_with, context_actor_viewer, context_order_receiver, cursor_owner,
-    entity_can_attack_move, guard_area_admitted, heal_arm_keys_with, healer_object_action_with,
-    infantry_attack_action_with, ivan_cannot_bomb, move_click_command, object_click_payload,
+    AttackAction, AttackDispatch, HealerAction, InfantryAttackAction, OrderModifier,
+    armed_action_with, attack_action_with, attack_support_command, context_actor_viewer,
+    context_order_receiver, cursor_owner, entity_can_attack_move, guard_area_admitted,
+    healer_object_action_with, infantry_attack_action_with, ivan_cannot_bomb, move_click_command,
+    object_click_payload, object_guard_command,
 };
 use crate::app::AppState;
 use crate::app::input::dispatch::selected_stable_ids_in_order;
@@ -36,12 +37,13 @@ pub(super) fn unit_repair_branch_orders(
     order_mode: OrderMode,
     force_move_key: bool,
 ) -> AttackDispatch {
-    use crate::sim::world::UnitRepairAction;
+    use crate::sim::world::{InfantryHealAction, UnitRepairAction};
     let mut output = AttackDispatch {
         receivers: Default::default(),
         commands: Vec::new(),
         consumed: false,
         select_fallback: false,
+        selects: false,
     };
     if modifier == OrderModifier::Shift
         || current_objects == [target.stable_id]
@@ -55,15 +57,6 @@ pub(super) fn unit_repair_branch_orders(
     );
     let control = sim.control_projection();
     let heal_action = |id| {
-        let keys = heal_arm_keys_with(
-            sim,
-            &control,
-            rules,
-            id,
-            target.stable_id,
-            modifier,
-            force_move_key,
-        );
         healer_object_action_with(
             sim,
             &control,
@@ -71,15 +64,30 @@ pub(super) fn unit_repair_branch_orders(
             id,
             target.stable_id,
             issuing_house,
-            keys,
+            modifier,
+            force_move_key,
         )
     };
+    let owner_action =
+        cursor_owner(sim, rules, current_objects, target.stable_id).and_then(heal_action);
+    // An Infantryman's Select ends its What_Action (`0x0051E78B`), where a
+    // Unit's goes on to its building arm (`0x00740122`), so the release
+    // selects.
+    if owner_action == Some(HealerAction::Infantry(InfantryHealAction::Select)) {
+        output.selects = true;
+        return output;
+    }
     // DetermineAction's one chosen object owns a normal friendly click. A
     // repair-capable member must not turn the whole group's Select into Repair.
     if friendly
         && matches!(modifier, OrderModifier::Normal | OrderModifier::AttackMove)
-        && !cursor_owner(sim, rules, current_objects, target.stable_id)
-            .is_some_and(|id| heal_action(id) == Some(UnitRepairAction::Repair))
+        && !matches!(
+            owner_action,
+            Some(
+                HealerAction::Unit(UnitRepairAction::Repair)
+                    | HealerAction::Infantry(InfantryHealAction::Heal { .. })
+            )
+        )
     {
         return output;
     }
@@ -89,11 +97,21 @@ pub(super) fn unit_repair_branch_orders(
         };
         output.receivers.insert(id);
         let payload = match action {
-            UnitRepairAction::Select => {
+            HealerAction::Unit(UnitRepairAction::Select)
+            | HealerAction::Infantry(InfantryHealAction::Select) => {
                 output.select_fallback = true;
                 continue;
             }
-            UnitRepairAction::Repair => {
+            HealerAction::Infantry(InfantryHealAction::AttackSupport) => {
+                output.consumed = true;
+                let Some(command) = attack_support_command(sim, rules, id) else {
+                    continue;
+                };
+                command
+            }
+            // Infantry ClickedAction (`0x0051F190`) sends Heal as Attack.
+            HealerAction::Unit(UnitRepairAction::Repair)
+            | HealerAction::Infantry(InfantryHealAction::Heal { .. }) => {
                 output.consumed = true;
                 // Repair29 replaced Ctrl+Alt's base action before the mission
                 // producer; it sends Attack1, not a Guard.
@@ -104,7 +122,7 @@ pub(super) fn unit_repair_branch_orders(
                 };
                 command
             }
-            UnitRepairAction::Move => {
+            HealerAction::Unit(UnitRepairAction::Move) => {
                 output.consumed = true;
                 let Some(destination) = crate::app::input::commands::object_move_destination_with(
                     sim,
@@ -220,6 +238,11 @@ pub(super) fn attack_branch_orders(
             continue;
         }
         match action {
+            // A healer infantryman's AttackSupport over a Terrain object.
+            AttackAction::AttackSupport if matches!(attack_target, TargetKind::Entity(_)) => {
+                consumed_attack_action = true;
+                queued.extend(attack_support_command(sim, rules, id));
+            }
             AttackAction::None
             | AttackAction::NoMove
             | AttackAction::Move
@@ -239,6 +262,9 @@ pub(super) fn attack_branch_orders(
                         entity_id: id,
                         target: Some(attack_target),
                     });
+                } else if let TargetKind::Entity(target_id) = attack_target {
+                    // A healer infantryman over itself (`0x0051E748`).
+                    queued.extend(object_guard_command(sim, &control, rules, id, target_id));
                 }
             }
             AttackAction::Attack => {
@@ -312,6 +338,7 @@ pub(super) fn attack_branch_orders(
         commands: queued,
         consumed: consumed_attack_action,
         select_fallback,
+        selects: false,
     }
 }
 

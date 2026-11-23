@@ -1617,6 +1617,13 @@ impl ObjectType {
         self.silo_damage
     }
 
+    /// Whether occupants fire from this building: `CanOccupyFire=`
+    /// (`+0x157C`), or in RA2 Mode, which has no such key, always
+    /// ([`Self::ra2_occupy_fire`]). `IsOccupied` and GetFireError's B1 read it.
+    pub(crate) fn occupants_fire(&self) -> bool {
+        self.can_occupy_fire || self.ra2_occupy_fire
+    }
+
     /// Store the type's `SiloDamage=` resolved in `art`.
     pub(crate) fn project_silo_damage(&mut self, art: &crate::rules::art_data::ArtRegistry) {
         self.silo_damage = self.art_silo_damage(art);

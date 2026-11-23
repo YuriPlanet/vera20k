@@ -780,6 +780,18 @@ impl MatchSession {
             })
     }
 
+    /// VERA: whether the network match in setup or started seats a house
+    /// the computer runs, for the AI INI its rules agreement compares
+    /// (`shell_network_setup::agreement::local`): a campaign room always,
+    /// else its launch says (`SkirmishLaunchSession::seats_computers`). Its
+    /// load answers alike (`LoadingStartup::ai_file`).
+    pub(crate) fn network_seats_computers(&self) -> bool {
+        self.campaign_room().is_some()
+            || self
+                .network_setup()
+                .is_none_or(SkirmishLaunchSession::seats_computers)
+    }
+
     pub(crate) fn network_setup(&self) -> Option<&SkirmishLaunchSession> {
         match &self.network.as_ref()?.phase {
             NetworkPhase::Lobby { .. } => None,

@@ -333,7 +333,8 @@ pub(crate) struct ResidualTypeRules {
     /// `Assaulter.Level` (+0x42C, Valueable<int>, 0), consumed through
     /// [`AresTechnoTypeRules::assaulter_level`].
     assaulter_level: i32,
-    /// `NoSelfGuardArea` (+0x4C8, false).
+    /// `NoSelfGuardArea` (+0x4C8, false), consumed through
+    /// [`AresTechnoTypeRules::no_self_guard_area`].
     no_self_guard_area: bool,
     /// `DigInSound`/`DigOutSound` (+0x550/+0x558, NullableIdx<VocClass>),
     /// bound with the type's other sounds. Consumed by the Tunnel
@@ -1318,6 +1319,14 @@ impl AresTechnoTypeRules {
     /// hook 0x457DB7; `passenger::can_dock_occupier_garrison`).
     pub(crate) fn assaulter_level(&self) -> i32 {
         self.residual.assaulter_level
+    }
+
+    /// `NoSelfGuardArea` (+0x4C8): a healer infantryman of this type does not
+    /// answer GuardArea over itself (InfantryClass_GetActionOnObject_NoSelfGuardArea,
+    /// Ares.dll 10049710, hook 0x51E748;
+    /// `Simulation::infantry_healer_guards_itself`).
+    pub(crate) fn no_self_guard_area(&self) -> bool {
+        self.residual.no_self_guard_area
     }
 
     /// `Unsellable.Get(UnitsUnsellable)`: a unit of this type cannot be sold

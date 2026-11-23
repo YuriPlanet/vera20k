@@ -380,7 +380,7 @@ impl App {
                 }
                 Ok(config)
             });
-        let game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
+        let mut game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
         if let Some(config) = &game_config {
             crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
             crate::render::locomotor_visual::set_high_terrain_building_lift(
@@ -403,6 +403,16 @@ impl App {
             options_load.startup_shell_screen,
         );
         let options_profile = options_load.retained_profile;
+        // RA2 mode holds for the whole launch, as the mod does: the `-ra2`
+        // switch or the saved Options choice, before any archive or CSF opens.
+        if let Some(config) = game_config.as_mut() {
+            config.use_ra2_mode(
+                options_profile.ra2_mode && crate::ui::main_menu_dialogs::options::HAS_RA2_MODE,
+            );
+        }
+        if crate::util::ra2_launch::enabled() {
+            log::info!("RA2 mode for this start");
+        }
         personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         personal_rules.set_superweapon_limit(i32::from(options_profile.superweapon_limit));
         personal_rules.set_building_production_queue(options_profile.building_production_queue);
@@ -513,10 +523,16 @@ impl App {
         // them at the edges the player scrolls against, where the system would
         // draw its own cursor over the game's. winit applies this to its own
         // set_fullscreen only, not to full screen from the title-bar button.
+        // The title bar draws no material of its own, so it shows the window's
+        // background, which `mac_title_bar::style` sets near black; the dark
+        // appearance keeps the window buttons and title text light on it.
         #[cfg(target_os = "macos")]
         {
             use winit::platform::macos::WindowAttributesExtMacOS;
-            window_attrs = window_attrs.with_borderless_game(true);
+            window_attrs = window_attrs
+                .with_borderless_game(true)
+                .with_titlebar_transparent(true)
+                .with_theme(Some(winit::window::Theme::Dark));
         }
         // Capture windows stay hidden, so only a visible session shows the icon.
         let window_icon = window_visible
@@ -558,8 +574,11 @@ impl App {
             window.set_visible(true);
         }
         #[cfg(target_os = "macos")]
-        if let Some(icon) = &window_icon {
-            icon.set_dock_icon();
+        {
+            super::mac_title_bar::style(&window);
+            if let Some(icon) = &window_icon {
+                icon.set_dock_icon();
+            }
         }
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
@@ -786,7 +805,7 @@ impl App {
                     &bit_font,
                     gpu.config.width,
                     gpu.config.height,
-                    options_profile.yr_original_style,
+                    options_profile.plays_yr_original_style(),
                 )
                 .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
                 .ok()

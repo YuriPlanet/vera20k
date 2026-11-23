@@ -609,9 +609,18 @@ pub(crate) fn init_capture_manager(
         crate::sim::combat::combat_weapon::weapon_for_index(object_type, 0, 0)?.weapon_id?;
     let weapon = rules.weapon(weapon_name)?;
     let warhead = rules.weapon_warhead(weapon)?;
-    warhead
-        .mind_control
-        .then(|| CaptureManagerState::constructed(weapon.damage, weapon.infinite_mind_control))
+    warhead.mind_control.then(|| {
+        if rules.ra2() {
+            // Original RA2 reads MindControl.Damage only as the "considered
+            // offensive" flag (rules.ini Damage=10); link capacity is
+            // hardcoded 1 for both MindControl and SuperMindControl. Only YR
+            // reinterpreted Damage as the number of links (rulesmd.ini=1).
+            // Always one link on the RA2 profile, never infinite.
+            CaptureManagerState::constructed(1, false)
+        } else {
+            CaptureManagerState::constructed(weapon.damage, weapon.infinite_mind_control)
+        }
+    })
 }
 
 impl Simulation {

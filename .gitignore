@@ -26,6 +26,7 @@ Thumbs.db
 !.github/release/macos/requirements.txt
 !.github/release/icon.png
 !/src/app/vera_icon.png
+!/src/app/title_bar_logo*.png
 !/android/app/src/main/res/mipmap-*/*.png
 *.tmp
 *.map
@@ -113,12 +114,14 @@ Thumbs.db
 !/docs/ini-commander-personalities.md
 !/docs/ini-end-game-screens.md
 !/docs/health-bars.md
+!/docs/ra2-mode.md
 !/docs/jumpjet-smooth-facing.md
 !/docs/ai-nearest-enemy.md
 !/docs/jumpjet-land-nearby.md
 !/docs/formation-line.md
 !/docs/ferry.md
 !/docs/auto-repair.md
+!/docs/level-bridge-decks.md
 !/docs/minimap-beacons.md
 !/docs/primary-rotation.md
 !/docs/relation-colours.md

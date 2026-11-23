@@ -1587,7 +1587,8 @@ impl PreparedScenarioRules {
 
 /// The shared Rules/AI ordering for ordinary Full_Init and its early .SED arm.
 /// Process state remains in `owner`; this value carries immutable projections
-/// and the constructor receipt, never another live registry.
+/// and the constructor receipt, never another live registry. VERA: `ai_file`
+/// is the AI INI the load reads (`LoadingStartup::ai_file`).
 fn prepare_scenario_rules(
     owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
     assets: &mut AssetManager,
@@ -1595,15 +1596,20 @@ fn prepare_scenario_rules(
     map_ini: &crate::rules::ini_parser::IniFile,
     tmcj4f: Option<&crate::rules::ini_parser::IniFile>,
     rule_policy: RulePolicy,
+    ai_file: crate::rules::retail_sources::AiFile,
 ) -> Result<PreparedScenarioRules> {
+    if ai_file == crate::rules::retail_sources::AiFile::Original {
+        log::info!("Network match AI file: the original game's; it seats no computer");
+    }
     let (native, team_ai_registry, rules_at_ai_read) = if let Some(tmcj4f) = tmcj4f {
         let (loaded, (ai, rules_at_read)) = owner
             .load_scenario_with_post_map(prefix, map_ini, tmcj4f, |rules_at_read| {
                 (
-                    crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+                    crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
                         assets,
                         map_ini,
                         rule_policy,
+                        ai_file,
                     ),
                     rules_at_read,
                 )
@@ -1614,9 +1620,13 @@ fn prepare_scenario_rules(
         let loaded = owner
             .load_scenario(prefix, map_ini)
             .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
-        let ai =
-            crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(assets, map_ini, rule_policy)
-                .map_err(anyhow::Error::msg)?;
+        let ai = crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
+            assets,
+            map_ini,
+            rule_policy,
+            ai_file,
+        )
+        .map_err(anyhow::Error::msg)?;
         (loaded, ai, None)
     };
     Ok(PreparedScenarioRules {
@@ -1696,6 +1706,76 @@ impl MapLoadInitial {
         }
         log::info!("The mod adds to the map: {}", additions.names().join(", "));
         self.map_data = self.map_data.with_additions(additions.files())?;
+        Ok(self)
+    }
+
+    /// `-ra2` translation of the retail Allied mission ALL02S ("Hail to the
+    /// Chief"): its Chapel trigger uses an RA2 event kind whose stock YR
+    /// descendant the engine evaluates differently.
+    ///
+    /// `Chapel Destroyed` uses event 57, "the trigger's House owns no
+    /// BuildingTypes[186]". An engineer capture moves the only Chapel out of
+    /// NeutralA's registration and zeroes that House-scoped count, which the
+    /// trigger cannot distinguish from the Chapel being destroyed. The YR
+    /// campaign master rewrites that trigger to event 61, "no TechnoType
+    /// named CACOLO01 exists anywhere" — still true when the Chapel is
+    /// destroyed, false while the captured building lives on.
+    ///
+    /// Tanya's `1,11,0,3` is deliberately left alone: event 11 is "the
+    /// trigger's House is destroyed", and Germans owns only TANY on this
+    /// map, so the stock event is already correct. Limboed passengers keep
+    /// their tracking count, so entering a transport does not fake her death.
+    ///
+    /// This is map data, applied after every other map source has been merged
+    /// and before anything reads the map's rules or triggers. It never runs in
+    /// YR mode, on another map, or on a network map.
+    pub(crate) fn with_ra2_campaign_fixups(mut self, map_file: &str) -> Result<Self> {
+        use crate::rules::ini_parser::{IniFile, IniSection};
+
+        if !crate::util::ra2_launch::enabled() {
+            return Ok(self);
+        }
+        let base_name = map_file.rsplit(['/', '\\']).next().unwrap_or(map_file);
+        if !base_name.eq_ignore_ascii_case("ALL02S.MAP") {
+            return Ok(self);
+        }
+        // Each entry as `map::events::parse_events` reads it, through the
+        // 512-byte buffer of TriggerType Read7274A6.
+        let edits: Vec<String> = self
+            .map_data
+            .ini
+            .section("Events")
+            .into_iter()
+            .flat_map(|section| {
+                section
+                    .keys()
+                    .map(move |key| (key, section.read_string(key, "", 512)))
+            })
+            .filter_map(|(key, value)| {
+                let translated = if value.eq_ignore_ascii_case("1,57,0,186") {
+                    Some("1,61,2,0,CACOLO01")
+                } else {
+                    None
+                };
+                translated.map(|value| format!("{key}={value}"))
+            })
+            .collect();
+        if edits.is_empty() {
+            return Ok(self);
+        }
+        let mut patch_events = IniSection::new("Events".to_owned());
+        for edit in &edits {
+            let (key, value) = edit.split_once('=').expect("built as key=value");
+            patch_events.set(key, value);
+        }
+        let patch = IniFile::from_sections([patch_events]);
+        let mut ini = std::mem::replace(&mut self.map_data.ini, IniFile::empty());
+        ini.merge(&patch);
+        self.map_data = crate::map::map_file::MapFile::from_ini(ini)?;
+        log::info!(
+            "-ra2 ALL02S campaign translation applied: {}",
+            edits.join(", ")
+        );
         Ok(self)
     }
 
@@ -2549,7 +2629,10 @@ pub(crate) fn load_csf(
                 )),
             },
         )?;
-    log::info!("Loaded CSF string table: ra2md.csf; supplements={supplements:?}");
+    log::info!(
+        "Loaded CSF string table: {}; supplements={supplements:?}",
+        crate::assets::csf_file::CsfFile::active_csf_name()
+    );
     crate::i18n::apply(&mut csf);
     Ok(csf)
 }
@@ -2606,6 +2689,7 @@ pub(crate) fn load_map_initial_with_assets(
     requested_map: Option<&str>,
     mode_rules_file: Option<&str>,
     full_init_entry_mode: crate::app::match_runtime::session::SessionMode,
+    ai_file: crate::rules::retail_sources::AiFile,
     the_team_enabled: bool,
     launch_seed: Option<u32>,
     progress: &mut dyn crate::app::loading::pump::LoadingProgressSink,
@@ -2717,6 +2801,7 @@ pub(crate) fn load_map_initial_with_assets(
             &synthetic_ini,
             tmcj4f.as_ref(),
             full_init_entry_mode.stock_rule_policy(None),
+            ai_file,
         )?;
         let terrain_rules = &generated_rules.native.rules().terrain_rules;
         let resolved = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
@@ -3143,6 +3228,7 @@ fn load_map_first_step(
         signed_new_ini_format,
     )?;
     let full_init_entry_mode = startup.session_mode();
+    let ai_file = startup.ai_file(services.asset_manager);
     let (materialization, match_seed, match_launch_descriptor, scenario_prefix_plan, campaign) =
         match fresh_scenario_context.into_parts() {
             FreshScenarioParts::StockOffline(parts) => {
@@ -3310,6 +3396,7 @@ fn load_map_first_step(
                     &map_data.ini,
                     tmcj4f_ini.as_ref(),
                     rule_policy,
+                    ai_file,
                 )?
             };
             let (
@@ -4315,415 +4402,8 @@ pub(super) const fn should_read_tmcj4f(
 }
 
 #[cfg(all(test, tests_app))]
-mod full_init_rules_gate_tests {
-    use super::*;
-
-    #[test]
-    fn generated_rules_are_read_before_generation_and_carried_once_through_failure() {
-        // Unoptimized, the frames from here to RuleSet::project hold about
-        // 2.2 MiB of Rules copies, past libtest's 2 MiB thread.
-        crate::test_fixture::on_game_stack(generated_rules_read_before_generation_and_carried);
-    }
-
-    fn generated_rules_read_before_generation_and_carried() {
-        use crate::app::match_runtime::session::SessionMode;
-        use crate::map::source::test_support::TestDirectory;
-        use crate::rules::ini_parser::IniFile;
-        use crate::rules::powerups::POWERUP_MONEY;
-        use crate::rules::process_owner::NativeRulesProcessOwner;
-        use std::sync::Arc;
-
-        struct Progress {
-            fail: bool,
-        }
-        impl crate::app::loading::pump::LoadingProgressSink for Progress {
-            fn milestone(&mut self, _: u32) -> anyhow::Result<()> {
-                anyhow::ensure!(!self.fail, "stop after generated-map preparation");
-                Ok(())
-            }
-        }
-        let directory = TestDirectory::new("rmg-early-rules");
-        directory.write(
-            "temperatmd.ini",
-            b"[General]\nClearTile=0\n[TileSet0000]\nFileName=clear\nTilesInSet=1\n",
-        );
-        directory.write("isotem.pal", &[0; 768]);
-        directory.write("unittem.pal", &[0; 768]);
-        let Some((_, retail)) = crate::rules::retail_ini_fixture::retail_assets() else {
-            return;
-        };
-        directory.write("aimd.ini", retail.get_ref("AIMD.INI").unwrap());
-        directory.write(
-            "mode.ini",
-            b"[Animations]\n0=MODE\n[Powerups]\nMoney=7,MODE,yes,125\n[Clear]\nWheel=0%\n",
-        );
-        directory.write(
-            "TMCJ4F.INI",
-            b"[Animations]\n0=TAIL\n[Powerups]\nMoney=9,TAIL,yes,250\n[Clear]\nWheel=100%\n",
-        );
-        let options = crate::map::rmg::RmgOptions {
-            map_type: 0,
-            resources: 0,
-            vegetation: 0,
-            seed: 4242,
-            ..Default::default()
-        };
-        directory.write("early.sed", &options.to_sed_bytes(false));
-        let seed_path = directory.path().join("early.sed");
-        let root =
-            IniFile::from_str("[Countries]\n0=C]\n[Animations]\n0=BASE\n[Clear]\nWheel=25%\n");
-        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
-            root,
-            None,
-            IniFile::empty(),
-            Arc::default(),
-            Arc::default(),
-        )
-        .unwrap();
-        let mut assets = AssetManager::from_loose_root_for_test(directory.path());
-        let initial = load_map_initial_with_assets(
-            directory.path().to_owned(),
-            &mut assets,
-            Some(&mut owner),
-            None,
-            Some(seed_path.to_str().unwrap()),
-            Some("mode.ini"),
-            SessionMode::Skirmish,
-            true,
-            None,
-            &mut Progress { fail: false },
-        )
-        .unwrap();
-        assert!(initial.has_generated_rules());
-        assert_eq!(
-            initial
-                .map_data
-                .ini
-                .section("C]")
-                .unwrap()
-                .read_int("TechLevel", -1),
-            0
-        );
-        assert_eq!(
-            initial
-                .map_data
-                .ini
-                .section("Basic")
-                .unwrap()
-                .read_name("Player", 32)
-                .as_deref(),
-            Some("C]")
-        );
-        let saved_hash = owner.saved_scenario_rules().unwrap().content_hash();
-        let prepared = initial.generated_rules.unwrap();
-        assert_eq!(prepared.native.rules().powerups.weights[POWERUP_MONEY], 9);
-        assert_eq!(
-            prepared.native.rules().anim_type_name_by_index(2),
-            Some("TAIL")
-        );
-        assert_eq!(
-            prepared.rules_at_ai_read.as_ref().unwrap().powerups.weights[POWERUP_MONEY],
-            7,
-            "AI reads before TMCJ4F"
-        );
-        let (rules, _, _, _, _) = prepared.into_parts();
-        assert_eq!(rules.powerups.weights[POWERUP_MONEY], 9);
-        assert_eq!(
-            owner.saved_scenario_rules().unwrap().content_hash(),
-            saved_hash,
-            "consuming the carried result does not replay Process"
-        );
-
-        // A later admission error does not undo the already reached global read.
-        directory.write("TMCJ4F.INI", b"[Powerups]\nMoney=11,MODE,no,333\n");
-        let mut assets = AssetManager::from_loose_root_for_test(directory.path());
-        assert!(
-            load_map_initial_with_assets(
-                directory.path().to_owned(),
-                &mut assets,
-                Some(&mut owner),
-                None,
-                Some(seed_path.to_str().unwrap()),
-                Some("mode.ini"),
-                SessionMode::Skirmish,
-                true,
-                None,
-                &mut Progress { fail: true },
-            )
-            .is_err()
-        );
-        assert_eq!(
-            owner.saved_scenario_rules().unwrap().powerups().weights[POWERUP_MONEY],
-            11
-        );
-    }
-
-    fn rules_owner() -> crate::rules::process_owner::NativeRulesProcessOwner {
-        use crate::rules::ini_parser::IniFile;
-        use crate::rules::process_owner::NativeRulesProcessOwner;
-        use std::sync::Arc;
-
-        NativeRulesProcessOwner::from_cold_start_sources(
-            IniFile::from_str("[InfantryTypes]\n0=E1\n[E1]\nStrength=100\nTechLevel=1\n"),
-            None,
-            IniFile::empty(),
-            Arc::default(),
-            Arc::default(),
-        )
-        .unwrap()
-    }
-
-    fn color_add(rules: &crate::rules::ruleset::RuleSet) -> [[u8; 3]; 2] {
-        [
-            rules.color_add.entries()[0].rgb,
-            rules.color_add.entries()[1].rgb,
-        ]
-    }
-
-    fn native_rules_fixture() -> serde_json::Value {
-        crate::test_fixture::json("tools/input_oracle/campaign_native_rules.json").clone()
-    }
-
-    #[test]
-    fn campaign_start_descriptor_and_rules_owner_skip_a_present_named_ini_on_mode_zero() {
-        use crate::app::match_bootstrap::{
-            LoadingStartup, MatchSeedClock, MatchSeedSource, prepare_campaign_startup,
-        };
-        use crate::app::match_runtime::session::SessionMode;
-        use crate::assets::asset_manager::AssetManager;
-        use crate::map::rmg::{RmgOptions, emit};
-        use crate::map::source::{LoadedMapSource, test_support::TestDirectory};
-        use crate::rules::campaigns::CampaignRegistry;
-        use crate::rules::ini_parser::IniFile;
-        use crate::rules::movies::MovieRegistry;
-        use crate::rules::process_owner::NativeScenarioRulesPrefix;
-
-        struct ControlledClock;
-        impl MatchSeedClock for ControlledClock {
-            fn low_u32(&mut self) -> u32 {
-                73
-            }
-            fn source(&self) -> MatchSeedSource {
-                MatchSeedSource::Controlled
-            }
-            fn seed_authority_certifying(&self) -> bool {
-                true
-            }
-        }
-
-        let campaigns_ini =
-            IniFile::from_str("[Battles]\n0=ALLIED\n[ALLIED]\nScenario=ALL01UMD.MAP\n");
-        let mut campaigns = CampaignRegistry::default();
-        campaigns.apply_ini(&campaigns_ini, &MovieRegistry::default());
-        let mut clock = ControlledClock;
-        let prepared = prepare_campaign_startup(&campaigns, "ALLIED", 1, None, None, &mut clock)
-            .expect("campaign selection is admitted");
-        let startup = LoadingStartup::Campaign(prepared.clone());
-        let map = emit::empty_map_file(&RmgOptions::default(), 8, 8);
-        let source = LoadedMapSource::Mix {
-            logical_name: prepared.scenario().to_owned(),
-            source_archive: "MAPSMD03.MIX".into(),
-            entry_id: 1,
-            payload_len: 0,
-            source_sha256: String::new(),
-        };
-        let mut accepted_rmg_start_staging = None;
-        let descriptor = FreshScenarioLoadContextDescriptor::admit(
-            &startup,
-            &map,
-            &source,
-            &mut accepted_rmg_start_staging,
-        )
-        .unwrap();
-        descriptor
-            .validate_terminal_transfer(&startup, &source, map.basic.new_ini_format.unwrap_or(0))
-            .unwrap();
-        let FreshScenarioParts::Campaign {
-            startup: campaign, ..
-        } = descriptor.into_parts()
-        else {
-            panic!("campaign startup retains its campaign descriptor");
-        };
-        assert_eq!(startup.session_mode(), SessionMode::Campaign);
-
-        let directory = TestDirectory::new("campaign-basename-rules-gate");
-        directory.write("rulesmd.ini", b"[InfantryTypes]\n0=E1\n[E1]\nTechLevel=1\n");
-        directory.write("artmd.ini", b"");
-        directory.write(
-            "ALL01UMD.INI",
-            b"[InfantryTypes]\n0=CAMPAIGNONLY\n[CAMPAIGNONLY]\nStrength=100\nTechLevel=1\n",
-        );
-        let mut assets = AssetManager::from_loose_root_for_test(directory.path());
-        // A Campaign 0 -> 0 start reads the file on Full_Init's second pass.
-        let selected = select_campaign_named_ini_for_full_init(
-            &mut assets,
-            Some(&campaign),
-            startup.session_mode(),
-        )
-        .unwrap();
-        assert!(selected.is_some());
-        let loaded = rules_owner()
-            .load_scenario(
-                NativeScenarioRulesPrefix::Campaign(selected.as_ref()),
-                &map.ini,
-            )
-            .unwrap();
-        let (_, _, _, receipt) = loaded.into_parts();
-        assert_eq!(receipt.pre_reset_event_count(), 1);
-
-        let fixture = native_rules_fixture();
-        let campaign_cases = fixture["campaign_named_ini_cases"]
-            .as_array()
-            .expect("campaign gate rows");
-        for case in campaign_cases {
-            let input = &case["input"];
-            let file = &input["file"];
-            let case_name = input["case"].as_str().expect("case name");
-            let filename = file["filename"].as_str().expect("scenario basename");
-            let raw_ini = file["raw_ini"].as_str().expect("controlled INI bytes");
-            assert!(file["present"].as_bool().expect("file presence"));
-            assert_eq!(input["scenario_file"], campaign.scenario());
-
-            let entry_raw = input["entry_mode"].as_i64().unwrap() as i32;
-            let current_raw = input["current_mode"].as_i64().unwrap() as i32;
-            assert_eq!(
-                input["cached_entry_flag"].as_i64().unwrap() == 1,
-                entry_raw == 0,
-                "Full_Init sete cache must reflect the entry mode"
-            );
-            assert_eq!(file["digest_variant"].as_str(), Some("valid"));
-            if entry_raw == 0 {
-                assert_eq!(startup.session_mode(), SessionMode::Campaign);
-            }
-
-            let directory = TestDirectory::new(&format!("campaign-native-{case_name}"));
-            directory.write("rulesmd.ini", b"[InfantryTypes]\n0=E1\n");
-            directory.write("artmd.ini", b"");
-            directory.write(filename, raw_ini.as_bytes());
-            let mut assets = AssetManager::from_loose_root_for_test(directory.path());
-            let entry_mode = SessionMode::from_game_mode(entry_raw);
-            let current_mode = SessionMode::from_game_mode(current_raw);
-            let selected =
-                select_campaign_named_ini_for_full_init(&mut assets, Some(&campaign), current_mode)
-                    .unwrap();
-            // Each row is one pass from 0x00686C8B. An entry-0 row's skip is
-            // followed by the 0x00687599 rerun, which reads the file.
-            let process_reached = case["process_reached"].as_bool().unwrap();
-            if entry_mode == SessionMode::Campaign && current_mode == SessionMode::Campaign {
-                assert!(!process_reached, "{case_name}: the first pass skips");
-                assert!(selected.is_some(), "{case_name}: the rerun reads it");
-                continue;
-            }
-            assert_eq!(selected.is_some(), process_reached, "{case_name}");
-            assert_eq!(
-                case["requested_filename"].as_str(),
-                selected.as_ref().map(|_| filename),
-                "{case_name}"
-            );
-            assert_eq!(
-                case["bytes_read"].as_u64().unwrap() as usize,
-                selected.as_ref().map_or(0, |_| raw_ini.as_bytes().len()),
-                "{case_name}"
-            );
-            assert_eq!(
-                case["readccfile_status"].as_u64(),
-                selected.as_ref().map(|_| 1u64),
-                "campaign basename calls ReadCCFile with digest checks disabled"
-            );
-            assert_eq!(
-                case["digest_key_present_after"].as_bool(),
-                selected.as_ref().map(|ini| ini.section("Digest").is_some()),
-                "campaign basename leaves Digest in the unchecked INIClass"
-            );
-            // The prepared entry5/current0 row tests only the gated branch.
-            // The native caller/writer that could create this transition is
-            // still unproved; it does not extend the campaign startup mode.
-            let _loaded = rules_owner()
-                .load_scenario(
-                    NativeScenarioRulesPrefix::Campaign(selected.as_ref()),
-                    &map.ini,
-                )
-                .unwrap();
-        }
-    }
-
-    #[test]
-    fn tmcj4f_native_cases_gate_the_read_and_ignore_its_digest() {
-        use crate::app::match_runtime::session::SessionMode;
-        use crate::assets::asset_manager::AssetManager;
-        use crate::map::source::test_support::TestDirectory;
-        use crate::rules::process_owner::NativeScenarioRulesPrefix;
-
-        let fixture = native_rules_fixture();
-        let cases = fixture["tmcj_cases"].as_array().expect("TMCJ rows");
-        for case in cases {
-            let input = &case["input"];
-            let file = &input["file"];
-            let case_name = input["case"].as_str().expect("case name");
-            let filename = file["filename"].as_str().expect("TMCJ filename");
-            let raw_ini = file["raw_ini"].as_str();
-            let present = file["present"].as_bool().expect("file presence");
-            assert_eq!(raw_ini.is_some(), present, "{case_name}");
-
-            let directory = TestDirectory::new(&format!("tmcj-native-{case_name}"));
-            if let Some(raw_ini) = raw_ini {
-                directory.write(filename, raw_ini.as_bytes());
-            }
-            let mut assets = AssetManager::from_loose_root_for_test(directory.path());
-            let mode = SessionMode::from_game_mode(input["mode"].as_i64().unwrap() as i32);
-            let team_flag = input["flag"].as_u64().unwrap() == 1;
-            let gate_open = should_read_tmcj4f(mode, team_flag);
-            let selected = select_tmcj4f_for_full_init(&mut assets, mode, team_flag).unwrap();
-            let process_reached = case["process_reached"].as_bool().unwrap();
-            assert_eq!(selected.is_some(), process_reached, "{case_name}");
-            assert_eq!(
-                case["requested_filename"].as_str(),
-                gate_open.then_some(filename),
-                "the native availability probe follows mode/flag before file presence"
-            );
-            assert_eq!(
-                case["bytes_read"].as_u64().unwrap() as usize,
-                selected
-                    .as_ref()
-                    .map_or(0, |_| raw_ini.expect("selected TMCJ has bytes").len()),
-                "{case_name}"
-            );
-
-            let mut owner = rules_owner();
-            let map_ini = crate::rules::ini_parser::IniFile::empty();
-            let loaded = if let Some(selected) = selected.as_ref() {
-                assert_eq!(case["readccfile_status"].as_u64(), Some(1), "{case_name}");
-                assert_eq!(
-                    selected.section("Digest").is_some(),
-                    case["digest_key_present_after"].as_bool().unwrap(),
-                    "{case_name}"
-                );
-                owner
-                    .load_scenario_with_post_map(
-                        NativeScenarioRulesPrefix::NonCampaign(None),
-                        &map_ini,
-                        selected,
-                        |_| (),
-                    )
-                    .unwrap()
-                    .0
-            } else {
-                assert!(case["readccfile_status"].is_null(), "{case_name}");
-                assert!(case["digest_key_present_after"].is_null(), "{case_name}");
-                owner
-                    .load_scenario(NativeScenarioRulesPrefix::NonCampaign(None), &map_ini)
-                    .unwrap()
-            };
-            let (rules, _, _, _) = loaded.into_parts();
-            let native_before: [[u8; 3]; 2] =
-                serde_json::from_value(case["color_add_before"].clone()).unwrap();
-            let native_after: [[u8; 3]; 2] =
-                serde_json::from_value(case["color_add_after"].clone()).unwrap();
-            assert_eq!(native_before, [[0; 3]; 2], "{case_name}");
-            assert_eq!(color_add(&rules), native_after, "{case_name}");
-        }
-    }
-}
+#[path = "init_full_init_rules_gate_tests.rs"]
+mod full_init_rules_gate_tests;
 
 #[cfg(all(test, tests_app))]
 mod random_map_retail_tests {
@@ -4833,6 +4513,7 @@ mod random_map_retail_tests {
                     Some(&seed_name),
                     None,
                     crate::app::match_runtime::session::SessionMode::Skirmish,
+                    crate::rules::retail_sources::AiFile::GameFolder,
                     false,
                     None,
                     &mut SilentProgress,

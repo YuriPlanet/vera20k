@@ -22,8 +22,14 @@ const RTO_MIN: u64 = 48;
 const RTO_MAX: u64 = 1000;
 const PTO_MIN: u64 = 50;
 const PTO_MAX: u64 = 1000;
-/// `srtt_c` the relay assumes until a reader reports one (spec §4.6).
-const PTO_DEFAULT_SRTT: u64 = 100;
+/// `srtt` and `rttvar` in ms until a sample or a reader's report gives them
+/// (spec §4.6).
+const DEFAULT_SRTT_MS: u64 = 100;
+const DEFAULT_RTTVAR_MS: u64 = 50;
+/// The acknowledgement interval of a good and of a congested hop (spec §6.3
+/// row 3).
+const ACK_INTERVAL_GOOD_MS: u64 = 100;
+const ACK_INTERVAL_CONGESTED_MS: u64 = 200;
 const JITTER_MIN_SAMPLES: u64 = 16;
 /// The JITTERY floor in µs (spec §4.8, `max(10, turn_ms / 4)` ms).
 const JITTERY_FLOOR_US: u64 = 10_000;
@@ -250,6 +256,14 @@ impl RttEstimator {
         }
     }
 
+    /// `(srtt, rttvar)` in ms: the §4.6 defaults before the first sample.
+    pub(crate) fn rtt_or_default(&self) -> (u64, u64) {
+        self.srtt
+            .map_or((DEFAULT_SRTT_MS, DEFAULT_RTTVAR_MS), |srtt| {
+                (u64::from(srtt), u64::from(self.rttvar))
+            })
+    }
+
     /// `RTO_k` in ms (spec §4.5).
     pub(crate) fn rto(&self, backoff: u32) -> u64 {
         let rto = match self.srtt {
@@ -357,12 +371,22 @@ impl JitterMeter {
 }
 
 /// The reader's reported `(srtt_c, rttvar_c)` in ms, or the §4.6 defaults
-/// 100 / 50 while it reports no srtt.
+/// while it reports no srtt.
 pub(crate) fn reader_rtt(srtt_c: u16, rttvar_c: u16) -> (u64, u64) {
     if srtt_c == 0 {
-        (PTO_DEFAULT_SRTT, PTO_DEFAULT_SRTT / 2)
+        (DEFAULT_SRTT_MS, DEFAULT_RTTVAR_MS)
     } else {
         (u64::from(srtt_c), u64::from(rttvar_c))
+    }
+}
+
+/// A hop's acknowledgement interval in `state` (spec §6.3 row 3), which its
+/// sender takes as `ack_delay_max` (§4.6): one turn of `turn_ms` while lossy.
+pub(crate) fn ack_interval(state: LinkState, turn_ms: u32) -> u64 {
+    match state {
+        LinkState::Lossy => u64::from(turn_ms),
+        LinkState::Congested => ACK_INTERVAL_CONGESTED_MS,
+        _ => ACK_INTERVAL_GOOD_MS,
     }
 }
 

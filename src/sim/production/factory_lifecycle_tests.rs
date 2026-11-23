@@ -1907,8 +1907,16 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
     }
 }
 
+// The save traces the snapshot layout once per process; unoptimized, that
+// trace and this body's four simulations need more than libtest's 2 MiB.
 #[test]
 fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay() {
+    crate::test_fixture::on_game_stack(
+        prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay_body,
+    );
+}
+
+fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay_body() {
     use crate::sim::command::{CommandEnvelope, ProductionEvent};
     use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
     use crate::sim::runtime::{SimResources, SimRuntime};

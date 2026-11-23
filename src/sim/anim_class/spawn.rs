@@ -82,7 +82,7 @@ impl Simulation {
             SimFixed::from_num(location.x & 0xff),
             SimFixed::from_num(location.y & 0xff),
         );
-        let (key, ground_z, live_structural_bridge) = match resolved_terrain.as_ref() {
+        let (key, deck_z, live_structural_bridge) = match resolved_terrain.as_ref() {
             Some(terrain) => {
                 let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
                 let cell = cells.lookup_world(location.x, location.y);
@@ -100,7 +100,7 @@ impl Simulation {
                 let live_structural_bridge = cells.flags(cell) & 0x100 != 0;
                 (
                     RawCellKey::from_native(terrain, cell),
-                    ground_z,
+                    crate::sim::movement::ground_pose::deck_surface_z(&cells, cell, ground_z),
                     live_structural_bridge,
                 )
             }
@@ -109,7 +109,11 @@ impl Simulation {
                 else {
                     return;
                 };
-                (RawCellKey::Real(rx, ry), 0, false)
+                (
+                    RawCellKey::Real(rx, ry),
+                    crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
+                    false,
+                )
             }
         };
         apply_anim_raw_occupation(
@@ -117,7 +121,7 @@ impl Simulation {
             key,
             mask,
             location.z,
-            ground_z,
+            deck_z,
             live_structural_bridge,
             operation,
         );
@@ -444,8 +448,9 @@ impl Simulation {
         ) else {
             return false;
         };
-        if cells.flags(cells.lookup_world(centre.x, centre.y)) & 0x100 != 0 {
-            z = z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        let target = cells.lookup_world(centre.x, centre.y);
+        if cells.flags(target) & 0x100 != 0 {
+            z = crate::sim::movement::ground_pose::deck_surface_z(&cells, target, z);
         }
         let world_coord = AnimWorldCoord {
             x: centre.x,

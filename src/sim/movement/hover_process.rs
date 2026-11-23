@@ -125,12 +125,12 @@ pub(crate) fn hover_move_to(
     let z = terrain.map_or(coord.z, |terrain| {
         let cells = NativeCellQuery::canonical(terrain);
         let ground = ground_pose::query_ground_height(&cells, coord).unwrap_or(coord.z);
-        let structural = cells.flags(cells.lookup_world(coord.x, coord.y)) & 0x100 != 0;
-        ground.wrapping_add(if structural {
-            BRIDGE_DECK_HEIGHT_LEPTONS
+        let cell = cells.lookup_world(coord.x, coord.y);
+        if cells.flags(cell) & 0x100 != 0 {
+            ground_pose::deck_surface_z(&cells, cell, ground)
         } else {
-            0
-        })
+            ground
+        }
     });
     hover.destination = Some(DriveCoord { z, ..coord });
     if !airborne {
@@ -586,18 +586,16 @@ impl Simulation {
             let entered = cells.lookup_world(x, y);
             let structural = cells.flags(entered) & 0x100 != 0;
             let height = super::super::air_movement::current_fly_height(entity, Some(terrain));
-            let on_bridge =
-                if !entity.on_bridge() && structural && height >= BRIDGE_DECK_HEIGHT_LEPTONS {
-                    true
-                } else if entity.on_bridge() && !structural {
-                    false
-                } else {
-                    entity.on_bridge()
-                };
+            let reaches_deck = ground_pose::corrected_deck_z(terrain, entered)
+                .map_or(height >= BRIDGE_DECK_HEIGHT_LEPTONS, |deck| next.z >= deck);
+            let on_bridge = structural && (entity.on_bridge() || reaches_deck);
             let level = cells.ground_fields(entered).0;
+            let deck = terrain.corrected_high_bridge_deck_at(entered);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.on_bridge.store(on_bridge);
-                entity.position.store_cell_level(level, on_bridge);
+                entity
+                    .position
+                    .store_cell_level_on_deck(level, on_bridge, deck);
             }
         }
         self.foot_mark_put(id, rules, registry, effects);
@@ -1451,6 +1449,45 @@ mod tests {
         let actor = sim.entities().get(id).unwrap();
         assert_eq!(actor.navigation.nav_com(), Some(destination));
         assert!(runtime(actor).unwrap().destination.is_none());
+    }
+
+    /// A Hover Foot that steps into a cell under a fixed high-bridge deck
+    /// stores that deck as its level (`0x005148DF..0x00514973` sets the
+    /// bridge byte from the new cell), not the dip's ground plus four.
+    #[test]
+    fn hover_cell_entry_over_a_dip_stores_the_decks_level() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+        use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0);
+        // The anchor at level 5 puts the deck at 9; its lane (10, 9) is a dip.
+        let mut terrain = test_grid(32, 32, |x, y| {
+            let mut cell = test_flat_cell(x, y);
+            cell.level = if (x, y) == (10, 9) { 0 } else { 5 };
+            cell
+        });
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((10, 8), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+        sim.install_resolved_terrain_for_new_map(terrain);
+        let mut entity = GameEntity::test_default(1, "ROBO", "Americans", 10, 10);
+        entity.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Hover,
+            ),
+        );
+        sim.substrate.entities.insert(entity);
+
+        // Facing 0 at a cell's speed steps north out of (10, 10), at the
+        // deck's height.
+        sim.hover_step(1, 9 * 104, 256, &rules, None, &mut FrameEffects::default());
+
+        let entity = sim.substrate.entities.get(1).unwrap();
+        assert_eq!((entity.position.rx(), entity.position.ry()), (10, 9));
+        assert!(entity.on_bridge());
+        assert_eq!(entity.position.z(), 9);
     }
 
     #[test]

@@ -649,7 +649,7 @@ fn fire_coordinate_base<'r>(
                 ));
             }
             use crate::map::voxel_pose::{VxlSlopeBlend, ground_locomotor_matrix};
-            use crate::sim::movement::slope_transition::{SlopeRenderPhase, state_for_entity};
+            use crate::sim::movement::slope_transition::{SlopeRenderPhase, phase_for_entity};
             if !matches!(
                 kind,
                 LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover
@@ -671,7 +671,7 @@ fn fire_coordinate_base<'r>(
                     None,
                 )
             } else {
-                match state_for_entity(entity).map(|state| state.render_phase(binary_frame)) {
+                match phase_for_entity(entity, binary_frame) {
                     Some(SlopeRenderPhase::Stable(slope)) => (slope, None),
                     Some(SlopeRenderPhase::Transition {
                         from_slope,
@@ -992,6 +992,12 @@ fn barrel_voxel_coordinate(
 /// building's state, not a record of which weapon was chosen, so VERA keys it
 /// on the building being occupied.
 ///
+/// RA2 has no `OccupantAnim=` field at all (it is a YR addition): the retail
+/// garrison weapons carry their flash in `Anim=`, e.g. `AlliedOccupyW` and
+/// `SovietOccupyW` both use `Anim=UCFLASH`. Under `-ra2` an occupied building
+/// therefore keeps the ordinary `Anim=` ladder instead of being told to play
+/// a null override.
+///
 /// When nothing is picked and the firer rides an open-topped transport
 /// (`+0x82`), the weapon's `OpenToppedAnim=` (`+0x118`) plays instead
 /// (`0x006FF32F..0x006FF347`); stock gives it to PsychicJab and Virusgun.
@@ -1014,9 +1020,10 @@ pub(crate) fn muzzle_anim_name(
     occupied_fire: bool,
     in_open_transport: bool,
     ares: bool,
+    ra2: bool,
 ) -> Option<&str> {
     use crate::util::direction_tables::{ares_facing_bucket, muzzle_anim_index_8way};
-    let picked = if occupied_fire {
+    let picked = if occupied_fire && !ra2 {
         weapon.occupant_anim.as_deref()
     } else {
         let count = weapon.anim.len();
@@ -1587,49 +1594,84 @@ mod tests {
         // `(dir8 + 1) & 7`: facing north picks entry 1, and the last octant
         // wraps to entry 0.
         assert_eq!(
-            muzzle_anim_name(eight, 0x0000, false, false, false),
+            muzzle_anim_name(eight, 0x0000, false, false, false, false),
             Some("F1")
         );
         assert_eq!(
-            muzzle_anim_name(eight, 0x4000, false, false, false),
+            muzzle_anim_name(eight, 0x4000, false, false, false, false),
             Some("F3")
         );
         assert_eq!(
-            muzzle_anim_name(eight, 0xE000, false, false, false),
+            muzzle_anim_name(eight, 0xE000, false, false, false, false),
             Some("F0")
         );
         // An occupied building's shot takes `OccupantAnim=` instead.
         assert_eq!(
-            muzzle_anim_name(eight, 0x4000, true, false, false),
+            muzzle_anim_name(eight, 0x4000, true, false, false, false),
             Some("UCFLASH")
         );
         // Any other list length: the first entry, whatever the facing.
         let one = rules.weapon("ONE").unwrap();
         assert_eq!(
-            muzzle_anim_name(one, 0x4000, false, false, false),
+            muzzle_anim_name(one, 0x4000, false, false, false, false),
             Some("GUNFIRE")
         );
         // `OccupantAnim=` replaces the pick even when it is absent.
-        assert_eq!(muzzle_anim_name(one, 0x4000, true, false, false), None);
         assert_eq!(
-            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, false, false),
+            muzzle_anim_name(one, 0x4000, true, false, false, false),
+            None
+        );
+        assert_eq!(
+            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, false, false, false),
             None
         );
         // From an open-topped transport, `OpenToppedAnim=` fills only an
         // empty pick.
         let jab = rules.weapon("JAB").unwrap();
         assert_eq!(
-            muzzle_anim_name(jab, 0, false, true, false),
+            muzzle_anim_name(jab, 0, false, true, false, false),
             Some("GUNFIRE")
         );
-        assert_eq!(muzzle_anim_name(jab, 0, false, false, false), None);
+        assert_eq!(muzzle_anim_name(jab, 0, false, false, false, false), None);
         assert_eq!(
-            muzzle_anim_name(eight, 0x4000, false, true, false),
+            muzzle_anim_name(eight, 0x4000, false, true, false, false),
             Some("F3")
         );
         assert_eq!(
-            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, true, false),
+            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, true, false, false),
             None
+        );
+    }
+
+    /// Retail RA2 garrison weapons have `Anim=UCFLASH` but no `OccupantAnim=`.
+    /// The YR-only null override used to swallow their flash entirely, which
+    /// is why a garrisoned building dealt damage and played its Report sound
+    /// but showed no muzzle animation.
+    #[test]
+    fn ra2_occupied_building_keeps_the_weapons_own_anim() {
+        let rules = rules();
+        let one = rules.weapon("ONE").unwrap();
+        let m60 = rules.weapon("M60").unwrap();
+
+        // Baseline: YR still honours the (possibly null) OccupantAnim override.
+        assert_eq!(
+            muzzle_anim_name(one, 0x4000, true, false, false, false),
+            None
+        );
+        assert_eq!(
+            muzzle_anim_name(m60, 0x4000, true, false, false, false),
+            Some("UCFLASH")
+        );
+
+        assert_eq!(
+            muzzle_anim_name(one, 0x4000, true, false, false, true),
+            Some("GUNFIRE"),
+            "RA2 has no OccupantAnim, so the weapon's Anim must play"
+        );
+        assert_eq!(
+            muzzle_anim_name(m60, 0x4000, true, false, false, true),
+            Some("F3"),
+            "RA2 keeps the ordinary facing-picked Anim ladder"
         );
     }
 
@@ -1645,7 +1687,7 @@ mod tests {
             facing: u16,
             ares: bool,
         ) -> Option<&str> {
-            muzzle_anim_name(weapon, facing, false, false, ares)
+            muzzle_anim_name(weapon, facing, false, false, ares, false)
         }
         assert_eq!(pick(&weapon, 0x0000, true), Some("A2"));
         assert_eq!(pick(&weapon, 0xF000, true), Some("A1"));

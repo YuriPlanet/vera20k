@@ -645,6 +645,96 @@ fn parallel_ai_queues_gate_and_category_forbid_control_a_second_factory() {
     );
 }
 
+/// The rules of an Ares game (`ImmuneToAbduction=` is an Ares key) with
+/// `AllowParallelAIQueues=no` and two computer war factories.
+fn ares_serial_fixture() -> (Fixture, u64, u64) {
+    let fixture = ai_limit_fixture(
+        "\n[GlobalControls]\nAllowParallelAIQueues=no",
+        "ImmuneToAbduction=yes",
+    );
+    assert!(fixture.0.rules.ares());
+    fixture
+}
+
+fn reset_vehicle_choice(f: &mut Fixture) {
+    f.sim
+        .houses
+        .get_mut(&f.owner)
+        .unwrap()
+        .ai_unit_choices_mut()
+        .set(UnitChoiceKind::Unit, 0);
+}
+
+/// Ares `BuildingClass_Update_Factory` (hook `0x4502F4`, Ares.dll
+/// `10024E00`) under `AllowParallelAIQueues=no`: the first war factory claims
+/// the vehicle slot and the second waits, with no forbid key. The product's
+/// exit (`0x444119`, `10024DC0`) frees the slot whoever holds it.
+#[test]
+fn ares_serial_ai_queues_hold_a_second_war_factory_until_the_exit() {
+    let (mut f, weap_1, weap_2) = ares_serial_fixture();
+    ai_limit_visit(&mut f, weap_1);
+    ai_limit_visit(&mut f, weap_2);
+    assert!(ai_limit_holds(&f, weap_1));
+    assert!(!ai_limit_holds(&f, weap_2), "one war factory at a time");
+    let product = f
+        .sim
+        .production
+        .factories()
+        .building_factory(weap_1)
+        .and_then(|factory| factory.object())
+        .and_then(|object| object.entity_id)
+        .unwrap();
+    exit_produced_object(
+        &mut f.sim,
+        &f.rules,
+        weap_1,
+        product,
+        (8, 9),
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    reset_vehicle_choice(&mut f);
+    ai_limit_visit(&mut f, weap_2);
+    assert!(ai_limit_holds(&f, weap_2), "the exit freed the slot");
+}
+
+/// Ares' slot also frees when the building holding it is removed
+/// (`AnnounceInvalidPointer` `0x7258D0`, `100052B0`) and when a factory
+/// abandons its product (`0x4CA07A`, `10024EE0`). A war factory too poor to
+/// start still claims the slot.
+#[test]
+fn ares_serial_ai_queues_free_the_slot_on_removal_and_abandon() {
+    use crate::sim::ai_base_building::AiFactorySlot;
+    let (mut f, weap_1, weap_2) = ares_serial_fixture();
+    let slot = |f: &Fixture| {
+        f.sim.houses[&f.owner]
+            .ai_production()
+            .parallel_factory(AiFactorySlot::Vehicle)
+    };
+    let set_credits = |f: &mut Fixture, credits| {
+        let house = f.sim.houses.get_mut(&f.owner).unwrap();
+        house.economy_mut().set_credits_for_test(credits);
+    };
+    set_credits(&mut f, 0);
+    ai_limit_visit(&mut f, weap_1);
+    assert_eq!(slot(&f), Some(weap_1), "claimed before the money gate");
+    set_credits(&mut f, 1_000);
+    ai_limit_visit(&mut f, weap_2);
+    assert!(!ai_limit_holds(&f, weap_2));
+    f.sim.uninit_with_rules(weap_1, &f.rules);
+    ai_limit_visit(&mut f, weap_2);
+    assert!(ai_limit_holds(&f, weap_2), "the removal freed the slot");
+    assert_eq!(slot(&f), Some(weap_2));
+    abandon_production(
+        &mut f.sim,
+        &f.rules,
+        FactoryHolder::Building(weap_2),
+        f.owner,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(slot(&f), None, "the abandon freed the slot");
+}
+
 /// Phobos `HouseExt::OnDetach` (hook `0x7258D0`): a war factory too poor to
 /// start still claims the vehicle slot, and its removal hands the slot on, so
 /// the house's next war factory builds under the category forbid.

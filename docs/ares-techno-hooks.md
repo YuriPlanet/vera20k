@@ -94,22 +94,39 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   single per-class What_Action entry; they keep their stock rungs, whose
   orders the receiver filter already withholds; when the cursor owner is
   Deactivated, its answer decides the whole release, so no object receives
-  an order (`ares_deactivated_selection_click`). SelectBestObjectForAction
-  ranks an EMPed object 1.
+  an order (`ares_head_hook_selection_click`), under Shift too: the class
+  hooks precede Techno's ToggleSelect (0x700107), and their Select or 0
+  clears the selection before it selects (BandBox_LeftUp 0x4ABE4A).
+  SelectBestObjectForAction ranks an EMPed object 1.
 - The heal arms: a Unit's (1004E5A0, hook 0x73FDBD) replaces the stock arm
-  in `Simulation::unit_repair_action`, an Infantryman's (1004E2E0, hook
-  0x51E710) is `Simulation::ares_infantry_heal_action`. Both heal any damaged
-  ally the selected weapon's Verses reach, answer Select under Alt, and set
-  InfantryHeal/UnitRepair; the click sends the same Attack
-  (`healer_object_action`). The Infantryman over itself still takes the stock
-  self arm at 0x51E748, which VERA does not port (NoSelfGuardArea). The arms
-  follow the game's Ares switch (`RuleSet::ares`) in every build, and so do
-  their cursors through the Ares cursor owner (`app::input::ares_cursor`).
+  in `Simulation::unit_repair_action`, and an Infantryman's (1004E2E0, hook
+  0x51E710) replaces the stock rows after the ally test in
+  `Simulation::infantry_heal_action`. With Ares both heal any damaged ally
+  the selected weapon's Verses reach unless ForceMove is held, and set
+  InfantryHeal/UnitRepair; the stock Infantryman heals only a damaged
+  Infantryman (0x51E73C), under SetCursorFromAction's row 0x3C. The click
+  sends the same Attack (`healer_object_action`, which asks the Infantry
+  rows before the arm first). Over an object of a house it is not allied
+  with, a Terrain object included, a healer infantryman answers AttackSupport
+  (0x51E797): the arrow, and Foot's case 0x3B (0x4D74E0) puts it on Area
+  Guard of itself. Over any other ally it selects (0x51E78B), but a
+  transport goes on to the later rows and Alt's Move and Ctrl+Alt's
+  GuardArea stand. Over itself it takes the self arm at 0x51E748, GuardArea,
+  unless its type sets `NoSelfGuardArea=yes` (10049710;
+  `Simulation::infantry_healer_guards_itself`), or unless it is an Engineer
+  among several selected objects, which refuses Ctrl's Attack first
+  (0x51E6B4). Not ported, and only mods reach them since no retail
+  infantryman heals: Foot's Guard for a healer whose weapon 0 does not heal,
+  for which VERA has no order, so it orders nothing; Alt and Ctrl+Alt over a
+  Terrain object, which answer their key rungs, where the arm answers
+  AttackSupport; and a campaign's shroud Move over an ally, which VERA
+  selects, where the arm keeps it. The arms follow the game's Ares switch
+  (`RuleSet::ares`) in every build, and so do their cursors through the
+  Ares cursor owner (`app::input::ares_cursor`).
 - Init_1's capture manager and parasite for any weapon slot and the
   parasite slot hooks (0x629804, 0x62A020, 0x62A7B1); the gunner temporal
   swap (0x74642C, 0x74653C); Hover DeployToLand (0x513EAA, 0x514A21,
-  0x514DFE); NoSelfGuardArea (0x51E748: the healer's self arm it skips is
-  not ported); the Occupier+VehicleThief expiry
+  0x514DFE); the Occupier+VehicleThief expiry
   (0x4D9A83).
 - Dormant in retail: flying carriers (0x414338, 0x6B783B).
 - Presentation and audio: damage
@@ -225,7 +242,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `519675` | InfantryClass_UpdatePosition_BeforeInfantrySpecific | `10049820` | ported earlier |
 | `5198AD` | InfantryClass_UpdatePosition_EnteredGrinder | `100498D0` | ported: `sim::reverse_engineering` (ares-reverse-engineering.md) |
 | `51CE9A` | InfantryClass_Idle | `10049740` | ported earlier |
-| `51E748` | InfantryClass_GetActionOnObject_NoSelfGuardArea | `10049710` | residual: NoSelfGuardArea (stock self Area Guard arm unported) |
+| `51E748` | InfantryClass_GetActionOnObject_NoSelfGuardArea | `10049710` | ported: `Simulation::infantry_healer_guards_itself` |
 | `51E7BF` | InfantryClass_GetActionOnObject_CanCapture | `10049690` | ported earlier |
 | `51F76D` | InfantryClass_Unload | `10049790` | ported earlier |
 | `5202F9` | InfantryClass_UpdateVehicleThief_Check | `10049970` | equivalent: VehicleThief or CanDrive admits the follow |
@@ -359,7 +376,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
 | `51C913` | InfantryClass_CanFire_Heal | `1004E270` | ported: medic fires on any damaged Techno |
-| `51E710` | InfantryClass_GetActionOnObject_Heal | `1004E2E0` | ported: `Simulation::ares_infantry_heal_action` (see Residuals for the self arm) |
+| `51E710` | InfantryClass_GetActionOnObject_Heal | `1004E2E0` | ported: `Simulation::infantry_heal_action` (see Residuals) |
 | `520731` | InfantryClass_UpdateFiringState_Heal | `1004E420` | ported: medic keeps any damaged Techno target |
 | `6F7FC5` | TechnoClass_CanAutoTargetObject_Heal | `1004E490` | ported: healing vehicle takes any damaged ally |
 | `6F8EE3` | TechnoClass_FindTargetType_Heal | `1004E4A0` | ported: healer target classes 0x403C |

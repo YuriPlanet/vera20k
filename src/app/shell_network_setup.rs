@@ -33,7 +33,8 @@ pub(crate) use view::view;
 pub(crate) use wol::{
     WolStartUser, balance_teams, guest_users_listed, kicked_key, local_left, map_status,
     play_player_left, player_choices, player_ready, resident_seed, send_first_choices, user_joined,
-    user_kicked, user_left, verify, verify_layout, verify_pointer, verify_poll_scroll,
+    user_kicked, user_left, verify, verify_layout, verify_mismatch_parts, verify_pointer,
+    verify_poll_scroll,
 };
 
 use super::{App, AppState};

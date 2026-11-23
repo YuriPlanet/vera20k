@@ -216,12 +216,13 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             )
         }
         wol_options::DIALOG => {
+            let spec = options::menu_spec(state);
             let layout = options::layout(state);
             options::sync_gui(state);
             painted(
                 layout.page.clone(),
                 layout.page.status_help,
-                &wol_options::PAGE,
+                spec,
                 Body::Widgets,
             )
         }

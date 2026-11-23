@@ -379,9 +379,10 @@ use crate::app::shell_network_setup::agreement::{
 /// original game. A mod fails the pre-match check. Rules, Art, AI or mode
 /// INIs that differ, by root or changed file, fail the join's rules hash
 /// (`0x0079BA60`, silently in Quick Match) against any opponent without the
-/// same; every other change (another INI root, the theater suffix, other
-/// changed game files, an Ares setting other than Auto) fails the start's
-/// rules digest. The box says what to turn off for the first change
+/// same; every other change (another compared INI root, the theater suffix,
+/// other changed game files, the Ares setting On) fails the start's rules
+/// digest. The Ares setting Off is no change: without a mod it opens the
+/// game Auto opens. The box says what to turn off for the first change
 /// ([`original_game_changes`]), and the runner ends before it queues.
 fn original_game_refusal(
     mod_title: Option<&str>,
@@ -389,6 +390,7 @@ fn original_game_refusal(
 ) -> Option<&'static str> {
     Some(match original_game_changes(mod_title, assets).first()? {
         OriginalGameChange::Mod(_) => "VERA:QuickMatchNoMod",
+        OriginalGameChange::Ra2 => "VERA:QuickMatchRa2Mode",
         OriginalGameChange::IniRoots => "VERA:QuickMatchIniProfile",
         OriginalGameChange::Ares(_) => "VERA:QuickMatchAresSetting",
         OriginalGameChange::ChangedFiles(_) => CHANGED_FILES,
@@ -1752,6 +1754,15 @@ mod tests {
         assert_eq!(
             original_game_refusal(None, &changes),
             Some("VERA:QuickMatchAresSetting")
+        );
+        // Off opens the game Auto opens, so it is no change: the files are
+        // what Quick Match names.
+        changes = changes.with_ares_setting(AresSetting::Off);
+        assert_eq!(
+            original_game_changes(None, &changes),
+            [OriginalGameChange::ChangedFiles(
+                &["rulesmd.ini".to_owned()]
+            )]
         );
         changes = changes.with_ares_setting(AresSetting::Auto);
         // With no mod selected, an installed `ares.mix` is ignored. The

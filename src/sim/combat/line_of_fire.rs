@@ -37,7 +37,7 @@
 //! (overlay grid, bridge topology; Ares: cell occupancy and entities). Does
 //! NOT depend on render/ui/audio/net.
 
-use crate::map::resolved_terrain::NativeCellQuery;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::projectile_type::ProjectileType;
 use crate::rules::ruleset::RuleSet;
@@ -48,6 +48,7 @@ use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
 use crate::sim::overlay_grid::OverlayGrid;
+use crate::sim::projectile::fixed_deck_z_for_cell_ref;
 
 /// Leptons per cell — the divisor in the `CDQ; AND EDX,0xFF; ADD; SAR 8`
 /// idiom the walk uses at 0x004CC12F, 0x004CC28A and 0x004CC371.
@@ -256,6 +257,7 @@ pub(crate) fn cell_blocks_line_of_fire<'a>(
     interner: &StringInterner,
     rules: &RuleSet,
     los: &LineOfFireInputs<'_>,
+    terrain: Option<&ResolvedTerrainGrid>,
     mut lookup: impl FnMut((i16, i16)) -> CellRef<'a>,
 ) -> Option<CellRef<'a>> {
     #[cfg(any(test, feature = "test-support"))]
@@ -270,9 +272,9 @@ pub(crate) fn cell_blocks_line_of_fire<'a>(
     );
     let cell = lookup(packed);
     if rules.ares() {
-        ares_obstacle(&probe, cell, interner, rules, los)
+        ares_obstacle(&probe, cell, interner, rules, los, terrain)
     } else {
-        native_obstacle(probe, cell, packed, interner, rules, los, lookup)
+        native_obstacle(probe, cell, packed, interner, rules, los, terrain, lookup)
     }
 }
 
@@ -284,10 +286,17 @@ fn native_obstacle<'a>(
     interner: &StringInterner,
     rules: &RuleSet,
     los: &LineOfFireInputs<'_>,
+    terrain: Option<&ResolvedTerrainGrid>,
     mut lookup: impl FnMut((i16, i16)) -> CellRef<'a>,
 ) -> Option<CellRef<'a>> {
     let effective = |cell: &CellRef<'_>| {
-        crate::sim::map::bridge_topology::CellBridgeView::from_cell_ref(cell).effective_height()
+        let view = crate::sim::map::bridge_topology::CellBridgeView::from_cell_ref(cell);
+        if view.is_anchor()
+            && let Some(deck) = fixed_deck_z_for_cell_ref(terrain, cell)
+        {
+            return deck / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+        }
+        view.effective_height()
     };
     let blocks = |cell: &CellRef<'_>| {
         if probe.shot.subject_to_cliffs
@@ -364,8 +373,12 @@ fn ares_obstacle<'a>(
     interner: &StringInterner,
     rules: &RuleSet,
     los: &LineOfFireInputs<'_>,
+    terrain: Option<&ResolvedTerrainGrid>,
 ) -> Option<CellRef<'a>> {
     let level = |cell: &CellRef<'_>| {
+        if let Some(deck) = fixed_deck_z_for_cell_ref(terrain, cell) {
+            return deck / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+        }
         let bridge = cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
         i32::from(cell.signed_level() as u8) + if bridge != 0 { 4 } else { 0 }
     };
@@ -529,6 +542,7 @@ pub(crate) fn walk_line_for_blocking_cell<'a>(
             interner,
             rules,
             los,
+            Some(cells.terrain()),
             lookup,
         ) {
             return Some(hit);

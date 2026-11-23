@@ -946,3 +946,61 @@ fn fly_death_stun_matches_native_rows() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// Fly's Power_Off (`0x004CFD20`) through Deactivate, as Ares EMP reaches
+/// it on an aircraft at height 0: a Harrier given a destination spins at a
+/// SpinRate of 20 to 30 either way. Unpowered, each Process's spin step
+/// (`0x004CE5A0`) turns its PrimaryFacing by `SpinRate << 8` and steps
+/// SpinRate one toward 0; once Reactivate powers it on, the next Process
+/// ends the spin.
+#[test]
+fn a_harrier_powered_off_while_moving_spins_until_power_returns() {
+    use crate::sim::world::FrameEffects;
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 17, 128);
+    let plane = sim
+        .spawn_object("ORCA", "Americans", 50, 64, 0, &rules)
+        .unwrap();
+    sim.assign_aircraft_destination(
+        plane,
+        Some(NavTargetRef::Cell { rx: 100, ry: 64 }),
+        &rules,
+        &mut FrameEffects::default(),
+    );
+    sim.techno_deactivate(plane, &rules, &mut FrameEffects::default());
+    let spin = |sim: &Simulation| {
+        let entity = sim.entities().get(plane).unwrap();
+        entity
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .fly_runtime()
+            .unwrap()
+            .spin()
+    };
+    let facing = |sim: &Simulation| {
+        let frame = sim.session.binary_frame();
+        sim.entities()
+            .get(plane)
+            .unwrap()
+            .body_facing
+            .current(frame)
+    };
+    let step = |sim: &mut Simulation| {
+        let grid = sim.path_grid_snapshot();
+        sim.advance_tick(&[], Some(&rules), grid.as_deref(), None, 33);
+    };
+    let rate = spin(&sim).expect("a moving Fly spins");
+    assert!((20..=30).contains(&rate.abs()), "{rate}");
+    for turned in [rate, rate - rate.signum()] {
+        let before = facing(&sim);
+        step(&mut sim);
+        assert_eq!(facing(&sim), before.wrapping_add((turned << 8) as u16));
+        assert_eq!(spin(&sim), Some(turned - turned.signum()));
+    }
+    sim.techno_reactivate(plane, &rules, &mut FrameEffects::default());
+    step(&mut sim);
+    assert_eq!(spin(&sim), None);
+}

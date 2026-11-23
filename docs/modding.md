@@ -307,7 +307,9 @@ a folder that is already there, and your original game isn't changed.
 Pick a mod in the Mods menu and press **Check Files**. The game reads every file in the
 mod's folder and tells you how many there are and their **code**, such as `4F2A-91C3`.
 For a mod distributed in parts, this checks the assembled files.
-Two copies with the same code hold the same compared data files. Also keep their
+Two copies with the same code hold the same compared data files: the code leaves out what
+[playing with others](#playing-with-others) leaves out, such as a translated `.csf`, though
+the list and the count name every file. Also keep their
 `mod.ini` loading declarations in sync; the display metadata can differ.
 
 A mod can carry a list of its files, `mod-files.txt`. With one, Check Files also says
@@ -457,7 +459,11 @@ Production Queue** don't need to match: a room plays its host's, and a match a l
 starts plays without the queue. With a mod in use,
 everyone also needs the same theater INIs (such as `snowmd.ini`) and terrain tiles, and the same
 files in the mod's folder: every file there is compared by
-its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`. The folder's own name
+its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`, and except files that
+only show, play or tell you something: text (`.csf`), fonts (`.fnt`), movies (`.bik`, `.vqa`), pictures
+only a screen draws (`.pcx`, `.png`, `.jpg`, `.jpeg`, `.bmp`, `.gif`, `.ico`, `mouse.sha`) and documents
+(`.txt`, `.md`, `.pdf`, `.rtf`, `.htm`, `.html`, `.url`, `.log`). So a mod with its text translated plays
+with the original. Sounds, music, palettes and every `.mix` archive are still compared. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what
 the file holds. Terrain tiles decide how high the ground is and where units can go, so a
 mod's are compared with the original game's. Without a mod, terrain files you put in the game

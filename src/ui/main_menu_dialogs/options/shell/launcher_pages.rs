@@ -1,6 +1,9 @@
 use super::*;
-use crate::ui::main_menu_dialogs::options::{HAS_GRAPHICS_API, HAS_HD_MAP_PREVIEWS, HAS_VSYNC};
+use crate::ui::main_menu_dialogs::options::{
+    HAS_GRAPHICS_API, HAS_HD_MAP_PREVIEWS, HAS_RA2_MODE, HAS_VSYNC,
+};
 use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
+use crate::ui::shell::sound::{SoundSlider, launcher_volume_rects};
 use LauncherCheckboxId as Check;
 use LauncherComboId as Combo;
 use LauncherTrackbarId as Slider;
@@ -64,8 +67,11 @@ pub(super) fn controls(
             check(&mut row, Check::LockCursor, x, 150);
             check(&mut row, Check::OriginalShape, x, 174);
             section(&mut row, Category::Gameplay, 201);
-            check(&mut row, Check::ShiftQueue, x, 239);
-            check(&mut row, Check::BuildingProductionQueue, x, 265);
+            check(&mut row, Check::ShiftQueue, x, 233);
+            check(&mut row, Check::BuildingProductionQueue, x, 257);
+            if HAS_RA2_MODE {
+                check(&mut row, Check::Ra2Mode, x, 281);
+            }
             slider(&mut row, Slider::Difficulty, right, 228, 181);
             section(&mut row, Category::Interface, 310);
             check(&mut row, Check::Tooltips, x, 342);
@@ -73,11 +79,15 @@ pub(super) fn controls(
             check(&mut row, Check::ShowHidden, x, 390);
             slider(&mut row, Slider::Scroll, right, 344, 181);
             section(&mut row, Category::Audio, 448);
-            for (i, id) in [Slider::Score, Slider::Sound, Slider::Voice]
-                .into_iter()
-                .enumerate()
+            for (channel, id) in
+                SoundSlider::ALL
+                    .into_iter()
+                    .zip([Slider::Score, Slider::Sound, Slider::Voice])
             {
-                slider(&mut row, id, 124 + i as i32 * 154, 482, 129);
+                let setting = Setting::Slider(id);
+                let (caption, track) = launcher_volume_rects(channel);
+                row(Control::Label(PageLabel::Caption(setting)), caption);
+                row(Control::Setting(setting), track);
             }
         }
         Category::Enhancements => {

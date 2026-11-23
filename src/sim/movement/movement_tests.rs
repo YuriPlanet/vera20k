@@ -582,6 +582,65 @@ fn drive_ship_slope_process_samples_stationary_retargets_and_keeps_rng() {
 }
 
 #[test]
+fn drive_slope_tracks_the_surface_on_and_below_a_high_bridge() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::sim::movement::slope_transition::{SlopeRenderPhase, state_for_entity};
+
+    let mut terrain =
+        crate::map::resolved_terrain::test_grid(3, 3, |rx, ry| drivable_slope_cell(rx, ry, 9));
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new((1, 1), 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    let mut sim = Simulation::new();
+    let mut entity = GameEntity::test_default(1, "DRIVE", "Americans", 1, 1);
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_type_ref_for_test(sim.intern("DRIVE"));
+    entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+    sim.substrate.entities.insert(entity);
+
+    let slope = |sim: &Simulation, frame| {
+        state_for_entity(sim.substrate.entities.get(1).unwrap())
+            .unwrap()
+            .render_phase(frame)
+    };
+    drive_ship_slope_process_tick(&mut sim, &terrain, 10);
+    assert_eq!(
+        slope(&sim, 13),
+        SlopeRenderPhase::Stable(9),
+        "ground under the deck"
+    );
+
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_on_bridge(true);
+    drive_ship_slope_process_tick(&mut sim, &terrain, 14);
+    assert_eq!(
+        slope(&sim, 14),
+        SlopeRenderPhase::Stable(0),
+        "the elevated deck"
+    );
+
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_on_bridge(false);
+    drive_ship_slope_process_tick(&mut sim, &terrain, 15);
+    assert_eq!(
+        slope(&sim, 15),
+        SlopeRenderPhase::Transition {
+            from_slope: 0,
+            to_slope: 9,
+            phase_num: 0,
+            phase_den: 3,
+        }
+    );
+}
+
+#[test]
 fn drive_slope_boundary_is_detected_on_process_after_forced_track_crossing() {
     let terrain = crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
         1,

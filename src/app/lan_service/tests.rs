@@ -1554,6 +1554,7 @@ fn loading_survivor_connections_handoff_the_original_majority_certificate() {
         30,
         rate,
         sim.state_hash(),
+        0,
         "",
         "",
     )

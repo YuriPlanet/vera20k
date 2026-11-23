@@ -91,7 +91,7 @@ fn leaf_lists_open(state: &AppState) -> bool {
                 | WolPage::AddBuddyQuery(_)
                 | WolPage::MyInformation(_)
         )
-    )
+    ) || options::translate_popup(state).is_some()
 }
 
 /// `0x0077DED0`, called only at `WOL_Main` entry (`0x0077B307`): the
@@ -873,6 +873,7 @@ impl App {
             Some(WolPage::Login(_)) => Some(login::key_press),
             Some(WolPage::Lobby) => Some(lobby::key_press),
             Some(WolPage::Buddy(_)) => Some(buddy::key_press),
+            Some(WolPage::Options(_)) => Some(options::key_press),
             _ => None,
         };
         if let Some(key_press) = handler {

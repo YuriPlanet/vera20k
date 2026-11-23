@@ -9,6 +9,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::sim::anim_class::{AnimClassSpawnDescriptor, AnimObject};
 use crate::sim::rng::SimRng;
 use crate::sim::world::FrameEffects;
+use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::hash::Hasher;

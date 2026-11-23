@@ -834,6 +834,14 @@ impl RuleSet {
         self.ares
     }
 
+    /// VERA: whether the player's Ares setting Off is what keeps Ares from
+    /// playing in this game: its Rules layers or map hold a key that turns
+    /// Ares on for a player set to Auto (`ares_switch::AresInputs::kept_off`).
+    /// Their games are not the same game, which a refused network start says.
+    pub fn ares_kept_off(&self) -> bool {
+        self.ares_kept_off
+    }
+
     /// Whether Phobos plays in this game: its Rules layers or map hold a key
     /// of a Phobos piece that runs in every build, or the build has the
     /// `phobos` feature (`rules::phobos_switch`). Sim and presentation read
@@ -841,6 +849,15 @@ impl RuleSet {
     #[inline]
     pub fn phobos(&self) -> bool {
         self.phobos
+    }
+
+    /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md): original
+    /// Red Alert 2's rules where they differ from Yuri's Revenge. Sim and
+    /// rules read this one answer; app, asset and INI-root code read the
+    /// launch's choice (`util::ra2_launch`) it comes from.
+    #[inline]
+    pub fn ra2(&self) -> bool {
+        self.ra2
     }
 
     /// Whether this game's Rules were read the Ares way
@@ -1005,6 +1022,16 @@ impl RuleSet {
     /// Each hook of that chain does nothing otherwise.
     pub fn parallel_ai_queues_act(&self) -> bool {
         self.phobos && self.parallel_ai_queues.allows_parallel()
+    }
+
+    /// Whether Ares' serial AI queues act in this game: Ares plays and
+    /// `[GlobalControls] AllowParallelAIQueues=no`. Ares then lets one
+    /// factory building per category start production at a time
+    /// (`BuildingClass_Update_Factory`, hook `0x4502F4`, Ares.dll
+    /// `10024E00`). The one key keeps it apart from the Phobos hooks
+    /// ([`Self::parallel_ai_queues_act`]), so the two share the house's slots.
+    pub fn serial_ai_queues_act(&self) -> bool {
+        self.ares && !self.parallel_ai_queues.allows_parallel()
     }
 
     /// A superweapon type's `SuperWeaponTypeClass` array index (its

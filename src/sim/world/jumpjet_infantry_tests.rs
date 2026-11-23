@@ -1140,6 +1140,39 @@ fn rocketeer_crash_fixture(
     (sim, rules, shooter)
 }
 
+#[test]
+fn a_shot_down_rocketeer_finishes_on_the_fixed_bridge_deck() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::sim::movement::infantry_action::DO_AIR_DEATH_FINISH;
+
+    let input = serde_json::json!({
+        "doing": 23,
+        "height": 1080,
+        "owner": {"phase": 2, "moving": true},
+    });
+    let (mut sim, rules, shooter) = rocketeer_crash_fixture(&input);
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    terrain.cell_mut_for_test(52, 52).unwrap().level = 2;
+    let anchor = terrain.native_cell_identity((52, 52));
+    terrain.set_authored_high_bridge_deck(anchor, 10);
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new((52, 52), 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    shoot_the_rocketeer(&mut sim, &rules, shooter);
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+    for frame in 1001..=1030 {
+        sim.session.set_binary_frame_for_test(frame);
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+        let rocketeer = sim.substrate.entities.get(1).unwrap();
+        if rocketeer.mission_leaf.as_infantry().unwrap().doing() == DO_AIR_DEATH_FINISH {
+            assert_eq!(rocketeer.position.exact_z_leptons(), Some(1040));
+            return;
+        }
+    }
+    panic!("the shot-down Rocketeer did not reach AirDeathFinish");
+}
+
 /// Update's facing tail (`0x0054D60D..0x0054D692`): hovering in state 2 with a
 /// TarCom, a `JumpJetTurn=` infantryman's locomotor Facing takes the direction
 /// to it (`0x005F3DB0`) and PrimaryFacing keeps its own. Without the key the

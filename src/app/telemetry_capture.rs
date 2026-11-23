@@ -300,7 +300,11 @@ pub fn publish_if_due(state: &mut AppState) {
             snapshot.report_points = Some(state.match_state.report_history.points());
         }
         if state.diag.telemetry_terrain.is_none() {
-            state.diag.telemetry_terrain = build_terrain_grid(state);
+            state.diag.telemetry_terrain = state
+                .match_state
+                .sim_runtime
+                .runtime()
+                .and_then(|runtime| build_terrain_grid(&runtime.simulation));
         }
         snapshot.terrain = state.diag.telemetry_terrain.clone();
         state.diag.telemetry_terrain_dirty = false;
@@ -318,21 +322,27 @@ pub fn publish_if_due(state: &mut AppState) {
 /// Encode the app's elevation grid for the dashboard, or `None` when no map is
 /// loaded. Row-major, two lowercase hex digits per cell, for each of the four
 /// per-cell grids `TerrainGrid` carries: ground levels, land types, ramp slope
-/// types and bridge deck rises. All four come off the one `ResolvedTerrainCell`
-/// the map resolved, so the dashboard's water, ramps and bridges track the
-/// engine's own terrain rather than a re-derivation. The grid is static for a
+/// types and bridge deck rises. The dashboard samples the resolved ground and
+/// the span's shared deck. The caller treats the result as static for a
 /// loaded map, so the caller caches the result; it is rebuilt only after a
 /// world replacement.
-fn build_terrain_grid(state: &AppState) -> Option<crate::sim::telemetry::TerrainGrid> {
+fn build_terrain_grid(sim: &Simulation) -> Option<crate::sim::telemetry::TerrainGrid> {
+    encode_terrain_grid(
+        sim.session().map_width(),
+        sim.session().map_height(),
+        sim.resolved_terrain(),
+    )
+}
+
+fn encode_terrain_grid(
+    width: u16,
+    height: u16,
+    cells: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+) -> Option<crate::sim::telemetry::TerrainGrid> {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    let runtime = state.match_state.sim_runtime.runtime()?;
-    let sim = &runtime.simulation;
-    let width = sim.session().map_width();
-    let height = sim.session().map_height();
     if width == 0 || height == 0 {
         return None;
     }
-    let cells = sim.resolved_terrain();
     let stride = usize::from(width) * usize::from(height);
     let mut levels = String::with_capacity(stride * 2);
     let mut land_types = String::with_capacity(stride * 2);
@@ -347,11 +357,15 @@ fn build_terrain_grid(state: &AppState) -> Option<crate::sim::telemetry::Terrain
             let cell = cells.and_then(|grid| grid.cell(rx, ry));
             // Without a resolved cell (no terrain yet) the level stays flat.
             let level = cell.map_or(0, |cell| cell.level);
-            // A structural deck sits `bridge_deck_level` above the cell's own
-            // ground level; a low, ground-level bridge reports no rise.
-            let deck_rise = cell
-                .and_then(|cell| cell.bridge_deck_level_if_any())
-                .map_or(0, |deck| deck.saturating_sub(level));
+            let deck = cells
+                .and_then(|grid| grid.corrected_high_bridge_deck_level((rx, ry)))
+                .or_else(|| {
+                    cell.and_then(|cell| cell.high_bridge_deck_level())
+                        .map(|deck| i16::from(deck as i8))
+                });
+            let deck_rise = deck.map_or(0, |deck| {
+                (deck - i16::from(level as i8)).clamp(0, i16::from(u8::MAX)) as u8
+            });
             hex(&mut levels, level);
             hex(&mut land_types, cell.map_or(0, |cell| cell.land_type));
             hex(&mut slope_types, cell.map_or(0, |cell| cell.slope_type));
@@ -518,6 +532,29 @@ fn category_label(category: EntityCategory) -> &'static str {
 mod tests {
     use super::*;
     use crate::sim::combat::Health;
+
+    #[test]
+    fn terrain_capture_reports_the_fixed_deck_rise_over_a_dip() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+        use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+        let mut terrain = test_grid(16, 16, |rx, ry| {
+            let mut cell = test_flat_cell(rx, ry);
+            if (rx, ry) == (8, 8) {
+                cell.level = 4;
+            }
+            cell
+        });
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((8, 8), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+
+        let captured = encode_terrain_grid(16, 16, Some(&terrain)).unwrap();
+        let at = (9 * 16 + 8) * 2;
+        assert_eq!(&captured.levels[at..at + 2], "00");
+        assert_eq!(&captured.deck_rises[at..at + 2], "08");
+    }
 
     #[test]
     fn selection_capture_is_bounded_and_does_not_change_the_world() {

@@ -197,7 +197,7 @@ the room return 409 `player_not_in_room` instead, which leaves Teams as it is. A
 from before Teams cannot read a host's options while Teams is set and shows its
 invalid-update line, in a room that cannot start anyway, since its players' versions
 differ. `launch.options.auto_balance`, the Balance automatically setting of hosts on
-0.3.3 and 0.3.4, is `true` or left out while it is off; those games send it only with a Teams count,
+0.3.2 to 0.3.4, is `true` or left out while it is off; those games send it only with a Teams count,
 and current games never send it. `launch.options.queue`, a VERA room's join
 queue, lists by name the room's spectators (humans with the `Observer` role) who wait
 for a seat, first first, each once and at most 30; the game leaves it out while nobody
@@ -571,7 +571,9 @@ error that ended the match on this game: `agreement_mismatch`, `start_cancelled`
 `local_error`. `start_hash` is null once the
 relay's clock started; before that it maps each part of the start this game offered the
 relay, at most 64, to 16 hex digits, so two games' reports of one match differ in the part
-that differs.
+that differs: the `setup_*` parts, `world` with the world's own parts, `build`, `rules`
+and, from games that certify it, `asset_files` (what the simulation reads from picture
+and model files).
 Games before these fields send none of them.
 `fps_p50` and `fps_p5` read the presents of a moving picture: one that stands between
 frames is not drawn again, and the present after it starts a new interval.
@@ -733,8 +735,10 @@ not know.
   language, else the operator's `text`, which a missing or malformed tag gets.
 - `Vera-Changes: <percent-encoded JSON>`: what the game changes from the original game,
   which a room's rules line names: an object with `mod` (the mod's title), `ini_roots:
-  true` (config.toml names other INI files), `ares` (`on` or `off`, the player's Ares
-  setting when not Auto) and `files` with `count` (up to 32 names of the game-folder files
+  true` (config.toml names other Rules, Art, AI, mode roster or map catalog files, or
+  another theater suffix, or [RA2 Mode](ra2-mode.md) is on), `ares` (`on` or `off`, the player's Ares setting where it
+  decides which game opens: On unless a selected mod mounts `ares.mix` anyway, Off only
+  with such a mod or over rules that hold an Ares key) and `files` with `count` (up to 32 names of the game-folder files
   that change the rules the network compares, of `count`), each left out when unchanged:
   `{}` for the original game. Texts are 1–64 bytes of well-formed UTF-16 without control
   or format characters (such as bidi overrides), `count` at most 65535 and the header at
@@ -1107,7 +1111,7 @@ choice would, and publishes the options. A game that ignores the event leaves th
 to the host. The host alone hears why nothing moves: a Quick Match room, a mode without
 teams, AI players, fewer than two players, or teams already as even as they can be.
 Anyone else typing `/balance` hears that only the host can. The host's Balance teams, in
-Quick Team Setup, sends `/balance` in the room's chat. A 0.3.3 or 0.3.4 host with Balance automatically on sends
+Quick Team Setup, sends `/balance` in the room's chat. A host on 0.3.2 to 0.3.4 with Balance automatically on sends
 the `balance` command 5 seconds after who plays or the Teams count last changed; the
 lobby balances as for `/balance` but says nothing when nothing moves, and refuses the
 command from anyone but the host with 403 `forbidden`. Current games never send it.

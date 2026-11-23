@@ -838,11 +838,17 @@ impl ShellCaptureCheckpoint {
             Self::CampaignLoadingFirst(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST
             }
+            Self::CampaignLoadingFirst(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-loading-first"
+            }
             Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Allied) => {
                 CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE
             }
             Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE
+            }
+            Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-first-live"
             }
             Self::CampaignExplicitFirstLive("SOV05UMD.MAP") => "campaign-sov05-first-live-frame",
             Self::CampaignExplicitFirstLive("ALL02UMD.MAP") => "campaign-all02-first-live-frame",
@@ -853,11 +859,17 @@ impl ShellCaptureCheckpoint {
             Self::CampaignInitialSaved(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 "campaign-sov1-initial-save"
             }
+            Self::CampaignInitialSaved(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-initial-save"
+            }
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Allied) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN
             }
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN
+            }
+            Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::BootCamp) => {
+                "campaign-bootcamp-abort-return"
             }
             Self::CampaignRestart(movies::RestartTarget::AbortShown) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART_SHOWN
@@ -1613,7 +1625,7 @@ where
 
     // The settled main menu also captures in any larger window, to compare
     // its scaled drawing, with the pointer resting at the window's centre.
-    // VERA's room and its Create Game form also follow the window scale.
+    // VERA's room, Create Game form, and WOL options also follow the window scale.
     let scaled = (checkpoint == ShellCaptureCheckpoint::MainMenu0xE2Steady
         || matches!(
             checkpoint.movies_target(),
@@ -1621,6 +1633,9 @@ where
                 movies::WolTarget::ModernCreate
                     | movies::WolTarget::ModernTeams
                     | movies::WolTarget::ModernLobbySummary { .. }
+                    | movies::WolTarget::ModernOptions
+                    | movies::WolTarget::ModernOptionsTranslation
+                    | movies::WolTarget::ModernOptionsTranslationList
             ))
         ))
         && (width, height) != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
@@ -1630,7 +1645,7 @@ where
         (width == EXPECTED_WIDTH && height == EXPECTED_HEIGHT)
             || (online_latency && width == 640 && height == 480)
             || scaled,
-        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency, a larger window for the main menu and VERA's room), got {width}x{height}",
+        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (other supported dimensions depend on the checkpoint), got {width}x{height}",
         checkpoint.as_str()
     );
     let neutral = if scaled {

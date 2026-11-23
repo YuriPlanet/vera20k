@@ -496,7 +496,7 @@ pub struct SkirmishLaunchOptions {
     /// Left out while Off, as the bans are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teams: Option<u8>,
-    /// Balance automatically, which 0.3.3 and 0.3.4 hosts send with Teams.
+    /// Balance automatically, which hosts on 0.3.2 to 0.3.4 send with Teams.
     /// Read only so that their options parse; nothing reads it, and it is
     /// never sent.
     #[serde(default, skip_serializing)]
@@ -1250,6 +1250,16 @@ impl SkirmishLaunchSession {
         }
     }
 
+    /// Whether the match seats a house the computer runs: a computer
+    /// player, or Cooperative's, whose declared count can outlast its rows.
+    /// VERA: a network match that seats none reads the original AI INI
+    /// (`retail_sources::match_ai_file`).
+    pub fn seats_computers(&self) -> bool {
+        self.ai_player_count > 0
+            || !self.opponents.is_empty()
+            || self.mode.class == crate::skirmish_modes::MpModeClass::Cooperative
+    }
+
     fn view(&self) -> LaunchSessionView<'_> {
         LaunchSessionView {
             mode: &self.mode,
@@ -1607,7 +1617,7 @@ mod tests {
         );
     }
 
-    /// A 0.3.3 or 0.3.4 host's options still parse with its Balance
+    /// The options of a host on 0.3.2 to 0.3.4 still parse with its Balance
     /// automatically, and the setting never goes out again.
     #[test]
     fn an_older_hosts_balance_automatically_parses_and_is_never_sent() {
@@ -1752,6 +1762,21 @@ mod tests {
                 case["name"]
             );
         }
+    }
+
+    /// VERA: a match seats a computer with a computer's row, with a
+    /// declared count that outlasts its rows, and in Cooperative; human
+    /// players alone seat none.
+    #[test]
+    fn a_match_seats_computers_by_its_rows_its_declared_count_or_its_mode() {
+        let mut session = random_test_session();
+        assert!(session.seats_computers());
+        session.opponents.clear();
+        assert!(session.seats_computers());
+        session.ai_player_count = 0;
+        assert!(!session.seats_computers());
+        session.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        assert!(session.seats_computers());
     }
 
     #[test]

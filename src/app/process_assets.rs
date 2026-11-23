@@ -39,6 +39,13 @@ pub(crate) struct ProcessAssets {
     /// The launch's Ares setting (`util::ares_launch::AresSetting`), kept as
     /// the mod folder is.
     ares_setting: crate::util::ares_launch::AresSetting,
+    /// Whether that setting on Auto mounts `ares.mix` for this game
+    /// (`AssetManager::auto_mounts_ares`), and whether set to Off it keeps
+    /// the startup Rules' own Ares keys from turning Ares on
+    /// (`RuleSet::ares_kept_off`): kept with the Rules for
+    /// [`Self::agreed_ares_setting`] while the manager is away at a load.
+    auto_mounts_ares: bool,
+    rules_keep_ares_off: bool,
     /// That folder's files, read once: the pre-match check compares their
     /// digest.
     mod_files: std::sync::Arc<std::sync::OnceLock<Result<ModFiles, String>>>,
@@ -195,6 +202,8 @@ impl ProcessAssets {
         Self {
             media_archive_mode,
             ares_setting: Default::default(),
+            auto_mounts_ares: false,
+            rules_keep_ares_off: false,
             mod_files: Default::default(),
             mod_files_ahead: false,
             map_additions: Default::default(),
@@ -252,9 +261,22 @@ impl ProcessAssets {
         self
     }
 
-    /// The launch's Ares setting, which other players' games must share.
-    pub(crate) fn ares_setting(&self) -> crate::util::ares_launch::AresSetting {
-        self.ares_setting
+    /// VERA: the launch's Ares setting where it decides which game this is,
+    /// else Auto (`AresSetting::where_it_decides`), which other players'
+    /// games must share: the rules digest counts it, the rules parts and the
+    /// rules-differ texts name it and Quick Match refuses it.
+    pub(crate) fn agreed_ares_setting(&self) -> crate::util::ares_launch::AresSetting {
+        self.agreed_ares(self.manager.as_ref())
+    }
+
+    /// [`Self::agreed_ares_setting`] by `assets`, the open manager, which
+    /// owns the setting; without one, by what startup kept of it.
+    fn agreed_ares(&self, assets: Option<&AssetManager>) -> crate::util::ares_launch::AresSetting {
+        let (setting, auto_mounts) = match assets {
+            Some(assets) => (assets.ares_setting(), assets.auto_mounts_ares()),
+            None => (self.ares_setting, self.auto_mounts_ares),
+        };
+        setting.where_it_decides(auto_mounts, self.rules_keep_ares_off)
     }
 
     /// The player opened a multiplayer menu: start reading the mod's files
@@ -357,10 +379,11 @@ impl ProcessAssets {
         self.use_personal_rules(self.personal_rules.clone());
     }
 
-    /// Whether every INI root the rules agreement compares and the theater
-    /// suffix use stock YR names (`IniRoots::is_stock`). Host configuration
-    /// or a selected mod can choose others; even a suffix aliasing a shipped
-    /// theater INI counts as a custom choice.
+    /// Whether every INI root the rules agreement compares
+    /// (`IniRoots::agreed_files`) and the theater suffix use stock YR names
+    /// (`IniRoots::is_stock`). Host configuration or a selected mod can
+    /// choose others; even a suffix aliasing a shipped theater INI counts as
+    /// a custom choice.
     pub(crate) fn stock_ini_roots(&self) -> bool {
         self.selected_ini_roots
             .as_ref()
@@ -479,6 +502,8 @@ impl ProcessAssets {
             .into_startup(sounds, eva)?;
         let (rules, projection, owner) = startup.into_parts();
         self.native_rules = Some(owner);
+        self.auto_mounts_ares = assets.auto_mounts_ares();
+        self.rules_keep_ares_off = rules.as_ref().is_some_and(|rules| rules.ares_kept_off());
         Ok((rules, projection))
     }
 
@@ -588,10 +613,37 @@ impl ProcessAssets {
     /// ships and no tiles, and leaves its folder's terrain files to each
     /// match (`Self::agreed_inis`, `Self::match_terrain_digest`).
     /// The legacy advertisement CRC remains a separate native UI value.
+    /// This is the digest of a game, with the AI INI its folder supplies: a
+    /// launcher compares it before it seats anyone (docs/spawn.md). A match's
+    /// is [`Self::multiplayer_match_rules_digest`].
     pub(crate) fn multiplayer_rules_digest(&self, mode: &str) -> Result<String, String> {
+        self.rules_digest_reading(mode, crate::rules::retail_sources::AiFile::GameFolder)
+    }
+
+    /// VERA: [`Self::multiplayer_rules_digest`] of a network match, with the
+    /// AI INI it reads (`retail_sources::match_ai_file`): the original one
+    /// when it seats no computer (`seats_computers`), so players whose game
+    /// folders hold other AI files agree until a computer is seated.
+    pub(crate) fn multiplayer_match_rules_digest(
+        &self,
+        mode: &str,
+        seats_computers: bool,
+    ) -> Result<String, String> {
+        let (_, assets) = self.rules_and_sources()?;
+        self.rules_digest_reading(
+            mode,
+            crate::rules::retail_sources::match_ai_file(assets, true, seats_computers),
+        )
+    }
+
+    fn rules_digest_reading(
+        &self,
+        mode: &str,
+        ai_file: crate::rules::retail_sources::AiFile,
+    ) -> Result<String, String> {
         let (rules, assets) = self.rules_and_sources()?;
         let mut digests: Vec<Option<String>> = self
-            .agreed_inis(rules, assets, &[mode], true)?
+            .agreed_inis(rules, assets, &[mode], true, ai_file)?
             .into_iter()
             .flatten()
             .map(|ini| ini.digest)
@@ -604,7 +656,8 @@ impl ProcessAssets {
                 .then(|| self.changed_tiles(assets).digest.clone())
                 .flatten(),
         );
-        let mut bytes = b"VERA20k rules agreement v1\0".to_vec();
+        // v2 includes the independent high-bridge deck calculation.
+        let mut bytes = b"VERA20k rules agreement v2\0".to_vec();
         // VERA: the Options switches played, which the digested sources
         // leave out; none adds nothing.
         if let Some(crc) = rules.personal_rules_compatibility_crc() {
@@ -626,10 +679,15 @@ impl ProcessAssets {
         if assets.ships_ares() {
             bytes.push(1);
         }
-        // VERA: the player's Ares setting. Off keeps Ares keys from turning
-        // Ares on, so such a game never agrees with one set to Auto; Auto
-        // adds nothing, as before the setting.
-        match assets.ares_setting() {
+        // VERA: the player's Ares setting where it decides which game this
+        // is (`Self::agreed_ares_setting`): On, unless Auto mounts `ares.mix`
+        // for it too, and Off only when Auto would or these Rules hold an
+        // Ares key. Auto, and a setting that opens the game Auto opens, adds
+        // nothing. Off also keeps a mode's or a map's Ares key from turning
+        // Ares on, which only a match that reads one notices: its start
+        // compares whether Ares plays
+        // (`shell_network_setup::agreement::start_rules`).
+        match self.agreed_ares(Some(assets)) {
             crate::util::ares_launch::AresSetting::Auto => {}
             // On without a mod can play with or without the installation's
             // `ares.mix`; which one is part of the game.
@@ -639,13 +697,20 @@ impl ProcessAssets {
             }
             crate::util::ares_launch::AresSetting::Off => bytes.extend_from_slice(b"ares off\0"),
         }
+        // VERA: RA2 mode (docs/ra2-mode.md) also plays RA2's rules in the
+        // simulation (`util::ra2_launch`), which its INI roots alone do not
+        // show: config.toml can name the same roots without it. Off adds
+        // nothing, so a game without it keeps its digest.
+        if crate::util::ra2_launch::enabled() {
+            bytes.extend_from_slice(b"ra2 mode\0");
+        }
         // mod.ini's display metadata is deliberately absent from the mod-file
         // digest. Its effective loading declarations still select what plays;
         // compare the frozen choice, not the mutable manifest on disk.
         if let Some(selection) = self.resource_selection(assets) {
             bytes.extend_from_slice(b"resource selection\0");
             bytes.push(u8::from(selection.requires_ares));
-            bytes.extend_from_slice(assets.ares_setting().ini_value().as_bytes());
+            bytes.extend_from_slice(self.agreed_ares(Some(assets)).ini_value().as_bytes());
             bytes.push(0);
             for name in selection.roots.iter().chain(&selection.archives) {
                 bytes.extend_from_slice(name.as_bytes());
@@ -701,10 +766,16 @@ impl ProcessAssets {
         })
     }
 
-    /// The INI roots and archive names this game reads, lowercased, when a
-    /// mod requires Ares or any of them is not YR's: the rules agreement
-    /// compares them and the rules parts name them. `None` for a stock
-    /// choice, which adds nothing.
+    /// The INI roots and archive names players' games compare, lowercased,
+    /// when a mod requires Ares or any of them is not YR's: the rules
+    /// agreement compares them and the rules parts name them. `None` for a
+    /// stock choice, which adds nothing.
+    /// VERA: the roots are `IniRoots::agreed_files`, which hold what a match
+    /// plays and the modes and maps a game offers. The sound, EVA, theme,
+    /// campaign, mission and map-selection roots name what a game plays
+    /// aloud or shows: two games that differ only in those names play
+    /// together. Every archive name stays: an archive mounts into the search
+    /// order whatever it is named for, so it can supply any file.
     fn resource_selection(
         &self,
         assets: &AssetManager,
@@ -732,13 +803,13 @@ impl ProcessAssets {
             ),
         ];
         let chosen = self.resources.requires_ares
-            || !roots.files_are_stock()
+            || !roots.agreed_files_are_stock()
             || archive_names
                 .iter()
                 .any(|(name, stock)| !name.eq_ignore_ascii_case(stock));
         chosen.then(|| crate::app::rules_parts::ResourceSelection {
             requires_ares: self.resources.requires_ares,
-            roots: roots.files().map(str::to_ascii_lowercase).into(),
+            roots: roots.agreed_files().map(str::to_ascii_lowercase).into(),
             archives: archive_names
                 .iter()
                 .map(|(name, _)| name.to_ascii_lowercase())
@@ -752,17 +823,19 @@ impl ProcessAssets {
     /// INI, then each theater's INI: as `map::theater::load_theater` reads it
     /// with a mod selected, else the copy a retail install ships.
     /// One list per mode in `modes`; what no mode changes is read once.
+    /// AIMD is the copy `ai_file` names (`retail_sources::select_ai_ini`).
     fn agreed_inis(
         &self,
         rules: &crate::rules::process_owner::NativeRulesProcessOwner,
         assets: &AssetManager,
         modes: &[&str],
         switches: bool,
+        ai_file: crate::rules::retail_sources::AiFile,
     ) -> Result<Vec<Vec<AgreedIni>>, String> {
         use crate::rules::ini_parser::IniFile;
-        use crate::rules::retail_sources::{select_ini, select_mode_ini};
+        use crate::rules::retail_sources::{select_ai_ini, select_mode_ini};
         let roots = assets.ini_roots();
-        let ai = select_ini(assets, roots.ai())?;
+        let ai = select_ai_ini(assets, ai_file)?;
         let [root, langrule, art] = rules.multiplayer_source_digests();
         let root = if switches {
             root
@@ -779,7 +852,7 @@ impl ProcessAssets {
             ini("rules", roots.rules(), root, false),
             ini("langrule", "langrule.ini", langrule, true),
             ini("art", roots.art(), art, false),
-            ini("ai", roots.ai(), Some(ai.ini.multiplayer_digest()), false),
+            ini("ai", roots.ai(), Some(ai.multiplayer_digest()), false),
         ];
         // VERA: a theater INI's tilesets decide every cell's land and height.
         // One that is absent or does not parse fails that theater's load.
@@ -852,16 +925,19 @@ impl ProcessAssets {
             terrain_deformation: rules.personal_rules().terrain_deformation(),
             superweapon_limit: rules.personal_rules().superweapon_limit(),
             building_production_queue: rules.personal_rules().building_production_queue(),
-            ares: match assets.ares_setting() {
+            // As the digest counts it.
+            ares: match self.agreed_ares(Some(assets)) {
                 crate::util::ares_launch::AresSetting::Auto => "auto",
                 crate::util::ares_launch::AresSetting::On => "on",
                 crate::util::ares_launch::AresSetting::Off => "off",
             },
             // Mounted only where the digest counts it: with the setting On
-            // (its byte) or on Auto with a mod that ships it (`ships_ares`);
-            // Auto without a mod and Off never mount it.
+            // (its byte) or with a mod that ships it (`ships_ares`); without
+            // a mod only On mounts it, and Off never does.
             ares_mix: assets.ares_mix_mounted(),
             ini_roots_stock: self.stock_ini_roots(),
+            // As the digest counts it.
+            ra2: crate::util::ra2_launch::enabled(),
             resources: self.resource_selection(assets),
             mod_in_use: self.resources.mod_folder.as_deref().map(|dir| {
                 let (title, version) =
@@ -927,7 +1003,9 @@ impl ProcessAssets {
         let tiles = (!original).then(|| self.changed_tiles(assets));
         let tiles_digest = tiles.and_then(|tiles| tiles.digest.as_deref());
         let additions = self.map_additions(assets)?;
-        self.agreed_inis(rules, assets, modes, false)?
+        // The game's parts, as a launcher reads them: the folder's AI INI.
+        let ai_file = crate::rules::retail_sources::AiFile::GameFolder;
+        self.agreed_inis(rules, assets, modes, false, ai_file)?
             .into_iter()
             .map(|inis| {
                 let mut files: Vec<RulesFile> = inis
@@ -1042,8 +1120,9 @@ impl ProcessAssets {
         &mut self,
         mode: &str,
         options: &crate::map::rmg::RmgOptions,
+        seats_computers: bool,
     ) -> Result<String, String> {
-        let rules = self.multiplayer_rules_digest(mode)?;
+        let rules = self.multiplayer_match_rules_digest(mode, seats_computers)?;
         let assets = self.manager.as_mut().ok_or("retail sources are loading")?;
         let mode_rules = crate::rules::retail_sources::select_mode_ini(assets, Some(mode))?;
         // VERA: the preparation loads a theater, which pins the terrain files
@@ -1151,8 +1230,15 @@ impl ProcessAssets {
         let Some(rules) = self.native_rules.as_ref() else {
             return;
         };
-        let ai = match select_ini(assets, assets.ini_roots().ai()) {
-            Ok(selected) => selected.ini,
+        // VERA: a room is joined before it is known whether it seats a
+        // computer, so the join compares the AI INI a match without one
+        // reads: the original game's, whatever the folder supplies
+        // (`retail_sources::match_ai_file`). A room that seats a computer
+        // compares the folder's in its rules digest
+        // (`Self::multiplayer_match_rules_digest`).
+        let joined = crate::rules::retail_sources::match_ai_file(assets, true, false);
+        let ai = match crate::rules::retail_sources::select_ai_ini(assets, joined) {
+            Ok(ai) => ai,
             Err(error) => {
                 log::warn!("No INI hashes without the AI root: {error}");
                 return;
@@ -1467,6 +1553,78 @@ mod tests {
         assert_ne!(digest(false), original, "actual rule changes still differ");
     }
 
+    /// VERA: the Ares setting counts between players where it decides which
+    /// game opens. Off opens the original game Auto opens, and On the game
+    /// Auto opens for a mod whose `ares.mix` it mounts: their digests agree,
+    /// their parts say `auto` and neither is a change from the original
+    /// game. On without such a mod, Off with one, and Off over Rules that
+    /// hold an Ares key open another game.
+    #[test]
+    fn the_ares_setting_counts_only_where_it_decides_the_game() {
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+        use crate::rules::ares_switch::read_ares_way;
+        use crate::util::ares_launch::AresSetting::{self, Auto, Off, On};
+
+        let install = audio_test_install("ares-setting-agreement");
+        let write_rules = |text: &str| {
+            std::fs::write(install.path().join("rulesmd.ini"), text).unwrap();
+        };
+        write_rules("[General]\nBuildSpeed=.7\n");
+        for (name, text) in [
+            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+        ] {
+            std::fs::write(install.path().join(name), text).unwrap();
+        }
+        let mod_dir = TestDirectory::new("ares-setting-agreement-mod");
+        mod_dir.write_mix("ares.mix", "ares.txt", b"mod Ares");
+        let game = |selected_mod: bool, setting: AresSetting| {
+            let assets = AssetManager::with_mod_and_ares(
+                install.path(),
+                selected_mod.then_some(mod_dir.path()),
+                MediaArchiveMode::STOCK_DIGITAL,
+                setting,
+                &Default::default(),
+            )
+            .unwrap();
+            let _reading = read_ares_way(assets.ships_ares());
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+                .with_ares_setting(setting);
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.return_from_loading(assets);
+            let parts = process.multiplayer_rules_parts(&[""]).unwrap().remove(0);
+            let parts: serde_json::Value = serde_json::from_str(&parts.json()).unwrap();
+            (
+                process.multiplayer_rules_digest("").unwrap(),
+                parts["settings"]["ares"].as_str().unwrap().to_owned(),
+                process.agreed_ares_setting(),
+            )
+        };
+        let original = game(false, Auto);
+        assert_eq!(original.1, "auto");
+        assert_eq!(game(false, Off), original);
+        let on = game(false, On);
+        assert_ne!(on.0, original.0);
+        assert_eq!((on.1.as_str(), on.2), ("on", On));
+
+        let with_mod = game(true, Auto);
+        assert_ne!(with_mod.0, original.0);
+        assert_eq!(game(true, On), with_mod);
+        let off = game(true, Off);
+        assert_ne!(off.0, with_mod.0);
+        assert_eq!((off.1.as_str(), off.2), ("off", Off));
+
+        // Rules whose own key turns Ares on for a player set to Auto: Off
+        // plays them without Ares, in every match.
+        write_rules(
+            "[General]\nBuildSpeed=.7\n[VehicleTypes]\n1=HTNK\n[HTNK]\nImmuneToAbduction=yes\n",
+        );
+        let keyed = game(false, Auto);
+        let kept_off = game(false, Off);
+        assert_ne!(kept_off.0, keyed.0);
+        assert_eq!((kept_off.1.as_str(), kept_off.2), ("off", Off));
+    }
+
     #[test]
     fn generated_rules_agreement_covers_rmg_settings_and_theater_inputs() {
         let dir = crate::assets::asset_manager::test_support::audio_test_install("rmg-agreement");
@@ -1491,7 +1649,11 @@ mod tests {
             process.initialize_sources_if_needed(&assets).unwrap();
             process.return_from_loading(assets);
             process
-                .multiplayer_generated_rules_digest("", &crate::map::rmg::RmgOptions::default())
+                .multiplayer_generated_rules_digest(
+                    "",
+                    &crate::map::rmg::RmgOptions::default(),
+                    true,
+                )
                 .unwrap()
         };
         let original = digest();
@@ -1533,7 +1695,7 @@ mod tests {
             ..Default::default()
         };
         process
-            .multiplayer_generated_rules_digest("", &snow)
+            .multiplayer_generated_rules_digest("", &snow, true)
             .unwrap();
         assert_eq!(process.match_terrain_digest().unwrap(), terrain);
     }
@@ -1675,8 +1837,10 @@ mod tests {
     /// kept as a terrain file, and joins the start of a match that reads it.
     /// A mod's game agrees on the INI it reads. The agreement reads the file
     /// a theater suffix selects, else the stock one, as the loader does.
-    /// Every INI root the agreement compares, an EVA root too, counts against
-    /// the original game, so Quick Match refuses it before it queues.
+    /// Every INI root the agreement compares, the mode roster's too, counts
+    /// against the original game, so Quick Match refuses it before it queues.
+    /// A root that names what a game plays aloud or shows, such as EVA's,
+    /// changes neither.
     #[test]
     fn ini_roots_and_shipped_theater_inis_take_part_in_the_agreement() {
         use crate::map::source::test_support::make_new_format_mix_bytes;
@@ -1739,8 +1903,17 @@ mod tests {
             },
             None,
         );
-        assert_ne!(eva.multiplayer_rules_digest("").unwrap(), original);
-        assert!(!eva.stock_ini_roots());
+        assert_eq!(eva.multiplayer_rules_digest("").unwrap(), original);
+        assert!(eva.stock_ini_roots());
+        let modes = with_roots(
+            IniRootConfig {
+                modes: Some("my-modes.ini".to_owned()),
+                ..IniRootConfig::default()
+            },
+            None,
+        );
+        assert_ne!(modes.multiplayer_rules_digest("").unwrap(), original);
+        assert!(!modes.stock_ini_roots());
         assert_eq!(started(None, None).match_terrain_digest().unwrap(), None);
         let modded = started(None, Some(&mod_dir))
             .multiplayer_rules_digest("")
@@ -1905,6 +2078,54 @@ mod tests {
         assert_eq!(deformed["files"], stock["files"]);
         assert_eq!(deformed["settings"]["terrain_deformation"], true);
         assert_ne!(deformed["digest"], stock["digest"]);
+    }
+
+    /// VERA: a room that seats no computer agrees on the original AI INI,
+    /// and so does its join, whatever AI INI a game folder holds. A room
+    /// that seats one compares the folder's, as a launcher's digest does.
+    #[test]
+    fn a_room_compares_the_folders_ai_ini_only_when_it_seats_a_computer() {
+        use crate::map::source::test_support::make_new_format_mix_bytes;
+        let dir =
+            crate::assets::asset_manager::test_support::audio_test_install("ai-file-agreement");
+        let local = make_new_format_mix_bytes(&[
+            ("rulesmd.ini", b"[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", b"[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", b"[AI]\nValue=1\n"),
+        ]);
+        std::fs::remove_file(dir.path().join("localmd.mix")).unwrap();
+        std::fs::write(
+            dir.path().join("ra2md.mix"),
+            make_new_format_mix_bytes(&[("localmd.mix", &local)]),
+        )
+        .unwrap();
+        let start = || {
+            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.install_native_ini_hashes(&assets, &[]);
+            process.return_from_loading(assets);
+            process
+        };
+        let room = |process: &ProcessAssets, computers| {
+            process
+                .multiplayer_match_rules_digest("", computers)
+                .unwrap()
+        };
+        let original = start();
+        std::fs::write(dir.path().join("aimd.ini"), b"[AI]\nValue=2\n").unwrap();
+        let changed = start();
+        assert_eq!(changed.changed_game_files(), ["aimd.ini"]);
+
+        assert_eq!(room(&original, false), room(&changed, false));
+        assert_eq!(original.native_ini_hashes(), changed.native_ini_hashes());
+        assert_ne!(room(&original, true), room(&changed, true));
+        // The original game has one digest, whoever is seated.
+        assert_eq!(room(&original, false), room(&original, true));
+        assert_eq!(
+            room(&changed, true),
+            changed.multiplayer_rules_digest("").unwrap()
+        );
     }
 
     #[test]

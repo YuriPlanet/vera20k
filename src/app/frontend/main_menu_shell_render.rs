@@ -339,7 +339,7 @@ pub(crate) fn ensure_movie_for_current_layout(
     requested_owner: Ra2tsDialogOwner,
 ) -> Result<()> {
     let layout = shell_layout::main_menu_layout(state);
-    let yr_original_style = state.persistence.options_profile.yr_original_style;
+    let yr_original_style = state.persistence.options_profile.plays_yr_original_style();
     let requested_identity =
         Ra2tsMovieSessionIdentity::new(requested_owner, layout.movie_base, yr_original_style);
     if ra2ts_movie_session_is_reusable(
@@ -727,6 +727,18 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         | ShellMessageBoxPurpose::ModFiles(_) => atlas.ra2_dialog_background,
         _ => None,
     }
+    .or_else(|| {
+        // Original RA2 draws every shell message box (including the
+        // "Are you sure you want to exit Red Alert 2?" confirmation) over
+        // `PUDLGBGN.SHP` tinted with `DIALOG.PAL`, both in `ra2.mix ->
+        // local.mix`. The stock slot above is gamemd's `DIALOGN.PAL` art.
+        // Prefer RA2's own dialog art so -ra2 boxes don't look like YR.
+        if crate::util::ra2_launch::enabled() {
+            atlas.ra2_dialog_background
+        } else {
+            None
+        }
+    })
     .or_else(|| atlas.mode_two_dialog_background(None));
     let shell_box = &message_box.shell_box;
     let parts = shell_layout::shell_box_parts(state, shell_box);

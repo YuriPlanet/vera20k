@@ -127,6 +127,11 @@ pub(crate) fn parse_args(args: Vec<OsString>) -> Result<MapPictureRequest> {
     let (mut sha256, mut output, mut area, mut max_size, mut markers, mut prepared_mod) =
         (None, None, None, None, None, None);
     while let Some(flag) = args.next() {
+        // The parent's RA2 mode (`pictures::start`), which
+        // `util::ra2_launch::configure` has already read.
+        if flag.eq_ignore_ascii_case("-ra2") {
+            continue;
+        }
         let value = args
             .next()
             .with_context(|| format!("missing value after {}", flag.to_string_lossy()))?;
@@ -217,14 +222,17 @@ fn picture_path(folder: &Path, sha256: &str) -> PathBuf {
 
 /// The folder in `pictures` for the [`PICTURE_VERSION`] pictures of maps
 /// drawn with the art in `ra2_dir`, under the mod in `mod_dir` when one is in
-/// use: every build of that version shares it, and another game folder or
-/// mod draws its own. The folders of other versions, game folders and mods,
+/// use and in RA2 Mode when it is on (`util::ra2_launch`): every build of
+/// that version shares it, and another game folder, mod or mode draws its own. The folders of other versions, game folders and mods,
 /// which this run never shows, are removed.
 fn generation_folder(pictures: &Path, ra2_dir: &Path, mod_dir: Option<&Path>) -> PathBuf {
     let mut key = format!("{PICTURE_VERSION}\0{}", ra2_dir.to_string_lossy());
     if let Some(mod_dir) = mod_dir {
         key.push('\0');
         key.push_str(&mod_dir.to_string_lossy());
+    }
+    if crate::util::ra2_launch::enabled() {
+        key.push_str("\0ra2");
     }
     let name = crate::util::sha256::sha256_hex(key.as_bytes())[..GENERATION_LEN].to_owned();
     for entry in std::fs::read_dir(pictures).into_iter().flatten().flatten() {
@@ -294,6 +302,10 @@ mod tests {
         assert_eq!(args.len(), 6, "the menus ask for nothing more");
         assert!(is_invocation(args.clone()));
         assert_eq!(parse_args(args.clone()).unwrap(), menus);
+        // A parent in RA2 Mode adds its switch (`pictures::start`).
+        let mut ra2 = args.clone();
+        ra2.push("-ra2".into());
+        assert_eq!(parse_args(ra2).unwrap(), menus);
         let tool = MapPictureRequest {
             area: PictureArea::View,
             max_size: (1200, 1200),

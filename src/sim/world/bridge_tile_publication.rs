@@ -134,30 +134,32 @@ impl LivePublication<'_> {
             return Ok(());
         }
 
+        let footprint = |(x, y): CellCoord| match axis {
+            Axis::NS => [(x, y), (x, y.wrapping_sub(1)), (x, y.wrapping_add(1))],
+            Axis::EW => [(x.wrapping_sub(1), y), (x, y), (x.wrapping_add(1), y)],
+        };
+        let other_center = match axis {
+            Axis::NS => (requested.0.wrapping_sub(1), requested.1),
+            Axis::EW => (requested.0, requested.1.wrapping_sub(1)),
+        };
+        // Recursion can replace the tile under either footprint. Preserve the
+        // live deck levels without changing which cells the callbacks visit.
+        let centers = [requested, other_center];
+        let decks = centers
+            .map(|center| footprint(center).map(|coord| (coord, self.corrected_deck_at(coord))));
         self.perpendicular(requested, axis, phase, direction, family);
         // Native rereads the retained receiver's +11A after recursion. Fallout
-        // uses the stack coordinate, with the half-footprint adjustment below.
+        // uses the stack coordinate with the resulting half-footprint adjustment.
         let sub = self.subtile(retained);
-        let center = match axis {
-            Axis::NS => (requested.0.wrapping_sub(i16::from(sub & 1)), requested.1),
-            Axis::EW => (requested.0, requested.1.wrapping_sub(i16::from(sub >= 5))),
-        };
-        let footprint = match axis {
-            Axis::NS => [
-                center,
-                (center.0, center.1.wrapping_sub(1)),
-                (center.0, center.1.wrapping_add(1)),
-            ],
-            Axis::EW => [
-                (center.0.wrapping_sub(1), center.1),
-                center,
-                (center.0.wrapping_add(1), center.1),
-            ],
-        };
-        for coord in footprint {
+        let half = usize::from(match axis {
+            Axis::NS => sub & 1 != 0,
+            Axis::EW => sub >= 5,
+        });
+        for (coord, deck) in decks[half] {
             let cell = self.lookup(coord);
-            self.fallout(cell);
+            self.fallout(cell, deck);
         }
+        let center = centers[half];
         // All three synchronous callbacks precede a fresh level lookup.
         let sample = self.lookup(center);
         let level = i32::from(self.level(sample)) - 4;

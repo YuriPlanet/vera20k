@@ -17,7 +17,7 @@
 use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::descriptor::DialogResourceId;
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::{RectPx, ShellScale, center_offset};
 use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
@@ -25,6 +25,10 @@ use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 pub const CAMPAIGN_DIALOG: DialogResourceId = DialogResourceId(0x0094);
 /// Allied emblem static (FSALG.SHP, kind 4).
 pub const ALLIED_EMBLEM: u16 = 0x06EA;
+/// Boot Camp emblem static (FSBCLG.SHP, kind 4). Original RA2 only; the
+/// control id `0x6EB` sits between the Allied and Soviet emblems in dialog
+/// `0x94`, but YR leaves it unused (`gamemd.exe 0x0052EE78` still handles it).
+pub const BOOTCAMP_EMBLEM: u16 = 0x06EB;
 /// Soviet emblem static (FSSLG.SHP, kind 4).
 pub const SOVIET_EMBLEM: u16 = 0x06EC;
 /// Difficulty trackbar `msctls_trackbar32`.
@@ -57,7 +61,10 @@ pub const CAMPAIGN_PAGE: MenuPageSpec = MenuPageSpec {
 /// (`0x0052F26B`). The slider is a shell trackbar without the value plaque:
 /// the value static `0x670` names the position instead.
 pub fn nodes() -> NodeSpec {
-    let emblems = CampaignSide::ALL.map(|side| {
+    // Original RA2 has a third Boot Camp emblem (0x6EB). Include it always;
+    // `CampaignLayout::control_rect` hides it from hit-testing under YR, where
+    // the campaign dialog offers only Allied and Soviet.
+    let emblems = CampaignSide::ALL_RA2.map(|side| {
         NodeSpec::new(NodeKind::Button)
             .id(side.emblem().into())
             .tooltip(side.caption_key())
@@ -70,25 +77,47 @@ pub fn nodes() -> NodeSpec {
     CAMPAIGN_PAGE.nodes().children(emblems).child(slider)
 }
 
-/// The two campaigns `0x94` offers.
+/// The campaigns `0x94` offers. Original RA2 has three: Boot Camp, Allied and
+/// Soviet (`gamemd.exe 0x0052EFCE..0x0052EFF1` resolves all three select
+/// voices). VERA enables Boot Camp only under `-ra2`, since the YR campaign
+/// menu has no boot camp.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CampaignSide {
     Allied,
     Soviet,
+    BootCamp,
 }
 
 impl CampaignSide {
+    /// The two emblems YR shows. Kept as the default so YR behaviour and the
+    /// existing diagnostics/tests are unchanged.
     pub const ALL: [CampaignSide; 2] = [CampaignSide::Allied, CampaignSide::Soviet];
+    /// All three emblems, including Boot Camp (original RA2 only).
+    pub const ALL_RA2: [CampaignSide; 3] = [
+        CampaignSide::BootCamp,
+        CampaignSide::Allied,
+        CampaignSide::Soviet,
+    ];
+
+    /// The emblems active for the current launch mode.
+    pub fn active() -> &'static [CampaignSide] {
+        if crate::util::ra2_launch::enabled() {
+            &Self::ALL_RA2
+        } else {
+            &Self::ALL
+        }
+    }
 
     pub fn emblem(self) -> u16 {
         match self {
             CampaignSide::Allied => ALLIED_EMBLEM,
             CampaignSide::Soviet => SOVIET_EMBLEM,
+            CampaignSide::BootCamp => BOOTCAMP_EMBLEM,
         }
     }
 
     pub fn from_emblem(id: u16) -> Option<Self> {
-        Self::ALL.into_iter().find(|side| side.emblem() == id)
+        Self::ALL_RA2.into_iter().find(|side| side.emblem() == id)
     }
 
     /// `[Battles]` campaign name the proc looks up (`0x00825C68`, `0x00825C6C`).
@@ -96,6 +125,7 @@ impl CampaignSide {
         match self {
             CampaignSide::Allied => "all1",
             CampaignSide::Soviet => "sov1",
+            CampaignSide::BootCamp => "tut1",
         }
     }
 
@@ -104,6 +134,7 @@ impl CampaignSide {
         match self {
             CampaignSide::Allied => "AlliedCampaignSelect",
             CampaignSide::Soviet => "SovietCampaignSelect",
+            CampaignSide::BootCamp => "BootCampSelect",
         }
     }
 
@@ -113,6 +144,7 @@ impl CampaignSide {
         match self {
             CampaignSide::Allied => "STT:AlliedCampaignIcon",
             CampaignSide::Soviet => "STT:SovietCampaignIcon",
+            CampaignSide::BootCamp => "STT:CampaignAnimTutorial",
         }
     }
 
@@ -120,6 +152,7 @@ impl CampaignSide {
         match self {
             CampaignSide::Allied => 0,
             CampaignSide::Soviet => 1,
+            CampaignSide::BootCamp => 2,
         }
     }
 }
@@ -135,8 +168,12 @@ pub struct CampaignLayout {
     pub page: MenuPageLayout,
     pub allied: RectPx,
     pub soviet: RectPx,
+    /// Boot Camp emblem. Only meaningful under `-ra2`; in YR it is a copy of
+    /// the Allied rect so code that reads it unconditionally stays safe.
+    pub bootcamp: RectPx,
     pub allied_caption: RectPx,
     pub soviet_caption: RectPx,
+    pub bootcamp_caption: RectPx,
     pub slider: RectPx,
     pub difficulty_label: RectPx,
     pub difficulty_value: RectPx,
@@ -151,6 +188,7 @@ impl CampaignLayout {
         match side {
             CampaignSide::Allied => self.allied,
             CampaignSide::Soviet => self.soviet,
+            CampaignSide::BootCamp => self.bootcamp,
         }
     }
 
@@ -158,11 +196,16 @@ impl CampaignLayout {
         match side {
             CampaignSide::Allied => self.allied_caption,
             CampaignSide::Soviet => self.soviet_caption,
+            CampaignSide::BootCamp => self.bootcamp_caption,
         }
     }
 
-    /// The window of node `id` (see [`nodes`]).
+    /// The window of node `id` (see [`nodes`]). Boot Camp has no window under
+    /// YR, which offers only the two campaign emblems.
     pub fn control_rect(&self, id: u16) -> Option<RectPx> {
+        if id == BOOTCAMP_EMBLEM && !crate::util::ra2_launch::enabled() {
+            return None;
+        }
         match CampaignSide::from_emblem(id) {
             Some(side) => Some(self.emblem(side)),
             None if id == DIFFICULTY_SLIDER => Some(self.slider),
@@ -175,9 +218,52 @@ impl CampaignLayout {
 /// (`[0x007F5BE4]`).
 const OVERRIDE_MIN_WIDTH: u32 = 800;
 
+/// Original RA2 `game.exe` dialog `0x94` has a pixel override installed by
+/// `ShellDialog__GetControlOverrideRect` (RA2 `0x001E64A0`), just like YR's
+/// `0x00608500`. The RT_DIALOG template only carries the small DLU statics;
+/// reading those directly puts the emblems/slider dozens of pixels too high.
+/// These are the values RA2 writes at runtime:
+///   0x6EA Allied (30,26,570,135), 0x6EB Boot Camp (82,187,468,108),
+///   0x6EC Soviet (98,298,444,149), 0x50F slider (177,509,272,21),
+///   0x670 difficulty value (309,476,141,20).
+/// Captions are not separate overridden statics in RA2; the proc draws them
+/// directly under each emblem, so they sit at the emblem's lower edge.
+fn compute_ra2_layout(page: MenuPageLayout, screen_w: u32, screen_h: u32) -> CampaignLayout {
+    let dx = if screen_w < OVERRIDE_MIN_WIDTH {
+        0
+    } else {
+        center_offset(screen_w as i32, 800)
+    };
+    let dy = if screen_w < OVERRIDE_MIN_WIDTH {
+        0
+    } else {
+        center_offset(screen_h as i32, 600)
+    };
+    let at = |x: i32, y: i32, w: i32, h: i32| RectPx::new(x + dx, y + dy, w, h);
+    CampaignLayout {
+        page,
+        allied: at(30, 26, 570, 135),
+        bootcamp: at(82, 187, 468, 108),
+        soviet: at(98, 298, 444, 149),
+        allied_caption: at(30, 161, 570, 20),
+        bootcamp_caption: at(82, 295, 468, 20),
+        soviet_caption: at(98, 447, 444, 20),
+        slider: at(177, 509, 272, 21),
+        difficulty_label: at(177, 476, 141, 20),
+        difficulty_value: at(309, 476, 141, 20),
+        scale: crate::ui::shell::geom::RETAIL_SCALE,
+    }
+}
+
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
     let page = menu_page::compute_layout(&CAMPAIGN_PAGE, screen_w, screen_h);
-    // `[0x94.Wide]`: 0x00608564..0x006086CF.
+    // Original RA2 installs its own control override rects for dialog 0x94;
+    // the YR layout_data table does not describe them. Use the native RA2
+    // geometry when launched with -ra2.
+    if crate::util::ra2_launch::enabled() {
+        return compute_ra2_layout(page, screen_w, screen_h);
+    }
+    // : 0x00608564..0x006086CF.
     let section = if screen_w < OVERRIDE_MIN_WIDTH {
         "0x94"
     } else {
@@ -194,8 +280,12 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
         page,
         allied: rect(ALLIED_EMBLEM),
         soviet: rect(SOVIET_EMBLEM),
+        // YR has no Boot Camp; keep a valid copy so unconditional readers stay
+        // safe, but  hides the node from hit-testing.
+        bootcamp: rect(ALLIED_EMBLEM),
         allied_caption: rect(0x7A7),
         soviet_caption: rect(0x7A8),
+        bootcamp_caption: rect(0x7A7),
         slider: rect(DIFFICULTY_SLIDER),
         difficulty_label: rect(0xFF00),
         difficulty_value: rect(0xFF01),
@@ -205,8 +295,8 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
 
 vera20k_gui::scaled_rects!(CampaignLayout {
     [scale]
-    page, allied, soviet, allied_caption, soviet_caption, slider, difficulty_label,
-    difficulty_value
+    page, allied, soviet, bootcamp, allied_caption, soviet_caption, bootcamp_caption,
+    slider, difficulty_label, difficulty_value
 });
 
 /// One emblem static's kind-4 animation (`+0x98` frame, `+0xA8` running).
@@ -275,7 +365,7 @@ impl EmblemAnimation {
 pub struct CampaignShellState {
     hovered: Option<CampaignSide>,
     pending_voice: Option<(CampaignSide, Instant)>,
-    emblems: [EmblemAnimation; 2],
+    emblems: [EmblemAnimation; 3],
     /// Slider position `0..=DIFFICULTY_MAX`.
     difficulty: i32,
 }
@@ -289,7 +379,7 @@ impl CampaignShellState {
         Self {
             hovered: None,
             pending_voice: None,
-            emblems: [EmblemAnimation::default(); 2],
+            emblems: [EmblemAnimation::default(); 3],
             difficulty: options_difficulty.clamp(0, DIFFICULTY_MAX),
         }
     }
@@ -389,14 +479,14 @@ impl CampaignShellState {
 
     /// Step the running emblem animations; the hovered emblem's wrap stops it.
     /// Returns whether any frame changed.
-    pub fn advance_emblems(&mut self, now: Instant, frame_counts: [usize; 2]) -> bool {
+    pub fn advance_emblems(&mut self, now: Instant, frame_counts: [usize; 3]) -> bool {
         let mut changed = false;
-        for side in CampaignSide::ALL {
-            let before = self.emblem(side).shown_frame;
-            let running = self.emblem(side).running();
-            self.emblem_mut(side)
+        for side in CampaignSide::active() {
+            let before = self.emblem(*side).shown_frame;
+            let running = self.emblem(*side).running();
+            self.emblem_mut(*side)
                 .advance(now, frame_counts[side.index()]);
-            changed |= running && self.emblem(side).shown_frame != before;
+            changed |= running && self.emblem(*side).shown_frame != before;
         }
         changed
     }
@@ -581,7 +671,7 @@ mod tests {
         let start = t0();
         let mut state = CampaignShellState::open(1);
         state.pointer_moved(Some(CampaignSide::Allied), start);
-        let frames = [4, 4];
+        let frames = [4, 4, 4];
         assert!(!state.advance_emblems(start + Duration::from_millis(99), frames));
         assert_eq!(state.emblem(CampaignSide::Allied).shown_frame(), 0);
         for (ms, frame) in [(100, 0), (200, 1), (300, 2), (400, 3)] {
@@ -617,7 +707,7 @@ mod tests {
         let start = t0();
         let mut state = CampaignShellState::open(1);
         state.pointer_moved(Some(CampaignSide::Allied), start);
-        state.advance_emblems(start + Duration::from_millis(100), [5, 5]);
+        state.advance_emblems(start + Duration::from_millis(100), [5, 5, 5]);
         let at = start + Duration::from_millis(150);
         state.select();
         assert_eq!(state.take_selection_voice(), Some(CampaignSide::Allied));
@@ -635,13 +725,13 @@ mod tests {
         let mut state = CampaignShellState::open(1);
         state.pointer_moved(Some(CampaignSide::Soviet), start);
         for ms in [100, 200] {
-            state.advance_emblems(start + Duration::from_millis(ms), [5, 5]);
+            state.advance_emblems(start + Duration::from_millis(ms), [5, 5, 5]);
         }
         assert_eq!(state.emblem(CampaignSide::Soviet).shown_frame(), 1);
         let at = start + Duration::from_millis(250);
         state.pointer_up(Some(CampaignSide::Soviet), at);
         assert_eq!(state.emblem(CampaignSide::Soviet).shown_frame(), 0);
-        state.advance_emblems(at + Duration::from_millis(100), [5, 5]);
+        state.advance_emblems(at + Duration::from_millis(100), [5, 5, 5]);
         assert_eq!(state.emblem(CampaignSide::Soviet).shown_frame(), 0);
         assert!(
             state
@@ -656,7 +746,7 @@ mod tests {
         let start = t0();
         let mut state = CampaignShellState::open(1);
         state.pointer_moved(Some(CampaignSide::Allied), start);
-        state.advance_emblems(start + Duration::from_millis(450), [5, 5]);
+        state.advance_emblems(start + Duration::from_millis(450), [5, 5, 5]);
         assert_eq!(state.emblem(CampaignSide::Allied).shown_frame(), 0);
         assert_eq!(
             state.next_deadline(),

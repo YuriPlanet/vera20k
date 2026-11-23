@@ -69,7 +69,9 @@ mixed builds use the existing refusal, and a rollback restores the earlier reten
 
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
-[Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
+[Ares setting](ares.md#the-ares-setting), which the rules agreement covers where it
+decides which game opens and a match's start where it decides whether Ares plays
+([below](#room-rules)). With
 **No mod** selected and the setting on Auto, the installation's `ares.mix` is ignored and
 the game keeps the original archive order and INI readers. A selected mod
 can load its own `ares.mix` or use the installation's copy; that game's INIs and
@@ -112,13 +114,51 @@ start agreement then names those files (`ProcessAssets::match_terrain_digest`): 
 whose terrain files differ are refused at that start, each game naming the terrain files
 it read, and not before. Skirmish and campaign read the game folder's terrain as before.
 A game from before this rule is another version and is refused by the build check first;
-a rollback compares the terrain files as that build did. With a
+a rollback compares the terrain files as that build did.
+The AI INI (`aimd.ini`) is read by a like rule. A network match of the original game
+that seats no computer (`SkirmishLaunchSession::seats_computers`: no computer player and
+not Cooperative; a campaign room always seats one) reads the AI INI a retail install
+ships, whatever the game folder holds (`retail_sources::match_ai_file`): no house in it
+runs the computer's teams, and a team a map's trigger creates is the original game's for
+every player. Its rules agreement compares that copy
+(`ProcessAssets::multiplayer_match_rules_digest`), and so does the join, which is made
+before a room knows whom it seats. So a player whose game folder changes only the AI INI
+joins any room and plays its matches of human players. When the host seats a computer the
+room's settings change, every game sends its agreement again, now with the AI INI its
+folder supplies, and the player whose file differs is named and refused as on any rules
+difference, before the match loads. A match that seats a computer, a selected mod's game,
+a game whose AI root is not YR's, skirmish and campaign read the game folder's AI INI as
+before. A launcher's digest and parts (`--probe`, `ExpectedRulesDigest`) are taken before
+anyone is seated and still compare the folder's; its match reads by the same rule as a
+room's. Quick Match still ends a search for a changed AI INI before it queues. Nothing
+new is exchanged: a game from before this rule is another version and is refused by the
+build check first, and a rollback reads and compares the folder's AI INI as that build
+did. With a
 mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
 folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so players whose copies of a mod differ are
-refused as on any rules difference. The effective file, catalog, archive and extension
-declarations from `mod.ini` also take part in this agreement; its display metadata does
-not. A classic RA2 folder mod's detected rules, art, AI, mode and archive names
-use these same agreement fields. A rollback uses the older build's file selection.
+refused as on any rules difference. A file that only shows, plays or tells one player
+something is left out by the ending of its name (`mod_files::SHOWN_KINDS`): text tables
+(`.csf`), fonts (`.fnt`), movies (`.bik`, `.vqa`), pictures only screens draw (`.pcx`, `.png`,
+`.jpg`, `.jpeg`, `.bmp`, `.gif`, `.ico`, `mouse.sha`) and documents (`.txt`, `.md`, `.pdf`, `.rtf`,
+`.htm`, `.html`, `.url`, `.log`). The simulation side reads no file of these kinds, and a
+Rules, Art, AI or mode INI or a map that includes one is compared as it was read, so players
+of one mod with another translation or other screens play together. A sound, EVA or theme
+INI that includes one is no longer compared with it, as those INIs are not without a mod.
+Sounds, music and palettes still count: the
+sound, EVA and theme lists number what a map's triggers name, a theme counts only while
+its WAV is there, and whether a palette loads decides a building's death animation. So
+does every archive, which can hold any file whatever it is named for. Nothing new is
+exchanged: a game from before this is another build and is refused by the build check
+first, and a rollback compares those files again. The effective declarations from `mod.ini` that
+select what a match plays and the modes and maps a game offers also take part in this
+agreement: the Rules, Art, AI, mode roster and map catalog files
+(`IniRoots::agreed_files`), every archive name and the Ares requirement. Its display
+metadata does not, and neither do the names of the sound, EVA, theme, campaign, mission
+and map-selection files, in `mod.ini` or in config.toml's `[ini]`: they name what a game
+plays aloud or shows, and two games that differ only in those names play together. An
+archive name stays whatever the archive is for, since it mounts into the search order
+and can supply any file. A classic RA2 folder mod's detected rules, art, AI, mode and
+archive names use these same agreement fields. A rollback uses the older build's file selection.
 These choices are frozen at startup and reused when the asset manager is rebuilt.
 For [mods distributed in parts](modding.md#mods-distributed-in-parts), the check
 compares the assembled files. ZIPs and extracted folders with the same files
@@ -136,8 +176,10 @@ refused by the build check first; a rollback returns to the earlier digest for e
 on that build. Quick Match plays the original game, and the matchbot pairs without the
 rules hash, so a client ends its search before it queues with a message saying what to
 turn off, for the first of what it changes from the original game
-(`agreement::original_game_changes`): a mod in use; `[ini]` roots or a
-`theater_suffix` in config.toml other than YR's; an [Ares setting](ares.md#the-ares-setting) other than Auto; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD)
+(`agreement::original_game_changes`): a mod in use; Rules, Art, AI, mode roster or map
+catalog `[ini]` roots or a `theater_suffix` in config.toml other than YR's; the
+[Ares setting](ares.md#the-ares-setting) On (Off opens the game Auto opens and is no
+change); game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD)
 from the retail copy; a copy from a retail
 archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as
 the original, and another INI is compared with the retail archives' own entry, else
@@ -285,8 +327,9 @@ relay orders a one-source match only with that mark.
 Online matches with two or more human sources, or one the lobby marked, use a
 lobby-certified relay clock
 and one immutable relay command stream. Every originally admitted client that
-finishes loading must agree to the initial world, its build and its rules
-(`agreement::local`) before it starts. A player who
+finishes loading must agree to the initial world, its build, its rules
+(`agreement::local`) and what its simulation reads from its picture and model files
+(`RuleSet::file_inputs_hash`) before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
@@ -327,6 +370,38 @@ facing this one included. Its box (`VERA:MatchStartMismatch`) names the version 
 files and, for a launcher's match, Terrain Deformation and the Superweapon Limit.
 Players of one build agree as before, also after a rollback, and nothing new is
 exchanged.
+The same identity carries what each game's simulation took from the contents of its
+picture and model files (`RuleSet::file_inputs_hash`), reported as the `asset_files`
+start part. No room compares those files: the rules digest covers INI text, and SHP
+and VXL files only inside a mod's folder. Yet the simulation reads them. A Buildup
+SHP's frame count times a building's unfolding and its sale, the frame count of an
+animation that affects play its end, that of a deployment's, the Psychic Dominator's
+or the Lightning Storm's what waits for it, a resource spawner's its growth, a main voxel model's load and
+first limb's size a shot's origin, a LeaveRubble image's length its rubble, a
+scorching or cratering animation's large or small frame its smudge, the first weather bolt's
+height the storm's clouds, and in an Ares game a particle's loaded AlphaImage its
+simulation. Two games whose files differed in one of these used to start and leave
+step in mid-match; now they are refused at the start, by LAN's startup handshake and
+by the relay alike, with the start-mismatch box. The number folds nothing that only
+draws: other pixels, another palette, a model's other parts, which file supplied an
+image, the frames of an effect animation that changes nothing but its picture, or a
+smudging animation's frame size on the same side of the size test the smudge pick
+makes. A graphics pack that keeps the folded values plays with games without it. Of
+the picture-only animations something in the simulation waits on, only a unit's
+`DeployingAnim=`, the Psychic Dominator's two and the Lightning Storm's clouds are
+folded yet. A refused game is not told which part differed, so its box names what its
+own folder changes: before the changed game files, every game-folder file whose
+picture or model gives the number another value than the copy a retail install reads,
+or one a retail install lacks (`RuleSet::file_input_folder_files`; each binder holds
+the file it reads against that copy, `retail_sources::FolderFiles`). A file that only
+redraws is not named, nor one from the shipped archives, and a selected mod's own files
+are left out, as the rules digest compares them with the mod
+(`agreement::match_picture_files`). The box names three files and the log all of them.
+A launcher's match that names such a file does not point at the launcher, whose rules
+parts leave those files out. On LAN the refusal keeps the native text without this
+list. Nothing new is exchanged and the identity stays 32 bytes.
+A game from before this is another build, which the build check refuses first; a
+rollback starts such games together again.
 At each deadline, missing input is empty; a command joins the next unsealed
 frame. The sender also waits for that commit.
 Each relay seals at most 32 batches of its own players into a frame
@@ -607,12 +682,11 @@ participants and reapplies it for a late Type3 only in the same admission epoch 
 revision (`app::lan_service::options`).
 
 The build agreement identifies the envelope revision through the existing
-source-derived build identity. Mixed builds are refused at join with reason 8.
-The guest also reads the agreement before decoding the options body, so it can show
-`VERA:LanHostBuildDiffers` even for the earlier layout. An invalid room update uses
-`VERA:LanOptionsInvalid` and ends that setup. After a rollback, two games running
-the earlier build exchange its earlier layout. The lobby, relay, and VS31
-fragment framing keep their existing formats.
+source-derived build identity. Mixed builds are refused at join with reason 8, so a
+guest reads options only from its own build. An invalid room update, one that names
+another build included, uses `VERA:LanOptionsInvalid` and ends that setup. After a
+rollback, two games running the earlier build exchange its earlier layout. The
+lobby, relay, and VS31 fragment framing keep their existing formats.
 
 When a room member visits the public lobby and joins another game, the client
 asks the lobby to admit them directly. A wrong password, a full room or a
@@ -733,9 +807,10 @@ refuses options naming them, so the room cannot start until those players leave 
 public lobby or the host leaves the room, and a visitor who joins the public lobby again
 is listed twice. Roll the lobby back past this only when no room has a visitor. The
 public lobby lists a stranded visitor until this lobby is back and they leave the room
-or sign out; it then also drops an entry whose session is gone.
+or sign out; an entry whose session ended under the older lobby stays listed until
+the store is fixed.
 
-Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
+Games 0.3.2 to 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
 plays or the Teams count changed. Current games neither offer it nor send it. A current
 guest reads and ignores it in such a host's room, which cannot start anyway, since the
@@ -812,8 +887,8 @@ in a release), which the hash already covers; they are refused as any other buil
 
 - LAN: the host denies a join from another build (reason 8), and the guest sees Request
   denied and "VERA20k build or enabled gameplay features differ." (`VERA:LanBuildDiffers`).
-  A guest that receives the host's options from another build says so in the room's chat
-  (`VERA:LanHostBuildDiffers`) and does not start.
+  The guest checks the host's build in the join's answer as well, so no room holds two
+  builds.
 - Online: the sign-in names the version (`Vera-Build`), and every `ready` and `map_status`
   carries it. The lobby hides rooms and matches of another build, or of another version
   where a game names no build, and starts a match only when every player's is equal
@@ -822,7 +897,8 @@ in a release), which the hash already covers; they are refused as any other buil
   build is told it is not the release ([current production path](#current-production-path)).
 - Start: every network start folds it into the start identity the relay and LAN's startup
   compare (`StartupAgreement`), so a launcher's match of two builds, which no lobby
-  compares, is refused at its start.
+  compares, is refused at its start. That identity also names the world, the rules and
+  what the simulation reads from picture and model files ([above](#current-production-path)).
 - External launches: `[Settings] ExpectedVersion` is compared with it, as `--probe`
   reports it ([external launches](spawn.md#probe)).
 
@@ -861,7 +937,9 @@ The two checks also read different files, so they can disagree either way. The d
 (`rules::native_ini_hash`, `0x00679D90`/`0x00679ED0`/`0x00679EC0`, compared on LAN at
 `0x005E1711..0x005E174D` and online at `0x0079BB16..0x0079BBAE`) hashes the rules root,
 every mode's INI, CoopCampMD, AIMD and ARTMD whatever mode the room plays, but no
-LANGRULE, theater INI, theater tile or other file of a mod. The digest
+LANGRULE, theater INI, theater tile or other file of a mod. VERA: the original game's
+door hashes the AIMD a retail install ships, which a match that seats no computer reads
+(above). The digest
 (`ProcessAssets::multiplayer_rules_digest`) covers only the mode played, and adds
 LANGRULE, the theater INIs (a mod's with its changed tiles, else the retail copies), the
 switches and a mod's other files.
@@ -871,7 +949,7 @@ the start. This is kept on purpose: the door is gamemd's admission check, which
 released games rely on. When the door
 still refuses a join because the rules files differ, or the digest a start, each game
 says what it changes from the original game, its mod, `config.toml`'s INI roots, its
-Ares setting other than Auto and changed game files (`agreement::original_game_changes`),
+Ares setting where it decides which game opens and changed game files (`agreement::original_game_changes`),
 or that it plays the original (`agreement::rules_differ_text`);
 retail's text for it sends the player to Westwood. Nothing more is exchanged for
 that. A game of another build is refused at the build check first, so no released
@@ -896,12 +974,33 @@ game handles the same way.
 
 The player's [Ares setting](ares.md#the-ares-setting) (`[VERA] Ares=`, or a launch
 file's `[Settings] Ares=`) is not a room rule: like the mod, each game reads it at start
-and plays its own. Auto adds nothing to the rules digest, so a game set to Auto agrees
-with a released game as before. On makes every game an Ares game, which adds the byte a
-mounted `ares.mix` adds, and Off adds its own words, so a player whose setting differs
-from the others' is refused at the start, and that game's text names the setting
-(`agreement::own_changes_text`). Nothing new is exchanged. A rollback reads no setting
-and plays Auto.
+and plays its own. The rules digest counts it only where it decides which game opens
+(`AresSetting::where_it_decides`, `ProcessAssets::agreed_ares_setting`): On, which makes
+every game an Ares game and adds the byte a mounted `ares.mix` adds, unless Auto mounts
+`ares.mix` for the game too (a selected mod with one in reach); and Off, which adds its
+own words, only when Auto would mount it or the game's own rules (the Rules root, a
+mod's LANGRULE) hold an Ares key that Off keeps from turning Ares on. Auto, and a
+setting that opens the game Auto opens, adds nothing: a player set to Off plays the
+original game with players set to Auto, and one set to On plays a mod that ships
+`ares.mix` with them. A player whose setting does decide the game is refused in the
+room, and that game's text names the setting (`agreement::own_changes_text`). Off also
+keeps a mode's or a map's Ares key from turning Ares on, which no room knows before the
+match loads: each game adds whether Ares plays in the match it loaded to the rules its
+start certifies (`agreement::start_rules`), so those players are refused at the start,
+and the game set to Off names its setting there (`agreement::start_changes_text`). The
+other players' games cannot tell why and say only that another game differs. Nothing new
+is exchanged. A game from before this is another version and is refused by the build
+check first; a rollback compares the setting itself again, and one past the setting
+reads none and plays Auto.
+
+[RA2 Mode](ra2-mode.md) (`[VERA] RA2Mode=` or `-ra2`) is not a room rule either: each
+game reads it at start, and it adds its own words to the rules digest
+(`ProcessAssets::multiplayer_rules_digest`) and `ra2: true` to the rules parts, so a
+player in RA2 Mode is refused in a room of Yuri's Revenge players and its game names the
+setting. Its `Vera-Changes` header says `ini_roots: true`, a key lobbies and older games
+already know, so nothing new is exchanged; this version's `LobbyChangeIniRoots` text
+names RA2 Mode with the INI files. An older game reads no RA2 Mode and plays
+Yuri's Revenge; it has another build and is refused by the build check first.
 
 Until VERARULES.INI was retired for [New Mod](modding.md#start-a-new-mod), `host_rules`
 also carried the host's file as `personal_rules`. This version never sends it, and

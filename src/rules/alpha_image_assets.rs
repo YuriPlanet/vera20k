@@ -145,6 +145,9 @@ impl AlphaImage {
 #[derive(Debug, Clone, Default)]
 pub struct AlphaImageCatalog {
     images: BTreeMap<String, Arc<AlphaImage>>,
+    /// VERA: by image name, the game-folder file that supplied a loaded SHP
+    /// where a retail install loads none (`retail_sources::FolderFiles`).
+    folder_files: BTreeMap<String, String>,
 }
 
 impl AlphaImageCatalog {
@@ -155,18 +158,48 @@ impl AlphaImageCatalog {
                 names.insert(name.to_string());
             }
         });
+        let mut folder_files = BTreeMap::new();
+        let folder = crate::rules::retail_sources::FolderFiles::new(assets);
         let images = names
             .into_iter()
             .filter_map(|name| {
-                let load = assets.load_file_from_mix(&format!("{name}.SHP"))?;
-                Some((name, Arc::new(AlphaImage::from_shp(&load.bytes)?)))
+                let file = format!("{name}.SHP");
+                let load = assets.load_file_from_mix(&file)?;
+                let image = Arc::new(AlphaImage::from_shp(&load.bytes)?);
+                let shipped_loads = || {
+                    folder
+                        .shipped(&file)
+                        .is_some_and(|bytes| AlphaImage::from_shp(bytes).is_some())
+                };
+                if !crate::rules::retail_sources::shipped_source(&load.source_archive)
+                    && !shipped_loads()
+                {
+                    folder_files.insert(
+                        name.clone(),
+                        crate::rules::retail_sources::game_folder_file(&load.source_archive),
+                    );
+                }
+                Some((name, image))
             })
             .collect();
-        Self { images }
+        Self {
+            images,
+            folder_files,
+        }
+    }
+
+    /// VERA: the game-folder file that makes the SHP of `name` load.
+    pub(crate) fn folder_file(&self, name: &str) -> Option<&str> {
+        self.folder_files.get(name).map(String::as_str)
     }
 
     pub(crate) fn get(&self, name: &str) -> Option<&Arc<AlphaImage>> {
         self.images.get(name)
+    }
+
+    /// Whether the SHP of `name` loaded.
+    pub(crate) fn loaded(&self, name: &str) -> bool {
+        self.images.contains_key(name)
     }
 
     #[cfg(any(test, feature = "test-support"))]

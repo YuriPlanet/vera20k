@@ -72,6 +72,10 @@ pub(crate) const HAS_CHECK_FOR_UPDATES: bool = !BROWSER;
 /// The column's Mods button, which opens VERA's Mods page
 /// (`ui::mods_shell`). The browser build has no Mods folder.
 pub(crate) const HAS_MODS: bool = !BROWSER;
+/// The Gameplay page's RA2 Mode (`util::ra2_launch`). The browser build keeps
+/// one game instance across its starts, and its launcher probe reads no saved
+/// choice, so it has no box.
+pub(crate) const HAS_RA2_MODE: bool = !BROWSER;
 /// The Esc menu's Set Window Size button. A browser tab's canvas takes its size
 /// from the page and an Android window fills the screen, so those builds have
 /// none.
@@ -904,6 +908,9 @@ pub(crate) enum LauncherCheckboxId {
     ShiftQueue,
     /// The player's damaged buildings are sent the Repair order by themselves.
     AutoRepair,
+    /// The next start plays original Red Alert 2 (`[VERA] RA2Mode=`,
+    /// docs/ra2-mode.md).
+    Ra2Mode,
     /// The wheel changes battle view distance.
     MouseWheelZoom,
     /// Alternative controls: left selects, right commands.
@@ -994,6 +1001,7 @@ impl Setting {
             ) => HAS_VSYNC,
             Self::List(LauncherComboId::GraphicsApi) => HAS_GRAPHICS_API,
             Self::Checkbox(LauncherCheckboxId::HdMapPreviews) => HAS_HD_MAP_PREVIEWS,
+            Self::Checkbox(LauncherCheckboxId::Ra2Mode) => HAS_RA2_MODE,
             _ => true,
         }
     }
@@ -1075,6 +1083,7 @@ pub(crate) const ROWS: &[Row] = {
             "BuildingProductionQueue"
         ),
         row!(Gameplay, Checkbox(AutoRepair), "AutoRepair"),
+        row!(Gameplay, Checkbox(Ra2Mode), "Ra2Mode"),
         row!(Gameplay, List(Ares), "AresSetting"),
         row!(
             Gameplay,
