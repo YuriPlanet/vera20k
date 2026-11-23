@@ -1,161 +1,147 @@
-# veraui.ini 节点树格式设计（草案，待确认）
+# veraui.ini 节点树格式设计（第二稿，待确认）
 
-日期：2026-11-23。状态：设计稿，未实现。依据：`docs/interface-layout.md`（对 mod 作者的承诺）、
-`src/ui/match_layout.rs`（现有读取器）、`src/ui/sidebar/veraui_default.ini`（现有内置文件，只有坐标）。
+日期：2026-11-23。状态：设计稿，未实现。用户 11-23 定：**不考虑旧 mod 的兼容**，格式可以重做。
 
 ## 1. 目标
 
-- `veraui.ini` 声明整棵对局界面树：每个部件是一个节点，写明**类型、位置、图片、文字样式、命令**。
-  原版界面本身就是内置的 `veraui_default.ini`，代码里不再写死部件的图片名、帧含义、颜色、字体。
-- 代码只保留**类型的行为**：雷达开合动画、电力条的推进、建造网格的排列与滚动、标签页的状态机、
-  命令的执行。它们读节点属性，不认部件名字。
-- 去掉侧边栏图集加载、绘制、视图里按部件逐个写的代码（估计净减 600–700 行 Rust）。
+- `veraui.ini` 就是对局界面的节点树：一个段是一个节点，键就是节点属性。原版界面是内置的
+  `veraui_default.ini`，mod 和玩家的文件在它上面改。
+- 位置由 gui 的布局算（`Hold`、`X`、`Y`、`Row`/`Column` 的排列和间距），不再由宿主按原版算式逐个计算。
+- 代码只保留类型的行为（雷达开合、电力条推进、建造网格的条目与滚动、标签状态、命令执行、点击规则），
+  不认部件名字，不写死图片名、帧含义、颜色。
+- 预期删除：读取器里的部件表与数字绑定（`match_layout.rs` 2278 行中的大部分）、侧边栏图集的逐部件加载、
+  绘制与视图的逐部件分支、`SidebarChromeLayoutSpec` 的大部分字段及其使用。
 
-## 2. 不变的承诺
+## 2. 去掉的东西（相对现在的 veraui.ini）
 
-- `docs/interface-layout.md` 已写明的键含义不变，现有的 mod 文件照常读取。新格式只**增加**键。
-- 坏文件不让游戏失败：拒绝的键记一条问题，保留原值（沿用 `LayoutProblem`）。
-- 文件只影响本机显示，不进入模拟、不参与联机比对（不变）。
-- 叠加顺序：`veraui_default.ini` → mod 的 `veraui.ini` → 玩家自己的布局。
-
-## 3. 基本概念
-
-| 概念 | 写法 | 说明 |
-|---|---|---|
-| 布局 | `[名字]` | 一组部件；`[Layouts]` 把阵营映射到布局（不变） |
-| 继承 | `Base=GDI` | **新增**。布局从另一个布局开始，只写不同的键。mod 的布局不写 `Base=` 时，仍从它的阵营的原版开始（与现在一致） |
-| 部件 | `[布局.部件]` | 一个节点；名字就是树里的节点名，外部模块和代码按名字找 |
-| 子部件 | `Parts=A,B,C` | 容器的子节点及其绘制顺序（不变） |
-| 类型 | `Type=` | 决定这个节点有哪些属性、由哪段代码驱动 |
-| 阵营变体 | `键.阵营=值` | **新增**。只对某个阵营的图片主题生效，例如 `Art.Yuri=radary.shp`。阵营名：`Allied`、`Soviet`、`Yuri` |
-
-阵营变体替代代码里的 `SidebarArtNames::for_yuri`：尤里的雷达、背景、调色板换名，写进数据。
-
-## 4. 通用键（所有类型）
-
-| 键 | 值 | 现状 |
-|---|---|---|
-| `X`、`Y` | 相对父节点 `Hold` 点的像素 | 已有 |
-| `Hold` | `TopLeft`…`BottomRight` 九种 | 已有（部分部件固定） |
-| `Width`、`Height` | 像素，或 `Rest` | 已有（部分部件） |
-| `Visible` | `yes`/`no` | **新增**，等同把部件从 `Parts=` 拿掉，但保留节点 |
-| `Art` | 文件名，`.shp`/`.pcx` | **新增可写**（文档目前写着“暂不接受”） |
-| `Palette` | 调色板文件名；缺省为侧边栏通用的 `sidebar.pal` | **新增** |
-| `Depth` | 绘制层次的序号，同父节点内比较；缺省按 `Parts=` 顺序 | 新增，可选，默认不写 |
-
-`Art` 可以给图片的每一帧起名，供类型使用（见各类型的“帧”）：`Frames=Idle,Pressed,Disabled,Flash,FlashActive`
-表示第 0 帧叫 Idle、第 1 帧叫 Pressed……，类型按名字取帧，缺的帧退回第 0 帧（与现在相同）。
-
-## 5. 类型与各自的键
-
-### Panel（面板图）
-只画 `Art` 的第 0 帧。原版的 `Credits`、`Top`、`Middle` 都是它。
-
-### Text（文字）
-| 键 | 值 |
+| 去掉 | 原因 |
 |---|---|
-| `Value` | 显示什么：`Credits`（金钱；观战时自动变为对局时间）、`Time`、`Power` 等（已有 `Value=Time`） |
-| `Font` | `GameFnt`（原版位图字体，默认）；以后可加别的 |
-| `Color` | `SideText`（阵营的侧边栏文字色，即现在 `native_radar_outline_color`）、`SideHighlight`、`White`，或 `r,g,b` |
-| `Align` | `Left`、`Center`、`Right`；`Center` 以部件宽度居中（金钱是在 168 宽内居中） |
-| `Shadow` | `no`（原版无阴影，默认）/ `yes` |
+| `Version=`、固定值的键、“这个键暂不接受”的规则 | 不再有旧版本要兼容；每种类型列出它接受的键 |
+| 原版部件的特殊键（雷达的 `MapX`…、建造网格的 `ScrollX`…、标签的 `Step`） | 改成子节点：小地图、滚动按钮、每个标签都是自己的节点，用通用的 `X`、`Y` |
+| 部件名和代码里数字字段的一一绑定（`Number` 枚举，约 40 个） | 节点属性直接给布局用 |
+| `[Layouts]` 里按阵营选整套布局 | 保留，但布局之间可以 `Base=` 继承，只写差异 |
 
-原版的 `Money` 是 `Type=Text`、`Value=Credits`、`Color=SideText`、`Align=Center`、`Width=168`。
-
-### Button（按钮）
-| 键 | 值 |
-|---|---|
-| `Art`、`Frames` | 原版按钮：`Frames=Idle,Pressed`（顶部两钮），维修/卖出 `Idle,On` |
-| `Command` | 命令名（已有，mod 按钮在用）。原版：`Diplomacy`、`Options`、`ToggleRepair`、`ToggleSell` |
-| `Toggle` | `yes`：按下后保持（维修、卖出） |
-| `Label`、`Color` | 无图片时的文字按钮（已有，mod 按钮在用） |
-
-点击区就是图片的尺寸（与现在相同）。
-
-### Tabs（标签页组）
-| 键 | 值 |
-|---|---|
-| `Step` | 相邻标签的间距，可为负（已有） |
-| `Tabs` | 各标签对应的建造类别，按顺序：`Buildings,Defenses,Infantry,Vehicles` |
-| `Art` | 每个标签一张图：`Art=tab00.shp,tab01.shp,tab02.shp,tab03.shp` |
-| `Frames` | `Idle,Active,Disabled,Flash,FlashActive` |
-
-### CameoGrid（建造网格）
-已有的键：`Columns`、`CellX`、`CellY`、`ColumnWidth`、`RowHeight`、`Footer`、`ScrollX`、`ScrollY`、`ScrollStep`、`CellWidth`、`CellHeight`、`Tab`、`Rows`。新增：
-
-| 键 | 值 |
-|---|---|
-| `RowArt` | 每行的底图（`side2.shp`），`EmptyRowArt` 空行（`side2b.shp`） |
-| `EndArt`、`FootArt` | 末行下方的 `side3.shp`、`addon.shp` |
-| `ScrollUpArt`、`ScrollDownArt` | `r-up.shp`、`r-dn.shp`，`Frames=Idle,Pressed,Disabled` |
-| `ClockArt` | 建造进度遮罩 `gclock2.shp` |
-| `DarkenArt` | 不可用遮罩 `darken.shp` |
-| `LabelColor` | “就绪”等状态文字颜色，缺省 `SideHighlight` |
-| `LabelStrip` | 状态文字底条，`r,g,b,a`，缺省 `0,0,0,175`（即现在的 0xAF） |
-
-### Radar（雷达）
-已有：`MapX`、`MapY`、`MapWidth`、`MapHeight`。新增：`Art`（外壳，第 0 帧为关闭，开合动画用全部帧）、
-`Palette`（`Palette.Yuri=radaryuri.pal`）。
-
-### PowerBar（电力条）
-| 键 | 值 |
-|---|---|
-| `Art` | `powerp.shp`，`Frames=Empty,Surplus,Spare,Drain,Blink` |
-| `Step` | 每格的纵向步长，缺省 3 |
-| `HitWidth` | 提示框的命中宽度，缺省 8 |
-
-### Bar（命令栏）与 CommandButtons
-`Bar` 已是容器部件。新增 `Rail`（`lspacer.shp`）、`LeftCap`（`lendcap.shp`，`Frames=Base,Pressed,Closed`）、
-`RightCap`（`rendcap.shp`）、`Slot`（`bttnbkgd.shp`）。命令按钮沿用 UIMD.INI 的 `ButtonList`，图片 `button%02d.shp`
-写成 `ButtonArt=button%02d.shp`。
-
-### 没有图片的类型
-`Row`、`Column`（已有 `Row`）：只排列子部件。`Battlefield`（`Field`）不变。
-
-## 6. 仍留在代码里的（类型行为，不是部件）
-
-- 雷达开合的帧序列、小地图的绘制（7.6k 行雷达渲染不迁）。
-- 电力条的段数推进与闪烁（`PowerBarAnimState`）。
-- 建造网格的条目顺序、滚动、就绪/暂停/队列徽章的显示条件（`CameoStrips`、`sidebar_view`）。
-- 标签页的禁用与闪烁状态机（`gadget_flash`）。
-- 命令的执行、点击顺序（`ui::gadget`）。
-- Ares 按阵营改文件名：作为读取 `Art` 后的一层名字替换，Ares 配置优先（本机没有 Ares 模组，只能靠单元测试）。
-- 侧边栏宽度变化时的平滑缩放（`frame.rs`）。
-
-## 7. 默认文件草稿（`veraui_default.ini`）
+## 3. 文件结构
 
 ```ini
-; The built-in veraui.ini: the original interface as layouts. It is the
-; bottom layer: a mod's veraui.ini and the player's own layout write their
-; values over the layout its side starts from.
+[Layouts]          ; 阵营用哪个布局（[Sides] 名，Default= 兜底）
+Default=Original
+
+[Original]         ; 一个布局：只放布局级的键
+Base=              ; 从哪个布局开始，缺省从空树开始（内置文件除外，mod 的布局缺省 Base=它阵营的原版）
+Root=Screen        ; 根节点
+
+[Original.Screen]  ; 节点 = [布局.节点名]
+Type=Row
+Parts=Field,Side
+...
+```
+
+- 节点名在一个布局内唯一，就是树里的 `Name`，外部模块按名字找。
+- `Parts=` 列子节点，也是绘制顺序；不在任何 `Parts=` 里的节点不显示。
+- 继承：`Base=` 布局的节点全部带过来；本布局写同名节点的哪个键，就只改那个键。新节点要被某个 `Parts=` 列出才显示。
+- 阵营变体：`键@阵营=值`，只在该阵营的图片主题下生效，例如 `Art@Yuri=radary.shp`。阵营：`Allied`、`Soviet`、`Yuri`。
+
+## 4. 通用键
+
+| 键 | 值 |
+|---|---|
+| `Type` | 见第 5 节 |
+| `Parts` | 子节点，按绘制顺序 |
+| `Hold` | 相对父节点的哪个点：`TopLeft` … `BottomRight` 九种，缺省 `TopLeft` |
+| `X`、`Y` | 离 `Hold` 点的像素；在 `Row`/`Column` 里则不写，由排列决定 |
+| `Width`、`Height` | 像素；`Rest` 占满父节点剩下的；缺省为图片尺寸 |
+| `Visible` | `yes`/`no` |
+| `Art` | 图片文件（`.shp`/`.pcx`）；多张用逗号，节点类型按顺序取用 |
+| `Frames` | 给帧起名：`Idle,Pressed,Disabled…`；类型按名字取帧，缺的退回第 0 帧 |
+| `Palette` | 调色板，缺省 `sidebar.pal` |
+| `Color` | `r,g,b`、`r,g,b,a` 或 `[Colors]` 里的名字 |
+
+## 5. 类型
+
+| 类型 | 画什么 | 自己的键 |
+|---|---|---|
+| `Row`、`Column` | 不画，排列子节点 | `Gap`（可为负）、`Reverse=yes`（从右往左 / 从下往上） |
+| `Image` | `Art` 的第 0 帧 | — |
+| `Text` | 一行字 | `Value`（`Credits`、`Time`、`Power`…；或 `Text=` 固定文字）、`Font`、`Align`、`Shadow` |
+| `Button` | 按状态取帧 | `Command`、`Toggle=yes`、`Label`（无图时的文字） |
+| `Tab` | 标签按钮 | `Tab=Buildings/Defenses/Infantry/Vehicles`；帧 `Idle,Active,Disabled,Flash,FlashActive` |
+| `Radar` | 雷达外壳与开合动画 | 子节点 `Minimap` |
+| `Minimap` | 小地图（宿主区域） | — |
+| `CameoGrid` | 建造图标网格，按剩余高度决定行数 | `Columns`、`Cell=60,48`、`Pitch=63,50`、`RowArt`、`EmptyRowArt`、`Clock`、`Darken`、`LabelColor`、`LabelStrip`、`Tab`（固定显示某一类） |
+| `Repeat` | 把一张图沿纵向或横向铺到指定长度 | `Along=Down/Right` |
+| `PowerBar` | 电力条 | `Step`、`HitWidth`；帧 `Empty,Surplus,Spare,Drain,Blink` |
+| `CommandBar` | 命令栏底轨、两端、底座 | `Rail`、`LeftCap`、`RightCap`、`Slot`；子节点是命令按钮 |
+| `Battlefield` | 战场 | 子节点：`Timers`、`Messages`、`Banner`、`Tooltip` |
+
+`Text` 的 `Value=Credits` 在观战时自动显示对局时间（现在的行为）。
+
+## 6. 颜色表
+
+```ini
+[Colors]
+SideText=164,210,255
+SideText@Soviet=255,255,0
+SideText@Yuri=255,255,0
+Black=0,0,0
+LabelStrip=0,0,0,175
+```
+
+阵营色（现在写死在 `sidebar_text.rs` 的 `HIGHLIGHT_*` 和 RGB565 换算）由颜色表给出；mod 改一处，所有用到它的部件一起变。
+
+## 7. 默认文件草稿（侧边栏与命令栏部分）
+
+```ini
+; The built-in veraui.ini: the original interface. Every number here is its
+; original value; a mod's veraui.ini and the player's own layout write over
+; the layout its side starts from.
 
 [Layouts]
+; [Sides] names: the Allies use the GDI position table, the Soviets and
+; Yuri the Nod one.
 GDI=GDI
 Nod=Nod
+ThirdSide=Nod
 
-; ---- GDI: the allied position table; every side's pictures ----
+[Colors]
+SideText=164,210,255
+SideText@Soviet=255,255,0
+SideText@Yuri=255,255,0
+LabelStrip=0,0,0,175
+
 [GDI]
-Version=2
+Root=Screen
+
+[GDI.Screen]
+Type=Row
+Parts=Field,Side
+
+[GDI.Field]
+Type=Battlefield
+Width=Rest
+Parts=Timers,Messages,Banner,Tooltip,Bar
 
 [GDI.Side]
+Type=Image
 Width=168
-Height=168
-Parts=Credits,Money,Top,Diplomacy,Options,Radar,Middle,Repair,Sell,Tabs,Cameos,Power
+Height=Rest
+Parts=Credits,Top,Radar,Middle,Cameos,Power
 
 [GDI.Credits]
-Type=Panel
+Type=Image
 Art=credits.shp
+Parts=Money
 
 [GDI.Money]
 Type=Text
 Value=Credits
 Y=2
-Width=168
+Width=Rest
 Align=Center
 Color=SideText
 
 [GDI.Top]
-Type=Panel
+Type=Image
 Y=16
 Art=top.shp
 Parts=Diplomacy,Options
@@ -180,15 +166,19 @@ Command=Options
 Type=Radar
 Y=48
 Art=radar.shp
-Art.Yuri=radary.shp
-Palette.Yuri=radaryuri.pal
-MapX=16
-MapY=1
-MapWidth=140
-MapHeight=108
+Art@Yuri=radary.shp
+Palette@Yuri=radaryuri.pal
+Parts=Minimap
+
+[GDI.Minimap]
+Type=Minimap
+X=16
+Y=1
+Width=140
+Height=108
 
 [GDI.Middle]
-Type=Panel
+Type=Image
 Y=158
 Art=side1.shp
 Parts=Repair,Sell,Tabs
@@ -212,66 +202,107 @@ Toggle=yes
 Command=ToggleSell
 
 [GDI.Tabs]
-Type=Tabs
+Type=Row
 X=26
 Y=39
-Step=29
-Tabs=Buildings,Defenses,Infantry,Vehicles
-Art=tab00.shp,tab01.shp,tab02.shp,tab03.shp
+Gap=1
+Parts=Buildings,Defenses,Infantry,Vehicles
+
+[GDI.Buildings]
+Type=Tab
+Tab=Buildings
+Art=tab00.shp
 Frames=Idle,Active,Disabled,Flash,FlashActive
 
+[GDI.Defenses]
+Base=Buildings          ; a node may start from another node of the layout
+Tab=Defenses
+Art=tab01.shp
+
+[GDI.Infantry]
+Base=Buildings
+Tab=Infantry
+Art=tab02.shp
+
+[GDI.Vehicles]
+Base=Buildings
+Tab=Vehicles
+Art=tab03.shp
+
 [GDI.Cameos]
-Type=CameoGrid
+Type=Column
 Y=227
+Height=Rest
+Parts=Grid,End,Foot
+
+[GDI.Grid]
+Type=CameoGrid
+Height=Rest
 Columns=2
-CellX=22
-CellY=1
-CellWidth=60
-CellHeight=48
-ColumnWidth=63
-RowHeight=50
+Cell=60,48
+CellAt=22,1
+Pitch=63,50
 Footer=33
 RowArt=side2.shp
 EmptyRowArt=side2b.shp
-EndArt=side3.shp
-FootArt=addon.shp
-ScrollX=39
-ScrollY=7
-ScrollStep=46
-ScrollUpArt=r-up.shp
-ScrollDownArt=r-dn.shp
-ClockArt=gclock2.shp
-DarkenArt=darken.shp
-LabelColor=SideHighlight
-LabelStrip=0,0,0,175
+Clock=gclock2.shp
+Darken=darken.shp
+LabelColor=SideText
+LabelStrip=LabelStrip
+
+[GDI.End]
+Type=Image
+Art=side3.shp
+Parts=ScrollDown,ScrollUp
+
+[GDI.ScrollDown]
+Type=Button
+X=39
+Y=7
+Art=r-dn.shp
+Frames=Idle,Pressed,Disabled
+Command=ScrollDown
+
+[GDI.ScrollUp]
+Base=ScrollDown
+X=85
+Art=r-up.shp
+Command=ScrollUp
+
+[GDI.Foot]
+Type=Image
+Art=addon.shp
 
 [GDI.Power]
 Type=PowerBar
 X=5
 Y=227
+Height=Rest
 Art=powerp.shp
 Frames=Empty,Surplus,Spare,Drain,Blink
 Step=3
 HitWidth=8
 
 [GDI.Bar]
+Type=CommandBar
+Hold=Bottom
+Height=32
+Width=Rest
 Rail=lspacer.shp
 LeftCap=lendcap.shp
 RightCap=rendcap.shp
 Slot=bttnbkgd.shp
-ButtonArt=button%02d.shp
+Parts=Team01,Team02,Team03,TypeSelect,Deploy,AttackMove,Guard,Beacon,Stop,PlanningMode,Cheer
 
-; Pause-menu and in-match dialog backgrounds, three sizes.
-[GDI.Backgrounds]
-Type=Panel
-Art=bkgdlg.shp,bkgdmd.shp,bkgdsm.shp
-Art.Yuri=bkgdlgy.shp,bkgdmdy.shp,bkgdsmy.shp
-Palette=uibkgd.pal
-Palette.Yuri=uibkgdy.pal
+[GDI.Team01]
+Type=Button
+Art=button00.shp
+Frames=Idle,Pressed
+Command=Team01
+; ... Team02 .. Cheer the same, button01..button10
 
-; ---- Nod: the Soviet and Yuri position table; only what differs ----
+; ---- Nod: the Soviet and Yuri table; only what differs ----
 [Nod]
-Version=2
 Base=GDI
 
 [Nod.Diplomacy]
@@ -292,37 +323,37 @@ Y=7
 
 [Nod.Tabs]
 X=20
-Step=32
+Gap=0
 
-[Nod.Cameos]
-ColumnWidth=64
+[Nod.Grid]
+Pitch=64,50
 Footer=25
-ScrollStep=45
+
+[Nod.ScrollUp]
+X=84
 
 [Nod.Power]
 X=0
 ```
 
-`Base=` 让 Nod 只写与 GDI 不同的 12 个数，整份文件约 170 行（现有只含坐标的文件 149 行）。
+计时器、消息、横幅、提示框和暂停菜单的背景按同样方式写在 `Field` 下（略）。
 
-## 8. 兼容与校验
+## 8. 与现在行为的差异（需要截图核对）
 
-- `Version=2` 的布局才接受新键；`Version=1` 照旧（新键记“未知键”问题，与现在一致）。
-- 原版部件的类型不能改（`Repair` 的 `Type=Button` 是固定值），否则记问题并保留原值；mod 自加的部件可任选类型。
-- 每个类型只接受它的键；拼错的键、越界的数、找不到的图片都记问题，保留默认值。
-- `Art` 指向的文件不存在时，退回默认文件的图片（与现在“缺图跳过”不同：更宽容），并记问题。
+- 建造网格的 3–5 列（VERA 自加功能）现在按浮点间距排，改成整数像素后，列的位置可能差 1 像素。
+- `Tabs` 的间距现在是“标签起点相距 29”，改成 `Row` + `Gap` 后依赖标签图的宽度；换了宽度不同的标签图，间距会跟着变（这正是 Row 的意义）。
+- 命令栏按钮的槽位顺序改由 `Parts=` 决定，不再读 UIMD.INI 的 `ButtonList`（单人/联机两套顺序要写成两个布局，或 `Parts@Multiplayer=`）。
 
 ## 9. 实现步骤与验收
 
-1. 读取器：`Base=`、`键.阵营`、各类型新键；默认文件改成草稿的样子。验收：读出的布局表与现在逐字段相等。
-2. 图集：按各部件的 `Art`（含变体）加载、打包；删掉逐部件加载代码。验收：图集像素与贴图坐标逐字节相同。
-3. 绘制与视图：按类型通用处理；删掉逐部件分支和 `ChromeArt`。验收：三阵营 × 三套示例布局 × 几种窗口尺寸截图，
-   与改动前逐像素对比；有差异逐处说明（目标是无差异）。
-4. 文档：`docs/interface-layout.md` 补新键；示例文件补一个改图、改颜色的布局。
+1. 新读取器：段 → 节点，键 → 属性，`Base=`（布局与节点两级）、`@阵营`、颜色表；按类型校验。删除旧读取器的部件表与数字绑定。
+2. 侧边栏和命令栏：从树建 HUD 节点，位置交给 gui 布局；绘制和视图按类型；图集按 `Art` 加载。删除逐部件代码。
+3. 战场部件（计时器、消息、横幅、提示框）同样从树来。
+4. 布局编辑模式改为写节点属性；文档与示例按新格式重写。
+5. 验收：三阵营 × 示例布局 × 800×600、1024×768、1920×1080、缩放 1.5/2 截图，与改动前对比；只接受第 8 节列出的差异。
 
-## 10. 待你确认的问题
+## 10. 待你确认
 
-1. 阵营变体的写法 `Art.Yuri=` 是否合适（另一种是 `[GDI.Radar.Yuri]` 子段）？
-2. 颜色的命名值（`SideText`、`SideHighlight`）是否够用，还是一律写 `r,g,b`（阵营色则无法表达）？
-3. `Art` 不存在时退回默认图片，还是像现在一样不画？
-4. 命令栏的命令按钮仍沿用 UIMD.INI 的 `ButtonList`，还是也搬进 `veraui.ini`（`[GDI.Bar] Parts=Team01,...`）？
+1. 阵营变体 `键@阵营=`、颜色表 `[Colors]`、节点继承 `Base=` 这三个写法是否可以。
+2. 命令栏按钮改由 `veraui.ini` 声明、不再读 UIMD.INI（第 8 节第三条）是否可以。
+3. 第 8 节的三处可能差异是否接受。
