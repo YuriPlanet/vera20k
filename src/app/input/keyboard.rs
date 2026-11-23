@@ -321,7 +321,16 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
         commands,
         vec![localized(state, hotkeys::catalog::VERA_CATEGORY_KEY, None)],
     ));
+    refresh_title(state);
     state.platform.window.request_redraw();
+}
+/// Resolve the open page's heading into its static, as it opens and after
+/// the string table's labels change; the page paints it from there.
+pub(crate) fn refresh_title(state: &mut AppState) {
+    let text = state.csf_label(KEYBOARD_PAGE.title_key, "Keyboard Options");
+    if let Some(dialog) = state.frontend.keyboard_dialog.as_mut() {
+        dialog.title.set_text(&text, Instant::now());
+    }
 }
 fn reload(state: &mut AppState, reset: bool) {
     let Some(config) = state.platform.game_config.as_ref() else {

@@ -25,7 +25,6 @@ pub(crate) fn render_keyboard_shell(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    let title_text = state.csf_label(KEYBOARD_PAGE.title_key, "Keyboard Options");
     let now = Instant::now();
     let active = state
         .frontend
@@ -50,7 +49,8 @@ pub(crate) fn render_keyboard_shell(
             .keyboard_dialog
             .as_mut()
             .expect("active A3 state");
-        dialog.title.set_text(&title_text, now);
+        // The heading's text is resolved as the page opens
+        // (`input::keyboard::refresh_title`).
         dialog.title.start(now);
         dialog.title.paint(now)
     } else {
@@ -111,7 +111,7 @@ pub(crate) fn render_keyboard_shell(
         let id = u16::try_from(id).ok()?;
         let (key, fallback) = match id {
             // The heading shows once its reveal starts.
-            TITLE => return title.map(|_| title_text.clone()),
+            TITLE => return title.map(|_| dialog.title.text().to_owned()),
             // In game the status line shows the hovered control's help; the
             // front end's is the family static.
             FOOTER => {
