@@ -607,6 +607,7 @@ fn the_two_switches_split_building_from_troops() {
     // Forces off: the base keeps building, the troops are the player's again.
     let mut host = AutoPlayHost::new(Box::new(script()), owner, usize::MAX);
     host.set_domains(crate::sim::autoplay::AutoPlayDomains {
+        squads_only: false,
         production: true,
         forces: false,
         abilities: false,
@@ -630,6 +631,7 @@ fn the_two_switches_split_building_from_troops() {
     // Production off: the troops may still be ordered, the base is the player's.
     let mut host = AutoPlayHost::new(Box::new(script()), owner, usize::MAX);
     host.set_domains(crate::sim::autoplay::AutoPlayDomains {
+        squads_only: false,
         production: false,
         forces: true,
         abilities: false,
@@ -1021,7 +1023,7 @@ fn the_retail_policy_leaves_a_teams_members_to_its_script() {
             None,
         )
         .expect("a forming team");
-    sim.team_add_member(team, tank, false, &rules, Default::default());
+    sim.team_add_member(team, tank, false, &rules, &mut Default::default());
 
     let mut policy = AssistBrain::new(0x5EED);
     let decided = frame_commands(&mut policy, &rules, &sim, owner);
@@ -1233,6 +1235,7 @@ fn the_forces_switch_stops_managed_stepping() {
         .expect("a Russian tank");
     let mut host = retail_host(&mut sim, 7);
     host.set_domains(AutoPlayDomains {
+        squads_only: false,
         production: true,
         forces: false,
         abilities: false,

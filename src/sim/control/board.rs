@@ -66,6 +66,12 @@ pub struct AutoPlayDomains {
     /// them. Their own switch because a player who wants the army but not the
     /// missile is not asking for half an army.
     pub abilities: bool,
+    /// The scope key, which is not a fourth kind of work: it narrows the three
+    /// above to the objects the brain has put in a standing formation. Off,
+    /// every object the brain drives is ordinary; on, only the ones in a squad
+    /// are. It is separate from the three because a player who wants the army
+    /// but not the builders does not want them in a different order.
+    pub squads_only: bool,
 }
 
 impl AutoPlayDomains {
@@ -73,12 +79,14 @@ impl AutoPlayDomains {
         production: true,
         forces: true,
         abilities: true,
+        squads_only: false,
     };
 
     pub const NONE: Self = Self {
         production: false,
         forces: false,
         abilities: false,
+        squads_only: false,
     };
 
     /// Whether any switch is on: a host with none is a host driving nothing.
@@ -306,6 +314,18 @@ impl ControlBoard {
         {
             let obs = Observation::new(sim, owner).with_player_groups(&self.excluded);
             self.brain.think(rules, &obs, &mut out);
+            // The scope key. The brain says who is standing in a formation and
+            // the board drops the orders aimed at everything else: a house whose
+            // builders the player has kept, whose army the brain still drives,
+            // is the difference between taking the troops back and taking the
+            // whole match back. A brain with no roster answers `None` and the
+            // scope changes nothing, so a second brain is not silently broken
+            // by a key it does not understand.
+            if self.domains.squads_only {
+                if let Some(members) = self.brain.squad_members(rules, &obs) {
+                    out.orders.retain(|order| members.contains(&order.actor));
+                }
+            }
         }
         let tick = sim.session().tick();
         let mut asked: Vec<Intent> = Vec::new();
@@ -829,6 +849,7 @@ mod tests {
         };
 
         let abilities_only = AutoPlayDomains {
+            squads_only: false,
             production: false,
             forces: false,
             abilities: true,
@@ -841,6 +862,7 @@ mod tests {
         assert!(!abilities_only.admits(&queue), "and not the base's");
 
         let forces_only = AutoPlayDomains {
+            squads_only: false,
             production: false,
             forces: true,
             abilities: false,
@@ -852,6 +874,7 @@ mod tests {
         );
 
         let build_only = AutoPlayDomains {
+            squads_only: false,
             production: true,
             forces: false,
             abilities: false,
@@ -995,7 +1018,7 @@ mod tests {
             owner,
             &rules,
             None,
-            crate::sim::world::FrameEffects::empty(),
+            &mut crate::sim::world::FrameEffects::empty(),
         );
         let obs = Observation::new(&sim, owner);
         assert!(!obs.is_hostile(prize), "it is the house's own now");

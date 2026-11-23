@@ -2031,7 +2031,7 @@ fn an_allied_vehicle_on_the_foundation_is_told_to_leave_not_a_blocker() {
             power,
             (12, 10),
             house,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     };
     assert_eq!(

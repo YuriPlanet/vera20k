@@ -1510,7 +1510,10 @@ fn toggle_auto_play(state: &mut AppState) {
         .match_state
         .auto_play
         .as_ref()
-        .is_some_and(|host| host.domains() == crate::sim::control::board::AutoPlayDomains::ALL);
+        .is_some_and(|host| {
+            let domains = host.domains();
+            domains.production && domains.forces && domains.abilities
+        });
     if all_on {
         state.match_state.auto_play = None;
     } else {
@@ -1558,7 +1561,8 @@ fn install_auto_play(
 }
 
 /// One switch's key, so the base, the army and the abilities are three
-/// independent decisions.
+/// independent decisions, and the scope is a fourth: it decides *which* objects
+/// the other three drive, so it can be flipped without touching what they do.
 ///
 /// With no host running it installs one with that switch alone on; with one
 /// running it flips that switch; and with every switch off it takes the host
@@ -1570,6 +1574,7 @@ enum AutoPlaySwitch {
     Production,
     Forces,
     Abilities,
+    Squads,
 }
 
 fn toggle_auto_play_switch(state: &mut AppState, switch: AutoPlaySwitch) {
@@ -1579,6 +1584,13 @@ fn toggle_auto_play_switch(state: &mut AppState, switch: AutoPlaySwitch) {
             AutoPlaySwitch::Production => domains.production = true,
             AutoPlaySwitch::Forces => domains.forces = true,
             AutoPlaySwitch::Abilities => domains.abilities = true,
+            // The scope has no meaning with nothing running, so the first press
+            // starts the whole hand and narrows it in one go rather than
+            // installing a host that drives nothing.
+            AutoPlaySwitch::Squads => {
+                domains = crate::sim::control::board::AutoPlayDomains::ALL;
+                domains.squads_only = true;
+            }
         }
         install_auto_play(state, domains);
         post_auto_play_state(state);
@@ -1589,6 +1601,7 @@ fn toggle_auto_play_switch(state: &mut AppState, switch: AutoPlaySwitch) {
         AutoPlaySwitch::Production => domains.production = !domains.production,
         AutoPlaySwitch::Forces => domains.forces = !domains.forces,
         AutoPlaySwitch::Abilities => domains.abilities = !domains.abilities,
+        AutoPlaySwitch::Squads => domains.squads_only = !domains.squads_only,
     }
     if domains.any() {
         host.set_domains(domains);
@@ -1601,11 +1614,19 @@ fn toggle_auto_play_switch(state: &mut AppState, switch: AutoPlaySwitch) {
 /// this is the message sink that takes plain text rather than a CSF template.
 fn post_auto_play_state(state: &mut AppState) {
     let message = match state.match_state.auto_play.as_ref() {
-        Some(host) => format!(
-            "Auto play: {} ({})",
-            host.domains().describe(),
-            host.policy_name()
-        ),
+        Some(host) => {
+            let scope = if host.domains().squads_only {
+                ", squads only"
+            } else {
+                ""
+            };
+            format!(
+                "Auto play: {} ({}){}",
+                host.domains().describe(),
+                host.policy_name(),
+                scope
+            )
+        }
         None => "Auto play off".to_string(),
     };
     crate::app::input::messages::post_selection_navigation_text(state, &message);

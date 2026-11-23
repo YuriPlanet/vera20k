@@ -261,4 +261,20 @@ pub trait Brain {
     /// while the object stands still. The default does nothing, because a brain
     /// that keeps no memory has nothing to forget.
     fn orders_refused(&mut self, _refused: &[(u64, Goal)]) {}
+
+    /// The objects the brain has put into a standing formation, when it keeps
+    /// one. `None` is a brain with no roster, and the scope key that asks for
+    /// this changes nothing for it — a brain that puts every object it drives
+    /// in a team has nothing to narrow.
+    ///
+    /// The set is rebuilt each frame rather than held: the board asks once, the
+    /// same frame the orders are filtered, so a brain never has to say when its
+    /// roster went stale.
+    fn squad_members(
+        &mut self,
+        _rules: &RuleSet,
+        _obs: &Observation<'_>,
+    ) -> Option<std::collections::BTreeSet<u64>> {
+        None
+    }
 }

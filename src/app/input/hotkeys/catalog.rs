@@ -918,7 +918,7 @@ const RETAIL_COMMANDS: [CommandMetadata; 87] = [
 /// to showing the key. The category must stay the one `VERA_CATEGORY_KEY`
 /// names, or these commands open a second category of their own — the macro
 /// takes a literal, so a test pins the two together.
-const AUTOPLAY_COMMANDS: [CommandMetadata; 4] = [
+const AUTOPLAY_COMMANDS: [CommandMetadata; 5] = [
     command!(
         HotkeyCommand::ToggleAutoPlay,
         "AutoPlay",
@@ -956,6 +956,16 @@ const AUTOPLAY_COMMANDS: [CommandMetadata; 4] = [
         "VERA:AutoPlayAbilities",
         "VERA:HotkeyCategory",
         "VERA:AutoPlayAbilitiesDesc",
+        None
+    ),
+    // The scope key: the same three halves, narrowed to the objects standing
+    // in the brain's teams.
+    command!(
+        HotkeyCommand::ToggleAutoPlaySquads,
+        "AutoPlaySquads",
+        "VERA:AutoPlaySquads",
+        "VERA:HotkeyCategory",
+        "VERA:AutoPlaySquadsDesc",
         None
     ),
 ];

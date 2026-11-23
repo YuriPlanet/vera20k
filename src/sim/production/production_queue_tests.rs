@@ -2648,20 +2648,20 @@ fn a_refused_append_clears_the_cameo_request() {
             &rules,
             "Americans",
             "MTNK",
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
     }
     let cleared: RefCell<Vec<crate::sim::intern::InternedId>> = RefCell::new(Vec::new());
     let clear = |id: crate::sim::intern::InternedId| cleared.borrow_mut().push(id);
-    let effects = crate::sim::world::FrameEffects::default().with_production_strip(&[], &clear);
+    let mut effects = crate::sim::world::FrameEffects::default().with_production_strip(&[]);
     // The fourth is refused at the append.
     assert!(!enqueue_by_type(
         &mut sim,
         &rules,
         "Americans",
         "MTNK",
-        effects,
+        &mut effects,
         false
     ));
     let mtnk = sim.interner.get("MTNK").expect("the type is interned");

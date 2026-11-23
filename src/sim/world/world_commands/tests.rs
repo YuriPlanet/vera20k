@@ -1433,7 +1433,7 @@ fn bunker_full_lifecycle_enter_install_then_eject() {
             "the rifleman is shooting the refinery"
         );
         // The engineer takes it: the refinery is now the rifleman's own.
-        sim.change_owner_with_rules(building, americans, &rules, None, FrameEffects::default());
+        sim.change_owner_with_rules(building, americans, &rules, None, &mut FrameEffects::default());
         assert!(
             sim.substrate
                 .entities

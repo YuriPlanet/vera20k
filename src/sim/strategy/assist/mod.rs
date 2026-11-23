@@ -124,6 +124,7 @@ pub(super) mod build;
 pub(super) mod census;
 pub(super) mod composition;
 pub(super) mod dodge;
+pub(super) mod economy;
 pub(super) mod expand;
 pub(super) mod kite;
 pub(super) mod micro;
@@ -930,6 +931,14 @@ impl Brain for AssistBrain {
         if !replaced.is_empty() {
             self.orders_refused(&replaced);
         }
+    }
+
+    fn squad_members(
+        &mut self,
+        _rules: &RuleSet,
+        _obs: &Observation<'_>,
+    ) -> Option<std::collections::BTreeSet<u64>> {
+        Some(self.squads.members())
     }
 
     fn orders_refused(&mut self, refused: &[(u64, Goal)]) {

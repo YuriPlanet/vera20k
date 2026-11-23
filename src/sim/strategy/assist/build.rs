@@ -58,58 +58,6 @@ use super::plan::{self, Budget, Item};
 /// the one that stops being starved.
 pub(super) const HARVESTERS_PER_REFINERY: usize = 3;
 
-/// The free wallet the tech stage needs before it answers: the price of the
-/// cheapest thing it buys.
-///
-/// `[AMRADR] Cost=1000` is that price, and the stage's dearest entry is the
-/// lab at `[GATECH] Cost=2000`. The gate used to ask for the dearest one in
-/// hand, and a house never held it: the barracks and the war factory spend
-/// every credit above their own floors, so the wallet the lab needed was one
-/// frame away for the whole match — the report is an army of infantry and no
-/// lab, no radar, no tank. At the cheap step's price the stage is decided
-/// instead, and `build_next` holds the difference back from the lines
-/// (`yard_reserve`) so the wallet can fill. The hold expires with
-/// [`BUILD_HOLD_FRAMES`], so a house that cannot fill it is not saving
-/// forever.
-pub(super) const TECH_START_CREDITS: i32 = 1_000;
-
-/// The free wallet a building on the yard maker's `Prerequisite=` list has to
-/// hold: it buys the ability to rebuild a lost yard, which only pays off once
-/// the base can afford to lose one.
-pub(super) const SUPPORT_MIN_CREDITS: i32 = 4_000;
-
-/// How many war factories the house runs before it is rich, and how many a
-/// rich house runs: the list in [`super::plan`] holds the numbers now, because
-/// they are entries of one order rather than thresholds of their own.
-
-/// The free wallet a house has to be holding before it treats a factory as the
-/// bottleneck: past this it cannot spend what it earns, so the answer is
-/// another factory rather than another harvester.
-pub(super) const SURPLUS_CREDITS: i32 = 12_000;
-
-/// The income one production line can spend, in credits a minute, and so the
-/// income at which a second line is worth buying.
-///
-/// A line turns out a unit in its `Cost_Of` worth of frames: a 900-credit tank
-/// takes about forty-five seconds to build, which is 1 200 credits a minute.
-/// Two lines spend about 2 400. Past that the house is earning faster than its
-/// factories can turn it into army, and the wallet it cannot spend is the
-/// signal — not a round number the wallet happens to reach once.
-pub(super) const SURPLUS_INCOME_PER_MINUTE: i32 = 2_400;
-
-/// How long the build list's answer stands before it may answer a different
-/// entry, in frames: forty seconds (600 frames at the 15 a second the
-/// simulation steps).
-///
-/// Long enough to save for a structure the wallet cannot cover the frame it is
-/// chosen — a gate opens on a wallet that is then spent elsewhere — and short
-/// enough that a base which really has changed its mind (the defense it wanted
-/// now stands) is not held to a plan for a minute.
-pub(super) const BUILD_HOLD_FRAMES: u64 = 600;
-
-/// How many war factories and barracks a house with a surplus runs: an entry
-/// of [`super::plan::STEPS`], as the target counts above are.
-
 /// One frame's base spending: take what is finished out of the yard and start
 /// the next structure. The production lines are
 /// [`super::composition::fill_lines`]' job.
@@ -456,7 +404,7 @@ fn build_next(
             step,
             match held {
                 Some((held_step, until)) if held_step == step => until,
-                _ => tick.saturating_add(BUILD_HOLD_FRAMES),
+                _ => tick.saturating_add(super::economy::BUILD_HOLD_FRAMES),
             },
         ));
     }

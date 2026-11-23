@@ -42,23 +42,6 @@ const COMBAT_MIN_CREDITS: i32 = 2_000;
 /// at the vehicle's floor the barracks never fires at all.
 const INFANTRY_MIN_CREDITS: i32 = 500;
 
-/// The price of the cheapest line vehicle the house can build now.
-///
-/// Two questions read it, and they are the same question from two sides: what
-/// the barracks is saving the wallet for, and what the war factory has to be
-/// able to pay before it has anything to make. It is read from the rules
-/// rather than fixed at [`COMBAT_MIN_CREDITS`]: the fixed floor is the price
-/// of a *heavy* unit, and a war factory held to it makes nothing while the
-/// barracks spends every credit above its own floor — the army that is all
-/// infantry and never a tank. A side whose line tank is dearer than another's
-/// answers with its own price this way.
-fn line_vehicle_floor(rules: &RuleSet, obs: &Observation<'_>) -> Option<i32> {
-    build::class_types(rules, obs, ObjectCategory::Vehicle)
-        .filter(|(ty, _)| super::orders::is_combat_unit(rules, ty))
-        .map(|(ty, _)| obs.cost_of(rules, ty))
-        .min()
-}
-
 /// The wallet past which the house reaches for the heavy end; under it, one
 /// line unit's price is as far as it goes ([`unit_ceiling`]).
 const RICH_CREDITS: i32 = 4_000;
@@ -142,7 +125,8 @@ pub(super) fn fill_lines(
     // dearer number the barracks spent every credit above its own floor and the
     // wallet never reached the price the war factory wanted — the army the
     // play test reports as "only infantry and dogs, no tank all match".
-    let vehicle_floor = line_vehicle_floor(rules, obs).unwrap_or(COMBAT_MIN_CREDITS);
+    let vehicle_floor =
+        super::economy::line_vehicle_floor(rules, obs).unwrap_or(COMBAT_MIN_CREDITS);
     // Whether the barracks stops this frame.
     //
     // Two failure modes meet here, and the arm has to avoid both:
@@ -189,7 +173,9 @@ pub(super) fn fill_lines(
     // this is false, so the ceiling keeps its documented behaviour; at 100000
     // it is true from the first frame and the barracks keeps working.
     let rich = budget.free >= vehicle_floor.saturating_mul(RICH_VEHICLES);
-    let barracks_holds = infantry_full && !rich && !a_soldier_would_reset_the_saving;
+    let barracks_holds = infantry_full
+        && !rich
+        && (budget.free >= vehicle_floor || a_soldier_would_reset_the_saving);
     // Why the infantry line kept running: the ceiling is only as good as the
     // three numbers it reads. Traced like the build list's own line, so a
     // roster that is four fifths infantry can be attributed instead of guessed.
@@ -1171,7 +1157,7 @@ mod tests {
     /// vehicle's price, both idle. The ceiling only bites at the price of one
     /// line vehicle, and under it the barracks keeps its own line running.
     #[test]
-    fn a_barracks_keeps_turning_while_the_wallet_is_below_the_war_factory() {
+    fn a_barracks_holds_while_the_wallet_is_below_the_war_factory() {
         let Some((mut sim, rules)) = arena(0xA17) else {
             return;
         };
@@ -1192,7 +1178,7 @@ mod tests {
                 .expect("a soldier");
         }
         let obs = Observation::new(&sim, owner);
-        let floor = line_vehicle_floor(&rules, &obs).expect("the side has a line vehicle");
+        let floor = crate::sim::strategy::assist::economy::line_vehicle_floor(&rules, &obs).expect("the side has a line vehicle");
         let under = floor.saturating_sub(100).max(INFANTRY_MIN_CREDITS);
         sim.houses
             .get_mut(&owner)
@@ -1224,11 +1210,11 @@ mod tests {
             })
             .collect();
         assert!(
-            queued
+            !queued
                 .iter()
                 .any(|name| rules.object(name).expect("a rules type").category
                     == ObjectCategory::Infantry),
-            "the base does not stand idle: {queued:?}"
+            "a soldier here would put the saving back: {queued:?}"
         );
     }
 
@@ -1507,7 +1493,7 @@ mod tests {
         assert!(infantry_above_ceiling(&brain.census), "past the ceiling");
 
         let obs = Observation::new(&sim, owner);
-        let floor = line_vehicle_floor(&rules, &obs).expect("the side has a line vehicle");
+        let floor = crate::sim::strategy::assist::economy::line_vehicle_floor(&rules, &obs).expect("the side has a line vehicle");
         let queued = |sim: &Simulation, out: &Outbox| -> Vec<String> {
             out.intents
                 .iter()

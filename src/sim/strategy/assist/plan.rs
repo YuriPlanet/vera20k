@@ -142,7 +142,8 @@ impl Budget {
     }
 }
 
-/// Read the budget: the ledger's own commitment, and the wallet beside it.
+/// Read the budget: the ledger's own commitment, the reserve the house will not
+/// spend, and the wallet beside them.
 pub(super) fn budget(
     rules: &RuleSet,
     obs: &Observation<'_>,
@@ -150,9 +151,18 @@ pub(super) fn budget(
     income: Option<i32>,
 ) -> Budget {
     let committed = census.committed(rules, obs);
+    // The reserve comes off here rather than at each gate, so every reader of
+    // `free` — the build list's gates, the production lines' floors, the
+    // ceiling on what one unit may cost — is answering about money the house is
+    // actually free to spend. One owner, so a caller cannot reserve money in
+    // one place and spend it in another.
+    let held = super::economy::reserve(rules, obs, income);
     Budget {
         committed,
-        free: obs.credits().wrapping_sub(committed),
+        free: obs
+            .credits()
+            .wrapping_sub(committed)
+            .wrapping_sub(held),
         income,
     }
 }
@@ -292,12 +302,12 @@ pub(super) const STEPS: &[Step] = &[
     Step {
         item: Item::Aircraft,
         want: 1,
-        gate: Gate::Tech,
+        gate: Gate::Free(super::economy::TECH_START_CREDITS),
     },
     Step {
         item: Item::Radar,
         want: 1,
-        gate: Gate::Tech,
+        gate: Gate::Free(super::economy::TECH_START_CREDITS),
     },
     Step {
         item: Item::Tech,
@@ -386,7 +396,7 @@ pub(super) const STEPS: &[Step] = &[
     Step {
         item: Item::Support,
         want: 1,
-        gate: Gate::Free(build::SUPPORT_MIN_CREDITS),
+        gate: Gate::Free(super::economy::SUPPORT_MIN_CREDITS),
     },
     // The plot, once there is money the lines cannot spend: a superweapon is
     // the one purchase that takes a base apart, and a house that owns one wins
@@ -567,20 +577,30 @@ fn open(
         Gate::HarvestersServed => census.harvesters_served(),
         Gate::Free(credits) => budget.free >= credits,
         Gate::Surplus => {
-            budget.free >= build::SURPLUS_CREDITS
+            budget.free >= super::economy::SURPLUS_CREDITS
                 || budget
                     .income
-                    .is_some_and(|rate| rate >= build::SURPLUS_INCOME_PER_MINUTE)
+                    .is_some_and(|rate| rate >= super::economy::SURPLUS_INCOME_PER_MINUTE)
         }
         Gate::CanReplace => build::can_replace_units(rules, obs, census),
         // The wallet, and only the wallet: a house that waits to have an army
         // before it unlocks the tree is a house that pays for the whole army
         // with the opening's tech level. `build_next` already refuses a
         // structure the wallet cannot cover, and the threshold here is the
-        // cheapest thing the stage buys ([`build::TECH_START_CREDITS`]): the
+        // cheapest thing the stage buys
+        // ([`super::economy::TECH_START_CREDITS`]): the
         // stage is decided there, and what it still needs is held back from
         // the lines rather than waited for.
-        Gate::Tech => budget.free >= build::TECH_START_CREDITS,
+        // The tech stage: the wallet past the cheapest thing it buys, and an army
+        // worth unlocking types for. The second half is what the doc above
+        // promises and what was missing. A house that unlocks the tree on the
+        // opening's money pays for the whole army at the opening's tech level,
+        // and one that unlocks it before it has an army has bought a key to a
+        // room with nothing in it.
+        Gate::Tech => {
+            budget.free >= super::economy::TECH_START_CREDITS
+                && census.fighters >= super::squads::ARMY_TO_ATTACK
+        }
     }
 }
 

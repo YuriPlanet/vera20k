@@ -155,6 +155,9 @@ pub(crate) enum HotkeyCommand {
     AutoPlayBuild,
     /// Auto play's abilities half: superweapon launches on a switch of their own.
     AutoPlayAbilities,
+    /// Auto play's scope key: the three halves keep running, but only over the
+    /// objects standing in the brain's teams.
+    ToggleAutoPlaySquads,
     /// Ctrl+D smart command: context-dependent convenience action on the
     /// selection (transport loading, garrison, engineer, sabotage, etc.).
     /// Registered in the `vera20k` keyboard category with the Ctrl+D default.

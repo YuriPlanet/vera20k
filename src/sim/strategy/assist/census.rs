@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
-use crate::rules::unit_role::{ROLES, Role, RoleTable, role_against_armour};
+use crate::rules::unit_role::{ROLES, Role, RoleTable, RoleWeights, role_against_armour};
 use crate::sim::control::observation::{EnemyEntity, Observation};
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionId;
@@ -465,6 +465,21 @@ impl Unit {
     }
 }
 
+/// What a type is, for the squads that must decide what a unit is *for*.
+///
+/// The ledger is the one pass that has the rules open, so this is read there and
+/// carried beside the unit: a squad that had to ask the rules again would be
+/// rebuilding the role table per decision, and a `Unit` that carried the weights
+/// would be copying a seven-place float vector per soldier per frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct TypeFacts {
+    /// Infantry, vehicle, aircraft, ship or building.
+    pub(super) category: ObjectCategory,
+    /// Its weight in each of the seven jobs, against the best answer the same
+    /// rule set offers. `0.0` means "does not do that job".
+    pub(super) weights: RoleWeights,
+}
+
 /// The house's assets for one frame.
 #[derive(Debug, Default)]
 pub(super) struct Census {
@@ -472,6 +487,11 @@ pub(super) struct Census {
     pub(super) counts: [usize; 5],
     /// Every own type's count, for the questions a name-parsed rules list asks.
     pub(super) by_type: BTreeMap<InternedId, usize>,
+    /// Every own type's facts, keyed by the type the units carry.
+    ///
+    /// Keyed by type rather than by entity because two Grizzlies answer the same
+    /// way: written once per type per refresh, read once per question.
+    pub(super) types: BTreeMap<InternedId, TypeFacts>,
     pub(super) lines: [Line; 6],
     pub(super) units: Vec<Unit>,
     pub(super) enemies: Vec<EnemyEntity>,
@@ -772,6 +792,17 @@ impl Census {
                     self.repair_sites.push((entity.cell, entity.entity_id));
                 }
             }
+            // Read before the branches, because the facts are true of the type
+            // whether or not this copy can be ordered today, and a squad asks
+            // about the type.
+            let weights = roles.weights(&ty.id);
+            self.types.insert(
+                entity.type_id,
+                TypeFacts {
+                    category: ty.category,
+                    weights,
+                },
+            );
             let points = if combat {
                 fight_points(ty, health_permille)
             } else {
@@ -807,7 +838,6 @@ impl Census {
                     // reason — the shortfall vector is threat (all live enemy objects)
                     // against able, so a house with a platoon in limbo read itself as
                     // answering a role it could not answer.
-                    let weights = roles.weights(&ty.id);
                     for role in ROLES {
                         if weights.get(role) >= ROLE_FLOOR {
                             self.able[role.index()] += 1;
@@ -923,6 +953,14 @@ impl Census {
                 )
             })
             .map(|building| (building.entity_id, building.cell))
+    }
+
+    /// What the type of `unit` is, for the squads that decide what it is *for*.
+    ///
+    /// `None` only for a unit whose type the scan never resolved, which is the
+    /// same case `type_count` reports as absent.
+    pub(super) fn facts(&self, type_id: InternedId) -> Option<TypeFacts> {
+        self.types.get(&type_id).copied()
     }
 
     pub(super) fn type_count(&self, type_id: InternedId) -> usize {

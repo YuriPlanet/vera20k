@@ -30,6 +30,8 @@ use std::collections::BTreeSet;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::control::observation::Observation;
 
+use crate::rules::object_type::ObjectCategory;
+
 use super::census::{Census, Unit};
 use super::squared_distance;
 
@@ -61,6 +63,17 @@ const TARGET_LOCK_FRAMES: u64 = 1_800;
 /// with fewer losses (lost 52:112 -> 33:96), and the worst seed went from
 /// own=147 enemy=10 army=82 (timeout) to own=157 enemy=1 army=93 (won).
 const DEFEND_MAX: usize = 12;
+
+/// The standing garrison: what holds the yard between raids.
+///
+/// [`DEFEND_MAX`] is a *ceiling* — what a raid may call home — not a standing
+/// strength. A house that keeps half its army home forever is the house that
+/// never attacks, and the old code did keep it: the defenders were formed only
+/// when a raid was already on the base, so between raids the whole army was the
+/// fist and an opening of two soldiers and a harvester marched at a construction
+/// yard. Four is a squad: enough that a lone straggler does not walk into an
+/// empty yard, few enough that a ten-unit fist still forms at twelve.
+const PEACETIME_GARRISON: usize = 4;
 
 /// How near the base a hostile has to be for it to be a raid on the base, in
 /// cells: the push step's own threat ring, because "the base is threatened"
@@ -163,6 +176,22 @@ pub(super) enum Role {
     Attack,
 }
 
+/// What a team is doing about its own strength.
+///
+/// The membership is rebuilt from the ledger, so a dead unit is simply absent
+/// from the next count and there is no recruit/release bookkeeping to get wrong.
+/// What a bare membership cannot say is whether the team is *whole*: a fist of
+/// six that is meant to hold ten should not march, and a garrison of three that
+/// is meant to hold four should be asking production for one more. `Muster` is
+/// that difference, and it is what the production step reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SquadState {
+    /// Below [`Squad::want`], and the house is meant to be filling it.
+    Muster,
+    /// At strength, or doing the job regardless.
+    Ready,
+}
+
 /// One team: who is in it, what it is aimed at, and until when.
 #[derive(Debug, Clone)]
 pub(super) struct Squad {
@@ -172,6 +201,12 @@ pub(super) struct Squad {
     pub(super) target: Option<u64>,
     /// The frame the team may re-pick its target on.
     pub(super) lock_until: u64,
+    /// What the team is meant to hold. The designed strength, not the count: a
+    /// team rebuilt to whatever is alive would call six a fist and never ask for
+    /// the other four.
+    pub(super) want: usize,
+    /// Whether it is at `want`, and what it is doing about the difference.
+    pub(super) state: SquadState,
 }
 
 impl Squad {
@@ -198,6 +233,17 @@ pub(super) struct Squads {
 impl Squads {
     pub(super) fn new() -> Self {
         Self::default()
+    }
+
+    /// Every object standing in a team, by stable id.
+    ///
+    /// The scope key asks for this once a frame so the board can drop the
+    /// orders aimed at everything the teams do not hold.
+    pub(super) fn members(&self) -> std::collections::BTreeSet<u64> {
+        self.squads
+            .iter()
+            .flat_map(|squad| squad.members.iter().copied())
+            .collect()
     }
 
     /// Rebuild the membership from the ledger, if the term has run or a new
@@ -244,26 +290,63 @@ impl Squads {
             .filter(|unit| unit.traits.scout && unit.orderable && !unit.hand)
             .map(|unit| unit.entity_id)
             .collect();
+        // A scout is not a strength the house designs to: every dog and every
+        // scout the rules carry goes, so the team is whole the moment it exists.
+        let scout_want = scouts.len();
         taken.extend(scouts.iter().copied());
         self.squads.push(Squad {
             role: Role::Scout,
             members: scouts,
             target: None,
             lock_until: tick.saturating_add(TARGET_LOCK_FRAMES),
+            want: scout_want,
+            state: SquadState::Ready,
         });
 
-        // Then the defenders, if the base is being raided: the nearest few,
-        // because the nearest are the ones that can arrive. `held` is the
-        // raider the old team was still locked on, read before the clear.
+        // The defenders are always a team.
+        //
+        // They used to exist only while a raid was already on the base, and
+        // between raids every unit that was not a scout or a raider went into the
+        // fist. That is why an opening army of two soldiers and a harvester
+        // marched at a construction yard instead of holding the yard it came
+        // from, and why the yard was empty when the raid arrived. A house that
+        // expands is a house that can afford to, and that is a house holding
+        // something.
+        //
+        // `held` is the raider the old team was still locked on, read before the
+        // clear, so a rebuild does not send the garrison at a different hostile
+        // every twenty seconds and meet none of them.
         let raid = raid.map(|(id, _)| id).or(held);
-        let raid_cell = raid.and_then(|id| {
-            census
-                .enemies
-                .iter()
-                .find(|enemy| enemy.entity_id == id)
-                .map(|enemy| enemy.cell)
-        });
-        if let (Some(threat), Some(cell)) = (raid, raid_cell) {
+        // Where the garrison forms: the raid when there is one, the yard when
+        // there is not. Without this the defenders with no raid had nowhere to
+        // stand and the pass below gave them the nearest hostile anywhere on the
+        // map.
+        let anchor = raid
+            .and_then(|id| {
+                census
+                    .enemies
+                    .iter()
+                    .find(|enemy| enemy.entity_id == id)
+                    .map(|enemy| enemy.cell)
+            })
+            .or(census.base_cell);
+        let raiders = census
+            .base_cell
+            .map_or(0, |home| census.enemies_near(home, HOME_THREAT_CELLS));
+        // Enough to meet the raid: the raid's own size, with DEFEND_MAX as the
+        // floor and half the army as the ceiling. Twelve was measured against a
+        // ring of fourteen and was short; a fixed number is the wrong shape for
+        // this, because the raid is not fixed. Between raids the standing
+        // garrison is a third of the army at most, so a fist still forms.
+        let want = if raiders > 0 {
+            raiders
+                .max(DEFEND_MAX)
+                .min((census.fighters / 2).max(1))
+                .min(census.fighters)
+        } else {
+            PEACETIME_GARRISON.min(census.fighters / 3)
+        };
+        if want > 0 {
             let mut nearest: Vec<&Unit> = census
                 .units
                 .iter()
@@ -274,28 +357,35 @@ impl Squads {
                         && !taken.contains(&unit.entity_id)
                 })
                 .collect();
-            nearest.sort_by_key(|unit| (squared_distance(unit.cell, cell), unit.entity_id));
-            // Enough to meet the raid: the raid's own size, with DEFEND_MAX as
-            // the floor and half the army as the ceiling. Twelve was measured
-            // against a ring of fourteen and was short; a fixed number is the
-            // wrong shape for this, because the raid is not fixed.
-            let raiders = census
-                .base_cell
-                .map_or(0, |home| census.enemies_near(home, HOME_THREAT_CELLS));
-            let want = raiders
-                .max(DEFEND_MAX)
-                .min((census.fighters / 2).max(DEFEND_MAX));
+            // Infantry first, then distance, then id. Not by name: the ledger
+            // knows which job each type answers, and the body a house rebuilds
+            // fastest is the one the rules price lowest for the job. The
+            // expensive answer is what the fist keeps.
+            nearest.sort_by_key(|unit| {
+                let infantry = census
+                    .facts(unit.type_id)
+                    .is_some_and(|facts| facts.category == ObjectCategory::Infantry);
+                let distance = anchor.map_or(0, |cell| squared_distance(unit.cell, cell));
+                (!infantry, distance, unit.entity_id)
+            });
             let members: BTreeSet<u64> = nearest
                 .into_iter()
                 .take(want)
                 .map(|unit| unit.entity_id)
                 .collect();
             taken.extend(members.iter().copied());
+            let state = if members.len() >= want {
+                SquadState::Ready
+            } else {
+                SquadState::Muster
+            };
             self.squads.push(Squad {
                 role: Role::Defend,
                 members,
-                target: Some(threat),
+                target: raid,
                 lock_until: tick.saturating_add(TARGET_LOCK_FRAMES),
+                want,
+                state,
             });
         }
 
@@ -332,15 +422,26 @@ impl Squads {
                 .map(|unit| unit.entity_id)
                 .collect();
             taken.extend(members.iter().copied());
+            let state = if members.len() >= HARASS_MAX {
+                SquadState::Ready
+            } else {
+                SquadState::Muster
+            };
             self.squads.push(Squad {
                 role: Role::Harass,
                 members,
                 target: None,
                 lock_until: tick.saturating_add(TARGET_LOCK_FRAMES),
+                want: HARASS_MAX,
+                state,
             });
         }
 
-        // What is left is the fist.
+        // What is left is the fist. Its designed strength is
+        // [`ARMY_TO_ATTACK`]: the same number the advance step gates on, so a
+        // fist of six is `Muster` here and does not march there. That is the
+        // difference between the two states being a label and being the thing
+        // production reads.
         let attack: BTreeSet<u64> = census
             .units
             .iter()
@@ -348,11 +449,18 @@ impl Squads {
             .map(|unit| unit.entity_id)
             .filter(|id| !taken.contains(id))
             .collect();
+        let state = if attack.len() >= ARMY_TO_ATTACK {
+            SquadState::Ready
+        } else {
+            SquadState::Muster
+        };
         self.squads.push(Squad {
             role: Role::Attack,
             members: attack,
             target: None,
             lock_until: tick,
+            want: ARMY_TO_ATTACK,
+            state,
         });
     }
 
@@ -522,8 +630,8 @@ mod tests {
         let defend = squads.squad(Role::Defend).expect("a raid is met");
         assert_eq!(
             defend.members.len(),
-            DEFEND_MAX,
-            "some of the army, not all"
+            (fighters / 2).max(1),
+            "half the army holds the base; the rest is free to march"
         );
         assert!(
             defend.members.contains(&0),
@@ -539,7 +647,7 @@ mod tests {
         let attack = squads.squad(Role::Attack).expect("the fist");
         assert_eq!(
             attack.members.len(),
-            fighters - DEFEND_MAX,
+            fighters - (fighters / 2).max(1),
             "the rest stay in the fist"
         );
     }
@@ -650,8 +758,15 @@ mod tests {
             squads
                 .squad(Role::Attack)
                 .map_or(0, |squad| squad.members.len()),
-            5 - HARASS_MAX,
-            "and the house keeps something at home"
+            0,
+            "five units are a garrison and a raid, not a fist"
+        );
+        assert_eq!(
+            squads
+                .squad(Role::Defend)
+                .map_or(0, |squad| squad.members.len()),
+            1,
+            "and one rifleman stays home"
         );
     }
 
@@ -677,8 +792,8 @@ mod tests {
             squads
                 .squad(Role::Attack)
                 .map_or(0, |squad| squad.members.len()),
-            30 - HARASS_MAX,
-            "and the fist keeps everything the raid does not take"
+            30 - HARASS_MAX - PEACETIME_GARRISON.min(30 / 3),
+            "and the fist keeps everything the garrison and the raid do not take"
         );
     }
 
