@@ -3,6 +3,7 @@
 //! UI overlays, selection brackets, target lines, and the overlay render index.
 
 pub(crate) mod airstrike_lines;
+pub(crate) mod ares_tactical_text;
 pub(crate) mod beacon_labels;
 pub(crate) mod build_text;
 pub(crate) mod building_anim;

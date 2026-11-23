@@ -10,6 +10,29 @@ Ares plays. Their names, categories and descriptions come from the CSF
 (`TXT_TOGGLE_POWER`, `TXT_INTERFACE`, `TXT_TOGGLE_POWER_DESC`, ...). None has
 a default key.
 
+## FPSCounter and the release note
+
+The FPSCounter command (`src/Commands/FPSCounter.h`, Ares.dll `100022F0`;
+texts `TXT_FPS_COUNTER`, `TXT_DEVELOPMENT`, `TXT_FPS_COUNTER_DESC`) shows
+or hides a frame counter. It starts hidden and stays as set from one match
+to the next.
+
+TacticalClass_Draw_TheDarkSideOfTheMoon (Ares.dll `1006BE80`, hook
+`0x006D4B25`, `Misc/Surfaces.cpp`) prints lines at the bottom left of the
+battlefield, after the timer lines and before the outcome banner, from the
+bottom up (`app::presentation::ares_tactical_text`):
+
+- the string table's `TXT_RELEASE_NOTE`, in red, when it has text. Ares'
+  own `ares.csf` holds it empty, so a mod sets it in a
+  `stringtable00.csf` to `stringtable99.csf`;
+- while the counter is on, `FPS: <rate> Avg: <average>` in white: the
+  frames the game counted in the last second and the average since the
+  count began (gamemd `0x0055E33B`).
+
+Each line sits on a black box its own size at the battlefield's left edge.
+The stability warning Ares 3.0 could print first is never set
+(`Ares::GetStabilityWarning`, `10003650`, returns nothing).
+
 ## TogglePower
 
 ```ini
@@ -53,4 +76,4 @@ mode off (`sim::snapshot::saved_local_view`).
   players' base plans to Ares' debug log; DumpMemory writes a Windows
   minidump. VERA has neither the log nor the dump.
 
-FPSCounter and MapSnapshot are open in [ares-remaining.md](ares-remaining.md).
+MapSnapshot is open in [ares-remaining.md](ares-remaining.md).

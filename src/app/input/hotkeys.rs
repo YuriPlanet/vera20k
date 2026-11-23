@@ -149,6 +149,10 @@ pub(crate) enum HotkeyCommand {
     /// selection (transport loading, garrison, engineer, sabotage, etc.).
     /// Registered in the `vera20k` keyboard category with the Ctrl+D default.
     AutoLoad,
+    /// Ares 3.0 `FPSCounter`: shows or hides the frame counter at the bottom
+    /// left of the battlefield (`app::presentation::ares_tactical_text`).
+    /// Listed while Ares plays.
+    FpsCounter,
     /// Ares 3.0 `TogglePower`: arms power mode (`app::input::power_mode`)
     /// when `[General] TogglePowerAllowed=` is set. Listed while Ares plays.
     TogglePower,
@@ -1257,15 +1261,19 @@ mod tests {
     }
 
     /// Ares' CommandClassCallback_Register (hook `0x533058`) registers
-    /// TogglePower where gamemd allocates UnitTab, with no default key.
+    /// FPSCounter, then TogglePower, where gamemd allocates UnitTab, with no
+    /// default key.
     #[test]
-    fn ares_toggle_power_registers_before_unit_tab_without_a_key() {
+    fn ares_commands_register_before_unit_tab_without_a_key() {
         let catalog = catalog::registered_commands();
         let at = catalog
             .iter()
             .position(|row| row.ini_name == "TogglePower")
             .expect("TogglePower is registered");
         assert_eq!(catalog[at + 1].command, HotkeyCommand::UnitTab);
+        assert_eq!(catalog[at - 1].command, HotkeyCommand::FpsCounter);
+        assert_eq!(catalog[at - 1].ini_name, "FPSCounter");
+        assert_eq!(catalog[at - 1].category_key, "TXT_DEVELOPMENT");
         assert_eq!(catalog[at].name_key, "TXT_TOGGLE_POWER");
         assert_eq!(catalog[at].category_key, "TXT_INTERFACE");
         assert_eq!(

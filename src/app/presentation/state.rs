@@ -138,6 +138,10 @@ pub(crate) struct MatchPresentationState {
     /// A `RefCell`: the particle, overlay-anim and light draws step it while
     /// they read the presentation through `&`.
     pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
+    /// Ares' FPS counter switch (`Ares::bFPSCounter`, Ares.dll `100C0BB9`),
+    /// process-lived and off at start; the FPSCounter command flips it
+    /// ([`super::ares_tactical_text`]).
+    pub(crate) ares_fps_counter: bool,
     /// The water and ore sparkles' per-cell PixelFX and clock. A `RefCell`:
     /// the sparkle draw steps it beside the world it reads through `&AppState`.
     pub(crate) pixel_fx: std::cell::RefCell<crate::render::pixel_fx_sparkles::PixelFxCells>,
