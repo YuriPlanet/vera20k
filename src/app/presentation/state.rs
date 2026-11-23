@@ -152,6 +152,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) super_timer_next_flip_ms: Option<u64>,
     /// Local timer-list folding and scroll state, independent of simulation.
     pub(crate) super_timer_dock: crate::app::presentation::super_timers::TimerDock,
+    /// What the timer lines show this frame (`super_timers::update_super_timers`).
+    pub(crate) super_timer_frame: crate::app::presentation::super_timers::TimerFrame,
     pub(crate) combat_lights: crate::app::presentation::combat_lights::CombatLightRuntime,
     /// The sole client owner of native GScreenClass shake offsets; input
     /// events decay it and Simulation only sends ordered axis writes.

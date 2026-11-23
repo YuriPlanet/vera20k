@@ -1094,6 +1094,7 @@ fn upload_to_gpu(
     // tooltip (O10). Prepare once: nonsilent TextLabel72A4A0 advances its
     // raw-wall reveal and requests typing audio once per successful paint.
     // Keep the row's existing opaque black background behind its glyphs.
+    crate::app::input::messages::advance_messages(state);
     let (message_fill, message_text) = crate::app::input::messages::build_message_instances(state);
     let verdict = crate::app::presentation::outcome_banner::visible_verdict(state);
     let (outcome_shape, outcome_text) = verdict
@@ -1115,8 +1116,10 @@ fn upload_to_gpu(
         tooltip_text.extend(texts);
     }
 
-    // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles;
-    // built before the pool borrow (they step the Supers' blinks).
+    // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles:
+    // their step (the Supers' blinks, the dock's rows and hit areas) runs
+    // first, then the drawing reads it.
+    crate::app::presentation::super_timers::update_super_timers(state);
     let (mut super_timer_fill, mut super_timer_text) =
         crate::app::presentation::super_timers::build_super_timer_instances(state);
     // The buttons and texts the side's layout adds over the battlefield

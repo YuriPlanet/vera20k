@@ -1252,11 +1252,13 @@ fn sync_view(state: &mut AppState) {
 /// Prepare one successful offline TextLabel paint, using raw wall time for
 /// typing and the existing sound owner for every MessageCharTyped request.
 /// Expiry uses the same wall clock, but is polled only by admitted Main_Tick passes.
-pub(crate) fn build_message_instances(
-    state: &mut AppState,
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+/// Each drawn frame's message step, before the messages are drawn:
+/// nonsilent TextLabel72A4A0 advances its raw-wall reveal and requests the
+/// typing sound once per successful paint. It steps whether or not a layout
+/// shows the messages.
+pub(crate) fn advance_messages(state: &mut AppState) {
     if state.frontend.screen != GameScreen::InGame {
-        return (Vec::new(), Vec::new());
+        return;
     }
     let wall_ms = crate::app::input::tooltips::now_ms(state) as u32;
     let requests = state
@@ -1271,6 +1273,14 @@ pub(crate) fn build_message_instances(
         for _ in 0..requests {
             crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
         }
+    }
+}
+
+/// The message lines as they stand after this frame's
+/// [`advance_messages`].
+pub(crate) fn build_message_instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    if state.frontend.screen != GameScreen::InGame {
+        return (Vec::new(), Vec::new());
     }
     // A layout that leaves the messages out only takes them off the screen.
     if !crate::app::presentation::field_parts::shows(

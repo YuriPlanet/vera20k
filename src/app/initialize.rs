@@ -1188,6 +1188,7 @@ impl App {
                     super_timer_blinks: Default::default(),
                     super_timer_next_flip_ms: None,
                     super_timer_dock: Default::default(),
+                    super_timer_frame: Default::default(),
                     minimap: None,
                     radar_anim: None,
                     radar_movies: Default::default(),

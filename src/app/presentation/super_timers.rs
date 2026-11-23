@@ -407,11 +407,30 @@ fn blink_rgb(rules: &RuleSet) -> [u8; 3] {
     house_text_rgb(&rules.color_schemes, scheme)
 }
 
-/// The timer lines as UI sprites: the black boxes, drawn first, and the text.
-/// The tactical view starts at the screen's origin.
-pub(crate) fn build_super_timer_instances(
-    state: &mut AppState,
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+/// What the timer lines show this frame, worked out before they are drawn
+/// ([`update_super_timers`]): each shown text in drawing order, and the
+/// dock's toggle while it has one.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct TimerFrame {
+    /// A line's label, then its time: the text, where it prints and its
+    /// colour.
+    pub(crate) texts: Vec<(String, TextPlace, [u8; 3])>,
+    /// The dock's toggle and whether the dock is open.
+    pub(crate) toggle: Option<(crate::ui::gadget::GadgetRect, bool)>,
+}
+
+/// Each drawn frame's timer step, before its timers are drawn: the lines,
+/// their places and colours ([`TimerFrame`]), the dock's rows and hit areas,
+/// and each Super's blink, which steps on the wall clock. The drawing then
+/// only reads what this left ([`build_super_timer_instances`]).
+pub(crate) fn update_super_timers(state: &mut AppState) {
+    state
+        .match_state
+        .match_presentation
+        .super_timer_frame
+        .texts
+        .clear();
+    state.match_state.match_presentation.super_timer_frame.toggle = None;
     state
         .match_state
         .match_presentation
@@ -426,12 +445,12 @@ pub(crate) fn build_super_timer_instances(
     // A layout that leaves the timers out draws none and keeps no hit area.
     if state.frontend.screen != GameScreen::InGame || !field_parts::shows(state, FieldPart::Timers)
     {
-        return (Vec::new(), Vec::new());
+        return;
     }
     let (Some(runtime), Some(rules)) =
         (state.match_state.sim_runtime.presentation(), state.rules())
     else {
-        return (Vec::new(), Vec::new());
+        return;
     };
     let sim = &runtime.simulation;
     let frame = sim.session().binary_frame();
@@ -523,7 +542,7 @@ pub(crate) fn build_super_timer_instances(
         );
     }
     if lines.is_empty() {
-        return (Vec::new(), Vec::new());
+        return;
     }
 
     let csf = state.process_assets.csf.as_ref();
@@ -611,10 +630,6 @@ pub(crate) fn build_super_timer_instances(
     // The dock stacks up from the bottom right of its box, the battlefield
     // in the original interface, and works in the box's own pixels.
     let [_, _, view_w, view_h] = field_parts::rect(state, FieldPart::Timers);
-    // Screen-space lanes add back the world camera the UI shader subtracts,
-    // and the box's corner.
-    let camera = field_parts::lane_camera(state, FieldPart::Timers);
-
     let font = &state.renderer.bit_font;
     let timer_lines: Vec<_> = lines.iter().map(|(line, _, _)| *line).collect();
     // The grouped lines are few; they replace the compact dock's paging.
@@ -634,18 +649,7 @@ pub(crate) fn build_super_timer_instances(
         }
     }
     let blinks = &mut state.match_state.match_presentation.super_timer_blinks;
-    let tint = |rgb: [u8; 3]| rgb.map(|channel| f32::from(channel) / 255.0);
-    let fill = |[x, y, w, h]: [i32; 4]| SpriteInstance {
-        position: [x as f32 + camera[0], y as f32 + camera[1]],
-        size: [w as f32, h as f32],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        tint: [0.0; 3],
-        alpha: 1.0,
-        ..Default::default()
-    };
-    let mut fills = Vec::with_capacity(2 * lines.len());
-    let mut texts = Vec::new();
+    let mut shown = Vec::with_capacity(2 * lines.len());
     let mut next_flip_ms: Option<u64> = None;
     for (index, (line, label, rgb)) in lines.iter().enumerate() {
         let blink = match line.source {
@@ -687,27 +691,59 @@ pub(crate) fn build_super_timer_instances(
                 label_at.fill[3],
             ));
         }
-        for (text, at, rgb) in [(&label, label_at, *rgb), (&time, time_at, time_rgb)] {
-            fills.push(fill(at.fill));
-            texts.extend(font.build_text(
-                text,
-                at.x as f32,
-                at.y as f32,
-                1.0,
-                0.0,
-                tint(rgb),
-                camera,
-            ));
-        }
+        shown.push((label, label_at, *rgb));
+        shown.push((time, time_at, time_rgb));
     }
-    state
-        .match_state
-        .match_presentation
-        .super_timer_next_flip_ms = next_flip_ms;
-    if let Some(rect) = dock.toggle_rect {
+    let toggle = dock.toggle_rect.map(|rect| (rect, dock.expanded));
+    let presentation = &mut state.match_state.match_presentation;
+    presentation.super_timer_next_flip_ms = next_flip_ms;
+    presentation.super_timer_frame.texts = shown;
+    presentation.super_timer_frame.toggle = toggle;
+}
+
+/// The timer lines as UI sprites: the black boxes, drawn first, and the
+/// text, from what [`update_super_timers`] worked out this frame.
+pub(crate) fn build_super_timer_instances(
+    state: &AppState,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    use crate::app::presentation::field_parts;
+    use crate::ui::field_layout::FieldPart;
+    let frame = &state.match_state.match_presentation.super_timer_frame;
+    if frame.texts.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    // Screen-space lanes add back the world camera the UI shader subtracts,
+    // and the box's corner.
+    let camera = field_parts::lane_camera(state, FieldPart::Timers);
+    let font = &state.renderer.bit_font;
+    let tint = |rgb: [u8; 3]| rgb.map(|channel| f32::from(channel) / 255.0);
+    let fill = |[x, y, w, h]: [i32; 4]| SpriteInstance {
+        position: [x as f32 + camera[0], y as f32 + camera[1]],
+        size: [w as f32, h as f32],
+        uv_origin: [0.0, 0.0],
+        uv_size: [1.0, 1.0],
+        tint: [0.0; 3],
+        alpha: 1.0,
+        ..Default::default()
+    };
+    let mut fills = Vec::with_capacity(frame.texts.len());
+    let mut texts = Vec::new();
+    for (text, at, rgb) in &frame.texts {
+        fills.push(fill(at.fill));
+        texts.extend(font.build_text(
+            text,
+            at.x as f32,
+            at.y as f32,
+            1.0,
+            0.0,
+            tint(*rgb),
+            camera,
+        ));
+    }
+    if let Some((rect, expanded)) = frame.toggle {
         // Solid 7x4 pixel triangles, no font substitution, frame or backing box.
         for row in 0..4 {
-            let width = if dock.expanded {
+            let width = if expanded {
                 7 - row * 2
             } else {
                 1 + row * 2
