@@ -1,6 +1,7 @@
 //! The LAN lobby's join flow: chat packets, discovered-game projection, lobby
 //! requests, and the host/guest join offer, confirm, denial and cancel exchange.
 
+use crate::app::match_runtime::session::MatchSession;
 use crate::net::global::GlobalDestination;
 use crate::net::lan_messages::LanJoinRequest;
 use crate::net::lan_messages::LanMessage;
@@ -232,29 +233,16 @@ pub(super) fn active_game_name(state: &AppState) -> Option<String> {
     }
 }
 
-pub(super) fn received_choices(
-    country: i32,
-    color: i32,
-    initial: &crate::skirmish_launch::SkirmishLocalSlot,
-) -> anyhow::Result<crate::skirmish_launch::SkirmishLocalSlot> {
-    let mut slot = initial.clone();
-    // Type3 initializes start/team to Random. Subsequent authoritative host
-    // options own their selected values (696FF0/697020 at5E060D..5E061A).
-    slot.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
-    slot.team = crate::skirmish_launch::LaunchTeam::None;
-    slot.country_random = country < 0;
-    if country >= 0 {
-        anyhow::ensure!(
-            country <= i32::from(u16::MAX),
-            "country outside registry domain"
-        );
-        slot.country = crate::skirmish_launch::LaunchCountry::from_country_index(country as u32);
-    }
-    slot.color_random = color < 0;
-    if color >= 0 {
-        slot.color_index = u8::try_from(color)?;
-    }
-    Ok(slot)
+/// The room admits a participant whose name no seated player already
+/// carries: a name that differs only in case names the same player, as
+/// the guest's admission projection compares it.
+pub(super) fn admits_participant(session: &MatchSession, name: &str) -> bool {
+    !session.network_setup().is_some_and(|launch| {
+        launch
+            .humans
+            .iter()
+            .any(|human| human.name.eq_ignore_ascii_case(name))
+    })
 }
 
 pub(super) fn accept_participant(
@@ -295,9 +283,7 @@ pub(super) fn accept_participant(
             "different LAN game"
         );
     }
-    if let Some(launch) = state.match_state.session.network_setup()
-        && launch.humans.iter().any(|human| human.name == name)
-    {
+    if !admits_participant(&state.match_state.session, &name) {
         return Ok(());
     }
     let initial = state
@@ -307,7 +293,7 @@ pub(super) fn accept_participant(
         .slot;
     let human = crate::skirmish_launch::SkirmishHumanSlot {
         name: name.clone(),
-        slot: received_choices(fields.country, fields.color, &initial)?,
+        slot: super::picks::decoded_participant(fields.country, fields.color, &initial)?,
         //5E0685 passes this slot to5E8D90 after appending the node.
         raw_slot_index: Some(
             u8::try_from(fields.field_0x53)
@@ -639,7 +625,7 @@ pub(super) fn confirm_join(
                 .multiplayer_shell_runtime
                 .local_participant()
                 .slot;
-            let slot = received_choices(request.country, request.color, &initial)?;
+            let slot = super::picks::decoded_participant(request.country, request.color, &initial)?;
             // With every seat taken, VERA's room seats the newcomer on the
             // last AI's, which it frees.
             let freed = state.match_state.session.free_network_seat_for_newcomer()?;
