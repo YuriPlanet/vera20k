@@ -589,6 +589,9 @@ pub(super) fn build_world_instances(
                 #[cfg(feature = "phobos")]
                 if state.match_state.match_presentation.digital_display_enabled
                     && let Some(rules) = state.rules()
+                    && let Some(offset) = crate::app::presentation::health_templates::family(
+                        crate::app::presentation::health_templates::Mark::DigitalDisplay,
+                    )
                 {
                     let digital =
                         crate::app::presentation::digital_display::digital_display_instances(
@@ -610,6 +613,15 @@ pub(super) fn build_world_instances(
                             },
                             true,
                         );
+                    let mut digital = digital;
+                    crate::app::presentation::health_templates::shift_instances(
+                        digital
+                            .texts
+                            .iter_mut()
+                            .flat_map(|text| text.rectangles.iter_mut().chain(text.text.iter_mut()))
+                            .chain(digital.shapes.iter_mut().map(|(_, shape)| shape)),
+                        offset,
+                    );
                     status.digital_text = digital.texts;
                     status.digital_shapes = digital.shapes;
                 }
@@ -626,8 +638,12 @@ pub(super) fn build_world_instances(
                         let point = crate::util::lepton::absolute_leptons_to_screen(
                             coord.x, coord.y, coord.z,
                         );
-                        status.talk_bubble =
-                            shape.instance(frame, point, 0.0).map(|mut instance| {
+                        use crate::app::presentation::health_templates::{Mark, mark, shifted};
+                        status.talk_bubble = mark(Mark::TalkBubble, frame)
+                            .and_then(|(frame, offset)| {
+                                shape.instance(frame, shifted(point, offset), 0.0)
+                            })
+                            .map(|mut instance| {
                                 instance.palette_light =
                                     crate::render::palette_light::PaletteLight::plain(53, 1000);
                                 instance

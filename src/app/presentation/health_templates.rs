@@ -140,9 +140,17 @@ pub(crate) enum Mark {
     SuperLabel,
     InfoLabel,
     StatusLabel,
+    /// Phobos' DigitalDisplay texts and glyphs.
+    DigitalDisplay,
+    /// The texts players put on their beacons.
+    BeaconLabel,
+    /// The rising bounty and refund texts.
+    FlyingCredits,
+    /// The speech bubble over a talking unit; its code is the frame.
+    TalkBubble,
 }
 
-const MARKS: [(Mark, &str); 10] = [
+const MARKS: [(Mark, &str); 14] = [
     (Mark::BombClock, "status.bomb_clock"),
     (Mark::Wrench, "status.wrench"),
     (Mark::PowerOff, "status.power_off"),
@@ -153,6 +161,10 @@ const MARKS: [(Mark, &str); 10] = [
     (Mark::SuperLabel, "label.super"),
     (Mark::InfoLabel, "label.info"),
     (Mark::StatusLabel, "label.status"),
+    (Mark::DigitalDisplay, "label.digital"),
+    (Mark::BeaconLabel, "label.beacon"),
+    (Mark::FlyingCredits, "label.credits"),
+    (Mark::TalkBubble, "status.talk_bubble"),
 ];
 
 /// State bit: the shield's pips are asked for, clear of the marks' bits.
@@ -163,7 +175,7 @@ const fn mark_bit(mark: Mark) -> u32 {
     4 << mark as u32
 }
 
-const _: () = assert!(mark_bit(Mark::StatusLabel) < SHIELD, "the marks' bits stay clear of the shield's");
+const _: () = assert!(mark_bit(Mark::TalkBubble) < SHIELD, "the marks' bits stay clear of the shield's");
 
 /// PIPBRD frames are told apart from PIPS frames by this bit of the art id.
 const BORDER_ART: u32 = 1 << 16;
@@ -547,6 +559,26 @@ pub(crate) fn shield_pips(
         if let WorldOp::Image { rect, art } = cmd.op {
             out(art.0 as usize, [rect.x, rect.y]);
         }
+    }
+}
+
+/// Whether `family`'s template shows it this frame, and how far it moves
+/// it: a text family's one question to its template.
+pub(crate) fn family(family: Mark) -> Option<[i32; 2]> {
+    mark(family, 0).map(|(_, offset)| offset)
+}
+
+/// `instances` moved by a template's `offset`, where it has one.
+pub(crate) fn shift_instances<'a>(
+    instances: impl IntoIterator<Item = &'a mut crate::render::batch::SpriteInstance>,
+    offset: [i32; 2],
+) {
+    if offset == [0, 0] {
+        return;
+    }
+    for instance in instances {
+        instance.position[0] += offset[0] as f32;
+        instance.position[1] += offset[1] as f32;
     }
 }
 
