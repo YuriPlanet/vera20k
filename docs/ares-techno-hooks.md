@@ -140,8 +140,6 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   (0x4DAA68, 0x7101CF). The airstrike voices (0x41D5AE, 0x41D940) are
   ported in `sim/airstrike.rs`.
 - The AttachEffect anim hiding of the Temporal hook.
-- `SuperGapRadiusInCells` multiples of 256: the stock What_Action
-  (`0x004472AA`) still reads the char, VERA the int.
 
 ## RulesExt general keys
 
@@ -363,7 +361,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
-| `44E2B0` | BuildingClass_Mi_Unload_LargeGap | `1004D1B0` | ported: int SuperGapRadiusInCells; toggle otherwise stock |
+| `44E2B0` | BuildingClass_Mi_Unload_LargeGap | `1004D1B0` | ported: the int radii (`toggle_gap_supercharge`). Ares acts only when the charge changes, so it skips stock's removal and empty re-add for an uncharged generator that is not operational (`0x44E30E..0x44E326`): equivalent: the operational edge (`0x454B91..0x454BEB`, Ares `0x454BDC`) removes a gap the running client holds by the end of that Update either way, and stock's add deposits nothing while not operational |
 | `454BDC` | BuildingClass_UpdatePowered_LargeGap | `1004D250` | ported: int GapRadiusInCells |
 | `4566D5` | BuildingClass_GetRangeOfRadial_LargeGap | `1004D170` | ported: int radius in GetSensorRange |
 | `65731F` | RadarClass_UpdateMinimap_Lock | `1004D2C0` | not applicable: radar surface lock (DirectDraw performance) |
