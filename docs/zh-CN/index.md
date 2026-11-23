@@ -12,7 +12,7 @@ lang: zh-CN
 
 这是一份简短的代码导览。如果它与代码不一致，以代码为准。每个模块开头的 `//!` 注释写明了它的用途和可以依赖的模块。
 
-[模式底座重构约束](mode-core-plan.md) · [菜单清单](menu-reference.md) · [战役清单](campaign-manifest.md)
+[代码规范](coding-style.md) · [模式底座重构约束](mode-core-plan.md) · [菜单清单](menu-reference.md) · [战役清单](campaign-manifest.md)
 
 ## 代码结构
 
