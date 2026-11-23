@@ -538,6 +538,58 @@ pub(crate) fn hovered_help(state: &AppState) -> Option<&str> {
     }
 }
 
+/// Puts the menu's live values on its nodes: each button's enable and lit
+/// look (`states`), FF's trackbar positions.
+fn sync_values(
+    gui: &mut vera20k_gui::Gui,
+    root: vera20k_gui::NodeId,
+    template: PauseMenuTemplate,
+    states: &[PauseMenuButtonState; 8],
+    positions: [i32; 2],
+) {
+    use crate::ui::shell::page::set;
+    use vera20k_gui::{Prop, Value};
+    // A button the template lacks has id 0 and no node.
+    for button in PauseMenuButton::ALL
+        .into_iter()
+        .filter(|b| template.id(*b) != 0)
+    {
+        let (id, look) = (template.id(button), states[button as usize]);
+        set(gui, root, id, Prop::Enabled, Value::Bool(look.enabled));
+        set(gui, root, id, Prop::Toggled, Value::Bool(look.highlighted));
+    }
+    for slider in InternetSlider::ALL {
+        let position = Value::Int(positions[slider as usize]);
+        set(gui, root, slider.id(), Prop::Pos, position);
+    }
+}
+
+/// Makes the menu's nodes current without input, every button on its rect
+/// (a disabled one too, which paints in the side's dark colour) in its
+/// `states`: its renderer's call every drawn frame before it paints from
+/// them. The pointer's own sync hides the disabled buttons, so they neither
+/// hover nor take a press.
+pub(crate) fn sync(
+    state: &mut AppState,
+    states: &[PauseMenuButtonState; 8],
+) -> Option<PauseMenuLayout> {
+    let layout = current_layout(state)?;
+    let template = layout.template;
+    let positions = state
+        .match_state
+        .match_presentation
+        .internet_pause
+        .positions;
+    super::dialog_page::sync_dialog(
+        &mut state.match_state.match_presentation.dialog_ui,
+        template.dialog(),
+        || pause_menu::spec(template, positions, IN_GAME_KEYBOARD_HELP),
+        |id| layout.rect(id),
+        |gui, root| sync_values(gui, root, template, states, positions),
+    );
+    Some(layout)
+}
+
 /// One pointer message on the menu (`down`: `None` moves). The Options page
 /// sees it first; a disabled button neither hovers nor takes a press.
 pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
@@ -567,7 +619,7 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
         template.dialog(),
         || pause_menu::spec(template, positions, IN_GAME_KEYBOARD_HELP),
         rect,
-        super::dialog_page::no_sync,
+        |gui, root| sync_values(gui, root, template, &states, positions),
         event,
     );
     // Owner-draw button-down: GUIMainButtonSound (Rules+0x188,

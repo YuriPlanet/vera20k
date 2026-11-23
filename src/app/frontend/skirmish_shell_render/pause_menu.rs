@@ -2,18 +2,17 @@
 //! Controls.
 
 use super::SHELL_LABEL_TEXT_RGB;
-use super::controls::{ControlPaint, group_box_geometry, paint_control, push_group_or_plain_frame};
+use super::gui_paint::{ButtonArt, FrameArt, GuiStyle};
 use super::in_game_shell::{self, InGamePaint};
 use super::launcher_options;
 use crate::app::AppState;
 use crate::assets::csf_file::CsfFile;
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::pause_menu::{
-    InternetSlider, PAUSE_MENU_FOOTER, PauseMenuButton, PauseMenuButtonState, PauseMenuTemplate,
+    FOOTER, INTERNET_CAPTIONS, INTERNET_GROUP, INTERNET_VALUES, InternetSlider, PAUSE_MENU_FOOTER,
+    PauseMenuButton, PauseMenuButtonState, PauseMenuTemplate, TITLE,
 };
 use crate::ui::sidebar::SidebarTheme;
-use vera20k_gui::shell::trackbar::value_text_rect;
 
 /// Type2 chooses released0 / pressed1 / timer-highlight2 (612EE8..612F5B).
 /// Disabled buttons retain their SHP frame;612F5F changes their text color only.
@@ -70,13 +69,18 @@ pub(super) fn button_text_rect(rect: RectPx, pressed: bool) -> RectPx {
 /// The app supplies every button state, including Load/Delete eligibility.
 /// This renderer owns no button actions and cannot silently substitute a
 /// no-op route.
+///
+/// The menu's buttons, title, status line and FF's group box, trackbars and
+/// statics paint from its `vera20k-gui` nodes ([`super::gui_paint`]), made
+/// current first every frame. The Options page's column buttons are its
+/// own dialog's, painted here as the menu's.
 pub(crate) fn render_pause_menu_shell(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
     buttons: [PauseMenuButtonState; 8],
 ) -> anyhow::Result<()> {
-    let layout = crate::app::input::pause_menu::current_layout(state).expect("active shell");
+    let layout = crate::app::input::pause_menu::sync(state, &buttons).expect("active shell");
     let page_layout = crate::app::input::pause_menu::options_page_layout(state);
     if let (Some(page_layout), Some(page)) = (
         &page_layout,
@@ -85,7 +89,8 @@ pub(crate) fn render_pause_menu_shell(
         page.dialog.shell_sync(page_layout);
     }
     let mut overlay = in_game_shell::ShellFrameOverlay::default();
-    let label = match layout.template {
+    let template = layout.template;
+    let label = match template {
         PauseMenuTemplate::Offline => "Active Pause Menu B5",
         PauseMenuTemplate::Network => "Active Pause Menu BBA",
         PauseMenuTemplate::Internet => "Active Pause Menu FF",
@@ -93,44 +98,70 @@ pub(crate) fn render_pause_menu_shell(
     let frame = {
         let mut paint = InGamePaint::new(state);
         let state = paint.state;
-        let font = &state.renderer.bit_font;
+        let ui = &state.match_state.match_presentation.dialog_ui;
         let csf = state.process_assets.csf.as_ref();
+        let pause = &state.match_state.match_presentation.internet_pause;
         let shared_pause = crate::app::input::pause_menu::multiplayer_control(state)
             .map(|control| control.caption);
-        for (button, rect) in layout.buttons() {
-            let label = match button {
-                PauseMenuButton::SharedPause => {
-                    shared_pause.map(crate::i18n::tr).unwrap_or_default()
-                }
-                PauseMenuButton::Resume if shared_pause.is_some() => {
-                    crate::i18n::tr("VERA:ReturnToGame")
-                }
-                // BBB's 0x52C caption.
-                PauseMenuButton::Keyboard => caption(csf, "GUI:Keyboard"),
-                _ => caption(
-                    csf,
-                    layout
-                        .template
-                        .control(button)
-                        .expect("template button")
-                        .csf_key,
-                ),
-            };
-            paint.owner_button(rect, &label, buttons[button as usize]);
-        }
-        let title = caption(csf, layout.template.title().csf_key);
-        if !title.is_empty() {
-            paint.text(&title, layout.title, ShellAlign::PANEL_TITLE);
-        }
-        // The common handler shows the hovered control's 6040B0 help in 0x695.
-        let footer = match crate::app::input::pause_menu::hovered_help(state) {
-            Some(key) if key.starts_with("VERA:") => crate::i18n::tr(key),
-            Some(key) => caption(csf, key),
-            None => caption(csf, PAUSE_MENU_FOOTER.csf_key),
+        let slot = |ids: [u16; 2], id: u16| -> Option<InternetSlider> {
+            let index = ids.iter().position(|of| *of == id)?;
+            Some(InternetSlider::ALL[index])
         };
-        if !footer.is_empty() {
-            paint.text(&footer, layout.footer, ShellAlign::NONE);
-        }
+        let text_of = |id: i32| -> Option<String> {
+            let id = u16::try_from(id).ok()?;
+            if let Some(button) = template.button(id) {
+                return Some(match button {
+                    PauseMenuButton::SharedPause => {
+                        shared_pause.map(crate::i18n::tr).unwrap_or_default()
+                    }
+                    PauseMenuButton::Resume if shared_pause.is_some() => {
+                        crate::i18n::tr("VERA:ReturnToGame")
+                    }
+                    // BBB's 0x52C caption.
+                    PauseMenuButton::Keyboard => caption(csf, "GUI:Keyboard"),
+                    _ => caption(csf, template.control(button)?.csf_key),
+                });
+            }
+            if let Some(slider) = slot(INTERNET_CAPTIONS, id) {
+                let (key, fallback) = slider.caption();
+                return Some(
+                    csf.map_or_else(|| fallback.to_string(), |csf| csf.text(key).into_owned()),
+                );
+            }
+            if let Some(slider) = slot(INTERNET_VALUES, id) {
+                let (key, fallback) = pause.value_caption(slider);
+                return Some(crate::i18n::label(csf, key, fallback));
+            }
+            match id {
+                TITLE => Some(caption(csf, template.title().csf_key)),
+                // The common handler shows the hovered control's 6040B0 help
+                // in 0x695.
+                FOOTER => Some(match crate::app::input::pause_menu::hovered_help(state) {
+                    Some(key) if key.starts_with("VERA:") => crate::i18n::tr(key),
+                    Some(key) => caption(csf, key),
+                    None => caption(csf, PAUSE_MENU_FOOTER.csf_key),
+                }),
+                INTERNET_GROUP => Some(caption(csf, "GUI:InternetGameControls")),
+                // The trackbars show their position.
+                _ => None,
+            }
+        };
+        let frame_of = |id: i32| (id == i32::from(INTERNET_GROUP)).then_some(FrameArt::Group);
+        let style = GuiStyle {
+            buttons: ButtonArt::Side,
+            side: Some(paint.side_buttons()),
+            text_of: Some(&text_of),
+            frame_of: Some(&frame_of),
+            ..Default::default()
+        };
+        // The template's buttons in their sidebar order, VERA's after them;
+        // one without a rect is hidden and paints nothing.
+        paint.nodes(
+            ui,
+            &PauseMenuButton::ALL.map(|button| template.id(button)),
+            style,
+        );
+        paint.nodes(ui, &[TITLE, FOOTER], style);
         let page = state.match_state.match_presentation.options_page.as_ref();
         if let (Some(page_layout), Some(page)) = (&page_layout, page) {
             let dialog = &page.dialog;
@@ -154,67 +185,21 @@ pub(crate) fn render_pause_menu_shell(
             paint.texts.extend(widgets.texts);
             (overlay.controls, overlay.texts) = (widgets.popup, widgets.popup_texts);
         }
-        if let (Some(internet), Some(chrome_atlas)) = (
-            layout.internet,
-            state.frontend.skirmish_shell_chrome.as_ref(),
-        ) {
-            let chrome = chrome_atlas.control_chrome();
-            // FF's group box, both plaque trackbars and their statics (60B7A0).
-            let group_caption = caption(csf, "GUI:InternetGameControls");
-            let (frame, caption_rect) = group_box_geometry(
-                internet.group,
-                font.cell_height() as i32,
-                crate::ui::shell::geom::RETAIL_SCALE,
-            );
-            let caption_width = Some(font.text_width(&group_caption) as i32);
-            let white = chrome_atlas.white_pixel;
-            push_group_or_plain_frame(
-                &mut paint.controls,
-                white,
-                frame,
-                caption_width,
-                false,
-                crate::ui::shell::geom::RETAIL_SCALE,
-            );
-            paint.text(&group_caption, caption_rect, ShellAlign::NONE);
-            let pause = &state.match_state.match_presentation.internet_pause;
-            for slider in InternetSlider::ALL {
-                let index = slider as usize;
-                let rect = internet.sliders[index];
-                let value = pause.positions[index];
-                let thumb_left =
-                    slider
-                        .range()
-                        .thumb_left_in(value, rect, crate::ui::shell::geom::RETAIL_SCALE);
-                let trackbar = ControlPaint::Trackbar {
-                    rect,
-                    thumb_left,
-                    plaque: true,
-                    disabled: false,
-                };
-                paint_control(
-                    &mut paint.controls,
-                    &chrome,
-                    trackbar,
-                    crate::ui::shell::geom::RETAIL_SCALE,
-                );
-                let at = value_text_rect(rect, crate::ui::shell::geom::RETAIL_SCALE);
-                paint.text(
-                    &value.to_string(),
-                    at,
-                    ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                );
-                let (key, fallback) = slider.caption();
-                let left =
-                    csf.map_or_else(|| fallback.to_string(), |csf| csf.text(key).into_owned());
-                paint.text(&left, internet.captions[index], ShellAlign::H_RIGHT);
-                let (key, fallback) = pause.value_caption(slider);
-                paint.text(
-                    &crate::i18n::label(csf, key, fallback),
-                    internet.values[index],
-                    ShellAlign::NONE,
-                );
-            }
+        // FF's group box, then each plaque trackbar with its caption and
+        // value static (60B7A0), where its page shows them and the control
+        // art is there.
+        if state.frontend.skirmish_shell_chrome.is_some() {
+            let [connection, speed] = InternetSlider::ALL.map(InternetSlider::id);
+            let internet = [
+                INTERNET_GROUP,
+                connection,
+                INTERNET_CAPTIONS[0],
+                INTERNET_VALUES[0],
+                speed,
+                INTERNET_CAPTIONS[1],
+                INTERNET_VALUES[1],
+            ];
+            paint.nodes(ui, &internet, style);
         }
         paint.finish(label)
     };
