@@ -23,11 +23,7 @@ use std::sync::{
 };
 
 use anyhow::{Context, Result, anyhow, ensure};
-#[cfg(test)]
-use base64::Engine;
 use serde_json::Value;
-#[cfg(test)]
-use serde_json::json;
 
 use super::{
     NET_STATUS_LOST, WolPage, WolVisit, in_match, lobby, lobby_phrases, lobby_watches, quick_match,
@@ -38,43 +34,23 @@ use super::{
     WolServiceRequest, service_event,
 };
 use crate::app::AppState;
-#[cfg(test)]
-use crate::app::persistence::account;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::i18n::tr;
 use crate::net::udp::LanUdpTransport;
 use crate::ui::chat_translation::{ChatLanguage, ChatReply, only_repeats, without_note};
 use crate::ui::wol_account::{AccountRequest, AccountSuccess};
-#[cfg(test)]
-use crate::ui::wol_chat::WolChatLine;
 use events::apply_event;
 pub(crate) use events::{decode_external_watch_grant, relay_ticket_is_watch};
 #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
 pub(super) use http::browser_stats;
-#[cfg(test)]
-use match_start::bind_relay_roster;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub(crate) use match_start::discard_spawned_visit;
-#[cfg(test)]
-use match_start::followed_user;
 use match_start::{
     StartDataMismatch, begin_start, cancel_watch_start, enter_timed_start, fail_watch, poll_relay,
     poll_spawned_exit, poll_watch, prepare_watch, spawned_visit_mut,
 };
 pub(crate) use match_start::{begin_spawned_match, end_spawned_match};
-#[cfg(test)]
-use requests::accepted_human_matches;
-#[cfg(test)]
-use requests::check_map_capacity;
-#[cfg(test)]
-use requests::create_payload;
 pub(crate) use requests::local_choices_agreed;
-#[cfg(test)]
-use requests::local_choices_match;
-#[cfg(test)]
-use requests::request_match;
-#[cfg(test)]
-use requests::send_chat;
 use requests::{
     MapTooSmall, accepted_choices_match, canonical_options, local_agreement, local_map_status,
     options, poll_start_preparation, request_service, request_setup, restore_accepted_options,

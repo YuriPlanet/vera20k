@@ -1,7 +1,15 @@
+use base64::Engine;
+use serde_json::json;
+
+use super::match_start::{bind_relay_roster, followed_user};
+use super::requests::{
+    accepted_human_matches, check_map_capacity, create_payload, local_choices_match, request_match,
+    send_chat,
+};
 use super::*;
-use crate::app::shell_wol::live_service::events::decode_external_watch_grant;
-use crate::app::shell_wol::live_service::events::relay_ticket_is_watch;
+use crate::app::persistence::account;
 use crate::app::shell_wol::{WolHighScoreRecord, WolLadderRecord};
+use crate::ui::wol_chat::WolChatLine;
 
 /// The reason must not land in a transcript the player is about to lose.
 #[test]
