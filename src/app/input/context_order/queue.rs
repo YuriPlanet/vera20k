@@ -7,12 +7,13 @@ use super::{
     armed_action_with, attack_branch_orders, building_click_orders, building_selection_click,
     cell_guard_area_action_with, cell_harvest_order, cursor_owner, disarm_bomb_engineers,
     engineer_capture_orders, entry_orders, finish_order, friendly_ivans, garrison_entry_orders,
-    infantry_arm_attacks_with, infantry_c4_action_with, infiltrator_capture_orders,
-    locked_move_cells, lone_self_foot_release, lone_self_healer_guard, move_click_command,
-    object_action_answers_friendly, object_attack_click_command_with, object_click_release,
-    object_key_action_with, object_key_target, projected_order_selection, push_move_flash,
-    resolve_order_modifiers, selection_can_attack_move, self_answers_no_deploy, self_click_command,
-    self_detonates, terrain_forced, unit_repair_branch_orders, vehicle_capture_action,
+    healer_terrain_key_order, infantry_arm_attacks_with, infantry_c4_action_with,
+    infiltrator_capture_orders, locked_move_cells, lone_self_foot_release, lone_self_healer_guard,
+    move_click_command, object_action_answers_friendly, object_attack_click_command_with,
+    object_click_release, object_key_action_with, object_key_target, projected_order_selection,
+    push_move_flash, resolve_order_modifiers, selection_can_attack_move, self_answers_no_deploy,
+    self_click_command, self_detonates, terrain_forced, unit_repair_branch_orders,
+    vehicle_capture_action,
 };
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner;
@@ -1378,6 +1379,20 @@ fn queue_context_order(
                         continue;
                     };
                     payload
+                } else if let Some(order) = hover_terrain.and_then(|terrain| {
+                    healer_terrain_key_order(
+                        sim,
+                        &control,
+                        &resources.rules,
+                        stable_id,
+                        terrain,
+                        key_modifier,
+                        force_move_key,
+                    )
+                }) {
+                    // A healer's AttackSupport over a Terrain object replaces
+                    // its Alt or Ctrl+Alt answer (`0x0051E797`).
+                    order
                 } else if let Some((_, Some(target_id))) = force_move_object
                     && key_modifier != OrderModifier::Shift
                 {

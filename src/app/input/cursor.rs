@@ -626,6 +626,18 @@ impl<'a> ActionQuery<'a> {
         {
             let kind = match action {
                 super::context_order::ObjectKeyAction::ToggleSelect => CursorFeedbackKind::Select,
+                // A healer's AttackSupport, the arrow, replaces the other key
+                // answers ([`super::context_order::healer_supports_over_terrain`]).
+                _ if super::context_order::healer_supports_over_terrain(
+                    sim,
+                    &sim.control_projection(),
+                    rules,
+                    id,
+                    terrain_id,
+                ) =>
+                {
+                    CursorFeedbackKind::Default
+                }
                 super::context_order::ObjectKeyAction::GuardArea => CursorFeedbackKind::GuardArea,
                 super::context_order::ObjectKeyAction::Move => {
                     key_move_feedback(sim, rules, id, terrain_id)
