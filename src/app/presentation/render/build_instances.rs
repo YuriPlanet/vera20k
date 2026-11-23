@@ -572,7 +572,13 @@ pub(super) fn build_world_instances(
                         );
                         status.info_text.push(
                             crate::app::presentation::ui_overlays::status_text_instances(
-                                font, &text, origin, measure, camera, tint,
+                                crate::app::presentation::health_templates::Mark::InfoLabel,
+                                font,
+                                &text,
+                                origin,
+                                measure,
+                                camera,
+                                tint,
                             ),
                         );
                     }

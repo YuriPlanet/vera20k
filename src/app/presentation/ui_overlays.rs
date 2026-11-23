@@ -784,6 +784,7 @@ fn status_text_tint(
 /// already measured/clipped backing and native glyph origin; group and
 /// Building labels deliberately use different rectangles and alignment.
 pub(crate) fn status_text_instances(
+    family: Mark,
     font: &BitFont,
     text: &str,
     origin: [f32; 2],
@@ -792,6 +793,18 @@ pub(crate) fn status_text_instances(
     tint: [f32; 3],
 ) -> StatusTextOverlayInstances {
     let mut label = StatusTextOverlayInstances::default();
+    // The family's built-in template (`health_templates`) may hide or move
+    // it; a stock one leaves every number as it was.
+    let Some((_, offset)) = health_templates::mark(family, 0) else {
+        return label;
+    };
+    let shifted = health_templates::shifted((origin[0], origin[1]), offset);
+    let origin = [shifted.0, shifted.1];
+    let (rect_x, rect_y) = if offset == [0, 0] {
+        (rect_x, rect_y)
+    } else {
+        (rect_x.saturating_add(offset[0]), rect_y.saturating_add(offset[1]))
+    };
     if rect_width > 0 && rect_height > 0 {
         let rect_x = rect_x as f32 + camera[0];
         let rect_y = rect_y as f32 + camera[1];
@@ -951,7 +964,7 @@ pub(crate) fn build_control_group_status_render_instances(
         // applies the camera offset at draw time, like the neighboring pips.
         parents.insert(
             stable_id,
-            status_text_instances(font, &text, [x, y], clipped, camera, tint),
+            status_text_instances(Mark::GroupLabel, font, &text, [x, y], clipped, camera, tint),
         );
     }
     parents
@@ -1147,7 +1160,13 @@ pub(crate) fn build_building_status_render_instances(
                 measure[1].wrapping_add(2) as f32 + camera[1],
             ];
             labels.push(status_text_instances(
-                font, &text, origin, measure, camera, tint,
+                Mark::SuperLabel,
+                font,
+                &text,
+                origin,
+                measure,
+                camera,
+                tint,
             ));
         }
         // VERA info rows stack below the Super rows (super first, then info),
@@ -1166,7 +1185,13 @@ pub(crate) fn build_building_status_render_instances(
                 measure[1].wrapping_add(2) as f32 + camera[1],
             ];
             labels.push(status_text_instances(
-                font, text, origin, measure, camera, tint,
+                Mark::InfoLabel,
+                font,
+                text,
+                origin,
+                measure,
+                camera,
+                tint,
             ));
         }
         let Some(label) = label else {
@@ -1220,7 +1245,13 @@ pub(crate) fn build_building_status_render_instances(
             measure[1].wrapping_add(2) as f32 + camera[1],
         ];
         labels.push(status_text_instances(
-            font, &text, origin, clipped, camera, tint,
+            Mark::StatusLabel,
+            font,
+            &text,
+            origin,
+            clipped,
+            camera,
+            tint,
         ));
     }
     labels

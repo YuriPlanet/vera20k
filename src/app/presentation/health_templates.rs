@@ -132,24 +132,38 @@ pub(crate) enum Mark {
     SelfHeal,
     /// Phobos' mobile shield PIPBRD.
     ShieldBackground,
+    /// The status texts an object shows (`ui_overlays::status_text_instances`):
+    /// its control group's digit, a building's Super timer lines, VERA's
+    /// info rows, a building's power, primary and Ares labels. Their code is
+    /// always 0; a template can hide a family or move it.
+    GroupLabel,
+    SuperLabel,
+    InfoLabel,
+    StatusLabel,
 }
 
-const MARKS: [(Mark, &str); 6] = [
-    (Mark::BombClock, "bomb_clock"),
-    (Mark::Wrench, "wrench"),
-    (Mark::PowerOff, "power_off"),
-    (Mark::Rank, "rank"),
-    (Mark::SelfHeal, "self_heal"),
-    (Mark::ShieldBackground, "shield_background"),
+const MARKS: [(Mark, &str); 10] = [
+    (Mark::BombClock, "status.bomb_clock"),
+    (Mark::Wrench, "status.wrench"),
+    (Mark::PowerOff, "status.power_off"),
+    (Mark::Rank, "status.rank"),
+    (Mark::SelfHeal, "status.self_heal"),
+    (Mark::ShieldBackground, "status.shield_background"),
+    (Mark::GroupLabel, "label.group"),
+    (Mark::SuperLabel, "label.super"),
+    (Mark::InfoLabel, "label.info"),
+    (Mark::StatusLabel, "label.status"),
 ];
 
-/// State bit: the shield's pips are asked for (after the marks').
-const SHIELD: u32 = 1 << 10;
+/// State bit: the shield's pips are asked for, clear of the marks' bits.
+const SHIELD: u32 = 1 << 20;
 
 /// A mark's state bit, after the bars' and the scale's.
 const fn mark_bit(mark: Mark) -> u32 {
     4 << mark as u32
 }
+
+const _: () = assert!(mark_bit(Mark::StatusLabel) < SHIELD, "the marks' bits stay clear of the shield's");
 
 /// PIPBRD frames are told apart from PIPS frames by this bit of the art id.
 const BORDER_ART: u32 = 1 << 16;
@@ -232,7 +246,7 @@ fn templates() -> Vec<StatusTemplate> {
     });
     for (mark, name) in MARKS {
         all.push(StatusTemplate {
-            name: format!("status.{name}"),
+            name: name.to_owned(),
             state: mark_bit(mark),
             elements: vec![Element::Slots {
                 at: at(0, 0),
