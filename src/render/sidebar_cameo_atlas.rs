@@ -497,6 +497,8 @@ pub(crate) fn load_native_pcx(assets: &AssetManager, filename: &str) -> Option<N
 /// Ares3.0 Cameos1005E32D..1005E366 through `decode_native_pcx`. Normal,
 /// promoted and superweapon consumers share this decoder. Ares supplies
 /// a60x48 destination canvas;6BA5EF..600 uses source dimensions without scaling.
+/// StripClass_Draw_DrawPCX (hook `0x6A9A43`, Ares.dll `1005E300`) blits it
+/// over the cameo cell, with magenta transparent.
 /// https://ares-developers.github.io/Ares-docs/new/pcxcameos.html
 /// Phobos `MissingCameo=` reaches the same blit when it names a `.pcx`.
 fn render_pcx_cameo(

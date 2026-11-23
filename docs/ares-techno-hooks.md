@@ -90,9 +90,13 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   the ClickedAction refusals drop a Deactivated object from the click's
   receivers (`Simulation::click_order_receivers`), and GetDeactivatedAction
   10044AD0 decides the hover cursor of the object that owns it
-  (`capability_cursor_for_hover`). The click paths over an object have no
-  single per-class What_Action entry; they keep their stock rungs, whose
-  orders the receiver filter already withholds; when the cursor owner is
+  (`capability_cursor_for_hover`). The click paths need no per-receiver
+  rungs: the release asks each selected object its own What_Action and hands
+  that to its ClickedAction (`0x4AE83A`, `0x4AE844`), whose Deactivated
+  refusal passes only Detonate (0x37), and GetDeactivatedAction answers
+  Detonate only for a lone selected object over itself, which the self-click
+  producer sends. Dropping the Deactivated receivers is therefore
+  equivalent. When the cursor owner is
   Deactivated, its answer decides the whole release, so no object receives
   an order (`ares_head_hook_selection_click`), under Shift too: the class
   hooks precede Techno's ToggleSelect (0x700107), and their Select or 0
