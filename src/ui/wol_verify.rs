@@ -101,15 +101,21 @@ impl WolVerifyDialog {
         }
         let first = layout.boxes[0];
         let last = layout.boxes[BOXES.len() - 1];
-        let outer = RectPx::new(
-            first.x - 1,
-            first.y - 1,
-            first.w + 2,
-            last.y + last.h - first.y + 2,
-        );
+        // Template checkbox windows are slightly taller than their pitch.
+        // Derive a uniform pitch from the scaled row starts, not the check
+        // window height. The shared list uses a device-pixel inset per edge.
+        let gaps = (BOXES.len() - 1) as i32;
+        let (row_h, inner_h) = if layout.scale.is_unscaled() {
+            // Preserve the native-size extended viewport as it was.
+            (first.h, last.y + last.h - first.y)
+        } else {
+            let pitch = ((last.y - first.y + gaps / 2) / gaps).max(1);
+            (pitch, pitch * BOXES.len() as i32)
+        };
+        let outer = RectPx::new(first.x - 1, first.y - 1, first.w + 2, inner_h + 2);
         let metrics = ListMetrics {
-            row_h: first.h,
-            ..ListMetrics::RETAIL
+            row_h,
+            ..ListMetrics::scaled(layout.scale)
         };
         let top = self.list().map_or(0, |view| view.top);
         Some(ShellListGeometry::new(
@@ -159,10 +165,13 @@ impl WolVerifyDialog {
         let Some(root) = self.ui.root_in(DIALOG) else {
             return;
         };
-        let row_h = Value::Int(layout.boxes[0].h);
-        page::set(self.ui.gui_mut(), root, LIST, Prop::RowHeight, row_h);
+        self.ui.set_scale(layout.scale);
         let boxed = self.mismatch.is_some();
-        let list = self.list_geometry(layout).map(|geometry| geometry.outer);
+        let list = self.list_geometry(layout);
+        if let Some(geometry) = list {
+            let row_h = Value::Int(geometry.metrics.row_h);
+            page::set(self.ui.gui_mut(), root, LIST, Prop::RowHeight, row_h);
+        }
         let boxes: Vec<_> = (0..self.names.len())
             .map(|node| self.node_rect(layout, node))
             .collect();
@@ -170,7 +179,7 @@ impl WolVerifyDialog {
         page::sync_rects(gui, root, |id| match id {
             BOX_OK => boxed.then_some(ok),
             _ if boxed => None,
-            LIST => list,
+            LIST => list.map(|geometry| geometry.outer),
             id => boxes
                 .get(usize::from(id.wrapping_sub(node_box(0))))
                 .copied()
@@ -277,8 +286,17 @@ mod tests {
     }
     #[test]
     fn thirty_connected_nodes_survive_scroll_and_clicks_use_logical_identity() {
+        for (w, h) in [(320, 240), (800, 600), (1024, 768), (1600, 1200)] {
+            assert_roster_pointer_at_size(w, h);
+        }
+    }
+
+    fn assert_roster_pointer_at_size(w: i32, h: i32) {
+        use crate::ui::shell::{geom, modal::wol_verify_layout};
+
         let mut dialog = WolVerifyDialog::open((0..30).map(|n| format!("Player{n}")).collect());
-        let layout = crate::ui::shell::modal::wol_verify_layout(800, 600);
+        let scale = geom::shell_scale_for_window(w, h);
+        let layout = wol_verify_layout(w, h, scale);
         let ok = RectPx::default();
         let click = |dialog: &mut WolVerifyDialog, at| {
             dialog.pointer(&layout, ok, at, Some(true));
@@ -289,6 +307,10 @@ mod tests {
         assert!(dialog.node_rect(&layout, 29).is_none());
         let geometry = dialog.list_geometry(&layout).unwrap();
         let bar = geometry.scrollbar.unwrap();
+        if !scale.is_unscaled() {
+            assert_eq!(geometry.visible_rows, BOXES.len());
+        }
+        assert_eq!(bar.w, ListMetrics::scaled(scale).scrollbar_w);
         // The ordinary scrollbar track, then its release.
         click(
             &mut dialog,
@@ -297,6 +319,9 @@ mod tests {
         let visible = dialog.visible_nodes(&layout);
         assert!(visible.start > 0 && visible.contains(&29));
         assert!(dialog.checked()[29]);
+        let last = dialog.node_rect(&layout, 29).unwrap();
+        click(&mut dialog, (last.x + 1, last.y + 1));
+        assert!(!dialog.checked()[29], "the last rendered row is clickable");
         let first = visible.start;
         dialog.connect(first);
         let rect = dialog.node_rect(&layout, first).unwrap();

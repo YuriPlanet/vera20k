@@ -11,7 +11,7 @@ use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 /// The room's page in the window, before VERA's roster is placed in it.
-fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
+pub(in crate::app) fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
     let (w, h) = shell_layout::shell_screen_size(state);
     MultiplayerSetupLayout::new(
         crate::app::shell_network_setup::dialog(state),
