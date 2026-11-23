@@ -303,6 +303,11 @@ pub struct MatchLayout {
     /// `[Colors]`: the built-in file's, then each file's over it, the later
     /// over the earlier. Each line's name, the side it holds for and its text.
     colors: Arc<[(String, Option<usize>, String)]>,
+    /// The side's text colour for each side's pictures (by `SidebarTheme as
+    /// usize`): the money's `Color=`, resolved once the layout is read.
+    side_text: [[u8; 3]; 3],
+    /// The cameo labels' `LabelColor=`, resolved the same way.
+    label_text: [[u8; 3]; 3],
 }
 
 impl MatchLayout {
@@ -349,6 +354,22 @@ impl MatchLayout {
         spec.parts = self.parts;
         spec.places = self.places;
         spec.field = self.field;
+        spec.side_text = self.side_text[spec.theme as usize];
+        spec.label_text = self.label_text[spec.theme as usize];
+    }
+
+    /// The colour `key` of `part` names for each side's pictures, by
+    /// `SidebarTheme as usize`: a `[Colors]` name or `r,g,b`, else the
+    /// side's `SideText` when the value is none.
+    fn side_colors(&self, part: SidebarPart, key: &str) -> [[u8; 3]; 3] {
+        [SidebarTheme::Allied, SidebarTheme::Soviet, SidebarTheme::Yuri].map(|theme| {
+            let [r, g, b, _] = self
+                .text(part, key, theme)
+                .and_then(|value| self.color(value, theme))
+                .or_else(|| self.color("SideText", theme))
+                .unwrap_or([255; 4]);
+            [r, g, b]
+        })
     }
 }
 
@@ -617,7 +638,7 @@ fn find_section<'a>(ini: &'a IniFile, name: &str) -> Option<&'a IniSection> {
         .and_then(|section| ini.section(section))
 }
 
-/// One picture the original interface's sidebar draws: the part and its
+/// One picture a layout gives a built-in sidebar part: the part and its
 /// picture key, the file, the palette it is drawn with when not the
 /// sidebar's own, and how many frames the part uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -627,35 +648,51 @@ pub struct SidebarArt {
     pub file: String,
     pub palette: Option<String>,
     pub frames: usize,
+    /// Whether the layout names a picture other than the built-in one's:
+    /// any SHP the game can find.
+    pub own: bool,
+    /// The built-in file's picture for this part and key, drawn when the
+    /// layout's own is not found; `None` when it has none.
+    pub built_in: Option<String>,
+    /// Whether the layout names a palette other than the built-in one's.
+    pub own_palette: bool,
 }
 
-/// The pictures of the built-in sidebar for the side whose pictures are
-/// `theme`, part by part. The command bar's load apart.
-pub fn sidebar_art(theme: crate::ui::sidebar::SidebarTheme) -> Vec<SidebarArt> {
-    use crate::ui::sidebar::SidebarTheme;
-    let theme = match theme {
-        SidebarTheme::Allied => 0,
-        SidebarTheme::Soviet => 1,
-        SidebarTheme::Yuri => 2,
-    };
-    let tree = Tree::read(&[&BUILT_IN], TABLES[0], TABLES[0], &mut Vec::new());
+/// The pictures `layout` gives the built-in sidebar for the side whose
+/// pictures are `theme`, part by part: its own `Art=`, `RowArt=`, ...,
+/// `Frames=` and `Palette=` over the built-in file's
+/// ([`MatchLayout::original`] for the original sidebar). The command bar's
+/// load apart. Read when the sidebar's pictures are loaded, not every frame.
+pub fn sidebar_art(layout: &MatchLayout, theme: SidebarTheme) -> Vec<SidebarArt> {
+    let original = MatchLayout::original(true);
     let mut art = Vec::new();
     for part in SidebarPart::STOCK_ORDER {
-        let Some(node) = tree.node(part.name()) else {
+        let Some(node) = layout.tree.node(part.name()) else {
             continue;
         };
         for key in crate::ui::sidebar::ArtKey::ALL {
-            let Some(file) = node.text_for(key.name(), theme) else {
+            let Some(file) = node.text_for(key.name(), theme as usize) else {
                 continue;
             };
+            let built_in = original.text(part, key.name(), theme);
+            let own = built_in.is_none_or(|built_in| !built_in.eq_ignore_ascii_case(file));
+            let palette = node.text_for("Palette", theme as usize);
+            let own_palette = palette.is_some_and(|palette| {
+                original
+                    .text(part, "Palette", theme)
+                    .is_none_or(|built_in| !built_in.eq_ignore_ascii_case(palette))
+            });
             art.push(SidebarArt {
                 part,
                 key,
                 file: file.to_owned(),
-                palette: node.text_for("Palette", theme).map(str::to_owned),
+                palette: palette.map(str::to_owned),
                 frames: node
                     .text("Frames")
                     .map_or(1, |frames| names(frames).len().max(1)),
+                own,
+                built_in: built_in.map(str::to_owned),
+                own_palette,
             });
         }
     }
@@ -873,6 +910,8 @@ fn read_layout(files: &[&IniFile], layout: &str, table: &str) -> (MatchLayout, V
     read.colors = read_colors(files, &mut reader).into();
     let problems = reader.problems;
     read.tree = Arc::new(tree);
+    read.side_text = read.side_colors(SidebarPart::Money, "Color");
+    read.label_text = read.side_colors(SidebarPart::Cameos, "LabelColor");
     (read, problems)
 }
 
@@ -2318,7 +2357,7 @@ mod tests {
     #[test]
     fn the_built_in_sidebar_names_its_pictures() {
         let art = |theme| {
-            sidebar_art(theme)
+            sidebar_art(MatchLayout::original(true), theme)
                 .into_iter()
                 .map(|art| {
                     (
@@ -2363,5 +2402,85 @@ mod tests {
             Some("radaryuri.pal"),
             1
         )));
+    }
+
+    #[test]
+    fn a_layout_changes_the_pictures_of_the_built_in_parts() {
+        use crate::ui::sidebar::ArtKey;
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nDefault=Mine\n\
+              [Mine.Repair]\nArt=myrepair.shp\nFrames=Idle,On\n\
+              [Mine.Radar]\nArt@Soviet=myradar.shp\nPalette@Soviet=mine.pal\n",
+        );
+        assert_eq!(problems(&file), expect(&[]));
+        let layout = file.for_side(Some("GDI"), true).unwrap();
+        let find = |theme: SidebarTheme, part: SidebarPart| {
+            sidebar_art(layout, theme)
+                .into_iter()
+                .find(|art| art.part == part && art.key == ArtKey::Art)
+                .unwrap()
+        };
+        // The layout's own picture, with the built-in one to fall back on.
+        let repair = find(SidebarTheme::Allied, SidebarPart::Repair);
+        assert_eq!(repair.file, "myrepair.shp");
+        assert!(repair.own);
+        assert_eq!(repair.built_in.as_deref(), Some("repair.shp"));
+        assert_eq!(repair.frames, 2);
+        assert_eq!((repair.palette, repair.own_palette), (None, false));
+        // What it does not write stays the built-in file's.
+        let sell = find(SidebarTheme::Soviet, SidebarPart::Sell);
+        assert_eq!((sell.file.as_str(), sell.own), ("sell.shp", false));
+        // A key of one side's pictures holds for that side alone.
+        let radar = find(SidebarTheme::Allied, SidebarPart::Radar);
+        assert_eq!((radar.file.as_str(), radar.own), ("radar.shp", false));
+        let radar = find(SidebarTheme::Soviet, SidebarPart::Radar);
+        assert_eq!(radar.file, "myradar.shp");
+        assert!(radar.own);
+        assert_eq!(radar.built_in.as_deref(), Some("radar.shp"));
+        assert_eq!(radar.palette.as_deref(), Some("mine.pal"));
+        assert!(radar.own_palette);
+        // The built-in Yuri radar is not the layout's own.
+        let radar = find(SidebarTheme::Yuri, SidebarPart::Radar);
+        assert_eq!((radar.file.as_str(), radar.own), ("radary.shp", false));
+        assert_eq!(radar.palette.as_deref(), Some("radaryuri.pal"));
+        assert!(!radar.own_palette);
+        // The original layout names no picture of its own.
+        for theme in [SidebarTheme::Allied, SidebarTheme::Soviet, SidebarTheme::Yuri] {
+            assert!(
+                sidebar_art(MatchLayout::original(false), theme)
+                    .iter()
+                    .all(|art| !art.own && !art.own_palette)
+            );
+        }
+    }
+
+    #[test]
+    fn a_layouts_colors_give_the_side_text() {
+        // The original: SideText of the built-in [Colors].
+        for (theme, color) in [
+            (SidebarTheme::Allied, [164, 210, 255]),
+            (SidebarTheme::Soviet, [255, 255, 0]),
+            (SidebarTheme::Yuri, [255, 255, 0]),
+        ] {
+            let spec = SidebarChromeLayoutSpec::for_theme(theme);
+            assert_eq!((spec.side_text, spec.label_text), (color, color));
+        }
+        // A [Colors] line of the mod's file changes the colour that names it,
+        // for its side alone; a part may name its own colour.
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nDefault=Mine\n\
+              [Colors]\nSideText@Soviet=200,0,0\nGold=250,200,50\n\
+              [Mine.Cameos]\nLabelColor=Gold\n\
+              [Mine.Money]\nColor@Yuri=1,2,3\n",
+        );
+        assert_eq!(problems(&file), expect(&[]));
+        let (allied, _) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
+        assert_eq!(allied.side_text, [164, 210, 255]);
+        assert_eq!(allied.label_text, [250, 200, 50]);
+        let (soviet, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod"), false));
+        assert_eq!(soviet.side_text, [200, 0, 0]);
+        assert_eq!(soviet.label_text, [250, 200, 50]);
+        let (yuri, _) = sidebar(SidebarTheme::Yuri, file.for_side(Some("ThirdSide"), false));
+        assert_eq!(yuri.side_text, [1, 2, 3]);
     }
 }

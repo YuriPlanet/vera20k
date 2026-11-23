@@ -18,6 +18,7 @@ use crate::render::shell_ui_style_assets::{
     ShellUiAssetRef, base_art_candidates, decode_ui_shp, mod_art_candidates, ui_art_candidates,
 };
 use crate::render::sidebar_smoothing::{self, SidebarPieces, SmoothCopy};
+use crate::ui::match_layout::MatchLayout;
 use crate::ui::sidebar::{ArtKey, SidebarPart};
 
 /// Each part's pictures, by [`SidebarPart`] and [`ArtKey`]: every frame of
@@ -433,6 +434,10 @@ pub struct SidebarChromeSet {
     /// themes, built as sides draw them). Resolution follows the arm that
     /// built the set.
     ares: bool,
+    /// The `veraui.ini` layout whose pictures each stock theme is built from
+    /// (by `SidebarTheme as usize`): the layout of the side that draws it,
+    /// `None` for the built-in pictures.
+    layouts: [Option<MatchLayout>; 3],
 }
 
 impl SidebarChromeSet {
@@ -505,6 +510,9 @@ impl SidebarChromeSet {
             &self.missing,
         ) {
             let (archive, yuri) = stock_theme_source(theme);
+            let layout = self.layouts[theme as usize]
+                .as_ref()
+                .unwrap_or(MatchLayout::original(true));
             match build_theme_atlas(
                 gpu,
                 batch,
@@ -513,6 +521,7 @@ impl SidebarChromeSet {
                 archive,
                 SidebarArtNames::for_yuri(yuri),
                 false,
+                layout,
             ) {
                 Some(atlas) => self.atlases.push((stock_theme_side(theme), atlas)),
                 None => self.missing.push(theme),
@@ -695,6 +704,10 @@ pub(crate) fn ares_sidebar_config(
 /// `sidebar_render::project_sidebar_side`), with another side's built on the
 /// frame that first draws it ([`SidebarChromeSet::ensure_side`]). `None` when
 /// the archives hold no sidebar art at all.
+///
+/// `layout_file` is the mod's `veraui.ini`: each theme's pictures are those
+/// of the layout `[Layouts]` gives the side that draws it (its `[Sides]`
+/// name, else `Default=`), over the built-in ones.
 pub fn build_sidebar_chrome_set(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -702,7 +715,19 @@ pub fn build_sidebar_chrome_set(
     rules: &crate::rules::ruleset::RuleSet,
     side_index: i32,
     local_side: i32,
+    layout_file: Option<&crate::rules::ini_parser::IniFile>,
 ) -> Result<Option<SidebarChromeSet>, crate::assets::error::AssetError> {
+    let layout_file = layout_file.map(crate::ui::match_layout::MatchLayoutFile::from_ini);
+    // The layout of side `side`, over the position table its theme uses.
+    let layout_of = |side: i32, theme: SidebarTheme| -> Option<MatchLayout> {
+        let name = u8::try_from(side)
+            .ok()
+            .and_then(|side| rules.side_name(crate::rules::ruleset::SideIdx(side)));
+        layout_file
+            .as_ref()?
+            .for_side(name, theme == SidebarTheme::Allied)
+            .cloned()
+    };
     if let Some((mix_index, yuri_names)) = ares_sidebar_config(rules, side_index) {
         if !asset_manager.activate_sidebar_archives(mix_index)? {
             // Full_Init687824 and saved Load67E766 abort when534FA0 fails.
@@ -720,14 +745,17 @@ pub fn build_sidebar_chrome_set(
         } else {
             &base
         };
+        let theme = sidebar_theme_for_side(side_index, true);
+        let layout = layout_of(side_index, theme);
         let atlas = build_theme_atlas(
             gpu,
             batch,
             asset_manager,
-            sidebar_theme_for_side(side_index, true),
+            theme,
             primary,
             SidebarArtNames::for_yuri(yuri_names),
             true,
+            layout.as_ref().unwrap_or(MatchLayout::original(true)),
         )
         .ok_or_else(|| crate::assets::error::AssetError::AssetNotFound {
             name: format!("required sidebar shapes or palettes for side {side_index} in {primary}"),
@@ -736,12 +764,15 @@ pub fn build_sidebar_chrome_set(
             atlases: vec![(side_index, atlas)],
             missing: Vec::new(),
             ares: true,
+            layouts: Default::default(),
         }));
     }
     let mut set = SidebarChromeSet {
         atlases: Vec::new(),
         missing: Vec::new(),
         ares: false,
+        layouts: [SidebarTheme::Allied, SidebarTheme::Soviet, SidebarTheme::Yuri]
+            .map(|theme| layout_of(stock_theme_side(theme), theme)),
     };
     set.ensure_side(local_side, gpu, batch, asset_manager);
     Ok((!set.atlases.is_empty()).then_some(set))
@@ -937,6 +968,43 @@ impl<'a> SidebarThemeRoute<'a> {
     }
 }
 
+/// One sidebar picture's frames, and its shape when drawn as theme art: in
+/// `themed` from the theme route (the radar, a part with a `Palette=`), else
+/// in SIDEBAR.PAL from the side route. A layout's `own` file is any SHP the
+/// game can find, a mod's loose file first.
+fn render_piece<'a>(
+    theme_route: SidebarThemeRoute<'a>,
+    side_route: SidebarSideRoute<'a>,
+    file: &str,
+    frames: usize,
+    themed: Option<&Palette>,
+    generic_palette: &Palette,
+    own: bool,
+) -> (Vec<Option<RenderedChromeEntry>>, Option<(ShpFile, &'a str)>) {
+    if let Some(palette) = themed {
+        let shape = theme_route.shape(file, RADAR_DEFAULT_FRAME);
+        let rendered = (0..frames)
+            .map(|frame| render_shp(&shape.as_ref()?.0, palette, frame))
+            .collect();
+        return (rendered, shape);
+    }
+    if own {
+        let decode =
+            |asset: ShellUiAssetRef<'_>| parse_sidebar_shape(side_route.asset_manager, asset.bytes);
+        let shape = ui_art_candidates(side_route.asset_manager, file)
+            .find_map(decode)
+            .or_else(|| side_route.decode(file, decode));
+        let rendered = (0..frames)
+            .map(|frame| render_shp(shape.as_ref()?, generic_palette, frame))
+            .collect();
+        return (rendered, None);
+    }
+    let rendered = (0..frames)
+        .map(|frame| render_side_entry(side_route, file, generic_palette, frame))
+        .collect();
+    (rendered, None)
+}
+
 fn build_theme_atlas(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -945,6 +1013,7 @@ fn build_theme_atlas(
     mix_name: &str,
     names: SidebarArtNames,
     ares: bool,
+    layout: &MatchLayout,
 ) -> Option<SidebarChromeAtlas> {
     let palette_name = names.radar_palette;
     let radar_name = names.radar;
@@ -974,38 +1043,85 @@ fn build_theme_atlas(
         "{theme:?} generic sidebar palette resolved from {}",
         generic_palette_source
     );
-    // The pictures the built-in veraui.ini gives the sidebar's parts. The
-    // radar is theme art: its own MIX, the theme palette and the file the
+    // The pictures the side's veraui.ini layout gives the sidebar's parts,
+    // the built-in file's where it names none. The radar is theme art: its
+    // own MIX, the theme palette and, for the built-in picture, the file the
     // Ares filename switch names (`SidebarArtNames`). Every other part is
     // generic chrome of the side route in SIDEBAR.PAL; 652E90 + 653010 draw
-    // even Yuri's diplomacy and options buttons with it. A frame the file
-    // lacks stays None, and the draw falls back to frame 0 or skips it.
+    // even Yuri's diplomacy and options buttons with it. A part with a
+    // Palette= is drawn as the radar is. A frame the file lacks stays None,
+    // and the draw falls back to frame 0 or skips it. A picture or palette
+    // of the layout's own that is not found leaves the built-in one.
     let mut radar = None;
     let mut excluded_extra_ids = std::collections::HashSet::new();
     let mut rendered_pieces = Vec::new();
-    for art in crate::ui::match_layout::sidebar_art(theme) {
+    for art in crate::ui::match_layout::sidebar_art(layout, theme) {
         let is = |part, key| art.part == part && art.key == key;
         let radar_part = art.part == SidebarPart::Radar;
-        let file = if radar_part {
+        let built_in = if radar_part {
             radar_name
         } else {
-            art.file.as_str()
+            art.built_in.as_deref().unwrap_or(art.file.as_str())
+        };
+        let own_palette = art
+            .palette
+            .as_deref()
+            .filter(|_| art.own_palette)
+            .and_then(|name| {
+                let found = theme_route.palette(name).map(|(palette, _)| palette);
+                if found.is_none() {
+                    log::warn!(
+                        "{} [{}] Palette={name}: no such palette; the side's own draws",
+                        crate::ui::match_layout::FILE_NAME,
+                        art.part.name()
+                    );
+                }
+                found
+            });
+        let palette = (radar_part || art.palette.is_some())
+            .then(|| own_palette.as_ref().unwrap_or(&theme_palette));
+        let piece = |file: &str, own: bool| {
+            render_piece(
+                theme_route,
+                side_route,
+                file,
+                art.frames,
+                palette,
+                &generic_palette,
+                own,
+            )
+        };
+        let own = art
+            .own
+            .then(|| piece(art.file.as_str(), true))
+            .filter(|(frames, _)| {
+                let found = frames.first().is_some_and(Option::is_some);
+                if !found {
+                    log::warn!(
+                        "{} [{}] {}={}: no such picture; the built-in {built_in} draws",
+                        crate::ui::match_layout::FILE_NAME,
+                        art.part.name(),
+                        art.key.name(),
+                        art.file
+                    );
+                }
+                found
+            });
+        let (file, (frames, shape)) = match own {
+            Some(rendered) => (art.file.as_str(), rendered),
+            None => (built_in, piece(built_in, false)),
         };
         excluded_extra_ids.insert(mix_hash(file));
-        let frames: Vec<Option<RenderedChromeEntry>> = if radar_part || art.palette.is_some() {
-            let shape = theme_route.shape(file, RADAR_DEFAULT_FRAME);
-            let frames = (0..art.frames)
-                .map(|frame| render_shp(&shape.as_ref()?.0, &theme_palette, frame))
-                .collect();
-            if radar_part {
-                radar = radar.or(shape);
-            }
-            frames
-        } else {
-            (0..art.frames)
-                .map(|frame| render_side_entry(side_route, file, &generic_palette, frame))
-                .collect()
-        };
+        if radar_part && radar.is_none() {
+            radar = shape.map(|(shape, source)| {
+                (
+                    shape,
+                    source,
+                    file.to_owned(),
+                    palette.unwrap_or(&theme_palette).clone(),
+                )
+            });
+        }
         // Without these the theme is skipped. Residual: with no side1 shape
         // gamemd loads SIDEGDI1..3.SHP in place of all three
         // (0x006ABD47..0x006ABD7E; a missing side2 or side3 alone has no
@@ -1025,14 +1141,14 @@ fn build_theme_atlas(
         }
         rendered_pieces.push((art.part, art.key, frames));
     }
-    let (radar_shape, radar_source) = radar?;
+    let (radar_shape, radar_source, radar_file, radar_palette) = radar?;
     let radar_identity = SidebarChromeAssetIdentity {
-        logical_name: radar_name.to_owned(),
+        logical_name: radar_file,
         source_archive: Some(radar_source.to_owned()),
     };
     // Pre-render all radar.shp frames for the opening/closing animation.
     let (radar_frames, radar_frame_size, radar_content_insets) =
-        render_all_radar_frames(&radar_shape, &theme_palette);
+        render_all_radar_frames(&radar_shape, &radar_palette);
 
     let (
         [background_large, background_medium, background_small],

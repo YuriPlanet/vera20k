@@ -87,7 +87,7 @@ part, with a dot between them: `[Mine.Radar]`. Its keys are the part's propertie
 | `Type` | The kind of part. It decides which other keys the part has |
 | `Parts` | The parts inside it, in the order they are drawn |
 | `X`, `Y` | Where it sits in the part it is inside |
-| `Art`, `Frames`, `Palette`, `Color` | Its pictures and colours. See [Not yet](#not-yet) |
+| `Art`, `Frames`, `Palette`, `Color` | Its pictures and colours. See [Pictures and colours](#pictures-and-colours) |
 
 A layout starts as the original interface of the side that uses it. You write only what
 you change: a key you write replaces that one key of the part, and every other key stays.
@@ -130,6 +130,66 @@ part doesn't write comes from that part. The original's tabs and buttons use it,
 A key with `@` and a side's pictures after its name holds for that side alone:
 `Art@Yuri=radary.shp` is the radar frame for Yuri. The three are `Allied`, `Soviet` and
 `Yuri`; a key without `@` holds for every side that has no line of its own.
+
+### Pictures and colours
+
+An original part draws the SHP files its picture keys name. `Art=` is the part's own
+picture. The build pictures have four more: `RowArt=` behind each row, `EmptyRowArt=`
+behind a row with nothing to build, `EndArt=` under the last row and `FootArt=` under
+that. Write a key to draw your own file instead:
+
+```ini
+[Layouts]
+Default=Mine
+
+[Mine.Repair]
+Art=myrepair.shp
+
+[Mine.Radar]
+Art@Soviet=myradar.shp
+Palette@Soviet=myradar.pal
+```
+
+- The file can be loose in the game or mod folder, or in a MIX.
+- A picture is drawn with the sidebar's palette (`sidebar.pal`). A part with
+  `Palette=` is drawn with that palette, as the radar is.
+- `Frames=` names the frames the part uses, in order. The original repair button has
+  `Idle,On,Disabled,Flash,FlashOn`: your file needs those five. A frame the file
+  lacks draws frame 0 or nothing.
+- A file the game can't find leaves the original picture. The game's log names it.
+- A key the built-in file writes for one side holds for that side over yours without
+  `@`. The radar is `Art@Yuri=radary.shp` for Yuri, so write `Art@Yuri=` to change
+  Yuri's radar.
+- Each side's sidebar has the pictures of its side's layout. They are loaded with the
+  match from the mod's file: a player's own file can't change them.
+
+Colours have names. The built-in file names the side's text colour:
+
+```ini
+[Colors]
+SideText=164,210,255
+SideText@Soviet=255,255,0
+SideText@Yuri=255,255,0
+```
+
+A `[Colors]` section in your file changes these and adds your own names. A colour is
+`r,g,b` or `r,g,b,a`, each from 0 to 255, and `@` with a side holds for that side alone.
+A part's colour key names a colour, or writes `r,g,b` itself:
+
+| Part | Key | What it colours |
+| --- | --- | --- |
+| `Money` | `Color` | The money, the frame of the map picture and the text added over the battlefield |
+| `Cameos` | `LabelColor` | The build pictures' labels and the frame of the one under the mouse, and the buttons and text added to the sidebar |
+
+Both are `SideText` in the built-in file, so changing `SideText` changes both:
+
+```ini
+[Colors]
+SideText@Soviet=255,96,64
+
+[Mine.Cameos]
+LabelColor=255,255,255
+```
 
 ## The screen
 
@@ -597,9 +657,7 @@ skipped, and the game tells you.
 | `Type` on an original part | The kind of part: `Screen`, `Battlefield`, `Box`, `Tooltip`, `Panel`, `Image`, `Text`, `Button`, `Tab`, `Radar`, `Minimap`, `CameoGrid`, `PowerBar` or `CommandBar`. A layout can only add a `Button`, a `Text`, a `Row`, a `Column` or a `CameoGrid` |
 | `Parts` on `Radar`, `Tabs`, `Cameos`, `Power` and `Bar` | The parts inside them: the map picture, the four tabs and the two scroll buttons stay where they are |
 | `Hold`, `Width`, `Height` | A part's edge and size, for the sidebar's own parts and `Field`. `Rest` means what is left |
-| `Art`, `Frames`, `Palette` and the other picture keys on an original part | The pictures an original part draws. Replace the picture files instead |
-| `Color`, `Align`, `Font` | How a text looks |
-| A `[Colors]` section of your own | The colours parts name, like `SideText`, the side's colour of the money and the build labels. The game's own are in the built-in file |
+| `Align`, `Font` | How a text looks |
 | `Command`, `Value`, `Tab` on an original part | A new command for an original button, a new value for the money number, or another tab for a tab button |
 
 The three big parts hold on to their edges: they have no `X` or `Y`. The command bar

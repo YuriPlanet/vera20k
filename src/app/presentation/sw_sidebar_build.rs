@@ -44,8 +44,9 @@ pub(crate) fn build(
         return out;
     }
     let art = state.match_state.match_presentation.sw_sidebar_art.as_ref();
-    let hover_tint = crate::render::sidebar_text::side_highlight_color(
-        crate::app::presentation::sidebar_render::current_sidebar_theme(state),
+    // The cameo labels' colour of the layout (`[Cameos] LabelColor=`).
+    let hover_tint = crate::render::sidebar_text::side_text_tint(
+        state.match_state.match_presentation.sidebar_layout_spec.label_text,
     );
     let (cursor_x, cursor_y) = state.match_state.input.cursor_px();
     if let (Some(entry), Some(toggle)) = (

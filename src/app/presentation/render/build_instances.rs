@@ -1456,8 +1456,9 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     let minimap_rect = active_minimap_screen_rect(state);
     let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(state);
     let tactical_center_cell = crate::app::input::camera::tactical_centre_cell(state);
-    let sidebar_color = crate::render::sidebar_text::native_radar_outline_color(
-        crate::app::presentation::sidebar_render::current_sidebar_theme(state),
+    // The side text colour the layout gives (`[Money] Color=`).
+    let sidebar_color = crate::render::sidebar_text::native_outline_from(
+        state.match_state.match_presentation.sidebar_layout_spec.side_text,
     );
     // Native g_SidebarSurface is 168 x screen_height in surface-local space;
     // SidebarClass::BlitToScreen @ 0x006A70E0 translates that retained surface
@@ -1602,10 +1603,10 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     };
     // StripClass::Draw packs the B0FA1C side colour into the 16-bit surface
     // format before drawing its labels (6A9BF3..6A9C46).
-    let ready_tint = {
-        let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
-        crate::render::sidebar_text::native_radar_outline_color(theme)
-    };
+    // The layout's `[Cameos] LabelColor=`, by default the side text colour.
+    let ready_tint = crate::render::sidebar_text::native_outline_from(
+        state.match_state.match_presentation.sidebar_layout_spec.label_text,
+    );
     let cameo_layers = view
         .map(|v| build_sidebar_cameo_instances(state, v, status_labels))
         .unwrap_or_default();
@@ -1631,7 +1632,6 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // text colour as the cameo labels.
     let layout_spec = state.match_state.match_presentation.sidebar_layout_spec;
     if let Some(v) = view.filter(|_| layout_spec.shows(crate::ui::sidebar::SidebarPart::Money)) {
-        let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
         text_layers.status.extend(
             crate::app::presentation::sidebar_text::build_sidebar_credits_instances(
                 &state.renderer.bit_font,
@@ -1642,7 +1642,8 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
                     .and_then(|atlas| atlas.art(crate::ui::sidebar::SidebarPart::Credits, crate::ui::sidebar::ArtKey::Art, 0))
                     .map_or(layout_spec.sidebar_width, |plate| plate.pixel_size[0]),
                 &state.csf_text("TXT_TIME_FORMAT_HOURS"),
-                crate::app::presentation::sidebar_text::credits_tint(theme),
+                // The layout's `[Money] Color=`.
+                crate::render::sidebar_text::native_outline_from(layout_spec.side_text),
                 [
                     state.match_state.input.camera_x,
                     state.match_state.input.camera_y,

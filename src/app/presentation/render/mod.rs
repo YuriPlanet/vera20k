@@ -1145,12 +1145,12 @@ fn upload_to_gpu(
     // The buttons and texts the side's layout adds over the battlefield
     // share the timers' lanes: white boxes, then text, inside its clip.
     {
-        let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
+        let side_text = state.match_state.match_presentation.sidebar_layout_spec.side_text;
         let placed = crate::app::presentation::layout_parts::placed(state);
         let layout_parts = &mut state.match_state.match_presentation.added_part_huds.field;
         layout_parts.draw(
             &placed,
-            crate::render::sidebar_text::native_radar_outline_color(theme),
+            crate::render::sidebar_text::native_outline_from(side_text),
             [
                 state.match_state.input.camera_x,
                 state.match_state.input.camera_y,
