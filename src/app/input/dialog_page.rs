@@ -41,14 +41,37 @@ pub(crate) fn route(
     sync: impl FnOnce(&mut Gui, NodeId),
     event: InputEvent,
 ) -> Vec<PageEvent> {
+    sync_dialog(ui, dialog, nodes, rect_of, sync);
+    ui.on_input(event);
+    let events = ui.drain_events();
+    page::page_events(ui.gui(), events)
+}
+
+/// What [`route`] does before its event, with no event: makes `dialog` the
+/// controller's top dialog, builds its controls once, puts them on
+/// `rect_of` (a control without a rect is hidden) and lets `sync` put the
+/// dialog's values on them.
+///
+/// A renderer that paints from the nodes (`gui_paint`)
+/// calls it, through [`InGameDialog::sync`], every drawn frame before it
+/// paints: input syncs the nodes only when the pointer sends a message, so
+/// the first frame, a resize or a control a mode hides would otherwise
+/// paint stale nodes or none. Already active and built, it allocates
+/// nothing (`ensure_active`, `ensure_built` and `sync_rects` only compare
+/// and set); `sync` should set text props with
+/// [`crate::ui::shell::page::set_text`] to keep it so.
+pub(crate) fn sync_dialog(
+    ui: &mut DialogController,
+    dialog: DialogResourceId,
+    nodes: impl FnOnce() -> NodeSpec,
+    rect_of: impl Fn(u16) -> Option<RectPx>,
+    sync: impl FnOnce(&mut Gui, NodeId),
+) {
     ui.ensure_active(dialog);
     crate::ui::shell::menu_page::sync_nodes(ui, dialog, nodes, rect_of, &[]);
     if let Some(root) = ui.root_in(dialog) {
         sync(ui.gui_mut(), root);
     }
-    ui.on_input(event);
-    let events = ui.drain_events();
-    page::page_events(ui.gui(), events)
 }
 
 /// [`route`] with nothing to sync.
@@ -77,6 +100,20 @@ pub(crate) struct InGameDialog {
 }
 
 impl InGameDialog {
+    /// [`sync_dialog`] on the dialog's controller: its renderer's per-frame
+    /// call before it paints from the nodes.
+    pub(crate) fn sync(
+        &self,
+        state: &mut AppState,
+        nodes: impl FnOnce() -> NodeSpec,
+        rect_of: impl Fn(u16) -> Option<RectPx>,
+        sync: impl FnOnce(&mut Gui, NodeId),
+    ) {
+        if let Some(ui) = (self.ui_mut)(state) {
+            sync_dialog(ui, self.id, nodes, rect_of, sync);
+        }
+    }
+
     /// One pointer message at the shell cursor (`down`: `None` moves),
     /// [`route`]d on the dialog's controller, its cues played; returns the
     /// rest.

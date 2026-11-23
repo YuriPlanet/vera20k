@@ -70,19 +70,27 @@ pub fn ensure_built(gui: &mut Gui, root: NodeId, spec: impl FnOnce() -> NodeSpec
 }
 
 /// Puts every control under `root` on its layout rect; a control without
-/// one is hidden.
+/// one is hidden. It allocates nothing, so a renderer may run it every
+/// frame ([`crate::app::input::dialog_page::sync_dialog`]).
 pub fn sync_rects(gui: &mut Gui, root: NodeId, rect_of: impl Fn(u16) -> Option<RectPx>) {
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if let Ok(children) = gui.tree().children(node) {
-            stack.extend(children.iter().copied());
-        }
-        let Some(id) = gui.id_of(node).and_then(|id| u16::try_from(id).ok()) else {
-            continue;
-        };
+    sync_rects_from(gui, root, &rect_of);
+}
+
+fn sync_rects_from(gui: &mut Gui, node: NodeId, rect_of: &dyn Fn(u16) -> Option<RectPx>) {
+    if let Some(id) = gui.id_of(node).and_then(|id| u16::try_from(id).ok()) {
         let rect = rect_of(id);
         let _ = gui.set(node, Prop::Rect, Value::Rect(rect.unwrap_or_default()));
         let _ = gui.set(node, Prop::Visible, Value::Bool(rect.is_some()));
+    }
+    let count = gui.tree().children(node).map_or(0, <[NodeId]>::len);
+    for index in 0..count {
+        let child = gui
+            .tree()
+            .children(node)
+            .ok()
+            .and_then(|c| c.get(index).copied());
+        let Some(child) = child else { break };
+        sync_rects_from(gui, child, rect_of);
     }
 }
 
@@ -90,6 +98,17 @@ pub fn sync_rects(gui: &mut Gui, root: NodeId, rect_of: impl Fn(u16) -> Option<R
 pub fn set(gui: &mut Gui, root: NodeId, id: u16, prop: Prop, value: Value) {
     if let Some(node) = gui.find_id(root, i32::from(id)) {
         let _ = gui.set(node, prop, value);
+    }
+}
+
+/// Sets the text `prop` (`Text`, `Label`, `Art`) on control `id` under
+/// `root` only when it differs: a per-frame sync allocates only on a change.
+pub fn set_text(gui: &mut Gui, root: NodeId, id: u16, prop: Prop, text: &str) {
+    let Some(node) = gui.find_id(root, i32::from(id)) else {
+        return;
+    };
+    if !matches!(gui.get(node, prop), Ok(Some(Value::Text(old))) if old == text) {
+        let _ = gui.set(node, prop, Value::Text(text.to_owned()));
     }
 }
 
