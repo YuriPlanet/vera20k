@@ -277,6 +277,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) added_parts: std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
     /// Their drawing trees, brought to `added_parts` as each frame draws.
     pub(crate) added_part_huds: crate::app::presentation::layout_parts::PartsHuds,
+    /// The radar's minimap as a host area of a tree.
+    pub(crate) minimap_hud: crate::app::presentation::picture_hud::AreaHud,
     /// The sidebar column's chrome as a drawing tree.
     pub(crate) sidebar_chrome_hud: crate::app::presentation::picture_hud::PictureHud,
     /// The bottom command bar's drawing tree.

@@ -1,8 +1,9 @@
 //! Turns a [`vera20k_gui::hud::Hud`]'s paint list into sprite instances and
 //! the runs that draw them in the list's order.
 //!
-//! It draws fills, pictures and text, what its users have. Host areas come
-//! with the first HUD that shows one, and so do the world commands.
+//! It draws fills, pictures, text and host areas (whose instance the host
+//! hands over), what its users have. The world commands come with the
+//! first HUD that shows one.
 
 use std::ops::Range;
 
@@ -186,7 +187,15 @@ impl HudPaint {
                         }));
                     Material::Glyphs
                 }
-                PaintOp::External { .. } => continue,
+                // A host area: what the host draws there, handed over as
+                // its instance, in the node's place in the order.
+                PaintOp::External { .. } => {
+                    let Some(instance) = node.instance else {
+                        continue;
+                    };
+                    self.instances.push(instance);
+                    Material::Pictures
+                }
             };
             if let Some(clip) = command.clip {
                 clip_from(&mut self.instances, start, clip, space);

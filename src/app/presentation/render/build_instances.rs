@@ -1417,6 +1417,9 @@ fn build_placement_ghost(
 // ---------------------------------------------------------------------------
 
 /// Build sidebar UI instances: chrome, cameos, text, minimap, viewport rect, radar animation.
+/// The minimap's name in the sidebar's tree.
+const MINIMAP_AREA: &str = "minimap";
+
 pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances {
     // Nothing below changes the retained view; the minimap build and the
     // font raster switches write other fields, so the view is read again
@@ -1453,14 +1456,28 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     let (minimap, viewport_rect, content_boundary) = if minimap_visible {
         match &mut state.match_state.match_presentation.minimap {
             Some(mm) => {
-                let minimap = vec![mm.build_minimap_instance_in_rect(
+                let quad = mm.build_minimap_instance_in_rect(
                     state.match_state.input.camera_x,
                     state.match_state.input.camera_y,
                     minimap_rect.x,
                     minimap_rect.y,
                     minimap_rect.w,
                     minimap_rect.h,
-                )];
+                );
+                // The radar's picture is a host area of the sidebar's tree,
+                // its node over the whole pixels the picture covers.
+                let area = crate::app::presentation::picture_hud::covering(
+                    minimap_rect.x,
+                    minimap_rect.y,
+                    minimap_rect.w,
+                    minimap_rect.h,
+                );
+                let minimap = state
+                    .match_state
+                    .match_presentation
+                    .minimap_hud
+                    .draw(MINIMAP_AREA, Some((area, quad)))
+                    .to_vec();
                 let viewport_rect = sidebar_surface.map_or_else(Vec::new, |sidebar_surface| {
                     mm.build_viewport_rect_in_rect(
                         state.match_state.input.camera_x,
@@ -1491,9 +1508,13 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
                 });
                 (minimap, viewport_rect, content_boundary)
             }
-            None => (Vec::new(), Vec::new(), Vec::new()),
+            None => {
+                state.match_state.match_presentation.minimap_hud.draw(MINIMAP_AREA, None);
+                (Vec::new(), Vec::new(), Vec::new())
+            }
         }
     } else {
+        state.match_state.match_presentation.minimap_hud.draw(MINIMAP_AREA, None);
         (Vec::new(), Vec::new(), Vec::new())
     };
 

@@ -182,4 +182,84 @@ mod tests {
         assert_eq!(hud.finish().len(), 1);
         assert_eq!(hud.rects(), [Rect::new(7, 0, 1, 1)]);
     }
+
+    #[test]
+    fn a_host_area_draws_the_hosts_instance_and_goes_with_it() {
+        let mut area = AreaHud::default();
+        let drawn = area.draw("minimap", Some((covering(16.5, 49.0, 140.0, 108.0), quad(16.5))));
+        assert_eq!(drawn.len(), 1);
+        assert_eq!(bytemuck::bytes_of(&drawn[0]), bytemuck::bytes_of(&quad(16.5)));
+        assert!(area.draw("minimap", None).is_empty());
+        assert_eq!(area.draw("minimap", Some((Rect::new(0, 0, 0, 0), quad(3.0))))[0].position[0], 3.0);
+    }
+}
+
+/// One host area as an `External` node: a part the host draws itself (the
+/// radar's minimap) placed and named in the tree, so it can be found,
+/// hidden or measured like any other part, while its pixels stay the
+/// host's. The host hands over what it drew there as one instance.
+pub(crate) struct AreaHud {
+    hud: Hud,
+    node: Option<NodeId>,
+    paint: HudPaint,
+    draw: NodeDraw,
+}
+
+impl Default for AreaHud {
+    fn default() -> Self {
+        Self {
+            hud: Hud::new(1, InputPolicy::default()),
+            node: None,
+            paint: HudPaint::default(),
+            draw: NodeDraw::default(),
+        }
+    }
+}
+
+impl AreaHud {
+    /// Show the area `name` over `rect` (layout pixels) drawn as `instance`,
+    /// or no area; the instances to draw this frame.
+    pub(crate) fn draw(
+        &mut self,
+        name: &str,
+        area: Option<(Rect, SpriteInstance)>,
+    ) -> &[SpriteInstance] {
+        match area {
+            Some((rect, instance)) => {
+                let node = match self.node {
+                    Some(node) => node,
+                    None => {
+                        let Ok(node) =
+                            self.hud
+                                .create_root(Layer::Panels, Origin::Host, NodeKind::External)
+                        else {
+                            return &[];
+                        };
+                        let _ = self.hud.set(node, Prop::Name, Value::Text(name.to_owned()));
+                        let _ = self.hud.set(node, Prop::Text, Value::Text(name.to_owned()));
+                        self.node = Some(node);
+                        node
+                    }
+                };
+                let rect = Rect::new(rect.x, rect.y, rect.w.max(1), rect.h.max(1));
+                if !matches!(self.hud.get(node, Prop::Rect), Ok(Some(Value::Rect(shown))) if *shown == rect)
+                {
+                    let _ = self.hud.set(node, Prop::Rect, Value::Rect(rect));
+                }
+                self.draw = NodeDraw {
+                    instance: Some(instance),
+                    ..Default::default()
+                };
+            }
+            None => {
+                if let Some(node) = self.node.take() {
+                    let _ = self.hud.remove(node);
+                }
+            }
+        }
+        self.hud.layout(UNBOUNDED);
+        let draw = self.draw;
+        self.paint.build_pictures(&self.hud, SPACE, |_| draw);
+        self.paint.instances()
+    }
 }
