@@ -475,7 +475,7 @@ Parts=Credits,Top,Radar,Middle,Cameos,Power,StopAll
 [Mine.StopAll]
 Type=Button
 Command=StopObject
-Label=Stop
+Label=GUI:Stop
 X=10
 Y=300
 
@@ -497,7 +497,7 @@ the battlefield.
 | --- | --- |
 | `Type` | `Button` or `Text`. `Row`, `Column` and `CameoGrid` are below |
 | `Command` | For a button: what a click does. See [Commands](#commands) |
-| `Label` | For a button without a picture: the words on it. The name of a line in the game's string table shows that line's text. Without `Label` the button shows its command's name |
+| `Label` | For a button without a picture: the words on it. It is the name of a line in the game's string table, like `GUI:Stop`, and shows that line's text; a name the table doesn't have shows as `MISSING:'name'`, as everywhere else in the game. Without `Label` the button's label is its command's name, looked up the same way |
 | `Art` | For a button: its picture, an SHP file like `mybutton.shp`. Frame 0 is the button and frame 1 the button held down. It uses the sidebar's palette (`sidebar.pal`), as the command bar's buttons do |
 | `Value` | For a text: what it shows. See [Values](#values) |
 | `Hold` | The corner or edge of `Side` or `Field` the part is measured from: the nine words of [On the battlefield](#on-the-battlefield). `TopLeft` if you leave it out |
@@ -543,7 +543,7 @@ Art=button06.shp
 [Mine.Spread]
 Type=Button
 Command=ScatterObject
-Label=Scatter
+Label=TXT_SCATTER
 ```
 
 This puts three buttons side by side, in the middle of the battlefield's bottom edge.

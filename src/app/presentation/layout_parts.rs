@@ -176,15 +176,11 @@ fn value_text(state: &AppState, value: TextValue) -> String {
     }
 }
 
-/// A button's label: the text of a string-table name, else the word itself.
+/// A button's label: its word looked up as every label of the game is
+/// ([`AppState::csf_label`]), so a word the string table lacks shows as
+/// `MISSING:'word'`, and the word itself stands in while no table is loaded.
 fn label_text(state: &AppState, label: &str) -> String {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .and_then(|csf| csf.get(label))
-        .unwrap_or(label)
-        .to_owned()
+    state.csf_label(label, label)
 }
 
 /// Every added part of the local side's layout, where this frame shows it,
