@@ -239,6 +239,22 @@ pub enum Prop {
     /// only when the text is not empty once its trailing CR/LF go (the
     /// owner's 0x501 handler clicks Send then, `0xCF`/`0x11E`).
     Multiline,
+    /// A node of the chrome layer ([`crate::Gui::push_chrome`]): the mouse
+    /// buttons it takes, bit 1 the left and bit 2 the right (the left alone
+    /// unless set). A press or release of a button it does not take passes
+    /// on to the next node under the pointer.
+    Buttons,
+    /// Chrome button: it activates on the press edge (`Activated` for the
+    /// left button, `RightActivated` for the right) and takes no capture,
+    /// so its release passes on.
+    PressActivates,
+    /// Chrome button: a catcher the host handles itself. It takes and holds
+    /// the pointer as a button does but activates nothing; the input it
+    /// takes reports it in [`crate::InputResult::passthrough`], unconsumed.
+    Passthrough,
+    /// Chrome button: a release that activates it with the pointer inside
+    /// its rect flips `Toggled` (1) or turns it on (2).
+    ToggleOnRelease,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -290,6 +306,8 @@ impl Prop {
             | Prop::RehoverOnRelease
             | Prop::BlurOnPress
             | Prop::Multiline
+            | Prop::PressActivates
+            | Prop::Passthrough
             | Prop::WheelPicks
             | Prop::SelectOnFocus
             | Prop::AllSelected
@@ -327,15 +345,22 @@ impl Prop {
             | Prop::RowHeight
             | Prop::FocusTarget
             | Prop::Fill
+            | Prop::Buttons
+            | Prop::ToggleOnRelease
             | Prop::WheelStep => ValueType::Int,
         }
     }
 
     fn allowed_on(self, kind: NodeKind) -> bool {
         match self {
-            Prop::Toggled | Prop::Default | Prop::Cancel | Prop::ReleaseActivates => {
-                kind == NodeKind::Button
-            }
+            Prop::Toggled
+            | Prop::Default
+            | Prop::Cancel
+            | Prop::ReleaseActivates
+            | Prop::Buttons
+            | Prop::PressActivates
+            | Prop::Passthrough
+            | Prop::ToggleOnRelease => kind == NodeKind::Button,
             Prop::TabStop => kind.is_focusable(),
             Prop::KeepsBlink | Prop::BlurOnPress | Prop::Multiline => kind == NodeKind::Edit,
             Prop::FocusOnPress => !kind.is_container() && kind != NodeKind::Edit,

@@ -488,15 +488,15 @@ mod tests {
         g.input(InputEvent::PointerMove { x: 50, y: 50 }, 0);
         g.drain_events();
         assert!(
-            !g.input(InputEvent::Wheel { lines: 1 }, 0).consumed,
+            !g.input(InputEvent::Wheel { lines: 1, x: 0, y: 0 }, 0).consumed,
             "already at the top"
         );
-        assert!(g.input(InputEvent::Wheel { lines: -1 }, 0).consumed);
+        assert!(g.input(InputEvent::Wheel { lines: -1, x: 0, y: 0 }, 0).consumed);
         assert_eq!(
             g.drain_events(),
             vec![UiEvent::Scrolled { node: list, top: 3 }]
         );
-        g.input(InputEvent::Wheel { lines: -100 }, 0);
+        g.input(InputEvent::Wheel { lines: -100, x: 0, y: 0 }, 0);
         assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(47)));
     }
 }

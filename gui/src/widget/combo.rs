@@ -429,18 +429,18 @@ mod tests {
         click(&mut g, 129, 25);
         g.input(InputEvent::PointerMove { x: 500, y: 500 }, 0);
         g.drain_events();
-        assert!(g.input(InputEvent::Wheel { lines: -1 }, 0).consumed);
+        assert!(g.input(InputEvent::Wheel { lines: -1, x: 0, y: 0 }, 0).consumed);
         assert_eq!(
             g.drain_events(),
             vec![UiEvent::Changed { node: c, value: Value::Int(1), final_: true }]
         );
         assert_eq!(g.popup(), None);
         click(&mut g, 129, 25);
-        g.input(InputEvent::Wheel { lines: 1 }, 0);
-        g.input(InputEvent::Wheel { lines: 0 }, 0);
+        g.input(InputEvent::Wheel { lines: 1, x: 0, y: 0 }, 0);
+        g.input(InputEvent::Wheel { lines: 0, x: 0, y: 0 }, 0);
         click(&mut g, 129, 25);
         g.drain_events();
-        g.input(InputEvent::Wheel { lines: 2 }, 0);
+        g.input(InputEvent::Wheel { lines: 2, x: 0, y: 0 }, 0);
         assert_eq!(g.drain_events(), vec![], "already the first row");
         assert_eq!((g.popup(), g.get(c, Prop::Selected).unwrap()), (None, Some(&Value::Int(0))));
     }
