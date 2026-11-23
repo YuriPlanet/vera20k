@@ -13,7 +13,7 @@ use crate::app::input::commands::preferred_local_owner;
 use crate::app::presentation::instances;
 use crate::app::presentation::sidebar_render::{
     active_minimap_screen_rect, build_command_bar_instances, build_sidebar_cameo_instances,
-    build_sidebar_chrome_instances, build_sidebar_text_instances, current_sidebar_view,
+    build_sidebar_chrome_instances, current_sidebar_view,
 };
 use crate::app::presentation::ui_overlays::{
     build_building_status_instances, build_control_group_status_instances,
@@ -1624,23 +1624,29 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             .unwrap_or(crate::render::bit_font::TextRaster::NATIVE),
     );
     let view = current_sidebar_view(state);
-    let mut text_layers = view
-        .map(|v| build_sidebar_text_instances(state, v, status_labels, ready_tint))
-        .unwrap_or_default();
-    huds.status.begin();
-    if let Some(houses) = view
-        .and_then(|v| v.observer.as_deref())
-        .filter(|_| state.renderer.bit_font.darken_texture().is_some())
-    {
-        crate::app::presentation::sidebar_build::draw_observer_strip_text(
-            &mut huds.status,
-            &state.renderer.bit_font,
-            houses,
-            [
-                state.match_state.input.camera_x,
-                state.match_state.input.camera_y,
-            ],
+    for hud in [&mut huds.status, &mut huds.queue, &mut huds.label] {
+        hud.begin();
+    }
+    // Without the retail FNT the native sidebar text path is unavailable.
+    if let Some(v) = view.filter(|_| state.renderer.bit_font.darken_texture().is_some()) {
+        crate::app::presentation::sidebar_build::draw_cameo_labels(
+            state,
+            v,
+            status_labels,
+            ready_tint,
+            &mut huds,
         );
+        if let Some(houses) = v.observer.as_deref() {
+            crate::app::presentation::sidebar_build::draw_observer_strip_text(
+                &mut huds.status,
+                &state.renderer.bit_font,
+                houses,
+                [
+                    state.match_state.input.camera_x,
+                    state.match_state.input.camera_y,
+                ],
+            );
+        }
     }
     // Credits counter shares the GAME.FNT sidebar-text layer: gamemd draws it
     // with the same BitFont on the sidebar surface, in the same packed side
@@ -1670,8 +1676,12 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             ],
         );
     }
-    huds.status.finish(&state.renderer.bit_font);
-    text_layers.status.extend(huds.status.glyphs().copied());
+    for hud in [&mut huds.status, &mut huds.queue, &mut huds.label] {
+        hud.finish(&state.renderer.bit_font);
+    }
+    let mut status_text: Vec<SpriteInstance> = huds.status.glyphs().copied().collect();
+    let queue_text: Vec<SpriteInstance> = huds.queue.glyphs().copied().collect();
+    let label_text: Vec<SpriteInstance> = huds.label.glyphs().copied().collect();
     // The buttons and texts the side's layout adds to the sidebar. A
     // button's box rides the white lane of the cameo's hover outline: over
     // the chrome and the cameos, under the text.
@@ -1686,7 +1696,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         ],
         &state.renderer.bit_font,
     );
-    text_layers.status.extend_from_slice(layout_parts.texts());
+    status_text.extend_from_slice(layout_parts.texts());
     // Their pictures draw over the sidebar's own, from the same atlas.
     chrome.extend_from_slice(layout_parts.pictures());
     state.renderer.bit_font.set_raster(frame_raster);
@@ -1750,10 +1760,10 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         gclock: cameo_layers.gclock,
         cameo_overlay: cameo_layers.overlay,
         queue_overlay: cameo_layers.queue_overlay,
-        queue_text: text_layers.queue,
+        queue_text,
         label_overlay: cameo_layers.label_overlay,
-        label_text: text_layers.label,
-        text: text_layers.status,
+        label_text,
+        text: status_text,
         #[cfg(feature = "phobos")]
         sw_sidebar_chrome: sw_sidebar.chrome,
         #[cfg(feature = "phobos")]

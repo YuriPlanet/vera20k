@@ -20,7 +20,6 @@ use crate::ui::sidebar::{self, ArtKey, SidebarPart, SidebarView};
 // Re-export instance builders so callers don't need to know about the split.
 pub(crate) use crate::app::presentation::sidebar_build::{
     build_command_bar_instances, build_sidebar_cameo_instances, build_sidebar_chrome_instances,
-    build_sidebar_text_instances,
 };
 
 // ---------------------------------------------------------------------------

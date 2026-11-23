@@ -948,37 +948,37 @@ pub(crate) fn draw_observer_strip_text(
 pub(crate) struct SidebarHuds {
     /// The observer strip's pictures, over the chrome.
     pub(crate) observer: PictureHud,
-    /// The texts drawn after the clock: the observer strip's and the money
-    /// counter.
+    /// The texts drawn after the clock: the production Hold labels, the
+    /// observer strip's and the money counter.
     pub(crate) status: TextHud,
+    /// The cameos' queue counts, over their strips.
+    pub(crate) queue: TextHud,
+    /// The Ready and superweapon labels, drawn before the clock.
+    pub(crate) label: TextHud,
 }
 
-#[derive(Default)]
-pub(crate) struct SidebarTextInstances {
-    /// The production Hold label, drawn after the clock.
-    pub status: Vec<SpriteInstance>,
-    pub queue: Vec<SpriteInstance>,
-    /// Ready and superweapon labels, drawn before the clock.
-    pub label: Vec<SpriteInstance>,
-}
-
-pub(crate) fn build_sidebar_text_instances(
+/// The cameos' labels as the frame's next texts of `huds`, each tree in the
+/// part `Cameos`: the Ready and superweapon labels into `label`, drawn before
+/// the clock, the production Hold label into `status`, drawn after it, and
+/// the queue counts into `queue`. The caller begins and finishes the trees,
+/// and draws nothing of this without the retail FNT.
+pub(crate) fn draw_cameo_labels(
     state: &AppState,
     view: &SidebarView,
     labels: CameoStatusLabels<'_>,
     ready_tint: [f32; 3],
-) -> SidebarTextInstances {
-    if state.renderer.bit_font.darken_texture().is_none() {
-        // No retail FNT loaded; the native sidebar text path is unavailable.
-        return SidebarTextInstances::default();
-    }
+    huds: &mut SidebarHuds,
+) {
     let co = [
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
     ];
-    let mut instances = Vec::new();
-    let mut queue = Vec::new();
-    let mut label = Vec::new();
+    let font = &state.renderer.bit_font;
+    let height = font.cell_height();
+    let cameos = SidebarPart::Cameos.name();
+    for hud in [&mut huds.status, &mut huds.queue, &mut huds.label] {
+        hud.part(cameos);
+    }
 
     for item in &view.items {
         let slot = item.rect;
@@ -989,7 +989,6 @@ pub(crate) fn build_sidebar_text_instances(
         // Only the Hold label moves to the left edge, and only beside a queue
         // badge; see `status_text_shifts_left`.
         if let Some(status_text) = cameo_status_text(item, labels) {
-            let font = &state.renderer.bit_font;
             let shifts_left = status_text_shifts_left(item, has_queue_badge);
             let badge = shifts_left
                 .then(|| queue_badge_text(state, item, has_queue_badge))
@@ -1006,38 +1005,43 @@ pub(crate) fn build_sidebar_text_instances(
             // gamemd anchors text at `cameo_y + y_pad`; the strip extends
             // y_pad above and (cell_height - glyph_height + y_pad) below.
             let text_y = slot.y + READY_PAD_Y;
-            let glyphs = if status_text_precedes_clock(item) {
-                &mut label
+            let hud = if status_text_precedes_clock(item) {
+                &mut huds.label
             } else {
-                &mut instances
+                &mut huds.status
             };
-            glyphs.extend(font.fitted(fit, |font| {
-                font.build_text(status_text, text_x, text_y, 1.0, 0.00042, ready_tint, co)
-            }));
+            hud.fitted_text(
+                covering(text_x, text_y, text_w, height),
+                status_text,
+                [text_x + co[0], text_y + co[1]],
+                ready_tint,
+                CAMEO_TEXT_DEPTH,
+                fit,
+            );
         }
 
         // Queue count badge — right-aligned at top-right of cameo.
         // Original: ComputeTextRect(cameo_x+60, cameo_y+1, 0x242, 2, 1)
         // 0x242 = right-align. Uses same side-dependent color as Ready text.
         if let Some(count_str) = queue_badge_text(state, item, has_queue_badge) {
-            let text_w = state.renderer.bit_font.text_width(&count_str) as f32;
+            let text_w = font.text_width(&count_str) as f32;
             // Right-align: text right edge at cameo right edge (anchor = cameo_x + 60).
             let text_x = slot.x + slot.w - text_w;
             let text_y = slot.y + QUEUE_COUNT_PAD_Y;
-            queue.extend(
-                state
-                    .renderer
-                    .bit_font
-                    .build_text(&count_str, text_x, text_y, 1.0, 0.00042, ready_tint, co),
+            huds.queue.fitted_text(
+                covering(text_x, text_y, text_w, height),
+                &count_str,
+                [text_x + co[0], text_y + co[1]],
+                ready_tint,
+                CAMEO_TEXT_DEPTH,
+                Fit::NONE,
             );
         }
     }
-    SidebarTextInstances {
-        status: instances,
-        queue,
-        label,
-    }
 }
+
+/// The cameos' labels' depth, the sidebar text layer's.
+const CAMEO_TEXT_DEPTH: f32 = 0.00042;
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
