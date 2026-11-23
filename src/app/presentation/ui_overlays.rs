@@ -1913,6 +1913,24 @@ fn stock_rank_frames() -> (usize, usize, usize) {
     }
 }
 
+/// Frame of the filled Ammo magazine pip on PIPS2.SHP (stock ORCA/Harrier
+/// scale row).
+///
+/// Same divergence as [`stock_rank_frames`]: retail RA2's `conquer.mix` copy
+/// has 19 frames and YR's `conqmd.mix` has 21. YR inserts an extra magenta
+/// pip at 12, so from there every later frame is one slot higher. Inspecting
+/// both strips: RA2 12 = green filled magazine, 13 = dark empty magazine;
+/// YR 13 = green filled magazine, 14 = dark empty magazine. Drawing YR's 13
+/// over RA2's strip selects the dark empty frame, so a loaded aircraft's
+/// pips look empty.
+fn stock_ammo_pip_frame() -> usize {
+    ammo_pip_frame_for(crate::util::ra2_launch::enabled())
+}
+
+fn ammo_pip_frame_for(ra2: bool) -> usize {
+    if ra2 { 12 } else { 13 }
+}
+
 /// Ares `TechnoClass_DrawVeterancy` (Ares.dll 1004E0C0, hook 0x70A990),
 /// which replaces the stock rank leaf; Phobos's `DrawInsignia` replaces it
 /// in turn. The rank shape, frame and custom SHP name, or `None`:
@@ -2873,7 +2891,8 @@ fn scale_pip_rows(
             .min(PIP_ROW_LIMIT as i32);
         //70A3B7 resets this arm three pixels above the ordinary Y anchor,
         //even after a preceding spawn row. No empty Ammo outlines are drawn.
-        pips.extend((0..filled as usize).map(|slot| pip(slot, 13, row_y - 3)));
+        let ammo_frame = stock_ammo_pip_frame();
+        pips.extend((0..filled as usize).map(|slot| pip(slot, ammo_frame, row_y - 3)));
         return pips;
     }
     if object.pip_scale == crate::rules::object_type::PipScale::MindControl {
@@ -3100,6 +3119,16 @@ mod mind_control_pip_tests;
 
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
+    /// RA2's PIPS2.SHP lacks the magenta pip YR inserts at frame 12, so the
+    /// filled Ammo magazine sits one slot earlier than in YR. Using YR's 13
+    /// on RA2's strip selects the dark empty magazine and a loaded aircraft
+    /// shows no pips.
+    #[test]
+    fn stock_ammo_pip_frame_tracks_the_ra2_strip() {
+        assert_eq!(super::ammo_pip_frame_for(true), 12, "RA2 conquer.mix green magazine");
+        assert_eq!(super::ammo_pip_frame_for(false), 13, "YR conqmd.mix green magazine");
+    }
+
     /// Convenience Help's reload row, formatted when drawn from the facts
     /// the frame captured: an allied unit and an allied building that are
     /// reloading their magazines each draw the filled VERA:InfoReload row.
