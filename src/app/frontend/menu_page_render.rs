@@ -244,6 +244,117 @@ pub(crate) fn page_panel_state(
     }
 }
 
+/// The right panel's heading `0x694` and status line `0x695` as the family
+/// pages, the online pages and Options show them: the two kind-1 statics,
+/// `Text` widgets of one tree of their own ([`paint_panel_statics`]). The
+/// pages' own trees are rebuilt as scratch trees while a page has no
+/// instance, and their rect tables know no statics; the panel's outlive the
+/// pages.
+pub(crate) struct PanelStatics {
+    gui: Gui,
+    root: NodeId,
+}
+
+/// The heading's and the status line's ids in [`PanelStatics`].
+const PANEL_TITLE: i32 = 0x694;
+const PANEL_STATUS: i32 = 0x695;
+
+impl Default for PanelStatics {
+    fn default() -> Self {
+        let mut gui = Gui::new(4);
+        let root = gui
+            .create(NodeKind::Dialog, None)
+            .expect("an empty tree takes its root");
+        for id in [PANEL_TITLE, PANEL_STATUS] {
+            let node = gui
+                .create(NodeKind::Text, Some(root))
+                .expect("the panel's tree holds both statics");
+            let _ = gui.set(node, Prop::Id, Value::Int(id));
+        }
+        Self { gui, root }
+    }
+}
+
+/// A panel static as it shows this frame: its text, where and how it
+/// aligns, and its kind-1 reveal (unrevealed, the label colour).
+pub(crate) struct PanelStatic<'a> {
+    pub(crate) text: std::borrow::Cow<'a, str>,
+    pub(crate) rect: RectPx,
+    pub(crate) align: ShellAlign,
+    pub(crate) reveal: Option<crate::render::shell_text_reveal::PathAReveal>,
+}
+
+impl<'a> PanelStatic<'a> {
+    /// The heading revealing `window` of its text `text`.
+    pub(crate) fn title(
+        text: impl Into<std::borrow::Cow<'a, str>>,
+        rect: RectPx,
+        align: ShellAlign,
+        window: Kind1RevealWindow,
+    ) -> Self {
+        let reveal = Some(shell_reveal_path_a(window));
+        let text = text.into();
+        Self {
+            text,
+            rect,
+            align,
+            reveal,
+        }
+    }
+
+    /// The status line [`paint_shell_status_line`] gives.
+    pub(crate) fn status(label: PaintLabel<'a>) -> Self {
+        Self {
+            text: label.text,
+            rect: label.rect,
+            align: label.align,
+            reveal: label.path_a_reveal,
+        }
+    }
+}
+
+/// The heading and the status line (each when it shows) from the panel's
+/// widgets, in that order, at `scale`'s glyph size.
+pub(crate) fn paint_panel_statics(
+    state: &AppState,
+    statics: [Option<PanelStatic<'_>>; 2],
+    scale: crate::ui::shell::geom::ShellScale,
+) -> Vec<crate::render::shell_text::ShellTextDraw> {
+    let Ok(mut panel) = state.frontend.panel_statics.lock() else {
+        return Vec::new();
+    };
+    let PanelStatics { gui, root } = &mut *panel;
+    let root = *root;
+    let mut reveals = [None; 2];
+    for (index, shown) in statics.into_iter().enumerate() {
+        let node = gui.tree().children(root).ok().and_then(|c| c.get(index).copied());
+        let Some(node) = node else { continue };
+        let _ = gui.set(node, Prop::Visible, Value::Bool(shown.is_some()));
+        let Some(shown) = shown else { continue };
+        let _ = gui.set(node, Prop::Rect, Value::Rect(shown.rect));
+        let _ = gui.set(node, Prop::Align, Value::Int(shown.align.0.into()));
+        // The text is copied in only when it changes.
+        if !matches!(gui.get(node, Prop::Text), Ok(Some(Value::Text(old))) if *old == *shown.text) {
+            let _ = gui.set(node, Prop::Text, Value::Text(shown.text.into_owned()));
+        }
+        reveals[index] = shown.reveal;
+    }
+    let reveal_of = |id: i32| match id {
+        PANEL_TITLE => reveals[0],
+        PANEL_STATUS => reveals[1],
+        _ => None,
+    };
+    let style = GuiStyle {
+        reveal_of: Some(&reveal_of),
+        ..Default::default()
+    };
+    let mut paint = GuiPaint::default();
+    crate::app::frontend::skirmish_shell_render::gui_paint::paint_gui_into(
+        &mut paint, state, None, gui, root, scale, &[], style,
+    );
+    paint.texts
+}
+
 /// Advance the showing family dialog's `0x71C` for this recomposition; the
 /// frame loop commits it after present. No timer reaches the static while the
 /// dialog's first-paint slide runs.
@@ -509,7 +620,7 @@ pub(crate) fn encode_family_page(
         list_boxes,
         under,
         over_panel_art,
-        mut labels,
+        labels,
         over,
         cursor,
     } = frame;
@@ -555,18 +666,15 @@ pub(crate) fn encode_family_page(
         }
         (None, None) => GuiPaint::default(),
     };
-    if let Some(window) = panel.title {
-        labels.push(PaintLabel {
-            text: state.csf_text(title_key).into(),
-            rect: layout.right_panel.family_title_caption(layout.title),
-            align: ShellAlign::ART_CAPTION,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: Some(shell_reveal_path_a(window)),
-        });
-    }
-    labels.extend(panel.status);
+    let title = panel.title.map(|window| {
+        let rect = layout.right_panel.family_title_caption(layout.title);
+        let text = state.csf_text(title_key);
+        PanelStatic::title(text, rect, ShellAlign::ART_CAPTION, window)
+    });
     let mut text =
         shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
+    let status = panel.status.map(PanelStatic::status);
+    text.extend(paint_panel_statics(state, [title, status], scale));
     widgets.extend(over);
     text.extend(widgets.texts);
     draws.push(TexturedDraw {

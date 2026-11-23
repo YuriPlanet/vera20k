@@ -17,6 +17,8 @@
 //! ([`checkbox_face`], [`GuiStyle::dim_disabled_checkboxes`]), flag
 //! pictures (`Image` nodes) and host-coloured bars (`Bar` nodes).
 
+use std::borrow::Cow;
+
 use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
 
 use super::controls::{ControlPaint, dropdown_scroll_part, paint_control, push_popup_instances};
@@ -377,12 +379,12 @@ impl GuiStyle<'_> {
 }
 
 /// A node's caption: `Label` is a string key (shown as the key when
-/// missing), `Text` a literal.
-fn label_of(state: &AppState, gui: &Gui, node: NodeId) -> Option<String> {
+/// missing), `Text` a literal (borrowed, not copied).
+fn label_of<'g>(state: &AppState, gui: &'g Gui, node: NodeId) -> Option<Cow<'g, str>> {
     match gui.get(node, Prop::Label).ok().flatten() {
-        Some(Value::Text(key)) => Some(state.csf_label(key, key)),
+        Some(Value::Text(key)) => Some(Cow::Owned(state.csf_label(key, key))),
         _ => match gui.get(node, Prop::Text).ok().flatten() {
-            Some(Value::Text(text)) => Some(text.clone()),
+            Some(Value::Text(text)) => Some(Cow::Borrowed(text.as_str())),
             _ => None,
         },
     }
@@ -599,7 +601,7 @@ pub(crate) fn paint_gui_into(
         .zip(id(node))
         .and_then(|(text_of, id)| text_of(id))
     {
-        Some(text) => Some(text),
+        Some(text) => Some(Cow::Owned(text)),
         None => label_of(state, gui, node),
     };
     let mut stack = vec![root];

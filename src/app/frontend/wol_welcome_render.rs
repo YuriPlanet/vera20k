@@ -13,7 +13,7 @@ use anyhow::Result;
 
 use crate::app::AppState;
 use crate::app::diagnostics::shell_capture::PresentedShell;
-use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
+use crate::app::frontend::menu_page_render::{PanelStatic, paint_panel_statics};
 use crate::app::frontend::shell_pass::{
     ShellComposition, TexturedDraw, encode_shell_pass, software_cursor,
 };
@@ -25,8 +25,7 @@ use crate::app::frontend::skirmish_shell_render::{BoxLook, paint_shell_box};
 use crate::app::frontend::skirmish_shell_render::{WolLobbyPaint, paint_list_frame};
 use crate::app::shell_wol::WolPage;
 use crate::render::shell_paint::{
-    self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED,
-    push_entry_scaled,
+    self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, push_entry_scaled,
 };
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::ShellAlign;
@@ -420,7 +419,6 @@ pub(crate) fn render_wol_page(
     // once the page closed; the entry slide leaves the left side painted.
     let children = page_statics;
     let mut icon_sprites = Vec::new();
-    let mut labels = Vec::new();
     let mut welcome_texts = None;
     // `BS_GROUPBOX` frames (`0x0061E700`): the list's two rings, the top
     // edge eight pixels below the window top, on the window's last column
@@ -654,18 +652,12 @@ pub(crate) fn render_wol_page(
         (None, None) => {}
     }
     let title_key = painted.as_ref().and_then(Painted::title_key);
-    if let (Some(window), Some(key)) = (title_window, title_key) {
-        labels.push(PaintLabel {
-            text: state.csf_text(key).into(),
-            rect: page.title,
-            align: ShellAlign::PANEL_TITLE,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: Some(shell_reveal_path_a(window)),
-        });
-    }
-    labels.extend(status_label);
-    let mut text =
-        shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
+    let title = title_window.zip(title_key).map(|(window, key)| {
+        let text = state.csf_text(key);
+        PanelStatic::title(text, page.title, ShellAlign::PANEL_TITLE, window)
+    });
+    let status = status_label.map(PanelStatic::status);
+    let mut text = paint_panel_statics(state, [title, status], scale);
     text.extend(welcome_texts.into_iter().flatten());
 
     // The boxes over the backdrop: PUDLGBGN with MNBTTN buttons.
