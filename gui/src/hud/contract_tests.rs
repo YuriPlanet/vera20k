@@ -1,4 +1,4 @@
-use super::world::{MAX_TEMPLATES, StatusTemplate, World};
+use crate::status::{MAX_TEMPLATES, StatusTemplate, World};
 use super::*;
 
 const CLIENT: Origin = Origin::External(3);

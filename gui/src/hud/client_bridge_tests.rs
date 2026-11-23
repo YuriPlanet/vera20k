@@ -7,7 +7,7 @@
 //! it names nothing but `pub` items reachable from the crate root, as the
 //! bridge outside the crate would.
 
-use crate::hud::world::{
+use crate::status::{
     Amount, Band, Condition, Element, ObjectView, SourceId, StatusTemplate, World, WorldOp,
 };
 use crate::hud::{Hud, Layer, Origin, PaintCmd, PaintOp};

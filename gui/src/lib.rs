@@ -15,8 +15,10 @@ mod external_client_tests;
 pub mod gui;
 pub mod hud;
 pub mod node;
+pub mod origin;
 pub mod shell;
 pub mod spec;
+pub mod status;
 pub mod time;
 mod widget;
 

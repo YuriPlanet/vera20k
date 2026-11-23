@@ -11,7 +11,7 @@
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
-use vera20k_gui::hud::world::{Amount, Band, Element, ObjectView, SourceId, StatusTemplate, World};
+use vera20k_gui::status::{Amount, Band, Element, ObjectView, SourceId, StatusTemplate, World};
 use vera20k_gui::hud::{Hud, Layer, Origin};
 use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Refused, Rgba, Value};
 

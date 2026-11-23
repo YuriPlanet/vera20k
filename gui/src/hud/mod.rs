@@ -1,6 +1,5 @@
 //! A retained heads-up display: layered node trees over a world the host
-//! draws, plus status templates evaluated per object in that world
-//! ([`world`]).
+//! draws. Status templates evaluated per object are [`crate::status`].
 //!
 //! Everything a host passes in or reads out is plain data: handles, integers,
 //! strings and colours. No callbacks are kept and no GPU type appears, so a
@@ -19,12 +18,13 @@ mod contract_tests;
 mod client_bridge_tests;
 mod layout;
 mod paint;
-pub mod world;
 
 use std::collections::HashMap;
 
 use crate::node::{NodeId, NodeKind, Prop, Refused, Tree, Value};
 use crate::Rect;
+use crate::origin::others_share;
+pub use crate::origin::Origin;
 
 pub use paint::{PaintCmd, PaintOp};
 
@@ -55,31 +55,6 @@ impl Layer {
     }
 
     pub const ALL: [Layer; 5] = [Layer::Field, Layer::Panels, Layer::Overlay, Layer::Modal, Layer::System];
-}
-
-/// Who made a node, template or draw list.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Origin {
-    Host,
-    Layout,
-    Player,
-    External(u16),
-}
-
-/// What others than the host share of a limit: a quarter, rounded up, is
-/// the host's alone.
-fn others_share(limit: usize) -> usize {
-    limit - limit.div_ceil(4)
-}
-
-impl Origin {
-    fn share(self, limit: usize) -> usize {
-        if self == Origin::Host {
-            limit
-        } else {
-            others_share(limit)
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
