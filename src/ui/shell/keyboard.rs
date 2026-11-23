@@ -117,31 +117,69 @@ pub const CANCEL: u16 = 2;
 /// them); a press on the category face opens its list anywhere and takes the
 /// focus off the field. Every press on a command row selects it, and the
 /// wheel moves the list three rows a notch.
+///
+/// After them the statics that only paint (no help, so the pointer passes
+/// them by): the captions, the description, the capture field's key and its
+/// sunken frame. The texts sit at their rects' top left, like the rows; the
+/// combo face's caption is cut at its arrow reserve.
 fn spec() -> NodeSpec {
+    use crate::render::shell_text::ShellAlign;
     let focus = |node: NodeSpec| node.with(Prop::FocusOnPress, Value::Bool(true));
+    let align =
+        |node: NodeSpec, align: ShellAlign| node.with(Prop::Align, Value::Int(i32::from(align.0)));
+    let text = || align(NodeSpec::new(NodeKind::Text), ShellAlign::NONE);
     let controls = CONTROLS.map(|(control, id, help)| {
         let node = match control {
             KeyboardControl::Button(_) => NodeSpec::new(NodeKind::Button),
-            KeyboardControl::Commands => NodeSpec::new(NodeKind::List)
-                .with(Prop::RowCount, Value::Int(0))
+            // The rows are the category's command names (`Items`).
+            KeyboardControl::Commands => align(NodeSpec::new(NodeKind::List), ShellAlign::NONE)
+                .with(Prop::Items, Value::Items(Vec::new()))
                 .with(Prop::WheelStep, Value::Int(1)),
             KeyboardControl::Category => focus(NodeSpec::new(NodeKind::Combo))
                 .with(Prop::RowCount, Value::Int(0))
                 .with(Prop::OpenAnywhere, Value::Bool(true))
                 // The open list's wheel steps the selection and closes it,
                 // silently (the combo's own step: CBN_SELCHANGE, no cue).
-                .with(Prop::WheelPicks, Value::Bool(true)),
+                .with(Prop::WheelPicks, Value::Bool(true))
+                .with(Prop::TextInset, Value::Rect(combo_caption_inset())),
             KeyboardControl::Capture => focus(NodeSpec::new(NodeKind::Text)),
-            _ => NodeSpec::new(NodeKind::Text),
+            KeyboardControl::Description => NodeSpec::new(NodeKind::Text),
+            _ => text(),
         };
         node.id(id.into()).tooltip(help)
     });
     let cancel = NodeSpec::new(NodeKind::Button)
         .id(CANCEL.into())
         .with(Prop::Cancel, Value::Bool(true));
+    let labels = LABELS.map(|(id, key, centred)| {
+        let look = if centred {
+            ShellAlign::H_CENTER
+        } else {
+            ShellAlign::NONE
+        };
+        align(NodeSpec::new(NodeKind::Text), look)
+            .id(id.into())
+            .with(Prop::Label, Value::Text(key.into()))
+    });
     NodeSpec::new(NodeKind::Dialog)
         .children(controls)
         .child(cancel)
+        .children(labels)
+        .child(text().id(DESCRIPTION_TEXT.into()))
+        .child(text().id(CAPTURE_TEXT.into()))
+        .child(NodeSpec::new(NodeKind::Text).id(CAPTURE_FRAME.into()))
+}
+
+/// The combo face's caption rect as a `TextInset`: `combo_text_rect`'s,
+/// from the left inset to the arrow reserve.
+fn combo_caption_inset() -> RectPx {
+    use crate::ui::skirmish_shell::{COMBO_ARROW_RESERVE_W, COMBO_TEXT_LEFT_INSET};
+    RectPx::new(
+        COMBO_TEXT_LEFT_INSET,
+        0,
+        COMBO_ARROW_RESERVE_W - COMBO_TEXT_LEFT_INSET,
+        0,
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -243,10 +281,11 @@ impl KeyboardState {
         self.rows
             .sort_by_key(|i| self.commands[*i].name.to_lowercase());
         // 5FB60E targets static63B, not list4C8: initial selection stays absent.
-        let count = self.rows.len() as i32;
+        let names = self.rows.iter().map(|i| self.commands[*i].name.clone());
+        let names = Value::Items(names.collect());
         if let Some(node) = self.list_node() {
             let gui = self.ui.gui_mut();
-            let _ = gui.set(node, Prop::RowCount, Value::Int(count));
+            let _ = gui.set(node, Prop::Items, names);
             let _ = gui.set(node, Prop::Selected, Value::Int(-1));
             let _ = gui.set(node, Prop::Top, Value::Int(0));
         }
@@ -335,7 +374,7 @@ impl KeyboardState {
 }
 
 /// The captions (statics `0xFFFF`): key and whether centred.
-const LABELS: [(u16, &str, bool); 6] = [
+pub const LABELS: [(u16, &str, bool); 6] = [
     (0xFF00, "GUI:Category", false),
     (0xFF01, "GUI:Commands", false),
     (0xFF02, "GUI:PressShortcut", false),
@@ -344,7 +383,11 @@ const LABELS: [(u16, &str, bool); 6] = [
     (0xFF05, "GUI:CurrentShortcut", false),
 ];
 /// The description text inside group box `0x6E9`.
-const DESCRIPTION_TEXT: u16 = 0xFF06;
+pub const DESCRIPTION_TEXT: u16 = 0xFF06;
+/// The captured key's name in the capture field `0x4CD`.
+pub const CAPTURE_TEXT: u16 = 0xFF07;
+/// The capture field's sunken frame.
+pub const CAPTURE_FRAME: u16 = 0xFF08;
 
 #[derive(Debug, Clone, Copy)]
 pub struct KeyboardLayout {
@@ -452,8 +495,34 @@ impl KeyboardLayout {
             KeyboardButton::ResetAll => self.reset,
         }
     }
-    /// Control `id`'s rect.
+    /// Control or static `id`'s rect.
     pub fn rect(self, id: u16) -> Option<RectPx> {
+        let capture = self.capture;
+        match id {
+            DESCRIPTION_TEXT => return Some(self.description),
+            //620F60 ignores the supplied0x24 flags; it paints at the inset origin.
+            CAPTURE_TEXT => {
+                return Some(RectPx::new(
+                    capture.x + 4,
+                    capture.y + 4,
+                    capture.w - 8,
+                    capture.h - 8,
+                ));
+            }
+            //61ED86..88 adds one to the window extents before6208F0 expands border2.
+            CAPTURE_FRAME => {
+                return Some(RectPx::new(
+                    capture.x - 2,
+                    capture.y - 2,
+                    capture.w + 5,
+                    capture.h + 5,
+                ));
+            }
+            _ => {}
+        }
+        if let Some(index) = LABELS.iter().position(|label| label.0 == id) {
+            return Some(self.labels[index].1);
+        }
         Some(match KeyboardControl::from_id(id)? {
             KeyboardControl::Button(button) => self.button(button),
             KeyboardControl::Category => self.category,
