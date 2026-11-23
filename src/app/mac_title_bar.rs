@@ -16,8 +16,8 @@ use objc2_app_kit::{
 use objc2_foundation::{NSData, NSPoint, NSRect, NSSize, NSString};
 use winit::window::Window;
 
-/// The bar's colour, sRGB 18,18,20.
-const BAR_RGB: [f64; 3] = [18.0, 18.0, 20.0];
+/// The bar's colour, sRGB 6,6,6.
+const BAR_RGB: [f64; 3] = [6.0, 6.0, 6.0];
 /// The colour of title text after the logo, a light grey with a slight
 /// purple tint (sRGB).
 const TITLE_RGB: [f64; 3] = [168.0, 156.0, 192.0];
