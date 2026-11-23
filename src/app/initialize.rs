@@ -1143,6 +1143,7 @@ impl App {
                     player_layout_text: Vec::new(),
                     layout_edit: None,
                     added_parts: Default::default(),
+                    stock_parts: Default::default(),
                     added_part_huds: Default::default(),
                     command_bar_hud: Default::default(),
                     sidebar_chrome_hud: Default::default(),

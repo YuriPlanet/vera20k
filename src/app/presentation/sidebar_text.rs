@@ -15,6 +15,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+use crate::app::presentation::layout_parts::TextAlign;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarPart, SidebarView};
@@ -22,26 +23,38 @@ use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarPart, SidebarView};
 // only the sidebar-view adapter below. Re-exported for existing callers.
 pub use crate::render::sidebar_text::{build_credits_instances, credits_tint};
 /// Per-frame wrapper over [`build_credits_instances`] taking the sidebar view
-/// and the layout table's place for the counter: centred on the credits
-/// plate, `plate_width` wide, which in the original spans the sidebar. The
-/// observer's counter shows the match's time through `time_format`
-/// (`TXT_TIME_FORMAT_HOURS`).
+/// and the layout table's place for the counter: on the credits plate,
+/// `plate_width` wide, which in the original spans the sidebar. `shown` is
+/// the text when the layout's `[Money] Value=` is another value than the
+/// credits; with `None` the counter shows the credits, and the observer's
+/// the match's time through `time_format` (`TXT_TIME_FORMAT_HOURS`).
+/// `align` is `Align=`: the original centres the text on the plate.
 /// Residual: CreditsClass::Draw centres on the sidebar surface's width; the
 /// two differ only for a plate narrower than the 168 px surface (retail
 /// credits.shp is 168 px wide in SIDEC01.MIX and SIDEC02.MIX).
+#[allow(clippy::too_many_arguments)]
 pub fn build_sidebar_credits_instances(
     font: &BitFont,
     view: &SidebarView,
     spec: SidebarChromeLayoutSpec,
     plate_width: f32,
     time_format: &str,
+    shown: Option<&str>,
+    align: TextAlign,
     tint: [f32; 3],
     camera_offset: [f32; 2],
 ) -> Vec<SpriteInstance> {
-    let text = if view.observer.is_some() {
-        crate::render::sidebar_text::format_observer_clock(view.credits, time_format)
-    } else {
-        crate::render::sidebar_text::format_credits(view.credits)
+    let counted;
+    let text = match shown {
+        Some(text) => text,
+        None => {
+            counted = if view.observer.is_some() {
+                crate::render::sidebar_text::format_observer_clock(view.credits, time_format)
+            } else {
+                crate::render::sidebar_text::format_credits(view.credits)
+            };
+            counted.as_str()
+        }
     };
     let credits = spec.place(SidebarPart::Credits);
     let money = spec.place(SidebarPart::Money);
@@ -50,9 +63,25 @@ pub fn build_sidebar_credits_instances(
         w: plate_width,
         ..view.panel_rect
     };
+    // `build_credits_instances` centres on the rectangle it is given: a
+    // rectangle as wide as the text at the plate's left or right edge puts
+    // the text there.
+    let width = || font.text_width(text) as f32;
+    let plate = match align {
+        TextAlign::Center => plate,
+        TextAlign::Left => crate::ui::sidebar::Rect {
+            w: width(),
+            ..plate
+        },
+        TextAlign::Right => crate::ui::sidebar::Rect {
+            x: plate.x + plate.w.round() - width(),
+            w: width(),
+            ..plate
+        },
+    };
     build_credits_instances(
         font,
-        &text,
+        text,
         plate,
         [money[0], credits[1] + money[1]],
         tint,
@@ -188,6 +217,8 @@ mod tests {
             SidebarChromeLayoutSpec::stock(),
             168.0,
             "Time: %02d:%02d:%02d",
+            None,
+            TextAlign::Center,
             [1.0, 1.0, 0.0],
             [0.0, 0.0],
         );
@@ -225,6 +256,8 @@ mod tests {
                 SidebarChromeLayoutSpec::stock(),
                 168.0,
                 "%02d:%02d:%02d",
+                None,
+                TextAlign::Center,
                 [1.0, 1.0, 0.0],
                 [0.0, 0.0],
             )

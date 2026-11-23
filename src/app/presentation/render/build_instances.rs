@@ -1632,6 +1632,9 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     let layout_spec = state.match_state.match_presentation.sidebar_layout_spec;
     if let Some(v) = view.filter(|_| layout_spec.shows(crate::ui::sidebar::SidebarPart::Money)) {
         let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
+        // The layout's `[Money] Value=` and `Align=`, read when it was loaded.
+        let money = state.match_state.match_presentation.stock_parts.money;
+        let shown = crate::app::presentation::layout_parts::money_value_text(state);
         text_layers.status.extend(
             crate::app::presentation::sidebar_text::build_sidebar_credits_instances(
                 &state.renderer.bit_font,
@@ -1642,6 +1645,8 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
                     .and_then(|atlas| atlas.art(crate::ui::sidebar::SidebarPart::Credits, crate::ui::sidebar::ArtKey::Art, 0))
                     .map_or(layout_spec.sidebar_width, |plate| plate.pixel_size[0]),
                 &state.csf_text("TXT_TIME_FORMAT_HOURS"),
+                shown.as_deref(),
+                money.align,
                 crate::app::presentation::sidebar_text::credits_tint(theme),
                 [
                     state.match_state.input.camera_x,

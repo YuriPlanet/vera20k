@@ -513,7 +513,9 @@ impl MatchLayoutFile {
 
     /// Leave out every added button whose `Command=` is not `known`, with a
     /// line for each. The command lists belong to the input code, so the
-    /// loader asks them once the file is read.
+    /// loader asks them once the file is read. A built-in button's
+    /// `Command=` that is not `known`, and a built-in text's `Value=` or
+    /// `Align=` the game has not, get a line too and keep the built-in one.
     pub fn check_commands(&mut self, known: impl Fn(&str) -> bool) {
         let mut refused: Vec<LayoutProblem> = Vec::new();
         for layout in self.all_layouts_mut() {
@@ -561,6 +563,66 @@ impl MatchLayoutFile {
                 }
             }
             layout.added = kept.into();
+        }
+        // A built-in part's `Command=` other than its own, and a built-in
+        // text's `Value=` and `Align=`: the parts' own code reads them once
+        // the layout is loaded (`MatchLayout::text`), and one it cannot use
+        // keeps the built-in action or text. A key the part does not have
+        // in the built-in file is not checked here.
+        const ALIGNS: [&str; 3] = ["Left", "Center", "Right"];
+        for pair in &self.layouts {
+            for (table, layout) in pair.iter().enumerate() {
+                let original = &ORIGINAL[table];
+                for part in SidebarPart::STOCK_ORDER {
+                    let (Some(node), Some(built_in)) = (
+                        layout.tree.node(part.name()),
+                        original.tree.node(part.name()),
+                    ) else {
+                        continue;
+                    };
+                    for (key, kind) in [
+                        ("Command", LayoutProblemKind::UnknownCommand),
+                        ("Value", LayoutProblemKind::UnknownValue),
+                        ("Align", LayoutProblemKind::UnknownValue),
+                    ] {
+                        let values = node.values(key);
+                        for (at, value) in values.iter().enumerate() {
+                            // A file's own value, where it holds for its side.
+                            if !value.own
+                                || values[at + 1..]
+                                    .iter()
+                                    .any(|later| later.theme == value.theme)
+                            {
+                                continue;
+                            }
+                            let own = match value.theme {
+                                Some(theme) => built_in.text_for(key, theme),
+                                None => built_in.text(key),
+                            };
+                            let Some(own) = own else {
+                                continue;
+                            };
+                            let text = value.text.as_str();
+                            let usable = own.eq_ignore_ascii_case(text)
+                                || match key {
+                                    "Command" => known(text),
+                                    "Value" => TextValue::named(text).is_some(),
+                                    _ => {
+                                        ALIGNS.iter().any(|align| align.eq_ignore_ascii_case(text))
+                                    }
+                                };
+                            let problem = LayoutProblem {
+                                section: value.section.clone(),
+                                key: key.to_owned(),
+                                kind: kind.clone(),
+                            };
+                            if !usable && !refused.contains(&problem) {
+                                refused.push(problem);
+                            }
+                        }
+                    }
+                }
+            }
         }
         self.problems.extend(refused);
     }
@@ -2363,5 +2425,40 @@ mod tests {
             Some("radaryuri.pal"),
             1
         )));
+    }
+
+    /// A built-in button's `Command=` and the money's `Value=` and `Align=`
+    /// are read by the parts' own code; one the game has not is refused
+    /// and the built-in one kept. A tab's `Tab=` cannot change yet.
+    #[test]
+    fn a_layout_gives_the_built_in_parts_commands_and_texts() {
+        let mut file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Hud\nNod=Bad\n\
+              [Hud.Repair]\nCommand=StopObject\n\
+              [Hud.Sell]\nCommand=Levitate\n\
+              [Hud.Options]\nCommand=options\n\
+              [Hud.Buildings]\nTab=Defense\n\
+              [Hud.Money]\nValue=Time\nAlign=Left\n\
+              [Bad.Money]\nValue=Gold\nAlign=Middle\n",
+        );
+        file.check_commands(|name| name.eq_ignore_ascii_case("StopObject"));
+        assert_eq!(
+            problems(&file),
+            expect(&[
+                ("[Hud.Sell] Command", LayoutProblemKind::UnknownCommand),
+                ("[Hud.Buildings] Tab", LayoutProblemKind::NotYet),
+                ("[Bad.Money] Value", LayoutProblemKind::UnknownValue),
+                ("[Bad.Money] Align", LayoutProblemKind::UnknownValue),
+            ])
+        );
+        for gdi_positions in [true, false] {
+            let layout = file.for_side(Some("GDI"), gdi_positions).unwrap();
+            let text = |part, key| layout.text(part, key, SidebarTheme::Allied);
+            assert_eq!(text(SidebarPart::Repair, "Command"), Some("StopObject"));
+            assert_eq!(text(SidebarPart::Sell, "Command"), Some("Levitate"));
+            assert_eq!(text(SidebarPart::Diplomacy, "Command"), Some("Diplomacy"));
+            assert_eq!(text(SidebarPart::Money, "Value"), Some("Time"));
+            assert_eq!(text(SidebarPart::Money, "Align"), Some("Left"));
+        }
     }
 }

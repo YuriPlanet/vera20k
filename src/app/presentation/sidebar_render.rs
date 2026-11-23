@@ -278,6 +278,21 @@ pub(crate) fn refresh_added_parts(state: &mut AppState) {
         None if !kept.is_empty() => *kept = Default::default(),
         _ => {}
     }
+    // What the layout gives the built-in parts, read again only when the
+    // layout or the side's pictures change.
+    use crate::app::presentation::layout_parts::StockParts;
+    let theme = current_sidebar_theme(state);
+    let original = crate::ui::match_layout::MatchLayout::original(gdi_positions(state));
+    let kept = &state.match_state.match_presentation.stock_parts;
+    let stock = match side_layout(state).filter(|_| !map_picture) {
+        Some(layout) if kept.is_read_from(layout.added(), theme) => None,
+        Some(layout) => Some(StockParts::read(layout, original, theme)),
+        None if kept.is_original() => None,
+        None => Some(StockParts::default()),
+    };
+    if let Some(stock) = stock {
+        state.match_state.match_presentation.stock_parts = stock;
+    }
 }
 
 fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {

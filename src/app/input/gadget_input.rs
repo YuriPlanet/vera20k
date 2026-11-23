@@ -704,6 +704,23 @@ fn apply_gadget_result(state: &mut AppState, result: u16) {
         (view.layout.side2_tile_count, view.items.len())
     });
     let id = result & !(RESULT_BUTTON | RESULT_RIGHT);
+    // A built-in button the side's layout gives another `Command=` gives
+    // that command, as a button the layout adds would; its look stays.
+    let stock = match id {
+        ID_DIPLOMACY => Some(sidebar::SidebarPart::Diplomacy),
+        ID_OPTIONS => Some(sidebar::SidebarPart::Options),
+        ID_REPAIR => Some(sidebar::SidebarPart::Repair),
+        ID_SELL => Some(sidebar::SidebarPart::Sell),
+        ID_SCROLL_DOWN => Some(sidebar::SidebarPart::ScrollDown),
+        ID_SCROLL_UP => Some(sidebar::SidebarPart::ScrollUp),
+        _ => None,
+    };
+    if let Some(command) = stock
+        .and_then(|part| state.match_state.match_presentation.stock_parts.commands[part as usize])
+    {
+        crate::app::presentation::layout_parts::run(state, command, (result & RESULT_RIGHT) != 0);
+        return;
+    }
     match id {
         ID_TIMER_DOCK => state
             .match_state

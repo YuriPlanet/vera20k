@@ -24,6 +24,8 @@ use crate::render::bit_font::BitFont;
 use crate::render::hud_paint::{HudPaint, HudSpace, Material, NodeDraw, Picture};
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::ui::added_parts::{AddedKind, Holder, TextValue};
+use crate::ui::match_layout::MatchLayout;
+use crate::ui::sidebar::{SidebarPart, SidebarTheme};
 
 /// What a layout button's `Command=` names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +44,129 @@ pub(crate) fn command_named(name: &str) -> Option<ButtonCommand> {
         .position(|bar| bar.eq_ignore_ascii_case(name))
         .map(ButtonCommand::Bar)
         .or_else(|| crate::app::input::hotkeys::command_named(name).map(ButtonCommand::Hotkey))
+}
+
+/// Where a built-in text sits in its part's width: `Align=`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum TextAlign {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
+impl TextAlign {
+    /// The alignment a layout file names, without regard to capitals.
+    fn named(name: &str) -> Option<Self> {
+        [
+            ("Left", Self::Left),
+            ("Center", Self::Center),
+            ("Right", Self::Right),
+        ]
+        .into_iter()
+        .find(|(known, _)| known.eq_ignore_ascii_case(name))
+        .map(|(_, align)| align)
+    }
+}
+
+/// What the money counter shows and where: `[Layout.Money] Value=` and
+/// `Align=`. The original's is the credits, centred on the plate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MoneyText {
+    pub value: TextValue,
+    pub align: TextAlign,
+}
+
+impl Default for MoneyText {
+    fn default() -> Self {
+        Self {
+            value: TextValue::Credits,
+            align: TextAlign::Center,
+        }
+    }
+}
+
+/// What the local side's layout gives the built-in parts' own code, read
+/// out of it once when the layout or the side changes
+/// (`sidebar_render::refresh_added_parts`), so a frame or a click reads an
+/// array and no name.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct StockParts {
+    /// The layout these were read from, by its list of added parts (each
+    /// read layout has its own, which this clone keeps alive), and the
+    /// side's pictures they were read for. `None`: the original's.
+    read_from: Option<(
+        std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
+        SidebarTheme,
+    )>,
+    /// The command each built-in button gives instead of its own, by
+    /// `SidebarPart as usize`; `None` keeps its own action.
+    pub commands: [Option<ButtonCommand>; 19],
+    pub money: MoneyText,
+}
+
+impl StockParts {
+    /// What `layout` gives the built-in parts for the side whose pictures
+    /// are `theme`. `original` is the position table `layout` starts from:
+    /// a button's `Command=` that says what the original's does keeps its
+    /// own action, and a name the game has no command for (refused by
+    /// `MatchLayoutFile::check_commands`) keeps it too.
+    pub(crate) fn read(layout: &MatchLayout, original: &MatchLayout, theme: SidebarTheme) -> Self {
+        let mut commands = [None; 19];
+        for part in SidebarPart::STOCK_ORDER {
+            let (Some(command), Some(own)) = (
+                layout.text(part, "Command", theme),
+                original.text(part, "Command", theme),
+            ) else {
+                continue;
+            };
+            if !command.eq_ignore_ascii_case(own) {
+                commands[part as usize] = command_named(command);
+            }
+        }
+        let money = MoneyText {
+            value: layout
+                .text(SidebarPart::Money, "Value", theme)
+                .and_then(TextValue::named)
+                .unwrap_or(TextValue::Credits),
+            align: layout
+                .text(SidebarPart::Money, "Align", theme)
+                .and_then(TextAlign::named)
+                .unwrap_or_default(),
+        };
+        Self {
+            read_from: Some((layout.added().clone(), theme)),
+            commands,
+            money,
+        }
+    }
+
+    /// Whether these were read from the layout whose list of added parts
+    /// is `added`, for the side whose pictures are `theme`.
+    pub(crate) fn is_read_from(
+        &self,
+        added: &std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
+        theme: SidebarTheme,
+    ) -> bool {
+        self.read_from
+            .as_ref()
+            .is_some_and(|(read, of)| std::sync::Arc::ptr_eq(read, added) && *of == theme)
+    }
+
+    /// Whether these are the original interface's: no layout's.
+    pub(crate) fn is_original(&self) -> bool {
+        self.read_from.is_none()
+    }
+}
+
+/// The money counter's text when the layout has it show another value
+/// than the credits; `None` for the credits, which the counter formats
+/// itself (an observer's shows the match's time).
+pub(crate) fn money_value_text(state: &AppState) -> Option<String> {
+    match state.match_state.match_presentation.stock_parts.money.value {
+        TextValue::Credits => None,
+        value => Some(value_text(state, value)),
+    }
 }
 
 /// A button's padding around its label, on each side.
@@ -275,17 +400,24 @@ pub(crate) fn clicked(state: &mut AppState, index: usize, right: bool) {
             AddedKind::Button { command, .. } => command_named(command),
             AddedKind::Text { .. } | AddedKind::Group { .. } | AddedKind::CameoGrid { .. } => None,
         });
+    if let Some(command) = command {
+        run(state, command, right);
+    }
+}
+
+/// Give `command` as its key or its command-bar button would: an added
+/// button's, or a built-in button's the layout gives another command.
+pub(crate) fn run(state: &mut AppState, command: ButtonCommand, right: bool) {
     match command {
-        Some(ButtonCommand::Bar(id)) => {
+        ButtonCommand::Bar(id) => {
             crate::app::input::dispatch::dispatch_command_bar(state, id, right)
         }
-        Some(ButtonCommand::Hotkey(command)) => crate::app::input::dispatch::handle_hotkey_pressed(
+        ButtonCommand::Hotkey(command) => crate::app::input::dispatch::handle_hotkey_pressed(
             state,
             crate::app::input::hotkeys::HotkeyResolution::Command(command),
             // The key matters only to the developer chords of an unbound key.
             winit::keyboard::KeyCode::F24,
         ),
-        None => {}
     }
 }
 
@@ -587,6 +719,48 @@ mod tests {
             .filter(|part| matches!(part.kind, AddedKind::Button { .. }))
             .count();
         assert_eq!(buttons, 2);
+    }
+
+    /// A built-in button's `Command=` other than its own gives that command;
+    /// one the game has not keeps the button's own action. The money's
+    /// `Value=` and `Align=` are read once with them.
+    #[test]
+    fn a_layout_gives_the_built_in_buttons_commands_and_the_money_its_text() {
+        use crate::ui::match_layout::{MatchLayout, MatchLayoutFile};
+        let mut file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Hud\n\
+              [Hud.Repair]\nCommand=StopObject\n\
+              [Hud.Sell]\nCommand=Levitate\n\
+              [Hud.ScrollUp]\nCommand=guard\n\
+              [Hud.Options]\nCommand=Options\n\
+              [Hud.Money]\nValue=Time\nAlign=Left\n",
+        );
+        file.check_commands(|name| command_named(name).is_some());
+        let layout = file.for_side(Some("GDI"), true).unwrap();
+        let stock = StockParts::read(layout, MatchLayout::original(true), SidebarTheme::Allied);
+        let mut expected = [None; 19];
+        expected[SidebarPart::Repair as usize] =
+            Some(ButtonCommand::Hotkey(HotkeyCommand::StopObject));
+        expected[SidebarPart::ScrollUp as usize] = Some(ButtonCommand::Bar(6));
+        assert_eq!(stock.commands, expected);
+        assert_eq!(
+            stock.money,
+            MoneyText {
+                value: TextValue::Time,
+                align: TextAlign::Left,
+            }
+        );
+        assert!(stock.is_read_from(layout.added(), SidebarTheme::Allied));
+        assert!(!stock.is_read_from(layout.added(), SidebarTheme::Soviet));
+
+        // The original interface gives every button its own action and the
+        // money the credits, centred.
+        for gdi_positions in [true, false] {
+            let original = MatchLayout::original(gdi_positions);
+            let stock = StockParts::read(original, original, SidebarTheme::Soviet);
+            assert_eq!(stock.commands, [None::<ButtonCommand>; 19]);
+            assert_eq!(stock.money, MoneyText::default());
+        }
     }
 
     const CAMERA: [f32; 2] = [100.5, 20.0];

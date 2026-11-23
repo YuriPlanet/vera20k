@@ -275,6 +275,9 @@ pub(crate) struct MatchPresentationState {
     pub(crate) layout_edit: Option<crate::app::input::layout_edit::LayoutEditState>,
     /// The buttons and texts the local side's layout adds.
     pub(crate) added_parts: std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
+    /// What the local side's layout gives the built-in parts' own code:
+    /// the buttons' commands and the money counter's value and alignment.
+    pub(crate) stock_parts: crate::app::presentation::layout_parts::StockParts,
     /// Their drawing trees, brought to `added_parts` as each frame draws.
     pub(crate) added_part_huds: crate::app::presentation::layout_parts::PartsHuds,
     /// The radar's minimap as a host area of a tree.
