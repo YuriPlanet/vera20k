@@ -46,8 +46,10 @@ collection. The pre-release writer at `eb05f451e` uses layout
 `0xFD54FFFF`. Its saved object images predate the alternate-theater ART
 flag and convert with that flag off. The `41f140f93` writer's layout
 `0xCB545137` predates the fixed high-bridge deck level and Fly's EMP spin;
-its bridge cells convert with no fixed deck. The `6d6caa108` writer covers
-direct loading of layout `0xCADF6067`.
+its bridge cells convert with no fixed deck. The `6d6caa108` writer's layout
+`0xCADF6067` predates a map House's Ares `Degrades=`; its Houses convert with
+none and keep their country's answer. The `ffe8b25af` writer covers direct
+loading of layout `0xD6C75D57`.
 
 Run the menu and compatibility tests with this command.
 
