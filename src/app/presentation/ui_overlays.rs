@@ -120,6 +120,54 @@ impl HudBomb {
 }
 
 impl HudFacts {
+    /// The facts a record the view could not reach still answers with: the
+    /// coordinates the control-group labels and the radial rings place
+    /// objects by, and a Structure's own answers. The draw passes such a
+    /// record by, but the passes that read every object (the control-group
+    /// labels, the radial rings) choose by them, so they keep their input.
+    pub(crate) fn outside_view(
+        entity: &crate::sim::game_entity::GameEntity,
+        at: &crate::app::presentation::frame::Capture<'_>,
+        location: DriveCoord,
+    ) -> Self {
+        let sim = at.sim;
+        let rules = at.rules();
+        let object = at.object_type(entity);
+        // `ground_pose::object_get_coords`: its centre, and the same height
+        // `location` already holds.
+        let center = crate::sim::movement::ground_pose::object_center_xy(entity);
+        Self {
+            get_coords: DriveCoord {
+                x: center[0],
+                y: center[1],
+                z: location.z,
+            },
+            location,
+            structure: (entity.category() == EntityCategory::Structure).then(|| StructureHud {
+                sensor_range: object.map_or(0, |object| {
+                    object.building_sensor_range(
+                        entity.gap_supercharged(),
+                        crate::sim::combat::combat_weapon::current_weapon(
+                            entity,
+                            object,
+                            sim.entities(),
+                            rules,
+                            sim.interner(),
+                        )
+                        .map(|weapon| weapon.range_leptons),
+                        rules.ares(),
+                    )
+                }),
+                foundation_leptons: entity.seldom.type_facts.foundation().dimensions_leptons(),
+                toggled_off: entity.ares_toggled_off(),
+                shows_production_to_observer: at
+                    .observer_id
+                    .is_some_and(|viewer| entity.shows_production_to(viewer)),
+            }),
+            more: None,
+        }
+    }
+
     /// `location` is `ground_pose::object_location` on the live map.
     pub(crate) fn capture(
         entity: &crate::sim::game_entity::GameEntity,

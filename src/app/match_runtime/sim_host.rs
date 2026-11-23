@@ -118,6 +118,9 @@ pub(crate) struct SimHost {
     /// Whether frames capture VERA's Convenience Help status rows
     /// ([`Self::show_status_rows`]); off, the capture skips them.
     status_rows: bool,
+    /// The camera and the pass-by window around it, published each pass:
+    /// the view the next capture answers for.
+    view: Option<([f32; 2], crate::app::presentation::instances::PassByWindow)>,
     /// Global B04474 and its comparison timer (`FrameChecksumState`):
     /// process state that launch and load retain, written and compared only
     /// inside a multiplayer tick.
@@ -413,6 +416,36 @@ impl SimHost {
         }
     }
 
+    /// The camera and the pass-by window around it, for the frame's screen
+    /// answers. A camera that leaves the standing frame's scope drops that
+    /// frame, so the next read captures one for the new view.
+    pub(crate) fn set_view(
+        &mut self,
+        camera: [f32; 2],
+        window: crate::app::presentation::instances::PassByWindow,
+    ) {
+        self.view = Some((camera, window));
+        if !self.lent
+            && self
+                .frame
+                .get()
+                .is_some_and(|frame| !frame.covers_camera(camera))
+        {
+            self.forget_frame();
+        }
+    }
+
+    /// The camera positions the standing frame's scope still covers, while a
+    /// tick is lent: the camera may not leave them, or the picture would
+    /// show objects the frame did not answer for. A home world drops its
+    /// frame instead, so the camera is free there.
+    pub(crate) fn frame_camera_limit(&self) -> Option<([f32; 2], [f32; 2])> {
+        if !self.lent {
+            return None;
+        }
+        self.frame.get().and_then(|frame| frame.camera_range())
+    }
+
     /// What drawing reads of the objects: the frame the lent tick started
     /// from, else the home world's, captured on its first read since the
     /// last write.
@@ -427,6 +460,7 @@ impl SimHost {
                 runtime,
                 &self.sidebar_types,
                 self.status_rows,
+                self.view.map(|(camera, window)| (window, camera)),
             ));
             let mut costs = self.snapshot_costs.get();
             costs.capture += started.elapsed();

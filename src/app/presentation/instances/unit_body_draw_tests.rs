@@ -654,6 +654,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
             &scene.runtime,
             &Default::default(),
             false,
+            None,
         )
         .object(plane.stable_id())
         .cloned()

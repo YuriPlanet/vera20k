@@ -496,6 +496,7 @@ fn render_original_body_pixels(
                 &runtime,
                 &Default::default(),
                 false,
+                None,
             );
             let gi_record = presented.object(1).unwrap();
             let before = sim.state_hash();

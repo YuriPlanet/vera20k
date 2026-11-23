@@ -219,6 +219,7 @@ impl Scene {
             &self.runtime,
             &Default::default(),
             false,
+            None,
         );
         let order = NativeDisplayOrder::from_world(&sim, None);
         let voxel_images = RefCell::new(VoxelImageCache::default());

@@ -138,6 +138,7 @@ fn emit(
         &scene.runtime,
         &Default::default(),
         false,
+        None,
     );
     let record = frame.object(plant).unwrap();
     let order = NativeDisplayOrder::from_world(&sim, None);

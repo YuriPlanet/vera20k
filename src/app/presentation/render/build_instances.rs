@@ -361,11 +361,24 @@ pub(super) fn build_world_instances(
         for member in frame.display_members(&runtime.simulation).objects() {
             let objects = &mut planned_objects;
             let slot = match member.kind {
-                ObjectKind::Record { slot, span } if window.reaches(span) => slot,
+                ObjectKind::Record { slot, span }
+                    if window.reaches(span)
+                        && frame
+                            .record_at(slot)
+                            .is_some_and(|entity| entity.is_scoped()) =>
+                {
+                    slot
+                }
                 ObjectKind::Record { slot, .. } => {
                     // The cross-check runs the visitors on the passed-by
-                    // object into a scratch list: debug builds only.
-                    if cfg!(debug_assertions) {
+                    // object into a scratch list: debug builds only. A
+                    // record the view could not reach has no screen answers
+                    // to plan with, so it is not asked.
+                    if cfg!(debug_assertions)
+                        && frame
+                            .record_at(slot)
+                            .is_some_and(|entity| entity.is_scoped())
+                    {
                         let draws_nothing = frame
                             .record_at(slot)
                             .zip(instances::layer_draw_band(member.layer))

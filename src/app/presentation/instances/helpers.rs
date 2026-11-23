@@ -930,6 +930,15 @@ impl PassByWindow {
         )
     }
 
+    /// The camera positions this window still covers: the camera it was
+    /// built for, by the margin the window admits with.
+    pub(crate) fn camera_range(&self, camera: [f32; 2]) -> ([f32; 2], [f32; 2]) {
+        (
+            [camera[0] - Self::MARGIN, camera[1] - Self::MARGIN],
+            [camera[0] + Self::MARGIN, camera[1] + Self::MARGIN],
+        )
+    }
+
     /// Whether `span` reaches the window.
     pub(crate) fn reaches(
         &self,

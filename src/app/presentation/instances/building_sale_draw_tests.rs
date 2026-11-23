@@ -204,6 +204,7 @@ fn gate_piece(
         runtime,
         &Default::default(),
         false,
+        None,
     );
     let input = ShpInputs {
         runtime,
