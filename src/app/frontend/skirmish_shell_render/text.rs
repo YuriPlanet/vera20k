@@ -164,7 +164,6 @@ pub(super) fn combo_dropdown_text_fit_width(content: RectPx, scale: ShellScale) 
         .max(0.0) as u32
 }
 
-/// A list row's text inset from its left edge, grown with the page.
 pub(super) fn combo_face_text_fit_width(rect: RectPx, scale: ShellScale) -> u32 {
     // The truncation test runs on gamemd's glyph metrics, so the stretched face's
     // width is taken back to the units the caption is centred in.
