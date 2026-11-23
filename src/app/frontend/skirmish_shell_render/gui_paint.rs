@@ -35,6 +35,7 @@ use crate::render::bit_font::BitFont;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalButton, ModalDepths};
 use crate::render::shell_text::{self, ShellTextDraw};
+use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::shell::checkbox::CheckboxFace;
@@ -96,6 +97,11 @@ pub(crate) enum ButtonArt {
     /// pressed or not, and the normal colour when disabled (the saved-file
     /// browsers over Skirmish): only the art shows either.
     PanelCentred,
+    /// [`Self::Panel`]'s art pushed only while the press is held with the
+    /// pointer still on it (612B70), with the type-2 caption of
+    /// [`Self::Side`] in the label colour (the front-end Keyboard page's
+    /// Back).
+    PanelType2,
     /// [`Self::Panel`] on a family page's column: the SDBTNANM art on the
     /// main-menu chrome ([`GuiPaint::column`]), fitted right-anchored to the
     /// cell, and the type-1 caption inset in the window rect.
@@ -138,6 +144,7 @@ impl ButtonArt {
             | ButtonArt::ModalCentred
             | ButtonArt::ModalSqueezed
             | ButtonArt::ModalType2
+            | ButtonArt::PanelType2
             | ButtonArt::Side => held,
             _ => captured,
         }
@@ -159,7 +166,7 @@ impl ButtonArt {
                 centred,
             ),
             (ButtonArt::ModalCentred | ButtonArt::PanelCentred, _) => (rect, centred),
-            (ButtonArt::ModalType2 | ButtonArt::Side, _) => {
+            (ButtonArt::ModalType2 | ButtonArt::PanelType2 | ButtonArt::Side, _) => {
                 (super::pause_menu::button_text_rect(rect, pressed), centred)
             }
             (_, Some(align)) => (rect, align),
@@ -214,6 +221,11 @@ pub(crate) enum ComboArt {
     /// No face: the host paints it (VERA's roster cells); only an open
     /// list paints.
     Host,
+    /// [`Self::Plain`]'s face; its open list (the host's rows, all shown,
+    /// no scrollbar) in the owner-draw two-pixel bevel round its
+    /// `PopupRect`, the row under the pointer lit, else the selection
+    /// (A3's category list).
+    Beveled,
 }
 
 /// Share the right-panel heading's text width while keeping the retail
@@ -291,6 +303,9 @@ pub(crate) struct GuiStyle<'a> {
     /// A disabled checkbox shows its face dimmed (`0x006163A0`); off, a
     /// checkbox's `Enabled` greys only its caption.
     pub(crate) dim_disabled_checkboxes: bool,
+    /// A text that reveals as a kind-1 static does by its `Id` (a heading),
+    /// in place of its colour.
+    pub(crate) reveal_of: Option<&'a dyn Fn(i32) -> Option<PathAReveal>>,
 }
 
 impl Default for GuiStyle<'_> {
@@ -316,6 +331,7 @@ impl Default for GuiStyle<'_> {
             side: None,
             frame_of: None,
             dim_disabled_checkboxes: false,
+            reveal_of: None,
         }
     }
 }
@@ -659,7 +675,10 @@ pub(crate) fn paint_gui_into(
                     }
                     // The rest are the shell control art's.
                     (_, None) => continue,
-                    (ButtonArt::Panel | ButtonArt::PanelCentred, Some(atlas)) => {
+                    (
+                        ButtonArt::Panel | ButtonArt::PanelCentred | ButtonArt::PanelType2,
+                        Some(atlas),
+                    ) => {
                         super::chrome::push_right_panel_button_shp(
                             &mut paint.controls,
                             atlas,
@@ -978,10 +997,26 @@ pub(crate) fn paint_gui_into(
             NodeKind::Text => {
                 if let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) {
                     let at = inset(gui, node, rect, scale).unwrap_or(rect);
-                    let rgb = text_rgb(gui, node, enabled, style.rgb, None);
-                    paint
-                        .texts
-                        .push(text(state, &label, at, align, glyph, rgb, depth));
+                    let reveal = style
+                        .reveal_of
+                        .zip(id(node))
+                        .and_then(|(reveal_of, id)| reveal_of(id));
+                    paint.texts.push(match reveal {
+                        Some(reveal) => shell_text::draw_in_rect_path_a_scaled(
+                            font,
+                            &label,
+                            rect_to_text_rect(at),
+                            align,
+                            [0.0; 2],
+                            depth,
+                            reveal,
+                            glyph,
+                        ),
+                        None => {
+                            let rgb = text_rgb(gui, node, enabled, style.rgb, None);
+                            text(state, &label, at, align, glyph, rgb, depth)
+                        }
+                    });
                 }
             }
             // A flag or insignia PCX (`Art`) from the shell art's flags,
@@ -1254,6 +1289,57 @@ fn paint_combo(
     }
     let Some(drop_down) = drop_down else { return };
     let popup = drop_down.popup;
+    if style.combos == ComboArt::Beveled {
+        let rows_rect = popup.rect;
+        let frame = RectPx::new(
+            rows_rect.x - 2,
+            rows_rect.y - 2,
+            rows_rect.w + 4,
+            rows_rect.h + 4,
+        );
+        super::chrome::push_solid_rect(
+            &mut paint.popup,
+            atlas,
+            frame,
+            super::SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
+            SHELL_DROPDOWN_DEPTH,
+        );
+        let row_h = crate::ui::skirmish_shell::DropdownMetrics::scaled(scale).row_h;
+        let lit = drop_down.hot_row.or(selected);
+        for (index, (item, _)) in rows.iter().enumerate() {
+            let row = RectPx::new(
+                rows_rect.x,
+                rows_rect.y + index as i32 * row_h,
+                rows_rect.w,
+                row_h,
+            );
+            if lit == Some(index) {
+                super::chrome::push_solid_rect(
+                    &mut paint.popup,
+                    atlas,
+                    row,
+                    OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+                    SHELL_DROPDOWN_DEPTH - 0.00001,
+                );
+            }
+            paint.popup_texts.push(text(
+                state,
+                item,
+                RectPx::new(row.x + 3, row.y, row.w - 6, row.h),
+                ShellAlign::V_CENTER,
+                scale.factor(),
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_DROPDOWN_TEXT_DEPTH,
+            ));
+        }
+        super::chrome::push_ownerdraw_two_pixel_bevel_frame(
+            &mut paint.popup,
+            atlas,
+            frame,
+            SHELL_DROPDOWN_DEPTH - 0.00002,
+        );
+        return;
+    }
     if style.combos == ComboArt::Framed {
         // `0x105`'s list is no `ComboDropWin`: a one-pixel outline, the
         // selection lit wherever the pointer is, its rows uncut.
