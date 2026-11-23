@@ -129,6 +129,8 @@ pub(crate) fn draw_sidebar_chrome(
     // One part after another in the layout's order, so a later part lies over
     // an earlier one; a part the layout leaves out draws nothing.
     for part in spec.parts_in_order() {
+        // Each part a named node of the tree, its pieces its children.
+        inst.part(part.name());
         match part {
             // DrawCreditsSHPBackground 6D0E60.
             SidebarPart::Credits => {

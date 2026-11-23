@@ -19,8 +19,10 @@ use crate::render::hud_paint::{HudPaint, HudSpace, NodeDraw};
 /// The pieces' tree, kept from frame to frame, and the instances it draws.
 pub(crate) struct PictureHud {
     hud: Hud,
-    /// The picture nodes, in drawing order.
-    nodes: Vec<NodeId>,
+    /// The part and picture nodes, in drawing order.
+    nodes: Vec<Entry>,
+    /// The part this frame's pictures go into, from [`Self::part`].
+    part: Option<NodeId>,
     /// How many of `nodes` this frame has reached.
     used: usize,
     /// The tree's revision at its last layout.
@@ -35,12 +37,23 @@ impl Default for PictureHud {
         Self {
             hud: Hud::new(usize::MAX, InputPolicy::default()),
             nodes: Vec::new(),
+            part: None,
             used: 0,
             laid_out: 0,
             draws: HashMap::new(),
             paint: HudPaint::default(),
         }
     }
+}
+
+/// One node of the tree: a named part, or a picture inside `parent`.
+#[derive(Clone, Copy, Debug)]
+struct Entry {
+    node: NodeId,
+    /// A part's name; `None` for a picture.
+    name: Option<&'static str>,
+    /// A picture's part.
+    parent: Option<NodeId>,
 }
 
 /// The `Art` every node names; which picture it is, its [`NodeDraw`] says.
@@ -60,7 +73,49 @@ impl PictureHud {
     /// the last frame's.
     pub(crate) fn begin(&mut self) {
         self.used = 0;
+        self.part = None;
         self.draws.clear();
+    }
+
+    /// Start the part `name` (its `veraui.ini` key, the node's `Name`): the
+    /// pictures added from here until the next part are its children, so
+    /// the part can be found by its name and hidden or restyled as one. A
+    /// part draws nothing itself; its pictures keep their places and order.
+    pub(crate) fn part(&mut self, name: &'static str) {
+        let node = match self.nodes.get(self.used) {
+            Some(entry) if entry.name == Some(name) => entry.node,
+            _ => {
+                self.forget_from(self.used);
+                let Ok(node) = self
+                    .hud
+                    .create_root(Layer::Panels, Origin::Host, NodeKind::Panel)
+                else {
+                    self.part = None;
+                    return;
+                };
+                let _ = self.hud.set(node, Prop::Name, Value::Text(name.to_owned()));
+                self.nodes.push(Entry {
+                    node,
+                    name: Some(name),
+                    parent: None,
+                });
+                node
+            }
+        };
+        self.used += 1;
+        self.part = Some(node);
+    }
+
+    /// The node of the part `name`, while this frame has it.
+    #[cfg(test)]
+    pub(crate) fn find(&self, name: &str) -> Option<NodeId> {
+        self.hud.find(Origin::Host, name)
+    }
+
+    /// The tree, for a host that hides or restyles a part.
+    #[cfg(test)]
+    pub(crate) fn hud_mut(&mut self) -> &mut Hud {
+        &mut self.hud
     }
 
     /// The frame's next piece: `rect` in the host's layout space, drawn as
@@ -96,7 +151,8 @@ impl PictureHud {
     pub(crate) fn rects(&self) -> Vec<Rect> {
         self.nodes
             .iter()
-            .filter_map(|&node| match self.hud.get(node, Prop::Rect) {
+            .filter(|entry| entry.name.is_none())
+            .filter_map(|entry| match self.hud.get(entry.node, Prop::Rect) {
                 Ok(Some(Value::Rect(rect))) => Some(*rect),
                 _ => None,
             })
@@ -107,16 +163,24 @@ impl PictureHud {
     fn node(&mut self, rect: Rect) -> Option<NodeId> {
         let rect = Rect::new(rect.x, rect.y, rect.w.max(1), rect.h.max(1));
         let node = match self.nodes.get(self.used) {
-            Some(&node) => node,
-            None => {
-                let node = self
-                    .hud
-                    .create_root(Layer::Panels, Origin::Host, NodeKind::Image)
-                    .ok()?;
+            Some(entry) if entry.name.is_none() && entry.parent == self.part => entry.node,
+            _ => {
+                self.forget_from(self.used);
+                let node = match self.part {
+                    Some(part) => self.hud.create(NodeKind::Image, part, Origin::Host).ok()?,
+                    None => self
+                        .hud
+                        .create_root(Layer::Panels, Origin::Host, NodeKind::Image)
+                        .ok()?,
+                };
                 let _ = self
                     .hud
                     .set(node, Prop::Art, Value::Text(PICTURE.to_owned()));
-                self.nodes.push(node);
+                self.nodes.push(Entry {
+                    node,
+                    name: None,
+                    parent: self.part,
+                });
                 node
             }
         };
@@ -129,8 +193,9 @@ impl PictureHud {
     }
 
     fn forget_from(&mut self, kept: usize) {
-        for &node in self.nodes.get(kept..).unwrap_or_default() {
-            let _ = self.hud.remove(node);
+        // A removed part takes its pictures with it; theirs are then gone.
+        for entry in self.nodes.get(kept..).unwrap_or_default() {
+            let _ = self.hud.remove(entry.node);
         }
         self.nodes.truncate(kept);
     }
@@ -181,6 +246,31 @@ mod tests {
         hud.picture(covering(7.0, 0.0, 1.0, 1.0), quad(7.0));
         assert_eq!(hud.finish().len(), 1);
         assert_eq!(hud.rects(), [Rect::new(7, 0, 1, 1)]);
+    }
+
+    #[test]
+    fn parts_name_their_pictures_without_moving_them_and_hide_as_one() {
+        let mut hud = PictureHud::default();
+        let frame = |hud: &mut PictureHud, with_middle: bool| -> Vec<f32> {
+            hud.begin();
+            hud.part("Top");
+            hud.picture(covering(1.0, 0.0, 3.0, 4.0), quad(1.0));
+            hud.picture(covering(2.0, 0.0, 3.0, 4.0), quad(2.0));
+            if with_middle {
+                hud.part("Middle");
+                hud.picture(covering(3.0, 0.0, 3.0, 4.0), quad(3.0));
+            }
+            hud.part("Power");
+            hud.picture(covering(4.0, 0.0, 3.0, 4.0), quad(4.0));
+            hud.finish().iter().map(|q| q.position[0]).collect()
+        };
+        assert_eq!(frame(&mut hud, true), [1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(frame(&mut hud, false), [1.0, 2.0, 4.0]);
+        assert!(hud.find("Middle").is_none());
+        assert_eq!(frame(&mut hud, true), [1.0, 2.0, 3.0, 4.0]);
+        let top = hud.find("Top").unwrap();
+        hud.hud_mut().set(top, Prop::Visible, Value::Bool(false)).unwrap();
+        assert_eq!(frame(&mut hud, true), [3.0, 4.0], "a hidden part hides its pictures");
     }
 
     #[test]
@@ -236,7 +326,7 @@ impl AreaHud {
                             return &[];
                         };
                         let _ = self.hud.set(node, Prop::Name, Value::Text(name.to_owned()));
-                        let _ = self.hud.set(node, Prop::Text, Value::Text(name.to_owned()));
+                        let _ = self.hud.set(node, Prop::Art, Value::Text(name.to_owned()));
                         self.node = Some(node);
                         node
                     }

@@ -98,6 +98,7 @@ impl CommandBarHud {
     ) -> &[SpriteInstance] {
         let pictures = &mut self.pictures;
         pictures.begin();
+        pictures.part("CommandBar");
         // 6D0A20: native sidebar converter, frame0, clipped to the tactical-bottom
         // surface. The spacer reaches the left cap as `spacer_pieces` lays it
         // out: 1:1 and cropped as native up to 1080-pixel frames, partly
