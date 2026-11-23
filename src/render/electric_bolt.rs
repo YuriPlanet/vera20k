@@ -37,6 +37,22 @@ impl ElectricBoltPalette {
             center: color(15),
         }
     }
+
+    /// The colours the frame draws a bolt with when PALETTE.PAL cannot be
+    /// read.
+    ///
+    /// The file is outside data: the frame keeps drawing the bolt's geometry
+    /// in white, so the shared process Main requests stay the ones native
+    /// makes and a missing file cannot move the simulation's random stream.
+    /// The player is told what the file was
+    /// (`app::input::messages::post_palette_refusal`).
+    pub(crate) const fn fallback() -> Self {
+        Self {
+            ordinary: 0xffff,
+            alternate: 0xffff,
+            center: 0xffff,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

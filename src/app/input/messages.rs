@@ -1074,6 +1074,31 @@ pub(crate) fn post_layout_problem(state: &mut AppState) {
     post_grey_row(state, &text, false, false);
 }
 
+/// VERA: what the player is told when the world's PALETTE.PAL cannot be read.
+pub(crate) fn palette_refusal_text() -> String {
+    crate::i18n::tr("VERA:PaletteUnreadable")
+}
+
+/// VERA: a match whose PALETTE.PAL the game cannot read says so once; the
+/// frame then draws its brackets and bolts without the game's colours.
+///
+/// The palette's owner holds the refusal
+/// (`presentation::state::SurfacePalette::take_refusal`), and this asks it
+/// for the palette once, so a file that cannot be read is noticed at the
+/// world's start rather than in a later frame.
+pub(crate) fn post_palette_refusal(state: &mut AppState) {
+    let refused = {
+        let surface = &state.match_state.match_presentation.surface_palette;
+        let _ = surface.get(state.process_assets.manager());
+        surface.take_refusal()
+    };
+    if !refused {
+        return;
+    }
+    let text = palette_refusal_text();
+    post_grey_row(state, &text, false, false);
+}
+
 /// What the layout edit mode tells the player (`input::layout_edit`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LayoutEditLine {

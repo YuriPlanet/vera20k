@@ -1691,4 +1691,36 @@ mod tests {
             None
         );
     }
+
+    /// A map the shell lists: the start only needs a name and a capacity.
+    fn listed_map() -> crate::map::scenario_menu::MapMenuEntry {
+        crate::map::scenario_menu::MapMenuEntry {
+            file_name: "TEST.MAP".to_owned(),
+            display_name: "Test".to_owned(),
+            author: None,
+            preview: crate::map::preview::PreviewSection::default(),
+            multiplayer_start_waypoints: Vec::new(),
+            player_capacity: 8,
+            preview_source_bounds: None,
+        }
+    }
+
+    /// The mode roster comes from the game's MPModesMD.INI, which may be
+    /// missing or unusable. Start Game then says so instead of doing
+    /// nothing.
+    #[test]
+    fn an_empty_mode_roster_says_the_modes_are_missing() {
+        let shell = crate::ui::skirmish_shell::SkirmishShellState::default();
+        let maps = [listed_map()];
+        let error = crate::ui::skirmish_shell::launch_session(&shell, &maps, &[], true)
+            .expect_err("an empty roster has no mode to start on");
+        assert!(matches!(
+            error,
+            crate::skirmish_launch::LaunchValidationError::NoSelectedMode { .. }
+        ));
+        let modal = App::skirmish_validation_modal_for_error(None, &error)
+            .expect("the start must say what is missing");
+        assert_eq!(modal.message, crate::i18n::tr("VERA:NoModesFound"));
+        assert!(!modal.message.contains("MISSING"), "{}", modal.message);
+    }
 }

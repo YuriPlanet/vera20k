@@ -310,6 +310,21 @@ fn render_phases_wanted(state: &AppState) -> bool {
     state.renderer.performance_overlay.is_visible()
 }
 
+/// The colours the selected building's bracket uses: palette entries 15 and
+/// 12, converted the way the frame draws them. `None` draws no bracket.
+fn bracket_colours(palette: Option<&crate::assets::pal_file::Palette>) -> Option<[u16; 2]> {
+    palette.map(|palette| {
+        [15_u8, 12].map(|index| {
+            let color = palette.color(index);
+            crate::render::palette_light::PaletteLight::plain(53, 1000).rgb565(
+                [color.r, color.g, color.b],
+                index,
+                127,
+            )
+        })
+    })
+}
+
 /// Render one in-game frame: terrain, units, overlays, UI, sidebar.
 ///
 /// Orchestrates the 7-phase pipeline described in the module doc.
@@ -418,7 +433,10 @@ pub(crate) fn render_game(
         found
     });
     // FileSystem52BE61..52BFCE's PALETTE.PAL plain N53 Convert is shared
-    // by Bolt and the selected Building's15/12 bracket colors.
+    // by Bolt and the selected Building's15/12 bracket colors. The file is
+    // outside data: a missing or unusable PALETTE.PAL leaves the frame without
+    // the game's colours, so it draws no brackets and the bolts fall back to
+    // white rather than stopping.
     let surface_palette = (selected_building
         || !state
             .match_state
@@ -430,20 +448,11 @@ pub(crate) fn render_game(
             .match_state
             .match_presentation
             .surface_palette(state.process_assets.manager())
-            .expect("ready tactical assets include PALETTE.PAL")
-    });
+    })
+    .flatten();
     let bolt_palette =
         surface_palette.map(crate::render::electric_bolt::ElectricBoltPalette::from_palette);
-    let bracket_palette = surface_palette.map(|palette| {
-        [15_u8, 12].map(|index| {
-            let color = palette.color(index);
-            crate::render::palette_light::PaletteLight::plain(53, 1000).rgb565(
-                [color.r, color.g, color.b],
-                index,
-                127,
-            )
-        })
-    });
+    let bracket_palette = bracket_colours(surface_palette);
     let mut world =
         build_instances::build_world_instances(state, vsw, vsh, bracket_palette, &cursor_targets);
     // The skip table the bodies just built name, before any of this picture's
@@ -1324,4 +1333,118 @@ fn upload_to_gpu(
 #[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     include!("../render_tests.rs");
+}
+
+/// The tactical frame's palette, when the file behind it is not usable.
+///
+/// The asset manager prefers a loose file over the archived copy, so a
+/// truncated PALETTE.PAL shadows a good one: the frame has no palette, must
+/// draw no brackets rather than stop, and the player must be told what the
+/// file was.
+#[cfg(all(test, tests_app_presentation_render))]
+mod palette_tests {
+    use super::bracket_colours;
+    use crate::app::presentation::state::SurfacePalette;
+
+    /// A loose install folder with `palette.pal` in it, or without.
+    fn install(name: &str, palette: Option<&[u8]>) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "vera-tactical-palette-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        if let Some(bytes) = palette {
+            std::fs::write(root.join("palette.pal"), bytes).unwrap();
+        }
+        root
+    }
+
+    /// A bolt across the frame, and the viewport it is drawn through.
+    fn bolt() -> (
+        crate::sim::combat::electric_bolt::ElectricBoltBirth,
+        crate::render::surface_line::SurfaceLineViewport,
+    ) {
+        (
+            crate::sim::combat::electric_bolt::ElectricBoltBirth {
+                frame: 0,
+                from: crate::sim::projectile::ProjectileCoord::new(128, 0, 0),
+                to: crate::sim::projectile::ProjectileCoord::new(1024, 512, 0),
+                z_adjust: 0,
+                phase: 0,
+                alternate_color: false,
+                colors: [None; 3],
+                owner: None,
+            },
+            crate::render::surface_line::SurfaceLineViewport {
+                camera: [0, 0],
+                clip: [0, 0, 160, 120],
+                z_origin_y: 0,
+                zoom: 1.0,
+            },
+        )
+    }
+
+    #[test]
+    fn a_palette_the_game_cannot_read_is_refused_and_told_to_the_player() {
+        // A loose PALETTE.PAL shadows the archived copy, and the truncated
+        // one cannot be read as a palette.
+        let root = install("truncated", Some(b"truncated"));
+        let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(&root);
+        let surface = SurfacePalette::default();
+        // A selected building asks for the bracket colours; there are none.
+        let palette = surface.get(Some(&assets));
+        assert!(palette.is_none());
+        assert!(bracket_colours(palette).is_none());
+        // The player is told what the file was, in the language in use.
+        assert!(surface.take_refusal(), "the player must be told");
+        let text = crate::app::input::messages::palette_refusal_text();
+        assert!(!text.contains("MISSING"), "{text}");
+        std::fs::remove_dir_all(root).unwrap();
+
+        // An install folder without the file at all refuses it as well.
+        let root = install("missing", None);
+        let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(&root);
+        let surface = SurfacePalette::default();
+        assert!(surface.get(Some(&assets)).is_none());
+        assert!(surface.take_refusal(), "the player must be told");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The bolt's geometry draws with the palette and without it: a file the
+    /// game cannot read must not move the shared process Main requests, or
+    /// the simulation's random stream would follow the frame's files.
+    #[test]
+    fn a_bolt_draws_without_the_games_palette() {
+        use crate::app::presentation::electric_bolts::ElectricBolts;
+        use crate::render::electric_bolt::ElectricBoltPalette;
+        let (birth, viewport) = bolt();
+        let palette = ElectricBoltPalette {
+            ordinary: 0xffff,
+            alternate: 0x001f,
+            center: 0xffff,
+        };
+        let mut with_palette = crate::sim::rng::MainRng::new(1);
+        let mut without_palette = crate::sim::rng::MainRng::new(1);
+        let mut bolts = ElectricBolts::default();
+        bolts.create(birth);
+        assert!(
+            !bolts
+                .composite(viewport, Some(palette), &mut with_palette.draws(), |_| true)
+                .is_empty()
+        );
+        let mut bolts = ElectricBolts::default();
+        bolts.create(birth);
+        assert!(
+            !bolts
+                .composite(viewport, None, &mut without_palette.draws(), |_| true)
+                .is_empty(),
+            "the frame keeps drawing the bolt"
+        );
+        assert_eq!(
+            without_palette.native_state_hex(),
+            with_palette.native_state_hex(),
+            "a missing palette must not move the shared Main requests"
+        );
+    }
 }
