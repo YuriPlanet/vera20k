@@ -858,6 +858,8 @@ pub(crate) const ROOM_HEADERS: u16 = 0x7F94;
 pub(crate) const ROOM_BANDS: u16 = 0x7F95;
 pub(crate) const ROOM_ICONS: u16 = 0x7F96;
 pub(crate) const ROOM_NOTES: u16 = 0x7F97;
+pub(crate) const ROOM_BOXES: u16 = 0x7F98;
+pub(crate) const ROOM_TEAM_BAR: u16 = 0x7F99;
 /// A roster header's caption, over its Player cell.
 pub(crate) const HEADER_CAPTION: u16 = 0x7200;
 /// A roster header's Join (or Watch) caption, at its band's right end.
@@ -1167,6 +1169,8 @@ pub(crate) struct MultiplayerSetupState {
     /// The maps whose briefing VERA's room has looked for, by file name, so
     /// it points each one out once while the room stays open.
     briefings_checked: Vec<String>,
+    /// The room's painted nodes, found when its page was built.
+    pub(crate) room_nodes: std::cell::Cell<RoomNodes>,
 }
 impl Default for MultiplayerSetupState {
     fn default() -> Self {
@@ -1184,6 +1188,7 @@ impl Default for MultiplayerSetupState {
             game_options_page: RoomBox::GameOptions,
             map_offer: None,
             briefings_checked: Vec::new(),
+            room_nodes: std::cell::Cell::default(),
         }
     }
 }
@@ -1748,17 +1753,6 @@ impl MultiplayerSetupLayout {
         (self.roster && name.x > band.x)
             .then(|| RectPx::new(band.x, name.y, name.x - band.x, name.h))
     }
-    /// VERA's roster: the Player cell whose badge stands at `x`, `y`; the
-    /// badge is painted art, no control, and only names its player in the
-    /// status help.
-    pub(crate) fn badge_at(&self, view: &SetupView, x: i32, y: i32) -> Option<u16> {
-        (0..MODERN_SETUP_ROWS)
-            .map(|row| SetupColumn::Player.control(row))
-            .find(|&id| {
-                self.badge_rect(view, id)
-                    .is_some_and(|rect| rect.contains(x, y))
-            })
-    }
     /// Make room for navigation only on an extended roster. Resource placement
     /// of all ordinary <=8-player dialogs remains unchanged.
     pub(crate) fn arrange_extended_rows(&mut self) {
@@ -1959,6 +1953,9 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
     let native = move |ids: &'static [u16]| ids.iter().copied().filter(move |_| !modern);
     let trackbars = native(&OPTION_TRACKBARS).chain([DIFFICULTY, TEAM_COUNT, ROOM_SIZE]);
     NodeSpec::new(NodeKind::Dialog)
+        // A badge's status help names its player, over Join's box too; a
+        // press goes through it.
+        .child(icons_spec(dialog))
         .children(combos.chain(lists).map(|id| {
             let combo =
                 node(NodeKind::Combo, id).with(Prop::OpenAnywhere, Value::Bool(dialog.modern));
@@ -1982,11 +1979,31 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
         .child(crate::ui::shell::menu_page::hover_target(MAP_PREVIEW, ""))
         .child(node(NodeKind::Text, ROSTER_AREA).tooltip(""))
         // Each group's box takes a carried roster row (no press).
-        .children((0..MODERN_SETUP_ROWS as u16).map(|row| {
-            node(NodeKind::Text, GROUP_BOX + row).with(Prop::DropTarget, Value::Bool(true))
-        }))
+        .child(
+            node(NodeKind::Panel, ROOM_BOXES).children((0..MODERN_SETUP_ROWS as u16).map(|row| {
+                node(NodeKind::Text, GROUP_BOX + row).with(Prop::DropTarget, Value::Bool(true))
+            })),
+        )
         .child(node(NodeKind::Text, ROSTER_PAGE_LINE).with(Prop::Align, centred()))
         .children(painted_spec(dialog))
+}
+
+/// The rows' pictures: VERA's roster's badges, which hover with their
+/// player's help, or gamemd's flags and status icons.
+fn icons_spec(dialog: SetupDialog) -> NodeSpec {
+    let rows = 0..dialog.rows_per_page() as u16;
+    let icons = rows.flat_map(move |row| match dialog.modern {
+        true => vec![
+            node(NodeKind::Image, BADGE + row)
+                .tooltip("")
+                .with(Prop::PressThrough, Value::Bool(true)),
+        ],
+        false => vec![
+            node(NodeKind::Image, ROW_FLAG + row),
+            node(NodeKind::Image, ROW_STATUS + row),
+        ],
+    });
+    node(NodeKind::Panel, ROOM_ICONS).children(icons)
 }
 
 fn centred() -> Value {
@@ -2018,16 +2035,8 @@ fn painted_spec(dialog: SetupDialog) -> impl Iterator<Item = NodeSpec> {
         ]
     });
     let bands = rows
-        .clone()
         .filter(move |_| modern)
         .map(|row| node(NodeKind::Text, OWN_ROW + row));
-    let icons = rows.flat_map(move |row| match modern {
-        true => vec![node(NodeKind::Image, BADGE + row)],
-        false => vec![
-            node(NodeKind::Image, ROW_FLAG + row),
-            node(NodeKind::Image, ROW_STATUS + row),
-        ],
-    });
     let notes =
         std::iter::once(node(NodeKind::Text, COOPERATIVE_TEXT).with(Prop::Align, Value::Int(0)))
             .chain((0..DIFFICULTY_WORDS.len() as u16).map(move |index| {
@@ -2040,13 +2049,70 @@ fn painted_spec(dialog: SetupDialog) -> impl Iterator<Item = NodeSpec> {
         node(NodeKind::Panel, ROOM_LABELS).children(labels),
         node(NodeKind::Panel, ROOM_HEADERS).children(headers),
         node(NodeKind::Panel, ROOM_BANDS).children(bands),
-        node(NodeKind::Panel, ROOM_ICONS).children(icons),
         node(NodeKind::Panel, ROOM_NOTES).children(notes),
-        node(NodeKind::Text, TEAM_BAR_BOX),
-        node(NodeKind::Text, TEAMS_CAPTION),
-        node(NodeKind::Text, ROOM_SIZE_CAPTION),
+        node(NodeKind::Panel, ROOM_TEAM_BAR).children([
+            node(NodeKind::Text, TEAM_BAR_BOX),
+            node(NodeKind::Text, TEAMS_CAPTION),
+            node(NodeKind::Text, ROOM_SIZE_CAPTION),
+        ]),
     ]
     .into_iter()
+}
+
+/// The room's painted nodes and the roster's boxes, found once when its
+/// page is built ([`sync`]), so a frame paints them without a search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct RoomNodes {
+    pub(crate) root: Option<NodeId>,
+    pub(crate) labels: Option<NodeId>,
+    pub(crate) headers: Option<NodeId>,
+    pub(crate) boxes: Option<NodeId>,
+    pub(crate) bands: Option<NodeId>,
+    pub(crate) icons: Option<NodeId>,
+    pub(crate) notes: Option<NodeId>,
+    pub(crate) team_bar: Option<NodeId>,
+    pub(crate) page_line: Option<NodeId>,
+    pub(crate) scroll: Option<NodeId>,
+    pub(crate) chat: Option<NodeId>,
+    pub(crate) emote: Option<NodeId>,
+}
+
+impl RoomNodes {
+    /// `root`'s children by id, in one pass.
+    fn find(gui: &Gui, root: NodeId) -> Self {
+        let mut nodes = RoomNodes {
+            root: Some(root),
+            ..RoomNodes::default()
+        };
+        for &child in gui.tree().children(root).unwrap_or_default() {
+            let Some(id) = gui.id_of(child).and_then(|id| u16::try_from(id).ok()) else {
+                continue;
+            };
+            let slot = match id {
+                ROOM_LABELS => &mut nodes.labels,
+                ROOM_HEADERS => &mut nodes.headers,
+                ROOM_BOXES => &mut nodes.boxes,
+                ROOM_BANDS => &mut nodes.bands,
+                ROOM_ICONS => &mut nodes.icons,
+                ROOM_NOTES => &mut nodes.notes,
+                ROOM_TEAM_BAR => &mut nodes.team_bar,
+                ROSTER_PAGE_LINE => &mut nodes.page_line,
+                ROSTER_SCROLL => &mut nodes.scroll,
+                CHAT => &mut nodes.chat,
+                EMOTE => &mut nodes.emote,
+                _ => continue,
+            };
+            *slot = Some(child);
+        }
+        nodes
+    }
+}
+
+/// The room's painted statics and their panels, which take no session
+/// state ([`props`]).
+fn painted(id: u16) -> bool {
+    (COLUMN_LABEL..=ROOM_TEAM_BAR).contains(&id)
+        || (HEADER_CAPTION..ROW_STATUS + MODERN_SETUP_ROWS as u16).contains(&id)
 }
 
 /// The column label `index` of `layout`'s, as the room words it: its key
@@ -2078,7 +2144,13 @@ fn painted_rect(
 ) -> Option<Option<RectPx>> {
     if matches!(
         id,
-        ROOM_LABELS | ROOM_HEADERS | ROOM_BANDS | ROOM_ICONS | ROOM_NOTES
+        ROOM_LABELS
+            | ROOM_HEADERS
+            | ROOM_BANDS
+            | ROOM_ICONS
+            | ROOM_NOTES
+            | ROOM_BOXES
+            | ROOM_TEAM_BAR
     ) {
         return Some(Some(RectPx::default()));
     }
@@ -2306,7 +2378,8 @@ pub(crate) fn sync(
             .into_iter()
             .filter_map(|node| Some((node, u16::try_from(gui.id_of(node)?).ok()?)))
             .collect();
-        for (node, id) in nodes {
+        // The painted statics and their panels take no session state.
+        for (node, id) in nodes.into_iter().filter(|(_, id)| !painted(*id)) {
             for (prop, value) in props(ui, view, layout, id) {
                 let _ = gui.set(node, prop, value);
             }
@@ -2316,13 +2389,25 @@ pub(crate) fn sync(
                 let _ = gui.log_rows(node, ui.chat.lines.len(), 0);
             }
         }
-        // gamemd's rooms show a row's flag by its country's PCX.
-        if dialog == page && !room.modern {
-            let icons = view.row_icons.iter().take(room.rows_per_page());
-            for (row, icon) in icons.enumerate() {
-                if let Some(country) = icon.as_ref().and_then(|icon| icon.country.as_deref()) {
-                    let flag = ROW_FLAG + row as u16;
-                    page_nodes::set_text(gui, root, flag, Prop::Art, country);
+        if dialog == page {
+            if built || ui.room_nodes.get().root != Some(root) {
+                ui.room_nodes.set(RoomNodes::find(gui, root));
+            }
+            // gamemd's rooms show a row's flag by its country's PCX, each
+            // row's flag first of its two pictures.
+            if let Some(icons) = ui.room_nodes.get().icons.filter(|_| !room.modern) {
+                let rows = view.row_icons.iter().take(room.rows_per_page());
+                for (row, icon) in rows.enumerate() {
+                    let flag = gui
+                        .tree()
+                        .children(icons)
+                        .ok()
+                        .and_then(|c| c.get(2 * row).copied());
+                    if let (Some(flag), Some(country)) =
+                        (flag, icon.as_ref().and_then(|icon| icon.country.as_deref()))
+                    {
+                        page_nodes::set_node_text(gui, flag, Prop::Art, country);
+                    }
                 }
             }
         }
@@ -3123,8 +3208,6 @@ mod tests {
             "{badge:?} {cell:?}"
         );
         assert_eq!((badge.y, badge.h), (cell.y, cell.h));
-        let (x, y) = (badge.x + badge.w / 2, badge.y + badge.h / 2);
-        assert_eq!(layout.badge_at(&view, x, y), Some(name));
         assert_eq!(
             layout.badge_rect(&view, SetupColumn::Player.control(2)),
             None

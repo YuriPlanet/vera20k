@@ -3,7 +3,9 @@
 
 use super::chrome::*;
 use super::controls::team_caption_tint;
-use super::gui_paint::{ButtonArt, ComboArt, FrameArt, GuiStyle, Picture, paint_gui_ids};
+use super::gui_paint::{
+    ButtonArt, ComboArt, FrameArt, GuiStyle, Picture, paint_gui_ids, paint_gui_styled,
+};
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
@@ -244,6 +246,14 @@ pub(crate) fn render_multiplayer_setup(
         })
         .unwrap_or_default()
     };
+    // The room's own nodes, found when its page was built.
+    let nodes = Some(ui.room_nodes.get())
+        .filter(|nodes| page_root.is_some() && nodes.root == page_root)
+        .unwrap_or_default();
+    let paint_node = |node: Option<NodeId>, style| {
+        node.map(|node| paint_gui_styled(state, controller.gui(), node, scale, &[], style))
+            .unwrap_or_default()
+    };
     // The column labels and the roster's headers in the room's text, at
     // the roster's size over VERA's roster.
     let room_text = GuiStyle {
@@ -253,15 +263,16 @@ pub(crate) fn render_multiplayer_setup(
         ..room_style
     };
     if !leaving && ui.notice.is_none() {
-        let labels = paint_ids(page_root, &[ROOM_LABELS], scale, room_text);
+        let labels = paint_node(nodes.labels, room_text);
         texts.extend(labels.texts);
         if view.pages.len() > 1 {
             // Ordinary MNBTTN buttons, as Game Options' OK; one with no page
             // to go to is hidden. The line between them names the page.
-            let ids = [PREVIOUS_ROWS, NEXT_ROWS, ROSTER_PAGE_LINE];
+            let ids = [PREVIOUS_ROWS, NEXT_ROWS];
             let buttons = paint_ids(page_root, &ids, scale, room_style);
             controls.extend(buttons.controls);
             texts.extend(buttons.texts);
+            texts.extend(paint_node(nodes.page_line, room_style).texts);
         }
         // VERA's roster's headers: the caption where the players' names
         // stand, then Join (or Watch), text at the column's right end like
@@ -269,13 +280,10 @@ pub(crate) fn render_multiplayer_setup(
         // while it is closed; and a box around each group, lit while a press
         // in it joins the group or the host carries a row over it.
         if layout.roster {
-            let headers = paint_ids(page_root, &[ROOM_HEADERS], scale, room_text);
+            let headers = paint_node(nodes.headers, room_text);
             texts.extend(headers.texts);
-            let boxes: Vec<u16> = (0..MODERN_SETUP_ROWS)
-                .filter(|row| view.headers[*row].is_some())
-                .map(|row| GROUP_BOX + row as u16)
-                .collect();
-            let boxes = paint_ids(page_root, &boxes, scale, frames);
+            // A box shows round each group with a header.
+            let boxes = paint_node(nodes.boxes, frames);
             controls.extend(boxes.controls);
             // The carried row's name follows the pointer, centred on it.
             if let Some(drag) = drag.filter(|drag| drag.carrying)
@@ -303,7 +311,7 @@ pub(crate) fn render_multiplayer_setup(
                 ));
             }
             // The shell's own scrollbar, when the groups do not all fit.
-            let bar = paint_ids(page_root, &[ROSTER_SCROLL], scale, frames);
+            let bar = paint_node(nodes.scroll, frames);
             controls.extend(bar.controls);
         }
         // VERA's team bar under the roster, in its own box: the Teams count
@@ -313,13 +321,12 @@ pub(crate) fn render_multiplayer_setup(
             text_factor: Some(scale.factor() * ROSTER_TEXT_SCALE),
             ..frames
         };
-        let ids = [TEAM_BAR_BOX, TEAMS_CAPTION, ROOM_SIZE_CAPTION];
-        let team_bar = paint_ids(page_root, &ids, scale, team_bar);
+        let team_bar = paint_node(nodes.team_bar, team_bar);
         controls.extend(team_bar.controls);
         texts.extend(team_bar.texts);
         // VERA's roster marks the local player's row with a dark band.
         if layout.roster {
-            let bands = paint_ids(page_root, &[ROOM_BANDS], scale, frames);
+            let bands = paint_node(nodes.bands, frames);
             controls.extend(bands.controls);
         }
         // The rows' lists, VERA's roster's as its cells; the team bar's and a
@@ -391,7 +398,7 @@ pub(crate) fn render_multiplayer_setup(
             picture_of: Some(&picture_of),
             ..room_style
         };
-        let icons = paint_ids(page_root, &[ROOM_ICONS], scale, pictures);
+        let icons = paint_node(nodes.icons, pictures);
         controls.extend(icons.controls);
         // VERA's room keeps its options in Game Options; Difficulty stays.
         if layout.game_options.is_none() {
@@ -417,7 +424,7 @@ pub(crate) fn render_multiplayer_setup(
             texts.extend(bar.texts);
         }
         // A cooperative map's description and Difficulty's words.
-        let notes = paint_ids(page_root, &[ROOM_NOTES], scale, room_style);
+        let notes = paint_node(nodes.notes, room_style);
         texts.extend(notes.texts);
         // The chat edit as its widget holds it: it keeps the room's focus,
         // and its caret, under the room's boxes too.
@@ -431,7 +438,7 @@ pub(crate) fn render_multiplayer_setup(
             rgb: label_rgb,
             ..GuiStyle::default()
         };
-        let chat = paint_ids(page_root, &[CHAT], scale, chat_edit);
+        let chat = paint_node(nodes.chat, chat_edit);
         controls.extend(chat.controls);
         texts.extend(chat.texts);
         let chat_rows = |_| {
@@ -528,7 +535,7 @@ pub(crate) fn render_multiplayer_setup(
             pressed_of: Some(&emote_pressed),
             ..GuiStyle::default()
         };
-        let emote = paint_ids(page_root, &[EMOTE], scale, emote);
+        let emote = paint_node(nodes.emote, emote);
         controls.extend(emote.controls);
         texts.extend(crate::render::shell_paint::paint_labels_scaled(
             font,

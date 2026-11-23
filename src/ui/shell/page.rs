@@ -78,9 +78,10 @@ pub fn sync_rects(gui: &mut Gui, root: NodeId, rect_of: impl Fn(u16) -> Option<R
 
 fn sync_rects_from(gui: &mut Gui, node: NodeId, rect_of: &dyn Fn(u16) -> Option<RectPx>) {
     if let Some(id) = gui.id_of(node).and_then(|id| u16::try_from(id).ok()) {
+        // Written only on a change, so a steady frame writes nothing.
         let rect = rect_of(id);
-        let _ = gui.set(node, Prop::Rect, Value::Rect(rect.unwrap_or_default()));
-        let _ = gui.set(node, Prop::Visible, Value::Bool(rect.is_some()));
+        set_if_changed(gui, node, Prop::Rect, Value::Rect(rect.unwrap_or_default()));
+        set_if_changed(gui, node, Prop::Visible, Value::Bool(rect.is_some()));
     }
     let count = gui.tree().children(node).map_or(0, <[NodeId]>::len);
     for index in 0..count {
@@ -94,6 +95,13 @@ fn sync_rects_from(gui: &mut Gui, node: NodeId, rect_of: &dyn Fn(u16) -> Option<
     }
 }
 
+/// Sets `prop` on `node` unless it already holds `value`.
+pub fn set_if_changed(gui: &mut Gui, node: NodeId, prop: Prop, value: Value) {
+    if gui.get(node, prop).ok().flatten() != Some(&value) {
+        let _ = gui.set(node, prop, value);
+    }
+}
+
 /// Sets `prop` on control `id` under `root`.
 pub fn set(gui: &mut Gui, root: NodeId, id: u16, prop: Prop, value: Value) {
     if let Some(node) = gui.find_id(root, i32::from(id)) {
@@ -104,9 +112,13 @@ pub fn set(gui: &mut Gui, root: NodeId, id: u16, prop: Prop, value: Value) {
 /// Sets the text `prop` (`Text`, `Label`, `Art`) on control `id` under
 /// `root` only when it differs: a per-frame sync allocates only on a change.
 pub fn set_text(gui: &mut Gui, root: NodeId, id: u16, prop: Prop, text: &str) {
-    let Some(node) = gui.find_id(root, i32::from(id)) else {
-        return;
-    };
+    if let Some(node) = gui.find_id(root, i32::from(id)) {
+        set_node_text(gui, node, prop, text);
+    }
+}
+
+/// [`set_text`] on `node` itself, for a host that keeps its nodes.
+pub fn set_node_text(gui: &mut Gui, node: NodeId, prop: Prop, text: &str) {
     if !matches!(gui.get(node, prop), Ok(Some(Value::Text(old))) if old == text) {
         let _ = gui.set(node, prop, Value::Text(text.to_owned()));
     }
