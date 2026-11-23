@@ -75,6 +75,10 @@ pub(crate) struct RulesSettings {
     /// The INI roots listed under `resources` and the theater suffix are all
     /// YR's (`ProcessAssets::stock_ini_roots`).
     pub(crate) ini_roots_stock: bool,
+    /// RA2 Mode is on (docs/ra2-mode.md). Left out while off, so a game
+    /// without it has the parts it had before the setting was named here.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) ra2: bool,
     /// The INI roots and archive names players' games compare, when a mod
     /// requires Ares or any of them is not YR's; absent otherwise. The rules
     /// digest compares them then.
@@ -207,6 +211,7 @@ impl RulesParts {
                 ares: "auto",
                 ares_mix: false,
                 ini_roots_stock: true,
+                ra2: false,
                 resources: None,
                 mod_in_use: None,
             },
@@ -288,6 +293,11 @@ mod tests {
         let queue = RulesParts::new(vec![file("rules", false)], queue, None);
         assert_ne!(queue.digest, parts.digest);
         assert!(queue.json().contains(r#""superweapon_limit":0,"building_production_queue":true,"#));
+        let mut ra2 = settings();
+        ra2.ra2 = true;
+        let ra2 = RulesParts::new(vec![file("rules", false)], ra2, None);
+        assert_ne!(ra2.digest, parts.digest);
+        assert!(ra2.json().contains(r#""ini_roots_stock":true,"ra2":true,"#));
     }
 
     /// Each of the player's own rule switches (`PersonalRules`, which the

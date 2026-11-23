@@ -193,6 +193,8 @@ fn start(
         // After the run's own arguments, which it is known by
         // (`is_invocation`); start-up takes the switch out first.
         .args(mod_args)
+        // The same game: RA2 mode reads other rules and theaters.
+        .args(crate::util::ra2_launch::enabled().then_some("-ra2"))
         // The developer sandbox would start a different map at start-up.
         .env_remove("RA2_QUICKPLAY")
         .stdin(std::process::Stdio::null())

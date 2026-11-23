@@ -851,6 +851,15 @@ impl RuleSet {
         self.phobos
     }
 
+    /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md): original
+    /// Red Alert 2's rules where they differ from Yuri's Revenge. Sim and
+    /// rules read this one answer; app, asset and INI-root code read the
+    /// launch's choice (`util::ra2_launch`) it comes from.
+    #[inline]
+    pub fn ra2(&self) -> bool {
+        self.ra2
+    }
+
     /// Whether this game's Rules were read the Ares way
     /// (`ares_switch::ares_way`). The game's readers after the projection (its
     /// fixed ART, the asset closures) open the same mode with

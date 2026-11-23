@@ -1085,7 +1085,7 @@ fn firepower_stages(
         // helper applies the same type flags without requiring an occupant.
         // Original RA2 has no OccupyDamageMultiplier: the garrison gun deals
         // its plain WeaponType damage. YR applies the global multiplier.
-        occupied: (!crate::util::ra2_launch::enabled() && is_garrison)
+        occupied: (!rules.ra2() && is_garrison)
             .then(|| f32_bits(multipliers.occupy_damage_multiplier)),
         // `+0x2E4` on a non-building: a unit installed in a Tank Bunker.
         bunkered: firer
@@ -2144,6 +2144,7 @@ pub(super) fn emit_admitted_fire(
             snap.garrison.is_some(),
             in_open_transport,
             rules.ares(),
+            rules.ra2(),
         )
         .map(|name| world.interner.intern(name)),
         occupied_building: snap.garrison.is_some(),

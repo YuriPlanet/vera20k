@@ -429,7 +429,10 @@ impl<'a> FireSubject<'a> {
             organic: obj.organic,
             jumpjet_turn: obj.jumpjet_turn,
             can_be_occupied: obj.can_be_occupied,
-            can_occupy_fire: obj.can_occupy_fire,
+            // `+0x157C`, or RA2 Mode's answer: original RA2 has no
+            // CanOccupyFire, and a manned CanBeOccupied building fires its
+            // own gun, where B1 would otherwise answer ILLEGAL forever.
+            can_occupy_fire: obj.occupants_fire(),
             emp_pulse_cannon: obj.emp_pulse_cannon,
             turret_anim_is_voxel: obj.turret_anim_is_voxel,
             ..FirerTypeFacts::default()

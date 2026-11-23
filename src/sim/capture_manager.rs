@@ -610,7 +610,7 @@ pub(crate) fn init_capture_manager(
     let weapon = rules.weapon(weapon_name)?;
     let warhead = rules.weapon_warhead(weapon)?;
     warhead.mind_control.then(|| {
-        if crate::util::ra2_launch::enabled() {
+        if rules.ra2() {
             // Original RA2 reads MindControl.Damage only as the "considered
             // offensive" flag (rules.ini Damage=10); link capacity is
             // hardcoded 1 for both MindControl and SuperMindControl. Only YR

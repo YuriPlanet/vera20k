@@ -1,5 +1,7 @@
 use super::*;
-use crate::ui::main_menu_dialogs::options::{HAS_GRAPHICS_API, HAS_HD_MAP_PREVIEWS, HAS_VSYNC};
+use crate::ui::main_menu_dialogs::options::{
+    HAS_GRAPHICS_API, HAS_HD_MAP_PREVIEWS, HAS_RA2_MODE, HAS_VSYNC,
+};
 use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
 use crate::ui::shell::sound::{SoundSlider, launcher_volume_rects};
 use LauncherCheckboxId as Check;
@@ -67,6 +69,9 @@ pub(super) fn controls(
             section(&mut row, Category::Gameplay, 201);
             check(&mut row, Check::ShiftQueue, x, 239);
             check(&mut row, Check::BuildingProductionQueue, x, 265);
+            if HAS_RA2_MODE {
+                check(&mut row, Check::Ra2Mode, right, 280);
+            }
             slider(&mut row, Slider::Difficulty, right, 228, 181);
             section(&mut row, Category::Interface, 310);
             check(&mut row, Check::Tooltips, x, 342);

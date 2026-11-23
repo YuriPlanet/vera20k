@@ -186,11 +186,11 @@ fn retail_hospital_heal_sound_is_delivered_before_the_patient_leaves_cargo() {
 }
 
 /// Original RA2 leaves Hospital Ammo=0 (unlimited healing) and offers a
-/// normal infantryman an Enter action. On the RA2 profile an Ammo=0 hospital
+/// normal infantryman an Enter action. In RA2 Mode an Ammo=0 hospital
 /// answers CAN_LOAD with ROGER; on YR the finite Ammo gate refuses.
 #[test]
 fn ra2_ammo_zero_hospital_accepts_wounded_infantry() {
-    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+    let mut rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
         "[InfantryTypes]\n0=E1\n[BuildingTypes]\n0=HOSP\n\
          [E1]\nStrength=100\n\
          [HOSP]\nStrength=800\nHospital=yes\nAmmo=0\n",
@@ -202,18 +202,16 @@ fn ra2_ammo_zero_hospital_accepts_wounded_infantry() {
     let hospital = sim.spawn_object("HOSP", "Americans", 20, 10, 0, &rules).unwrap();
     let gi = sim.spawn_object("E1", "Americans", 12, 10, 0, &rules).unwrap();
 
-    crate::util::ra2_launch::set_override(true);
+    rules.set_ra2_for_test(true);
     assert_eq!(
         radio::receive::can_load_query(&sim, hospital, gi, &rules),
         RadioResponse::Roger,
         "RA2 Ammo=0 hospital accepts the infantry"
     );
-    crate::util::ra2_launch::set_override(false);
+    rules.set_ra2_for_test(false);
     assert_ne!(
         radio::receive::can_load_query(&sim, hospital, gi, &rules),
         RadioResponse::Roger,
         "YR Ammo=0 hospital refuses"
     );
-
-    crate::util::ra2_launch::clear_override();
 }

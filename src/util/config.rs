@@ -369,11 +369,21 @@ impl GameConfig {
         Ok(config)
     }
 
-    /// `-ra2` replaces the whole `[ini]` policy with the fixed non-md roots.
-    /// It wins over anything in config.toml so a single switch is sufficient;
-    /// it is inert unless this binary was built with the `ra2` feature.
+    /// VERA: RA2 mode for this launch, once VERA.INI has been read: the
+    /// `-ra2` switch already recorded, or the player's saved Options choice
+    /// (`[VERA] RA2Mode=`, `saved_choice`). Either turns it on for the whole
+    /// process (`util::ra2_launch`) and selects its INI roots.
+    pub fn use_ra2_mode(&mut self, saved_choice: bool) {
+        if saved_choice {
+            crate::util::ra2_launch::set(true);
+        }
+        self.apply_ra2_launch();
+    }
+
+    /// RA2 mode replaces the whole `[ini]` policy with the fixed non-md roots.
+    /// It wins over anything in config.toml so a single switch is sufficient.
     fn apply_ra2_launch(&mut self) {
-        if crate::util::ra2_launch::enabled() && crate::rules::RA2_ENABLED {
+        if crate::util::ra2_launch::enabled() {
             log::info!("-ra2 launch: selecting original RA2 non-md INI roots");
             self.ini = crate::util::ini_roots::IniRootConfig {
                 profile: crate::util::ini_roots::IniProfile::Ra2,
@@ -787,9 +797,9 @@ mod tests {
     }
 
     #[test]
-    fn ra2_launch_flag_overrides_ini_policy_only_in_a_ra2_build() {
-        // A config that explicitly selects custom YR-ish roots; -ra2 must win
-        // wholesale when the feature is compiled in, and be inert otherwise.
+    fn ra2_launch_flag_overrides_ini_policy() {
+        // A config that explicitly selects custom YR-ish roots; RA2 mode must
+        // win wholesale.
         let mut config = GameConfig::parse(
             "[paths]\nra2_dir='retail'\n[ini]\n\
              profile='custom'\nrules='r.ini'\nart='a.ini'\nai='i.ini'\n",
@@ -797,15 +807,10 @@ mod tests {
         .unwrap();
         crate::util::ra2_launch::set(true);
         config.apply_ra2_launch();
-        if crate::rules::RA2_ENABLED {
-            assert_eq!(config.ini.profile, IniProfile::Ra2);
-            let roots = config.ini.resolve(|_| true).unwrap();
-            assert_eq!(roots.names(), ["rules.ini", "art.ini", "ai.ini"]);
-            assert_eq!(roots.theater_ini("snow"), "snow.ini");
-        } else {
-            // Without the feature the config's own custom choice survives.
-            assert_eq!(config.ini.profile, IniProfile::Custom);
-        }
+        assert_eq!(config.ini.profile, IniProfile::Ra2);
+        let roots = config.ini.resolve(|_| true).unwrap();
+        assert_eq!(roots.names(), ["rules.ini", "art.ini", "ai.ini"]);
+        assert_eq!(roots.theater_ini("snow"), "snow.ini");
         crate::util::ra2_launch::set(false);
     }
 

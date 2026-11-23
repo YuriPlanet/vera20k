@@ -925,6 +925,15 @@ is exchanged. A game from before this is another version and is refused by the b
 check first; a rollback compares the setting itself again, and one past the setting
 reads none and plays Auto.
 
+[RA2 Mode](ra2-mode.md) (`[VERA] RA2Mode=` or `-ra2`) is not a room rule either: each
+game reads it at start, and it adds its own words to the rules digest
+(`ProcessAssets::multiplayer_rules_digest`) and `ra2: true` to the rules parts, so a
+player in RA2 Mode is refused in a room of Yuri's Revenge players and its game names the
+setting. Its `Vera-Changes` header says `ini_roots: true`, a key lobbies and older games
+already know, so nothing new is exchanged; this version's `LobbyChangeIniRoots` text
+names RA2 Mode with the INI files. An older game reads no RA2 Mode and plays
+Yuri's Revenge; it has another build and is refused by the build check first.
+
 Until VERARULES.INI was retired for [New Mod](modding.md#start-a-new-mod), `host_rules`
 also carried the host's file as `personal_rules`. This version never sends it, and
 refuses a room or a replay whose `host_rules` still has it: an older host's room is

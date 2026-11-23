@@ -51,8 +51,9 @@ lacks the field and would start the game for `--generate-map`, so check it first
 (`[SpawnLocations]`) and `[HouseTeams]` numbers 0 to 119. Every other launch seats at most 30
 houses, with starts and teams 0 to 29. A build that lacks the field seats 30 in every launch.
 The game folder comes from `config.toml` unless `--ra2-dir` names one, the mod from `config.toml`
-unless `--mod` or `--no-mod` chooses, and the Ares setting from VERA.INI unless `--ares` names the
-one `spawn.ini`'s `[Settings] Ares=` will. In the browser, `probe(map_name)` returns the same JSON
+unless `--mod` or `--no-mod` chooses, the Ares setting from VERA.INI unless `--ares` names the
+one `spawn.ini`'s `[Settings] Ares=` will, and [RA2 Mode](ra2-mode.md) from VERA.INI or `-ra2`, as
+the game takes it; `--generate-map` takes RA2 Mode the same way. In the browser, `probe(map_name)` returns the same JSON
 text.
 
 The mode catalog is the selected mod's `[Files] Modes`, or `MPModesMD.ini` by default. The
@@ -98,7 +99,8 @@ agree.
   counts it (`on` or `off` where the setting decides which game opens; `auto` for Auto and for a
   setting that opens the game Auto opens, such as Off without a mod), whether
   `ares.mix` is mounted, whether the INI roots listed under `resources` and the theater suffix are
-  all YR's (`ini_roots_stock`), and the mod (`title` and `version`, from its `mod.ini`, else its folder's
+  all YR's (`ini_roots_stock`), `ra2: true` when [RA2 Mode](ra2-mode.md) is on (left out while
+  off), and the mod (`title` and `version`, from its `mod.ini`, else its folder's
   name; `version` is empty without one). When a mod requires Ares or the game reads one of these INI roots
   or archives under another name than YR's, `resources` names them as the digest compares them, lowercased:
   `requires_ares`, `roots` (Rules, Art, AI, mode and map catalog) and `archives` (expansion and

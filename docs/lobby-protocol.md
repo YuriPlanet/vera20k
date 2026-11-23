@@ -734,7 +734,7 @@ not know.
 - `Vera-Changes: <percent-encoded JSON>`: what the game changes from the original game,
   which a room's rules line names: an object with `mod` (the mod's title), `ini_roots:
   true` (config.toml names other Rules, Art, AI, mode roster or map catalog files, or
-  another theater suffix), `ares` (`on` or `off`, the player's Ares setting where it
+  another theater suffix, or [RA2 Mode](ra2-mode.md) is on), `ares` (`on` or `off`, the player's Ares setting where it
   decides which game opens: On unless a selected mod mounts `ares.mix` anyway, Off only
   with such a mod or over rules that hold an Ares key) and `files` with `count` (up to 32 names of the game-folder files
   that change the rules the network compares, of `count`), each left out when unchanged:

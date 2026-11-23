@@ -2011,6 +2011,12 @@ pub struct ObjectType {
     /// Parsed from `CanOccupyFire=yes` in rules.ini. Building must also
     /// have `CanBeOccupied=yes` and at least one occupant for fire to occur.
     pub can_occupy_fire: bool,
+    /// VERA RA2 Mode: original Red Alert 2 has no `CanOccupyFire=`, so a
+    /// `CanBeOccupied=` building's occupants fire without it. Derived from
+    /// [`RuleSet::ra2`](crate::rules::ruleset::RuleSet::ra2) by the RuleSet
+    /// at load, its one writer; false in Yuri's Revenge. Read through
+    /// [`Self::occupants_fire`].
+    pub(crate) ra2_occupy_fire: bool,
 
     /// Whether to show pip indicators for each occupant inside the building.
     /// Parsed from `ShowOccupantPips=yes` in rules.ini.

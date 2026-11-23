@@ -1,14 +1,18 @@
-//! Process-wide record that this launch asked for original Red Alert 2 mode.
+//! Process-wide record that this launch plays original Red Alert 2 mode.
 //!
-//! `-ra2` is parsed once by the retail switch table, which is pure argv code
-//! and must not own filesystem behavior. The parsed choice is stored here so
-//! every [`crate::util::config::GameConfig`] load — the app's own and the many
+//! VERA-only (docs/ra2-mode.md). Two things turn it on for a launch: the
+//! `-ra2` switch, which [`configure`] reads from argv before any config load,
+//! and the player's Options choice (`[VERA] RA2Mode=yes` in VERA.INI), which
+//! startup reads with VERA.INI (`GameConfig::use_ra2_mode`). Like a mod, the
+//! choice holds until the next start. It is stored here so every
+//! [`crate::util::config::GameConfig`] load — the app's own and the many
 //! headless tools' — resolves the same non-md INI roots without threading a
 //! parameter through each call site.
 //!
-//! The default is off: a build with no `-ra2` keeps its YR roots. A build
-//! without the `ra2` feature never sets this (see `entry::run_with_args`), so
-//! the flag is inert there even if a stale `-ra2` reaches the switch table.
+//! A game's rules record it once at load (`RuleSet::ra2`), and the simulation
+//! reads that answer; app, asset and INI-root code read it here.
+//!
+//! The default is off: a launch with neither keeps its YR roots.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -21,7 +25,7 @@ pub fn set(requested: bool) {
     RA2_REQUESTED.store(requested, Ordering::Relaxed);
 }
 
-/// Whether this process launched with `-ra2`.
+/// Whether this launch plays RA2 Mode.
 ///
 /// Under `cfg(test)`, a thread-local override takes precedence when set. This
 /// lets a unit test exercise the RA2 branch without flipping the process-wide
@@ -53,14 +57,12 @@ thread_local! {
 }
 
 /// Parse the process arguments for `-ra2` and record the choice. Called once,
-/// before any config load. The switch is only honored by an `ra2`-featured
-/// build; without it the argument is consumed as a no-op so an older binary
-/// still starts instead of failing on an unknown token.
+/// before any config load.
 pub fn configure(args: &[&std::ffi::OsStr]) {
     let requested = args
         .iter()
         .any(|arg| arg.to_string_lossy().eq_ignore_ascii_case("-ra2"));
-    set(requested && crate::rules::RA2_ENABLED);
+    set(requested);
 }
 
 #[cfg(test)]
