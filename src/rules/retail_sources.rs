@@ -391,6 +391,100 @@ pub fn game_folder_file(source: &str) -> String {
     }
 }
 
+/// One archive a retail install searches ([`retail_archive`]): the name its
+/// files report as their source, the game-folder source it stands in for,
+/// and the archive.
+pub(crate) type RetailArchive<'a> = (&'a str, Option<&'a str>, std::borrow::Cow<'a, MixArchive>);
+
+/// The registered archives as a retail install searches them, in their
+/// order ([`retail_archive`]).
+pub(crate) fn registered_retail(asset_manager: &AssetManager) -> Vec<RetailArchive<'_>> {
+    asset_manager
+        .registered_archives()
+        .filter_map(|(source, archive)| {
+            let (replaces, retail) = retail_archive(asset_manager, source, Some(archive))?;
+            Some((source, replaces, retail))
+        })
+        .collect()
+}
+
+/// What a retail install searches in place of one archive (`None` when it
+/// does not open): the archive itself when it ships; else the shipped copy of
+/// the archive of its name, with the source it stands in for; else nothing
+/// (`expandmd99.mix`).
+pub(crate) fn retail_archive<'a>(
+    assets: &AssetManager,
+    source: &'a str,
+    archive: Option<&'a MixArchive>,
+) -> Option<(Option<&'a str>, std::borrow::Cow<'a, MixArchive>)> {
+    if let Some(archive) = archive.filter(|_| shipped_source(source)) {
+        return Some((None, std::borrow::Cow::Borrowed(archive)));
+    }
+    let name = source.rsplit("->").next().unwrap_or(source).trim();
+    shipped_nested_archive(assets, name).map(|copy| (Some(source), std::borrow::Cow::Owned(copy)))
+}
+
+/// VERA: a binder's reads of picture and model files, telling a file the
+/// game folder supplies from the copy a retail install reads. The asset
+/// binders read through it where a network start certifies what they take
+/// (`RuleSet::file_inputs_hash`), so a refused start can name the files that
+/// change it (`RuleSet::file_input_folder_files`).
+pub(crate) struct FolderFiles<'a> {
+    assets: &'a AssetManager,
+    /// [`registered_retail`], found by the first read no shipped archive
+    /// supplies; a game without such files never builds it.
+    retail: std::cell::OnceCell<Vec<RetailArchive<'a>>>,
+}
+
+impl<'a> FolderFiles<'a> {
+    pub(crate) fn new(assets: &'a AssetManager) -> Self {
+        Self {
+            assets,
+            retail: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// `name` as the game reads it (`AssetManager::get_ref`'s bytes), with
+    /// the game-folder file that supplies it ([`game_folder_file`]) when no
+    /// shipped archive does ([`shipped_source`]).
+    pub(crate) fn read(&self, name: &str) -> Option<(&'a [u8], Option<String>)> {
+        let (bytes, source) = self.assets.get_with_source_ref(name)?;
+        Some((
+            bytes,
+            (!shipped_source(source)).then(|| game_folder_file(source)),
+        ))
+    }
+
+    /// The copy of `name` a retail install reads from the registered
+    /// archives; `None` when it ships none.
+    pub(crate) fn shipped(&self, name: &str) -> Option<&[u8]> {
+        let id = crate::assets::mix_hash::mix_hash(name);
+        self.retail
+            .get_or_init(|| registered_retail(self.assets))
+            .iter()
+            .find(|(_, _, archive)| archive.contains_id(id))
+            .and_then(|(_, _, archive)| archive.get_by_id(id))
+    }
+
+    /// [`Self::read`]'s bytes, noting the game-folder file in `changed` when
+    /// `value` of them is not `value` of the shipped copy's: the file then
+    /// changes what the binder takes. A name a retail install lacks differs.
+    pub(crate) fn read_noting<V: PartialEq>(
+        &self,
+        name: &str,
+        value: impl Fn(&[u8]) -> V,
+        changed: &mut std::collections::BTreeSet<String>,
+    ) -> Option<&'a [u8]> {
+        let (bytes, folder_file) = self.read(name)?;
+        if let Some(file) = folder_file
+            && self.shipped(name).map(&value) != Some(value(bytes))
+        {
+            changed.insert(file);
+        }
+        Some(bytes)
+    }
+}
+
 fn outermost_archive(source: &str) -> &str {
     source.split(" -> ").next().unwrap_or(source).trim()
 }

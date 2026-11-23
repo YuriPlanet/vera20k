@@ -291,13 +291,52 @@ pub(crate) fn match_keeps_ares_off(state: &AppState) -> bool {
         .is_some_and(|runtime| runtime.resources.rules.ares_kept_off())
 }
 
+/// VERA: the game-folder files that change what the loaded match's
+/// simulation reads from pictures and models
+/// (`RuleSet::file_input_folder_files`), which its start certifies and no
+/// room compares. A selected mod's own files are left out: the rules digest
+/// compares them with the mod.
+pub(crate) fn match_picture_files(state: &AppState) -> Vec<String> {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+        return Vec::new();
+    };
+    let mut files = runtime.resources.rules.file_input_folder_files();
+    if let Some(assets) = state.process_assets.manager() {
+        files.retain(|file| !assets.from_mod_folder(file));
+    }
+    files
+}
+
+/// The files a refused start names: first what only this match read of the
+/// game folder (`read`), which no room compared and the box's three names
+/// should not push out, then the changed game files, each file once. `None`
+/// when the match read none besides the changed files, named already.
+fn start_files(changed: &[String], read: impl IntoIterator<Item = String>) -> Option<Vec<String>> {
+    let mut files = Vec::new();
+    for file in read {
+        if !files.contains(&file) {
+            files.push(file);
+        }
+    }
+    if files.iter().all(|file| changed.contains(file)) {
+        return None;
+    }
+    for file in changed {
+        if !files.contains(file) {
+            files.push(file.clone());
+        }
+    }
+    Some(files)
+}
+
 /// VERA: [`own_changes_text`] for a start the players' games refused. A match
 /// whose map names a tile the original game lacks also read this game's
-/// terrain files (`ProcessAssets::match_terrain_files`), which no room
-/// compares, so they are named with the changed files. And where the Ares
-/// setting Off is what keeps Ares from playing in the match
-/// (`RuleSet::ares_kept_off`), which no room compares either, it is named
-/// as the setting.
+/// terrain files (`ProcessAssets::match_terrain_files`), and a game folder
+/// can change what a match's simulation reads from pictures and models
+/// ([`match_picture_files`]). No room compares either, so they are named
+/// before the changed files. And where the Ares setting Off is what keeps
+/// Ares from playing in the match (`RuleSet::ares_kept_off`), which no room
+/// compares either, it is named as the setting.
 pub(crate) fn start_changes_text(state: &AppState) -> Option<String> {
     let assets = &state.process_assets;
     let mut changes = original_game_changes(state.frontend.mods.title(), assets);
@@ -315,16 +354,15 @@ pub(crate) fn start_changes_text(state: &AppState) -> Option<String> {
             OriginalGameChange::Ares(crate::util::ares_launch::AresSetting::Off),
         );
     }
-    let terrain = assets.match_terrain_files();
-    let mut files = assets.changed_game_files().to_vec();
-    for file in terrain {
-        if !files.contains(file) {
-            files.push(file.clone());
-        }
-    }
-    if !terrain.is_empty() {
+    let read = assets
+        .match_terrain_files()
+        .iter()
+        .cloned()
+        .chain(match_picture_files(state));
+    let files = start_files(assets.changed_game_files(), read);
+    if let Some(files) = &files {
         changes.retain(|change| !matches!(change, OriginalGameChange::ChangedFiles(_)));
-        changes.push(OriginalGameChange::ChangedFiles(&files));
+        changes.push(OriginalGameChange::ChangedFiles(files));
     }
     changes_text(changes)
 }
@@ -390,6 +428,38 @@ mod tests {
         assert_ne!(start(false, ares_key), "digest");
         let terrain = start_rules("digest".to_owned(), Some("files"), &loaded(true, ""));
         assert_ne!(terrain, "digest");
+    }
+
+    /// A refused start names the terrain and picture files its match read
+    /// before the changed game files, each file once, and adds nothing when
+    /// the match read no others.
+    #[test]
+    fn a_refused_start_names_what_its_match_read_first_and_once() {
+        let names = |names: &[&str]| {
+            names
+                .iter()
+                .map(|&name| name.to_owned())
+                .collect::<Vec<_>>()
+        };
+        let changed = names(&["rulesmd.ini", "expandmd07.mix"]);
+        assert_eq!(start_files(&changed, names(&[])), None);
+        assert_eq!(start_files(&changed, names(&["expandmd07.mix"])), None);
+        assert_eq!(
+            start_files(
+                &changed,
+                names(&["clear01.sno", "expandmd07.mix", "gtpowrmk.shp"])
+            ),
+            Some(names(&[
+                "clear01.sno",
+                "expandmd07.mix",
+                "gtpowrmk.shp",
+                "rulesmd.ini"
+            ]))
+        );
+        assert_eq!(
+            start_files(&[], names(&["gtpowrmk.shp", "gtpowrmk.shp"])),
+            Some(names(&["gtpowrmk.shp"]))
+        );
     }
 
     /// The `Vera-Changes` header names each change in the JSON and bounds the

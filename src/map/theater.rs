@@ -9,11 +9,9 @@
 //! - Part of map/ — depends on assets/, rules/ (for INI parsing).
 //! - Does NOT depend on render/ or sim/.
 
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use crate::assets::asset_manager::{AssetManager, PinnedNames};
-use crate::assets::mix_archive::MixArchive;
 use crate::assets::mix_hash::mix_hash;
 use crate::assets::pal_file::Palette;
 use crate::assets::tmp_file::TmpFile;
@@ -21,6 +19,7 @@ use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
 use crate::map::map_file::MapError;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::object_image::ImageTheater;
+use crate::rules::retail_sources::{RetailArchive, registered_retail, retail_archive};
 
 /// Marker for "no tile" after raw Pack5 compatibility translation.
 ///
@@ -996,23 +995,6 @@ pub fn changed_tiles(asset_manager: &AssetManager) -> ChangedTiles {
     }
 }
 
-/// One archive a retail install searches ([`retail_archive`]): the name its
-/// files report as their source, the game-folder source it stands in for,
-/// and the archive.
-type RetailArchive<'a> = (&'a str, Option<&'a str>, Cow<'a, MixArchive>);
-
-/// The registered archives as a retail install searches them, in their
-/// order ([`retail_archive`]).
-fn registered_retail(asset_manager: &AssetManager) -> Vec<RetailArchive<'_>> {
-    asset_manager
-        .registered_archives()
-        .filter_map(|(source, archive)| {
-            let (replaces, retail) = retail_archive(asset_manager, source, Some(archive))?;
-            Some((source, replaces, retail))
-        })
-        .collect()
-}
-
 /// A theater's archives that are not registered
 /// (`AssetManager::theater_archives_unmounted`) as a retail install searches
 /// them, after the registered ones. A loose one that does not open still
@@ -1032,24 +1014,6 @@ fn unmounted_retail<'a>(
             Some((unmounted.source.as_str(), replaces, retail))
         })
         .collect()
-}
-
-/// What a retail install searches in place of one archive (`None` when it
-/// does not open): the archive itself when it ships; else the shipped copy of
-/// the archive of its name, with the source it stands in for; else nothing
-/// (`expandmd99.mix`).
-fn retail_archive<'a>(
-    assets: &AssetManager,
-    source: &'a str,
-    archive: Option<&'a MixArchive>,
-) -> Option<(Option<&'a str>, Cow<'a, MixArchive>)> {
-    if let Some(archive) = archive.filter(|_| crate::rules::retail_sources::shipped_source(source))
-    {
-        return Some((None, Cow::Borrowed(archive)));
-    }
-    let name = source.rsplit("->").next().unwrap_or(source).trim();
-    crate::rules::retail_sources::shipped_nested_archive(assets, name)
-        .map(|copy| (Some(source), Cow::Owned(copy)))
 }
 
 /// A tile's files as a theater reads them: the pristine file and its

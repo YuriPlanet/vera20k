@@ -9,7 +9,7 @@
 //! Filename candidate generation lives in free functions below so render code can
 //! use convention helpers without re-mixing them into metadata resolution.
 
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use crate::rules::flh::Flh;
 use crate::rules::ini_parser::{IniFile, IniSection};
@@ -1178,6 +1178,15 @@ pub struct ArtRegistry {
     /// every insert, rebuilds it with
     /// [`ArtRegistry::refresh_anim_types_affecting_play`].
     anim_types_affecting_play: LookupSet<String>,
+    /// VERA: by AnimType key, the game-folder files whose SHP has another
+    /// frame count than the copy a retail install reads
+    /// (`retail_sources::FolderFiles`), and the ones whose image has another
+    /// height: what its bound frame count, bounds and height came from.
+    anim_folder_files: BTreeMap<String, AnimFolderFiles>,
+    /// VERA: the game-folder files whose middle frame puts a smudging
+    /// animation on the other side of [`smudge_frame_is_large`] than the
+    /// retail copy's ([`Self::populate_anim_frame_dims`]).
+    smudge_folder_files: BTreeSet<String>,
 }
 
 /// An AnimType runtime config's place in its [`ArtRegistry`]: an index, so a
@@ -1186,6 +1195,16 @@ pub struct ArtRegistry {
 /// gave it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnimConfigHandle(u32);
+
+/// VERA: the game-folder files that change what one AnimType's bound SHPs
+/// give ([`ArtRegistry::anim_folder_files`]).
+#[derive(Debug, Clone, Default)]
+struct AnimFolderFiles {
+    /// Another frame count than the retail copy's.
+    frames: BTreeSet<String>,
+    /// Another image height than the retail copy's.
+    height: BTreeSet<String>,
+}
 
 /// The one test the smudge pick makes of a scorching or cratering
 /// animation's middle frame (`AnimClass::Middle`, as
@@ -1687,6 +1706,8 @@ impl ArtRegistry {
             anim_theater_flags,
             scheduler_anim_types: BTreeSet::new(),
             anim_types_affecting_play: LookupSet::default(),
+            anim_folder_files: BTreeMap::new(),
+            smudge_folder_files: BTreeSet::new(),
         };
         registry.refresh_anim_types_affecting_play();
         registry
@@ -1704,6 +1725,8 @@ impl ArtRegistry {
             anim_theater_flags: HashMap::new(),
             scheduler_anim_types: BTreeSet::new(),
             anim_types_affecting_play: LookupSet::default(),
+            anim_folder_files: BTreeMap::new(),
+            smudge_folder_files: BTreeSet::new(),
         }
     }
 
@@ -1748,13 +1771,7 @@ impl ArtRegistry {
         state: &mut impl std::hash::Hasher,
     ) {
         use std::hash::Hash;
-        let mut names: BTreeSet<String> = self.anim_types_affecting_play.iter().cloned().collect();
-        names.extend(
-            paced
-                .into_iter()
-                .filter(|name| !name.is_empty())
-                .map(str::to_ascii_uppercase),
-        );
+        let names = self.anims_read_for_play(paced);
         names.len().hash(state);
         for name in names {
             let bounds = self.anim_runtime_configs.get(&name).map(|config| {
@@ -1767,6 +1784,51 @@ impl ArtRegistry {
             });
             (name, bounds).hash(state);
         }
+    }
+
+    /// The keys of the AnimTypes whose frames the simulation reads: every
+    /// type that affects play and every one in `paced`.
+    fn anims_read_for_play<'a>(
+        &self,
+        paced: impl IntoIterator<Item = &'a str>,
+    ) -> BTreeSet<String> {
+        let mut names: BTreeSet<String> = self.anim_types_affecting_play.iter().cloned().collect();
+        names.extend(
+            paced
+                .into_iter()
+                .filter(|name| !name.is_empty())
+                .map(str::to_ascii_uppercase),
+        );
+        names
+    }
+
+    /// VERA: the game-folder files that change what the simulation reads of
+    /// the animations: another frame count for an AnimType whose frames it
+    /// reads ([`Self::fold_anim_frame_bounds`]'s types, with `paced` as
+    /// there), another image height for `measured` (the weather bolt), and
+    /// a smudging frame on the other side of the size test
+    /// ([`Self::fold_smudge_frame_classes`]).
+    pub(crate) fn anim_folder_files<'a>(
+        &self,
+        paced: impl IntoIterator<Item = &'a str>,
+        measured: Option<&str>,
+    ) -> BTreeSet<&str> {
+        let mut files: BTreeSet<&str> = self
+            .anims_read_for_play(paced)
+            .iter()
+            .filter_map(|name| self.anim_folder_files.get(name))
+            .flat_map(|files| &files.frames)
+            .map(String::as_str)
+            .collect();
+        files.extend(
+            measured
+                .and_then(|name| self.anim_folder_files.get(&name.to_ascii_uppercase()))
+                .into_iter()
+                .flat_map(|files| &files.height)
+                .map(String::as_str),
+        );
+        files.extend(self.smudge_folder_files.iter().map(String::as_str));
+        files
     }
 
     /// VERA: for each animation whose middle frame leaves a smudge picked by
@@ -2097,12 +2159,30 @@ impl ArtRegistry {
             theater_ext,
             theater_name,
         );
-        let data = candidates
-            .iter()
-            .find_map(|candidate| asset_manager.get_ref(candidate));
+        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
+        let word = |bytes: &[u8], offset: usize| {
+            bytes
+                .get(offset..offset + 2)
+                .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
+        };
+        let mut folder_files = AnimFolderFiles::default();
+        let data = candidates.iter().find_map(|candidate| {
+            let (bytes, file) = folder.read(candidate)?;
+            if let Some(file) = file {
+                let shipped = folder.shipped(candidate);
+                if shipped.map(|shipped| word(shipped, 6)) != Some(word(bytes, 6)) {
+                    folder_files.frames.insert(file.clone());
+                }
+                if shipped.map(|shipped| word(shipped, 4)) != Some(word(bytes, 4)) {
+                    folder_files.height.insert(file);
+                }
+            }
+            Some(bytes)
+        });
         if !config.art_body_read && data.is_none() {
             // Fresh unread types and saved own-name misses are valid null
             // images (AnimRead427D22 / AnimTypeLoad428955).
+            self.anim_folder_files.remove(name);
             return;
         }
         let header_word = |data: Option<&[u8]>, offset: usize| {
@@ -2118,6 +2198,7 @@ impl ArtRegistry {
             bound.raw_shp_frame_count = Some(raw_count);
             bound.raw_shp_height = Some(header_word(data, 4));
             bound.middle_frame = Some(0);
+            self.note_anim_folder_files(name, folder_files);
             return;
         }
         // Read_Map4AD092 / MouseLoad5BE689 -> InitTheater427940 can replace
@@ -2131,7 +2212,9 @@ impl ArtRegistry {
             Some(loads) => loads
                 .iter()
                 .flat_map(|load| load.shp_names(theater_ext, theater_name))
-                .find_map(|candidate| asset_manager.get_ref(&candidate)),
+                .find_map(|candidate| {
+                    folder.read_noting(&candidate, |bytes| word(bytes, 6), &mut folder_files.frames)
+                }),
             None => data,
         };
         let bounds_count = header_word(bounds_data, 6);
@@ -2158,7 +2241,9 @@ impl ArtRegistry {
             && let Some(post_data) = loads
                 .iter()
                 .flat_map(|load| load.shp_names(theater_ext, theater_name))
-                .find_map(|candidate| asset_manager.get_ref(&candidate))
+                .find_map(|candidate| {
+                    folder.read_noting(&candidate, |bytes| word(bytes, 6), &mut folder_files.frames)
+                })
         {
             // The NewTheater arm427A1E calls427B50 again after the explicit
             // ART bounds reads: fill only zero End/LoopEnd, always write
@@ -2179,6 +2264,16 @@ impl ArtRegistry {
         bound.middle_frame = Some(middle);
         bound.end = loaded_end;
         bound.loop_end = loaded_loop_end;
+        self.note_anim_folder_files(name, folder_files);
+    }
+
+    /// Replace what [`Self::anim_folder_files`] holds for `name`.
+    fn note_anim_folder_files(&mut self, name: &str, folder_files: AnimFolderFiles) {
+        if folder_files.frames.is_empty() && folder_files.height.is_empty() {
+            self.anim_folder_files.remove(name);
+        } else {
+            self.anim_folder_files.insert(name.to_owned(), folder_files);
+        }
     }
 
     /// Bind native loader-derived End/LoopEnd values for the transitive
@@ -2600,18 +2695,31 @@ impl ArtRegistry {
         // Two-pass: collect (name, image_id) under &self, then mutate via
         // get_mut. Direct iter_mut would conflict with the &self call to
         // resolve_anim_image_id.
-        let pending: Vec<(String, String)> = self
+        let pending: Vec<(String, String, bool)> = self
             .iter_entries()
             .filter(|(_name, entry)| entry.crater || entry.scorch || entry.force_big_craters)
-            .map(|(name, _entry)| {
+            .map(|(name, entry)| {
                 let image_id: String = self.resolve_anim_image_id(name);
-                (name.to_string(), image_id)
+                // The smudge pick reads this frame's size
+                // ([`Self::fold_smudge_frame_classes`]).
+                let sized = (entry.scorch || entry.crater) && !entry.force_big_craters;
+                (name.to_string(), image_id, sized)
             })
             .collect();
 
         let mut populated: u32 = 0;
         let mut fallback: u32 = 0;
-        for (name, image_id) in pending {
+        let mut folder_files = BTreeSet::new();
+        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
+        let middle_frame_is_large = |bytes: &[u8]| {
+            let shp = crate::assets::shp_file::ShpFile::from_bytes(bytes).ok()?;
+            let frame = shp.frames.get(shp.frames.len() / 2)?;
+            Some(smudge_frame_is_large(
+                i32::from(frame.frame_width),
+                i32::from(frame.frame_height),
+            ))
+        };
+        for (name, image_id, sized) in pending {
             let candidates: Vec<String> = effect_shp_candidates(
                 crate::rules::art_data::EffectImageKind::Animation,
                 Some(self),
@@ -2620,7 +2728,13 @@ impl ArtRegistry {
                 theater_ext,
                 theater_name,
             );
-            let shp_bytes: Option<&[u8]> = candidates.iter().find_map(|c| asset_manager.get_ref(c));
+            let shp_bytes: Option<&[u8]> = candidates.iter().find_map(|c| {
+                if sized {
+                    folder.read_noting(c, middle_frame_is_large, &mut folder_files)
+                } else {
+                    asset_manager.get_ref(c)
+                }
+            });
             let Some(data) = shp_bytes else {
                 fallback += 1;
                 continue;
@@ -2643,6 +2757,7 @@ impl ArtRegistry {
                 fallback += 1;
             }
         }
+        self.smudge_folder_files = folder_files;
         (populated, fallback)
     }
 }

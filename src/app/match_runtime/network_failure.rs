@@ -97,14 +97,17 @@ fn reason(state: &AppState) -> Option<String> {
 }
 
 /// VERA: a refused start also names what this game changes from the
-/// original game, the terrain files this match read and the Ares setting Off
-/// where it kept Ares from playing among them, or says it plays the original
-/// (`agreement::start_changes_text`), and a launcher's match points at the
-/// launcher, which compares every player's rules parts (docs/spawn.md).
-/// Those parts leave the terrain files and that Ares answer out, so a match
-/// that read the one or has the other does not point there.
+/// original game, the terrain and picture or model files this match read and
+/// the Ares setting Off where it kept Ares from playing among them, or says
+/// it plays the original (`agreement::start_changes_text`), and a launcher's
+/// match points at the launcher, which compares every player's rules parts
+/// (docs/spawn.md). Those parts leave the terrain files, the picture and
+/// model files and that Ares answer out, so a match that read such files or
+/// has that answer does not point there.
 fn start_mismatch_text(state: &AppState) -> String {
-    use crate::app::shell_network_setup::agreement::{match_keeps_ares_off, start_changes_text};
+    use crate::app::shell_network_setup::agreement::{
+        match_keeps_ares_off, match_picture_files, start_changes_text,
+    };
     let mut text = crate::i18n::tr("VERA:MatchStartMismatch");
     text.push_str("\n\n");
     text.push_str(
@@ -113,6 +116,7 @@ fn start_mismatch_text(state: &AppState) -> String {
     if state.frontend.external_launch
         && !state.process_assets.match_reads_folder_terrain()
         && !match_keeps_ares_off(state)
+        && match_picture_files(state).is_empty()
     {
         text.push('\n');
         text.push_str(&crate::i18n::tr("VERA:LauncherShowsMismatch"));
