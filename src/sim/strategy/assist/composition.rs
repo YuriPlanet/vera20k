@@ -301,8 +301,13 @@ pub(super) fn fill_lines(
         let queued = queue_unit(rules, obs, &mut budget, out, wanted);
         if queued && let Some((ty, _)) = wanted {
             let traits = census::Traits::of(rules, ty);
-            if traits.engineer || traits.spy {
+            if traits.engineer {
                 brain.engineers.note_bought(obs.tick());
+            } else if traits.spy {
+                // Infiltration is neither an engineer purchase nor an
+                // immediate capture. The ledger for failed captures must not
+                // silence the spy line, and spies need their own pacing.
+                brain.next_spy_purchase = obs.tick().saturating_add(900);
             }
         }
     }
@@ -371,7 +376,7 @@ const ENGINEER_QUIET_FRAMES: u64 = 1_800;
 /// two totals rather than a reading of the field.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EngineerLedger {
-    /// Engineers and spies bought, as the queue saw them.
+    /// Engineers bought, as the queue saw them. Spies have a separate cooldown.
     pub(super) bought: u32,
     /// Buildings taken: a capture that landed.
     pub(super) captured: u32,
@@ -380,7 +385,7 @@ pub struct EngineerLedger {
 }
 
 impl EngineerLedger {
-    /// Whether the house may buy another engineer or spy this frame.
+    /// Whether the house may buy another engineer this frame.
     ///
     /// The window is the only gate. The ratio decides whether a purchase
     /// *enters* a window, not whether the house may ever buy again: a ratio
@@ -424,6 +429,7 @@ fn tool<'r>(
     census: &Census,
     credits: i32,
     ledger: &EngineerLedger,
+    spy_ready: bool,
 ) -> Option<(&'r ObjectType, InternedId)> {
     let engineers = census
         .units
@@ -441,7 +447,21 @@ fn tool<'r>(
     // whether filling it has been working.
     let may_buy_capturers = ledger.may_buy(obs.tick());
     let want_engineer = engineers < ENGINEER_WANT && may_buy_capturers;
-    let want_spy = spies < SPY_WANT && may_buy_capturers;
+    let visible_spy_target = obs.spyable_buildings(rules).any(|target| {
+        obs.is_cell_visible(target.cell.0, target.cell.1)
+    });
+    // An identified infiltration target gets priority, but a wealthy house
+    // that already owns its scouting/capture tools can prepare one spy before
+    // its first sighting. A hard visibility-only requirement prevented both
+    // the existing tool fixture and real fog-of-war anticipation from working.
+    let spy_preparation = engineers >= ENGINEER_WANT
+        && dogs >= DOG_WANT
+        && credits >= 3_000;
+    let want_spy = spies < SPY_WANT && spy_ready
+        && (visible_spy_target || spy_preparation);
+    // Once the first scout and engineer are available, a visible infiltration
+    // opportunity deserves a slot before another engineer is purchased.
+    let urgent_spy = want_spy && dogs >= 1 && engineers >= 1 && spies == 0;
     let want_dog = dogs < DOG_WANT;
     if !want_engineer && !want_spy && !want_dog {
         return None;
@@ -462,6 +482,7 @@ fn tool<'r>(
         // base's own growth. Then the cheaper, then the earlier rule.
         .min_by_key(|(ty, id, traits)| {
             (
+                u8::from(!(urgent_spy && traits.spy)),
                 u8::from(!traits.scout),
                 u8::from(!traits.engineer),
                 obs.cost_of(rules, ty),
@@ -505,6 +526,26 @@ fn product_for<'r>(
         && brain.census.refineries > 0
         && brain.census.harvesters == 0
         && let Some(found) = build::harvester(rules, obs)
+    {
+        return Some(found);
+    }
+    // A scout-revealed safe derrick is a time-limited opportunity, not a
+    // generic unit shortfall. Buy the *first* engineer before the native unit
+    // suggestion, but never send a lone engineer into a known enemy base.
+    if category == ProductionCategory::Infantry
+        && !brain.director.recovering_income()
+        && !brain.director.under_attack_now()
+        && let Some(found) = early_oil_engineer(brain, rules, obs, budget.free)
+    {
+        return Some(found);
+    }
+    // An identified infiltration window should not be starved by the house's
+    // native infantry suggestion: it can keep choosing riflemen every frame.
+    // This is just the purchase, not permission to run through hostile fire.
+    if category == ProductionCategory::Infantry
+        && !brain.director.protecting_base()
+        && !brain.director.recovering_income()
+        && let Some(found) = early_spy_infiltration(brain, rules, obs, budget.free)
     {
         return Some(found);
     }
@@ -565,7 +606,8 @@ fn product_for<'r>(
     if category == ProductionCategory::Infantry
         && !brain.director.protecting_base()
         && !brain.director.recovering_income()
-        && let Some(found) = tool(rules, obs, &brain.census, budget.free, &brain.engineers)
+        && let Some(found) = tool(rules, obs, &brain.census, budget.free, &brain.engineers,
+            obs.tick() >= brain.next_spy_purchase)
     {
         return Some(found);
     }
@@ -623,6 +665,71 @@ fn product_for<'r>(
     }
 }
 
+/// Invest in an *already discovered and currently unguarded* income point.
+/// Acquiring the unit is not an order to capture: `orders::captures` still
+/// checks the entire approach and escort safety before risking its life.
+fn early_oil_engineer<'r>(
+    brain: &AssistBrain,
+    rules: &'r RuleSet,
+    obs: &Observation<'_>,
+    credits: i32,
+) -> Option<(&'r ObjectType, InternedId)> {
+    if credits < 1_000 || brain.census.refineries == 0
+        || !brain.engineers.may_buy(obs.tick())
+        || brain.census.units.iter().any(|unit| unit.traits.engineer)
+        || !brain.census.units.iter().any(|unit| unit.traits.scout) {
+        return None;
+    }
+    let safe_oil = obs.capturable_buildings(rules).any(|target| {
+        !obs.is_hostile(target.entity_id)
+            && obs.is_cell_revealed(target.cell.0, target.cell.1)
+            && obs.object_type(rules, target.type_id)
+                .is_some_and(|ty| ty.produce_cash_amount > 0)
+            && !obs.visible_enemy_entities().any(|enemy| {
+                super::squared_distance(enemy.cell, target.cell) <= 12 * 12
+            })
+            && !brain.census.enemies.iter().any(|enemy| {
+                obs.object_type(rules, enemy.type_id)
+                    .is_some_and(|ty| ty.category == ObjectCategory::Building)
+                    && super::squared_distance(enemy.cell, target.cell) <= 12 * 12
+            })
+    });
+    if !safe_oil { return None; }
+    build::class_types(rules, obs, ObjectCategory::Infantry)
+        .filter(|(ty, _)| census::Traits::of(rules, ty).engineer)
+        .filter(|(ty, _)| obs.cost_of(rules, ty) <= credits)
+        .min_by_key(|(ty, id)| (obs.cost_of(rules, ty), *id))
+}
+
+/// Buy one spy when scouting has found a *currently visible* infiltratable
+/// building. Do not rely on the native infantry suggestion being absent: it
+/// often continuously recommends basic infantry. A separate 900-frame clock
+/// and a one-spy limit keep this from turning into an infiltration spam loop.
+fn early_spy_infiltration<'r>(
+    brain: &AssistBrain,
+    rules: &'r RuleSet,
+    obs: &Observation<'_>,
+    credits: i32,
+) -> Option<(&'r ObjectType, InternedId)> {
+    if credits < 1_500 || brain.census.refineries == 0
+        || brain.census.harvesters == 0
+        || obs.tick() < brain.next_spy_purchase
+        || brain.census.units.iter().any(|unit| unit.traits.spy)
+        || !brain.census.units.iter().any(|unit| unit.traits.scout)
+        || !brain.census.units.iter().any(|unit| unit.traits.engineer) {
+        return None;
+    }
+    let target_visible = obs.spyable_buildings(rules)
+        .any(|building| obs.is_cell_visible(building.cell.0, building.cell.1));
+    if !target_visible {
+        return None;
+    }
+    build::class_types(rules, obs, ObjectCategory::Infantry)
+        .filter(|(ty, _)| census::Traits::of(rules, ty).spy)
+        .filter(|(ty, _)| obs.cost_of(rules, ty) <= credits)
+        .min_by_key(|(ty, id)| (obs.cost_of(rules, ty), *id))
+}
+
 /// The type the house's own choice has this factory make, when the house may
 /// still build it and pay for it: `Suggest_New_Object 0x004FBD80`.
 ///
@@ -668,7 +775,15 @@ fn fighter<'r>(
     naval: Option<bool>,
     infantry_short: bool,
 ) -> Option<(&'r ObjectType, InternedId)> {
-    let ceiling = if category == ObjectCategory::Aircraft {
+    let can_field_advanced = matches!(category, ObjectCategory::Vehicle | ObjectCategory::Infantry)
+        && brain.census.refineries >= 1
+        && brain.census.harvesters >= 1
+        && brain.census.fighters >= 10
+        && (budget.free >= 6_000
+            || (brain.census.refineries >= 2 && budget.free >= 3_000))
+        && !brain.director.recovering_income()
+        && !brain.director.protecting_base();
+    let ceiling = if category == ObjectCategory::Aircraft || can_field_advanced {
         budget.free
     } else {
         unit_ceiling(budget.free)
@@ -683,6 +798,40 @@ fn fighter<'r>(
         .collect();
     if affordable.is_empty() {
         return None;
+    }
+
+    // The previous push identified a real, visible battery that outranges
+    // everything in the fist. Buy an unlocked standoff vehicle rather than
+    // another short-range tank to lose under the guns. A siege asset is only
+    // bought when affordable; other categories keep their normal flow.
+    if category == ObjectCategory::Vehicle && brain.push_gate == "need-siege" {
+        // Use the reach measured at the *current attack target*. A huge gun
+        // on the opposite edge of the map must not make every affordable
+        // artillery candidate appear inadequate.
+        let target_reach = brain.siege_reach.unwrap_or(0);
+        if let Some((ty,id,_)) = affordable.iter().copied()
+            .filter(|(ty,_,_)| super::advance::weapon_range_cells(rules,ty,false)
+                > target_reach + 1)
+            .min_by_key(|(_,id,cost)| (brain.census.type_count(*id), *cost, *id))
+        { return Some((ty,id)); }
+    }
+
+    // Reserve a bounded share for unlocked advanced weapons. Without this,
+    // the shortfall scorer's preference for cheaper answers can buy line
+    // tanks forever even after a tech lab unlocks Prism/Mirage/Apocalypse.
+    // Keep the quota small: expensive units cannot erase the line army.
+    if can_field_advanced {
+        let slot = slot_category(category).index();
+        let pool: usize = brain.census.tiers[slot].iter().sum();
+        let advanced = brain.census.tiers[slot][2];
+        if advanced_due(pool, advanced) {
+            if let Some((ty, id, _)) = affordable.iter().copied()
+                .filter(|(_, _, cost)| price_tier(*cost) == 2)
+                .min_by_key(|(_, id, cost)| (brain.census.type_count(*id), -cost, *id))
+            {
+                return Some((ty, id));
+            }
+        }
     }
 
     // The infantry floor outranks the ranking: below the share, the barracks
@@ -795,6 +944,12 @@ fn fighter<'r>(
         }
     }
     None
+}
+
+/// At most one in five combat units should come from the expensive tier.
+/// Test it without any retail unit names so modded rules obey the same quota.
+fn advanced_due(pool: usize, advanced: usize) -> bool {
+    pool >= 5 && advanced.saturating_mul(5) < pool
 }
 
 /// The pool a rules category's fighting units are counted in. Naval units are
@@ -1472,7 +1627,7 @@ mod tests {
         );
 
         let obs = Observation::new(&sim, owner);
-        let (ty, _) = tool(&rules, &obs, &census, 100_000, &EngineerLedger::default())
+        let (ty, _) = tool(&rules, &obs, &census, 100_000, &EngineerLedger::default(), true)
             .expect("the infantry line still has a tool to make");
         assert!(ty.agent, "the tool is a spy, not {}", ty.id);
     }
@@ -1561,6 +1716,33 @@ mod tests {
         // The floor is the other side of the same reading, and it must not
         // also be permanently true: an army past the ceiling is not short.
         assert!(!infantry_below_floor(&census));
+    }
+
+    /// V11: a stable tier quota should periodically pay for unlocked heavy
+    /// combat types, but never build *only* the expensive tier.
+    #[test]
+    fn unlocked_advanced_units_receive_a_bounded_share() {
+        assert!(!advanced_due(0, 0));
+        assert!(!advanced_due(4, 0));
+        assert!(advanced_due(5, 0));
+        assert!(!advanced_due(5, 1));
+        assert!(advanced_due(10, 1));
+        assert!(!advanced_due(10, 2));
+        assert!(advanced_due(16, 3));
+    }
+
+    /// A failed engineer rush cannot keep a separate spy expedition idle.
+    #[test]
+    fn spy_purchase_cooldown_is_not_engineer_failure_debt() {
+        let mut brain = AssistBrain::new(42);
+        for _ in 0..ENGINEER_WASTE_PATIENCE + 1 {
+            brain.engineers.note_bought(100);
+        }
+        assert!(!brain.engineers.may_buy(100));
+        assert_eq!(brain.next_spy_purchase, 0);
+        brain.next_spy_purchase = 100 + 900;
+        assert!(!brain.engineers.may_buy(100));
+        assert!(1_000 >= brain.next_spy_purchase);
     }
 
     /// The engineer line stops buying when its errands are not landing.

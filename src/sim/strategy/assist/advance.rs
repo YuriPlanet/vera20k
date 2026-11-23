@@ -356,6 +356,140 @@ fn tank_cohesion_post(
     None
 }
 
+/// The screen goes behind *actual nearby armour*, rather than charging a
+/// fragile rifleman ahead of the tanks. Only applies while marching across
+/// safe ground: once in contact, micro/engage owns both units.
+fn infantry_screen_post(
+    fighters: &[&Unit], soldier: &Unit, target: (u16,u16),
+    rules: &RuleSet, obs: &Observation<'_>,
+) -> Option<(u16,u16)> {
+    if soldier.slot != super::census::Slot::Infantry || !soldier.traits.combat
+        || soldier.traits.irreplaceable { return None; }
+    let armor = fighters.iter().copied()
+        .filter(|unit| unit.slot == super::census::Slot::Vehicle
+            && unit.traits.combat && unit.controllable() && !unit.in_service()
+            && unit.points >= soldier.points)
+        .min_by_key(|unit| (cell_distance(unit.cell, target), unit.entity_id))?;
+    let armor_distance = cell_distance(armor.cell, target);
+    if armor_distance <= 8 || cell_distance(soldier.cell, target) + 3 >= armor_distance
+        || obs.visible_enemy_entities().any(|enemy|
+            cell_distance(enemy.cell, soldier.cell) <= 9)
+    { return None; }
+    let (dx,dy) = (
+        (i32::from(armor.cell.0) - i32::from(target.0)).signum(),
+        (i32::from(armor.cell.1) - i32::from(target.1)).signum(),
+    );
+    for offset in [3,4,2] {
+        let (Ok(x),Ok(y)) = (
+            u16::try_from(i32::from(armor.cell.0) + offset * dx),
+            u16::try_from(i32::from(armor.cell.1) + offset * dy),
+        ) else { continue; };
+        let cell=(x,y);
+        if obs.is_ground_walkable(x,y)
+            && super::orders::reachable(rules,obs,soldier.entity_id,cell)
+        { return Some(cell); }
+    }
+    None
+}
+
+/// During an artillery preparation window, standing under enemy guns is
+/// worse than waiting. Move the *current* front back to a lawful standoff
+/// ring, and send late reinforcements to that ring rather than into the tower.
+/// This is a temporary detour: the original push target stays in `advance`.
+fn stage_siege(
+    tracker: &mut super::tracked::Tracker, trace: Option<u64>,
+    fighters: &[&Unit], rules: &RuleSet, obs: &Observation<'_>,
+    out: &mut Outbox, target: (u16,u16),
+) -> usize {
+    let gunline: Vec<_> = obs.visible_enemy_entities().filter_map(|enemy| {
+        let ty = obs.entity_type(rules,enemy.entity_id)?;
+        if !ty.is_base_defense || cell_distance(enemy.cell,target) > 14 { return None; }
+        let reach = weapon_range_cells(rules,ty,obs.is_deployed(enemy.entity_id));
+        (reach >= 4).then_some((enemy.entity_id,enemy.cell,reach))
+    }).collect();
+    let mut issued = 0;
+    for unit in fighters.iter().cycle()
+        .skip((obs.tick() as usize) % fighters.len().max(1))
+        .take(fighters.len().min(128))
+    {
+        if issued >= 5 { break; }
+        if !unit.controllable() || unit.in_service() || obs.is_deployed(unit.entity_id)
+            || unit.slot == super::census::Slot::Aircraft
+            || super::micro::firing(obs,unit.mission,unit.entity_id)
+            || super::orders::ordered_this_frame(out,unit.entity_id)
+        { continue; }
+        let Some((_,gun,reach)) = gunline.iter().copied()
+            .filter(|(id,_,_)| obs.can_hurt(rules,*id,unit.entity_id))
+            .min_by_key(|(id,at,_)| (cell_distance(*at,unit.cell),*id))
+        else { continue; };
+        let Some(post) = super::tactics::siege_post(
+            rules,obs,unit.entity_id,unit.cell,gun,reach)
+        else { continue; };
+        if cell_distance(unit.cell,post) <= 2
+            || obs.destination(unit.entity_id) == Some(post)
+        { continue; }
+        if super::orders::issue_tracked(
+            tracker,trace,out,rules,obs,unit.entity_id,
+            super::tracked::TrackedKind::Avoid,None,Some(post),Goal::Move { cell: post },
+        ) { issued += 1; }
+    }
+    issued
+}
+
+/// The front is outnumbered *locally* although its rear has enough strength
+/// to win the exchange. A short staging window moves the tail to a position
+/// just behind the tip; it never selects a different enemy objective.
+fn stage_reinforcements(
+    tracker: &mut super::tracked::Tracker, trace: Option<u64>,
+    fighters: &[&Unit], rules: &RuleSet, obs: &Observation<'_>,
+    out: &mut Outbox, target: (u16,u16),
+) -> usize {
+    let Some(tip) = fighters.iter()
+        .filter(|unit| cell_distance(unit.cell,target) <= 18)
+        .min_by_key(|unit| (cell_distance(unit.cell,target),unit.entity_id))
+    else { return 0; };
+    let mut dx = (i32::from(tip.cell.0) - i32::from(target.0)).signum();
+    let dy = (i32::from(tip.cell.1) - i32::from(target.1)).signum();
+    if dx == 0 && dy == 0 { dx = 1; }
+    let mut posts = Vec::new();
+    let lateral = (-dy,dx);
+    for range in [16i32,18,14,20] {
+        for shift in [0,-2,2,-4,4] {
+            let (Ok(x),Ok(y)) = (
+                u16::try_from(i32::from(target.0) + dx * range + lateral.0 * shift),
+                u16::try_from(i32::from(target.1) + dy * range + lateral.1 * shift),
+            ) else { continue; };
+            if obs.is_ground_walkable(x,y) { posts.push((x,y)); }
+        }
+    }
+    let mut issued = 0;
+    for unit in fighters.iter().cycle()
+        .skip((obs.tick() as usize) % fighters.len().max(1))
+        .take(fighters.len().min(128))
+    {
+        if issued >= 5 { break; }
+        if !unit.controllable() || unit.in_service() || obs.is_deployed(unit.entity_id)
+            || unit.slot == super::census::Slot::Aircraft
+            || super::micro::firing(obs,unit.mission,unit.entity_id)
+            || super::orders::ordered_this_frame(out,unit.entity_id)
+        { continue; }
+        let Some(post) = posts.iter().copied()
+            .cycle().skip((unit.entity_id as usize) % posts.len().max(1))
+            .take(posts.len())
+            .find(|post| super::orders::reachable(rules,obs,unit.entity_id,*post)
+                && !super::tactics::unsafe_post(rules,obs,unit.entity_id,*post))
+        else { continue; };
+        if cell_distance(unit.cell,post) <= 3
+            || obs.destination(unit.entity_id) == Some(post)
+        { continue; }
+        if super::orders::issue_tracked(
+            tracker,trace,out,rules,obs,unit.entity_id,
+            super::tracked::TrackedKind::Avoid,None,Some(post),Goal::Move { cell: post },
+        ) { issued += 1; }
+    }
+    issued
+}
+
 pub(super) fn advance(
     brain: &mut AssistBrain,
     rules: &RuleSet,
@@ -469,6 +603,7 @@ pub(super) fn advance(
     };
     brain.push_gate = gate;
     if gate != "push" {
+        brain.assault_wait = None;
         return false;
     }
     let tick = obs.tick();
@@ -490,10 +625,12 @@ pub(super) fn advance(
     let target = match answer {
         targets::Answer::NowhereToLook => {
             brain.push_gate = "nowhere-to-look";
+            brain.assault_wait = None;
             return false;
         }
         targets::Answer::NoTarget => {
             brain.push_gate = "no-target";
+            brain.assault_wait = None;
             return false;
         }
         targets::Answer::Chosen(chosen) => chosen,
@@ -503,6 +640,31 @@ pub(super) fn advance(
     brain.push_target = Some((target.nearest.0, tick, target.nearest.1));
     let mopping_up = target.mopping_up;
     let (target_id, target_cell) = (target.entity_id, target.cell);
+    let siege_reach = if !mopping_up && target_id != 0 {
+        super::tactics::need_siege(rules,obs,target_cell,&fighters)
+    } else { None };
+    brain.siege_reach = siege_reach;
+    if let Some(reach) = siege_reach {
+        // Keep a bounded artillery preparation window for one enemy target.
+        // A missing factory, an unaffordable price, or a refused production
+        // order must never freeze the old successful v10 assault indefinitely.
+        let start = match brain.siege_wait {
+            Some((id, since)) if id == target_id => since,
+            _ => tick,
+        };
+        brain.siege_wait = Some((target_id, start));
+        if tick.saturating_sub(start) < 600 {
+            brain.push_gate = "need-siege";
+            // Waiting must be an actual manoeuvre, not just a label. A tank
+            // already walking into the pillbox will keep that native order
+            // unless we deliberately move it back out of the gunline.
+            stage_siege(&mut brain.tracked,brain.trace,&fighters,rules,obs,out,target_cell);
+            log::debug!("auto play: stage for siege reach>{reach} at {target_cell:?}");
+            return true;
+        }
+    } else {
+        brain.siege_wait = None;
+    }
     // A crate on the way is a crate the army walks over.
     //
     // The box is a bonus and not a job, and the walk to the structure passes
@@ -542,6 +704,29 @@ pub(super) fn advance(
         brain.push_gate = "outgunned";
         brain.push_rest = (obs.tick(), "outgunned");
         return false;
+    }
+
+    // A strong army can still lose when only its fastest two units meet the
+    // enemy and the others are twenty cells behind. Look at currently visible
+    // contact strength, not the all-map force total. Wait one bounded wave;
+    // if the rear cannot arrive, do not freeze this previously winning push.
+    if !mopping_up && !searching
+        && super::tactics::waiting_for_support(rules,obs,target_cell,&fighters)
+    {
+        let start = match brain.assault_wait {
+            Some((id,since)) if id == target_id => since,
+            _ => tick,
+        };
+        brain.assault_wait = Some((target_id,start));
+        if tick.saturating_sub(start) < 240 {
+            brain.push_gate = "await-support";
+            stage_reinforcements(
+                &mut brain.tracked,brain.trace,&fighters,rules,obs,out,target_cell,
+            );
+            return true;
+        }
+    } else {
+        brain.assault_wait = None;
     }
 
     // The frame's budget is a handful of orders and the rest of the list is
@@ -681,7 +866,46 @@ pub(super) fn advance(
         // and stood in the yard for the rest of the match.
         let cohesion = tank_rally.filter(|anchor| needs_tank_cohesion(unit, *anchor))
             .filter(|anchor| super::orders::reachable(rules, obs, unit.entity_id, *anchor));
-        let march_cell = cohesion.unwrap_or(target_cell);
+        let mut march_cell = cohesion.unwrap_or(target_cell);
+        if let Some(screen) = infantry_screen_post(&fighters, unit, target_cell, rules, obs)
+            && super::orders::reachable(rules,obs,unit.entity_id,screen)
+        {
+            march_cell = screen;
+        }
+        // A high-value vehicle must not simply drive into a visible psychic
+        // controller's weapon range. Attack it from outside range when it
+        // has the reach; otherwise preserve the unit and let infantry or
+        // artillery deal with the controller. This is not omniscient: threats
+        // beyond current sight never enter the decision.
+        if unit.slot == super::census::Slot::Vehicle && unit.traits.combat
+            && let Some((controller, position, reach)) =
+                super::tactics::controller_covering(rules,obs,march_cell)
+        {
+            let own_reach = obs.entity_type(rules,unit.entity_id)
+                .map_or(0,|ty| weapon_range_cells(rules,ty,obs.is_deployed(unit.entity_id)));
+            if own_reach <= reach + 1 {
+                let existing = super::tactics::controller_covering(rules,obs,unit.cell);
+                if existing.is_some() {
+                    if let Some(safe) = super::tactics::evade_controller(
+                        rules,obs,unit.entity_id,unit.cell,position)
+                    {
+                        if super::orders::issue_tracked(
+                            &mut brain.tracked,brain.trace,out,rules,obs,
+                            unit.entity_id,super::tracked::TrackedKind::Dodge,
+                            None,Some(safe),Goal::Move { cell: safe },
+                        ) { issued += 1; }
+                    }
+                } else if super::orders::issue_tracked(
+                    &mut brain.tracked,brain.trace,out,rules,obs,
+                    // Guard has a lower priority than an old AttackMove:
+                    // it would be rejected while the native tank kept driving
+                    // into the controller. Engage is an expiring override.
+                    unit.entity_id,super::tracked::TrackedKind::Engage,
+                    Some(controller),None,Goal::Guard,
+                ) { issued += 1; }
+                continue;
+            }
+        }
         let attacking = unit.mission == MissionId::from_known(MissionType::Attack)
             && obs.attack_target(unit.entity_id).is_some();
         // A destination from an old push is not proof that this unit is
@@ -859,9 +1083,13 @@ pub(super) fn advance(
 /// brain that measures the standing weapon sends a deployed soldier at a target
 /// its gun cannot cover, and a soldier that cannot walk just stands there.
 pub(super) fn weapon_range_cells(rules: &RuleSet, ty: &ObjectType, deployed: bool) -> i32 {
-    let Some(weapon) = weapon_of(rules, ty, deployed) else {
-        return 0;
-    };
+    weapon_of(rules,ty,deployed).map_or(0, weapon_reach_cells)
+}
+
+/// The native effective reach of a *particular* weapon. Siege selection must
+/// inspect the warhead and reach of the SAME slot, not accidentally combine a
+/// long-ranged AA gun with a short-ranged ground-damaging secondary weapon.
+pub(super) fn weapon_reach_cells(weapon: &crate::rules::weapon_type::WeaponType) -> i32 {
     let per_cell = crate::util::lepton::LEPTONS_PER_CELL_I32;
     let reach = (weapon.range_leptons - weapon.minimum_range_leptons.max(0)).max(0);
     reach.div_euclid(per_cell) + i32::from(reach.rem_euclid(per_cell) != 0)

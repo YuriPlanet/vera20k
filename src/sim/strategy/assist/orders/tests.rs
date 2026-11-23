@@ -1557,6 +1557,9 @@ fn an_idle_scout_walks_to_a_crate_near_it() {
         cell_y: 10,
         ..CrateSlot::default()
     };
+    // The real player must actually see the box, rather than reading the
+    // scenario's global crate slots through a fog-of-war side channel.
+    sim.fog.mark_visible_for_owner(owner, 13, 10);
 
     let obs = Observation::new(&sim, owner);
     let mut brain = AssistBrain::new(0xA17);
@@ -1613,6 +1616,37 @@ fn a_crate_out_of_reach_is_not_a_job_for_a_scout() {
     crates(&mut brain, &rules, &obs, &mut out);
 
     assert!(out.orders.is_empty(), "{:?}", out.orders);
+}
+
+#[test]
+fn a_seen_distant_crate_can_get_a_single_scout_assignment() {
+    use crate::sim::crates::CrateSlot;
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[InfantryTypes]\n0=DOG\n\
+         [DOG]\nStrength=100\nSpeed=6\nNotHuman=yes\nNatural=yes\n\
+         Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}\n",
+    )).expect("scout rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Americans");
+    let dog = sim.spawn_object("DOG", "Americans", 10, 10, 64, &rules)
+        .expect("a scout");
+    *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = CrateSlot {
+        cell_x: 20, cell_y: 10, ..CrateSlot::default()
+    };
+    sim.fog.mark_visible_for_owner(owner, 20, 10);
+    let obs = Observation::new(&sim, owner);
+    let mut brain = AssistBrain::new(0xA17);
+    brain.rebuild_census(&rules, &obs);
+    let mut first = Outbox::default();
+    crates(&mut brain, &rules, &obs, &mut first);
+    assert!(first.orders.iter().any(|order| order.actor == dog
+        && order.goal == Goal::Move { cell: (20, 10) }), "{:?}", first.orders);
+    assert_eq!(brain.crate_claims.len(),1);
+    let mut repeated = Outbox::default();
+    crates(&mut brain, &rules, &obs, &mut repeated);
+    assert!(repeated.orders.is_empty(), "claimed boxes must not prompt duplicate moves");
 }
 
 /// A crate that is not next to the unit is a job, and the house does not
@@ -1850,4 +1884,14 @@ fn support_powers_respect_their_individual_lobby_switch() {
     assert!(!allowed_by_shell(false, true),
         "the lobby may disable an explicitly disableable missile");
     assert!(allowed_by_shell(true, true));
+}
+
+
+#[test]
+fn a_free_support_power_is_not_blocked_by_an_income_reserve() {
+    assert!(super_launch_affordable(0, 100, 3_000));
+    assert!(super_launch_affordable(250, 100, 3_000));
+    assert!(!super_launch_affordable(-1_000, 1_700, 1_000));
+    assert!(super_launch_affordable(-1_000, 2_500, 1_000));
+    assert!(!super_launch_affordable(i32::MIN, 1_000, 500));
 }

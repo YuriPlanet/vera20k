@@ -292,6 +292,15 @@ impl<'a> Observation<'a> {
             .is_some_and(|entity| entity.is_deployed())
     }
 
+    /// A parasite inside a vehicle is a repair-depot emergency even when the
+    /// vehicle itself is still healthy. Exposed read-only so the controller
+    /// never needs to look through the observation boundary.
+    pub fn has_parasite(&self, entity_id: u64) -> bool {
+        self.sim.entities().get(entity_id).is_some_and(|entity| {
+            entity.parasite.eater().is_some()
+        })
+    }
+
     /// Whether `rx, ry` is no longer under the house's shroud: the cell has
     /// been revealed to it, or to an ally it shares sight with
     /// (`FogState::is_cell_revealed`, `src/sim/vision/mod.rs:1752`; the grid is
@@ -448,6 +457,27 @@ impl<'a> Observation<'a> {
             .get(entity_id)
             .and_then(|entity| entity.miner.as_ref())
             .map(|miner| miner.cargo().len() as u32)
+    }
+
+    /// The currently visible controller of a **formerly own** mind-controlled
+    /// unit. A visible victim is not proof that its controller is visible;
+    /// both must be in the player's live sight. A victim originally belonging
+    /// to another enemy must not become a rescue priority for this house.
+    pub fn visible_liberation_target(&self, victim_id: u64) -> Option<u64> {
+        if !self.visible_enemy_entities().any(|enemy| enemy.entity_id == victim_id) {
+            return None;
+        }
+        let victim = self.sim.entities().get(victim_id)?;
+        let controller_id = victim.seldom.mind_control.controller()?;
+        let controller = self.sim.entities().get(controller_id)?;
+        let original = controller.capture_manager.as_ref()?
+            .original_owner(victim_id)?;
+        if original != self.house
+            || !self.visible_enemy_entities().any(|enemy| enemy.entity_id == controller_id)
+        {
+            return None;
+        }
+        Some(controller_id)
     }
 
     /// Whether a harvester's hold is full: it should be on its way to a
@@ -1277,6 +1307,13 @@ impl<'a> Observation<'a> {
     /// How many objects this one is carrying: a transport's cargo, or a
     /// building's garrison. The Transport pilot needs it to tell a loaded
     /// carrier from an empty one.
+    /// Can this specific passenger enter this specific receiver *right now*?
+    /// The native radio/size/seat check stays behind L2's observation API;
+    /// strategy code must not inspect Simulation to infer remaining capacity.
+    pub fn can_enter_transport(&self, rules: &RuleSet, passenger: u64, carrier: u64) -> bool {
+        crate::sim::passenger::can_enter_transport(self.sim, rules, passenger, carrier)
+    }
+
     pub fn passengers(&self, entity_id: u64) -> usize {
         self.sim.entities().get(entity_id).map_or(0, |entity| {
             entity.passenger_role().occupants().count().max(0) as usize

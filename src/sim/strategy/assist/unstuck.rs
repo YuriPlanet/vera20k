@@ -24,6 +24,8 @@ const MAX_ESCAPES_PER_FRAME: usize = 2;
 #[derive(Debug, Clone, Copy)]
 struct Motion {
     destination: (u16, u16),
+    previous_destination: Option<(u16,u16)>,
+    destination_flips: u8,
     last_cell: (u16, u16),
     before_last: Option<(u16, u16)>,
     best_distance: i32,
@@ -48,17 +50,42 @@ impl Recovery {
             return false;
         }
         let sample = self.motion.entry(id).or_insert(Motion {
-            destination: dest, last_cell: at, before_last: None,
+            destination: dest, previous_destination: None, destination_flips: 0,
+            last_cell: at, before_last: None,
             best_distance: distance, last_progress_at: now,
             bounce: 0, cooldown_until: 0,
         });
         if sample.destination != dest {
-            *sample = Motion {
-                destination: dest, last_cell: at, before_last: None,
-                best_distance: distance, last_progress_at: now,
-                bounce: 0, cooldown_until: now.saturating_add(30),
-            };
-            return false;
+            // Two nearby waypoints alternating while the unit stands in the
+            // same corner is not a fresh mission on every tick. Keep the
+            // original no-progress clock and count successive A/B/A flips.
+            let close = cell_distance(sample.destination, dest) <= 4
+                && cell_distance(sample.last_cell, at) <= 3;
+            if !close {
+                *sample = Motion {
+                    destination: dest, previous_destination: None,
+                    destination_flips: 0, last_cell: at, before_last: None,
+                    best_distance: distance, last_progress_at: now,
+                    bounce: 0, cooldown_until: now.saturating_add(30),
+                };
+                return false;
+            }
+            let returned = sample.previous_destination == Some(dest);
+            sample.destination_flips = if returned {
+                sample.destination_flips.saturating_add(1)
+            } else { 0 };
+            sample.previous_destination = Some(sample.destination);
+            sample.destination = dest;
+            sample.last_cell = at;
+            sample.best_distance = distance;
+            if now < sample.cooldown_until { return false; }
+            if sample.destination_flips < 6
+                && now.saturating_sub(sample.last_progress_at) < NO_PROGRESS_FRAMES
+            { return false; }
+            sample.last_progress_at = now;
+            sample.destination_flips = 0;
+            sample.cooldown_until = now.saturating_add(ESCAPE_COOLDOWN_FRAMES);
+            return true;
         }
         if sample.last_cell != at {
             let reversed = sample.before_last == Some(at);
@@ -70,6 +97,7 @@ impl Recovery {
             sample.best_distance = distance;
             sample.last_progress_at = now;
             sample.bounce = 0;
+            sample.destination_flips = 0;
         }
         if now < sample.cooldown_until {
             return false;
@@ -202,6 +230,17 @@ mod tests {
             found |= recovery.observe(i * 5, 2, if i % 2 == 0 { (3, 3) } else { (4, 3) }, (20, 3));
         }
         assert!(found, "repeated backtracks do not count as progress");
+    }
+
+    #[test]
+    fn alternating_nearby_waypoints_do_not_reset_stall_forever() {
+        let mut recovery = Recovery::default();
+        let mut escaped = false;
+        for i in 0..18 {
+            let destination = if i % 2 == 0 { (20, 3) } else { (21, 3) };
+            escaped |= recovery.observe(i * 6, 19, (4, 3), destination);
+        }
+        assert!(escaped, "changing between nearby goals must not mask a stuck unit");
     }
 
     #[test]

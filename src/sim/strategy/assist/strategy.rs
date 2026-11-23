@@ -217,9 +217,11 @@ impl Director {
             Objective::HoldBase => !matches!(item,
                 Item::Superweapon | Item::SpySatellite | Item::CloningVats
                 | Item::IndustrialPlant | Item::Purifier),
+            // The build plan's StrategicStrike gate, not the name of the
+            // stage, determines when an affordable strike can be mounted.
             Objective::ExpandOre => !matches!(item,
-                Item::Superweapon | Item::SpySatellite | Item::CloningVats),
-            Objective::Muster => !matches!(item, Item::Superweapon),
+                Item::SpySatellite | Item::CloningVats),
+            Objective::Muster => true,
             Objective::PressAttack => true,
         }
     }

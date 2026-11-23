@@ -144,8 +144,9 @@ pub(super) fn captures(
     // chosen for an engineer simply because the native list knows it exists.
     let engineer_targets: Vec<EnemyEntity> = obs.capturable_buildings(rules)
         .filter(|target| {
-            !obs.is_hostile(target.entity_id)
-                || obs.is_cell_visible(target.cell.0, target.cell.1)
+            obs.is_cell_revealed(target.cell.0, target.cell.1)
+                && (!obs.is_hostile(target.entity_id)
+                    || obs.is_cell_visible(target.cell.0, target.cell.1))
         })
         .collect();
     // Book the captures that landed since the last look. A building that was
@@ -1683,6 +1684,10 @@ const SPY_WATCH_CELLS: i32 = 6;
 /// give a unit one: measured, a fighter that walked thirty cells for a box
 /// turned a win into a timeout.
 const CRATE_SEEK_CELLS: i32 = 8;
+/// A known distant crate is worth one scout's journey, not a tank attack
+/// group. No unseen crate may leak from the scenario's global crate slots.
+const CRATE_SCOUT_CELLS: i32 = 32;
+const CRATE_CLAIM_FRAMES: u64 = 600;
 
 /// Send an idle scout to a nearby crate it can actually reach.
 ///
@@ -1699,6 +1704,11 @@ pub(super) fn crates(
 ) {
     let tick = obs.tick();
     let cells: Vec<(u16, u16)> = obs.crate_cells(rules);
+    let live = &brain.tracked;
+    brain.crate_claims.retain(|id, (cell, until)| {
+        *until > tick && cells.contains(cell)
+            && live.primary_goal(*id) == Some(Goal::Move { cell: *cell })
+    });
     if cells.is_empty() {
         return;
     }
@@ -1714,6 +1724,8 @@ pub(super) fn crates(
     // assignment of the quickest idle-capable types, and only its members collect.
     // Speed is the rules' own `Speed=`, so a mod's fast unit joins it and a slow
     // one does not, with no type named here.
+    let scouts: BTreeSet<u64> = brain.census.units.iter()
+        .filter(|unit| unit.traits.scout).map(|unit| unit.entity_id).collect();
     let mut detail: Vec<(u64, (u16, u16), MovementZone, i32)> = brain
         .census
         .units
@@ -1735,7 +1747,9 @@ pub(super) fn crates(
         .collect();
     // Quickest first, so the detail is the same units every frame rather than
     // whichever the store yields first.
-    detail.sort_by_key(|(id, _, _, speed)| (-*speed, *id));
+    detail.sort_by_key(|(id, _, _, speed)| {
+        (if scouts.contains(id) { 0 } else { 1 }, -*speed, *id)
+    });
     let idle: Vec<(u64, (u16, u16), MovementZone, bool, i32)> = detail
         .into_iter()
         .take(CRATE_RUNNERS)
@@ -1756,6 +1770,8 @@ pub(super) fn crates(
     crates.sort_by_key(|cell| (squared_distance(anchor, *cell), *cell));
     let mut sent: BTreeSet<u64> = BTreeSet::new();
     for cell in crates {
+        // Global crate slots are not a fog-of-war observation.
+        if !obs.is_cell_visible(cell.0, cell.1) { continue; }
         // The nearest idle unit that can walk there. The unit's own movement
         // zone: a tank and a dog reach different ground, and asking with the
         // infantry's zone for everybody sends vehicles at cells they cannot
@@ -1766,7 +1782,16 @@ pub(super) fn crates(
         // the map for it is a house that is not fighting: measured, sending a
         // fighter thirty cells for a box turned a win into a timeout.
         let reachable = |unit: &(u64, (u16, u16), MovementZone, bool, i32), range: i32| {
-            squared_distance(unit.1, cell) <= range * range && obs.can_reach(unit.2, unit.1, cell)
+            let remote_scout = scouts.contains(&unit.0)
+                && obs.is_cell_visible(cell.0,cell.1)
+                && squared_distance(unit.1,cell)
+                    <= CRATE_SCOUT_CELLS * CRATE_SCOUT_CELLS;
+            (squared_distance(unit.1, cell) <= range * range || remote_scout)
+                && obs.can_reach(unit.2, unit.1, cell)
+                && !brain.census.enemies.iter().any(|enemy| {
+                    obs.is_cell_visible(enemy.cell.0,enemy.cell.1)
+                        && squared_distance(enemy.cell,cell) <= 8 * 8
+                })
         };
         // The soonest arrival, not the nearest body. The walk is the entire cost
         // of a crate, so the question is who gets there first per unit of army
@@ -1782,9 +1807,13 @@ pub(super) fn crates(
             let speed = unit.4.max(1);
             squared_distance(unit.1, cell) / speed
         };
+        if brain.crate_claims.values().any(|(claimed,until)|
+            *claimed == cell && *until > tick)
+        { continue; }
         let picked = idle
             .iter()
-            .filter(|(id, _, _, _, _)| !sent.contains(id))
+            .filter(|(id, _, _, _, _)| !sent.contains(id)
+                && !brain.crate_claims.contains_key(id))
             .filter(|unit| reachable(unit, CRATE_SEEK_CELLS))
             .min_by_key(|unit| (arrival(unit), unit.0))
             .copied();
@@ -1802,9 +1831,9 @@ pub(super) fn crates(
             continue;
         }
         if issue(brain, out, rules, obs, id, Goal::Move { cell }) {
-            brain
-                .tracked
-                .record(tick, id, TrackedKind::Move, None, Some(cell));
+            brain.tracked.record_goal(tick, id, TrackedKind::Move,
+                None, Some(cell), Goal::Move { cell });
+            brain.crate_claims.insert(id,(cell,tick.saturating_add(CRATE_CLAIM_FRAMES)));
             log::info!(
                 "auto play: unit {id} goes for the crate at {cell:?} taken={}",
                 obs.ground_object_cells(rules).contains(&cell)
@@ -1990,35 +2019,46 @@ pub(super) fn managed(
 
     // Collected before anything is written: the routine takes the unit, and
     // the ledger is borrowed while it is read.
-    let retreating: Vec<(u64, (u16, u16), MissionId)> = brain
+    let retreating: Vec<(u64, (u16, u16), MissionId, super::census::Slot)> = brain
         .census
         .units
         .iter()
-        .filter(|unit| unit.traits.combat && !unit.hand && unit.orderable)
-        .filter(|unit| unit.health_permille <= retreat_line(&unit.traits))
+        .filter(|unit| !unit.hand && unit.orderable && !unit.in_service())
+        .filter(|unit| {
+            (unit.traits.combat && (unit.health_permille <= retreat_line(&unit.traits)
+                || super::tactics::exposed_casualty(rules,obs,unit)))
+                || ((unit.traits.combat || unit.traits.harvester)
+                    && obs.has_parasite(unit.entity_id)
+                    && !brain.census.repair_sites.is_empty())
+        })
         // A hurt unit in a fight the house is winning stays in it. The
         // comparison is the push's own, with a stricter margin: the push may
         // wait for a better moment, this unit cannot, and a third of the
         // attackers walking home mid-exchange is what makes a push a series
         // of small fights that each one can be lost.
         .filter(|unit| {
-            !super::squads::winning_fight(
-                &brain.census,
-                rules,
-                obs,
-                unit.cell,
-                RETREAT_SUPERIORITY_PERMILLE,
-            )
+            obs.has_parasite(unit.entity_id)
+                || !super::squads::winning_fight(
+                    &brain.census,
+                    rules,
+                    obs,
+                    unit.cell,
+                    RETREAT_SUPERIORITY_PERMILLE,
+                )
         })
-        .map(|unit| (unit.entity_id, unit.cell, unit.mission))
+        .map(|unit| (unit.entity_id, unit.cell, unit.mission, unit.slot))
         .collect();
-    for (entity_id, cell, mission) in retreating {
+    for (entity_id, cell, mission, slot) in retreating {
         // The bay this unit walks to: the nearest one the house owns, so two
         // service depots share the work instead of every hurt unit crossing the
         // base to the first. With no bay the walk ends beside the base — the
         // yard's own cell is its foundation, and a Move to it is a walk that
         // never arrives.
-        let site = brain.census.nearest_repair_site(cell);
+        // UnitRepair is a vehicle bay, not an infantry hospital. Walking a
+        // wounded soldier to its pad leaves a refused Enter intent; infantry
+        // instead use the existing safe-home retreat routine.
+        let site = (slot == super::census::Slot::Vehicle)
+            .then(|| brain.census.nearest_repair_site(cell)).flatten();
         let depot = site.map(|(_, entity)| entity);
         let post = site
             .map(|(cell, _)| cell)
@@ -2160,7 +2200,8 @@ pub(super) fn transports(
             .filter(|unit| unit.orderable && !unit.hand && !unit.in_service())
             .filter_map(|unit| {
                 let ty = obs.object_type(rules, unit.type_id)?;
-                (super::pilots::Pilot::of(rules, ty) == super::pilots::Pilot::Transport)
+                (super::pilots::Pilot::of(rules, ty) == super::pilots::Pilot::Transport
+                    && !ty.open_topped && !ty.gunner)
                     .then_some((unit.entity_id, unit.cell, ty.passengers))
             })
             .collect();
@@ -2219,7 +2260,11 @@ fn board_idle(
     tick: u64,
 ) -> bool {
     for (carrier, cell, capacity) in carriers.iter().copied() {
-        if capacity <= 0 || obs.passengers(carrier) != 0 {
+        if capacity <= 0 || obs.passengers(carrier) != 0
+            || brain.tracked.pending_enterers(tick, carrier).any(|passenger| {
+                obs.inside_transport(passenger) != Some(carrier)
+            })
+        {
             continue;
         }
         let Some(soldier) = brain
@@ -2252,6 +2297,9 @@ fn board_idle(
             continue;
         };
         let soldier_id = soldier.entity_id;
+        if !obs.can_enter_transport(rules, soldier_id, carrier) {
+            continue;
+        }
         if issue_tracked(
             &mut brain.tracked, brain.trace, out, rules, obs,
             soldier_id, TrackedKind::Enter, Some(carrier), Some(cell),
@@ -2349,12 +2397,30 @@ pub(super) fn supers(
         {
             continue;
         }
+        // Ares Money.Amount is a real wallet transaction (negative = cost),
+        // not a harmless activation. Never spend the credits promised to the
+        // income/yard recovery plan on a support power.
+        if !super_launch_affordable(
+            super_weapon.money_amount, obs.credits(),
+            brain.yard_reserve.max(if brain.director.recovering_income() { 3_000 } else { 750 }),
+        ) {
+            continue;
+        }
         // Where it lands is the power's own answer, not one cell for all of
         // them: a paradrop is soldiers, and soldiers dropped into the enemy's
         // own base land inside everything that stands there.
         let Some(cell) = landing_cell(brain, rules, obs, aim_of(super_weapon.kind)) else {
             continue;
         };
+        // Force Shield blacks out its own house. Saving one tower must not
+        // shut down every powered tower, radar and production line. Only an
+        // actual emergency over valuable infrastructure can justify that cost.
+        if super_weapon.kind == SuperWeaponKind::ForceShield
+            && rules.general.force_shield_blackout_duration > 0
+            && !shield_blackout_worth_it(rules, obs, cell)
+        {
+            continue;
+        }
         log::info!("auto play: fire {name} at {cell:?}");
         brain
             .super_at
@@ -2365,6 +2431,44 @@ pub(super) fn supers(
         });
         fired += 1;
     }
+}
+
+/// Negative Money.Amount is a debit; positive amounts award money. Maintain a
+/// reserve even when the native command would be accepted, so a flashy launch
+/// cannot bankrupt the one remaining harvester or the construction yard.
+fn super_launch_affordable(money_amount: i32, credits: i32, reserve: i32) -> bool {
+    // No debit means no economic opportunity cost. In particular, never
+    // suppress a free American paradrop while saving for a refinery.
+    if money_amount >= 0 { return true; }
+    let debit = money_amount.saturating_neg();
+    credits.saturating_sub(debit) >= reserve
+}
+
+/// A shield that cuts all house power is an emergency last resort. It should
+/// cover a critical building that is being actively fired on by multiple
+/// visible enemies, or one already near destruction. Enemy proximity alone
+/// is not evidence that shutting off every powered defense is a good trade.
+fn shield_blackout_worth_it(
+    rules: &RuleSet, obs: &Observation<'_>, cell: (u16, u16),
+) -> bool {
+    let radius = rules.general.force_shield_radius.max(1);
+    obs.own_entities().any(|building| {
+        let Some(ty) = obs.entity_type(rules, building.entity_id) else {
+            return false;
+        };
+        if ty.category != ObjectCategory::Building
+            || !(ty.construction_yard || ty.refinery || ty.resource_destination)
+            || super::squared_distance(building.cell, cell) > radius * radius
+        {
+            return false;
+        }
+        let attackers = obs.visible_enemy_entities()
+            .filter(|enemy| obs.attack_target(enemy.entity_id) == Some(building.entity_id))
+            .count();
+        attackers >= 2 || (attackers >= 1 &&
+            i64::from(building.health.max(0)) * 100
+                < i64::from(ty.strength.max(1)) * 35)
+    })
 }
 
 fn allowed_by_shell(super_weapons_enabled: bool, disableable_from_shell: bool) -> bool {

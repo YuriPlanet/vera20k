@@ -110,15 +110,56 @@ pub(super) fn run(
     // enemy rather than one per enemy and unit. A unit that is being shot at
     // answers the gun that is shooting it before the wall it was shelling —
     // the "attacked the base while a tank killed it" report.
+    // Historic sightings are useful to pick a destination, but not a live
+    // firing target. Every prioritisation below uses *current* vision only.
+    let visible_enemies: BTreeSet<u64> = obs.visible_enemy_entities()
+        .map(|enemy| enemy.entity_id).collect();
     let aimed_at: std::collections::BTreeMap<u64, u64> = brain
         .census
         .enemies
         .iter()
+        .filter(|enemy| visible_enemies.contains(&enemy.entity_id))
         .filter_map(|enemy| {
             obs.attack_target(enemy.entity_id)
                 .map(|t| (enemy.entity_id, t))
         })
         .collect();
+    // Kill the visible controller to release captured friends instead of
+    // destroying those friends first. Never chase an invisible controller.
+    let liberators: BTreeSet<u64> = brain.census.enemies.iter()
+        .filter_map(|enemy| obs.visible_liberation_target(enemy.entity_id))
+        .collect();
+    // An enemy shooting an ore carrier, a refinery, or the yard is a real
+    // economic emergency. The spare guns in reach should focus that raider
+    // rather than independently choosing nearer scenery. An attacker shooting
+    // *this* fighter still wins: the first key in `in_reach` owns self-defence.
+    let economic_assets: BTreeSet<u64> = brain.census.units.iter()
+        .filter(|unit| unit.traits.harvester || unit.traits.refinery || unit.traits.yard)
+        .map(|unit| unit.entity_id)
+        .collect();
+    let economic_raiders: BTreeSet<u64> = aimed_at.iter()
+        .filter_map(|(enemy, target)| economic_assets.contains(target).then_some(*enemy))
+        .collect();
+    // Existing friendly fire is evidence that a durable enemy is worth
+    // finishing. Support that engagement, rather than scattering the spare
+    // tanks among different targets. Don't waste three guns on a nearly dead
+    // rifleman, and don't use last-known coordinates as current fire orders.
+    let mut friendly_fire = std::collections::BTreeMap::<u64,usize>::new();
+    for unit in brain.census.units.iter().filter(|unit| unit.traits.combat && unit.orderable) {
+        if let Some(target) = obs.attack_target(unit.entity_id)
+            && visible_enemies.contains(&target)
+        {
+            *friendly_fire.entry(target).or_default() += 1;
+        }
+    }
+    let focus_targets: BTreeSet<u64> = friendly_fire.into_iter()
+        .filter(|(_,count)| *count >= 2)
+        .filter_map(|(enemy,_)| {
+            let ty = obs.entity_type(rules,enemy)?;
+            (ty.category != ObjectCategory::Infantry
+                && obs.health(enemy).is_some_and(|hp| hp.saturating_mul(2) > ty.strength))
+                .then_some(enemy)
+        }).collect();
     let mut issued = 0;
     for item in work {
         if issued >= MICRO_ORDERS_PER_FRAME {
@@ -134,7 +175,12 @@ pub(super) fn run(
         // together, so a dog walks on past the tank to the infantry behind it
         // instead of being held on a target it cannot hurt.
         if let Some(enemy) = in_reach(
-            brain.census.enemies.iter().map(|enemy| {
+            brain.census.enemies.iter()
+                // A visible controller of our stolen unit is the legitimate
+                // target. Do not spend this cycle killing the captured tank.
+                .filter(|enemy| visible_enemies.contains(&enemy.entity_id))
+                .filter(|enemy| obs.visible_liberation_target(enemy.entity_id).is_none())
+                .map(|enemy| {
                 (
                     enemy.entity_id,
                     enemy.cell,
@@ -153,7 +199,11 @@ pub(super) fn run(
                 super::orders::admits(rules, obs, item.entity_id, &Goal::Attack { target })
                     && obs.can_hurt(rules, item.entity_id, target)
             },
-            |target| prefer(rules, obs, item.preference, target),
+            |target| target_rank(
+                prefer(rules,obs,item.preference,target),
+                liberators.contains(&target), economic_raiders.contains(&target),
+                focus_targets.contains(&target),
+            ),
         ) {
             // A tank beside a soldier flattens him instead of trading shots:
             // `Crusher=` on the tank, `Crushable=` on the infantry, and the
@@ -383,6 +433,10 @@ pub(super) fn run(
             // known hostile is only the fallback once there is nothing left to
             // find.
             Role::Scout => {
+                // A crate collector has a short, explicit job. Do not replace
+                // the crate walk with a shroud walk one line later this frame.
+                // Engage/Dodge already ran and still outrank the collection.
+                if brain.crate_claims.contains_key(&item.entity_id) { continue; }
                 // A scout walks the leg it is on. The nearest unexplored cell
                 // changes sides as the dog moves — two cells at the same
                 // distance, and the tie-break follows the dog — so re-deciding
@@ -644,6 +698,18 @@ fn prefer(
     }
 }
 
+/// One shared priority for special threats. Liberating captured allies
+/// outranks an ordinary raid; attacking the house's income chain outranks
+/// generic role preferences. Direct self-defense still wins in `in_reach`.
+fn target_rank(
+    preference: u8, liberation: bool, economic_raid: bool, allied_focus: bool,
+) -> u8 {
+    if liberation { 0 }
+    else if economic_raid { 1 }
+    else if allied_focus { 2 }
+    else { preference.saturating_add(3) }
+}
+
 /// How near a neutral building has to stand to a unit for it to be what the
 /// unit is up against, in cells: the cell it stands on and the one behind it,
 /// which is where a foundation's near edge is.
@@ -784,6 +850,20 @@ fn nearest(
         .iter()
         .min_by_key(|enemy| (squared_distance(enemy.cell, from), enemy.entity_id))
         .map(|enemy| (enemy.entity_id, enemy.cell))
+}
+
+#[cfg(test)]
+mod v13_priority_tests {
+    use super::*;
+
+    #[test]
+    fn liberate_and_protect_income_before_preference_targets() {
+        assert_eq!(target_rank(1,true,false,true),0);
+        assert_eq!(target_rank(1,false,true,true),1);
+        assert_eq!(target_rank(1,false,false,true),2);
+        assert_eq!(target_rank(0,false,false,false),3);
+        assert_eq!(target_rank(1,false,false,false),4);
+    }
 }
 
 #[cfg(all(test, tests_sim_p_s))]

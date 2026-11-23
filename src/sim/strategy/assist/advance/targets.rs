@@ -192,9 +192,20 @@ pub(super) fn choose(
     // stops at one and does nothing never arrives. Clearing the way costs one
     // target and unblocks the whole fist; the target behind it is what the army
     // comes back for.
-    let target = match blocking_structure(&structures, anchor, nearest) {
+    // A visible enemy nuclear/weather/psychic strike plot is not an ordinary
+    // dispensable structure: if it is on this *same* assault lane, disable the
+    // future superweapon before picking yet another nearby refinery. Do not
+    // redirect the fist across the map: that would regress the proven v10
+    // reachable/nearest target behaviour.
+    let campaign_target = structures.iter()
+        .filter(|(ty, enemy)| super::super::build::grants_a_strike(rules, ty)
+            && obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+            && strike_on_approach(anchor, nearest.cell, enemy.cell))
+        .min_by_key(|(_, enemy)| (cell_distance(enemy.cell, anchor), enemy.entity_id))
+        .map_or(nearest, |(_, enemy)| *enemy);
+    let target = match blocking_structure(&structures, anchor, campaign_target) {
         Some(blocker) => covering_defense(&structures, blocker).unwrap_or(blocker),
-        None => covering_defense(&structures, nearest).unwrap_or(nearest),
+        None => covering_defense(&structures, campaign_target).unwrap_or(campaign_target),
     };
     // A neutral building is nobody's, so it is in no census and no target list;
     // it is still closed ground the fist walks into and stops at. Sampling the
@@ -212,6 +223,26 @@ pub(super) fn choose(
         progress,
     )
 }
+/// A threat is urgent when it lies within the next local push, not merely
+/// anywhere on the map. The narrow distance condition protects v10's wins.
+fn strike_on_approach(anchor: (u16, u16), chosen: (u16, u16),
+    strike: (u16, u16)) -> bool {
+    cell_distance(strike, chosen) <= 12
+        && cell_distance(strike, anchor) <= cell_distance(chosen, anchor) + 6
+}
+
+#[cfg(test)]
+mod strategic_threat_tests {
+    use super::*;
+
+    #[test]
+    fn a_remote_strike_does_not_hijack_a_winning_attack_route() {
+        assert!(strike_on_approach((2, 2), (15, 2), (18, 2)));
+        assert!(!strike_on_approach((2, 2), (15, 2), (40, 2)));
+        assert!(!strike_on_approach((2, 2), (15, 2), (15, 30)));
+    }
+}
+
 /// How near an enemy's own defense has to stand to the structure the fist is
 /// walking at before the defense is the thing to kill first, in cells: far
 /// enough to cover the approach, near enough that it is that structure's gun

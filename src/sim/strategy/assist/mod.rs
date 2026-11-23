@@ -118,6 +118,7 @@ pub(crate) fn trace_enabled(name: &str) -> bool {
 
 
 pub(super) mod advance;
+pub(super) mod advanced;
 pub(super) mod army;
 pub(super) mod avoidance;
 pub(super) mod build;
@@ -136,6 +137,7 @@ pub(super) mod pilots;
 pub(super) mod plan;
 pub(super) mod squads;
 pub(super) mod strategy;
+pub(super) mod tactics;
 pub(super) mod terrain;
 pub(super) mod threats;
 pub(super) mod tracked;
@@ -276,6 +278,17 @@ pub struct AssistBrain {
     /// real gate; this only keeps a refused launch from spending the frame
     /// budget every frame it stays lit.
     pub(super) super_at: BTreeMap<InternedId, u64>,
+    /// At most two cheap mobile units may leave their routine for visible
+    /// distant crates. A durable claim stops two units chasing the same box.
+    pub(super) crate_claims: BTreeMap<u64, ((u16,u16), u64)>,
+    /// A bounded preparation window against the visible defensive gun line.
+    pub(super) siege_wait: Option<(u64, u64)>,
+    /// Target and start tick of a bounded local reinforcement assembly.
+    /// Kept apart from the artillery window: a tank column can be scattered
+    /// even without a fixed gunline, and neither timer may reset the other.
+    pub(super) assault_wait: Option<(u64, u64)>,
+    /// Reach of the gun line currently preventing this push, in map cells.
+    pub(super) siege_reach: Option<i32>,
     /// The house's income, measured: samples of `Observation::earned` a window
     /// apart. Not a simulation stream and not the brain's generator — it is a
     /// reading of the house's own books, kept here because the brain is the
@@ -361,6 +374,15 @@ pub struct AssistBrain {
     /// Which infiltration class each spy already sent was walking to, by unit.
     /// The unit is consumed on arrival, so its disappearance is the receipt.
     pub(super) spy_errand: std::collections::BTreeMap<u64, u8>,
+    /// Spy purchases are independent of engineer captures; one infiltration
+    /// expedition must not be starved by unsuccessful engineer rushes.
+    pub(super) next_spy_purchase: u64,
+    /// Local emergency unloading is a cooldown, not a permanent garrison ban.
+    pub(super) garrison_release_after: BTreeMap<u64, u64>,
+    /// A combat carrier takes at most one reserve soldier each short window.
+    pub(super) combat_board_after: u64,
+    /// Siege deploy is a toggle: never send it in both directions every frame.
+    pub(super) siege_toggle_after: BTreeMap<u64, u64>,
     /// The ore cells near the base and the frame they were read on.
     /// A field does not move, so the scan stands for `ore::SCAN_TERM`.
     pub(super) ore_scan: Option<ore::Survey>,
@@ -462,6 +484,10 @@ impl AssistBrain {
             roles: None,
             census: Census::default(),
             super_at: BTreeMap::new(),
+            crate_claims: BTreeMap::new(),
+            siege_wait: None,
+            assault_wait: None,
+            siege_reach: None,
             income: plan::IncomeMeter::new(),
             avoid_cursor: 0,
             expansion_probe: None,
@@ -476,6 +502,10 @@ impl AssistBrain {
             yard_commit: std::collections::BTreeMap::new(),
             infiltrated: std::collections::BTreeSet::new(),
             spy_errand: std::collections::BTreeMap::new(),
+            next_spy_purchase: 0,
+            garrison_release_after: BTreeMap::new(),
+            combat_board_after: 0,
+            siege_toggle_after: BTreeMap::new(),
             ore_scan: None,
             ore_known: BTreeMap::new(),
             push_target: None,
@@ -893,9 +923,17 @@ impl Brain for AssistBrain {
             orders::pack_captured_yard(self, rules, obs, out);
         }
         if obs.forces_enabled() {
-            orders::garrison(self, rules, obs, out);
+            advanced::protect_base(self, rules, obs, out);
+            advanced::relieve_garrison(self, rules, obs, out);
+            advanced::combat_carriers(self, rules, obs, out);
+            // While the base is being raided, do not return just-evacuated
+            // infantry to their occupied buildings in the same frame.
+            if !self.director.under_attack_now() {
+                orders::garrison(self, rules, obs, out);
+            }
             dodge::run(self, rules, obs, out);
             kite::run(self, rules, obs, out);
+            orders::crates(self, rules, obs, out);
             micro::run(self, rules, obs, out);
             avoidance::run(self, rules, obs, out);
             // A capture can borrow one spare defender, without overruling
@@ -904,6 +942,7 @@ impl Brain for AssistBrain {
             // A miner in immediate danger may run home, but only through a
             // temporary command that cannot turn into a permanent mining loop.
             orders::harvester_safety(self, rules, obs, out);
+            advanced::siege_artillery(self, rules, obs, out);
             // Native navigation can remain blocked after a legal Move. Detect
             // actual lack of progress before borrowing a unit for a side step.
             unstuck::run(self, rules, obs, out);
@@ -921,7 +960,6 @@ impl Brain for AssistBrain {
         }
         if obs.forces_enabled() {
             orders::transports(self, rules, obs, out);
-            orders::crates(self, rules, obs, out);
             orders::deploy(self, obs, out);
         }
         // Every pass has had its say: the strongest request for each actor

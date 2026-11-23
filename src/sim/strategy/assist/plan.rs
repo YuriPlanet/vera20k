@@ -260,6 +260,9 @@ pub(super) enum Gate {
     CanReplace,
     /// The tech stage: a surplus and an army worth unlocking types for.
     Tech,
+    /// A strategic strike requires an operational army and surplus funds;
+    /// a known enemy superweapon lowers the cash threshold.
+    StrategicStrike,
 }
 
 /// One entry of the build list: what is wanted, how many, and when.
@@ -344,6 +347,14 @@ pub(super) const STEPS: &[Step] = &[
         want: 1,
         gate: Gate::CanReplace,
     },
+    // A strategic weapon is a real arms-race decision, not the final leftover
+    // after cloning vats, satellite, towers and three production plants.
+    // The new gate skips it during the opening or an income collapse.
+    Step {
+        item: Item::Superweapon,
+        want: 1,
+        gate: Gate::StrategicStrike,
+    },
     // The second and third bays before the towers and the extra lines: the ore
     // a bay unloads is what pays for everything below it, and a house that
     // reaches the midgame on one bay earns a third of what it could.
@@ -418,16 +429,6 @@ pub(super) const STEPS: &[Step] = &[
         item: Item::Support,
         want: 1,
         gate: Gate::Free(super::economy::SUPPORT_MIN_CREDITS),
-    },
-    // The plot, once there is money the lines cannot spend: a superweapon is
-    // the one purchase that takes a base apart, and a house that owns one wins
-    // the fight it was losing. Last, because nothing below it needs it and a
-    // strike building before an army is a base that dies with the plot half
-    // built.
-    Step {
-        item: Item::Superweapon,
-        want: 1,
-        gate: Gate::Surplus,
     },
 ];
 
@@ -642,6 +643,10 @@ fn open(
                     .is_some_and(|rate| rate >= super::economy::SURPLUS_INCOME_PER_MINUTE)
         }
         Gate::CanReplace => build::can_replace_units(rules, obs, census),
+        Gate::StrategicStrike => census.harvesters >= 2
+            && census.fighters >= 10
+            && (census.enemy_strike_sites > 0 && budget.free >= 3_000
+                || census.refineries >= 2 && budget.free >= 5_000),
         // The wallet, and only the wallet: a house that waits to have an army
         // before it unlocks the tree is a house that pays for the whole army
         // with the opening's tech level. `build_next` already refuses a
@@ -869,6 +874,18 @@ mod tests {
         assert!(repair < towers, "repair {repair} before towers {towers}");
         assert_eq!(STEPS[repair].want, 1, "one shed repairs a whole army");
         assert_eq!(STEPS[repair].gate, Gate::CanReplace);
+    }
+
+    #[test]
+    fn a_strategic_strike_is_an_option_before_luxury_infrastructure() {
+        let strike = STEPS.iter().position(|step| step.item == Item::Superweapon)
+            .expect("one superweapon step");
+        let luxuries = STEPS.iter().position(|step| step.item == Item::CloningVats)
+            .expect("cloning step");
+        let repair = STEPS.iter().position(|step| step.item == Item::Repair)
+            .expect("service depot");
+        assert!(repair < strike && strike < luxuries);
+        assert_eq!(STEPS[strike].gate, Gate::StrategicStrike);
     }
 
     /// The second bay is income, and the towers and the extra lines are not:

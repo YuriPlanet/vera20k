@@ -338,6 +338,20 @@ impl Tracker {
         })
     }
 
+    /// An Enter request for this transport that has been admitted by L3, but
+    /// whose passenger might still be walking to it. Current cargo alone is
+    /// insufficient: three soldiers can all be ordered into the last seat
+    /// before the first one arrives. Callers exclude units already inside.
+    pub(super) fn pending_enterers(&self, now: u64, transport: u64)
+        -> impl Iterator<Item = u64> + '_
+    {
+        self.intents.iter().filter(move |(_, intent)| {
+            intent.kind == TrackedKind::Enter
+                && intent.target == Some(transport)
+                && now < intent.until
+        }).map(|(id, _)| *id)
+    }
+
     /// Whether anyone at all still has a live `kind` intent on `target`.
     ///
     /// The reverse of `admits`, for the orders that are about a *place* rather
@@ -894,5 +908,22 @@ mod tests {
         assert_eq!(tracker.primary_goal(7), None);
     }
 
+
+    /// A transport seat has a reservation while its passenger walks there.
+    /// Counting current occupants alone loses this race on a crowded frame.
+    #[test]
+    fn enter_intents_reserve_a_transport_until_refused_or_expired() {
+        let mut tracker = Tracker::new();
+        for id in [41,42] {
+            tracker.record_goal(10,id,TrackedKind::Enter,Some(600),Some((8,8)),
+                Goal::Enter { target: 600 });
+        }
+        let seats: Vec<u64> = tracker.pending_enterers(11,600).collect();
+        assert_eq!(seats,vec![41,42]);
+        assert_eq!(tracker.pending_enterers(11,601).count(),0);
+        tracker.void(41,TrackedKind::Enter);
+        assert_eq!(tracker.pending_enterers(11,600).collect::<Vec<_>>(),vec![42]);
+        assert_eq!(tracker.pending_enterers(10_000,600).count(),0);
+    }
 
 }
