@@ -444,23 +444,13 @@ pub(crate) fn paint_gui_children(
     root: NodeId,
     scale: ShellScale,
 ) -> GuiPaint {
-    paint_gui_children_under(state, gui, root, scale, &[])
+    paint_gui_styled(state, gui, root, scale, &[], GuiStyle::default())
 }
 
-/// [`paint_gui_children`] under `overlays` that paint with the widgets'
-/// sprites but before their text (an open list in a box): the captions of
-/// the nodes an overlay meets are left out, so they don't show through it.
-pub(crate) fn paint_gui_children_under(
-    state: &AppState,
-    gui: &Gui,
-    root: NodeId,
-    scale: ShellScale,
-    overlays: &[RectPx],
-) -> GuiPaint {
-    paint_gui_styled(state, gui, root, scale, overlays, GuiStyle::default())
-}
-
-/// [`paint_gui_children_under`] in the host's `style`.
+/// [`paint_gui_children`] in the host's `style`, under `overlays` that
+/// paint with the widgets' sprites but before their text (an open list in
+/// a box): the captions of the nodes an overlay meets are left out, so they
+/// don't show through it.
 pub(crate) fn paint_gui_styled(
     state: &AppState,
     gui: &Gui,
