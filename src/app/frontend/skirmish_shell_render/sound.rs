@@ -16,7 +16,7 @@ pub(crate) fn render_sound_shell(
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
     crate::app::input::sound::sync(state).expect("active B8 geometry");
-    super::in_game_shell::paint_dialog_nodes(state, encoder, destination, &DIALOG, |paint, ui| {
+    super::in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let state = paint.state;
         // B8 reads the control under the pointer on every move, a held
         // trackbar's drag included.

@@ -30,7 +30,7 @@ pub(crate) fn render_connection_shell(
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
     let layout = crate::app::input::connection::sync(state).expect("active 0xEA geometry");
-    in_game_shell::paint_dialog_nodes(state, encoder, destination, &DIALOG, |paint, ui| {
+    in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let state = paint.state;
         let page = state.match_state.network_wait.page().expect("open 0xEA");
         // Paging paints on the side art and the texts only: before the

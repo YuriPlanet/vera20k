@@ -63,6 +63,15 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
     own_checkbox_sound: false,
 };
 
+/// Makes 0x10C's nodes current without input (rects): its renderer's call
+/// every drawn frame before it paints from them.
+pub(crate) fn sync(state: &mut AppState) -> Option<restate::RestateLayout> {
+    let layout = super::dialog_page::layout(state, restate::restate_layout)?;
+    let rect = |id| layout.rect(id);
+    DIALOG.sync(state, restate::spec, rect, super::dialog_page::no_sync);
+    Some(layout)
+}
+
 /// One pointer message on 0x10C (`down`: `None` moves).
 pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     let Some(layout) = super::dialog_page::layout(state, restate::restate_layout) else {

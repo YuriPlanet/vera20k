@@ -22,7 +22,7 @@ pub(crate) fn render_diplomacy_shell(
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
     let (layout, view) = crate::app::input::diplomacy::sync(state).expect("active 0x73 geometry");
-    super::in_game_shell::paint_dialog_nodes(state, encoder, destination, &DIALOG, |paint, ui| {
+    super::in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let state = paint.state;
         let text_of = |id: i32| -> Option<String> {
             let id = u16::try_from(id).ok()?;

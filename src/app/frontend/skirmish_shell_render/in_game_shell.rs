@@ -323,39 +323,17 @@ impl<'a> InGamePaint<'a> {
     }
 }
 
-/// Paints `dialog` over the active-game shell (`0x00621E90` -> `0x0072F540`):
-/// the shell art, its lower right-panel button and title 0x694, what
-/// `extras` adds, then the status line 0x695.
+/// Paints `dialog`, whose nodes are current ([`InGameDialog::sync`]), over
+/// the active-game shell (`0x00621E90` -> `0x0072F540`): the shell art, its
+/// lower right-panel button from its node (its spec's control
+/// `dialog.lower.0` on the layout's lower rect, a
+/// [`super::gui_paint::ButtonArt::Side`] button captioned `dialog.lower.1`)
+/// and title 0x694, what `extras` adds, then the status line 0x695.
 pub(super) fn paint_dialog(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
     dialog: &InGameDialog,
-    extras: impl FnOnce(&mut InGamePaint<'_>, &DialogController),
-) -> anyhow::Result<()> {
-    paint_dialog_as(state, encoder, destination, dialog, false, extras)
-}
-
-/// [`paint_dialog`] for a dialog whose nodes are current
-/// ([`InGameDialog::sync`]): the lower button paints from its node
-/// (its spec's control `dialog.lower.0` on the layout's lower rect), a
-/// [`super::gui_paint::ButtonArt::Side`] button captioned `dialog.lower.1`.
-pub(super) fn paint_dialog_nodes(
-    state: &mut AppState,
-    encoder: &mut wgpu::CommandEncoder,
-    destination: &wgpu::Texture,
-    dialog: &InGameDialog,
-    extras: impl FnOnce(&mut InGamePaint<'_>, &DialogController),
-) -> anyhow::Result<()> {
-    paint_dialog_as(state, encoder, destination, dialog, true, extras)
-}
-
-fn paint_dialog_as(
-    state: &mut AppState,
-    encoder: &mut wgpu::CommandEncoder,
-    destination: &wgpu::Texture,
-    dialog: &InGameDialog,
-    lower_node: bool,
     extras: impl FnOnce(&mut InGamePaint<'_>, &DialogController),
 ) -> anyhow::Result<()> {
     let frame = {
@@ -365,26 +343,14 @@ fn paint_dialog_as(
         paint.help = crate::app::input::dialog_page::help(ui).map(|key| state.csf_label(key, ""));
         let shell = paint.shell;
         let (id, (key, fallback)) = dialog.lower;
-        if lower_node {
-            let text_of = |_: i32| Some(state.csf_label(key, fallback));
-            let style = super::gui_paint::GuiStyle {
-                buttons: super::gui_paint::ButtonArt::Side,
-                side: Some(paint.side_buttons()),
-                text_of: Some(&text_of),
-                ..Default::default()
-            };
-            paint.nodes(ui, &[id], style);
-        } else {
-            let rect = shell
-                .layout
-                .lower_button_rect(shell.width, shell.button_size);
-            let caption = state.csf_label(key, fallback);
-            paint.button(
-                rect,
-                &caption,
-                crate::app::input::dialog_page::pressed(ui, id),
-            );
-        }
+        let text_of = |_: i32| Some(state.csf_label(key, fallback));
+        let style = super::gui_paint::GuiStyle {
+            buttons: super::gui_paint::ButtonArt::Side,
+            side: Some(paint.side_buttons()),
+            text_of: Some(&text_of),
+            ..Default::default()
+        };
+        paint.nodes(ui, &[id], style);
         if let Some(title) = dialog.title {
             let title = paint.label(title);
             paint.text(
