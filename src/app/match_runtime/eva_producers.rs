@@ -88,7 +88,8 @@
 //!   `GoOffline 0x004523DE` (`EVA_BuildingOnLine/OffLine`, human house only):
 //!   `sim::building_power::go_building_online` / `go_building_offline`, called
 //!   for map-placed buildings (`sim::world::world_spawn`), `EventClass::Execute`
-//!   (`Command::SetBuildingOnLine`; YR has no UI that queues the event) and
+//!   (`Command::SetBuildingOnLine`, queued by Ares' power mode,
+//!   `app::input::power_mode`; YR has no UI that queues it) and
 //!   `TriggerAction::Execute` (`sim::trigger_runtime`).
 //!
 //! Multiplayer only (GameMode 5 refuses them), produced:

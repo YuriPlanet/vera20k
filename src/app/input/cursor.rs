@@ -292,6 +292,20 @@ fn find_cursor_feedback_kind(
             CursorFeedbackKind::SellMode(valid)
         });
     }
+    // DetermineAction's power arm (`0x00692815`, Ares `1005C790`): the
+    // Ares cursor table (10057F10) draws its TogglePower/NoTogglePower
+    // entries.
+    if matches!(pointer_mode, super::state::TacticalPointerMode::Power) {
+        let kind = CursorFeedbackKind::TogglePower(
+            super::power_mode::building_under_cursor(state).is_some(),
+        );
+        return Some(super::ares_cursor::tactical(
+            kind,
+            &super::ares_cursor::CursorOverrides::default(),
+            0,
+            state.rules(),
+        ));
+    }
     // No early return for an empty selection here. `242c79ad0` carried
     // `if selected.is_empty() { return None; }` (no comment, no native
     // backing), which made the no-selection arm below unreachable and showed
@@ -1947,6 +1961,12 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         }),
         // Action 0xD, the SellUnit row.
         CursorFeedbackKind::SellUnit => Some(CursorId::SellUnit),
+        // Actions 0x21/0x22: rows 0x37 and 0x3C (`0x004AB884` switch).
+        CursorFeedbackKind::TogglePower(valid) => Some(if valid {
+            CursorId::TogglePower
+        } else {
+            CursorId::NoTogglePower
+        }),
         CursorFeedbackKind::SuperWeaponTarget(id) => Some(id),
         // Row 0x4E: mouse.sha frames 435..449 at rate 4.
         CursorFeedbackKind::PlaceBeacon => Some(CursorId::Beacon),

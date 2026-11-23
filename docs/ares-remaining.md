@@ -141,8 +141,10 @@ Resurrection's nine pairs) have no such pair.
   (`[Colors] Count` above 8). Ares' defaults match the engine. See
   [ares-sidebar-ui-hooks.md](ares-sidebar-ui-hooks.md).
 - The CSF loader hooks (Misc/CSFLoader.cpp) are deferred: CSF loading is handled separately.
+- Ares' FPSCounter and MapSnapshot keyboard commands (hook `0x533058`); TogglePower
+  and the debug commands are in [ares-commands.md](ares-commands.md).
 - The front-end hooks among the untouched ones below: the skirmish MultiEngineer
-  option, Ares' keyboard commands and the uimd.ini settings. The DLL plumbing
+  option and the uimd.ini settings. The DLL plumbing
   (checksums, save stream, copy protection, log, swizzling, start and command
   line) is in [ares-skipped-hooks.md](ares-skipped-hooks.md).
 - Overlay radar colours (OverlayTypeClass_GetRadarColor, `1006ACC0`, hook `0x5FED00`):
@@ -220,7 +222,7 @@ Retail INIs for retail tests: run the repo's `extract-ini` into `ini/` and set `
 
 ## Untouched hooks
 
-These 6 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
+These 5 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
 hook script above skips this page).
 
 | Hook | Ares.dll | Name | Source |
@@ -228,6 +230,5 @@ hook script above skips this page).
 | `0x69801A` | `1006AF40` | Game_GetGameTypePrefs_MultiEngineer | `Misc/Skirmish.cpp` |
 | `0x699043` | `1006AF00` | GameMode_SaveGameSettings_MultiEngineer | `Misc/Skirmish.cpp` |
 | `0x6AEE6A` | `1006B070` | Skirmish_InitializeDialog_MultiEngineer | `Misc/Skirmish.cpp` |
-| `0x533058` | `10002A80` | CommandClassCallback_Register | `Ares.Commands.cpp` |
 | `0x5FACDF` | `10006030` | Options_LoadFromINI | `Ares.UISettings.cpp` |
 | `0x73D219` | `10053E50` | UnitClass_Draw_OreGatherAnim | `Ext/WarheadType/Hooks.EMP.cpp` |

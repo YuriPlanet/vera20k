@@ -2448,7 +2448,8 @@ pub struct ObjectType {
     /// Whether this building can be toggled on/off by the player.
     /// Parsed from `TogglePower=yes` in rules.ini.
     /// Defaults to true for buildings (most can be powered down).
-    /// Triggers `TogglePower` cursor when hovering this building in power-toggle mode.
+    /// Triggers `TogglePower` cursor when hovering this building in power mode
+    /// ([`Self::can_toggle_power`]).
     pub toggle_power: bool,
 
     /// `InfantryGainSelfHeal=` (`BuildingTypeClass+0x1564`, read by the

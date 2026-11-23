@@ -156,9 +156,15 @@ pub struct SidebarGadgetState {
     pub sell_mode_on: bool,
 
     /// Mirrors Display +0x11B4, beacon placement mode, which only
-    /// SetPlaceBeaconMode 4AC960 sets (`app::input::beacon`). Repair and Sell
-    /// changes clear it (4AC916, 4AC6BB).
+    /// SetPlaceBeaconMode 4AC960 sets (`app::input::beacon`). Repair, Sell
+    /// and Power changes clear it (4AC916, 4AC6BB, 4AC87B).
     pub place_beacon_mode_on: bool,
+
+    /// Mirrors Display +0x11B2, power mode, which only SetTogglePowerMode
+    /// 4AC820 sets: YR never arms it, Ares' TogglePower command does
+    /// (`app::input::power_mode`). Repair, Sell and Beacon changes clear it
+    /// (4AC908, 4AC6AD, 4AC9C7).
+    pub power_mode_on: bool,
 
     /// Last sim tick the orchestrator processed: offline, the frames since
     /// it are this pass's Sidebar Action visits
@@ -211,8 +217,8 @@ impl SidebarGadgetState {
 
     /// Display SetRepairMode4AC8C0 / SetSellMode4AC660 (-1). A pending
     /// placement TYPE refuses the entire transition. Both toggles clear the
-    /// competing mode and the beacon byte (4AC916 / 4AC6BB), and entry needs
-    /// House+2F0 (owned-building tracking).
+    /// competing mode, the power byte and the beacon byte (4AC901..4AC916 /
+    /// 4AC6A6..4AC6BB), and entry needs House+2F0 (owned-building tracking).
     /// Return whether UnselectAll48DC90 must run. The independent Super
     /// pointer and PlanMgrAC4CF4 are not these Display mode bytes.
     /// Source: original gamemd.exe instructions.
@@ -226,6 +232,7 @@ impl SidebarGadgetState {
             return false;
         }
         self.place_beacon_mode_on = false;
+        self.power_mode_on = false;
         let enabled = owned_buildings > 0
             && !match mode {
                 SelectionMode::Repair => self.repair_mode_on,
@@ -269,11 +276,13 @@ impl SidebarGadgetState {
     }
 
     /// Display4AC8C0(0)/4AC660(0): a pending building placement refuses mode
-    /// changes. Only the Repair/Sell bytes clear here; the Beacon byte has
-    /// its own owner (app::input::beacon, 4AC960). Power (4AC820) and the
-    /// Waypoint byte (+0x11B3, 4AC700) are never armed in YR, and the
-    /// PlanMgr planning mode and the bare Super pointer are separate owners
-    /// these Display setters do not cancel.
+    /// changes. Only the Repair/Sell bytes clear here: switching off a mode
+    /// that is on clears the power byte too, but power is never on beside
+    /// either. The Beacon byte has its own owner (app::input::beacon,
+    /// 4AC960) and Power its own setter ([`Self::set_power_mode`]). The
+    /// Waypoint byte (+0x11B3, 4AC700) is never armed in YR, and the PlanMgr
+    /// planning mode and the bare Super pointer are separate owners these
+    /// Display setters do not cancel.
     pub(crate) fn disable_selection_modes(&mut self, placement_armed: bool) {
         if !placement_armed {
             self.repair_mode_on = false;
@@ -281,16 +290,41 @@ impl SidebarGadgetState {
         }
     }
 
+    /// `DisplayClass::SetTogglePowerMode @ 0x004AC820`: `toggle` is the -1
+    /// argument (the opposite of the current byte), otherwise 0. Nothing
+    /// changes when the requested state equals the byte or a placement type
+    /// is set (`+0x11A8`). A change clears the Repair, Sell, Waypoint and
+    /// Beacon bytes (`0x004AC866..0x004AC87B`); entry needs House+2F0
+    /// (owned-building tracking) above zero, else the mode stays off. Return
+    /// whether UnselectAll48DC90 must run (`0x004AC89B`, entry only). The
+    /// cursor rows reset by vt+0x48/+0x50 follow from the bytes.
+    pub(crate) fn set_power_mode(
+        &mut self,
+        toggle: bool,
+        placement_armed: bool,
+        owned_buildings: i32,
+    ) -> bool {
+        let target = toggle && !self.power_mode_on;
+        if target == self.power_mode_on || placement_armed {
+            return false;
+        }
+        self.repair_mode_on = false;
+        self.sell_mode_on = false;
+        self.place_beacon_mode_on = false;
+        self.power_mode_on = target && owned_buildings > 0;
+        self.power_mode_on
+    }
+
     /// SetRepairMode(0) and SetSellMode(0), then the direct Power, Planning
     /// and Beacon byte clears (+0x11B2..+0x11B4) that Begin_Building_Placement
     /// (4FB883..4FB8A2), SelectClass::Action (6AAF6D..6AAF8B) and TAction46's
     /// lock (6DEDB2..6DEDD0, 6E268A..6E26A6) share. Only the first two are
-    /// refused while a placement type is set; TAction46 nulls it first. SetTogglePowerMode (4AC87B) and
-    /// SetWaypointMode (4AC756) also clear the beacon byte, and
-    /// SetPlaceBeaconMode clears +0x11B2/+0x11B3; VERA has no owner for the
-    /// Power or Planning-waypoint modes, so neither path exists here.
+    /// refused while a placement type is set; TAction46 nulls it first.
+    /// SetWaypointMode (4AC756) also clears the beacon byte; VERA has no
+    /// owner for the Planning-waypoint mode, so that path does not exist here.
     pub(crate) fn disable_cursor_modes(&mut self) {
         self.disable_selection_modes(false);
+        self.power_mode_on = false;
         self.place_beacon_mode_on = false;
     }
 
@@ -398,6 +432,31 @@ mod tests {
         state.disable_selection_modes(false);
         assert!(!state.repair_mode_on && !state.sell_mode_on);
         assert!(state.place_beacon_mode_on);
+    }
+
+    /// SetTogglePowerMode 0x004AC820 against the Repair setter 0x004AC8C0.
+    #[test]
+    fn power_mode_needs_a_building_and_excludes_the_other_display_modes() {
+        let mut state = SidebarGadgetState::new();
+        state.sell_mode_on = true;
+        state.place_beacon_mode_on = true;
+        assert!(!state.set_power_mode(true, true, 1), "placement refuses it");
+        assert!(state.sell_mode_on && !state.power_mode_on);
+        assert!(!state.set_power_mode(true, false, 0));
+        assert!(
+            !state.power_mode_on && !state.sell_mode_on && !state.place_beacon_mode_on,
+            "a refused entry still clears the other modes"
+        );
+        assert!(state.set_power_mode(true, false, 1), "entry unselects");
+        assert!(state.power_mode_on);
+        assert!(state.toggle_selection_mode(SelectionMode::Repair, false, 1));
+        assert!(state.repair_mode_on && !state.power_mode_on);
+        assert!(state.set_power_mode(true, false, 1));
+        assert!(
+            !state.set_power_mode(true, false, 1),
+            "the key toggles it off"
+        );
+        assert!(!state.power_mode_on && !state.repair_mode_on);
     }
 
     #[test]
