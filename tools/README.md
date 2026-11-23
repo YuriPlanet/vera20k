@@ -26,6 +26,7 @@ oracle families index their own fixtures and producers.
 | Inspect exact retail INI values through production sources and readers | [INI lookup](ini_lookup.md), `asset ini-get` |
 | Select media archives without ambient argument parsing | [media policy](media_policy.md) |
 | Inspect/extract/render assets | [asset browser](asset_browser/README.md), `asset` binary |
+| Prepare a local Yuri's Revenge data folder and point the checkout at it | [Local game files](game_files.md), `python -m tools.game_files` |
 | Convert RA3's end-game art into `[EndGameScreens]` pictures: banners unclipped, score pages filled | `python -m tools.end_game_cards --sources <dir> --out <dir>` |
 | Reproduce FireAt-tail launch goldens | [projectile fixture family](projectile_oracle/README.md) |
 | Reproduce native projectile launch, timer, collision and arc-domain goldens | [projectile comparisons](projectile_oracle/README.md); shared [slope initializer](native_slope.py) |
