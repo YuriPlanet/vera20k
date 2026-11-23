@@ -9,7 +9,6 @@
 use crate::Rect;
 use crate::node::{NodeId, NodeKind, Prop, Refused, Tree, Value};
 use crate::shell::geom::ShellScale;
-use crate::shell::trackbar::{TrackbarPress, TrackbarRange};
 use crate::widget::{self, Capture, Ctx};
 
 /// Milliseconds on the UI clock (§9.1). The host supplies it, so tests and
@@ -458,7 +457,7 @@ impl Gui {
                             // sees it until the release (`SetCapture` 0x0061E4DF).
                             self.set_hover(None);
                             if self.top_mut().pointer.dragging {
-                                self.drag_trackbar(held, x);
+                                self.with_ctx(now, |ctx| widget::trackbar::drag(ctx, held, x));
                             }
                             return InputResult { consumed: true };
                         }
@@ -880,6 +879,13 @@ impl Gui {
         widget::scrollbar::view(&self.tree, node, self.scale_of(node).ok()?, held)
     }
 
+    /// Trackbar `node`'s range as it hits: `Min`, `Max`, `Step` and, by
+    /// `ShowValue`, its value plaque's reserve.
+    pub fn trackbar_range(&self, node: NodeId) -> Option<crate::shell::trackbar::TrackbarRange> {
+        let n = self.tree.node(node).ok().filter(|n| n.kind == NodeKind::Trackbar)?;
+        Some(widget::trackbar::range(n))
+    }
+
     /// List `node` as a transcript (a chat log) now holds `rows` rows, of
     /// which `dropped` left its front: a view at its end, or never
     /// scrolled, follows the new last row, any other keeps showing the same
@@ -946,6 +952,7 @@ impl Gui {
             tree: &mut self.tree,
             events: &mut self.events,
             scale: d.scale,
+            base_scale: self.base_scale,
             now,
             double_click: self.double_click,
             byte_len: self.byte_len,
@@ -993,31 +1000,17 @@ impl Gui {
             }
             return;
         }
-        match n.kind {
-            NodeKind::Trackbar => {
-                let range = trackbar_range(n);
-                let value = n.int_prop(Prop::Pos, range.min);
-                let rect = self.tree.screen_rect(node).unwrap_or_default();
-                let scale = self.trackbar_scale(n);
-                match range.press_in(value, x, y, rect, scale) {
-                    TrackbarPress::Miss => {}
-                    TrackbarPress::Hold => self.top_mut().pointer.pressed = Some(node),
-                    TrackbarPress::Drag => {
-                        let pointer = &mut self.top_mut().pointer;
-                        pointer.pressed = Some(node);
-                        pointer.dragging = true;
-                    }
-                    TrackbarPress::Jump(to) => {
-                        self.top_mut().pointer.pressed = Some(node);
-                        self.move_trackbar(node, to);
-                    }
-                }
+        if n.kind == NodeKind::Trackbar {
+            // Any press on the window holds it; only one on the thumb drags.
+            if let Some(drag) = self.with_ctx(now, |ctx| widget::trackbar::press(ctx, node, x, y)) {
+                let pointer = &mut self.top_mut().pointer;
+                pointer.pressed = Some(node);
+                pointer.dragging |= drag;
             }
-            _ => {
-                self.top_mut().pointer.pressed = Some(node);
-                self.events.push(UiEvent::Pressed { node });
-            }
+            return;
         }
+        self.top_mut().pointer.pressed = Some(node);
+        self.events.push(UiEvent::Pressed { node });
     }
 
     /// The release of a captured node; `over` when the pointer is still on it.
@@ -1029,10 +1022,7 @@ impl Gui {
             NodeKind::Combo => self.with_ctx(now, |ctx| widget::combo::release(ctx, node, x, y)),
             NodeKind::Edit => self.with_ctx(now, |ctx| widget::edit::release(ctx, node, x, y)),
             NodeKind::ScrollBar => self.with_ctx(now, |ctx| widget::scrollbar::release(ctx, node)),
-            NodeKind::Trackbar => {
-                let value = Value::Int(n.int_prop(Prop::Pos, 0));
-                self.events.push(UiEvent::Changed { node, value, final_: true });
-            }
+            NodeKind::Trackbar => self.with_ctx(now, |ctx| widget::trackbar::release(ctx, node)),
             _ if over && enabled => self.activate(node),
             _ => {}
         }
@@ -1042,30 +1032,6 @@ impl Gui {
         let checked = !self.tree.node(node).is_ok_and(|n| n.bool_prop(Prop::Checked, false));
         let _ = self.tree.set(node, Prop::Checked, Value::Bool(checked));
         self.events.push(UiEvent::Changed { node, value: Value::Bool(checked), final_: true });
-    }
-
-    fn drag_trackbar(&mut self, node: NodeId, x: i32) {
-        let Ok(n) = self.tree.node(node) else { return };
-        let range = trackbar_range(n);
-        let rect = self.tree.screen_rect(node).unwrap_or_default();
-        let scale = self.trackbar_scale(n);
-        self.move_trackbar(node, range.value_at_in(x, rect, scale));
-    }
-
-    /// The scale trackbar `n` hits at: its `ScaleScreen`'s, else its dialog's.
-    fn trackbar_scale(&self, n: &crate::node::Node) -> ShellScale {
-        match n.props.get(&Prop::ScaleScreen) {
-            Some(Value::Rect(r)) => self.base_scale.in_window(r.w, r.h),
-            _ => self.dialogs.last().map_or(self.base_scale, |d| d.scale),
-        }
-    }
-
-    fn move_trackbar(&mut self, node: NodeId, to: i32) {
-        let from = self.tree.node(node).map_or(to, |n| n.int_prop(Prop::Pos, trackbar_range(n).min));
-        if from != to {
-            let _ = self.tree.set(node, Prop::Pos, Value::Int(to));
-            self.events.push(UiEvent::Changed { node, value: Value::Int(to), final_: false });
-        }
     }
 
     fn top_mut(&mut self) -> &mut Dialog {
@@ -1224,13 +1190,6 @@ pub fn append_events(events: &mut Vec<UiEvent>, new: impl IntoIterator<Item = Ui
             _ => events.push(event),
         }
     }
-}
-
-/// The trackbar's range; without its value plaque the track runs to the
-/// window's right end (`0x4AC` with 0).
-fn trackbar_range(n: &crate::node::Node) -> TrackbarRange {
-    TrackbarRange::new(n.int_prop(Prop::Min, 0), n.int_prop(Prop::Max, 100), n.int_prop(Prop::Step, 1))
-        .with_plaque(n.bool_prop(Prop::ShowValue, true))
 }
 
 #[cfg(test)]

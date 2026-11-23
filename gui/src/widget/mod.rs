@@ -10,6 +10,7 @@ pub(crate) mod combo;
 pub(crate) mod edit;
 pub(crate) mod list;
 pub(crate) mod scrollbar;
+pub(crate) mod trackbar;
 
 use crate::gui::{Key, UiEvent, UiMs};
 use crate::node::{NodeId, Tree};
@@ -21,6 +22,8 @@ pub(crate) struct Ctx<'a> {
     pub events: &'a mut Vec<UiEvent>,
     /// The dialog's device-to-authored mapping.
     pub scale: ShellScale,
+    /// The host's unscaled mapping ([`crate::Gui::set_base_scale`]).
+    pub base_scale: ShellScale,
     pub now: UiMs,
     /// The host's double-click limits: milliseconds, width, height.
     pub double_click: (UiMs, i32, i32),
