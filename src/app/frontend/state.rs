@@ -107,7 +107,7 @@ pub(crate) struct FrontendState {
     /// the online pages and Options paint from
     /// ([`crate::app::frontend::menu_page_render::paint_panel_statics`]).
     pub(crate) panel_statics:
-        std::sync::Mutex<crate::app::frontend::menu_page_render::PanelStatics>,
+        std::cell::RefCell<crate::app::frontend::menu_page_render::PanelStatics>,
     /// The saved-game loading box `0xF0`'s widgets: it takes no input, so
     /// no other controller holds it
     /// ([`crate::app::frontend::skirmish_shell_render::render_saved_game_loading`]).

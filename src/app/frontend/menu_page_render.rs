@@ -320,9 +320,9 @@ pub(crate) fn paint_panel_statics(
     statics: [Option<PanelStatic<'_>>; 2],
     scale: crate::ui::shell::geom::ShellScale,
 ) -> Vec<crate::render::shell_text::ShellTextDraw> {
-    let Ok(mut panel) = state.frontend.panel_statics.lock() else {
-        return Vec::new();
-    };
+    // The render holds `state` shared; the panel's tree is the one piece it
+    // writes (a borrow flag, no lock).
+    let mut panel = state.frontend.panel_statics.borrow_mut();
     let PanelStatics { gui, root } = &mut *panel;
     let root = *root;
     let mut reveals = [None; 2];
