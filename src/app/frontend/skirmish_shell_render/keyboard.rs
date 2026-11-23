@@ -130,7 +130,7 @@ pub(crate) fn render_keyboard_shell(
         };
         Some(shared.csf_label(key, fallback))
     };
-    let reveal_of = |id: i32| {
+    let reveal_of = |id: i32| -> Option<PathAReveal> {
         let window = title.filter(|_| id == i32::from(TITLE))?;
         Some(PathAReveal {
             count: window.count,

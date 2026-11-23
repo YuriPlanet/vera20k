@@ -309,6 +309,7 @@ impl KeyboardState {
     }
     /// The open category list's lit row: the one under the pointer, or the
     /// selection until the pointer reaches a row.
+    #[cfg(all(test, tests_ui))]
     pub fn category_hot_row(&self) -> Option<usize> {
         let node = self.category_node()?;
         self.ui.gui().combo_drop_down(node)?.hot_row
