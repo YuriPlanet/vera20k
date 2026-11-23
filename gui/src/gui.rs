@@ -6,6 +6,8 @@
 //! over it, and release activates only on the captured button. A disabled
 //! button still takes hover (it shows tooltip and status text) but no press.
 
+use std::ops::ControlFlow;
+
 use crate::Rect;
 use crate::node::{NodeId, NodeKind, Prop, Refused, Tree, Value};
 use crate::shell::geom::ShellScale;
@@ -852,17 +854,17 @@ impl Gui {
 
     /// The first visible `DropTarget` under `root` at `x`, `y`.
     fn drop_target_at(&self, root: NodeId, x: i32, y: i32) -> Option<NodeId> {
-        let mut found = None;
-        self.walk(root, &mut |id, _| {
-            if found.is_none()
-                && matches!(self.tree.get(id, Prop::DropTarget), Ok(Some(Value::Bool(true))))
-                && self.tree.effective(id, Prop::Visible)
-                && self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y))
-            {
-                found = Some(id);
-            }
-        });
-        found
+        self.tree
+            .walk(root, &mut |id, _| {
+                if matches!(self.tree.get(id, Prop::DropTarget), Ok(Some(Value::Bool(true))))
+                    && self.tree.effective(id, Prop::Visible)
+                    && self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y))
+                {
+                    return ControlFlow::Break(id);
+                }
+                ControlFlow::Continue(())
+            })
+            .break_value()
     }
 
     /// What the host paints of List `node`.
@@ -1049,13 +1051,16 @@ impl Gui {
             }
             _ => return InputResult { consumed: modal },
         };
-        let mut target = None;
-        self.walk(root, &mut |id, kind| {
-            let on = matches!(self.tree.get(id, marked), Ok(Some(Value::Bool(true))));
-            if target.is_none() && kind == NodeKind::Button && on {
-                target = Some(id);
-            }
-        });
+        let target = self
+            .tree
+            .walk(root, &mut |id, kind| {
+                let on = matches!(self.tree.get(id, marked), Ok(Some(Value::Bool(true))));
+                match kind == NodeKind::Button && on {
+                    true => ControlFlow::Break(id),
+                    false => ControlFlow::Continue(()),
+                }
+            })
+            .break_value();
         match target {
             Some(n) if self.tree.effective(n, Prop::Enabled) => {
                 self.activate(n);
@@ -1075,7 +1080,7 @@ impl Gui {
         let pointer = self.top_pointer();
         let from = pointer.focus;
         let mut stops = Vec::new();
-        self.walk(root, &mut |id, kind| {
+        let _ = self.tree.walk(root, &mut |id, kind| {
             let stop = match self.tree.get(id, Prop::TabStop) {
                 Ok(Some(Value::Bool(on))) => *on,
                 _ => kind == NodeKind::Edit,
@@ -1084,6 +1089,7 @@ impl Gui {
             {
                 stops.push(id);
             }
+            ControlFlow::<()>::Continue(())
         });
         let current = from.or(pointer.tab_stop);
         let next = match current.and_then(|c| stops.iter().position(|n| *n == c)) {
@@ -1143,31 +1149,21 @@ impl Gui {
     /// [`Self::hit`] for the host, under any open drop-down; `press` skips
     /// `PressThrough` nodes, as a press and its release do.
     pub fn hit_at(&self, root: NodeId, x: i32, y: i32, press: bool) -> Option<NodeId> {
-        let mut found = None;
-        self.walk(root, &mut |id, kind| {
-            // A static with status help hovers too (it takes no press).
-            let help = kind == NodeKind::Text && self.tree.get(id, Prop::Tooltip).is_ok_and(|t| t.is_some());
-            let through = press && matches!(self.tree.get(id, Prop::PressThrough), Ok(Some(Value::Bool(true))));
-            if found.is_none()
-                && !through
-                && (kind.is_focusable() || help)
-                && self.tree.effective(id, Prop::Visible)
-                && self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y))
-            {
-                found = Some(id);
-            }
-        });
-        found
-    }
-
-    fn walk(&self, id: NodeId, f: &mut impl FnMut(NodeId, NodeKind)) {
-        let Ok(kind) = self.tree.kind(id) else { return };
-        f(id, kind);
-        if let Ok(children) = self.tree.children(id) {
-            for c in children {
-                self.walk(*c, f);
-            }
-        }
+        self.tree
+            .walk(root, &mut |id, kind| {
+                // A static with status help hovers too (it takes no press).
+                let help = kind == NodeKind::Text && self.tree.get(id, Prop::Tooltip).is_ok_and(|t| t.is_some());
+                let through = press && matches!(self.tree.get(id, Prop::PressThrough), Ok(Some(Value::Bool(true))));
+                if !through
+                    && (kind.is_focusable() || help)
+                    && self.tree.effective(id, Prop::Visible)
+                    && self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y))
+                {
+                    return ControlFlow::Break(id);
+                }
+                ControlFlow::Continue(())
+            })
+            .break_value()
     }
 }
 

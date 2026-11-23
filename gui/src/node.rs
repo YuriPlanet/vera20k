@@ -4,6 +4,7 @@
 //! `Stale`; only container kinds hold children; a prop takes one value type.
 
 use std::collections::BTreeMap;
+use std::ops::ControlFlow;
 
 use crate::Rect;
 
@@ -585,6 +586,21 @@ impl Tree {
 
     pub fn kind(&self, id: NodeId) -> Result<NodeKind, Refused> {
         Ok(self.node(id)?.kind)
+    }
+
+    /// Visits `id` and its subtree in tree order, each node before its
+    /// children, until `f` breaks; the break's value.
+    pub fn walk<B>(
+        &self,
+        id: NodeId,
+        f: &mut impl FnMut(NodeId, NodeKind) -> ControlFlow<B>,
+    ) -> ControlFlow<B> {
+        let Ok(node) = self.node(id) else { return ControlFlow::Continue(()) };
+        f(id, node.kind)?;
+        for child in &node.children {
+            self.walk(*child, f)?;
+        }
+        ControlFlow::Continue(())
     }
 
     pub fn children(&self, id: NodeId) -> Result<&[NodeId], Refused> {
