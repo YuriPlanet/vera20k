@@ -4,6 +4,11 @@
 //! It draws fills, pictures, text and host areas (whose instance the host
 //! hands over), what its users have. The world commands come with the
 //! first HUD that shows one.
+//!
+//! A shell dialog's widgets draw here too, in their host's skin
+//! ([`crate::app::frontend::skirmish_shell_render::gui_paint`]): each
+//! skin's sprites on a lane of its own material ([`HudPaint::draw`]), its
+//! texts as the shell draws them ([`HudPaint::texts`]).
 
 use std::ops::Range;
 
@@ -11,6 +16,7 @@ use vera20k_gui::{Gui, NodeId, PaintCmd, PaintOp, Rect, Rgba, recycle};
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
+use crate::render::shell_text::ShellTextDraw;
 use crate::render::text_engine::Fit;
 
 /// What a run of instances samples.
@@ -22,6 +28,18 @@ pub(crate) enum Material {
     Glyphs,
     /// The atlas the host's pictures are in.
     Pictures,
+    /// The shell's control art (the skirmish shell chrome).
+    Controls,
+    /// The sidebar art: an in-game dialog's right-panel buttons.
+    Side,
+    /// The main-menu chrome: a family page's column buttons.
+    Column,
+    /// A WOL page's own art: its icons and glyphs.
+    Icons,
+    /// A page's own art: its PCX and shape statics.
+    PageArt,
+    /// The control art over everything else: an open drop-down list.
+    Popup,
 }
 
 /// Where a HUD's pixels land on the target.
@@ -85,6 +103,10 @@ pub(crate) struct HudPaint {
     commands: Vec<PaintCmd<'static>>,
     instances: Vec<SpriteInstance>,
     runs: Vec<(Material, Range<u32>)>,
+    /// A shell skin's texts, each clipped on its own, in their order.
+    pub(crate) texts: Vec<ShellTextDraw>,
+    /// The texts over [`Material::Popup`].
+    pub(crate) popup_texts: Vec<ShellTextDraw>,
 }
 
 impl HudPaint {
@@ -99,6 +121,8 @@ impl HudPaint {
     ) {
         self.instances.clear();
         self.runs.clear();
+        self.texts.clear();
+        self.popup_texts.clear();
         let mut commands = recycle(std::mem::take(&mut self.commands));
         hud.paint(&mut commands);
         for command in &commands {
@@ -200,6 +224,20 @@ impl HudPaint {
             .iter()
             .filter(move |(of, _)| *of == material)
             .flat_map(move |(_, run)| &self.instances()[run.start as usize..run.end as usize])
+    }
+
+    /// Appends what `draw` pushes onto `material`'s lane, after all that
+    /// is there; `draw` only pushes. It gets the texts too, for a skin
+    /// that lays a text down with its sprites.
+    pub(crate) fn draw<R>(
+        &mut self,
+        material: Material,
+        draw: impl FnOnce(&mut Vec<SpriteInstance>, &mut Vec<ShellTextDraw>) -> R,
+    ) -> R {
+        let start = self.instances.len();
+        let drawn = draw(&mut self.instances, &mut self.texts);
+        self.extend_runs(material, start as u32..self.instances.len() as u32);
+        drawn
     }
 
     fn extend_runs(&mut self, material: Material, added: Range<u32>) {
