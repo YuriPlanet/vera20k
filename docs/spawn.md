@@ -112,7 +112,9 @@ agree.
   sound, EVA, theme, campaign, mission and map-selection roots are in no part: the digest does
   not compare their names.
 - `mod_check`: with a mod that carries a `mod-files.txt`, where its files part from that list
-  (`changed`, `missing`, `extra`, at most 20 paths each); otherwise null.
+  (`changed`, `missing`, `extra`, at most 20 paths each); otherwise null. It can name a file the
+  `mod_files` part leaves out: one that only shows, plays or tells something, such as a `.csf`
+  ([Networking](Networking.md)).
 
 The object is at most 8192 bytes: longer lists are cut first, then free text (file names,
 sources, the mod's title and version, the `resources` names) to 64 characters, and last the files from the end; `digest`
