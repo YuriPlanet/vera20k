@@ -48,6 +48,9 @@ The app regression also saves changed levels and flags through `PreparedLoad`
 and resolves against the restored live world while its load template retains
 the initial state. Candidate and neighbor levels and flags now share the
 borrowed `TacticalCellLookup`; no app height/deck map survives load or restore.
+VERA keeps the deck a high bridge's span was given, so a lane raised under it
+holds that deck off its ground. The app leaves the one native case this changes
+unasserted: direction 6 `east_raised` at `(30,420)` (`KEPT_DECK_CASES`).
 
 Four additional upstream controls supply coherent EW bridge cells and deck-height
 centre/infantry right-subcell anchors for the existing click/shroud suffix fixtures. Four more
