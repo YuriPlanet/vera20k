@@ -113,8 +113,7 @@ cites each hook.
   the observer strip (0x6AA0CA, 0x6AA164),
   the amphibious water sound (0x51D799) and the bullet anim's
   MakeInfantryOwner outside Phobos (0x469C4E).
-- GarrisonedIn (0x51DF38, 0x51DFFD, 0x518434) and map-house `Degrades=`
-  (0x50114D).
+- GarrisonedIn (0x51DF38, 0x51DFFD, 0x518434).
 
 ## Hook table
 
@@ -279,7 +278,7 @@ DLL removed are not listed.
 |---|---|---|---|
 | `4F6532` | HouseClass_CTOR | `100230E0` | not applicable: HouseExt allocation; Ares house state lives in `HouseState` |
 | `4F7371` | HouseClass_DTOR | `10023100` | not applicable: HouseExt release |
-| `50114D` | HouseClass_InitFromINI | `10023140` | residual: a map house section's `Degrades=` (ares-building-types.md) |
+| `50114D` | HouseClass_InitFromINI | `10023140` | ported: a map house section's `Degrades=` (`HouseState::read_ares_degrades`), overriding the country's in the degrade update |
 | `503040` | HouseClass_SaveLoad_Prefix | `10023230` | not applicable: ExtMap stream prefix; VERA serializes `HouseState` |
 | `504069` | HouseClass_Load_Suffix | `10023160` | not applicable: ExtMap load suffix |
 | `504080` | HouseClass_SaveLoad_Prefix | `10023230` | not applicable: ExtMap stream prefix |
