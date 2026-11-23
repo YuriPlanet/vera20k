@@ -9,7 +9,7 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
-use crate::app::presentation::picture_hud::{PictureHud, Quad, covering};
+use crate::app::presentation::picture_hud::{PictureHud, covering};
 use crate::app::presentation::sidebar_render::current_sidebar_chrome;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::{BitFont, Fit};
@@ -415,12 +415,15 @@ fn push_chrome_sized(
 ) {
     pictures.picture(
         covering(x, y, size[0], size[1]),
-        Quad {
+        SpriteInstance {
             position: [x + camera_offset[0], y + camera_offset[1]],
             size,
             uv_origin: entry.uv_origin,
             uv_size: entry.uv_size,
             depth,
+            tint: [1.0, 1.0, 1.0],
+            alpha: 1.0,
+            ..Default::default()
         },
     );
 }

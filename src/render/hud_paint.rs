@@ -42,7 +42,7 @@ impl HudSpace {
 }
 
 /// What a host adds to one node's drawing.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct NodeDraw {
     /// The squeeze a text draws at.
     pub(crate) fit: Fit,
@@ -58,6 +58,9 @@ pub(crate) struct NodeDraw {
     pub(crate) picture: Option<Picture>,
     /// The depth its instances carry, for a host whose shader sorts by it.
     pub(crate) depth: f32,
+    /// A picture the host has already made into its instance: drawn as it
+    /// is, in the node's place in the order, instead of from `picture`.
+    pub(crate) instance: Option<SpriteInstance>,
 }
 
 /// A part of the host's picture atlas, drawn at its own size from its node's
@@ -120,6 +123,14 @@ impl HudPaint {
                     Material::Solid
                 }
                 PaintOp::Image { rect, .. } => {
+                    if let Some(instance) = node.instance {
+                        self.instances.push(instance);
+                        if let Some(clip) = command.clip {
+                            clip_from(&mut self.instances, start, clip, space);
+                        }
+                        self.extend_runs(Material::Pictures, start as u32..self.instances.len() as u32);
+                        continue;
+                    }
                     let Some(picture) = node.picture else {
                         continue;
                     };

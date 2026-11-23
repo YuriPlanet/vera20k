@@ -5,7 +5,7 @@
 //! (`presentation::sidebar_surface`); its gadgets take it in frame pixels.
 
 use super::*;
-use crate::app::presentation::picture_hud::{PictureHud, Quad, covering};
+use crate::app::presentation::picture_hud::{PictureHud, covering};
 use crate::ui::sidebar::command_bar::{CommandBarLayout, spacer_pieces};
 
 pub(crate) fn layout_and_slots(state: &AppState) -> Option<(CommandBarLayout, Vec<Option<usize>>)> {
@@ -177,7 +177,7 @@ fn clipped(
     }
     pictures.picture(
         covering(left, top, right - left, bottom - top),
-        Quad {
+        SpriteInstance {
             position: [camera[0] + left, camera[1] + top],
             size: [right - left, bottom - top],
             uv_origin: [
@@ -189,6 +189,9 @@ fn clipped(
                 (bottom - top) / size[1] * entry.uv_size[1],
             ],
             depth: DEPTH,
+            tint: [1.; 3],
+            alpha: 1.,
+            ..Default::default()
         },
     );
 }

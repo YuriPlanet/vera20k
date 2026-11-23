@@ -4,9 +4,9 @@
 //! one atlas, each placed by the original's own arithmetic. Here they become
 //! picture nodes of a retained `vera20k-gui` tree, one per piece, in drawing
 //! order and with the piece's rect in its layout space, so the tree owns
-//! which pieces stand, their order and their hit rects. Each node's quad is
-//! the one its host computed, handed to the adapter unchanged, so every
-//! instance is what the host drew before.
+//! which pieces stand, their order and their hit rects. Each node's
+//! instance is the one its host made, handed to the adapter unchanged, so
+//! every instance is what the host drew before.
 
 use std::collections::HashMap;
 
@@ -14,18 +14,7 @@ use vera20k_gui::hud::{Hud, InputPolicy, Layer, Origin};
 use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Value};
 
 use crate::render::batch::SpriteInstance;
-use crate::render::hud_paint::{HudPaint, HudSpace, NodeDraw, Picture};
-
-/// One piece as its host draws it: where on the target, how big, which part
-/// of the atlas and at what depth.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Quad {
-    pub(crate) position: [f32; 2],
-    pub(crate) size: [f32; 2],
-    pub(crate) uv_origin: [f32; 2],
-    pub(crate) uv_size: [f32; 2],
-    pub(crate) depth: f32,
-}
+use crate::render::hud_paint::{HudPaint, HudSpace, NodeDraw};
 
 /// The pieces' tree, kept from frame to frame, and the instances it draws.
 pub(crate) struct PictureHud {
@@ -36,7 +25,7 @@ pub(crate) struct PictureHud {
     used: usize,
     /// The tree's revision at its last layout.
     laid_out: u64,
-    /// Each node's quad this frame.
+    /// Each node's instance this frame.
     draws: HashMap<NodeId, NodeDraw>,
     paint: HudPaint,
 }
@@ -75,19 +64,13 @@ impl PictureHud {
     }
 
     /// The frame's next piece: `rect` in the host's layout space, drawn as
-    /// `quad`.
-    pub(crate) fn picture(&mut self, rect: Rect, quad: Quad) {
+    /// `instance`.
+    pub(crate) fn picture(&mut self, rect: Rect, instance: SpriteInstance) {
         let Some(node) = self.node(rect) else {
             return;
         };
         let draw = NodeDraw {
-            position: Some(quad.position),
-            picture: Some(Picture {
-                uv_origin: quad.uv_origin,
-                uv_size: quad.uv_size,
-                pixel_size: quad.size,
-            }),
-            depth: quad.depth,
+            instance: Some(instance),
             ..Default::default()
         };
         self.draws.insert(node, draw);
@@ -169,13 +152,16 @@ pub(crate) fn covering(x: f32, y: f32, w: f32, h: f32) -> Rect {
 mod tests {
     use super::*;
 
-    fn quad(x: f32) -> Quad {
-        Quad {
+    fn quad(x: f32) -> SpriteInstance {
+        SpriteInstance {
             position: [x, 2.5],
             size: [3.0, 4.0],
             uv_origin: [0.125, 0.25],
             uv_size: [0.0625, 0.5],
             depth: 0.00048,
+            tint: [1.0; 3],
+            alpha: 1.0,
+            ..Default::default()
         }
     }
 
