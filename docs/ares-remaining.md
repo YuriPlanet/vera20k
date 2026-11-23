@@ -21,8 +21,8 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1044; the chain docs give 357 more a disposition
-  (ported elsewhere, equivalent, not applicable, skipped or residual); 47 are
+  removed). The engine source cites 1047; the chain docs give 362 more a disposition
+  (ported elsewhere, equivalent, not applicable, skipped or residual); 39 are
   untouched, listed at the end. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
   [Smaller gameplay residuals](#smaller-gameplay-residuals).
@@ -221,7 +221,7 @@ Retail INIs for retail tests: run the repo's `extract-ini` into `ini/` and set `
 
 ## Untouched hooks
 
-These 47 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
+These 39 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
 hook script above skips this page). Most are DLL plumbing.
 
 | Hook | Ares.dll | Name | Source |
@@ -234,14 +234,6 @@ hook script above skips this page). Most are DLL plumbing.
 | `0x4A1D90` | `1005F640` | Checksummer_Add_double | `Misc/Checksum.cpp` |
 | `0x52E9AA` | `1005F680` | Frontend_WndProc_Checksum | `Misc/Checksum.cpp` |
 | `0x6516F0` | `1005F720` | Multiplay_LogToSync_MPDEBUG | `Misc/Checksum.cpp` |
-| `0x483BF1` | `1006ADE0` | CellClass_Load_Crates | `Misc/Savegame.cpp` |
-| `0x559F31` | `1006AE70` | LoadOptionsClass_GetFileInfo | `Misc/Savegame.cpp` |
-| `0x565215` | `1006AEC0` | MapClass_CTOR_NoInit_Crates | `Misc/Savegame.cpp` |
-| `0x67CEFE` | `1006ADF0` | Game_Save_FixLog | `Misc/Savegame.cpp` |
-| `0x67D04E` | `1006AE10` | Game_Save_SavegameInformation | `Misc/Savegame.cpp` |
-| `0x67D300` | `1006AEF0` | SaveGame_Start | `Misc/Savegame.cpp` |
-| `0x67E42E` | `1006AED0` | SaveGame | `Misc/Savegame.cpp` |
-| `0x67F7C8` | `1006AE50` | LoadGame_End | `Misc/Savegame.cpp` |
 | `0x47AE36` | `10003B00` | CDFileClass_SetFileName | `Ares.cpp` |
 | `0x47B026` | `10003B90` | FileFindOpen | `Ares.cpp` |
 | `0x52C5E0` | `10003AE0` | Ares_NoLogo | `Ares.cpp` |
