@@ -21,7 +21,7 @@ use crate::render::bit_font::BitFont;
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarPart, SidebarView};
 // Generic credit glyph generation is render-owned (F06); this module keeps
 // only the sidebar-view adapter below. Re-exported for existing callers.
-pub use crate::render::sidebar_text::{build_credits_instances, credits_tint};
+pub use crate::render::sidebar_text::build_credits_instances;
 /// Per-frame wrapper over [`build_credits_instances`] taking the sidebar view
 /// and the layout table's place for the counter: on the credits plate,
 /// `plate_width` wide, which in the original spans the sidebar. `shown` is

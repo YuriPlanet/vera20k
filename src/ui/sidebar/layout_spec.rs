@@ -202,6 +202,13 @@ impl SidebarPart {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct SidebarChromeLayoutSpec {
     pub theme: SidebarTheme,
+    /// The side's sidebar text colour (`SetSidebarTextColor @ 0x0072F440`):
+    /// the money's `veraui.ini` `Color=`, by default `[Colors] SideText`
+    /// of the built-in file. Read with the layout, not every frame.
+    pub side_text: [u8; 3],
+    /// The cameo labels' colour: `[Cameos] LabelColor=`, by default the
+    /// same `SideText`.
+    pub label_text: [u8; 3],
     /// The parts the sidebar has, in draw order: a panel before the parts in
     /// it, a later part over an earlier one. A part that is not listed is not
     /// drawn and takes no clicks.

@@ -635,6 +635,7 @@ pub(crate) fn finish_presentation_assets(
             crate::app::match_runtime::state::scenario_local_owner(simulation),
             rules.ares(),
         ),
+        match_layout_ini.as_ref(),
     )?;
     // `Game_LoadUI_LoadSideData` (0x1002F4A0) hands the local side's
     // `GraphicalText.Image=` / `.Palette=` to the overlay slot writer at

@@ -739,8 +739,9 @@ pub(crate) fn build_sidebar_cameo_instances(
         crate::app::input::campaign_input::is_locked(state),
     );
     // SetSidebarTextColor72F440 writes B0FA1C, which Draw packs at 6A9A4F.
-    let hover_tint = crate::render::sidebar_text::native_radar_outline_color(
-        crate::app::presentation::sidebar_render::current_sidebar_theme(state),
+    // The layout's `[Cameos] LabelColor=`, by default the side text colour.
+    let hover_tint = crate::render::sidebar_text::native_outline_from(
+        state.match_state.match_presentation.sidebar_layout_spec.label_text,
     );
     for (slot_index, item) in view.items.iter().enumerate() {
         let entry = if item.is_superweapon {

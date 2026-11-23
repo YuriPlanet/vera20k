@@ -13,9 +13,17 @@ use crate::ui::sidebar::Rect;
 
 /// The side's sidebar text colour (`72F440`), also the fade endpoint of the
 /// selected-unit text effect: `SideText` of the built-in `veraui.ini`'s
-/// `[Colors]`, read once for each side.
+/// `[Colors]`, read once for each side. A caller with the sidebar's table
+/// at hand takes the layout's (`SidebarChromeLayoutSpec::side_text`) with
+/// [`side_text_tint`].
 pub fn side_highlight_color(theme: SidebarTheme) -> [f32; 3] {
-    static COLORS: std::sync::LazyLock<[[f32; 3]; 3]> = std::sync::LazyLock::new(|| {
+    side_text_tint(built_in_side_text(theme))
+}
+
+/// `SideText` of the built-in `[Colors]` for the side whose pictures are
+/// `theme`, read once for each side.
+fn built_in_side_text(theme: SidebarTheme) -> [u8; 3] {
+    static COLORS: std::sync::LazyLock<[[u8; 3]; 3]> = std::sync::LazyLock::new(|| {
         [
             SidebarTheme::Allied,
             SidebarTheme::Soviet,
@@ -24,26 +32,35 @@ pub fn side_highlight_color(theme: SidebarTheme) -> [f32; 3] {
         .map(|theme| {
             let [r, g, b, _] = crate::ui::match_layout::built_in_color("SideText", theme)
                 .expect("veraui_default.ini gives every side's SideText");
-            [r, g, b].map(|channel| f32::from(channel) / 255.0)
+            [r, g, b]
         })
     });
     COLORS[theme as usize]
 }
 
+/// A side text colour as a draw tint.
+pub fn side_text_tint(rgb: [u8; 3]) -> [f32; 3] {
+    rgb.map(|channel| f32::from(channel) / 255.0)
+}
+
 /// Packed `RadarClass+0x1208` color expanded back to the presentation frame.
 /// StripClass::Draw packs the same B0FA1C colour for its labels
-/// (6A9BF3..6A9C46) and its hover outline (6A9A4F).
+/// (6A9BF3..6A9C46) and its hover outline (6A9A4F). For the built-in side
+/// colour of `theme`; [`native_outline_from`] packs a layout's.
+pub fn native_radar_outline_color(theme: SidebarTheme) -> [f32; 3] {
+    native_outline_from(built_in_side_text(theme))
+}
+
+/// Side text colour `rgb` as the B0FA1C users draw it.
 ///
-/// `SetSidebarTextColor @ 0x0072F440` selects the exact RGB table above;
+/// `SetSidebarTextColor @ 0x0072F440` selects the exact RGB;
 /// `RadarClass::Init_For_House @ 0x00652E90` then packs it through the active
 /// retail 16-bit DirectDraw descriptor before `Update @ 0x00656EC0` submits
 /// both retained radar rectangles. This is deliberately not a color inferred
 /// from radar/chrome art or a UI-theme palette.
-pub fn native_radar_outline_color(theme: SidebarTheme) -> [f32; 3] {
-    let source = side_highlight_color(theme);
-    let to_byte = |channel: f32| (channel * 255.0).round() as u8;
+pub fn native_outline_from(rgb: [u8; 3]) -> [f32; 3] {
     let format = super::native_surface_format::RGB565;
-    let [red, green, blue] = format.unpack_rgb8(format.pack_rgb8(source.map(to_byte)));
+    let [red, green, blue] = format.unpack_rgb8(format.pack_rgb8(rgb));
     let expanded = [red, green, blue, 255];
     // Batch's Legacy palette path multiplies encoded RGB, then decodes for
     // the sRGB target. Feed the same enrolled packed-word presentation used
@@ -210,13 +227,6 @@ pub fn format_observer_clock(seconds: i32, format: &str) -> String {
     )
 }
 
-/// Colour the credits counter is drawn in: the side-dependent sidebar text
-/// colour, the same one the cameo status labels use, packed through the
-/// surface's loss/shift masks before the draw like every B0FA1C user.
-pub fn credits_tint(theme: crate::render::sidebar_chrome::SidebarTheme) -> [f32; 3] {
-    native_radar_outline_color(theme)
-}
-
 /// Build the credits counter as GAME.FNT glyph quads.
 ///
 /// `panel_rect` is the sidebar surface in screen space — its origin is the
@@ -280,7 +290,6 @@ mod tests {
             let tint = native_radar_outline_color(theme);
             let bytes = tint.map(|c| (c * 255.0).round() as u8);
             assert_eq!(bytes, display_bytes, "theme={theme:?}");
-            assert_eq!(credits_tint(theme), tint, "theme={theme:?}");
             assert_eq!(
                 [bytes[0] & 0xf8, bytes[1] & 0xfc, bytes[2] & 0xf8],
                 packed_bytes

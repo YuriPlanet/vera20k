@@ -498,8 +498,9 @@ fn pieces(state: &AppState) -> Vec<EditPiece> {
     let Some(edit) = &state.match_state.match_presentation.layout_edit else {
         return Vec::new();
     };
-    let tint = crate::render::sidebar_text::native_radar_outline_color(
-        sidebar_render::current_sidebar_theme(state),
+    // The side's text colour as its layout gives it.
+    let tint = crate::render::sidebar_text::native_outline_from(
+        state.match_state.match_presentation.sidebar_layout_spec.side_text,
     );
     let font = &state.renderer.bit_font;
     let grabbed = edit.grab.as_ref().map(|grab| grab.name.as_str());
