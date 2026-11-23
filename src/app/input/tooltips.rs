@@ -13,7 +13,9 @@ use crate::app::input::cursor::CursorVisibility;
 use crate::app::input::gadget_input::{
     ID_DIPLOMACY, ID_OPTIONS, ID_SCROLL_DOWN, ID_SCROLL_UP, ID_TAB_BASE,
 };
-use crate::app::presentation::sidebar_render::{current_sidebar_side, current_sidebar_view};
+use crate::app::presentation::sidebar_render::{
+    current_sidebar_side, current_sidebar_theme, current_sidebar_view,
+};
 use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::map::entities::EntityCategory;
 use crate::render::batch::SpriteInstance;
@@ -888,9 +890,7 @@ pub(crate) fn build_tooltip_instances(
         })
         .map(|rgb| rgb.map(|channel| f32::from(channel) / 255.0))
         .unwrap_or_else(|| {
-            crate::render::sidebar_text::side_text_tint(
-                state.match_state.match_presentation.sidebar_layout_spec.side_text,
-            )
+            crate::render::sidebar_text::side_highlight_color(current_sidebar_theme(state))
         });
     draw_tooltip(
         &state.renderer.bit_font,
