@@ -66,16 +66,18 @@ pub(crate) struct RulesSettings {
     /// without it has the parts it had before the switch was named here.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(crate) building_production_queue: bool,
-    /// The Ares setting: `auto`, `on` or `off`.
+    /// The Ares setting where it decides which game this is, as the digest
+    /// counts it (`ProcessAssets::agreed_ares_setting`): `on`, `off`, or
+    /// `auto` for Auto and for a setting that opens the game Auto opens.
     pub(crate) ares: &'static str,
     /// `ares.mix` is mounted.
     pub(crate) ares_mix: bool,
     /// The INI roots listed under `resources` and the theater suffix are all
     /// YR's (`ProcessAssets::stock_ini_roots`).
     pub(crate) ini_roots_stock: bool,
-    /// The INI roots and archive names the game reads, when a mod requires
-    /// Ares or any of them is not YR's; absent otherwise. The rules digest
-    /// compares them then.
+    /// The INI roots and archive names players' games compare, when a mod
+    /// requires Ares or any of them is not YR's; absent otherwise. The rules
+    /// digest compares them then.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) resources: Option<ResourceSelection>,
     #[serde(rename = "mod")]
@@ -95,8 +97,8 @@ pub(crate) struct ModIdentity {
 pub(crate) struct ResourceSelection {
     /// The selected mod's `mod.ini` requires Ares.
     pub(crate) requires_ares: bool,
-    /// The Rules, Art, AI, sound, EVA, theme, campaign, mission, map
-    /// selection, mode and map catalog INIs, in that order.
+    /// The Rules, Art, AI, mode and map catalog files, in that order
+    /// (`IniRoots::agreed_files`).
     pub(crate) roots: Vec<String>,
     /// The expansion and map archive prefixes, the multiplayer and theme
     /// archives and the movie archive prefix, in that order.

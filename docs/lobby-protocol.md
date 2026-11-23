@@ -733,8 +733,10 @@ not know.
   language, else the operator's `text`, which a missing or malformed tag gets.
 - `Vera-Changes: <percent-encoded JSON>`: what the game changes from the original game,
   which a room's rules line names: an object with `mod` (the mod's title), `ini_roots:
-  true` (config.toml names other INI files), `ares` (`on` or `off`, the player's Ares
-  setting when not Auto) and `files` with `count` (up to 32 names of the game-folder files
+  true` (config.toml names other Rules, Art, AI, mode roster or map catalog files, or
+  another theater suffix), `ares` (`on` or `off`, the player's Ares setting where it
+  decides which game opens: On unless a selected mod mounts `ares.mix` anyway, Off only
+  with such a mod or over rules that hold an Ares key) and `files` with `count` (up to 32 names of the game-folder files
   that change the rules the network compares, of `count`), each left out when unchanged:
   `{}` for the original game. Texts are 1–64 bytes of well-formed UTF-16 without control
   or format characters (such as bidi overrides), `count` at most 65535 and the header at

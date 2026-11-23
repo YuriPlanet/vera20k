@@ -69,7 +69,9 @@ mixed builds use the existing refusal, and a rollback restores the earlier reten
 
 Whether Ares plays in a match is decided from that same data: the rules, mode
 and map, whether the selected mod loads `ares.mix`, and the player's
-[Ares setting](ares.md#the-ares-setting), which the rules agreement covers. With
+[Ares setting](ares.md#the-ares-setting), which the rules agreement covers where it
+decides which game opens and a match's start where it decides whether Ares plays
+([below](#room-rules)). With
 **No mod** selected and the setting on Auto, the installation's `ares.mix` is ignored and
 the game keeps the original archive order and INI readers. A selected mod
 can load its own `ares.mix` or use the installation's copy; that game's INIs and
@@ -115,10 +117,16 @@ A game from before this rule is another version and is refused by the build chec
 a rollback compares the terrain files as that build did. With a
 mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
 folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so players whose copies of a mod differ are
-refused as on any rules difference. The effective file, catalog, archive and extension
-declarations from `mod.ini` also take part in this agreement; its display metadata does
-not. A classic RA2 folder mod's detected rules, art, AI, mode and archive names
-use these same agreement fields. A rollback uses the older build's file selection.
+refused as on any rules difference. The effective declarations from `mod.ini` that
+select what a match plays and the modes and maps a game offers also take part in this
+agreement: the Rules, Art, AI, mode roster and map catalog files
+(`IniRoots::agreed_files`), every archive name and the Ares requirement. Its display
+metadata does not, and neither do the names of the sound, EVA, theme, campaign, mission
+and map-selection files, in `mod.ini` or in config.toml's `[ini]`: they name what a game
+plays aloud or shows, and two games that differ only in those names play together. An
+archive name stays whatever the archive is for, since it mounts into the search order
+and can supply any file. A classic RA2 folder mod's detected rules, art, AI, mode and
+archive names use these same agreement fields. A rollback uses the older build's file selection.
 These choices are frozen at startup and reused when the asset manager is rebuilt.
 For [mods distributed in parts](modding.md#mods-distributed-in-parts), the check
 compares the assembled files. ZIPs and extracted folders with the same files
@@ -136,8 +144,10 @@ refused by the build check first; a rollback returns to the earlier digest for e
 on that build. Quick Match plays the original game, and the matchbot pairs without the
 rules hash, so a client ends its search before it queues with a message saying what to
 turn off, for the first of what it changes from the original game
-(`agreement::original_game_changes`): a mod in use; `[ini]` roots or a
-`theater_suffix` in config.toml other than YR's; an [Ares setting](ares.md#the-ares-setting) other than Auto; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD)
+(`agreement::original_game_changes`): a mod in use; Rules, Art, AI, mode roster or map
+catalog `[ini]` roots or a `theater_suffix` in config.toml other than YR's; the
+[Ares setting](ares.md#the-ares-setting) On (Off opens the game Auto opens and is no
+change); game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD)
 from the retail copy; a copy from a retail
 archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as
 the original, and another INI is compared with the retail archives' own entry, else
@@ -871,7 +881,7 @@ the start. This is kept on purpose: the door is gamemd's admission check, which
 released games rely on. When the door
 still refuses a join because the rules files differ, or the digest a start, each game
 says what it changes from the original game, its mod, `config.toml`'s INI roots, its
-Ares setting other than Auto and changed game files (`agreement::original_game_changes`),
+Ares setting where it decides which game opens and changed game files (`agreement::original_game_changes`),
 or that it plays the original (`agreement::rules_differ_text`);
 retail's text for it sends the player to Westwood. Nothing more is exchanged for
 that. A game of another build is refused at the build check first, so no released
@@ -896,12 +906,24 @@ game handles the same way.
 
 The player's [Ares setting](ares.md#the-ares-setting) (`[VERA] Ares=`, or a launch
 file's `[Settings] Ares=`) is not a room rule: like the mod, each game reads it at start
-and plays its own. Auto adds nothing to the rules digest, so a game set to Auto agrees
-with a released game as before. On makes every game an Ares game, which adds the byte a
-mounted `ares.mix` adds, and Off adds its own words, so a player whose setting differs
-from the others' is refused at the start, and that game's text names the setting
-(`agreement::own_changes_text`). Nothing new is exchanged. A rollback reads no setting
-and plays Auto.
+and plays its own. The rules digest counts it only where it decides which game opens
+(`AresSetting::where_it_decides`, `ProcessAssets::agreed_ares_setting`): On, which makes
+every game an Ares game and adds the byte a mounted `ares.mix` adds, unless Auto mounts
+`ares.mix` for the game too (a selected mod with one in reach); and Off, which adds its
+own words, only when Auto would mount it or the game's own rules (the Rules root, a
+mod's LANGRULE) hold an Ares key that Off keeps from turning Ares on. Auto, and a
+setting that opens the game Auto opens, adds nothing: a player set to Off plays the
+original game with players set to Auto, and one set to On plays a mod that ships
+`ares.mix` with them. A player whose setting does decide the game is refused in the
+room, and that game's text names the setting (`agreement::own_changes_text`). Off also
+keeps a mode's or a map's Ares key from turning Ares on, which no room knows before the
+match loads: each game adds whether Ares plays in the match it loaded to the rules its
+start certifies (`agreement::start_rules`), so those players are refused at the start,
+and the game set to Off names its setting there (`agreement::start_changes_text`). The
+other players' games cannot tell why and say only that another game differs. Nothing new
+is exchanged. A game from before this is another version and is refused by the build
+check first; a rollback compares the setting itself again, and one past the setting
+reads none and plays Auto.
 
 Until VERARULES.INI was retired for [New Mod](modding.md#start-a-new-mod), `host_rules`
 also carried the host's file as `personal_rules`. This version never sends it, and
