@@ -1,4 +1,5 @@
-//! Tests of what `RuleSet::simulation_config_hash` covers.
+//! Tests of what `RuleSet::simulation_config_hash` and
+//! `RuleSet::file_inputs_hash` cover.
 
 use super::*;
 
@@ -651,4 +652,127 @@ fn simulation_config_hash_covers_canonical_smudge_anim_dimensions() {
         first.simulation_config_hash(),
         changed.simulation_config_hash()
     );
+}
+
+/// What a network start certifies of a game's picture and model files
+/// follows what the simulation reads from them: how long a building unfolds,
+/// a resource spawner's frames, whether a building leaves rubble, the length
+/// of an animation that deals damage or that a deployment waits on, a loaded
+/// model, the weather bolt's height and whether a scorching animation's
+/// frame is large. A file that only looks different leaves it alone, so its
+/// player starts with the others: another SHP supplying the same rubble
+/// frame, an effect image's frame count, the length of an animation that
+/// changes nothing but its picture, the height of one no reader measures and
+/// a scorching frame redrawn a pixel larger.
+#[test]
+fn file_inputs_hash_follows_what_the_simulation_reads_from_files() {
+    use crate::rules::building_rubble::RubbleArt;
+    let ini = IniFile::from_str(
+        "[General]\nWarpOut=WARPOUT\nWeatherConBolts=BOLT\n\
+         [BuildingTypes]\n0=B\n[B]\nLeaveRubble=yes\n\
+         [VehicleTypes]\n0=V\n[V]\nDeployingAnim=DEPLOY\n\
+         [TerrainTypes]\n0=TIBTRE01\n[TIBTRE01]\nSpawnsTiberium=yes\nIsAnimated=yes\n\
+         [Animations]\n0=FLASH\n1=BOLT\n2=BURN\n3=DEPLOY\n",
+    );
+    let art_ini = IniFile::from_str(
+        "[FLASH]\nRate=900\n[BOLT]\nRate=900\n[BURN]\nDamage=5\nScorch=yes\n[DEPLOY]\nRate=900\n",
+    );
+    let hash = |change: &dyn Fn(&mut RuleSet)| {
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art_ini).unwrap();
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+        change(&mut rules);
+        rules.file_inputs_hash()
+    };
+    let rubble = |shp: &str, shadow_frame| RubbleArt {
+        shp: shp.to_owned(),
+        body_frame: crate::rules::building_rubble::RUBBLE_BODY_FRAME,
+        shadow_frame,
+    };
+    let scorch_frame = |width: u16, height: u16| {
+        move |rules: &mut RuleSet| {
+            let burn = rules.art_entry_mut_for_test("BURN").unwrap();
+            (burn.frame_width, burn.frame_height) = (width, height);
+        }
+    };
+    let base = hash(&|_| {});
+    assert_eq!(hash(&|_| {}), base);
+    let with_rubble =
+        hash(&|rules| rules.set_building_rubble_art_for_test("B", rubble("b.shp", 7)));
+    for read in [
+        hash(&|rules| rules.set_buildup_control_for_test("B", [0, 20, 1])),
+        hash(&|rules| rules.set_terrain_spawner_frame_count_for_test("TIBTRE01", 24)),
+        hash(&|rules| rules.bind_anim_frame_count_for_test("BURN", 12)),
+        hash(&|rules| rules.bind_anim_frame_count_for_test("DEPLOY", 12)),
+        hash(&|rules| rules.supply_loaded_voxel_for_test("V")),
+        hash(&|rules| rules.bind_anim_shp_height_for_test("BOLT", 90)),
+        hash(&scorch_frame(61, 51)),
+        with_rubble,
+    ] {
+        assert_ne!(read, base);
+    }
+    assert_eq!(
+        hash(&|rules| rules.set_building_rubble_art_for_test("B", rubble("bt.shp", 9))),
+        with_rubble
+    );
+    for (drawn, what) in [
+        (
+            hash(&|rules| rules.set_effect_frame_count_for_test("WARPOUT", 6, 6)),
+            "an effect image's frames",
+        ),
+        (
+            hash(&|rules| rules.bind_anim_frame_count_for_test("FLASH", 12)),
+            "a picture-only animation's frames",
+        ),
+        (
+            hash(&|rules| rules.bind_anim_shp_height_for_test("BURN", 90)),
+            "an unmeasured animation's height",
+        ),
+        (hash(&scorch_frame(60, 50)), "a small scorching frame"),
+    ] {
+        assert_eq!(drawn, base, "{what}");
+    }
+}
+
+/// On the retail install, through the production binder: a game folder that
+/// redraws a power plant's Buildup with the same frames leaves what a start
+/// certifies as it is, and one that gives it fewer frames changes it, with
+/// the construction control the simulation reads.
+#[test]
+fn a_replaced_buildup_changes_the_file_inputs_only_with_its_frames() {
+    use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+    let (Some(mut rules), Some((root, mut retail))) = (
+        crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art(),
+        crate::rules::retail_ini_fixture::retail_assets(),
+    ) else {
+        return;
+    };
+    crate::map::theater::load_theater(&mut retail, "TEMPERATE").unwrap();
+    let name = crate::rules::art_data::building_shp_names("GAPOWRMK", "TEMPERATE")
+        .into_iter()
+        .find(|name| retail.get_ref(name).is_some())
+        .expect("retail GAPOWR buildup");
+    let original = retail.get_ref(&name).unwrap().to_vec();
+    let mut bound = |assets: &AssetManager| {
+        rules.bind_building_buildup_assets(assets, "TEMPERATE");
+        (rules.file_inputs_hash(), rules.buildup_control("GAPOWR"))
+    };
+    let base = bound(&retail);
+    let pack = crate::map::source::test_support::TestDirectory::new("file-inputs-pack");
+    let with_pack = |bytes: &[u8]| {
+        pack.write(&name, bytes);
+        let mut assets =
+            AssetManager::with_mod(&root, Some(pack.path()), MediaArchiveMode::STOCK_DIGITAL)
+                .unwrap();
+        crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        assets
+    };
+    let mut redrawn = original.clone();
+    *redrawn.last_mut().unwrap() ^= 1;
+    assert_eq!(bound(&with_pack(&redrawn)), base);
+    let mut shorter = original;
+    let frames = i16::from_le_bytes([shorter[6], shorter[7]]);
+    shorter[6..8].copy_from_slice(&(frames - 2).to_le_bytes());
+    let changed = bound(&with_pack(&shorter));
+    assert_ne!(changed.0, base.0);
+    assert_ne!(changed.1, base.1);
 }

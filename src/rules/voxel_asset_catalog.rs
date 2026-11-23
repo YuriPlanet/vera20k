@@ -286,6 +286,12 @@ impl VoxelAssetCatalog {
     pub(crate) fn is_bound(&self) -> bool {
         self.bound
     }
+    /// VERA: which types' main models loaded and their first limb's half
+    /// sizes, without which image supplied each part: what
+    /// `RuleSet::file_inputs_hash` folds of this catalog.
+    pub(crate) fn fold_loaded(&self, state: &mut impl std::hash::Hasher) {
+        std::hash::Hash::hash(&self.loaded, state);
+    }
     pub(crate) fn model(&self, category: ObjectCategory, name: &str) -> Option<&LoadedVoxelModel> {
         self.models.get(&(category, name.to_ascii_uppercase()))
     }

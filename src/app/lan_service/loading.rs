@@ -667,7 +667,8 @@ mod tests {
             .unwrap();
         let rate = NonZeroU32::new(5).unwrap();
         let agreement =
-            StartupAgreement::new([(0, 0), (1, 1)], [0, 1], 77, 10, 30, rate, 0, "", "").unwrap();
+            StartupAgreement::new([(0, 0), (1, 1)], [0, 1], 77, 10, 30, rate, 0, 0, "", "")
+                .unwrap();
         let mut live = LiveCommandSession::new(
             agreement,
             transport,

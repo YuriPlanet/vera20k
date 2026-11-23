@@ -1187,6 +1187,14 @@ pub struct ArtRegistry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnimConfigHandle(u32);
 
+/// The one test the smudge pick makes of a scorching or cratering
+/// animation's middle frame (`AnimClass::Middle`, as
+/// `sim::smudge_grid::pick_smudge_candidate` ports it): wider than `0x3C` and
+/// taller than `0x32` takes any smudge, else a 1x1 one.
+pub(crate) const fn smudge_frame_is_large(width: i32, height: i32) -> bool {
+    0x3C < width && 0x32 < height
+}
+
 /// The AnimType runtime configs, in the order their keys first arrived, and
 /// each key's index. A config is never removed, so a key keeps its handle
 /// while the registry lives; overwriting a key's config keeps it too.
@@ -1722,6 +1730,88 @@ impl ArtRegistry {
     /// binders and the processing receipt write it.
     pub fn anim_runtime_config(&self, image_id: &str) -> Option<&AnimTypeRuntimeConfig> {
         with_ascii_uppercase(image_id, |key| self.anim_runtime_configs.get(key))
+    }
+
+    /// VERA: what an AnimType's SHP decides for the simulation once bound:
+    /// its frame count and the End, LoopEnd and middle frame taken from it,
+    /// for every type that affects play ([`Self::anim_presentation_only`]
+    /// refuses it) and every type in `paced`, which a simulation owner
+    /// waits on though it changes nothing but its picture; in name order.
+    /// A type with no bound image folds as unbound. The other types' frames
+    /// stay out, as a match presents them outside the simulation
+    /// (`Simulation::effect_anim_constructor`), and so do the image's name,
+    /// its size and every other field of a config: what
+    /// `RuleSet::file_inputs_hash` folds of the animations.
+    pub(crate) fn fold_anim_frame_bounds<'a>(
+        &self,
+        paced: impl IntoIterator<Item = &'a str>,
+        state: &mut impl std::hash::Hasher,
+    ) {
+        use std::hash::Hash;
+        let mut names: BTreeSet<String> = self.anim_types_affecting_play.iter().cloned().collect();
+        names.extend(
+            paced
+                .into_iter()
+                .filter(|name| !name.is_empty())
+                .map(str::to_ascii_uppercase),
+        );
+        names.len().hash(state);
+        for name in names {
+            let bounds = self.anim_runtime_configs.get(&name).map(|config| {
+                (
+                    config.raw_shp_frame_count,
+                    config.middle_frame,
+                    config.end,
+                    config.loop_end,
+                )
+            });
+            (name, bounds).hash(state);
+        }
+    }
+
+    /// VERA: for each animation whose middle frame leaves a smudge picked by
+    /// its frame size, whether that frame is large
+    /// ([`smudge_frame_is_large`]), the one thing the pick reads of it; in
+    /// name order. `ForceBigCraters=` picks by the smudge's own size. What
+    /// `RuleSet::file_inputs_hash` folds of the smudges.
+    pub(crate) fn fold_smudge_frame_classes(&self, state: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.iter_entries()
+            .filter(|(_, entry)| (entry.scorch || entry.crater) && !entry.force_big_craters)
+            .map(|(name, entry)| {
+                (
+                    name,
+                    smudge_frame_is_large(
+                        i32::from(entry.frame_width),
+                        i32::from(entry.frame_height),
+                    ),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+            .hash(state);
+    }
+
+    /// The frame size each scorching or cratering animation took from its
+    /// SHP's middle frame, which selects the smudge it leaves, with the keys
+    /// that make it one, in name order.
+    pub(crate) fn fold_smudge_anim_dims(&self, state: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.iter_entries()
+            .filter(|(_, entry)| entry.scorch || entry.crater || entry.force_big_craters)
+            .map(|(name, entry)| {
+                (
+                    name.to_string(),
+                    (
+                        entry.scorch,
+                        entry.crater,
+                        entry.force_big_craters,
+                        entry.frame_width,
+                        entry.frame_height,
+                    ),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+            .hash(state);
     }
 
     /// The handle of the config [`Self::anim_runtime_config`] answers for
