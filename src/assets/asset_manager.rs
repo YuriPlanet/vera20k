@@ -3749,7 +3749,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_assets))]
 mod ra2_archive_name_tests {
     use super::is_md_startup_archive;
 

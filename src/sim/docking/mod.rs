@@ -8,5 +8,5 @@ pub mod bunker_link;
 mod hospital;
 #[cfg(all(test, tests_sim_c_g))]
 mod hospital_tests;
-#[cfg(test)]
+#[cfg(all(test, tests_sim_c_g))]
 mod armory_tests;
