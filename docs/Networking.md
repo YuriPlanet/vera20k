@@ -621,7 +621,18 @@ again without it. A lobby that lists matches to watch already supports Teams, th
 and the room rules. A refusal from it leaves the settings in place. The host checks the
 map has enough starts for the playing teams, people and AI before publishing, so they
 can change the map or the seats while keeping their room settings. A room has 2 to 15
-teams, named A to O.
+teams, named A to O. A count outside that range, from a room or a peer, leaves Teams
+Off.
+
+A room's list and its seats come from one number: the rows that admit players. That
+is the map's capacity, and the host's observer row adds one more row when the room
+has one: a WOL room holds the six rows of the original service (`0x005E6440`), or two
+in a tournament room, and the host's observer row adds a row only when the capacity
+is under that limit (`0x005EC4A3..0x005EC4EF`). The list shows exactly those rows, so
+a newcomer takes a row the list shows and the room refuses the next one, instead of
+seating a player in a row nobody sees. Nothing new travels: a player's row travels
+as before, and a room of mixed versions seats as many players as the host's rows
+allow. An older host keeps its own rows, and a rollback does again.
 
 In a VERA room whose mode has teams and Teams set, people play only on a team. A newcomer
 comes in watching while a spectator seat is open and takes a seat with a team header's
