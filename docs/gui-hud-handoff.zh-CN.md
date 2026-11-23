@@ -5,27 +5,27 @@
 ## 1. 现状
 
 库已审查修复；引擎里迁到 gui 的有：性能面板、mod 在 `veraui.ini` 中加的按钮和文字、命令栏、侧边栏面板、单位与建筑血条、
-超武计时器、聊天与系统消息。每项都与它替换的旧代码逐位对比过，旧绘制已删。侧边栏的模型已从视图中拆出（SidebarModel）。
+超武计时器、聊天与系统消息、提示框、结算横幅。每项都与它替换的旧代码逐位对比过，旧绘制已删。侧边栏的模型已从视图中拆出（SidebarModel）。
 
 | 项 | 值 |
 |---|---|
 | 分支 | `feature/gui-hud-foundation` |
 | 工作树 | `/Volumes/扩展盘/vera20k-build/worktrees/gui-hud` |
 | 基点 | 上游 main `257abddce`，未合入新的 main |
-| 最后一个代码提交 | `e3d97c0fe` |
+| 最后一个代码提交 | `0a5d32ee2` |
 | 推送、PR | 都没有；英文草稿 `/Volumes/扩展盘/vera20k-build/tmp/gui-hud-pr.md`（只写到 11-22 的内容） |
 
 素材：原创机械金属风的界面素材在 `/Volumes/扩展盘/vera20k-build/tmp/gui-art/dist/final/expandmd97.mix`，与原版文件尺寸、帧数、编号一致，
 放进游戏目录即替换，删掉即还原；引擎读取逻辑未改。
 
-## 2. 按计划逐期对照（估计整体约 35%）
+## 2. 按计划逐期对照（估计整体约 45%）
 
 | 期 | 已做 | 未做 |
 |---|---|---|
 | 0 基线 | 5000 对象 CPU 基准、wasm32 检查、逐项新旧对比；地图观察截图做端到端对照 | 固定的截图与输入回放基线、GPU 基准 |
-| 1 底座 | 库修复、渲染适配器、SidebarModel、消息与计时器的绘制副作用移到 update | 重绘闸门接 revision |
-| 2 试点 | 命令栏走节点树，血条走状态模板（5000 单位 p95 0.19 ms） | 只用公开接口建面板、模板并收到点击的验收测试 |
-| 3A | 计时器、消息 | 提示框、结算横幅、局内对话框剩余手绘控件、布局编辑覆盖层 |
+| 1 底座 | 库修复、渲染适配器、SidebarModel、消息与计时器的绘制副作用移到 update | 重绘闸门接 revision（推迟，见下） |
+| 2 试点 | 命令栏走节点树，血条走状态模板（5000 单位 p95 0.19 ms），公开接口验收测试 `gui/src/hud/client_bridge_tests.rs` | — |
+| 3A | 计时器、消息、提示框、结算横幅 | 局内对话框剩余手绘控件、布局编辑覆盖层 |
 | 3B | 侧边栏面板（2-5 列、veraui.ini 布局）、mod 部件 | 小地图框、veraui.ini 解析结果输出为节点树、编辑器 |
 | 3C | 血条（底框与血量格） | 等级、护盾、弹药/载员/驻军点、编队号、自愈、数字显示、标签、飘字 |
 | 4 | 每项已删旧绘制 | 接口文档、全量点击回归 |
@@ -36,6 +36,8 @@
   几何已只有一份。将来外部 ui.wasm 的按钮按 mod 按钮的方式登记成 gadget 即可（那时加通用的“HUD 节点 → gadget”桥）。
 - 建造栏的图标、进度遮罩、变暗遮罩、文字底条不再包一层节点树：只是原样转交实例，没有结构收益，反而每帧多开销。
 - 性能取舍（例如只给屏幕附近的对象抓状态条数据）先找用户权衡，不擅自改。
+- 重绘闸门接 revision 推迟：迁过来的节点树都是每次绘制时从状态推出的视图，闸门已按这些状态判断（计时器闪烁截止、消息逐字显示等），
+  加 revision 不改变行为。等外部模块能直接改树时再接，届时它就是调用者。
 
 ## 3. 代码位置
 
@@ -44,7 +46,7 @@
 | `gui/src/hud/` | 库；本轮新增 `world.rs` 的 `Element::Pips`（格数由数值的 max 决定） |
 | `src/render/hud_paint.rs` | 适配器；`NodeDraw` 可带深度、宿主算好的整条实例、逐字显示的标签 |
 | `src/app/presentation/picture_hud.rs` | 图片节点树：命令栏、侧边栏面板 |
-| `src/app/presentation/text_hud.rs` | 底框加文字的节点树：计时器、消息 |
+| `src/app/presentation/text_hud.rs` | 底框加文字的节点树：计时器、消息、提示框、横幅文字 |
 | `src/app/presentation/health_templates.rs` | 内置血条模板与按原版浮点步骤定位 |
 | `src/app/sidebar_projection.rs` | `SidebarModel`（模拟与存档读的部分）与视图 `SidebarProjectionState` |
 | `src/app/presentation/super_timers.rs`、`src/app/input/messages.rs` | update 与只读绘制分开 |
@@ -60,6 +62,9 @@
 | 侧边栏面板新旧对比 | 80,000 组随机输入（一半为打乱、隐藏、改坐标的 veraui.ini 式布局）、20,037,053 个四边形逐字节一致 |
 | 计时器新旧对比 | 60,000 组、2,977,629 个四边形逐字节一致（两种字体、中文） |
 | 消息新旧对比 | 60,000 组、1,223,836 个四边形逐字节一致（逐字显示进度、Tab、中文） |
+| 提示框新旧对比 | 60,000 组、1,596,635 个四边形逐字节一致（换行、固定角落、任意色调、有无底框） |
+| 横幅文字新旧对比 | 40,000 组、419,409 个字形逐字节一致 |
+| 公开接口验收 | 外部来源建按钮面板、收右键点击和命令名、提交血条模板、按来源卸载：通过 |
 | 带零售素材与 GPU 的测试 | 命令栏截图对照、侧边栏 8 项、血条与缩放等状态条 15 项通过；两项文字标签测试因本机是中文版 `ra2md.csf` 而失败，与改动无关 |
 | 地图观察截图 | 盟军/苏军建造放置局、铁幕与核弹计时器局：与改动前逐像素一致，只有两个矿石闪光像素在任意两次运行间都会变 |
 | 客户端全部库测试 | 只有 `architecture_guards::production_dependency_edges` 失败，报的是本分支没改的 `ui/*` 文件 |
@@ -89,6 +94,8 @@ run test -p vera20k --lib -- app::presentation:: app::input:: app::sidebar_proje
 | `gui-hud-health-parity.rs`（`parity`） | `src/app/presentation/health_templates.rs` | `tests_app_presentation` |
 | `gui-hud-timer-parity.rs`（`timer_parity`） | `src/app/presentation/super_timers.rs` | `tests_app_presentation` |
 | `gui-hud-message-parity.rs`（`message_parity`） | `src/app/input/messages.rs` | `tests_app_input_d_z` |
+| `gui-hud-tooltip-parity.rs`（`tooltip_parity`） | `src/app/input/tooltips.rs` | `tests_app_input_d_z` |
+| `gui-hud-banner-parity.rs`（`banner_parity`） | `src/app/presentation/outcome_banner.rs` | `tests_app_presentation` |
 
 挂钩写法：`#[cfg(all(test, tests_app_presentation))] #[path = "/Volumes/扩展盘/vera20k-build/tmp/<文件>"] mod <模块名>;`，
 用 `run test -p vera20k --release --lib -- <模块路径> --nocapture` 跑。
@@ -118,10 +125,10 @@ run test -p vera20k --lib -- app::presentation:: app::input:: app::sidebar_proje
 
 ## 9. 后续任务
 
-1. 3A：提示框（颜色是任意浮点的阵营色，填充与边框分两条通道，需要适配器支持宿主给定色调）、结算横幅、局内对话框剩余手绘控件。
+1. 3A：局内对话框剩余手绘控件、布局编辑覆盖层。
 2. 3B：小地图框、veraui.ini 输出为节点树、编辑器。
 3. 3C：等级、护盾、各类点、编队号、标签、飘字。
-4. 重绘闸门接 revision；公开接口验收测试；接口文档；全量点击回归。
+4. 接口文档；全量点击回归；接外部模块时接重绘闸门 revision。
 5. 单独修 Tab 崩溃；合入最新 main；提 PR（须用户同意）。
 
 推送和开 PR 之前须得到用户同意。提交信息和 PR 描述不加任何 AI 署名。
