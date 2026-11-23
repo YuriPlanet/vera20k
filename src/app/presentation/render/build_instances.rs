@@ -1628,6 +1628,20 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         .map(|v| build_sidebar_text_instances(state, v, status_labels, ready_tint))
         .unwrap_or_default();
     huds.status.begin();
+    if let Some(houses) = view
+        .and_then(|v| v.observer.as_deref())
+        .filter(|_| state.renderer.bit_font.darken_texture().is_some())
+    {
+        crate::app::presentation::sidebar_build::draw_observer_strip_text(
+            &mut huds.status,
+            &state.renderer.bit_font,
+            houses,
+            [
+                state.match_state.input.camera_x,
+                state.match_state.input.camera_y,
+            ],
+        );
+    }
     // Credits counter shares the GAME.FNT sidebar-text layer: gamemd draws it
     // with the same BitFont on the sidebar surface, in the same packed side
     // text colour as the cameo labels.
@@ -1677,11 +1691,11 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     chrome.extend_from_slice(layout_parts.pictures());
     state.renderer.bit_font.set_raster(frame_raster);
     // The observer's strip draws over the strip's tiles from the same atlas.
-    if let Some(v) = current_sidebar_view(state) {
-        chrome.extend(
-            crate::app::presentation::sidebar_build::build_observer_strip_instances(state, v),
-        );
-    }
+    chrome.extend_from_slice(crate::app::presentation::sidebar_build::draw_observer_strip(
+        state,
+        current_sidebar_view(state),
+        &mut huds.observer,
+    ));
     state.match_state.match_presentation.sidebar_huds = huds;
     let smooth_chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .is_some_and(|atlas| atlas.retarget_to_smooth(&mut chrome));

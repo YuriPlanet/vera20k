@@ -11,6 +11,7 @@
 use crate::app::AppState;
 use crate::app::presentation::picture_hud::{PictureHud, covering};
 use crate::app::presentation::sidebar_render::current_sidebar_chrome;
+use crate::app::presentation::text_hud::TextHud;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::{BitFont, Fit};
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
@@ -258,26 +259,6 @@ fn push_chrome(
 
 /// A chrome picture at its canvas size into a plain instance list, for the
 /// observer's strip, which draws among the cameos.
-fn push_chrome_instance(
-    instances: &mut Vec<SpriteInstance>,
-    entry: SidebarChromeEntry,
-    x: f32,
-    y: f32,
-    depth: f32,
-    camera_offset: [f32; 2],
-) {
-    instances.push(SpriteInstance {
-        position: [x + camera_offset[0], y + camera_offset[1]],
-        size: entry.pixel_size,
-        uv_origin: entry.uv_origin,
-        uv_size: entry.uv_size,
-        depth,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
-    });
-}
-
 /// One piece over `size` at `(x, y)` of the layout space; its node's rect
 /// is the whole pixels it covers there.
 fn push_chrome_sized(
@@ -888,64 +869,73 @@ pub(crate) fn build_sidebar_cameo_instances(
     }
 }
 
-/// The observer strip's pictures, from the chrome atlas: each listed House's
-/// side background at its row pair, its flag 70 pixels right and down
-/// (`0x006AA0F1..0x006AA154`, `0x006AA1E3..0x006AA2C9`).
-pub(crate) fn build_observer_strip_instances(
+/// The observer strip's pictures, from the chrome atlas, as the part
+/// `Observer` of `pictures`: each listed House's side background at its row
+/// pair, its flag 70 pixels right and down (`0x006AA0F1..0x006AA154`,
+/// `0x006AA1E3..0x006AA2C9`). Begins and finishes the tree's frame.
+pub(crate) fn draw_observer_strip<'a>(
     state: &AppState,
-    view: &SidebarView,
-) -> Vec<SpriteInstance> {
-    let (Some(houses), Some(atlas)) = (view.observer.as_deref(), current_sidebar_chrome(state))
-    else {
-        return Vec::new();
-    };
-    let co = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
-    let art = &atlas.observer_art;
-    let mut out = Vec::new();
-    for house in houses {
-        let [x, y] = house.origin;
-        if let Some(&background) = art.background(house.side) {
-            push_chrome_instance(&mut out, background, x, y, OBSERVER_BACKGROUND_DEPTH, co);
-        }
-        if let Some(&flag) = art.flag(house.country) {
-            push_chrome_instance(&mut out, flag, x + 70.0, y + 70.0, OBSERVER_FLAG_DEPTH, co);
+    view: Option<&SidebarView>,
+    pictures: &'a mut PictureHud,
+) -> &'a [SpriteInstance] {
+    pictures.begin();
+    let houses = view.and_then(|view| view.observer.as_deref());
+    if let (Some(houses), Some(atlas)) = (houses, current_sidebar_chrome(state)) {
+        let co = [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ];
+        let art = &atlas.observer_art;
+        pictures.part(OBSERVER);
+        for house in houses {
+            let [x, y] = house.origin;
+            if let Some(&background) = art.background(house.side) {
+                push_chrome(pictures, background, x, y, OBSERVER_BACKGROUND_DEPTH, co);
+            }
+            if let Some(&flag) = art.flag(house.country) {
+                push_chrome(pictures, flag, x + 70.0, y + 70.0, OBSERVER_FLAG_DEPTH, co);
+            }
         }
     }
-    out
+    pictures.finish()
 }
+
+/// The observer strip's part name in the sidebar's trees.
+const OBSERVER: &str = "Observer";
 
 /// Over the strip's SIDE2 tiles, under its text.
 const OBSERVER_BACKGROUND_DEPTH: f32 = 0.00045;
 const OBSERVER_FLAG_DEPTH: f32 = 0.000449;
 
 /// The observer strip's texts in each House's colour (Fancy_Text_Print
-/// `0x004A61C0`, style `0x42`): the name at 8, 4 into the row pair, each
-/// line 17 pixels below the last (`0x006AA373..0x006AA583`).
-fn observer_strip_text(
+/// `0x004A61C0`, style `0x42`), as the frame's next texts of `hud` in the
+/// part `Observer`: the name at 8, 4 into the row pair, each line 17 pixels
+/// below the last (`0x006AA373..0x006AA583`).
+pub(crate) fn draw_observer_strip_text(
+    hud: &mut TextHud,
     font: &BitFont,
     houses: &[crate::ui::sidebar::ObserverEntry],
     co: [f32; 2],
-) -> Vec<SpriteInstance> {
-    let mut out = Vec::new();
+) {
+    hud.part(OBSERVER);
+    let height = font.cell_height();
     for house in houses {
         let tint = house.rgb.map(|c| f32::from(c) / 255.0);
         let [x, y] = [house.origin[0] + 8.0, house.origin[1] + 4.0];
         for (line, text) in std::iter::once(&house.name).chain(&house.lines).enumerate() {
-            out.extend(font.build_text(
+            let y = y + line as f32 * 17.0;
+            // The line is not measured, to measure nothing the strip did not:
+            // its node marks where it starts.
+            hud.fitted_text(
+                covering(x, y, 0.0, height),
                 text,
-                x,
-                y + line as f32 * 17.0,
-                1.0,
-                crate::render::sidebar_text::CREDITS_DEPTH,
+                [x + co[0], y + co[1]],
                 tint,
-                co,
-            ));
+                crate::render::sidebar_text::CREDITS_DEPTH,
+                Fit::NONE,
+            );
         }
     }
-    out
 }
 
 // ---------------------------------------------------------------------------
@@ -956,8 +946,11 @@ fn observer_strip_text(
 /// to frame, one for each lane they draw in.
 #[derive(Default)]
 pub(crate) struct SidebarHuds {
-    /// The texts drawn after the clock: the money counter.
-    pub(crate) status: crate::app::presentation::text_hud::TextHud,
+    /// The observer strip's pictures, over the chrome.
+    pub(crate) observer: PictureHud,
+    /// The texts drawn after the clock: the observer strip's and the money
+    /// counter.
+    pub(crate) status: TextHud,
 }
 
 #[derive(Default)]
@@ -1038,9 +1031,6 @@ pub(crate) fn build_sidebar_text_instances(
                     .build_text(&count_str, text_x, text_y, 1.0, 0.00042, ready_tint, co),
             );
         }
-    }
-    if let Some(houses) = view.observer.as_deref() {
-        instances.extend(observer_strip_text(&state.renderer.bit_font, houses, co));
     }
     SidebarTextInstances {
         status: instances,
