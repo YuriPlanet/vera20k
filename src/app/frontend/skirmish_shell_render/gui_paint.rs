@@ -765,19 +765,13 @@ pub(crate) fn paint_gui_into(
         Some(text) => Some(Cow::Owned(text)),
         None => label_of(state, gui, node),
     };
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        if !flag(gui, node, Prop::Visible, true) {
-            continue;
-        }
-        if let Ok(children) = gui.tree().children(node) {
-            stack.extend(children.iter().rev());
-        }
+    // Each visible node in paint order, its sprites before its text.
+    gui.tree().walk_visible(root, |node| {
         let Ok(kind) = gui.tree().kind(node) else {
-            continue;
+            return;
         };
         let Ok(rect) = gui.tree().screen_rect(node) else {
-            continue;
+            return;
         };
         let covered = super::text_covered_by_overlay(rect, overlays);
         let enabled = match style
@@ -796,7 +790,7 @@ pub(crate) fn paint_gui_into(
         {
             if frame == FrameArt::ListBar {
                 push_list_bar(&mut paint.controls, &chrome, gui, node, scale);
-                continue;
+                return;
             }
             let label = caption(node);
             let look = TextLook {
@@ -812,7 +806,7 @@ pub(crate) fn paint_gui_into(
             push_frame(
                 controls, texts, font, white, rect, frame, caption, look, scale,
             );
-            continue;
+            return;
         }
         match kind {
             NodeKind::Button => {
@@ -830,7 +824,7 @@ pub(crate) fn paint_gui_into(
                     None => art.pushed(held, captured) == Some(node),
                 };
                 if art == ButtonArt::Side {
-                    let Some(side) = style.side else { continue };
+                    let Some(side) = style.side else { return };
                     let look = PauseMenuButtonState {
                         pressed,
                         highlighted: flag(gui, node, Prop::Toggled, false),
@@ -839,10 +833,10 @@ pub(crate) fn paint_gui_into(
                     let label = caption(node).filter(|_| !covered);
                     let (art, texts) = (&mut paint.side, &mut paint.texts);
                     push_side_button(art, texts, font, side, rect, label.as_deref(), look, glyph);
-                    continue;
+                    return;
                 }
                 match (art, atlas) {
-                    (ButtonArt::Host | ButtonArt::Side, _) => continue,
+                    (ButtonArt::Host | ButtonArt::Side, _) => return,
                     (ButtonArt::Caption, _) => {}
                     (ButtonArt::Column, _) => {
                         let visual = vera20k_gui::shell::button::ButtonVisual {
@@ -905,10 +899,10 @@ pub(crate) fn paint_gui_into(
                                 .texts
                                 .push(text(state, &label, at, centred, glyph, rgb, depth));
                         }
-                        continue;
+                        return;
                     }
                     // The rest are the shell control art's.
-                    (_, None) => continue,
+                    (_, None) => return,
                     (ButtonArt::Image, Some(atlas)) => {
                         let picture = style
                             .picture_of
@@ -925,7 +919,7 @@ pub(crate) fn paint_gui_into(
                                 push_picture(out, atlas, picture, rect, pressed, scale);
                             }
                         }
-                        continue;
+                        return;
                     }
                     (ButtonArt::ModalLit, Some(atlas)) => {
                         let lit = style
@@ -946,7 +940,7 @@ pub(crate) fn paint_gui_into(
                         }
                         let Some(label) = caption(node).filter(|t| !covered && !t.is_empty())
                         else {
-                            continue;
+                            return;
                         };
                         let at = scale.derive_rect(rect, |r| {
                             crate::app::frontend::shell_pass::owner_draw_button_label_rect(
@@ -968,7 +962,7 @@ pub(crate) fn paint_gui_into(
                                 scale.factor(),
                             )
                         }));
-                        continue;
+                        return;
                     }
                     (ButtonArt::CheckboxFace, Some(_)) => {
                         let checked = flag(gui, node, Prop::Toggled, false);
@@ -1035,7 +1029,7 @@ pub(crate) fn paint_gui_into(
                     }
                 }
                 let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) else {
-                    continue;
+                    return;
                 };
                 let rgb = text_rgb(
                     gui,
@@ -1079,7 +1073,7 @@ pub(crate) fn paint_gui_into(
                 // off (`0x4AC` with 0), which gives the track the whole window.
                 let plaque = flag(gui, node, Prop::ShowValue, true);
                 let Some(range) = gui.trackbar_range(node) else {
-                    continue;
+                    return;
                 };
                 let value = int(gui, node, Prop::Pos, range.min);
                 paint_control(
@@ -1128,7 +1122,7 @@ pub(crate) fn paint_gui_into(
                 }
             }
             NodeKind::Combo => {
-                let Some(atlas) = atlas else { continue };
+                let Some(atlas) = atlas else { return };
                 let host_rows = gui
                     .get(node, Prop::RowCount)
                     .ok()
@@ -1151,7 +1145,7 @@ pub(crate) fn paint_gui_into(
                 );
             }
             NodeKind::List => {
-                let Some(atlas) = atlas else { continue };
+                let Some(atlas) = atlas else { return };
                 // A host-counted list's rows are the host's, or it paints it.
                 let cells = style
                     .cells_of
@@ -1165,14 +1159,14 @@ pub(crate) fn paint_gui_into(
                     {
                         Some(rows) => Some(rows),
                         None if cells.is_some() => None,
-                        None => continue,
+                        None => return,
                     },
                     None => None,
                 };
                 // The owner-draw list `0x00618D40` over its dialog's art.
                 let (Some(view), Some(geometry)) = (gui.list_view(node), gui.list_geometry(node))
                 else {
-                    continue;
+                    return;
                 };
                 let selected = view
                     .selected
@@ -1219,7 +1213,7 @@ pub(crate) fn paint_gui_into(
                         let r = geometry.row(visible);
                         paint_cells(paint, state, atlas, style, row, r, scale, covered);
                     }
-                    continue;
+                    return;
                 }
                 let normal = text_rgb(gui, node, true, style.rgb, None);
                 let rows: Vec<(&str, u32)> = match &host_rows {
@@ -1267,7 +1261,7 @@ pub(crate) fn paint_gui_into(
             // with no area draws nothing.
             NodeKind::Edit if rect.w <= 0 || rect.h <= 0 => {}
             NodeKind::Edit => {
-                let Some(atlas) = atlas else { continue };
+                let Some(atlas) = atlas else { return };
                 let mut edit = gui.edit_state(node).unwrap_or_default();
                 if let Some(focus_of) = style.focus_of {
                     edit.focused = focus_of(node);
@@ -1315,7 +1309,7 @@ pub(crate) fn paint_gui_into(
                             .push(text(state, &shown, rect, align, glyph, rgb, depth));
                     }
                     paint.texts.extend(hint);
-                    continue;
+                    return;
                 }
                 if face == Some(EditFace::SearchLine)
                     && let Ok(Some(Value::Rect(text_inset))) = gui.get(node, Prop::TextInset)
@@ -1338,7 +1332,7 @@ pub(crate) fn paint_gui_into(
                     let shown = Some(shown.as_str()).filter(|_| !covered);
                     push_search_line(paint, font, atlas, line, shown, scale);
                     paint.texts.extend(hint);
-                    continue;
+                    return;
                 }
                 let Some(field) = inset(gui, node, rect, scale) else {
                     let (out, texts) = (&mut paint.controls, &mut paint.texts);
@@ -1362,7 +1356,7 @@ pub(crate) fn paint_gui_into(
                         scale,
                     );
                     paint.texts.extend(hint);
-                    continue;
+                    return;
                 };
                 if let Some(fill) = style.edit_fill {
                     super::chrome::push_solid_rect(&mut paint.controls, atlas, rect, fill, depth);
@@ -1398,7 +1392,7 @@ pub(crate) fn paint_gui_into(
             NodeKind::Text if style.glyph_of.zip(id(node)).is_some_and(|(f, id)| f(id).is_some()) => {
                 let size = style.glyph_of.zip(id(node)).and_then(|(f, id)| f(id));
                 let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) else {
-                    continue;
+                    return;
                 };
                 let sized = glyph * size.unwrap_or(1.0);
                 let fit = font.fit_line(&label, (rect.w as f32 / sized).max(1.0) as u32);
@@ -1461,23 +1455,23 @@ pub(crate) fn paint_gui_into(
                     .and_then(|(page_art_of, id)| page_art_of(id))
                 {
                     push_page_art(&mut paint.page_art, art, rect, scale);
-                    continue;
+                    return;
                 }
-                let Some(atlas) = atlas else { continue };
+                let Some(atlas) = atlas else { return };
                 let host = style
                     .picture_of
                     .zip(id(node))
                     .and_then(|(picture_of, id)| picture_of(id));
                 if let (Some(Picture::Glyph(file)), Some(art)) = (host, style.art) {
                     push_page_icon(&mut paint.icons, art, file, rect, true, scale);
-                    continue;
+                    return;
                 }
                 if let Some(picture) = host {
                     push_picture(&mut paint.controls, atlas, picture, rect, false, scale);
-                    continue;
+                    return;
                 }
                 let Ok(Some(Value::Text(name))) = gui.get(node, Prop::Art) else {
-                    continue;
+                    return;
                 };
                 if let Some(entry) = atlas.lan_player_side(name) {
                     let out = &mut paint.controls;
@@ -1517,7 +1511,7 @@ pub(crate) fn paint_gui_into(
             }
             _ => {}
         }
-    }
+    });
 }
 
 /// A text's alignment, glyph scale and colour.

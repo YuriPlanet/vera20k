@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use crate::Rect;
 use crate::gui::Gui;
-use crate::node::{NodeId, Prop, Tree, Value};
+use crate::node::{Node, NodeId, Prop, Tree, Value};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Placed {
@@ -146,36 +146,63 @@ impl Layout {
     fn place(&mut self, tree: &Tree, root: NodeId) {
         let base = self.nodes.len();
         self.child_clips.clear();
-        self.pending.clear();
-        self.pending.push((root, None));
-        while let Some((id, parent)) = self.pending.pop() {
-            let Ok(node) = tree.node(id) else { continue };
-            if !node.bool_prop(Prop::Visible, true) {
-                continue;
-            }
+        let viewport = self.viewport;
+        let (nodes, child_clips, index) = (&mut self.nodes, &mut self.child_clips, &mut self.index);
+        tree.walk_visible_with(root, None, &mut self.pending, |id, node, parent: Option<usize>| {
             let (area, clip, inherited) = match parent {
-                Some(p) => (self.nodes[base + p].rect, self.child_clips[p], self.nodes[base + p].enabled),
-                None => (self.viewport, None, true),
+                Some(p) => (nodes[base + p].rect, child_clips[p], nodes[base + p].enabled),
+                None => (viewport, None, true),
             };
             let rect = match node.props.get(&Prop::Rect) {
                 Some(Value::Rect(rect)) => rect.bounded(),
                 _ => Rect::new(area.x, area.y, 0, 0),
             };
-            let at = self.nodes.len() - base;
-            self.nodes.push(Placed {
+            let at = nodes.len() - base;
+            nodes.push(Placed {
                 id,
                 rect,
                 clip,
                 enabled: inherited && node.bool_prop(Prop::Enabled, true),
             });
-            self.child_clips.push(if node.bool_prop(Prop::Clip, false) {
+            child_clips.push(if node.bool_prop(Prop::Clip, false) {
                 Some(clip.map_or(rect, |clip| clip.intersect(rect)))
             } else {
                 clip
             });
-            self.index.insert(id, (root, at));
-            self.pending
-                .extend(node.children.iter().rev().map(|child| (*child, Some(at))));
+            index.insert(id, (root, at));
+            Some(at)
+        });
+    }
+}
+
+impl Tree {
+    /// `root`'s visible subtree in paint order, the one the layout lists:
+    /// each node before its children, a hidden node's subtree left out. No
+    /// recursion: a caller may nest as deep as the node limit.
+    pub fn walk_visible(&self, root: NodeId, mut visit: impl FnMut(NodeId)) {
+        let mut pending = Vec::new();
+        self.walk_visible_with(root, (), &mut pending, |id, _, ()| visit(id));
+    }
+
+    /// [`Self::walk_visible`], with `pending` as its scratch: `visit` gets
+    /// each node and what its parent's visit returned (`top` for `root`),
+    /// and returns what the node's children get.
+    pub(crate) fn walk_visible_with<P: Copy>(
+        &self,
+        root: NodeId,
+        top: P,
+        pending: &mut Vec<(NodeId, P)>,
+        mut visit: impl FnMut(NodeId, &Node, P) -> P,
+    ) {
+        pending.clear();
+        pending.push((root, top));
+        while let Some((id, parent)) = pending.pop() {
+            let Ok(node) = self.node(id) else { continue };
+            if !node.bool_prop(Prop::Visible, true) {
+                continue;
+            }
+            let below = visit(id, node, parent);
+            pending.extend(node.children.iter().rev().map(|child| (*child, below)));
         }
     }
 }
