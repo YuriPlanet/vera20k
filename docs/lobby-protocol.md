@@ -197,7 +197,7 @@ the room return 409 `player_not_in_room` instead, which leaves Teams as it is. A
 from before Teams cannot read a host's options while Teams is set and shows its
 invalid-update line, in a room that cannot start anyway, since its players' versions
 differ. `launch.options.auto_balance`, the Balance automatically setting of hosts on
-0.3.3 and 0.3.4, is `true` or left out while it is off; those games send it only with a Teams count,
+0.3.2 to 0.3.4, is `true` or left out while it is off; those games send it only with a Teams count,
 and current games never send it. `launch.options.queue`, a VERA room's join
 queue, lists by name the room's spectators (humans with the `Observer` role) who wait
 for a seat, first first, each once and at most 30; the game leaves it out while nobody
@@ -1109,7 +1109,7 @@ choice would, and publishes the options. A game that ignores the event leaves th
 to the host. The host alone hears why nothing moves: a Quick Match room, a mode without
 teams, AI players, fewer than two players, or teams already as even as they can be.
 Anyone else typing `/balance` hears that only the host can. The host's Balance teams, in
-Quick Team Setup, sends `/balance` in the room's chat. A 0.3.3 or 0.3.4 host with Balance automatically on sends
+Quick Team Setup, sends `/balance` in the room's chat. A host on 0.3.2 to 0.3.4 with Balance automatically on sends
 the `balance` command 5 seconds after who plays or the Teams count last changed; the
 lobby balances as for `/balance` but says nothing when nothing moves, and refuses the
 command from anyone but the host with 403 `forbidden`. Current games never send it.

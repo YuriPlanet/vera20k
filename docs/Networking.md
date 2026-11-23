@@ -743,9 +743,10 @@ refuses options naming them, so the room cannot start until those players leave 
 public lobby or the host leaves the room, and a visitor who joins the public lobby again
 is listed twice. Roll the lobby back past this only when no room has a visitor. The
 public lobby lists a stranded visitor until this lobby is back and they leave the room
-or sign out; it then also drops an entry whose session is gone.
+or sign out; an entry whose session ended under the older lobby stays listed until
+the store is fixed.
 
-Games 0.3.3 and 0.3.4 had a host setting, Balance automatically, that travels online as
+Games 0.3.2 to 0.3.4 had a host setting, Balance automatically, that travels online as
 `launch.options.auto_balance` and had the lobby balance the room 5 seconds after who
 plays or the Teams count changed. Current games neither offer it nor send it. A current
 guest reads and ignores it in such a host's room, which cannot start anyway, since the

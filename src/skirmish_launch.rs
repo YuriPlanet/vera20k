@@ -496,7 +496,7 @@ pub struct SkirmishLaunchOptions {
     /// Left out while Off, as the bans are.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teams: Option<u8>,
-    /// Balance automatically, which 0.3.3 and 0.3.4 hosts send with Teams.
+    /// Balance automatically, which hosts on 0.3.2 to 0.3.4 send with Teams.
     /// Read only so that their options parse; nothing reads it, and it is
     /// never sent.
     #[serde(default, skip_serializing)]
@@ -1607,7 +1607,7 @@ mod tests {
         );
     }
 
-    /// A 0.3.3 or 0.3.4 host's options still parse with its Balance
+    /// The options of a host on 0.3.2 to 0.3.4 still parse with its Balance
     /// automatically, and the setting never goes out again.
     #[test]
     fn an_older_hosts_balance_automatically_parses_and_is_never_sent() {
