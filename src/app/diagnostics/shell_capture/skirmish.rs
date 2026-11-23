@@ -290,8 +290,17 @@ fn guard(
     chooser: Option<ChooserTarget>,
     loading: bool,
     expected_cursor: (f32, f32),
+    keyboard_open: bool,
 ) -> Result<()> {
     let shell = &state.frontend.skirmish_shell_state;
+    // `main_menu_dialog_open` also counts the shared Keyboard dialog A3,
+    // which the in-game Keyboard route opens on purpose; its other two
+    // dialogs still count there.
+    let main_menu_dialog = if keyboard_open {
+        state.frontend.shell_message_box.is_some() || state.frontend.options_dialog.is_some()
+    } else {
+        state.main_menu_dialog_open()
+    };
     CaptureGuard {
         main_menu_screen: state.frontend.screen == GameScreen::MainMenu
             || (loading
@@ -314,7 +323,7 @@ fn guard(
             )
         },
         expected_cursor,
-        interaction_active: state.main_menu_dialog_open()
+        interaction_active: main_menu_dialog
             || state.frontend.quit_cascade.is_some()
             || (shell.choose_map_modal.is_some() && chooser.is_none())
             || (shell.random_map_setup_modal.is_some()
@@ -544,7 +553,18 @@ impl SkirmishCapture {
                     | Phase::InGameMenu
             ),
             (rest.0 as f32, rest.1 as f32),
+            self.keyboard_open(state),
         )
+    }
+
+    /// The Keyboard route's A3 is up over the running game: the one shell
+    /// dialog the guard admits, only on that route and only while the
+    /// in-game menu state is A3's.
+    fn keyboard_open(&self, state: &AppState) -> bool {
+        self.loading == Some(LoadingTarget::InGameMenu(InGameMenuTarget::Keyboard))
+            && self.phase == Phase::InGameMenu
+            && state.match_state.match_presentation.in_game_menu
+                == crate::ui::pause_menu::InGameMenuState::Keyboard
     }
 
     /// A press and release at `point` through the chooser's production
