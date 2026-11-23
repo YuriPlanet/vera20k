@@ -3,9 +3,19 @@
 //! dock, the buttons a layout adds, and the battlefield's and the radar's
 //! catchers, as nodes under the in-game dialogs of
 //! [`crate::app::presentation::state::MatchPresentationState::dialog_ui`].
-//! An in-game dialog over them takes the pointer; the menu's reset of that
-//! controller takes the chrome with it, which is rebuilt at the next pointer
-//! message.
+//! An in-game dialog over them takes the pointer. The chrome is built when
+//! the match starts and stays through the in-game menus' resets of that
+//! controller; the match's end takes it.
+//!
+//! The sidebar's and the command bar's buttons are also what draws them:
+//! the sidebar's parts are a group of the layer in the layout's order, each
+//! button part the button itself, each other part the panel its pictures go
+//! in, and the command bar is a group of its rail and tiles, its buttons in
+//! their slots' order and its thumb ([`ChromePaintNodes`],
+//! `presentation::picture_hud::ChromeHud`). A node keeps two rects: the one
+//! the cursor hits (`HitRect`, frame pixels, written here) and the one its
+//! picture covers on its surface (`Rect`, layout pixels, written by the
+//! paint).
 //!
 //! The layer's rules are the retained gadget list's (`vera20k_gui`'s
 //! `Gui::push_chrome`): smallest-area hover seeded at 1024x768, the press to
@@ -17,8 +27,9 @@
 //! Tree order is the gadget list's, after Phobos' superweapon column, whose
 //! input ran before the list's: the column's toggle and buttons, the
 //! layout's buttons (each added at the head, so the last first), the timer
-//! dock, the sidebar's eight buttons, the battlefield, the radar, the
-//! cameos, the command bar.
+//! dock, the sidebar's ten buttons (in the layout's order of its parts:
+//! their rects never overlap, so the order takes nothing from any), the
+//! battlefield, the radar, the cameos, the command bar.
 //!
 //! The nodes take their rects from the sidebar view, the frame and the
 //! layout at a pointer message: at every button edge, as the gadget driver
@@ -40,7 +51,8 @@ pub(crate) use command_bar::{places as command_bar_places, tooltips as command_b
 
 use crate::app::AppState;
 use crate::app::presentation::sidebar_render::current_sidebar_view;
-use crate::ui::sidebar::{self, SidebarAction, SidebarTab, SidebarView};
+use crate::render::retained_hud::PICTURE;
+use crate::ui::sidebar::{self, SidebarAction, SidebarPart, SidebarTab, SidebarView};
 
 /// gamemd sidebar button IDs (study §2.5 live-population table).
 pub(crate) const ID_TAB_BASE: u16 = 0x00CB; // tabs 0xCB..=0xCE, Kind 2 latch-ON
@@ -92,6 +104,8 @@ pub(crate) enum ChromeRoute {
 #[derive(Debug)]
 pub(crate) struct ChromeNodes {
     pub(crate) layer: DialogId,
+    /// Which build of the chrome it is ([`ChromePaintNodes::tree`]).
+    serial: u64,
     /// Phobos `ToggleSWButtonClass`: it listens to left press/release only
     /// and switches on the release; the right button does nothing over it.
     sw_toggle: NodeId,
@@ -104,6 +118,14 @@ pub(crate) struct ChromeNodes {
     /// no button takes no pointer. Grown to fit, never shrunk.
     pub(crate) layout_buttons: Vec<NodeId>,
     pub(crate) timer_dock: NodeId,
+    /// The sidebar's parts, in [`Self::sidebar_order`]'s order.
+    sidebar: NodeId,
+    /// Each part's node by `SidebarPart as usize`: a button or tab part is
+    /// its button below, any other a panel its pictures go in.
+    sidebar_parts: [NodeId; 19],
+    /// The layout's list of parts the group is in the order of; none before
+    /// the first [`arrange_sidebar`].
+    sidebar_order: Option<[Option<SidebarPart>; 19]>,
     pub(crate) tabs: [NodeId; 4],
     pub(crate) repair: NodeId,
     pub(crate) sell: NodeId,
@@ -122,7 +144,46 @@ pub(crate) struct ChromeNodes {
     /// 6A94B0 remove all 60; on an empty slot SelectClass::Action only sets
     /// the normal cursor (6AAD61) and passes flags 0 on (6AAD79 -> 6AB94F).
     pub(crate) cameos: Vec<NodeId>,
+    /// The command bar: `bar_base` (its rail, caps and tiles), then its
+    /// buttons in their slots' order, the thumb, and the buttons without a
+    /// slot.
+    bar: NodeId,
+    bar_base: NodeId,
+    /// The slots the bar's buttons are in the order of; none before the
+    /// first [`arrange_bar`].
+    bar_slots: Option<Vec<Option<usize>>>,
+    /// Command `i`'s button, the thumb last.
     pub(crate) command_bar: [NodeId; 12],
+}
+
+/// What the sidebar's and the command bar's drawing reads of the chrome:
+/// the groups it paints and the nodes it draws into.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ChromePaintNodes {
+    /// Which build of the chrome these are: a new one is other nodes.
+    pub(crate) tree: u64,
+    pub(crate) sidebar: NodeId,
+    /// Each sidebar part's node by `SidebarPart as usize`, a button part's
+    /// its button.
+    pub(crate) sidebar_parts: [NodeId; 19],
+    pub(crate) bar: NodeId,
+    /// The bar's one part, its rail, caps and tiles.
+    pub(crate) bar_parts: [NodeId; 1],
+    /// Command `i`'s button, the thumb last.
+    pub(crate) bar_buttons: [NodeId; 12],
+}
+
+impl ChromeNodes {
+    fn paint(&self) -> ChromePaintNodes {
+        ChromePaintNodes {
+            tree: self.serial,
+            sidebar: self.sidebar,
+            sidebar_parts: self.sidebar_parts,
+            bar: self.bar,
+            bar_parts: [self.bar_base],
+            bar_buttons: self.command_bar,
+        }
+    }
 }
 
 /// What places the nodes, short of the layout's own texts: a move re-reads
@@ -184,6 +245,52 @@ fn catcher(gui: &mut Gui, parent: NodeId) -> Result<NodeId, Refused> {
     Ok(node)
 }
 
+/// A button that is also the picture its part draws: the paint gives it
+/// its picture and its `Rect` (`presentation::picture_hud::ChromeHud`).
+fn drawn_button(gui: &mut Gui, parent: NodeId, id: u16, buttons: i32) -> Result<NodeId, Refused> {
+    let node = button(gui, parent, id, buttons)?;
+    gui.set(node, Prop::Art, Value::Text(PICTURE.to_owned()))?;
+    Ok(node)
+}
+
+/// The id and `Buttons` mask of a sidebar part that is a button.
+fn part_button(part: SidebarPart) -> Option<(u16, i32)> {
+    Some(match part {
+        SidebarPart::Buildings => (ID_TAB_BASE, LEFT),
+        SidebarPart::Defenses => (ID_TAB_BASE + 1, LEFT),
+        SidebarPart::Infantry => (ID_TAB_BASE + 2, LEFT),
+        SidebarPart::Vehicles => (ID_TAB_BASE + 3, LEFT),
+        SidebarPart::Repair => (ID_REPAIR, LEFT),
+        SidebarPart::Sell => (ID_SELL, LEFT),
+        // The native sidebar init writes the 0x55 scroll mask over the
+        // ctor's 5.
+        SidebarPart::ScrollDown => (ID_SCROLL_DOWN, BOTH),
+        SidebarPart::ScrollUp => (ID_SCROLL_UP, BOTH),
+        SidebarPart::Diplomacy => (ID_DIPLOMACY, LEFT),
+        SidebarPart::Options => (ID_OPTIONS, LEFT),
+        _ => return None,
+    })
+}
+
+/// The sidebar's group: a node per part, named by it, in the original's
+/// order until [`arrange_sidebar`] puts them in the layout's.
+fn build_sidebar(gui: &mut Gui, root: NodeId) -> Result<(NodeId, [NodeId; 19]), Refused> {
+    let sidebar = gui.create(NodeKind::Panel, Some(root))?;
+    let mut parts = [sidebar; 19];
+    for part in SidebarPart::STOCK_ORDER {
+        let node = match part_button(part) {
+            Some((id, buttons)) => drawn_button(gui, sidebar, id, buttons)?,
+            None => gui.create(NodeKind::Panel, Some(sidebar))?,
+        };
+        gui.set(node, Prop::Name, Value::Text(part.name().to_owned()))?;
+        parts[part as usize] = node;
+    }
+    Ok((sidebar, parts))
+}
+
+/// Which build of the chrome is the newest: each is other nodes.
+static BUILDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Pushes the chrome layer with its fixed nodes; the pools start empty.
 fn build(gui: &mut Gui) -> Result<ChromeNodes, Refused> {
     let root = gui.create(NodeKind::Dialog, None)?;
@@ -193,54 +300,133 @@ fn build(gui: &mut Gui) -> Result<ChromeNodes, Refused> {
     let sw_group = gui.create(NodeKind::Panel, Some(root))?;
     let layout_group = gui.create(NodeKind::Panel, Some(root))?;
     let timer_dock = button(gui, root, ID_TIMER_DOCK, LEFT)?;
-    let tabs = [
-        button(gui, root, ID_TAB_BASE, LEFT)?,
-        button(gui, root, ID_TAB_BASE + 1, LEFT)?,
-        button(gui, root, ID_TAB_BASE + 2, LEFT)?,
-        button(gui, root, ID_TAB_BASE + 3, LEFT)?,
-    ];
-    let repair = button(gui, root, ID_REPAIR, LEFT)?;
-    let sell = button(gui, root, ID_SELL, LEFT)?;
-    // The native sidebar init writes the 0x55 scroll mask over the ctor's 5.
-    let scroll_down = button(gui, root, ID_SCROLL_DOWN, BOTH)?;
-    let scroll_up = button(gui, root, ID_SCROLL_UP, BOTH)?;
-    let top = [
-        button(gui, root, ID_DIPLOMACY, LEFT)?,
-        button(gui, root, ID_OPTIONS, LEFT)?,
-    ];
+    let (sidebar, sidebar_parts) = build_sidebar(gui, root)?;
+    let part = |part: SidebarPart| sidebar_parts[part as usize];
+    let tabs = SidebarPart::TABS.map(part);
+    let top = [part(SidebarPart::Diplomacy), part(SidebarPart::Options)];
     let tactical = catcher(gui, root)?;
     let minimap = catcher(gui, root)?;
     let cameo_group = gui.create(NodeKind::Panel, Some(root))?;
-    let command_bar = command_bar::build(gui, root)?;
+    let bar = gui.create(NodeKind::Panel, Some(root))?;
+    gui.set(bar, Prop::Name, Value::Text("CommandBar".to_owned()))?;
+    let bar_base = gui.create(NodeKind::Panel, Some(bar))?;
+    let command_bar = command_bar::build(gui, bar)?;
     Ok(ChromeNodes {
         layer,
+        serial: BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
         sw_toggle,
         sw_group,
         sw_buttons: Vec::new(),
         layout_group,
         layout_buttons: Vec::new(),
         timer_dock,
+        sidebar,
+        sidebar_parts,
+        sidebar_order: None,
         tabs,
-        repair,
-        sell,
-        scroll_down,
-        scroll_up,
+        repair: part(SidebarPart::Repair),
+        sell: part(SidebarPart::Sell),
+        scroll_down: part(SidebarPart::ScrollDown),
+        scroll_up: part(SidebarPart::ScrollUp),
         top,
         tactical,
         minimap,
         cameo_group,
         cameos: Vec::new(),
+        bar,
+        bar_base,
+        bar_slots: None,
         command_bar,
     })
 }
 
-/// Puts `node` on `rect` taking the pointer, or takes it off the pointer
-/// (`None`, or `on` false: a disabled gadget, skipped by hit and walk).
+/// Puts the sidebar's parts in the order of `parts`, the layout's list: a
+/// later part draws over an earlier one. The parts it leaves out follow in
+/// the original's order; they draw nothing, and their buttons keep taking
+/// the pointer as the view places them. Only a changed list moves a node.
+fn arrange_sidebar(gui: &mut Gui, nodes: &mut ChromeNodes, parts: &[Option<SidebarPart>; 19]) {
+    if nodes.sidebar_order.as_ref() == Some(parts) {
+        return;
+    }
+    let listed = parts.iter().flatten().copied();
+    let rest = SidebarPart::STOCK_ORDER
+        .into_iter()
+        .filter(|part| !parts.contains(&Some(*part)));
+    let order: Vec<NodeId> = listed
+        .chain(rest)
+        .map(|part| nodes.sidebar_parts[part as usize])
+        .collect();
+    if gui.reorder(nodes.sidebar, &order).is_ok() {
+        nodes.sidebar_order = Some(*parts);
+    }
+}
+
+/// Puts the command bar's buttons in the order of their `slots`, after its
+/// rail and tiles and before its thumb, which draws over them; the buttons
+/// without a slot follow. Only changed slots move a node.
+fn arrange_bar(gui: &mut Gui, nodes: &mut ChromeNodes, slots: &[Option<usize>]) {
+    if nodes.bar_slots.as_deref() == Some(slots) {
+        return;
+    }
+    let slotted = slots.iter().flatten().copied().filter(|&command| command < 11);
+    let rest = (0..11).filter(|command| !slots.contains(&Some(*command)));
+    let order: Vec<NodeId> = std::iter::once(nodes.bar_base)
+        .chain(slotted.map(|command| nodes.command_bar[command]))
+        .chain(std::iter::once(nodes.command_bar[11]))
+        .chain(rest.map(|command| nodes.command_bar[command]))
+        .collect();
+    if gui.reorder(nodes.bar, &order).is_ok() {
+        nodes.bar_slots = Some(slots.to_vec());
+    }
+}
+
+/// The chrome's nodes, built when the controller has none (a new match's
+/// controller): `None` only if the node budget refuses them.
+fn ensure<'a>(chrome: &'a mut InGameChrome, gui: &mut Gui) -> Option<&'a mut ChromeNodes> {
+    if chrome.nodes(gui).is_none() {
+        chrome.key = None;
+        chrome.nodes = match build(gui) {
+            Ok(nodes) => Some(nodes),
+            Err(err) => {
+                log::warn!("the match's chrome could not be built: {err:?}");
+                None
+            }
+        };
+    }
+    chrome.nodes.as_mut()
+}
+
+/// Builds the match's chrome as the match starts; it then stays until the
+/// match ends.
+pub(crate) fn build_for_match(state: &mut AppState) {
+    let presentation = &mut state.match_state.match_presentation;
+    ensure(&mut presentation.in_game_chrome, presentation.dialog_ui.gui_mut());
+}
+
+/// The chrome's nodes the sidebar and the command bar draw into, built if
+/// the match's GUI has none: the sidebar's parts in the layout's order and,
+/// given the bar's `slots`, its buttons in theirs.
+pub(crate) fn paint_nodes(
+    state: &mut AppState,
+    slots: Option<&[Option<usize>]>,
+) -> Option<ChromePaintNodes> {
+    let presentation = &mut state.match_state.match_presentation;
+    let parts = presentation.sidebar_layout_spec.parts;
+    let gui = presentation.dialog_ui.gui_mut();
+    let nodes = ensure(&mut presentation.in_game_chrome, gui)?;
+    arrange_sidebar(gui, nodes, &parts);
+    if let Some(slots) = slots {
+        arrange_bar(gui, nodes, slots);
+    }
+    Some(nodes.paint())
+}
+
+/// Puts `node`'s hit rect on `rect` taking the pointer, or takes it off the
+/// pointer (`None`, or `on` false: a disabled gadget, skipped by hit and
+/// walk). The node's `Rect` is where its picture draws, the paint's.
 fn place(gui: &mut Gui, node: NodeId, rect: Option<Rect>, on: bool) {
-    if let Some(rect) = rect
-        && gui.get(node, Prop::Rect).ok().flatten() != Some(&Value::Rect(rect))
-    {
-        let _ = gui.set(node, Prop::Rect, Value::Rect(rect));
+    if let Some(rect) = rect {
+        let _ = gui.set(node, Prop::HitRect, Value::Rect(rect));
     }
     let enabled = rect.is_some() && on;
     if gui.get(node, Prop::Enabled).ok().flatten() != Some(&Value::Bool(enabled)) {
@@ -451,22 +637,11 @@ fn sync(state: &mut AppState, force: bool) -> bool {
     let places = places(state, view);
     let presentation = &mut state.match_state.match_presentation;
     let gui = presentation.dialog_ui.gui_mut();
-    let chrome = &mut presentation.in_game_chrome;
-    if !built {
-        chrome.key = None;
-        chrome.nodes = match build(gui) {
-            Ok(nodes) => Some(nodes),
-            Err(err) => {
-                log::warn!("the match's chrome could not be built: {err:?}");
-                None
-            }
-        };
-    }
-    let Some(nodes) = chrome.nodes.as_mut() else {
+    let Some(nodes) = ensure(&mut presentation.in_game_chrome, gui) else {
         return false;
     };
     write_places(gui, nodes, &places);
-    chrome.key = Some(key);
+    presentation.in_game_chrome.key = Some(key);
     true
 }
 
@@ -946,9 +1121,24 @@ pub(crate) fn test_layer() -> (Gui, ChromeNodes) {
     (gui, nodes)
 }
 
+/// The chrome's sidebar parts in the order of `parts` and its command bar's
+/// buttons in that of `slots`, and the nodes the paint draws into.
+#[cfg(test)]
+pub(crate) fn arranged(
+    gui: &mut Gui,
+    nodes: &mut ChromeNodes,
+    parts: &[Option<SidebarPart>; 19],
+    slots: &[Option<usize>],
+) -> ChromePaintNodes {
+    arrange_sidebar(gui, nodes, parts);
+    arrange_bar(gui, nodes, slots);
+    nodes.paint()
+}
+
+/// Where `node` takes the pointer: its hit rect.
 #[cfg(test)]
 pub(crate) fn rect_of(gui: &Gui, node: NodeId) -> Option<Rect> {
-    match gui.get(node, Prop::Rect) {
+    match gui.get(node, Prop::HitRect) {
         Ok(Some(Value::Rect(rect))) => Some(*rect),
         _ => None,
     }

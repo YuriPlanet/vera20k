@@ -1,9 +1,10 @@
 //! Sidebar drawing — chrome, cameos, the observer strip and the texts.
 //!
-//! The chrome, the observer strip and every text (the cameos' labels, the
-//! observer strip's and the money counter) are nodes of retained trees
-//! ([`PictureHud`], [`TextHud`]); the cameos, their clocks and strips are
-//! built as instance vectors.
+//! The chrome is drawn by its nodes on the match's chrome layer, its
+//! buttons by the nodes that take their clicks ([`ChromeHud`]); the observer
+//! strip and every text (the cameos' labels, the observer strip's and the
+//! money counter) are nodes of retained trees ([`PictureHud`], [`TextHud`]);
+//! the cameos, their clocks and strips are built as instance vectors.
 //!
 //! Split from `presentation::sidebar_render` to keep files under 400 lines.
 //!
@@ -11,12 +12,12 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
-use crate::app::presentation::picture_hud::{PictureHud, covering};
-use crate::app::presentation::sidebar_render::current_sidebar_chrome;
+use crate::app::presentation::picture_hud::{ChromeHud, ChromePieces, PictureHud, covering};
+use crate::app::presentation::sidebar_render::{current_sidebar_chrome, current_sidebar_view};
 use crate::app::presentation::text_hud::TextHud;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::{BitFont, Fit};
-use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
+use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::ui::sidebar::power_bar_anim::PowerBarAnimState;
 use crate::ui::sidebar::{
     ArtKey, PartKind, Rect, SidebarChromeLayoutSpec, SidebarLayout, SidebarPart, SidebarView,
@@ -29,46 +30,108 @@ pub(crate) mod command_bar;
 // Chrome art instances
 // ---------------------------------------------------------------------------
 
-pub(crate) fn build_sidebar_chrome_instances(
-    state: &AppState,
-    view: &SidebarView,
-    pictures: &mut PictureHud,
-) -> Vec<SpriteInstance> {
-    let Some(atlas) = current_sidebar_chrome(state) else {
-        return Vec::new();
-    };
-    draw_sidebar_chrome(
-        pictures,
-        atlas,
-        state.match_state.match_presentation.sidebar_layout_spec,
-        view,
-        &state.match_state.match_presentation.power_bar_anim,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
-        state.match_state.match_presentation.radar_anim.is_none(),
-    );
-    pictures.finish().to_vec()
+/// The chrome's drawings on the match's chrome layer, kept from frame to
+/// frame: the sidebar column's and the command bar's.
+#[derive(Default)]
+pub(crate) struct ChromePaint {
+    sidebar: ChromeHud,
+    bar: ChromeHud,
 }
 
-/// The bottom command bar, which shares the chrome atlas but draws into a
-/// surface of its own (`presentation::sidebar_surface`).
-pub(crate) fn build_command_bar_instances(state: &mut AppState) -> Vec<SpriteInstance> {
-    let mut hud = std::mem::take(&mut state.match_state.match_presentation.command_bar_hud);
-    let instances = match current_sidebar_chrome(state) {
-        Some(atlas) => hud.draw_for(state, atlas).to_vec(),
-        None => Vec::new(),
+/// The sidebar column's chrome this frame, drawn by its nodes on the match's
+/// chrome layer, the buttons by theirs: none without a view or the atlas.
+pub(crate) fn build_sidebar_chrome_instances(state: &mut AppState) -> Vec<SpriteInstance> {
+    if current_sidebar_view(state).is_none() || current_sidebar_chrome(state).is_none() {
+        return Vec::new();
+    }
+    let Some(nodes) = crate::app::input::chrome_input::paint_nodes(state, None) else {
+        return Vec::new();
     };
-    state.match_state.match_presentation.command_bar_hud = hud;
+    let presentation = &mut state.match_state.match_presentation;
+    let mut hud = std::mem::take(&mut presentation.chrome_paint.sidebar);
+    let parts = &nodes.sidebar_parts;
+    let mut frame = hud.frame(presentation.dialog_ui.gui_mut(), nodes.tree, parts, parts);
+    if let (Some(view), Some(atlas)) = (current_sidebar_view(state), current_sidebar_chrome(state)) {
+        let presentation = &state.match_state.match_presentation;
+        let spec = presentation.sidebar_layout_spec;
+        draw_sidebar_chrome(
+            &mut frame,
+            &|part: SidebarPart, key: ArtKey, index: usize| atlas.art(part, key, index),
+            spec,
+            view,
+            &presentation.power_bar_anim,
+            [
+                state.match_state.input.camera_x,
+                state.match_state.input.camera_y,
+            ],
+            presentation.radar_anim.is_none(),
+        );
+        leave_out_unlisted_buttons(&mut frame, spec);
+    }
+    let presentation = &mut state.match_state.match_presentation;
+    let instances = hud
+        .finish(presentation.dialog_ui.gui_mut(), nodes.sidebar)
+        .to_vec();
+    presentation.chrome_paint.sidebar = hud;
     instances
 }
 
-/// The column's chrome, one picture node of `pictures` per piece in drawing
-/// order ([`PictureHud`]); the caller begins nothing and finishes the frame.
+/// The buttons of the parts the layout leaves out, after its own parts as
+/// the chrome's group has them: they draw nothing.
+fn leave_out_unlisted_buttons(pieces: &mut impl ChromePieces, spec: SidebarChromeLayoutSpec) {
+    for part in SidebarPart::STOCK_ORDER {
+        if !spec.shows(part) && matches!(part.kind(), PartKind::Button | PartKind::Tab) {
+            pieces.button(part as usize, None);
+        }
+    }
+}
+
+/// The bottom command bar, which shares the chrome atlas but draws into a
+/// surface of its own (`presentation::sidebar_surface`), drawn by its nodes
+/// on the match's chrome layer, its buttons by theirs.
+pub(crate) fn build_command_bar_instances(state: &mut AppState) -> Vec<SpriteInstance> {
+    if current_sidebar_chrome(state).is_none() {
+        return Vec::new();
+    }
+    let bar = command_bar::layout_and_slots(state);
+    let slots = bar.as_ref().map(|(_, slots)| slots.as_slice());
+    let Some(nodes) = crate::app::input::chrome_input::paint_nodes(state, slots) else {
+        return Vec::new();
+    };
+    let presentation = &mut state.match_state.match_presentation;
+    let mut hud = std::mem::take(&mut presentation.chrome_paint.bar);
+    let mut frame = hud.frame(
+        presentation.dialog_ui.gui_mut(),
+        nodes.tree,
+        &nodes.bar_parts,
+        &nodes.bar_buttons,
+    );
+    if let (Some((layout, slots)), Some(atlas)) = (&bar, current_sidebar_chrome(state)) {
+        let camera = [
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ];
+        command_bar::draw(
+            &mut frame,
+            &atlas.command_bar,
+            *layout,
+            slots,
+            &state.match_state.match_presentation.sidebar_gadget_state,
+            camera,
+        );
+    }
+    let presentation = &mut state.match_state.match_presentation;
+    let instances = hud.finish(presentation.dialog_ui.gui_mut(), nodes.bar).to_vec();
+    presentation.chrome_paint.bar = hud;
+    instances
+}
+
+/// The column's chrome into `inst`, in drawing order: each part of the
+/// layout's list, its pictures from `art` (the atlas's `part`, `key`,
+/// frame); a button part is one button, drawn or not.
 pub(crate) fn draw_sidebar_chrome(
-    pictures: &mut PictureHud,
-    atlas: &SidebarChromeAtlas,
+    inst: &mut impl ChromePieces,
+    art: &impl Fn(SidebarPart, ArtKey, usize) -> Option<SidebarChromeEntry>,
     spec: SidebarChromeLayoutSpec,
     view: &SidebarView,
     power_bar_anim: &PowerBarAnimState,
@@ -76,21 +139,19 @@ pub(crate) fn draw_sidebar_chrome(
     static_radar_fallback: bool,
 ) {
     let layout = &view.layout;
-    pictures.begin();
-    let inst = pictures;
     let d = 0.00048;
     let td = d - 0.00001;
     let btn_depth = d - 0.00002;
     // One part after another in the layout's order, so a later part lies over
     // an earlier one; a part the layout leaves out draws nothing.
     for part in spec.parts_in_order() {
-        // Each part a named node of the tree, its pieces its children.
-        inst.part(part.name());
+        // Each part a named node of the chrome, its pieces its children.
+        inst.part(part as usize);
         match part.kind() {
             // DrawCreditsSHPBackground 6D0E60, RadarClass::Draw 653100 and
             // SIDE1: the first frame at the part's corner.
             PartKind::Image => {
-                if let Some(entry) = atlas.art(part, ArtKey::Art, 0) {
+                if let Some(entry) = art(part, ArtKey::Art, 0) {
                     let [x, y] = layout.origin(&spec, part);
                     push_chrome(inst, entry, x, y, d, camera_offset);
                 }
@@ -103,33 +164,38 @@ pub(crate) fn draw_sidebar_chrome(
             // Every button but the top two falls back to its first frame when
             // the MIX lacks the one asked for.
             PartKind::Button | PartKind::Tab => {
-                let Some((rect, frame)) = view.button(part) else {
-                    continue;
-                };
-                let frame = usize::from(frame);
-                let top = matches!(part, SidebarPart::Diplomacy | SidebarPart::Options);
-                let entry = atlas
-                    .art(part, ArtKey::Art, frame)
-                    .or_else(|| atlas.art(part, ArtKey::Art, 0).filter(|_| !top));
-                let depth = if part.kind() == PartKind::Tab { td } else { btn_depth };
-                if let Some(entry) = entry {
-                    push_chrome(inst, entry, rect.x, rect.y, depth, camera_offset);
-                }
+                let piece = view.button(part).and_then(|(rect, frame)| {
+                    let frame = usize::from(frame);
+                    let top = matches!(part, SidebarPart::Diplomacy | SidebarPart::Options);
+                    let entry = art(part, ArtKey::Art, frame)
+                        .or_else(|| art(part, ArtKey::Art, 0).filter(|_| !top))?;
+                    let depth = if part.kind() == PartKind::Tab { td } else { btn_depth };
+                    Some(chrome_piece(
+                        entry,
+                        rect.x,
+                        rect.y,
+                        entry.pixel_size,
+                        depth,
+                        camera_offset,
+                    ))
+                });
+                // The button draws itself, or nothing this frame.
+                inst.button(part as usize, piece);
             }
             PartKind::Radar => {
-                let radar = atlas.art(part, ArtKey::Art, 0);
+                let radar = art(part, ArtKey::Art, 0);
                 if let Some(radar) = radar.filter(|_| static_radar_fallback) {
                     let [x, y] = layout.origin(&spec, part);
                     push_chrome(inst, radar, x, y, d, camera_offset);
                 }
             }
             PartKind::CameoGrid => {
-                draw_cameo_rows(inst, atlas, spec, layout, part, camera_offset, d);
+                draw_cameo_rows(inst, art, spec, layout, part, camera_offset, d);
             }
             // powerp.shp strips stacked from the top.
             PartKind::PowerBar => render_power_bar(
                 inst,
-                atlas,
+                art,
                 spec,
                 layout,
                 power_bar_anim,
@@ -148,8 +214,8 @@ pub(crate) fn draw_sidebar_chrome(
 /// 6A6C30: row count is native capacity; pixel advance is SIDE2's loaded
 /// canvas height. SIDE3 and ADDON follow the last actual tile.
 fn draw_cameo_rows(
-    inst: &mut PictureHud,
-    atlas: &SidebarChromeAtlas,
+    inst: &mut impl ChromePieces,
+    art: &impl Fn(SidebarPart, ArtKey, usize) -> Option<SidebarChromeEntry>,
     spec: SidebarChromeLayoutSpec,
     layout: &SidebarLayout,
     part: SidebarPart,
@@ -157,7 +223,7 @@ fn draw_cameo_rows(
     d: f32,
 ) {
     let cx = layout.origin(&spec, part)[0];
-    let row_art = atlas.art(part, ArtKey::RowArt, 0);
+    let row_art = art(part, ArtKey::RowArt, 0);
     if let Some(side2) = row_art.filter(|_| spec.columns() <= 2) {
         for row in 0..layout.side2_tile_count {
             let y = layout.cameo_grid_top + row as f32 * side2.pixel_size[1];
@@ -196,7 +262,7 @@ fn draw_cameo_rows(
     }
     let mut y = layout.side3_y;
     for key in [ArtKey::EndArt, ArtKey::FootArt] {
-        if let Some(entry) = atlas.art(part, key, 0) {
+        if let Some(entry) = art(part, key, 0) {
             push_chrome(inst, entry, cx, y, d, camera_offset);
             y += entry.pixel_size[1];
         }
@@ -214,8 +280,8 @@ fn draw_cameo_rows(
 /// Segment counts come from `PowerBarAnimState`, which moves them one at a
 /// time toward their targets.
 fn render_power_bar(
-    inst: &mut PictureHud,
-    atlas: &SidebarChromeAtlas,
+    inst: &mut impl ChromePieces,
+    art: &impl Fn(SidebarPart, ArtKey, usize) -> Option<SidebarChromeEntry>,
     spec: SidebarChromeLayoutSpec,
     layout: &SidebarLayout,
     anim: &PowerBarAnimState,
@@ -232,7 +298,7 @@ fn render_power_bar(
     let fill_depth: f32 = base_depth - 0.00002;
 
     anim.visit_draw_segments(|frame, row| {
-        if let Some(entry) = atlas.art(SidebarPart::Power, ArtKey::Art, usize::from(frame)) {
+        if let Some(entry) = art(SidebarPart::Power, ArtKey::Art, usize::from(frame)) {
             push_chrome_sized(
                 inst,
                 entry,
@@ -249,7 +315,7 @@ fn render_power_bar(
 /// Ordinary gamemd chrome draws one render pixel per asset pixel;
 /// 6A5090/6A5130 change row capacity on resize, never artwork scale.
 fn push_chrome(
-    pictures: &mut PictureHud,
+    pictures: &mut impl ChromePieces,
     entry: SidebarChromeEntry,
     x: f32,
     y: f32,
@@ -259,10 +325,8 @@ fn push_chrome(
     push_chrome_sized(pictures, entry, x, y, entry.pixel_size, depth, camera_offset);
 }
 
-/// One piece over `size` at `(x, y)` of the layout space; its node's rect
-/// is the whole pixels it covers there.
 fn push_chrome_sized(
-    pictures: &mut PictureHud,
+    pictures: &mut impl ChromePieces,
     entry: SidebarChromeEntry,
     x: f32,
     y: f32,
@@ -270,7 +334,21 @@ fn push_chrome_sized(
     depth: f32,
     camera_offset: [f32; 2],
 ) {
-    pictures.picture(
+    let (rect, instance) = chrome_piece(entry, x, y, size, depth, camera_offset);
+    pictures.picture(rect, instance);
+}
+
+/// One piece over `size` at `(x, y)` of the layout space, and the whole
+/// pixels it covers there, its node's rect.
+fn chrome_piece(
+    entry: SidebarChromeEntry,
+    x: f32,
+    y: f32,
+    size: [f32; 2],
+    depth: f32,
+    camera_offset: [f32; 2],
+) -> (vera20k_gui::Rect, SpriteInstance) {
+    (
         covering(x, y, size[0], size[1]),
         SpriteInstance {
             position: [x + camera_offset[0], y + camera_offset[1]],
@@ -282,7 +360,7 @@ fn push_chrome_sized(
             alpha: 1.0,
             ..Default::default()
         },
-    );
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -895,10 +973,16 @@ pub(crate) fn draw_observer_strip<'a>(
         for house in houses {
             let [x, y] = house.origin;
             if let Some(&background) = art.background(house.side) {
-                push_chrome(pictures, background, x, y, OBSERVER_BACKGROUND_DEPTH, co);
+                let size = background.pixel_size;
+                let (rect, instance) =
+                    chrome_piece(background, x, y, size, OBSERVER_BACKGROUND_DEPTH, co);
+                pictures.picture(rect, instance);
             }
             if let Some(&flag) = art.flag(house.country) {
-                push_chrome(pictures, flag, x + 70.0, y + 70.0, OBSERVER_FLAG_DEPTH, co);
+                let (x, y) = (x + 70.0, y + 70.0);
+                let (rect, instance) =
+                    chrome_piece(flag, x, y, flag.pixel_size, OBSERVER_FLAG_DEPTH, co);
+                pictures.picture(rect, instance);
             }
         }
     }
@@ -1610,5 +1694,88 @@ mod tests {
             &badge_item(Vehicle, 1, false, false),
             false
         ));
+    }
+
+    /// The column's chrome drawn by its nodes on the chrome layer, its
+    /// buttons by the nodes that take their clicks, draws the instances of
+    /// its drawing in the same order and at the same depths, frame after
+    /// frame, as the layout reorders its parts and leaves one out.
+    #[test]
+    fn the_chromes_nodes_draw_the_sidebars_pieces_in_drawing_order() {
+        use super::{SpriteInstance, draw_sidebar_chrome, leave_out_unlisted_buttons};
+        use crate::app::presentation::picture_hud::ChromeHud;
+        use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
+        use crate::ui::sidebar::{
+            ArtKey, PowerBarAnimState, SidebarChromeLayoutSpec, SidebarFrame, SidebarPart,
+            SidebarTab, build_sidebar_view_with_spec,
+        };
+        // Every picture of every part, told apart by where it is in the atlas.
+        let art = |part: SidebarPart, key: ArtKey, frame: usize| {
+            Some(SidebarChromeEntry {
+                uv_origin: [
+                    part as usize as f32 / 32.0,
+                    key as usize as f32 / 8.0 + frame as f32 / 64.0,
+                ],
+                uv_size: [1.0 / 32.0, 1.0 / 64.0],
+                pixel_size: [40.0, 20.0],
+            })
+        };
+        let view = |spec: SidebarChromeLayoutSpec| {
+            build_sidebar_view_with_spec(
+                spec,
+                SidebarFrame::for_layout(1024, 768, 100, &spec),
+                SidebarTab::Building,
+                0,
+                0,
+                0,
+                Some([32.0, 28.0]),
+                &[],
+                &[],
+                &[],
+                None,
+                None,
+                &[],
+                &SidebarGadgetState::new(),
+                Some([52.0, 32.0]),
+                Some([52.0, 32.0]),
+                Some([46.0, 25.0]),
+                Some([46.0, 25.0]),
+                [Some([72.0, 18.0]); 2],
+                &crate::ui::sidebar::cameo_order::CameoStrips::default(),
+            )
+        };
+        let stock = SidebarChromeLayoutSpec::stock();
+        // The power bar first, and no up arrow.
+        let mut moved = stock;
+        let mut order = std::iter::once(SidebarPart::Power).chain(
+            SidebarPart::STOCK_ORDER
+                .into_iter()
+                .filter(|part| !matches!(part, SidebarPart::Power | SidebarPart::ScrollUp)),
+        );
+        moved.parts = std::array::from_fn(|_| order.next());
+        let mut anim = PowerBarAnimState::new();
+        anim.set_max_segments(120);
+        let camera = [2.5, -1.0];
+        let (mut gui, mut nodes) = crate::app::input::chrome_input::test_layer();
+        let mut hud = ChromeHud::default();
+        for spec in [stock, stock, moved, moved, stock] {
+            let view = view(spec);
+            let chrome =
+                crate::app::input::chrome_input::arranged(&mut gui, &mut nodes, &spec.parts, &[]);
+            let mut expected: Vec<SpriteInstance> = Vec::new();
+            draw_sidebar_chrome(&mut expected, &art, spec, &view, &anim, camera, true);
+            {
+                let parts = &chrome.sidebar_parts;
+                let mut pieces = hud.frame(&mut gui, chrome.tree, parts, parts);
+                draw_sidebar_chrome(&mut pieces, &art, spec, &view, &anim, camera, true);
+                leave_out_unlisted_buttons(&mut pieces, spec);
+            }
+            let drawn = hud.finish(&mut gui, chrome.sidebar).to_vec();
+            assert!(drawn.len() > 10, "the panels, the rows and the ten buttons");
+            assert_eq!(
+                bytemuck::cast_slice::<SpriteInstance, u8>(&drawn),
+                bytemuck::cast_slice::<SpriteInstance, u8>(&expected),
+            );
+        }
     }
 }

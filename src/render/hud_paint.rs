@@ -95,12 +95,28 @@ impl HudPaint {
         hud: &Gui,
         space: HudSpace,
         font: Option<&BitFont>,
+        draw: impl FnMut(NodeId) -> NodeDraw,
+    ) {
+        self.build_from(hud, None, space, font, draw);
+    }
+
+    /// [`Self::build`] of `root`'s subtree alone ([`Gui::paint_from`]), or
+    /// of the whole tree without one.
+    pub(crate) fn build_from(
+        &mut self,
+        hud: &Gui,
+        root: Option<NodeId>,
+        space: HudSpace,
+        font: Option<&BitFont>,
         mut draw: impl FnMut(NodeId) -> NodeDraw,
     ) {
         self.instances.clear();
         self.runs.clear();
         let mut commands = recycle(std::mem::take(&mut self.commands));
-        hud.paint(&mut commands);
+        match root {
+            Some(root) => hud.paint_from(root, &mut commands),
+            None => hud.paint(&mut commands),
+        }
         for command in &commands {
             let start = self.instances.len();
             let node = draw(command.node);
