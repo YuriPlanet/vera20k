@@ -201,3 +201,6 @@ tools/vendor-eval/
 
 # Reference matches: 140 MB of replays and logs, kept on disk and out of git
 /autoplay/reference/
+
+# Working notes kept on disk, not part of the engine
+/autoplay/docs/history/
