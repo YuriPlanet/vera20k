@@ -430,7 +430,7 @@ static BUILT_IN: LazyLock<BuiltIn> = LazyLock::new(|| {
 thread_local! {
     /// The commands of the last query, kept from call to call: a frame asks
     /// thousands of times and, once grown, allocates nothing.
-    static CMDS: RefCell<Vec<WorldCmd<'static>>> = const { RefCell::new(Vec::new()) };
+    static CMDS: RefCell<Vec<WorldCmd>> = const { RefCell::new(Vec::new()) };
     /// The slots of the last scale or shield row, kept likewise.
     static SLOTS: RefCell<Vec<Slot>> = const { RefCell::new(Vec::new()) };
 }
@@ -438,7 +438,7 @@ thread_local! {
 /// `world`'s pictures for `object`, in order: each image's rect and art.
 /// `out` runs while the shared commands are borrowed, so it must not ask
 /// the templates again.
-fn painted(world: &'static World, object: &ObjectView<'_>, mut out: impl FnMut(Rect, ArtId)) {
+fn painted(world: &World, object: &ObjectView<'_>, mut out: impl FnMut(Rect, ArtId)) {
     CMDS.with_borrow_mut(|cmds| {
         cmds.clear();
         world.paint_status(std::slice::from_ref(object), cmds);

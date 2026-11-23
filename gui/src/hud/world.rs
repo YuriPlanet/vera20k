@@ -157,7 +157,7 @@ pub struct TemplateId(u64);
 
 /// No rect has a negative size, and `x + w` and `y + h` fit an i32.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WorldOp<'a> {
+pub enum WorldOp {
     Rect {
         rect: Rect,
         color: Rgba,
@@ -171,18 +171,13 @@ pub enum WorldOp<'a> {
         value: i32,
         color: Rgba,
     },
-    Text {
-        rect: Rect,
-        key: &'a str,
-        color: Rgba,
-    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct WorldCmd<'a> {
+pub struct WorldCmd {
     /// The object the host keeps this at the draw depth of.
     pub object: Option<u64>,
-    pub op: WorldOp<'a>,
+    pub op: WorldOp,
 }
 
 /// A registered template, as [`normalized`] left it.
@@ -231,7 +226,7 @@ impl World {
     /// then the templates' registration order, at most
     /// [`MAX_COMMANDS_PER_OBJECT`] for each object. Allocates only to grow
     /// `out`, so a host that keeps it between frames pays nothing.
-    pub fn paint_status<'a, 'v>(&'a self, objects: &[ObjectView<'v>], out: &mut Vec<WorldCmd<'a>>) {
+    pub fn paint_status(&self, objects: &[ObjectView<'_>], out: &mut Vec<WorldCmd>) {
         for object in objects {
             let first = out.len();
             // What is left for other origins than the host.
@@ -338,7 +333,7 @@ fn moved(rect: Rect, (x, y): (i32, i32)) -> Rect {
     rect.translate(x, y).bounded()
 }
 
-fn paint_element(object: &ObjectView<'_>, element: &Element, out: &mut Vec<WorldCmd<'_>>) {
+fn paint_element(object: &ObjectView<'_>, element: &Element, out: &mut Vec<WorldCmd>) {
     let point = (object.x, object.y);
     let mut push = |op| {
         out.push(WorldCmd {
@@ -551,20 +546,20 @@ mod tests {
         world
     }
 
-    fn status<'a>(world: &'a World, objects: &[ObjectView<'_>]) -> Vec<WorldCmd<'a>> {
+    fn status(world: &World, objects: &[ObjectView<'_>]) -> Vec<WorldCmd> {
         let mut out = Vec::new();
         world.paint_status(objects, &mut out);
         out
     }
 
-    fn ops<'a>(world: &'a World, values: &[Option<Amount>]) -> Vec<WorldOp<'a>> {
+    fn ops(world: &World, values: &[Option<Amount>]) -> Vec<WorldOp> {
         status(world, &[object(values)])
             .into_iter()
             .map(|cmd| cmd.op)
             .collect()
     }
 
-    fn arts(cmds: &[WorldCmd<'_>]) -> Vec<(Option<u64>, u32)> {
+    fn arts(cmds: &[WorldCmd]) -> Vec<(Option<u64>, u32)> {
         cmds.iter()
             .filter_map(|cmd| match cmd.op {
                 WorldOp::Image { art, .. } => Some((cmd.object, art.0)),
