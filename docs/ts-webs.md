@@ -41,8 +41,9 @@ Struggle=0,6,0           ; the frames a webbed man plays, from WebbedInfantry's 
 
 - A Webby warhead does no area damage. Every cell within `WebRadius` of the impact (a
   circle, `dx*dx + dy*dy <= WebRadius*WebRadius`) gets the warhead's `Particle=` system.
-  Each object standing there takes a zero-damage hit. A cell more than three levels from
-  the impact's height uses its bridge deck instead of the ground.
+  Then each object standing there takes a zero-damage hit, before the next cell is
+  visited. A cell more than three levels from the impact's height uses its bridge deck
+  instead of the ground.
 - An infantryman who is not `IsWebImmune` is webbed for `WebDuration` plus a random
   `-WebDurationVariation..WebDurationVariation`. A new web replaces his current one only
   when it is not shorter than the time left. He takes no damage. Vehicles, buildings and
@@ -56,11 +57,16 @@ Struggle=0,6,0           ; the frames a webbed man plays, from WebbedInfantry's 
 - A unit with a Webby weapon fires it only at infantry it can web, and its other weapon at
   everything else: a webbed or web-immune man, a vehicle, a building, a bridge cell. The
   computer's target scan does not pick a man who is already webbed for more than a
-  quarter of its own web gun's duration. A vehicle that has just webbed its target drops
-  it and goes back to Guard.
+  quarter of its own web gun's duration.
+- A vehicle whose chosen weapon is its web gun, aimed at a man still webbed for more than
+  a quarter of that gun's duration, drops him and goes back to Guard instead of firing.
+  A vehicle whose only weapon is a web gun does this. One with two weapons does not
+  choose the web gun against a webbed man, so it keeps firing its other weapon at him
+  (see the residuals).
 - `BehavesLike=Web` particles stay where they are and animate until `EndStateAI`. A web
-  particle with a `Warhead=` hits everything in its cell with zero damage each frame, so a
-  Webby one keeps those men webbed. Retail Firestorm's `[Web]` has `Warhead=none`.
+  particle with a Webby `Warhead=` webs the men in its cell again each frame. Any other
+  warhead does nothing there: its hit does zero damage, which Firestorm ignores. Retail
+  Firestorm's `[Web]` has `Warhead=none`.
 
 Firestorm 2.0 evidence: the warhead keys in `WarheadTypeClass::Read_INI` `0x0066EE30`
 (defaults from the constructor `0x0066EB10`), `IsWebImmune` in `InfantryTypeClass::Read_INI`
@@ -70,13 +76,15 @@ branch of `BulletClass::Detonate` `0x004465B0`; the web arm of `InfantryClass::T
 `Is_Immobilized` (`0x004D5B10`) and its readers; `TechnoClass::What_Weapon_Should_I_Use`
 `0x00629F20`, `Evaluate_Object` `0x0062D516` and `UnitClass::Firing_AI` `0x0064E7A3`; the
 particle AIs `0x005A7170` (system) and `0x005A4310` (particle) and the BehavesLike name
-tables `0x00707B20` and `0x00707D0C`. Code: `sim::combat::world_receiver::emit_web_receivers`,
+tables `0x00707B20` and `0x00707D0C`. Code: `sim::combat::world_receiver::commit_web_burst`,
 `Simulation::infantry_take_web`, `sim::particles::web` and `rules::warhead_type::WarheadWeb`.
 
 Residuals:
 - Off the map, Firestorm still visits the cells a large `WebRadius` reaches and puts a web
   system on its dummy cell. VERA skips those cells.
-- The zero-damage hits land after the whole radius has been walked, not cell by cell.
+- A webbed man's Struggle starts on a random frame. Firestorm draws it from a generator
+  other than the scenario's (`0x0074BE20`, at `0x004D6643`). VERA's single port of the
+  action call uses the scenario's, as Yuri's Revenge does. Only games with webs draw it.
 - The web systems belong to no house, as in Firestorm. A null `Particle=` spawns nothing.
   Trees are not hit, since zero damage does nothing to them.
 - Firestorm resets a man's web when a game is loaded. VERA keeps it.
@@ -84,6 +92,10 @@ Residuals:
   number for another event, so VERA does not raise it.
 - Firestorm's weapon choice first drops a weapon that cannot fire at all just then, such
   as one that is reloading. VERA keeps Yuri's Revenge's checks and puts the web rule after
-  them.
+  them. Firestorm has one reload timer for both weapons (`+0x128`, read in `Can_Fire`
+  `0x0062FA12`), so after every shot both weapons read as reloading and the choice falls
+  back to the primary. A unit whose primary is the web gun therefore picks it at a
+  webbed man while it reloads, drops him and goes back to Guard. In VERA it fires its
+  other weapon at him instead. With the web gun as secondary, neither game drops him.
 - The computer's web filter runs before Yuri's Revenge's own threat checks rather than
   among them.

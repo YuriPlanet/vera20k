@@ -257,6 +257,9 @@ impl Simulation {
     /// Scenario draw in `0..count` of the action's record (`0x0051DA4A..
     /// 0x0051DA84`, at least one frame); otherwise at 0. Only Firestorm's
     /// web passes it; gamemd's own callers that VERA ports pass 0.
+    /// Residual: Firestorm 2.0's Do_Action draws this from the generator at
+    /// `0x0074BE20` (`0x004D6643..0x004D6673`), not Scenario; this one port
+    /// keeps gamemd's Scenario draw.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn apply_infantry_do_action(
         &mut self,

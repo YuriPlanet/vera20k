@@ -761,7 +761,8 @@ mod tests {
             39, 40, 41,
         ];
         // 42 is Firestorm's Struggle (docs/ts-webs.md), which does not
-        // interrupt.
+        // interrupt: Firestorm 2.0's InfantryClass Ready_To_Commence
+        // (0x004D9490) refuses it at 0x004D9522.
         const BLOCKED: [i32; 16] = [5, 7, 11, 12, 13, 14, 15, 20, 21, 27, 31, 32, 34, 35, 36, 42];
         let mission = mission_fixture(MISSION_GUARD.raw(), MissionId::NONE.raw(), 0);
 

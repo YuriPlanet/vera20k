@@ -208,9 +208,14 @@ const INFANTRY_ACTIONS: [InfantryActionRecord; 42] = [
 pub const DO_STRUGGLE: i32 = 42;
 
 /// Firestorm 2.0 `MasterDoControls[20]` at `0x006D20F4`, bytes `00 00 01 03`:
-/// not interruptible (byte 0, read by `Do_Action` `0x004D65CD`, `Can_Fire`
-/// `0x004D5A9B` and Scatter `0x004D9522`) and rate 3. Its IsMobile and
-/// RandomStart bytes (`0x006D20A5`, `0x006D20A6`) have no reader.
+/// not interruptible and rate 3. The interrupt byte's readers are `Do_Action`
+/// (`0x004D65CD`), `Can_Fire` (`0x004D5A9B`), `Scatter` (vt+0x144
+/// `0x004D6020`, at `0x004D6096`) and `Ready_To_Commence` (vt+0x1AC
+/// `0x004D9490`, at `0x004D9522`), the gate `InfantryClass::AI` asks before
+/// Commence (`0x004D4E5A`..`0x004D4E8B`). VERA's readiness reads the same
+/// record, so a webbed man's next mission waits for the web as there. Its
+/// IsMobile and RandomStart bytes (`0x006D20A5`, `0x006D20A6`) have no
+/// reader.
 const STRUGGLE_ACTION: InfantryActionRecord = InfantryActionRecord {
     interruptible: false,
     frame_delay: 3,
