@@ -221,9 +221,10 @@ fn select_sidebar_tab_command(state: &mut AppState, index: i32) {
 
 /// The tail of the Structures and Defense tab commands: Building7342A0 and
 /// Building7342B0 hand the tab's completed building to
-/// `ObjectClass::FindFactory` 5F5C20 (0,0) and `HouseClass::Begin_Building_
-/// Placement` 4FB840. Native registers exactly one such building per structure
-/// tab (`BuildingClass::SetSidebarTabObject` 734250 by the type's BuildCat),
+/// `ObjectClass::FindFactory` 5F5C20 (0,0), with Ares (0,1)
+/// ([`ready_tab_factory`]), and `HouseClass::Begin_Building_Placement`
+/// 4FB840. Native registers exactly one such building per structure tab
+/// (`BuildingClass::SetSidebarTabObject` 734250 by the type's BuildCat),
 /// which is this owner's ready building for that tab.
 fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
     let Some(owner_name) = preferred_command_owner(state) else {
@@ -244,11 +245,9 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
             .sidebar_projection
             .ready_building_for_tab(sim, owner_id, tab)
             .and_then(|(type_id, held)| {
-                // Native hands Manual_Place4FB840 the object's Factory
-                // 5F5C20(0,0), and 4FB840 refuses a null one; placement
-                // start centres the foundation on it.
-                let builder =
-                    crate::sim::production::object_find_factory(sim, rules, held, false, false)?;
+                // Manual_Place4FB840 refuses a null factory; placement start
+                // centres the foundation on it.
+                let builder = ready_tab_factory(sim, rules, held)?;
                 Some((
                     owner_id,
                     held,
@@ -271,6 +270,19 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
         let gadgets = &mut state.match_state.match_presentation.sidebar_gadget_state;
         gadgets.disable_cursor_modes();
     }
+}
+
+/// The factory a structure tab hotkey hands Manual_Place4FB840 with the
+/// tab's ready building `held`: its `ObjectClass::FindFactory(0, 0)`
+/// (`0x005F5C20`), or with Ares (0, 1), a powered one
+/// (Set{Structure,Defense}TabCommandClass_Execute_Power, Ares.dll
+/// `10025150`/`10025130`, hooks `0x00535DB6`/`0x00535E76`).
+pub(in crate::app::input) fn ready_tab_factory(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    held: u64,
+) -> Option<u64> {
+    crate::sim::production::object_find_factory(sim, rules, held, false, rules.ares_form())
 }
 
 /// Placement start centres the foundation on the Cell of `factory`, the
