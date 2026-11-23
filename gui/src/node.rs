@@ -4,6 +4,7 @@
 //! `Stale`; only container kinds hold children; a prop takes one value type.
 
 use std::collections::BTreeMap;
+use std::ops::ControlFlow;
 
 use crate::Rect;
 
@@ -398,6 +399,19 @@ impl Node {
         }
     }
 
+    /// A list's or combo's rows: its `Items`, else its `RowCount`.
+    pub fn row_count(&self) -> usize {
+        match self.props.get(&Prop::Items) {
+            Some(Value::Items(items)) => items.len(),
+            _ => self.int_prop(Prop::RowCount, 0).max(0) as usize,
+        }
+    }
+
+    /// A list's or combo's selected row; `-1` or absent is none.
+    pub fn selected(&self) -> Option<usize> {
+        usize::try_from(self.int_prop(Prop::Selected, -1)).ok()
+    }
+
     pub fn text_prop(&self, prop: Prop) -> Option<&str> {
         match self.props.get(&prop) {
             Some(Value::Text(s)) => Some(s),
@@ -535,6 +549,21 @@ impl Tree {
 
     pub fn kind(&self, id: NodeId) -> Result<NodeKind, Refused> {
         Ok(self.node(id)?.kind)
+    }
+
+    /// Visits `id` and its subtree in tree order, each node before its
+    /// children, until `f` breaks; the break's value.
+    pub fn walk<B>(
+        &self,
+        id: NodeId,
+        f: &mut impl FnMut(NodeId, NodeKind) -> ControlFlow<B>,
+    ) -> ControlFlow<B> {
+        let Ok(node) = self.node(id) else { return ControlFlow::Continue(()) };
+        f(id, node.kind)?;
+        for child in &node.children {
+            self.walk(*child, f)?;
+        }
+        ControlFlow::Continue(())
     }
 
     pub fn children(&self, id: NodeId) -> Result<&[NodeId], Refused> {

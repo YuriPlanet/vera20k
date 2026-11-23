@@ -700,8 +700,7 @@ mod tests {
                 (view.top, view.selected, view.pressed),
                 (page.top, None, None)
             );
-            let rect = gui.tree().screen_rect(list).unwrap();
-            let new = view.geometry(rect, ListMetrics::RETAIL);
+            let new = gui.list_geometry(list).unwrap();
             let old = ShellListGeometry::new(
                 layout.list,
                 page.lines.len(),

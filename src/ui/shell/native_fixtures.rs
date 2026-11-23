@@ -60,9 +60,7 @@ pub fn native_static_timer_cases() -> Vec<serde_json::Value> {
 mod widget_goldens {
     use vera20k_gui::shell::button::owner_button_frame;
     use vera20k_gui::shell::list::{ListMetrics, thumb_height};
-    use vera20k_gui::shell::trackbar::{
-        THUMB_W, TrackbarRange, thumb_left, trackbar_position_from_x,
-    };
+    use vera20k_gui::shell::trackbar::{THUMB_W, TrackbarRange};
 
     use crate::test_fixture;
 
@@ -167,9 +165,13 @@ mod widget_goldens {
             let range = integer(geometry, "maximum");
             let minimum = geometry["minimum"].as_i64().unwrap_or(0) as i32;
             let step = geometry["step"].as_i64().unwrap_or(1) as i32;
+            // The thumb runs on the position (relative to the minimum), the
+            // pointer partition on the owner's range and step.
+            let track = TrackbarRange { reserve, ..TrackbarRange::new(0, range, 1) };
+            let steps = TrackbarRange { reserve, ..TrackbarRange::new(minimum, minimum + range, step) };
             for sample in geometry["positions"].as_array().unwrap() {
                 let position = integer(sample, "position");
-                let left = thumb_left(position, width, reserve, range);
+                let left = track.thumb_left(position, width);
                 assert_eq!(
                     left,
                     integer(sample, "thumb_left"),
@@ -180,15 +182,13 @@ mod widget_goldens {
             }
             for sample in geometry["pointers"].as_array().unwrap() {
                 let x = integer(sample, "x");
-                let raw = trackbar_position_from_x(x, width, reserve, range);
-                let steps = TrackbarRange::new(minimum, minimum + range, step);
-                let position = steps.stepped(minimum + raw) - minimum;
+                let position = steps.value_at(x, width) - minimum;
                 assert_eq!(
                     position,
                     integer(sample, "position"),
                     "width={width} reserve={reserve} range={range} x={x}"
                 );
-                let left = thumb_left(position, width, reserve, range);
+                let left = track.thumb_left(position, width);
                 assert_eq!(left, integer(sample, "thumb_left"));
                 assert_eq!(left + THUMB_W, integer(sample, "thumb_right"));
                 pointer_count += 1;

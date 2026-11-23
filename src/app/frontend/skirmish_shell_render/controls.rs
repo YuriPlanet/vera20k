@@ -13,7 +13,7 @@ use crate::render::skirmish_shell_chrome::{
 use crate::rules::ruleset::RuleSet;
 use crate::ui::shell::geom::{ShellAlign, ShellScale};
 use crate::ui::skirmish_shell::{
-    DropdownMetrics, DropdownScrollbarPart, RectPx, SkirmishShellLayout, SkirmishShellState,
+    DropdownScrollbarPart, RectPx, SkirmishShellLayout, SkirmishShellState,
     checkbox_icon_rect, combo_arrow_rect, combo_face_rect, combo_swatch_rect,
     opponent_scroll_geometry,
 };
@@ -510,7 +510,7 @@ pub(super) enum ControlPaint {
         rect: RectPx,
     },
     /// A trackbar window with its thumb's window-relative left edge
-    /// ([`vera20k_gui::shell::trackbar::thumb_left`]). `plaque` is off where
+    /// ([`vera20k_gui::shell::trackbar::TrackbarRange::thumb_left`]). `plaque` is off where
     /// the owner sends `0x4AC` with 0 (Options Detail/Difficulty/Scroll, BBB).
     /// `disabled` is the window's `WS_DISABLED` style (`0x0061E0B0`).
     Trackbar {
@@ -694,7 +694,7 @@ pub(super) fn paint_control(
                     out,
                     down,
                     scrollbar.x,
-                    scrollbar.y + scrollbar.h - DropdownMetrics::scaled(scale).button_h,
+                    scrollbar.y + scrollbar.h - vera20k_gui::shell::list::ListMetrics::scaled(scale).arrow_h,
                     scale,
                     SHELL_DROPDOWN_DEPTH - 0.00005,
                 );
@@ -739,7 +739,7 @@ pub(super) fn push_opponent_scrollbar_instances(
 mod tests {
     use super::*;
     use crate::render::skirmish_shell_chrome::{TRACKBAR_FRAMES, trackbar_frame_slot};
-    use crate::ui::skirmish_shell::COMBO_DROPDOWN_SCROLLBAR_BUTTON_H;
+    use vera20k_gui::shell::list::ListMetrics;
 
     #[test]
     fn skirmish_dropdown_highlight_follows_pointer_without_committing_selection() {
@@ -1587,7 +1587,7 @@ mod tests {
             out[2].position,
             [
                 scrollbar.x as f32,
-                (scrollbar.y + scrollbar.h - COMBO_DROPDOWN_SCROLLBAR_BUTTON_H) as f32
+                (scrollbar.y + scrollbar.h - ListMetrics::RETAIL.arrow_h) as f32
             ]
         );
         assert_eq!(out[2].uv_origin, dn_r.uv_origin);

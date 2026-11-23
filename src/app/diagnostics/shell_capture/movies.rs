@@ -342,8 +342,6 @@ impl MoviesCapture {
         let (geometry, view) = crate::app::frontend::movies_credits_render::family_list_view(
             state,
             crate::ui::mods_shell::DIALOG,
-            layout.list,
-            layout.page.scale,
         )
         .context("the Mods page has no list")?;
         // The list opens with the row in use in view: pick from what shows.

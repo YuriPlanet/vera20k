@@ -41,7 +41,7 @@ use crate::ui::shell::checkbox::CheckboxFace;
 use crate::ui::shell::geom::{FAMILY_CAPTION_W, RectPx, ShellAlign, ShellScale};
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::sidebar::SidebarTheme;
-use vera20k_gui::shell::trackbar::{TrackbarRange, value_text_rect};
+use vera20k_gui::shell::trackbar::value_text_rect;
 
 /// Sprites (skirmish atlas), page-art pictures and texts of a dialog's
 /// widgets, and of an open combo drop-down over them.
@@ -739,12 +739,9 @@ pub(crate) fn paint_gui_into(
                 // The plaque and its value text unless the owner turned them
                 // off (`0x4AC` with 0), which gives the track the whole window.
                 let plaque = flag(gui, node, Prop::ShowValue, true);
-                let range = TrackbarRange::new(
-                    int(gui, node, Prop::Min, 0),
-                    int(gui, node, Prop::Max, 100),
-                    int(gui, node, Prop::Step, 1),
-                )
-                .with_plaque(plaque);
+                let Some(range) = gui.trackbar_range(node) else {
+                    continue;
+                };
                 let value = int(gui, node, Prop::Pos, range.min);
                 paint_control(
                     &mut paint.controls,
@@ -834,12 +831,10 @@ pub(crate) fn paint_gui_into(
                     None => None,
                 };
                 // The owner-draw list `0x00618D40` over its dialog's art.
-                let Some(view) = gui.list_view(node) else {
+                let (Some(view), Some(geometry)) = (gui.list_view(node), gui.list_geometry(node))
+                else {
                     continue;
                 };
-                let mut metrics = vera20k_gui::shell::list::ListMetrics::scaled(scale);
-                metrics.row_h = int(gui, node, Prop::RowHeight, metrics.row_h);
-                let geometry = view.geometry(rect, metrics);
                 let selected = view
                     .selected
                     .filter(|_| !flag(gui, node, Prop::NoSelectionFill, false));

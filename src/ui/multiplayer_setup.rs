@@ -1233,7 +1233,10 @@ impl MultiplayerSetupState {
             self.accept_flash_started = None;
             return false;
         }
-        vera20k_gui::shell::button::flash_phase(*self.accept_flash_started.get_or_insert(now), now)
+        // 612B70's 4DC timer highlight, from the first frame it is armed.
+        let started = *self.accept_flash_started.get_or_insert(now);
+        let elapsed = now.saturating_duration_since(started).as_millis() as u64;
+        vera20k_gui::time::blink_phase(0, elapsed)
     }
 }
 

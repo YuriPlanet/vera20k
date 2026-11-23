@@ -349,7 +349,7 @@ pub(crate) fn render_keyboard_shell(
             SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
             SHELL_DROPDOWN_DEPTH,
         );
-        let row_h = crate::ui::skirmish_shell::DropdownMetrics::scaled(layout.scale).row_h;
+        let row_h = vera20k_gui::shell::list::ListMetrics::combo(layout.scale).row_h;
         for (i, category) in dialog.categories.iter().enumerate() {
             let row = RectPx::new(
                 popup.x + 2,

@@ -401,7 +401,7 @@ mod tests {
     /// Slider `id`'s painted thumb offset in `rect`.
     fn thumb_left(state: &SoundState, id: SoundSlider, rect: RectPx) -> i32 {
         let position = i32::from(state.positions()[id as usize]);
-        vera20k_gui::shell::trackbar::thumb_left(position, rect.w, 50, 10)
+        vera20k_gui::shell::trackbar::TrackbarRange::new(0, 10, 1).thumb_left(position, rect.w)
     }
     #[test]
     fn shell_0xd6_page_matches_the_executed_wol_relayout() {
@@ -587,7 +587,7 @@ mod tests {
                 .filter_map(shell_sound_volume)
                 .collect::<Vec<_>>()
         };
-        let thumb = r.x + vera20k_gui::shell::trackbar::thumb_left(5, r.w, 50, 10);
+        let thumb = r.x + vera20k_gui::shell::trackbar::TrackbarRange::new(0, 10, 1).thumb_left(5, r.w);
         for x in [r.x + 1, thumb] {
             assert_eq!(press(&mut gui, x), []);
         }

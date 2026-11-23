@@ -22,22 +22,17 @@ use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{ShellAlign, ShellScale};
 use crate::ui::shell::menu_page;
 use vera20k_gui::ListView;
-use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
+use vera20k_gui::shell::list::ShellListGeometry;
 
 /// The family page `dialog`'s list as its `List` node shows it, with its
-/// geometry in window `list`.
+/// geometry on the node's window.
 pub(crate) fn family_list_view(
     state: &AppState,
     dialog: crate::ui::shell::descriptor::DialogResourceId,
-    list: RectPx,
-    scale: ShellScale,
 ) -> Option<(ShellListGeometry, ListView)> {
-    let controller = &state.frontend.shell_controller;
-    let view = controller
-        .gui()
-        .list_view(find_family_list(controller, dialog)?)?;
-    let rect = vera20k_gui::shell::list::list_box_rect(list);
-    Some((view.geometry(rect, ListMetrics::scaled(scale)), view))
+    let gui = state.frontend.shell_controller.gui();
+    let node = find_family_list(&state.frontend.shell_controller, dialog)?;
+    Some((gui.list_geometry(node)?, gui.list_view(node)?))
 }
 
 /// Whether the pointer is over the family page `dialog`'s list, its status
@@ -52,16 +47,15 @@ pub(crate) fn family_list_hovered(
             .is_some_and(|node| controller.gui().hovered() == Some(node))
 }
 
-/// The family page `dialog`'s list in window `list` (`0x00619230` over the
-/// parent background), its geometry and view; the rows' text is the host's.
+/// The family page `dialog`'s list (`0x00619230` over the parent
+/// background), its geometry and view; the rows' text is the host's.
 pub(crate) fn paint_family_list(
     state: &AppState,
     dialog: DialogResourceId,
-    list: RectPx,
     scale: ShellScale,
 ) -> Option<(Vec<SpriteInstance>, ShellListGeometry, ListView)> {
     let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
-    let (geometry, view) = family_list_view(state, dialog, list, scale)?;
+    let (geometry, view) = family_list_view(state, dialog)?;
     let (top, selected, pressed) = (view.top, view.selected, view.pressed);
     let mut out = Vec::new();
     crate::app::frontend::skirmish_shell_render::paint_list(
@@ -112,7 +106,7 @@ pub(crate) fn render_movie_list(
         let mut bar = None;
         if let Some(list) = state.frontend.movie_list.as_ref()
             && let Some((sprites, geometry, view)) =
-                paint_family_list(state, dialog, layout.list, page.scale)
+                paint_family_list(state, dialog, page.scale)
         {
             bar = geometry.scrollbar;
             frame.over.controls.extend(sprites);
@@ -240,7 +234,7 @@ pub(crate) fn render_credits_roll(
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
-    use vera20k_gui::shell::list::list_box_geometry;
+    use vera20k_gui::shell::list::{ListMetrics, list_box_geometry};
 
     #[test]
     fn list_rows_match_the_native_capture() {

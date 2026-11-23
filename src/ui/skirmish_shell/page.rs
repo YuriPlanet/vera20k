@@ -9,7 +9,7 @@
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
 
 use super::layout::{
-    DropdownMetrics, RectPx, SEAT_MENU, SKIRMISH_LONG_ROW_COUNT, SKIRMISH_ROW_COUNT,
+    RectPx, SEAT_MENU, SKIRMISH_LONG_ROW_COUNT, SKIRMISH_ROW_COUNT,
     SkirmishCheckboxId, SkirmishShellLayout, SkirmishTrackbarId, TEAM_MENU, combo_face_rect,
 };
 use super::state::{
@@ -296,7 +296,7 @@ pub fn sync_page(
     let gui = controller.gui_mut();
     page::ensure_built(gui, root, spec);
     page::sync_rects(gui, root, |id| rect(state, layout, maps, id));
-    let scrollbar_w = DropdownMetrics::scaled(layout.scale).scrollbar_w;
+    let scrollbar_w = vera20k_gui::shell::list::ListMetrics::scaled(layout.scale).scrollbar_w;
     // VERA: on the longer player list a low row's list would run over the
     // status line or off the screen, so it opens upward instead. gamemd's
     // eight rows never reach it.

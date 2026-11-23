@@ -6,10 +6,11 @@
 //! over it, and release activates only on the captured button. A disabled
 //! button still takes hover (it shows tooltip and status text) but no press.
 
+use std::ops::ControlFlow;
+
 use crate::Rect;
 use crate::node::{NodeId, NodeKind, Prop, Refused, Tree, Value};
 use crate::shell::geom::ShellScale;
-use crate::shell::trackbar::{TrackbarPress, TrackbarRange};
 use crate::widget::{self, Capture, Ctx};
 
 /// Milliseconds on the UI clock (§9.1). The host supplies it, so tests and
@@ -458,7 +459,7 @@ impl Gui {
                             // sees it until the release (`SetCapture` 0x0061E4DF).
                             self.set_hover(None);
                             if self.top_mut().pointer.dragging {
-                                self.drag_trackbar(held, x);
+                                self.with_ctx(now, |ctx| widget::trackbar::drag(ctx, held, x));
                             }
                             return InputResult { consumed: true };
                         }
@@ -584,9 +585,13 @@ impl Gui {
     /// a modal keeps.
     pub fn caret_visible_in(&self, dialog: DialogId, node: NodeId, now: UiMs) -> bool {
         self.dialog(dialog).is_some_and(|d| d.pointer.focus == Some(node))
-            && self.tree.node(node).is_ok_and(|n| match &n.state {
-                widget::WidgetState::Edit(s) => s.caret_visible(now),
-                _ => widget::edit::EditState::default().caret_visible(now),
+            && self.tree.node(node).is_ok_and(|n| {
+                let focused_at = match &n.state {
+                    widget::WidgetState::Edit(s) => s.focused_at,
+                    _ => 0,
+                };
+                // NewEdit's caret shows in the first of each two seconds.
+                !crate::time::blink_phase(focused_at, now)
             })
     }
 
@@ -849,17 +854,17 @@ impl Gui {
 
     /// The first visible `DropTarget` under `root` at `x`, `y`.
     fn drop_target_at(&self, root: NodeId, x: i32, y: i32) -> Option<NodeId> {
-        let mut found = None;
-        self.walk(root, &mut |id, _| {
-            if found.is_none()
-                && matches!(self.tree.get(id, Prop::DropTarget), Ok(Some(Value::Bool(true))))
-                && self.tree.effective(id, Prop::Visible)
-                && self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y))
-            {
-                found = Some(id);
-            }
-        });
-        found
+        self.tree
+            .walk(root, &mut |id, _| {
+                if matches!(self.tree.get(id, Prop::DropTarget), Ok(Some(Value::Bool(true))))
+                    && self.tree.effective(id, Prop::Visible)
+                    && self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y))
+                {
+                    return ControlFlow::Break(id);
+                }
+                ControlFlow::Continue(())
+            })
+            .break_value()
     }
 
     /// What the host paints of List `node`.
@@ -874,6 +879,13 @@ impl Gui {
         }
         let held = self.dialogs.iter().any(|d| d.pointer.pressed == Some(node));
         widget::scrollbar::view(&self.tree, node, self.scale_of(node).ok()?, held)
+    }
+
+    /// Trackbar `node`'s range as it hits: `Min`, `Max`, `Step` and, by
+    /// `ShowValue`, its value plaque's reserve.
+    pub fn trackbar_range(&self, node: NodeId) -> Option<crate::shell::trackbar::TrackbarRange> {
+        let n = self.tree.node(node).ok().filter(|n| n.kind == NodeKind::Trackbar)?;
+        Some(widget::trackbar::range(n))
     }
 
     /// List `node` as a transcript (a chat log) now holds `rows` rows, of
@@ -942,6 +954,7 @@ impl Gui {
             tree: &mut self.tree,
             events: &mut self.events,
             scale: d.scale,
+            base_scale: self.base_scale,
             now,
             double_click: self.double_click,
             byte_len: self.byte_len,
@@ -989,31 +1002,17 @@ impl Gui {
             }
             return;
         }
-        match n.kind {
-            NodeKind::Trackbar => {
-                let range = trackbar_range(n);
-                let value = n.int_prop(Prop::Pos, range.min);
-                let rect = self.tree.screen_rect(node).unwrap_or_default();
-                let scale = self.trackbar_scale(n);
-                match range.press_in(value, x, y, rect, scale) {
-                    TrackbarPress::Miss => {}
-                    TrackbarPress::Hold => self.top_mut().pointer.pressed = Some(node),
-                    TrackbarPress::Drag => {
-                        let pointer = &mut self.top_mut().pointer;
-                        pointer.pressed = Some(node);
-                        pointer.dragging = true;
-                    }
-                    TrackbarPress::Jump(to) => {
-                        self.top_mut().pointer.pressed = Some(node);
-                        self.move_trackbar(node, to);
-                    }
-                }
+        if n.kind == NodeKind::Trackbar {
+            // Any press on the window holds it; only one on the thumb drags.
+            if let Some(drag) = self.with_ctx(now, |ctx| widget::trackbar::press(ctx, node, x, y)) {
+                let pointer = &mut self.top_mut().pointer;
+                pointer.pressed = Some(node);
+                pointer.dragging |= drag;
             }
-            _ => {
-                self.top_mut().pointer.pressed = Some(node);
-                self.events.push(UiEvent::Pressed { node });
-            }
+            return;
         }
+        self.top_mut().pointer.pressed = Some(node);
+        self.events.push(UiEvent::Pressed { node });
     }
 
     /// The release of a captured node; `over` when the pointer is still on it.
@@ -1025,10 +1024,7 @@ impl Gui {
             NodeKind::Combo => self.with_ctx(now, |ctx| widget::combo::release(ctx, node, x, y)),
             NodeKind::Edit => self.with_ctx(now, |ctx| widget::edit::release(ctx, node, x, y)),
             NodeKind::ScrollBar => self.with_ctx(now, |ctx| widget::scrollbar::release(ctx, node)),
-            NodeKind::Trackbar => {
-                let value = Value::Int(n.int_prop(Prop::Pos, 0));
-                self.events.push(UiEvent::Changed { node, value, final_: true });
-            }
+            NodeKind::Trackbar => self.with_ctx(now, |ctx| widget::trackbar::release(ctx, node)),
             _ if over && enabled => self.activate(node),
             _ => {}
         }
@@ -1038,30 +1034,6 @@ impl Gui {
         let checked = !self.tree.node(node).is_ok_and(|n| n.bool_prop(Prop::Checked, false));
         let _ = self.tree.set(node, Prop::Checked, Value::Bool(checked));
         self.events.push(UiEvent::Changed { node, value: Value::Bool(checked), final_: true });
-    }
-
-    fn drag_trackbar(&mut self, node: NodeId, x: i32) {
-        let Ok(n) = self.tree.node(node) else { return };
-        let range = trackbar_range(n);
-        let rect = self.tree.screen_rect(node).unwrap_or_default();
-        let scale = self.trackbar_scale(n);
-        self.move_trackbar(node, range.value_at_in(x, rect, scale));
-    }
-
-    /// The scale trackbar `n` hits at: its `ScaleScreen`'s, else its dialog's.
-    fn trackbar_scale(&self, n: &crate::node::Node) -> ShellScale {
-        match n.props.get(&Prop::ScaleScreen) {
-            Some(Value::Rect(r)) => self.base_scale.in_window(r.w, r.h),
-            _ => self.dialogs.last().map_or(self.base_scale, |d| d.scale),
-        }
-    }
-
-    fn move_trackbar(&mut self, node: NodeId, to: i32) {
-        let from = self.tree.node(node).map_or(to, |n| n.int_prop(Prop::Pos, trackbar_range(n).min));
-        if from != to {
-            let _ = self.tree.set(node, Prop::Pos, Value::Int(to));
-            self.events.push(UiEvent::Changed { node, value: Value::Int(to), final_: false });
-        }
     }
 
     fn top_mut(&mut self) -> &mut Dialog {
@@ -1079,13 +1051,16 @@ impl Gui {
             }
             _ => return InputResult { consumed: modal },
         };
-        let mut target = None;
-        self.walk(root, &mut |id, kind| {
-            let on = matches!(self.tree.get(id, marked), Ok(Some(Value::Bool(true))));
-            if target.is_none() && kind == NodeKind::Button && on {
-                target = Some(id);
-            }
-        });
+        let target = self
+            .tree
+            .walk(root, &mut |id, kind| {
+                let on = matches!(self.tree.get(id, marked), Ok(Some(Value::Bool(true))));
+                match kind == NodeKind::Button && on {
+                    true => ControlFlow::Break(id),
+                    false => ControlFlow::Continue(()),
+                }
+            })
+            .break_value();
         match target {
             Some(n) if self.tree.effective(n, Prop::Enabled) => {
                 self.activate(n);
@@ -1105,7 +1080,7 @@ impl Gui {
         let pointer = self.top_pointer();
         let from = pointer.focus;
         let mut stops = Vec::new();
-        self.walk(root, &mut |id, kind| {
+        let _ = self.tree.walk(root, &mut |id, kind| {
             let stop = match self.tree.get(id, Prop::TabStop) {
                 Ok(Some(Value::Bool(on))) => *on,
                 _ => kind == NodeKind::Edit,
@@ -1114,6 +1089,7 @@ impl Gui {
             {
                 stops.push(id);
             }
+            ControlFlow::<()>::Continue(())
         });
         let current = from.or(pointer.tab_stop);
         let next = match current.and_then(|c| stops.iter().position(|n| *n == c)) {
@@ -1173,31 +1149,21 @@ impl Gui {
     /// [`Self::hit`] for the host, under any open drop-down; `press` skips
     /// `PressThrough` nodes, as a press and its release do.
     pub fn hit_at(&self, root: NodeId, x: i32, y: i32, press: bool) -> Option<NodeId> {
-        let mut found = None;
-        self.walk(root, &mut |id, kind| {
-            // A static with status help hovers too (it takes no press).
-            let help = kind == NodeKind::Text && self.tree.get(id, Prop::Tooltip).is_ok_and(|t| t.is_some());
-            let through = press && matches!(self.tree.get(id, Prop::PressThrough), Ok(Some(Value::Bool(true))));
-            if found.is_none()
-                && !through
-                && (kind.is_focusable() || help)
-                && self.tree.effective(id, Prop::Visible)
-                && self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y))
-            {
-                found = Some(id);
-            }
-        });
-        found
-    }
-
-    fn walk(&self, id: NodeId, f: &mut impl FnMut(NodeId, NodeKind)) {
-        let Ok(kind) = self.tree.kind(id) else { return };
-        f(id, kind);
-        if let Ok(children) = self.tree.children(id) {
-            for c in children {
-                self.walk(*c, f);
-            }
-        }
+        self.tree
+            .walk(root, &mut |id, kind| {
+                // A static with status help hovers too (it takes no press).
+                let help = kind == NodeKind::Text && self.tree.get(id, Prop::Tooltip).is_ok_and(|t| t.is_some());
+                let through = press && matches!(self.tree.get(id, Prop::PressThrough), Ok(Some(Value::Bool(true))));
+                if !through
+                    && (kind.is_focusable() || help)
+                    && self.tree.effective(id, Prop::Visible)
+                    && self.tree.screen_hit_rect(id).is_ok_and(|r| r.contains(x, y))
+                {
+                    return ControlFlow::Break(id);
+                }
+                ControlFlow::Continue(())
+            })
+            .break_value()
     }
 }
 
@@ -1220,13 +1186,6 @@ pub fn append_events(events: &mut Vec<UiEvent>, new: impl IntoIterator<Item = Ui
             _ => events.push(event),
         }
     }
-}
-
-/// The trackbar's range; without its value plaque the track runs to the
-/// window's right end (`0x4AC` with 0).
-fn trackbar_range(n: &crate::node::Node) -> TrackbarRange {
-    TrackbarRange::new(n.int_prop(Prop::Min, 0), n.int_prop(Prop::Max, 100), n.int_prop(Prop::Step, 1))
-        .with_plaque(n.bool_prop(Prop::ShowValue, true))
 }
 
 #[cfg(test)]

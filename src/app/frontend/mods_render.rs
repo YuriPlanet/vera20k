@@ -111,7 +111,7 @@ pub(crate) fn render_mods_page(
     let mods = &state.frontend.mods;
     if let Some(page) = mods.page.as_ref().filter(|_| !leaving)
         && let Some((sprites, geometry, view)) =
-            paint_family_list(state, dialog, layout.list, scale)
+            paint_family_list(state, dialog, scale)
     {
         frame.over.controls.extend(sprites);
         frame.list_boxes.push((layout.list, geometry.scrollbar));
