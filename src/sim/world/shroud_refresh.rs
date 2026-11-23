@@ -2088,7 +2088,7 @@ impl Simulation {
                         viewer,
                         config,
                         &self.interner,
-                    ) || entity.seldom.limpets.attached_by(viewer)
+                    ) || crate::sim::limpet::seen_through_by(entity, viewer)
                 }),
         );
         // The footprint indexes an admitting map's source counts. A source no
@@ -2228,7 +2228,7 @@ impl Simulation {
                 .get(id)
                 // The reveal's limpet arm (`sim::limpet`); its mask changes
                 // only between a release and a reveal.
-                .is_some_and(|entity| entity.seldom.limpets.attached_by(viewer))
+                .is_some_and(|entity| crate::sim::limpet::seen_through_by(entity, viewer))
             {
                 // Native RevealArea's House gate refuses this release. Retire
                 // only the derived index; the old map counts stay remembered.
@@ -2489,10 +2489,7 @@ impl Simulation {
                     &self.interner,
                     &clients,
                 );
-                let viewers: Vec<_> = entity
-                    .seldom
-                    .limpets
-                    .with_viewers(&clients, viewers)
+                let viewers: Vec<_> = crate::sim::limpet::sight_viewers(entity, &clients, viewers)
                     .iter()
                     .copied()
                     .filter(|viewer| only_viewer.is_none_or(|only| *viewer == only))
@@ -2547,7 +2544,7 @@ impl Simulation {
             &self.interner,
             &clients,
         );
-        let projected = entity.seldom.limpets.with_viewers(&clients, projected);
+        let projected = crate::sim::limpet::sight_viewers(entity, &clients, projected);
         let viewers: Vec<_> = projected
             .iter()
             .copied()

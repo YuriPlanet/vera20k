@@ -577,7 +577,8 @@ pub struct FootSpeedState {
     attached: bool,
     /// Whether the object has Tiberian Sun limpets (`sim::limpet`), which
     /// live in its seldom part; this byte, in the struct's padding, spares
-    /// every other speed query that read.
+    /// the speed, sight and repair queries of every other object that read.
+    /// `sim::limpet` writes it with the limpets, for every category.
     #[serde(default)]
     limpeted: bool,
 }

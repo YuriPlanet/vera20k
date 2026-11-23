@@ -47,18 +47,26 @@ IsLimpetDrone=yes
   not, unless they limpeted it too.
 - Any heal (negative damage) or a service depot's repair takes every limpet off, even at
   full health. Deploying or undeploying carries the limpets to the new object.
+- A service depot takes a limpeted vehicle at full health as it takes a damaged one, as
+  Firestorm's does: sent to a busy depot it waits its turn, and a depot it is already in
+  contact with does not turn it away. A repair vehicle, as in Firestorm, can be ordered
+  onto a damaged one only.
 - `AV=yes` makes the weapon's own target search look for vehicles only.
 - A vehicle can drive into a limpet mine's cell, and a player cannot order a mine to
   attack: it picks its own targets.
-- `IsLimpetDrone=` is read. Firestorm uses it only to draw the drone, which VERA does not
-  yet do.
+- An `IsLimpetDrone=yes` vehicle draws its body as a ten-frame loop, a frame each game
+  frame, whichever way it faces, and draws no turret.
 
 Firestorm 2.0 evidence: `TechnoClass::Fire_At` `0x006301A0` (the arm `0x006301EB..0x0063032A`);
 `UnitClass::Get_Max_Speed` `0x00659710` and its readers, which are gamemd's vt+0x38C readers
 (`FootClass::GetCurrentSpeed` `0x004DB1C3`, the Drive brake `0x004B10AC`, the base-defense
 threat score `0x004D985F`); `TechnoClass::Look` `0x00638160` (`0x0063829A..0x006382B8`);
 `TechnoClass::Take_Damage` `0x006325A0` (`0x006326E1`); `TechnoClass::Receive_Message`
-RADIO_REPAIR (`0x0062ABE1`); `UnitClass::Try_To_Deploy` (`0x00650D9E`) and
+RADIO_REPAIR (`0x0062ABE1`); the depot's admission, `BuildingClass::Receive_Message`
+(`0x00426B4A`) and `UnitClass::Assign_Destination` (`0x00657EA5`), and the repair vehicle's
+click test in `UnitClass::What_Action` (`0x00656127`); `UnitClass::Unlimbo` (`0x0064F83D`),
+`UnitClass::AI` (`0x0064E205`) and the Unit SHP draw (`0x00652F2D`) for the drone;
+`UnitClass::Try_To_Deploy` (`0x00650D9E`) and
 `BuildingClass::Mission_Deconstruction` (`0x004309E1`); `UnitClass::Can_Enter_Cell`
 (`0x0065570A`); `BuildingClass::What_Action` (`0x0042ECC6`, `0x0042EF65`);
 `WeaponTypeClass::Allowable_Threat` `0x00681150`; the readers `WarheadTypeClass::Read_INI`
@@ -81,8 +89,11 @@ Not ported:
 - Trigger event 55, which Firestorm raises when a limpet attaches to an object with a tag.
   Yuri's Revenge's event 55 is a different event, so a Tiberian Sun map's trigger on it
   does not fire.
-- Drawing: the limpeted health-bar colour and pip frame, and the Limpet Drone's ten-frame
-  body loop. A limpeted vehicle looks like any other.
+- The limpeted health-bar cue. Firestorm adds 8 to a limpeted vehicle's PIPBRD frame (3 for
+  a vehicle, `0x0062C3D3..0x0062C409`) and draws a limpeted building's selection box in
+  colour 5 where others use 15 (`0x0062B122..0x0062B14B`, `0x0062BED0`). Yuri's Revenge's
+  PIPBRD.SHP has two frames, vehicle and infantry, and gamemd draws no building selection
+  box, so neither has anything to land on. A limpeted object looks like any other.
 - An EMP on a limpet mine. Firestorm gives it a call of its own (`0x0042AA70`) in place of
   the EMP disable; VERA treats it as any building.
 - The repair cursor over a limpeted building at full health, which Firestorm allows

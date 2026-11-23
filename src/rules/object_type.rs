@@ -1714,7 +1714,8 @@ pub struct ObjectType {
     /// key: Firestorm 2.0 `UnitTypeClass::Read_INI @ 0x0065BBA0` reads it into
     /// UnitType+0x4A2 with ReadBool over the current value
     /// (`0x0065BE44..0x0065BE67`); the constructor zeroes it (`0x0065B764`).
-    /// Its only readers draw the body (a residual in the doc).
+    /// Its readers run the Unit's Stage as a ten-frame loop and draw the
+    /// body from it (`sim::limpet::wrap_drone_stage`).
     pub is_limpet_drone: bool,
     /// UnitType+E18/E19, original747862..747896: the Unit section's
     /// ReadBool SmallVisceroid/LargeVisceroid, distinct from General's type

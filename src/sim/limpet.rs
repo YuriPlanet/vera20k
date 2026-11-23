@@ -53,14 +53,9 @@ impl Limpets {
             .is_some_and(|attached| attached.houses.contains(&house))
     }
 
-    /// `viewers`, the client maps a reveal of the object writes (ascending),
-    /// joined by each of `clients` whose house limpeted it, still ascending.
-    /// Firestorm 2.0 `TechnoClass::Look @ 0x00638160` reveals for PlayerPtr
-    /// in place of the owner when PlayerPtr's bit is set
-    /// (`0x0063829A..0x006382B8`), so a limpeting player sees through the
-    /// object and its allies do not. The sight gates of `world::
-    /// shroud_refresh` admit the same houses ([`Self::attached_by`]).
-    pub(crate) fn with_viewers(
+    /// `viewers` joined by each of `clients` whose house limpeted the
+    /// object, still ascending ([`sight_viewers`]).
+    fn with_viewers(
         &self,
         clients: &[InternedId],
         viewers: Arc<[InternedId]>,
@@ -109,6 +104,32 @@ impl Limpets {
     fn clear(&mut self) {
         self.0 = None;
     }
+}
+
+/// Whether `house` limpeted `entity`, so its map sees through it: the sight
+/// gates of `world::shroud_refresh` admit it beside the owner's reveal
+/// houses ([`sight_viewers`]). The speed byte
+/// ([`FootSpeedState::limpeted`](crate::sim::components::FootSpeedState::limpeted)),
+/// which every writer of the limpets keeps for every category, spares an
+/// object without limpets the read of its seldom part.
+pub(crate) fn seen_through_by(entity: &GameEntity, house: InternedId) -> bool {
+    entity.foot_speed.limpeted() && entity.seldom.limpets.attached_by(house)
+}
+
+/// `viewers`, the client maps a reveal of `entity` writes (ascending), joined
+/// by each of `clients` whose house limpeted it, still ascending. Firestorm
+/// 2.0 `TechnoClass::Look @ 0x00638160` reveals for PlayerPtr in place of
+/// the owner when PlayerPtr's bit is set (`0x0063829A..0x006382B8`), so a
+/// limpeting player sees through the object and its allies do not.
+pub(crate) fn sight_viewers(
+    entity: &GameEntity,
+    clients: &[InternedId],
+    viewers: Arc<[InternedId]>,
+) -> Arc<[InternedId]> {
+    if !entity.foot_speed.limpeted() {
+        return viewers;
+    }
+    entity.seldom.limpets.with_viewers(clients, viewers)
 }
 
 /// The limpets a deploy or an undeploy carries from `from` to the object it
@@ -260,9 +281,35 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.seldom.limpets.is_attached())
+            .is_some_and(|entity| entity.foot_speed.limpeted())
         {
             self.change_limpets(id, rules, effects, Limpets::clear);
+        }
+    }
+
+    /// Firestorm 2.0 `UnitClass::AI` after its visceroid AI
+    /// (`0x0064E1FA..0x0064E221`): a Limpet Drone's (`IsLimpetDrone=`,
+    /// UnitType+0x4A2) Stage of 10 or more goes back to 0. Its Unlimbo starts
+    /// the Stage at rate 1 (`world::lifecycle::reveal`) and the common
+    /// Techno step (`TechnoClass::AI` `0x0062EAF2..0x0062EB30`, before this
+    /// in the same AI) adds one a frame, so its body, which the Unit SHP draw
+    /// (`0x00652EE0`) takes from the Stage in place of a facing
+    /// (`0x00652F2D`, `0x0065377F`), loops ten frames. The Stage is read
+    /// first, so no other Unit looks up its type here.
+    pub(crate) fn wrap_drone_stage(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.native_stage().value() < 10
+            || entity.category() != crate::map::entities::EntityCategory::Unit
+            || !self
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.is_limpet_drone)
+        {
+            return;
+        }
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.set_native_stage_value(0);
         }
     }
 
