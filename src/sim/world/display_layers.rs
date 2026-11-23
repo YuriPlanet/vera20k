@@ -252,18 +252,26 @@ impl DisplayLayers {
         true
     }
 
-    /// The layers as the hash and saves see them: without the local anims
+    /// The layers as the hash and the saves see them: without the local anims
     /// (`crate::sim::anim_class::is_local_anim_id`), which only this game
-    /// draws. Borrowed as they are when none is a member.
-    fn shared_layers(&self) -> std::borrow::Cow<'_, [Vec<u64>; 5]> {
+    /// draws. A layer without one is borrowed as it is; a layer with one owns
+    /// its shared members, because a layer's members are written as one byte
+    /// run and the local anims sit between them.
+    fn shared_layers(&self) -> [std::borrow::Cow<'_, [u64]>; 5] {
         use crate::sim::anim_class::is_local_anim_id;
-        if !self.layers.iter().flatten().any(|&id| is_local_anim_id(id)) {
-            return std::borrow::Cow::Borrowed(&self.layers);
-        }
-        std::borrow::Cow::Owned(self.layers.clone().map(|mut members| {
-            members.retain(|&id| !is_local_anim_id(id));
-            members
-        }))
+        self.layers.each_ref().map(|members| {
+            if members.iter().any(|&id| is_local_anim_id(id)) {
+                std::borrow::Cow::Owned(
+                    members
+                        .iter()
+                        .copied()
+                        .filter(|&id| !is_local_anim_id(id))
+                        .collect(),
+                )
+            } else {
+                std::borrow::Cow::Borrowed(members.as_slice())
+            }
+        })
     }
 
     pub(crate) fn fold_hash(&self, hasher: &mut impl Hasher) {
@@ -467,6 +475,59 @@ mod tests {
         assert_eq!(
             here.members(DisplayLayer::GROUND),
             there.members(DisplayLayer::GROUND)
+        );
+    }
+
+    /// The layers the hash and the save see: a layer without a local anim is
+    /// borrowed as it is, and only the layer holding one copies its shared
+    /// members out. The hash and the save see the same members as before.
+    #[test]
+    fn a_local_anim_copies_only_its_own_layer() {
+        let local = 1 << 56;
+        assert!(crate::sim::anim_class::is_local_anim_id(local));
+        let mut display = DisplayLayers::default();
+        for (id, layer) in [
+            (1, DisplayLayer::GROUND),
+            (2, DisplayLayer::AIR),
+            (local, DisplayLayer::AIR),
+            (3, DisplayLayer::AIR),
+        ] {
+            assert!(display.submit(id, Some(layer)));
+        }
+
+        let shared = display.shared_layers();
+        // Ground (layer 2) holds no local anim: it is borrowed, not copied.
+        assert!(
+            matches!(&shared[2], std::borrow::Cow::Borrowed(_)),
+            "a layer without a local anim must not be copied"
+        );
+        assert!(
+            std::ptr::eq(
+                (&*shared[2]).as_ptr(),
+                display.members(DisplayLayer::GROUND).as_ptr()
+            ),
+            "the borrowed layer must be the layer's own storage"
+        );
+        // Air (layer 3) holds the local anim: its shared members leave it out.
+        assert!(matches!(&shared[3], std::borrow::Cow::Owned(_)));
+        assert_eq!(&*shared[3], &[2u64, 3][..]);
+
+        // The hash and the save see the shared members only.
+        let shape = [
+            Vec::<u64>::new(),
+            Vec::new(),
+            vec![1],
+            vec![2, 3],
+            Vec::new(),
+        ];
+        let mut hasher = crate::util::state_hasher::StateHasher::new();
+        let mut expected = crate::util::state_hasher::StateHasher::new();
+        display.fold_hash(&mut hasher);
+        shape.hash(&mut expected);
+        assert_eq!(hasher.finish(), expected.finish());
+        assert_eq!(
+            crate::util::save_codec::serialize(&display).unwrap(),
+            crate::util::save_codec::serialize(&shape).unwrap(),
         );
     }
 

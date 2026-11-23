@@ -11,6 +11,7 @@ use crate::map::terrain::{
 use crate::render::batch::SpriteInstance;
 use crate::render::draw_state::DrawState;
 use crate::render::native_z;
+use std::cell::RefCell;
 
 /// Cull margin in screen pixels beyond the viewport on every side.
 const CULL_MARGIN: f32 = 120.0;
@@ -21,6 +22,14 @@ pub struct TerrainInstances {
     pub normal: Vec<SpriteInstance>,
     /// Each tile's [`walk_key`], ascending.
     pub walk: Vec<u32>,
+}
+
+thread_local! {
+    /// The visible cells' walk keys and their places in the grid, sorted into
+    /// the walk order. The draw before left them here, so the next draw
+    /// reuses their allocation. One set per thread: a draw runs on the
+    /// thread that renders.
+    static ORDER: RefCell<Vec<(u32, u32)>> = RefCell::new(Vec::new());
 }
 
 /// A cell's place in the tile walk (`Render_Tiles_In_Rect @ 0x006D7560`):
@@ -74,25 +83,20 @@ pub fn build_visible_instances(
         walk: Vec::new(),
     };
 
-    for cell in visible_cell_slice(grid, view_top, view_bottom) {
-        // AABB visibility test against viewport.
-        let right: f32 = cell.screen_x + TILE_WIDTH;
-        let bottom: f32 = cell.screen_y + TILE_HEIGHT;
-
-        if right < view_left || cell.screen_x > view_right {
-            continue;
-        }
-        if bottom < view_top || cell.screen_y > view_bottom {
-            continue;
-        }
-
-        // No shroud gate: the native tile walk draws every in-bounds cell
-        // regardless of explored state (`CellOverlay_TileDraw @ 0x00480350`
-        // has no shroud test), and the flat ABuffer curtain blacks out
-        // unexplored ground. Culling here left undrawn holes the curtain's
-        // feather could not darken — hard south-facing shroud edges wherever
-        // the feather extended past the last drawn tile.
-
+    // The tiles draw in the tile walk's order, so the visible cells' walk
+    // keys sort before the tiles are made: every tile is made once, in the
+    // order it draws.
+    let visible = visible_cell_slice(grid, view_top, view_bottom);
+    let place = |tile_id: u16, sub_tile: u8, variant: u8| match &uv_fn {
+        Some(f) => f(tile_id, sub_tile, variant),
+        None => Some(TilePlacement {
+            uv_origin: [0.0, 0.0],
+            uv_size: [1.0, 1.0],
+            pixel_size: [TILE_WIDTH, TILE_HEIGHT],
+            draw_offset: [0.0, 0.0],
+        }),
+    };
+    let make_tile = |cell: &TerrainCell| -> Option<SpriteInstance> {
         // Native480350 draws the cell's current tile at its current level.
         // Bridge publication (56EB80 floods and the ramp helpers under
         // 576BA0/571490) and cliff collapse rewrite tiles and levels after
@@ -103,15 +107,6 @@ pub fn build_visible_instances(
         // Recalc variant was chosen. A
         // live tile missing from the atlas keeps the grid tile and level.
         // Culling still uses the grid position; CULL_MARGIN covers 8 levels.
-        let place = |tile_id: u16, sub_tile: u8, variant: u8| match &uv_fn {
-            Some(f) => f(tile_id, sub_tile, variant),
-            None => Some(TilePlacement {
-                uv_origin: [0.0, 0.0],
-                uv_size: [1.0, 1.0],
-                pixel_size: [TILE_WIDTH, TILE_HEIGHT],
-                draw_offset: [0.0, 0.0],
-            }),
-        };
         let live = live_terrain.and_then(|terrain| {
             let live = terrain.cell(cell.rx, cell.ry)?;
             let (tile_id, sub_tile) = terrain.presentation_tile(live);
@@ -123,7 +118,7 @@ pub fn build_visible_instances(
         let Some((p, level)) =
             live.or_else(|| Some((place(cell.tile_id, cell.sub_tile, cell.variant)?, cell.z)))
         else {
-            continue;
+            return None;
         };
         let level = i32::from(level as i8);
 
@@ -145,7 +140,7 @@ pub fn build_visible_instances(
             .map(|lights| lights.terrain_tile_tint_at((cell.rx, cell.ry)))
             .unwrap_or(cell.tint);
         let draw_state = DrawState::default();
-        let inst = SpriteInstance {
+        Some(SpriteInstance {
             position: [
                 cell.screen_x + p.draw_offset[0],
                 screen_y + p.draw_offset[1],
@@ -168,24 +163,46 @@ pub fn build_visible_instances(
             draw_state,
             z_adjust,
             ..Default::default()
-        };
-        instances.normal.push(inst);
-        instances.walk.push(walk_key(cell.rx, cell.ry));
+        })
+    };
+
+    // The walk keys and the visible cells' places in the grid, sorted into
+    // the walk order. The draw before left them here.
+    let mut order = ORDER.with(|orders| std::mem::take(&mut *orders.borrow_mut()));
+    order.clear();
+    for (index, cell) in visible.iter().enumerate() {
+        // AABB visibility test against viewport.
+        let right: f32 = cell.screen_x + TILE_WIDTH;
+        let bottom: f32 = cell.screen_y + TILE_HEIGHT;
+
+        if right < view_left || cell.screen_x > view_right {
+            continue;
+        }
+        if bottom < view_top || cell.screen_y > view_bottom {
+            continue;
+        }
+
+        // No shroud gate: the native tile walk draws every in-bounds cell
+        // regardless of explored state (`CellOverlay_TileDraw @ 0x00480350`
+        // has no shroud test), and the flat ABuffer curtain blacks out
+        // unexplored ground. Culling here left undrawn holes the curtain's
+        // feather could not darken — hard south-facing shroud edges wherever
+        // the feather extended past the last drawn tile.
+
+        order.push((walk_key(cell.rx, cell.ry), index as u32));
     }
     // The grid is sorted by lifted screen row for the cull above; the walk
     // orders by cell.
-    if !instances.walk.is_sorted() {
-        let mut walked: Vec<(u32, SpriteInstance)> = instances
-            .walk
-            .drain(..)
-            .zip(instances.normal.drain(..))
-            .collect();
-        walked.sort_unstable_by_key(|&(key, _)| key);
-        for (key, instance) in walked {
-            instances.walk.push(key);
-            instances.normal.push(instance);
-        }
+    order.sort_unstable();
+    instances.walk.reserve(order.len());
+    for &(key, index) in order.iter() {
+        let Some(tile) = make_tile(&visible[index as usize]) else {
+            continue;
+        };
+        instances.normal.push(tile);
+        instances.walk.push(key);
     }
+    ORDER.with(|orders| *orders.borrow_mut() = order);
 
     instances
 }
@@ -238,8 +255,7 @@ mod tests {
     /// The grid is sorted by lifted screen row for culling; the tiles draw
     /// in the walk's order (0x006D7560), so a raised cell lifted above a
     /// lower one walked before it still draws after it.
-    #[test]
-    fn tiles_draw_in_the_tile_walk_order() {
+    fn grid_with_lifted_rows() -> TerrainGrid {
         let cell = |rx: u16, ry: u16, z: u8| {
             let (screen_x, screen_y) = crate::map::terrain::iso_to_screen(rx, ry, z);
             TerrainCell {
@@ -259,7 +275,7 @@ mod tests {
         // Lifted rows 30, 60 and 90: the raised (5,4) sorts before (3,2).
         let cells = vec![cell(1, 0, 0), cell(5, 4, 6), cell(3, 2, 0)];
         assert!(cells.is_sorted_by(|a, b| a.screen_y <= b.screen_y));
-        let grid = TerrainGrid {
+        TerrainGrid {
             cells,
             world_width: 600.0,
             world_height: 600.0,
@@ -267,7 +283,12 @@ mod tests {
             origin_y: 0.0,
             bridge_middle_tiles: None,
             deformation_tiles: Vec::new(),
-        };
+        }
+    }
+
+    #[test]
+    fn tiles_draw_in_the_tile_walk_order() {
+        let grid = grid_with_lifted_rows();
         let tiles = build_visible_instances(
             &grid,
             None,
@@ -282,5 +303,32 @@ mod tests {
         assert_eq!(tiles.walk, [walk_key(1, 0), walk_key(3, 2), walk_key(5, 4)]);
         let rows: Vec<f32> = tiles.normal.iter().map(|tile| tile.position[1]).collect();
         assert_eq!(rows, [30.0, 90.0, 60.0]);
+    }
+
+    /// The draw before left its scratch here; the tiles of this draw are the
+    /// tiles of a fresh draw, and the reused scratch does not pile up.
+    #[test]
+    fn a_draw_after_another_draw_draws_the_same_tiles() {
+        let grid = grid_with_lifted_rows();
+        let draw = || {
+            build_visible_instances(
+                &grid,
+                None,
+                -300.0,
+                0.0,
+                800.0,
+                600.0,
+                None,
+                None,
+                Vec::new(),
+            )
+        };
+        let first = draw();
+        let second = draw();
+        assert_eq!(second.walk, first.walk);
+        let rows = |tiles: &TerrainInstances| -> Vec<f32> {
+            tiles.normal.iter().map(|tile| tile.position[1]).collect()
+        };
+        assert_eq!(rows(&second), rows(&first));
     }
 }

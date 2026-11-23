@@ -221,3 +221,75 @@ fn smoke_spawns_and_drifts_with_ares_draws() {
     assert_eq!(records[0].lifetime(), lifetime - 1);
     assert_eq!(records[1].phase(), unique_id + 2);
 }
+
+/// A dead record whose type has a NextParticle is replaced by two records of
+/// that type (100279D8..10027D95): they take the parent's rise speed,
+/// translucency (plus the fade draw) and phase, and spread by the next
+/// type's radius.
+#[test]
+fn a_dead_smoke_record_is_replaced_by_two_children() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules = rules(
+        "[ParticleSystems]\n0=Smokes\n[Smokes]\nBehavesLike=Smoke\nHoldsWhat=Puff\n\
+         SpawnFrames=1\nSpawnRadius=8\nSpawnCutoff=0\n\
+         [Particles]\n0=Puff\n[Puff]\nBehavesLike=Smoke\nMaxEC=0\nVelocity=1.0\n\
+         StartStateAI=2\nEndStateAI=9\nTranslucency=25\nNextParticle=Puff2\n\
+         [Puff2]\nBehavesLike=Smoke\nMaxEC=4\nRadius=8\nStartStateAI=1\nEndStateAI=9\n\
+         Translucency=7\n",
+    );
+    let mut sim = Simulation::with_seed(47);
+    let at = IVec3::new(1000, 2000, 300);
+    let id = spawn(&mut sim, &rules, "Smokes", at, IVec3::ZERO);
+    let mut expected = sim.clone_scenario_rng();
+
+    // The first frame spawns the record; its MaxEC is 0, so the next
+    // frame's movement retires it.
+    sim.session.set_binary_frame_for_test(2);
+    tick(&mut sim, &rules, id);
+    let parent = ext(&sim, id).smoke()[0].clone();
+    assert_eq!(parent.type_id(), rules.p_type_id_by_name("Puff").unwrap());
+    assert_eq!(parent.rise_speed(), TWO_F32);
+
+    sim.session.set_binary_frame_for_test(4);
+    tick(&mut sim, &rules, id);
+
+    // The spawn's two offset draws and its lifetime draw, then the
+    // replacement's lifetime, fade and offset draws.
+    expected.next_range_i32_inclusive(-9, 9);
+    expected.next_range_i32_inclusive(-9, 9);
+    expected.next_range_i32_inclusive(0, 0);
+    let child_lifetime = expected.next_range_i32_inclusive(0, 4).wrapping_add(4);
+    let fade = if expected.next_range_i32_inclusive(0, 5) != 0 {
+        25
+    } else {
+        0
+    };
+    let offset_x = expected.next_range_i32_inclusive(-2048, 2048);
+    let offset_y = expected.next_range_i32_inclusive(-2048, 2048);
+    assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+
+    let records = ext(&sim, id).smoke();
+    assert_eq!(records.len(), 2);
+    let next_id = rules.p_type_id_by_name("Puff2").unwrap();
+    for record in records {
+        assert_eq!(record.type_id(), next_id);
+        assert_eq!(record.rise_speed(), parent.rise_speed());
+        assert_eq!(record.translucency(), parent.translucency() + fade);
+        assert_eq!(record.state(), 1);
+        assert_eq!(record.lifetime(), child_lifetime);
+    }
+    // The parent's phase plus the record count, in the order the children
+    // were appended.
+    assert_eq!(records[0].phase(), parent.phase() + 2);
+    assert_eq!(records[1].phase(), parent.phase() + 3);
+    // The children spread by the next type's radius.
+    assert_eq!(
+        records[0].location().x - records[1].location().x,
+        2 * offset_x
+    );
+    assert_eq!(
+        records[0].location().y - records[1].location().y,
+        2 * offset_y
+    );
+    assert_eq!(records[0].location().z, records[1].location().z);
+}
