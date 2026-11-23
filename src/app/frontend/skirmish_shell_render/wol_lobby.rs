@@ -13,7 +13,7 @@ use super::{SHELL_CONTROL_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::WolPageArt;
-use crate::render::shell_paint::{self, ModalDepths, PaintLabel};
+use crate::render::shell_paint::{self, ModalDepths};
 use crate::render::shell_text::ShellTextDraw;
 use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
 use crate::ui::wol_lobby::*;
@@ -472,56 +472,32 @@ pub(crate) fn paint_wol_player_card(
     let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
         return paint;
     };
-    let plain = |text: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| PaintLabel {
-        text: text.to_owned().into(),
-        rect,
-        align,
-        rgb,
-        path_a_reveal: None,
-    };
     let layout = &view.layout;
-    let mut labels = Vec::new();
-    for (row, ((caption, value), &(caption_rect, value_rect))) in
-        view.rows.iter().zip(&layout.rows).enumerate()
-    {
-        labels.push(plain(
-            caption,
-            caption_rect,
-            ShellAlign(ShellAlign::H_RIGHT.0 | ShellAlign::V_CENTER.0),
-            SHELL_LABEL_TEXT_RGB,
-        ));
-        // The name sits after its badge as in the modern player list.
-        let value_rect = match (row, view.badge, art) {
-            (0, Some(file), Some(art)) => {
-                push_icon(&mut paint.icons, art, file, value_rect, 2, scale);
-                scale.derive_rect(value_rect, |rect| {
-                    let x = 2 + PLAYER_NAME_X - PLAYER_BADGE_X;
-                    RectPx::new(rect.x + x, rect.y, rect.w - x, rect.h)
-                })
-            }
-            _ => value_rect,
-        };
-        labels.push(plain(
-            value,
-            value_rect,
-            ShellAlign::V_CENTER,
-            SHELL_LABEL_TEXT_RGB,
-        ));
+    // The name's badge before its value.
+    if let (Some(file), Some(art), Some((_, value))) = (view.badge, art, layout.rows.first()) {
+        push_icon(&mut paint.icons, art, file, *value, 2, scale);
     }
-    labels.push(plain(
-        &view.status,
-        layout.status,
-        ShellAlign::NONE,
-        SHELL_LABEL_TEXT_RGB,
-    ));
     paint.controls = online_box(atlas, layout.dialog, scale);
-    let font = &state.renderer.bit_font;
-    paint.texts =
-        shell_paint::paint_labels_at_depth_scaled(font, &labels, POPUP_DEPTHS.text, scale.factor());
-    // The buttons from the lobby's tree, with the card's captions.
     let Some(lobby) = state.frontend.wol.as_ref().and_then(|visit| visit.lobby()) else {
         return paint;
     };
+    // The rows' captions and values and the status line from their nodes
+    // (`app::shell_wol::player_card::sync`).
+    if let Some(root) = lobby.ui.card_root() {
+        let gui = lobby.ui.gui();
+        let mut statics = super::gui_paint::GuiPaint::default();
+        for &node in gui.tree().children(root).unwrap_or_default() {
+            let id = gui.id_of(node).and_then(|id| u16::try_from(id).ok());
+            if id.is_some_and(|id| (CARD_CAPTIONS..=CARD_STATUS).contains(&id)) {
+                let style = GuiStyle::default();
+                super::gui_paint::paint_gui_into(
+                    &mut statics, state, Some(atlas), gui, node, scale, &[], style,
+                );
+            }
+        }
+        paint.texts = statics.texts;
+    }
+    // The buttons from the lobby's tree, with the card's captions.
     let text_of = |id: i32| {
         let button = view
             .buttons
