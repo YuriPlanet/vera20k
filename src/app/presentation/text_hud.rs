@@ -73,6 +73,20 @@ impl TextHud {
         color: Rgba,
         depth: f32,
     ) {
+        self.fill_tinted(rect, position, size, color, depth, None);
+    }
+
+    /// [`Self::fill`] in the host's exact `tint`, where `color` (the node's
+    /// prop) only rounds it.
+    pub(crate) fn fill_tinted(
+        &mut self,
+        rect: Rect,
+        position: [f32; 2],
+        size: [f32; 2],
+        color: Rgba,
+        depth: f32,
+        tint: Option<[f32; 3]>,
+    ) {
         let Some(node) = self.node(NodeKind::Panel, rect) else {
             return;
         };
@@ -86,6 +100,7 @@ impl TextHud {
                 position: Some(position),
                 size: Some(size),
                 depth,
+                tint,
                 ..Default::default()
             },
         );
@@ -101,6 +116,21 @@ impl TextHud {
         position: [f32; 2],
         color: Rgba,
         label: Option<(f32, u32)>,
+    ) {
+        self.text_tinted(rect, text, position, color, label.map_or(0.0, |(depth, _)| depth), label.map(|(_, count)| count), None);
+    }
+
+    /// A text at `depth`, revealing `reveal` of its units when a label, in
+    /// the host's exact `tint` where `color` only rounds it.
+    pub(crate) fn text_tinted(
+        &mut self,
+        rect: Rect,
+        text: &str,
+        position: [f32; 2],
+        color: Rgba,
+        depth: f32,
+        reveal: Option<u32>,
+        tint: Option<[f32; 3]>,
     ) {
         let Some(node) = self.node(NodeKind::Text, rect) else {
             return;
@@ -118,8 +148,9 @@ impl TextHud {
             node,
             NodeDraw {
                 position: Some(position),
-                depth: label.map_or(0.0, |(depth, _)| depth),
-                reveal: label.map(|(_, count)| count),
+                depth,
+                reveal,
+                tint,
                 ..Default::default()
             },
         );
@@ -179,6 +210,12 @@ impl TextHud {
         }
         self.nodes.truncate(kept);
     }
+}
+
+/// The nearest opaque colour to a tint, for a node's prop.
+pub(crate) fn rounded(tint: [f32; 3]) -> Rgba {
+    let [r, g, b] = tint.map(|channel| (channel.clamp(0.0, 1.0) * 255.0).round() as u8);
+    Rgba(r, g, b, 255)
 }
 
 /// An opaque colour from whole 255ths, as the overlays give theirs.

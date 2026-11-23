@@ -1108,8 +1108,10 @@ fn upload_to_gpu(
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
     // overlay and before the software cursor (O10).
+    let mut tooltip_hud = std::mem::take(&mut state.match_state.match_presentation.tooltip_hud);
     let (mut tooltip_fill, mut tooltip_border, mut tooltip_text) =
-        crate::app::input::tooltips::build_tooltip_instances(state);
+        crate::app::input::tooltips::build_tooltip_instances(state, &mut tooltip_hud);
+    state.match_state.match_presentation.tooltip_hud = tooltip_hud;
     // The layout edit mode's outlines and names share the tooltip's lanes:
     // over the whole frame, sidebar included.
     {

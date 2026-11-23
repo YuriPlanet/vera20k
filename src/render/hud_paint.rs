@@ -65,6 +65,9 @@ pub(crate) struct NodeDraw {
     /// how many of its UTF-16 units show, at the node's depth and the font's
     /// own size.
     pub(crate) reveal: Option<u32>,
+    /// The tint a fill or a plain text draws in, where the host's colour
+    /// is not whole 255ths; otherwise the node's colour.
+    pub(crate) tint: Option<[f32; 3]>,
 }
 
 /// A part of the host's picture atlas, drawn at its own size from its node's
@@ -165,7 +168,15 @@ impl HudPaint {
                             let Rgba(r, g, b, _) = color;
                             font.build_text_label(key, x, y, node.depth, [0.0; 2], [r, g, b], count)
                         }
-                        None => font.build_text(key, x, y, scale, 0.0, rgb, [0.0; 2]),
+                        None => font.build_text(
+                            key,
+                            x,
+                            y,
+                            scale,
+                            node.depth,
+                            node.tint.unwrap_or(rgb),
+                            [0.0; 2],
+                        ),
                     });
                     self.instances
                         .extend(glyphs.into_iter().map(|glyph| SpriteInstance {
@@ -215,7 +226,8 @@ impl HudPaint {
 }
 
 fn fill(rect: Rect, color: Rgba, space: HudSpace, node: NodeDraw) -> SpriteInstance {
-    let (tint, alpha) = tint(color);
+    let (rgb, alpha) = tint(color);
+    let tint = node.tint.unwrap_or(rgb);
     let position = node.position.unwrap_or_else(|| space.point(rect.x, rect.y));
     let size = node
         .size

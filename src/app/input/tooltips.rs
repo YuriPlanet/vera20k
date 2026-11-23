@@ -8,6 +8,7 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::presentation::text_hud::{self, TextHud};
 use crate::app::input::cursor::CursorVisibility;
 use crate::app::input::gadget_input::{
     ID_DIPLOMACY, ID_OPTIONS, ID_SCROLL_DOWN, ID_SCROLL_UP, ID_TAB_BASE,
@@ -861,6 +862,7 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
 /// chat overlay and the software cursor (study O10).
 pub(crate) fn build_tooltip_instances(
     state: &AppState,
+    hud: &mut TextHud,
 ) -> (
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
@@ -890,7 +892,7 @@ pub(crate) fn build_tooltip_instances(
         .unwrap_or_else(|| {
             crate::render::sidebar_text::side_highlight_color(current_sidebar_theme(state))
         });
-    tooltip_quads(
+    draw_tooltip(
         &state.renderer.bit_font,
         &tip.text,
         [tip.x, tip.y],
@@ -919,6 +921,7 @@ pub(crate) fn build_tooltip_instances(
         // 5x7 fallback builds none); the pop-up itself no longer draws with it.
         state.renderer.bit_font.darken_texture().is_some(),
         crate::app::presentation::field_parts::layout(state).tooltip,
+        hud,
     )
 }
 
@@ -932,6 +935,8 @@ pub(crate) fn build_tooltip_instances(
 /// Returns `(fill quads, outline quads, text quads)`. `camera_offset` must be
 /// the live world camera: the UI pipeline subtracts it in the shader, so
 /// passing zero here walks the popup off screen.
+/// [`draw_tooltip`] through a fresh tree, for the tests.
+#[cfg(test)]
 pub(crate) fn tooltip_quads(
     font: &crate::render::bit_font::BitFont,
     text: &str,
@@ -941,6 +946,34 @@ pub(crate) fn tooltip_quads(
     camera_offset: [f32; 2],
     with_fill: bool,
     place: crate::ui::field_layout::TooltipPlace,
+) -> (
+    Vec<SpriteInstance>,
+    Vec<SpriteInstance>,
+    Vec<SpriteInstance>,
+) {
+    draw_tooltip(
+        font,
+        text,
+        tip_xy,
+        region,
+        tint,
+        camera_offset,
+        with_fill,
+        place,
+        &mut TextHud::default(),
+    )
+}
+
+pub(crate) fn draw_tooltip(
+    font: &crate::render::bit_font::BitFont,
+    text: &str,
+    tip_xy: [i32; 2],
+    region: [f32; 4],
+    tint: [f32; 3],
+    camera_offset: [f32; 2],
+    with_fill: bool,
+    place: crate::ui::field_layout::TooltipPlace,
+    hud: &mut TextHud,
 ) -> (
     Vec<SpriteInstance>,
     Vec<SpriteInstance>,
@@ -978,55 +1011,64 @@ pub(crate) fn tooltip_quads(
         None => [bx, by],
     };
 
-    let mut fill = Vec::with_capacity(1);
+    // The box, its outline and its lines as nodes of `hud`: the box solid
+    // black (not the sidebar darken strip: the retail tip fill hides
+    // whatever it lands on instead of dimming it, so the pop-up stays
+    // legible over bright cameo art and the tactical map) behind the
+    // outline (0.00021, 0.000205) behind the text (0.00020), in the side's
+    // exact colour.
+    hud.begin();
+    let color = text_hud::rounded(tint);
+    let whole = |x: f32, y: f32, w: f32, h: f32| {
+        vera20k_gui::Rect::new(x as i32, y as i32, w.ceil() as i32, h.ceil() as i32)
+    };
     if with_fill {
-        fill.push(SpriteInstance {
-            position: [bx + camera_offset[0], by + camera_offset[1]],
-            size: [box_w, box_h],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            depth: 0.00021,
-            // Solid black, not the sidebar darken strip: the retail tip fill
-            // hides whatever it lands on instead of dimming it, so the pop-up
-            // stays legible over bright cameo art and the tactical map.
-            tint: [0.0, 0.0, 0.0],
-            alpha: 1.0,
-            ..Default::default()
-        });
+        hud.fill(
+            whole(bx, by, box_w, box_h),
+            [bx + camera_offset[0], by + camera_offset[1]],
+            [box_w, box_h],
+            text_hud::rgb([0; 3]),
+            0.00021,
+        );
     }
-    let outline = [
+    for (x, y, w, h) in [
         (bx, by, box_w, TIP_BORDER_PX),
         (bx, by + box_h - TIP_BORDER_PX, box_w, TIP_BORDER_PX),
         (bx, by, TIP_BORDER_PX, box_h),
         (bx + box_w - TIP_BORDER_PX, by, TIP_BORDER_PX, box_h),
-    ]
-    .map(|(x, y, w, h)| SpriteInstance {
-        position: [x + camera_offset[0], y + camera_offset[1]],
-        size: [w, h],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        depth: 0.000205,
-        tint,
-        alpha: 1.0,
-        ..Default::default()
-    })
-    .to_vec();
+    ] {
+        hud.fill_tinted(
+            whole(x, y, w, h),
+            [x + camera_offset[0], y + camera_offset[1]],
+            [w, h],
+            color,
+            0.000205,
+            Some(tint),
+        );
+    }
     let line_advance = font.cell_height();
-    let mut out = Vec::new();
     for (i, span) in layout.lines.iter().enumerate() {
         let line = &text[span.start_byte..span.end_byte];
-        out.extend(crate::render::sidebar_text::build_text(
-            font,
+        let x = bx + TIP_TEXT_INSET[0];
+        let y = by + TIP_TEXT_INSET[1] + i as f32 * line_advance;
+        hud.text_tinted(
+            whole(x, y, box_w, line_advance),
             line,
-            bx + TIP_TEXT_INSET[0],
-            by + TIP_TEXT_INSET[1] + i as f32 * line_advance,
-            1.0,
+            [x + camera_offset[0], y + camera_offset[1]],
+            color,
             0.00020,
-            tint,
-            camera_offset,
-        ));
+            None,
+            Some(tint),
+        );
     }
-    (fill, outline, out)
+    hud.finish(font);
+    let mut boxes = hud.boxes().copied();
+    let fill = if with_fill {
+        boxes.next().into_iter().collect()
+    } else {
+        Vec::new()
+    };
+    (fill, boxes.collect(), hud.glyphs().copied().collect())
 }
 
 /// Put the box forward-down of the cursor, flipping it to back-up when it would

@@ -154,6 +154,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) super_timer_dock: crate::app::presentation::super_timers::TimerDock,
     /// What the timer lines show this frame (`super_timers::update_super_timers`).
     pub(crate) super_timer_frame: crate::app::presentation::super_timers::TimerFrame,
+    /// The tooltip's drawing tree.
+    pub(crate) tooltip_hud: crate::app::presentation::text_hud::TextHud,
     /// The message rows' drawing tree.
     pub(crate) message_hud: crate::app::presentation::text_hud::TextHud,
     /// The timer lines' drawing tree.
