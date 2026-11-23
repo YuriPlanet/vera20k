@@ -514,21 +514,10 @@ pub(crate) fn paint_wol_player_card(
         ShellAlign::NONE,
         SHELL_LABEL_TEXT_RGB,
     ));
-    let background = atlas
-        .ra2_dialog_background
-        .or_else(|| atlas.mode_two_dialog_background(None));
-    let draw = shell_paint::paint_modal_shp(
-        &state.renderer.bit_font,
-        background,
-        super::type3_button_frames(atlas),
-        layout.dialog,
-        &[],
-        &labels,
-        scale,
-        POPUP_DEPTHS,
-    );
-    paint.controls = draw.sprites;
-    paint.texts = draw.text;
+    paint.controls = online_box(atlas, layout.dialog, scale);
+    let font = &state.renderer.bit_font;
+    paint.texts =
+        shell_paint::paint_labels_at_depth_scaled(font, &labels, POPUP_DEPTHS.text, scale.factor());
     // The buttons from the lobby's tree, with the card's captions.
     let Some(lobby) = state.frontend.wol.as_ref().and_then(|visit| visit.lobby()) else {
         return paint;
