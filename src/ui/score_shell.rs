@@ -420,11 +420,6 @@ impl ScoreStatic {
     pub(crate) fn params(&self) -> Kind1Params {
         self.reveal.params()
     }
-
-    /// Reveal window for this recomposition, `None` before the slide ends.
-    pub(crate) fn paint(&mut self, now: Instant) -> Option<Kind1RevealWindow> {
-        self.reveal.paint(now)
-    }
 }
 
 /// A score dialog's kind-1 statics. The entry slide's end

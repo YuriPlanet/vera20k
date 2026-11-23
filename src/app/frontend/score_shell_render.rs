@@ -56,36 +56,6 @@ pub(crate) fn static_reveal(statics: &ScoreStatics, id: u16) -> Option<PathAReve
     })
 }
 
-/// A score dialog's kind-1 statics (`0x103`, `0xBC7`) as Path-A
-/// labels at `rect_of`'s windows: each in its `0x498` colour, else the
-/// shell's yellow, trailing the white highlight; hidden until its reveal
-/// starts.
-pub(crate) fn score_static_labels(
-    statics: &mut ScoreStatics,
-    now: Instant,
-    rect_of: impl Fn(u16) -> Option<crate::ui::shell::geom::RectPx>,
-    labels: &mut Vec<crate::render::shell_paint::PaintLabel<'static>>,
-) {
-    for text in &mut statics.0 {
-        let (Some(window), Some(rect)) = (text.paint(now), rect_of(text.id)) else {
-            continue;
-        };
-        let base = text.rgb.unwrap_or([255, 255, 0]);
-        labels.push(crate::render::shell_paint::PaintLabel {
-            text: text.text().to_owned().into(),
-            rect,
-            align: text.align,
-            rgb: base.map(|channel| f32::from(channel) / 255.0),
-            path_a_reveal: Some(PathAReveal {
-                count: window.count,
-                range: window.range,
-                base_rgb: base,
-                highlight_rgb: [255, 255, 255],
-            }),
-        });
-    }
-}
-
 /// The heading `0x694` the proc sets (`0x005C9BEC..0x005C9C34`).
 pub(crate) fn score_title_text(state: &AppState) -> String {
     state
@@ -147,7 +117,7 @@ pub(crate) fn render_score_page(
         // The statics carry the template windows `0x0060B950` keeps; on a
         // stretched page they map onto the window with the table. A row
         // past the result's shows nothing.
-        let text_of = |id| match id {
+        let text_of = |id: u16| match id {
             HEADING => Some((Prop::Label, page.model.title_key)),
             paging::COUNTER => None,
             id => Some((Prop::Text, page.statics.text(id).unwrap_or_default())),
