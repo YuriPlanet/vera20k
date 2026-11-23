@@ -775,7 +775,7 @@ fn update_smoke(
     // replacements appended here are not visited.
     let rng = sim.particle_rng();
     for index in (0..ext.smoke.len()).rev() {
-        let parent = ext.smoke[index].clone();
+        let parent = &ext.smoke[index];
         if !parent.dead {
             continue;
         }
@@ -795,25 +795,30 @@ fn update_smoke(
         let spread = next.radius.wrapping_shl(8);
         let offset_x = rng.next_range_i32_inclusive(spread.wrapping_neg(), spread);
         let offset_y = rng.next_range_i32_inclusive(spread.wrapping_neg(), spread);
+        // The fields the children take, copied out of the record before the
+        // replacements join the same vector.
         let [x, y, z] = parent.location;
+        let rise_speed = parent.rise_speed;
+        let translucency = parent.translucency;
+        let phase = parent.phase;
         let child = |location: [i32; 3], phase: i32| AresSmokeParticle {
             location,
             drift: [0, 0],
-            rise_speed: parent.rise_speed,
+            rise_speed,
             phase,
             state: i32::from(next.start_state_ai),
             lifetime,
             type_id: next_id,
-            translucency: parent.translucency.wrapping_add(fade),
+            translucency: translucency.wrapping_add(fade),
             dead: false,
         };
         ext.smoke.push(child(
             [x.wrapping_add(offset_x), y.wrapping_add(offset_y), z],
-            parent.phase.wrapping_add(count).wrapping_add(1),
+            phase.wrapping_add(count).wrapping_add(1),
         ));
         ext.smoke.push(child(
             [x.wrapping_sub(offset_x), y.wrapping_sub(offset_y), z],
-            count.wrapping_add(2).wrapping_add(parent.phase),
+            count.wrapping_add(2).wrapping_add(phase),
         ));
     }
     ext.remove_dead();

@@ -181,7 +181,10 @@ impl Simulation {
     /// placed at once rather than one neighbour per frame. Without `rules` a
     /// Building's key leaves out its type terms (`entity_sort_key`).
     pub fn ground_draw_order(&self, rules: Option<&RuleSet>) -> Vec<u64> {
-        self.layer_draw_order(DisplayLayer::GROUND, rules, &[])
+        self.sorted_layer_members(DisplayLayer::GROUND, rules, &[])
+            .into_iter()
+            .map(|(_, _, id)| id)
+            .collect()
     }
 
     /// Every Display member in draw order: the five layers in index order,
@@ -218,23 +221,29 @@ impl Simulation {
         );
         for index in 0..5 {
             let layer = DisplayLayer::from_index(index).expect("native Display layer index");
-            order.extend(
-                self.layer_draw_order(layer, rules, &unshared[usize::from(index)])
-                    .into_iter()
-                    .map(|id| (layer, id)),
-            );
+            let unshared = &unshared[usize::from(index)];
+            // Upper layers already hold their members in submission order.
+            if layer != DisplayLayer::GROUND && unshared.is_empty() {
+                order.extend(display.members(layer).iter().map(|&id| (layer, id)));
+            } else {
+                order.extend(
+                    self.sorted_layer_members(layer, rules, unshared)
+                        .into_iter()
+                        .map(|(_, _, id)| (layer, id)),
+                );
+            }
         }
         order
     }
 
-    /// `layer`'s members and `unshared` draws (`(place, id)`) in draw order:
-    /// by submission order, Ground by GetYSort key first.
-    fn layer_draw_order(
+    /// `layer`'s members and `unshared` draws (`(place, id)`), ordered by
+    /// GetYSort for Ground, then submission order, then id.
+    fn sorted_layer_members(
         &self,
         layer: DisplayLayer,
         rules: Option<&RuleSet>,
         unshared: &[(u64, u64)],
-    ) -> Vec<u64> {
+    ) -> Vec<(i32, u64, u64)> {
         let display = &self.substrate.display;
         let members = display.members(layer);
         let local: &[u64] = if layer == DisplayLayer::GROUND {
@@ -242,10 +251,6 @@ impl Simulation {
         } else {
             &[]
         };
-        // The other layers already hold their members in submission order.
-        if layer != DisplayLayer::GROUND && unshared.is_empty() {
-            return members.to_vec();
-        }
         let view = GroundSortView {
             entities: &self.substrate.entities,
             anims: &self.substrate.anims,
@@ -261,7 +266,7 @@ impl Simulation {
                 0
             }
         };
-        let mut keyed: Vec<(i32, u64, u64)> = members
+        let mut keyed: Vec<_> = members
             .iter()
             .chain(local)
             .map(|&id| (id, display.submission_order(id).unwrap_or(0)))
@@ -270,7 +275,7 @@ impl Simulation {
             .collect();
         // Each id appears once, so the order is total.
         keyed.sort_unstable();
-        keyed.into_iter().map(|(_, _, id)| id).collect()
+        keyed
     }
 
     pub(super) fn submit_entity_display(
@@ -410,6 +415,30 @@ mod tests {
         assert_eq!(sim.substrate.display.members(DisplayLayer::GROUND), [3, 2]);
         // No store holds them, so every key is equal (i32::MIN).
         assert_eq!(sim.ground_draw_order(None), [2, 3]);
+    }
+
+    /// The draw order walks the five layers in index order, and each layer's
+    /// members as the layer holds them.
+    #[test]
+    fn the_draw_order_walks_the_layers_in_index_order() {
+        let mut sim = Simulation::new();
+        for (id, layer) in [
+            (1, DisplayLayer::GROUND),
+            (2, DisplayLayer::AIR),
+            (3, DisplayLayer::SURFACE),
+            (4, DisplayLayer::AIR),
+        ] {
+            Simulation::submit_object_display(&mut sim.substrate, id, layer);
+        }
+        assert_eq!(
+            sim.display_draw_order(None),
+            [
+                (DisplayLayer::SURFACE, 3),
+                (DisplayLayer::GROUND, 1),
+                (DisplayLayer::AIR, 2),
+                (DisplayLayer::AIR, 4),
+            ]
+        );
     }
 
     #[test]
