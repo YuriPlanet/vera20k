@@ -90,7 +90,6 @@ data.
 Input rungs
 ([ares-techno-hooks.md](ares-techno-hooks.md),
 [ares-building-house-hooks.md](ares-building-house-hooks.md)):
-- an Ivan entering an allied Grinder without Ctrl (`0x51EB48`; VERA answers IvanBomb);
 - a healer infantryman whose weapon 0 does not heal over a non-allied object (Foot's
   Guard on itself, `0x4D74E0`; VERA orders nothing), and any healer's Alt or Ctrl+Alt
   over a Terrain object (`0x51E797`; VERA answers the key rungs);

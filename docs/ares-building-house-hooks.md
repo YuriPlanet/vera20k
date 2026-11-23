@@ -105,9 +105,8 @@ cites each hook.
   (0x4F8C23), the ready-building and hotkey factory lookups (0x6A9822,
   0x6AB312, 0x535DB6, 0x535E76), the Money SW tooltip (0x6A932B),
   the observer strip (0x6AA0CA, 0x6AA164),
-  the amphibious water sound (0x51D799), an Ivan entering an allied
-  Grinder (0x51EB48) and the bullet anim's MakeInfantryOwner outside Phobos
-  (0x469C4E).
+  the amphibious water sound (0x51D799) and the bullet anim's
+  MakeInfantryOwner outside Phobos (0x469C4E).
 - GarrisonedIn (0x51DF38, 0x51DFFD, 0x518434) and map-house `Degrades=`
   (0x50114D).
 
@@ -340,7 +339,7 @@ DLL removed are not listed.
 | `51E5BB` | InfantryClass_GetActionOnObject_MultiEngineerA | `10025540` | ported earlier |
 | `51E5E1` | InfantryClass_GetActionOnObject_MultiEngineerB | `10025550` | ported earlier |
 | `51E635` | InfantryClass_GetActionOnObject_EngineerOverFriendlyBuilding | `10025420` | ported earlier |
-| `51EB48` | InfantryClass_GetActionOnObject_IvanGrinder | `100254B0` | residual: an Ivan enters an allied Grinder without Ctrl (input; VERA answers IvanBomb) |
+| `51EB48` | InfantryClass_GetActionOnObject_IvanGrinder | `100254B0` | ported: a Crazy Ivan over an allied Grinder answers Grind (mission Eaten) unless the force-fire key is down (`context_order::ares_ivan_grinds`) |
 | `5201CC` | InfantryClass_UpdatePanic_ProneWater | `100256F0` | ported: no panic prone on Beach/Water (`infantry_fear_turn`) |
 
 ### Infantry/Hooks.Doggie.cpp

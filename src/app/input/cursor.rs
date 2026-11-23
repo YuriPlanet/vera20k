@@ -406,6 +406,10 @@ pub(crate) struct ActionQuery<'a> {
     pub(crate) selected: &'a [u64],
     pub(crate) modifier: super::context_order::OrderModifier,
     pub(crate) force_move_key: bool,
+    /// The force-fire key's own state, which Ares' Ivan rung reads
+    /// ([`super::context_order::ares_ivan_grinds`]); [`Self::modifier`]
+    /// drops it from a Ctrl+Shift chord the selection cannot attack-move.
+    pub(crate) force_fire_key: bool,
     pub(crate) order_mode: crate::app::types::OrderMode,
     pub(crate) planning: bool,
     /// The Cell What_Action's mouse-over argument
@@ -446,6 +450,7 @@ impl<'a> ActionQuery<'a> {
             selected,
             modifier,
             force_move_key,
+            force_fire_key: crate::app::input::dispatch::is_ctrl_held(state),
             order_mode: state.match_state.input.queued_order_mode,
             planning: state.match_state.input.planning.active(),
             mouse_over,
@@ -585,6 +590,23 @@ impl<'a> ActionQuery<'a> {
                 self.planning,
                 overrides,
             );
+            // Ares `100254B0` (hook `0x0051EB48`) answers at the head of the
+            // Ivan arm, the only row that answers IvanBomb or NoIvanBomb.
+            let kind = if matches!(
+                kind,
+                CursorFeedbackKind::IvanBomb | CursorFeedbackKind::NoIvanBomb
+            ) && let (Some(id), Some(rules)) = (best_id, self.rules)
+                && super::context_order::ares_ivan_grinds(
+                    sim,
+                    rules,
+                    id,
+                    hover.stable_id,
+                    self.force_fire_key,
+                ) {
+                CursorFeedbackKind::Grind
+            } else {
+                kind
+            };
             return Some(promote_attack_move_feedback(kind, attack_move));
         }
 

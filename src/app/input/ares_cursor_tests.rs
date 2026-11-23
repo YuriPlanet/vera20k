@@ -44,6 +44,7 @@ fn query<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) -> Ac
         selected,
         modifier: OrderModifier::Normal,
         force_move_key: false,
+        force_fire_key: false,
         order_mode: OrderMode::Move,
         planning: false,
         mouse_over: true,
@@ -103,6 +104,7 @@ fn cursor_keys_name_the_tactical_cursors() {
     assert_eq!(moving, Some(CursorFeedbackKind::Move));
     let forced = ActionQuery {
         modifier: OrderModifier::ForceFire,
+        force_fire_key: true,
         ..query(&sim, &rules, &selected)
     };
     let (firing, firing_table) = forced.selection_action(FAR, None);
@@ -166,6 +168,7 @@ fn the_radar_keeps_an_override_only_with_radar_frames() {
     );
     let forced = ActionQuery {
         modifier: OrderModifier::ForceFire,
+        force_fire_key: true,
         ..radar
     };
     let still = rules.ares_mouse_cursors().find("Still").unwrap();

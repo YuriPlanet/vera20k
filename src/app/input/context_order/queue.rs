@@ -2,17 +2,17 @@
 //! left-release decision (`LeftRelease`, berserk selections) it dispatches on.
 
 use super::{
-    AttackAction, AttackDispatch, BuildingClick, InfantryC4Action, ObjectKeyAction, OrderModifier,
-    ares_head_hook_selection_click, ares_trench_enter, armed_action_with, attack_branch_orders,
-    building_click_orders, building_selection_click, cell_guard_area_action_with,
-    cell_harvest_order, cursor_owner, disarm_bomb_engineers, engineer_capture_orders, entry_orders,
-    finish_order, friendly_bomb_ivans, garrison_entry_orders, infantry_arm_attacks_with,
-    infantry_c4_action_with, infiltrator_capture_orders, locked_move_cells, lone_self_foot_release,
-    lone_self_healer_guard, move_click_command, object_action_answers_friendly,
-    object_attack_click_command_with, object_click_release, object_key_action_with,
-    object_key_target, projected_order_selection, push_move_flash, resolve_order_modifiers,
-    selection_can_attack_move, self_answers_no_deploy, self_click_command, self_detonates,
-    terrain_forced, unit_repair_branch_orders, vehicle_capture_action,
+    AttackAction, AttackDispatch, BuildingClick, FriendlyIvanAction, InfantryC4Action,
+    ObjectKeyAction, OrderModifier, ares_head_hook_selection_click, ares_trench_enter,
+    armed_action_with, attack_branch_orders, building_click_orders, building_selection_click,
+    cell_guard_area_action_with, cell_harvest_order, cursor_owner, disarm_bomb_engineers,
+    engineer_capture_orders, entry_orders, finish_order, friendly_ivans, garrison_entry_orders,
+    infantry_arm_attacks_with, infantry_c4_action_with, infiltrator_capture_orders,
+    locked_move_cells, lone_self_foot_release, lone_self_healer_guard, move_click_command,
+    object_action_answers_friendly, object_attack_click_command_with, object_click_release,
+    object_key_action_with, object_key_target, projected_order_selection, push_move_flash,
+    resolve_order_modifiers, selection_can_attack_move, self_answers_no_deploy, self_click_command,
+    self_detonates, terrain_forced, unit_repair_branch_orders, vehicle_capture_action,
 };
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner;
@@ -281,6 +281,9 @@ fn queue_context_order(
     // The object receiver 4D74E0 reads the force-move key itself
     // (`0x004D79EC..0x004D7A14`), whatever chord it is part of.
     let force_move_key = is_alt_held(state);
+    // Ares' Ivan rung reads the force-fire key the same way
+    // ([`super::ares_ivan_grinds`]).
+    let force_fire_key = is_ctrl_held(state);
     let order_mode = state.match_state.input.queued_order_mode;
     let Some(owner) = preferred_local_owner(state) else {
         return false;
@@ -508,6 +511,7 @@ fn queue_context_order(
                                         order_mode,
                                         modifier,
                                         force_move_key,
+                                        force_fire_key,
                                         id,
                                         target.stable_id,
                                     )
@@ -1128,33 +1132,51 @@ fn queue_context_order(
                     _ => true,
                 };
             }
-            // A Crazy Ivan bombs a friend by a plain click, when the object that
-            // owns the cursor is one of the bombing Ivans.
+            // A Crazy Ivan bombs a friend by a plain click, or with Ares walks
+            // into an allied Grinder, when the object that owns the cursor is
+            // one of those Ivans.
             if clicked_friendly
                 && context_actions_enabled
                 && !force_move
                 && let Some(target) = hover.as_ref()
             {
-                let ivans = friendly_bomb_ivans(
+                let ivans = friendly_ivans(
                     sim,
                     &resources.rules,
                     &selected_units,
                     current_objects.len(),
                     target.stable_id,
+                    force_fire_key,
                     Some(overlay_registry),
                 );
                 if cursor_owner(sim, &resources.rules, &selected_ids, target.stable_id)
-                    .is_some_and(|best| ivans.contains(&best))
+                    .is_some_and(|best| ivans.iter().any(|&(id, _)| id == best))
                 {
-                    for attacker_id in ivans {
-                        queued.push(CommandEnvelope::new(
-                            owner_id,
-                            execute_tick,
-                            Command::Attack {
-                                attacker_id,
+                    for (id, action) in ivans {
+                        let order = match action {
+                            FriendlyIvanAction::Bomb => Command::Attack {
+                                attacker_id: id,
                                 target_id: target.stable_id,
                             },
-                        ));
+                            // Foot ClickedAction (`0x004D74E0`) case 0xB, for
+                            // a receiver the player may order (vt+0xA0).
+                            FriendlyIvanAction::Grind => {
+                                if !sim.local_techno_controllable_with(
+                                    &control,
+                                    id,
+                                    &resources.rules,
+                                ) {
+                                    continue;
+                                }
+                                Command::MegaMission {
+                                    entity_id: id,
+                                    mission: crate::sim::mission::MissionType::Eaten,
+                                    target: None,
+                                    destination: Some(TargetKind::Entity(target.stable_id)),
+                                }
+                            }
+                        };
+                        queued.push(CommandEnvelope::new(owner_id, execute_tick, order));
                     }
                     return finish_order(state, queued, speaker_id, rally_announce, None);
                 }
@@ -1349,6 +1371,7 @@ fn queue_context_order(
                         order_mode,
                         modifier,
                         force_move_key,
+                        force_fire_key,
                         stable_id,
                         target_id,
                     ) else {
@@ -1370,6 +1393,7 @@ fn queue_context_order(
                         order_mode,
                         key_modifier,
                         force_move_key,
+                        force_fire_key,
                         stable_id,
                         target_id,
                     ) else {

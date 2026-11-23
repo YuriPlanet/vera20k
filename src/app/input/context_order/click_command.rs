@@ -2,8 +2,9 @@
 //! area, the Move / object / attack click payloads, cell harvest and the move flash.
 
 use super::{
-    AttackAction, InfantryAttackAction, OrderModifier, attack_action_with, ctrl_forces_attack_rung,
-    healer_guards_itself, infantry_attack_action_with, ivan_cannot_bomb, shrouded_object_action,
+    AttackAction, InfantryAttackAction, OrderModifier, ares_ivan_grinds, attack_action_with,
+    ctrl_forces_attack_rung, healer_guards_itself, infantry_attack_action_with, ivan_cannot_bomb,
+    shrouded_object_action,
 };
 use crate::app::input::entity_pick::{HoverObject, HoverTargetKindWithId};
 use crate::app::types::{HoverTargetKind, OrderMode};
@@ -414,7 +415,9 @@ pub(super) fn object_click_payload(
 /// ClickedMission promotes it to attack-move, so an unforced shot ILLEGAL to
 /// the receiver leaves no Attack to promote: its tail answers 0 or Select
 /// there ([`attack_action`]). A Crazy Ivan's Attack over an object he cannot
-/// bomb is NoIvanBomb (`0x0051EB24`), which orders nothing.
+/// bomb is NoIvanBomb (`0x0051EB24`), which orders nothing; with Ares, his
+/// Attack over an allied Grinder is Grind ([`ares_ivan_grinds`]), sent as
+/// mission Eaten.
 ///
 /// Ctrl bypasses friendly/ILLEGAL rejection in the existing action owner,
 /// but still requires armed or Infiltrate admission (`700444..700474`).
@@ -443,11 +446,17 @@ pub(super) fn object_attack_click_command(
         order_mode,
         modifier,
         force_move_key,
+        matches!(
+            modifier,
+            OrderModifier::ForceFire | OrderModifier::AttackMove | OrderModifier::GuardArea
+        ),
         attacker_id,
         target_id,
     )
 }
 
+/// `force_fire_key` is the force-fire key's own state, which Ares' Ivan rung
+/// reads ([`ares_ivan_grinds`]).
 pub(super) fn object_attack_click_command_with(
     sim: &crate::sim::world::Simulation,
     control: &ControlProjection<'_>,
@@ -457,6 +466,7 @@ pub(super) fn object_attack_click_command_with(
     order_mode: OrderMode,
     modifier: OrderModifier,
     force_move_key: bool,
+    force_fire_key: bool,
     attacker_id: u64,
     target_id: u64,
 ) -> Option<Command> {
@@ -538,6 +548,20 @@ pub(super) fn object_attack_click_command_with(
         forced,
         Some(overlay_registry),
     ) {
+        // Ares' Grind over an allied Grinder: Foot ClickedAction
+        // (`0x004D74E0`) case 0xB, for a receiver the player may order.
+        AttackAction::Attack
+            if ares_ivan_grinds(sim, rules, attacker_id, target_id, force_fire_key) =>
+        {
+            return sim
+                .local_techno_controllable_with(control, attacker_id, rules)
+                .then_some(Command::MegaMission {
+                    entity_id: attacker_id,
+                    mission: crate::sim::mission::MissionType::Eaten,
+                    target: None,
+                    destination: Some(TargetKind::Entity(target_id)),
+                });
+        }
         // NoIvanBomb (`0x0051EB24`) orders nothing.
         AttackAction::Attack if ivan_cannot_bomb(sim, rules, attacker_id, target_id) => {
             return None;
