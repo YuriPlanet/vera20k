@@ -22,7 +22,7 @@ use crate::render::{
     shell_paint,
     shell_text::{self, ShellTextDraw},
 };
-use crate::ui::shell::geom::{RETAIL_SCALE, RectPx, ShellScale};
+use crate::ui::shell::geom::{RETAIL_SCALE, RectPx, ShellAlign, ShellScale};
 use crate::ui::shell::keyboard::{
     CAPTURE_FRAME, CAPTURE_TEXT, DESCRIPTION_TEXT, KEYBOARD_PAGE, KeyboardButton, KeyboardControl,
     KeyboardParent, LABELS,
