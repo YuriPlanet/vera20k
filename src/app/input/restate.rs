@@ -70,7 +70,15 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
 pub(crate) fn sync(state: &mut AppState) -> Option<restate::RestateLayout> {
     let layout = super::dialog_page::layout(state, restate::restate_layout)?;
     let rect = |id| layout.rect(id);
-    DIALOG.sync(state, restate::spec, rect, super::dialog_page::no_sync);
+    // The briefing 0x6E7 into its node, copied only when it changes; the
+    // text steps out of the state while the dialog's controller is borrowed.
+    let presentation = &mut state.match_state.match_presentation;
+    let briefing = std::mem::take(&mut presentation.restate_text);
+    DIALOG.sync(state, restate::spec, rect, |gui, root| {
+        let content = RestateControl::Content.id();
+        crate::ui::shell::page::set_text(gui, root, content, vera20k_gui::Prop::Text, &briefing);
+    });
+    state.match_state.match_presentation.restate_text = briefing;
     Some(layout)
 }
 

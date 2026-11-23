@@ -706,14 +706,6 @@ fn sync_shell_menu_settings(state: &mut AppState) {
     }
 }
 
-/// The rows list `node` shows now.
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-fn shown_rows(gui: &vera20k_gui::Gui, node: vera20k_gui::NodeId) -> std::ops::Range<usize> {
-    let top = gui.list_view(node).map_or(0, |view| view.top);
-    let shown = gui.list_geometry(node).map_or(0, |geometry| geometry.visible_rows);
-    top..top + shown
-}
-
 /// Build the shell message box (0xCE/0x120/0x121) SHP modal overlay when it is open: the centered
 /// PUDLGBGN panel + populated MNBTTN buttons and labels, sourced from
 /// the skirmish chrome atlas (the only atlas that loads PUDLGBGN/MNBTTN). The
@@ -803,21 +795,8 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     let notes = crate::app::updater::notes::node(state).map(|(node, notes)| {
         use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
         use crate::app::updater::notes::LIST_ID;
-        // Only the rows the list shows are named.
+        // The rows are the list's `Items`, written as it was built.
         let gui = state.frontend.shell_controller.gui();
-        let shown = shown_rows(gui, node);
-        let rows_of = |id: i32| {
-            let rows = gui.list_view(node)?.rows;
-            (id == LIST_ID).then(|| {
-                (0..rows)
-                    .map(|row| match shown.contains(&row) {
-                        true => notes.row(row).map_or_else(String::new, |row| row.0.to_owned()),
-                        false => String::new(),
-                    })
-                    .map(|text| (text, u32::MAX))
-                    .collect()
-            })
-        };
         // A change's further rows hang under its text.
         let indent_of = |id: i32, row: usize| {
             (id == LIST_ID)
@@ -825,7 +804,6 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
                 .flatten()
         };
         let style = GuiStyle {
-            rows_of: Some(&rows_of),
             indent_of: Some(&indent_of),
             solid_lists: true,
             ..Default::default()
@@ -843,42 +821,16 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         );
     }
     // Add Mod's parts, each row's text inset 4 pixels from both ends and cut
-    // to its row.
+    // to its row: the list's `Items`, which its sync writes as they change.
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-    let import_parts = crate::app::shell_mod_import::node(state).map(|(node, names)| {
+    let import_parts = crate::app::shell_mod_import::node(state).map(|node| {
         use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
-        use crate::app::shell_mod_import::LIST_ID;
-        let (font, scale) = (&state.renderer.bit_font, parts.scale);
         let gui = state.frontend.shell_controller.gui();
-        let shown = shown_rows(gui, node);
-        // Every row is as wide as the first, less its insets.
-        let width = gui.list_geometry(node).map_or(0, |geometry| {
-            let row = geometry.row(0);
-            let inset = match gui.get(node, vera20k_gui::Prop::TextInset) {
-                Ok(Some(vera20k_gui::Value::Rect(inset))) => *inset,
-                _ => RectPx::default(),
-            };
-            let text = scale.derive_rect(row, |row| {
-                RectPx::new(row.x + inset.x, row.y, row.w - inset.x - inset.w, row.h)
-            });
-            scale.base_rect(text).w.max(0) as u32
-        });
-        let rows_of = |id: i32| {
-            (id == LIST_ID).then(|| {
-                let rows = names.iter().enumerate();
-                rows.map(|(row, name)| match shown.contains(&row) {
-                    true => (font.truncate_to_width(name, width).into_owned(), u32::MAX),
-                    false => (String::new(), u32::MAX),
-                })
-                .collect()
-            })
-        };
         let style = GuiStyle {
-            rows_of: Some(&rows_of),
             solid_lists: true,
             ..Default::default()
         };
-        paint_gui_styled(state, gui, node, scale, &[], style)
+        paint_gui_styled(state, gui, node, parts.scale, &[], style)
     });
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
     let import_parts = import_parts.map(|import_parts| {

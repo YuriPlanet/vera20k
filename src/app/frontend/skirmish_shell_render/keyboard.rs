@@ -110,8 +110,9 @@ pub(crate) fn render_keyboard_shell(
     let text_of = |id: i32| -> Option<String> {
         let id = u16::try_from(id).ok()?;
         let (key, fallback) = match id {
-            // The heading shows once its reveal starts.
-            TITLE => return title.map(|_| dialog.title.text().to_owned()),
+            // The heading shows once its reveal starts: then its node's own
+            // `Text` (`input::keyboard::sync`), borrowed; blank before.
+            TITLE => return title.is_none().then(String::new),
             // In game the status line shows the hovered control's help; the
             // front end's is the family static.
             FOOTER => {

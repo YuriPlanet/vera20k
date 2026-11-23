@@ -236,6 +236,7 @@ pub(crate) fn sync(state: &mut AppState) -> Option<KeyboardLayout> {
         commands,
         categories,
         category,
+        title,
         ..
     } = dialog;
     super::dialog_page::sync_dialog(
@@ -246,6 +247,10 @@ pub(crate) fn sync(state: &mut AppState) -> Option<KeyboardLayout> {
         |id| layout.rect(id),
         |gui, root| {
             use crate::ui::shell::page::{set, set_text};
+            // The heading's text as `refresh_title` resolved it; the page
+            // shows it once its reveal starts.
+            let heading = crate::ui::shell::in_game_shell::TITLE;
+            set_text(gui, root, heading, Prop::Text, title.text());
             let face = KeyboardControl::Category.id();
             set(gui, root, face, Prop::PopupRect, rows);
             let name = categories.get(*category).map_or("", String::as_str);

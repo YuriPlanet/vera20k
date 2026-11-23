@@ -227,13 +227,18 @@ pub(crate) fn render_launcher_options(
             SHELL_CONTROL_DEPTH,
         );
     }
-    // The heading and the status line from the panel's widgets, the
-    // heading before the page's text and the status line after it.
+    // The heading and the status line from the panel's widgets in one
+    // paint, the heading before the page's text and the status line after
+    // it (each shown `Text` gives one draw).
     let heading = title.map(|window| {
         let align = ShellAlign::H_CENTER | ShellAlign::PANEL_FACE;
         PanelStatic::title(dialog.shell_title_text(), layout.title, align, window)
     });
-    texts.extend(paint_panel_statics(state, [heading, None], scale));
+    let heading_draws = usize::from(heading.as_ref().is_some_and(|h| !h.text.is_empty()));
+    let status = status_label.map(PanelStatic::status);
+    let mut statics = paint_panel_statics(state, [heading, status], scale);
+    let status_texts = statics.split_off(heading_draws.min(statics.len()));
+    texts.extend(statics);
     let column = if sliding {
         ColumnArt::Hidden
     } else {
@@ -243,8 +248,7 @@ pub(crate) fn render_launcher_options(
     let page = page.unwrap_or_default();
     instances.extend(page.controls);
     texts.extend(page.texts);
-    let status = status_label.map(PanelStatic::status);
-    texts.extend(paint_panel_statics(state, [None, status], scale));
+    texts.extend(status_texts);
     super::in_game_shell::render_shell_frame(
         state,
         encoder,

@@ -107,7 +107,7 @@ pub(crate) struct FrontendState {
     /// the online pages and Options paint from
     /// ([`crate::app::frontend::menu_page_render::paint_panel_statics`]).
     pub(crate) panel_statics:
-        std::sync::Mutex<crate::app::frontend::menu_page_render::PanelStatics>,
+        std::cell::RefCell<crate::app::frontend::menu_page_render::PanelStatics>,
     /// The showing family dialog's teardown slide-out while it runs; its
     /// continuation commits the route change when the slide ends.
     pub(crate) shell_exit: Option<crate::app::frontend::shell_transition::ShellExit>,

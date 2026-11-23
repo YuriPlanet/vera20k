@@ -97,6 +97,12 @@ impl ReleaseNotes {
         let row = self.rows.get(row)?;
         Some((row.text.as_str(), TEXT_INSET + row.indent))
     }
+
+    /// The rows' text as the list's `Items`, written once as it is built:
+    /// the notes never change while the offer is open.
+    fn items(&self) -> Vec<String> {
+        self.rows.iter().map(|row| row.text.clone()).collect()
+    }
 }
 
 /// Under the question, from its left edge to just short of the buttons, its
@@ -175,8 +181,10 @@ pub(crate) fn view(state: &AppState) -> Option<(ShellListGeometry, usize, Option
 pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let (geometry, _, _) = view(state)?;
     let (notes, layout, dialog) = open_list(state)?;
-    let (rows, scale) = (notes.rows.len() as i32, layout.scale);
+    let scale = layout.scale;
     let node = list_node(state, dialog);
+    // The rows' text goes into the list once, when it is built.
+    let items = node.is_none().then(|| notes.items());
     let frontend = &mut state.frontend;
     let shell_box = &frontend.shell_message_box.as_ref()?.shell_box;
     let controller = &mut frontend.shell_controller;
@@ -195,7 +203,9 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
             node
         }
     };
-    let _ = gui.set(node, Prop::RowCount, Value::Int(rows));
+    if let Some(items) = items {
+        let _ = gui.set(node, Prop::Items, Value::Items(items));
+    }
     let _ = gui.set(node, Prop::Rect, Value::Rect(geometry.outer));
     let _ = gui.set(
         node,

@@ -18,17 +18,9 @@ pub(crate) fn render_restate_shell(
 ) -> anyhow::Result<()> {
     crate::app::input::restate::sync(state).expect("active 0x10C geometry");
     super::in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
-        let state = paint.state;
         let content = RestateControl::Content.id();
-        // The briefing 0x6E7 is SS_LEFT, top aligned (its node's `Align`).
-        let text_of = |id: i32| {
-            (id == i32::from(content))
-                .then(|| state.match_state.match_presentation.restate_text.clone())
-        };
-        let style = GuiStyle {
-            text_of: Some(&text_of),
-            ..Default::default()
-        };
-        paint.nodes(ui, &[content], style);
+        // The briefing 0x6E7 is SS_LEFT, top aligned (its node's `Align`),
+        // its text the node's own (`input::restate::sync`), borrowed.
+        paint.nodes(ui, &[content], GuiStyle::default());
     })
 }
