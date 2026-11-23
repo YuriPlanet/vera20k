@@ -12,6 +12,7 @@ use super::in_game_shell::{
 };
 use super::preview::{build_preview_surface_instance, ensure_map_preview_texture};
 use crate::app::AppState;
+use crate::render::hud_paint::Material;
 use crate::ui::campaign_score_shell::campaign_score_background_rect;
 use crate::ui::coop_score_shell::*;
 
@@ -199,11 +200,11 @@ pub(crate) fn render_coop_score(
         edit_inset: Some(1),
         ..Default::default()
     };
-    let body = match controller.root_in(dialog) {
+    let mut body = match controller.root_in(dialog) {
         Some(root) => super::gui_paint::paint_gui_with(state, atlas, gui, root, scale, &[], style),
         None => Default::default(),
     };
-    let controls = body.controls;
+    let controls = body.take_lane(Material::Controls);
     let mut texts = body.texts;
     let mut overlay = ShellFrameOverlay {
         score_backdrop,
@@ -234,7 +235,7 @@ pub(crate) fn render_coop_score(
             scale,
             style,
         );
-        art.extend(buttons.controls);
+        art.extend(buttons.lane(Material::Controls).copied());
         texts.extend(buttons.texts);
     }
     in_game_shell::render_shell_frame(

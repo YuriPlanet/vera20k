@@ -6,6 +6,7 @@
 //! chrome.
 
 use super::gui_paint::{ButtonArt, CellRow, GuiStyle, Picture, paint_gui_styled};
+use crate::render::hud_paint::Material;
 use super::wol_lobby::{WolLobbyPaint, row_rgb};
 use crate::app::AppState;
 use crate::render::main_menu_shell_chrome::WolPageArt;
@@ -58,8 +59,8 @@ pub(crate) fn paint_wol_buddy_children(
     let children = gui.tree().children(nodes.root).unwrap_or_default();
     for child in children.iter().filter(|child| **child != nodes.list) {
         let widgets = paint_gui_styled(state, gui, *child, scale, &[], style);
-        paint.controls.extend(widgets.controls);
-        paint.icons.extend(widgets.icons);
+        paint.controls.extend(widgets.lane(Material::Controls).copied());
+        paint.icons.extend(widgets.lane(Material::Icons).copied());
         paint.texts.extend(widgets.texts);
     }
 
@@ -85,9 +86,9 @@ pub(crate) fn paint_wol_buddy_children(
         ..Default::default()
     };
     let list = paint_gui_styled(state, gui, list, scale, &[], style);
-    paint.controls.extend(list.controls);
+    paint.controls.extend(list.lane(Material::Controls).copied());
+    paint.icons.extend(list.lane(Material::Icons).copied());
     paint.texts.extend(list.texts);
-    paint.icons.extend(list.icons);
     paint
 }
 

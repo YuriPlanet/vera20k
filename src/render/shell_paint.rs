@@ -78,14 +78,29 @@ fn entry_sprite(
     size: [f32; 2],
     depth: f32,
 ) -> SpriteInstance {
+    quad([x, y], size, (entry.uv_origin, entry.uv_size), [1.0; 3], 1.0, depth)
+}
+
+/// One quad on the target: `size` pixels from `position`, sampling `uv`
+/// (origin, size) in `tint` and `alpha` at `depth`. Every shell skin's
+/// picture and solid fill (a white texel) is one, and so is each of the
+/// HUD paint's fills and pictures (`HudPaint::build`).
+pub fn quad(
+    position: [f32; 2],
+    size: [f32; 2],
+    (uv_origin, uv_size): ([f32; 2], [f32; 2]),
+    tint: [f32; 3],
+    alpha: f32,
+    depth: f32,
+) -> SpriteInstance {
     SpriteInstance {
-        position: [x, y],
+        position,
         size,
-        uv_origin: entry.uv_origin,
-        uv_size: entry.uv_size,
+        uv_origin,
+        uv_size,
         depth,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
+        tint,
+        alpha,
         ..Default::default()
     }
 }
@@ -136,16 +151,8 @@ pub fn push_tinted_entry(
     tint: [f32; 3],
     depth: f32,
 ) {
-    out.push(SpriteInstance {
-        tint,
-        ..entry_sprite(
-            entry,
-            rect.x as f32,
-            rect.y as f32,
-            [rect.w as f32, rect.h as f32],
-            depth,
-        )
-    });
+    let (position, size) = ([rect.x as f32, rect.y as f32], [rect.w as f32, rect.h as f32]);
+    out.push(quad(position, size, (entry.uv_origin, entry.uv_size), tint, 1.0, depth));
 }
 
 /// One chrome atlas entry at its native size, top-left at `(x, y)`.

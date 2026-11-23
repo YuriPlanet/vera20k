@@ -64,6 +64,7 @@ use crate::app::frontend::shell_transition::ShellFrameWave;
 use crate::map::preview::PreviewSourceBounds;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
+use crate::render::hud_paint::Material;
 use crate::render::shell_text::ShellTextDraw;
 use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
@@ -230,7 +231,7 @@ fn build_skirmish_shell_instances(
     leaving: bool,
     // `0x102`'s widgets as the GUI paints them (the computer rows'
     // scrollbar and the flags among them).
-    page: &[SpriteInstance],
+    page: impl IntoIterator<Item = SpriteInstance>,
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::new();
     // Every page of the family starts with the right panel and the lower
@@ -325,7 +326,7 @@ fn build_skirmish_shell_instances(
 
     // The widgets, the name box among them, follow the parent background:
     // this batch has no depth test and paints in queue order.
-    instances.extend_from_slice(page);
+    instances.extend(page);
     instances
 }
 
@@ -547,7 +548,7 @@ fn render_skirmish_shell_with_atlas(
     if let Some(root) = page_root {
         show_skirmish_flags(state, root, layout.shown_rows);
     }
-    let page_paint = page_root.map_or_else(Default::default, |root| {
+    let mut page_paint = page_root.map_or_else(Default::default, |root| {
         let gui = state.frontend.shell_controller.gui();
         // While a slide runs the column's art covers the buttons.
         let buttons = match sliding {
@@ -644,12 +645,12 @@ fn render_skirmish_shell_with_atlas(
             &state.frontend.skirmish_shell_state,
             wave.as_ref(),
             leaving,
-            &page_paint.controls,
+            page_paint.lane(Material::Controls).copied(),
         )
     };
     // Choose Map's, `0x105`'s or a browser's widgets over their art.
     let mut dialog_paint = dialog_paint.unwrap_or_default();
-    instances.append(&mut dialog_paint.controls);
+    instances.extend(dialog_paint.lane(Material::Controls).copied());
     if preview_instance.is_some() {
         push_solid_rect(
             &mut instances,
@@ -663,9 +664,9 @@ fn render_skirmish_shell_with_atlas(
     // every dialog text, which this unbuffered pass paints in queue order.
     // VERA's Game Options box takes the same place; the two never show at
     // once, as each takes every press while it is open.
-    let mut dropdown_instances = page_paint.popup;
+    let mut dropdown_instances = page_paint.take_lane(Material::Popup);
+    dialog_paint.drain_lane(Material::Popup, &mut dropdown_instances);
     let mut dropdown_text_draws = page_paint.popup_texts;
-    dropdown_instances.append(&mut dialog_paint.popup);
     dropdown_text_draws.append(&mut dialog_paint.popup_texts);
     if parent_showing {
         game_options::push_game_options_box(

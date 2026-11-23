@@ -7,9 +7,10 @@
 
 use vera20k_gui::NodeKind;
 
-use super::gui_paint::{self, ButtonArt, EditFace, GuiPaint, GuiStyle, HostRows};
+use super::gui_paint::{self, ButtonArt, EditFace, GuiStyle, HostRows};
 use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
 use crate::app::AppState;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::controller::DialogController;
@@ -30,14 +31,14 @@ pub(crate) fn paint_wol_login_children(
     state: &AppState,
     login: &WolLoginState,
     layout: &WolLoginLayout,
-) -> GuiPaint {
+) -> HudPaint {
     let ui = &state.frontend.shell_controller;
     let (gui, Some(root), Some(atlas)) = (
         ui.gui(),
         ui.root_in(DIALOG),
         state.frontend.skirmish_shell_chrome.as_ref(),
     ) else {
-        return GuiPaint::default();
+        return HudPaint::default();
     };
     let scale = layout.page.scale;
     if let Some(choice) = layout.entry_choice() {
@@ -89,7 +90,7 @@ pub(crate) fn paint_wol_login_children(
     let panel = children
         .iter()
         .find(|node| gui.tree().kind(**node) == Ok(NodeKind::Panel));
-    let mut paint = panel.map_or_else(GuiPaint::default, |panel| {
+    let mut paint = panel.map_or_else(HudPaint::default, |panel| {
         gui_paint::paint_gui_styled(state, gui, *panel, scale, &[], style)
     });
     // The combo's NewEdit has no frame of its own: its caret and text paint
@@ -101,7 +102,7 @@ pub(crate) fn paint_wol_login_children(
             edit_face_of: Some(&face),
             ..style
         };
-        paint.extend(gui_paint::paint_gui_styled(state, gui, node, scale, &[], style));
+        gui_paint::paint_gui_into(&mut paint, state, Some(atlas), gui, node, scale, &[], style);
     }
     paint
 }
@@ -119,28 +120,28 @@ fn paint_entry_choice(
     atlas: &SkirmishShellChromeAtlas,
     choice: &WolEntryChoiceLayout,
     scale: ShellScale,
-) -> GuiPaint {
-    let mut paint = GuiPaint::default();
+) -> HudPaint {
+    let mut paint = HudPaint::default();
     let label = |key: &str| state.csf_text(key);
     let background = atlas
         .ra2_dialog_background
         .or_else(|| atlas.mode_two_dialog_background(None));
-    match background {
+    paint.draw(Material::Popup, |out, _| match background {
         Some(background) => super::chrome::push_entry_fitted(
-            &mut paint.popup,
+            out,
             background,
             choice.dialog,
             scale,
             POPUP_DEPTHS.background,
         ),
         None => super::chrome::push_solid_rect(
-            &mut paint.popup,
+            out,
             atlas,
             choice.dialog,
             super::SHELL_MODAL_PANEL_RGB,
             POPUP_DEPTHS.background,
         ),
-    }
+    });
     let Some(chooser) = ui.control(DIALOG, CHOICE_BOX) else {
         return paint;
     };
@@ -178,7 +179,7 @@ fn paint_entry_choice(
         ..Default::default()
     };
     let widgets = gui_paint::paint_gui_styled(state, gui, chooser, scale, &[], style);
-    paint.popup.extend(widgets.controls);
+    paint.draw(Material::Popup, |out, _| out.extend(widgets.lane(Material::Controls).copied()));
     paint.popup_texts.extend(widgets.texts);
     paint
 }
@@ -234,7 +235,7 @@ pub(crate) fn paint_wol_account_form(
         ..style
     };
     let widgets = gui_paint::paint_gui_styled(state, ui.gui(), root, scale, &[], style);
-    paint.controls.extend(widgets.controls);
+    paint.controls.extend(widgets.lane(Material::Controls).copied());
     paint.texts = widgets.texts;
     paint
 }

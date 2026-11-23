@@ -4,7 +4,8 @@
 //! monitor are the shared family statics, and its column slides in and out
 //! (`0x006071E0`). Every control paints from the dialog's tree.
 
-use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, SideButtons, paint_gui_styled};
+use super::gui_paint::{ButtonArt, GuiStyle, SideButtons, paint_gui_styled};
+use crate::render::hud_paint::{HudPaint, Material};
 use super::{chrome::*, *};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
@@ -39,7 +40,7 @@ pub(crate) fn paint_page(
     scale: ShellScale,
     column: ColumnArt,
     covered: &[RectPx],
-) -> GuiPaint {
+) -> HudPaint {
     let (gui, panel) = dialog.shell_gui();
     let art = |id| match dialog.shell_control(id)? {
         Control::Button(button) if button.on_page() => Some(ButtonArt::ModalSqueezed),
@@ -63,7 +64,7 @@ pub(crate) fn paint_page(
     }
     // Without the control art only the side's column paints: its art is
     // the sidebar's.
-    let mut paint = GuiPaint::default();
+    let mut paint = HudPaint::default();
     if let ColumnArt::Side(_) = column {
         let side = gui.tree().children(panel).unwrap_or_default().iter().copied();
         for node in side.filter(|node| {
@@ -95,9 +96,9 @@ pub(crate) fn paint_options_settings(
         ColumnArt::Hidden,
         list.as_slice(),
     );
-    draw.sprites.extend(page.controls);
+    draw.sprites.extend(page.lane(Material::Controls).copied());
+    draw.sprites.extend(page.lane(Material::Popup).copied());
     draw.text.extend(page.texts);
-    draw.sprites.extend(page.popup);
     draw.text.extend(page.popup_texts);
 }
 
@@ -245,8 +246,9 @@ pub(crate) fn render_launcher_options(
         ColumnArt::Panel
     };
     let page = (!leaving).then(|| paint_page(state, dialog, scale, column, &[]));
-    let page = page.unwrap_or_default();
-    instances.extend(page.controls);
+    let mut page = page.unwrap_or_default();
+    instances.extend(page.lane(Material::Controls).copied());
+    let popup = page.take_lane(Material::Popup);
     texts.extend(page.texts);
     texts.extend(status_texts);
     super::in_game_shell::render_shell_frame(
@@ -261,7 +263,7 @@ pub(crate) fn render_launcher_options(
         },
         super::in_game_shell::ShellFrameArt::Launcher,
         super::in_game_shell::ShellFrameOverlay {
-            controls: page.popup,
+            controls: popup,
             texts: page.popup_texts,
             ..Default::default()
         },

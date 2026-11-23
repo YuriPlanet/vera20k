@@ -19,7 +19,8 @@ use crate::ui::skirmish_shell::{
     SkirmishCountryChoice, SkirmishShellLayout, combo_text_rect, random_map_setup_dropdown_rect,
 };
 
-use super::gui_paint::{ButtonArt, FrameArt, GuiPaint, GuiStyle, HostRows, paint_gui_with};
+use super::gui_paint::{ButtonArt, FrameArt, GuiStyle, HostRows, paint_gui_with};
+use crate::render::hud_paint::HudPaint;
 use super::{
     COMBODROPWIN_TEXT_TRUNCATION_SCROLLBAR_RESERVE_PX, SHELL_CONTROL_TEXT_DEPTH,
     SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F, SHELL_LABEL_TEXT_RGB,
@@ -420,7 +421,7 @@ pub(super) fn random_map_paint(
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     layout: &RandomMapSetupLayout,
     sliding: bool,
-) -> Option<GuiPaint> {
+) -> Option<HudPaint> {
     use crate::ui::skirmish_shell::random_map_page;
     use crate::ui::skirmish_shell::{RandomMapSetupControl as C, SetupCombo};
     let frontend = &mut state.frontend;
@@ -537,7 +538,7 @@ pub(super) fn choose_map_paint(
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     layout: &ChooseMapModalLayout,
     sliding: bool,
-) -> Option<GuiPaint> {
+) -> Option<HudPaint> {
     use crate::ui::skirmish_shell::choose_map_page;
     let frontend = &mut state.frontend;
     let modal = frontend.skirmish_shell_state.choose_map_modal.as_mut()?;

@@ -11,9 +11,10 @@ use crate::app::frontend::menu_page_render::{
     FamilyFrame, encode_family_page, family_art_ready, page_panel_state, page_tree,
 };
 use crate::app::frontend::movies_credits_render::family_list_hovered;
-use crate::app::frontend::skirmish_shell_render::gui_paint::{CellRow, GuiStyle, paint_gui_styled};
+use crate::app::frontend::skirmish_shell_render::gui_paint::{CellRow, GuiStyle, paint_gui_into};
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::mods::Listed;
+use crate::render::hud_paint::Material;
 use crate::render::shell_paint::SHELL_TEXT_RGB_ENABLED;
 use crate::ui::mods_shell::{self, PAGE};
 use crate::ui::movies_credits_shell::{family_list_selected, find_family_list};
@@ -179,24 +180,28 @@ pub(crate) fn render_mods_page(
             cells_of: Some(&cells_of),
             ..Default::default()
         };
-        frame
-            .over
-            .extend(paint_gui_styled(state, gui, node, scale, &[], style));
+        // Without the control art none of it paints.
+        let atlas = state.frontend.skirmish_shell_chrome.as_ref();
+        if let Some(atlas) = atlas {
+            let over = &mut frame.over;
+            paint_gui_into(over, state, Some(atlas), gui, node, scale, &[], style);
+        }
         frame.list_boxes.push((layout.list, geometry.scrollbar));
         frame.list_boxes.push((layout.details, None));
-        if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
-            let details = &mut frame.over.controls;
-            crate::app::frontend::skirmish_shell_render::paint_list_frame(
-                details,
-                atlas,
-                layout.details,
-            );
+        if let Some(atlas) = atlas {
+            frame.over.draw(Material::Controls, |details, _| {
+                crate::app::frontend::skirmish_shell_render::paint_list_frame(
+                    details,
+                    atlas,
+                    layout.details,
+                )
+            });
         }
         // The hint, the selected mod's lines and the caption, from their
         // statics.
-        if let Some((gui, root)) = frame.buttons {
-            let statics = paint_gui_styled(state, gui, root, scale, &[], GuiStyle::default());
-            frame.over.extend(statics);
+        if let (Some((gui, root)), Some(atlas)) = (frame.buttons, atlas) {
+            let (over, style) = (&mut frame.over, GuiStyle::default());
+            paint_gui_into(over, state, Some(atlas), gui, root, scale, &[], style);
         }
     }
     encode_family_page(state, encoder, destination, frame);

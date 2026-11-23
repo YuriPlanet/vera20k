@@ -5,6 +5,7 @@ use super::gui_paint::{ButtonArt, FrameArt, GuiStyle};
 use super::in_game_shell::{self, InGamePaint};
 use super::launcher_options;
 use crate::app::AppState;
+use crate::render::hud_paint::Material;
 use crate::ui::shell::pause_menu::{
     FOOTER, INTERNET_CAPTIONS, INTERNET_GROUP, INTERNET_GROUP_LABEL, INTERNET_VALUES,
     InternetSlider, KEYBOARD_LABEL, PAUSE_MENU_FOOTER, PauseMenuButton, PauseMenuButtonState,
@@ -104,12 +105,13 @@ pub(crate) fn render_pause_menu_shell(
             // own buttons still work. The open list paints after every
             // control and text.
             let column = launcher_options::ColumnArt::Side(paint.side_buttons());
-            let widgets =
+            let mut widgets =
                 launcher_options::paint_page(state, &page.dialog, page_layout.scale, column, &[]);
-            paint.art.extend(widgets.side);
-            paint.controls.extend(widgets.controls);
+            widgets.drain_lane(Material::Side, &mut paint.art);
+            overlay.controls = widgets.take_lane(Material::Popup);
+            widgets.drain_lane(Material::Controls, &mut paint.controls);
             paint.texts.extend(widgets.texts);
-            (overlay.controls, overlay.texts) = (widgets.popup, widgets.popup_texts);
+            overlay.texts = widgets.popup_texts;
         }
         // FF's group box, then each plaque trackbar with its caption and
         // value static (60B7A0), where its page shows them and the control

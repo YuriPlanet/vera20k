@@ -8,6 +8,7 @@
 use crate::app::AppState;
 use crate::app::input::dialog_page::InGameDialog;
 use crate::render::batch::SpriteInstance;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::scaled_copy::ScaledSurface;
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
 use crate::ui::shell::controller::DialogController;
@@ -200,8 +201,8 @@ impl<'a> InGamePaint<'a> {
     }
 
     /// The controls `ids` of `ui`'s top dialog, each with its subtree, in
-    /// that order, painted by [`super::gui_paint`] in `style` straight onto
-    /// these lanes: [`super::gui_paint::ButtonArt::Side`] art on `art`, the
+    /// that order, painted by [`super::gui_paint`] in `style` and appended
+    /// lane by lane: [`super::gui_paint::ButtonArt::Side`] art on `art`, the
     /// rest on `controls` and `texts`. A missing id paints nothing. The
     /// nodes must be current this frame
     /// ([`crate::app::input::dialog_page::InGameDialog::sync`]).
@@ -227,13 +228,9 @@ impl<'a> InGamePaint<'a> {
     ) {
         let state = self.state;
         let atlas = state.frontend.skirmish_shell_chrome.as_ref();
-        // The lanes move in and back out: no new buffers.
-        let mut paint = super::gui_paint::GuiPaint {
-            side: std::mem::take(&mut self.art),
-            controls: std::mem::take(&mut self.controls),
-            texts: std::mem::take(&mut self.texts),
-            ..Default::default()
-        };
+        // The controls and texts move in and back out: no new buffers.
+        let (controls, texts) = (std::mem::take(&mut self.controls), std::mem::take(&mut self.texts));
+        let mut paint = HudPaint::from_lane(Material::Controls, controls, texts);
         let scale = crate::ui::shell::geom::RETAIL_SCALE;
         for node in ids
             .iter()
@@ -250,9 +247,10 @@ impl<'a> InGamePaint<'a> {
                 style,
             );
         }
-        self.art = paint.side;
-        self.controls = paint.controls;
-        self.texts = paint.texts;
+        // The type-2 buttons' art under the rest, onto this shell's lanes.
+        paint.drain_lane(Material::Side, &mut self.art);
+        self.controls = paint.take_lane(Material::Controls);
+        self.texts = std::mem::take(&mut paint.texts);
     }
 }
 

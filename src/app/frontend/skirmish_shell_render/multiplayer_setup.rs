@@ -21,6 +21,7 @@ use super::{
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::batch::SpriteInstance;
+use crate::render::hud_paint::Material;
 use crate::render::shell_text;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::multiplayer_setup::*;
@@ -285,7 +286,7 @@ pub(crate) fn render_multiplayer_setup(
             // to go to is hidden. The line between them names the page.
             let ids = [PREVIOUS_ROWS, NEXT_ROWS];
             let buttons = paint_ids(page_root, &ids, scale, room_style);
-            controls.extend(buttons.controls);
+            controls.extend(buttons.lane(Material::Controls).copied());
             texts.extend(buttons.texts);
             texts.extend(paint_node(nodes.page_line, room_style).texts);
         }
@@ -299,7 +300,7 @@ pub(crate) fn render_multiplayer_setup(
             texts.extend(headers.texts);
             // A box shows round each group with a header.
             let boxes = paint_node(nodes.boxes, frames);
-            controls.extend(boxes.controls);
+            controls.extend(boxes.lane(Material::Controls).copied());
             // The carried row's name follows the pointer, centred on it.
             if let Some(drag) = drag.filter(|drag| drag.carrying)
                 && let Some(name) = view
@@ -327,7 +328,7 @@ pub(crate) fn render_multiplayer_setup(
             }
             // The shell's own scrollbar, when the groups do not all fit.
             let bar = paint_node(nodes.scroll, frames);
-            controls.extend(bar.controls);
+            controls.extend(bar.lane(Material::Controls).copied());
         }
         // VERA's team bar under the roster, in its own box: the Teams count
         // and the host's Room size (drawn with the room's trackbars), and the
@@ -337,12 +338,12 @@ pub(crate) fn render_multiplayer_setup(
             ..frames
         };
         let team_bar = paint_node(nodes.team_bar, team_bar);
-        controls.extend(team_bar.controls);
+        controls.extend(team_bar.lane(Material::Controls).copied());
         texts.extend(team_bar.texts);
         // VERA's roster marks the local player's row with a dark band.
         if layout.roster {
             let bands = paint_node(nodes.bands, frames);
-            controls.extend(bands.controls);
+            controls.extend(bands.lane(Material::Controls).copied());
         }
         // The rows' lists, VERA's roster's as its cells; the team bar's and a
         // campaign's lists on faces. An open list goes over the page in the
@@ -401,9 +402,9 @@ pub(crate) fn render_multiplayer_setup(
             (ids(&|id| faced(id) && !team_bar(id)), face_style),
         ] {
             let combos = paint_ids(page_root, &ids, scale, style);
-            controls.extend(combos.controls);
+            controls.extend(combos.lane(Material::Controls).copied());
+            overlay.controls.extend(combos.lane(Material::Popup).copied());
             texts.extend(combos.texts);
-            overlay.controls.extend(combos.popup);
             overlay.texts.extend(combos.popup_texts);
         }
         // The rows' pictures: VERA's roster names the side in text and
@@ -414,11 +415,11 @@ pub(crate) fn render_multiplayer_setup(
             ..room_style
         };
         let icons = paint_node(nodes.icons, pictures);
-        controls.extend(icons.controls);
+        controls.extend(icons.lane(Material::Controls).copied());
         // VERA's room keeps its options in Game Options; Difficulty stays.
         if layout.game_options.is_none() {
             let options = paint_ids(page_root, &option_ids(&view, &layout), scale, room_style);
-            controls.extend(options.controls);
+            controls.extend(options.lane(Material::Controls).copied());
             texts.extend(options.texts);
         }
         // The team bar's trackbars draw at its 78% and keep their values at
@@ -435,7 +436,7 @@ pub(crate) fn render_multiplayer_setup(
                 ..room_style
             };
             let bar = paint_ids(page_root, &[bar.id], bar_scale, style);
-            controls.extend(bar.controls);
+            controls.extend(bar.lane(Material::Controls).copied());
             texts.extend(bar.texts);
         }
         // A cooperative map's description and Difficulty's words.
@@ -454,7 +455,7 @@ pub(crate) fn render_multiplayer_setup(
             ..GuiStyle::default()
         };
         let chat = paint_node(nodes.chat, chat_edit);
-        controls.extend(chat.controls);
+        controls.extend(chat.lane(Material::Controls).copied());
         texts.extend(chat.texts);
         let chat_rows = |_| {
             let line = |line: &crate::ui::lan_shell::LanChatLine| {
@@ -470,7 +471,7 @@ pub(crate) fn render_multiplayer_setup(
             ..GuiStyle::default()
         };
         let chat = paint_ids(page_root, &[CHAT_LOG], scale, chat_style);
-        controls.extend(chat.controls);
+        controls.extend(chat.lane(Material::Controls).copied());
         texts.extend(chat.texts);
         if !sliding {
             if let Some(preview) = state.frontend.skirmish_preview_texture.as_ref() {
@@ -537,7 +538,7 @@ pub(crate) fn render_multiplayer_setup(
                 ..room_style
             };
             let buttons = paint_ids(page_root, &ids, scale, style);
-            art.extend(buttons.controls);
+            art.extend(buttons.lane(Material::Controls).copied());
             texts.extend(buttons.texts);
         }
         // C2/C9 0x3ED image button (00612B70, frame type 0): +0x14 wodact
@@ -551,7 +552,7 @@ pub(crate) fn render_multiplayer_setup(
             ..GuiStyle::default()
         };
         let emote = paint_node(nodes.emote, emote);
-        controls.extend(emote.controls);
+        controls.extend(emote.lane(Material::Controls).copied());
         texts.extend(crate::render::shell_paint::paint_labels_scaled(
             font,
             &labels,
@@ -574,7 +575,7 @@ pub(crate) fn render_multiplayer_setup(
                 ..GuiStyle::popup()
             };
             let widgets = paint_ids(controller.root_in(GAME_OPTIONS_BOX), &ids, scale, style);
-            overlay.controls.extend(widgets.controls);
+            overlay.controls.extend(widgets.lane(Material::Controls).copied());
             overlay.texts.extend(widgets.texts);
         }
         // VERA asks a guest before downloading a map it does not have, then
@@ -641,7 +642,7 @@ pub(crate) fn render_multiplayer_setup(
                 .root_in(MAP_OFFER_BOX)
                 .map(|root| paint_gui_styled(state, controller.gui(), root, scale, &[], style))
                 .unwrap_or_default();
-            overlay.controls.extend(widgets.controls);
+            overlay.controls.extend(widgets.lane(Material::Controls).copied());
             overlay.texts.extend(widgets.texts);
         }
     }

@@ -9,7 +9,8 @@
 //! frame stays here.
 #[cfg(test)]
 use super::controls::{frame_segments, group_box_geometry, push_group_or_plain_frame};
-use super::gui_paint::{ButtonArt, ComboArt, FrameArt, GuiPaint, GuiStyle, HostRows, SideButtons};
+use super::gui_paint::{ButtonArt, ComboArt, FrameArt, GuiStyle, HostRows, SideButtons};
+use crate::render::hud_paint::{HudPaint, Material};
 use super::in_game_shell::{self, InGameShellFrame, ShellFrameArt, ShellFrameOverlay};
 use crate::app::AppState;
 use crate::app::frontend::menu_page_render::{PanelStatic, paint_panel_statics};
@@ -102,10 +103,7 @@ pub(crate) fn render_keyboard_shell(
             layout.scale,
         )
     };
-    let mut paint = GuiPaint {
-        side: art,
-        ..Default::default()
-    };
+    let mut paint = HudPaint::default();
     // The painter's closures read the state while the frame is built.
     let shared: &AppState = state;
     let text_of = |id: i32| -> Option<String> {
@@ -230,15 +228,13 @@ pub(crate) fn render_keyboard_shell(
         ],
         layout.scale,
     );
-    // The open category list paints over every control and text.
-    let GuiPaint {
-        side: art,
-        controls,
-        mut texts,
-        popup,
-        popup_texts,
-        ..
-    } = paint;
+    // The type-2 Back over the art; the open category list paints over
+    // every control and text.
+    let mut art = art;
+    paint.drain_lane(Material::Side, &mut art);
+    let popup = paint.take_lane(Material::Popup);
+    let controls = paint.take_lane(Material::Controls);
+    let (mut texts, popup_texts) = (paint.texts, paint.popup_texts);
     // The status line is a family static like the heading: it scales with the
     // page, as on every other family page.
     let status = status_label.map(PanelStatic::status);

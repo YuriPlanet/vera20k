@@ -833,9 +833,10 @@ fn build_shell_message_box_overlay(
         paint_gui_styled(state, gui, node, parts.scale, &[], style)
     });
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    let notes = notes.map(|notes| {
+    let notes = notes.map(|mut notes| {
+        let controls = notes.take_lane(crate::render::hud_paint::Material::Controls);
         draw.text.extend(notes.texts);
-        notes.controls
+        controls
     });
     if let Some((settings, controls)) = menu {
         crate::app::frontend::skirmish_shell_render::paint_options_settings(
@@ -855,9 +856,10 @@ fn build_shell_message_box_overlay(
         paint_gui_styled(state, gui, node, parts.scale, &[], style)
     });
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-    let import_parts = import_parts.map(|import_parts| {
+    let import_parts = import_parts.map(|mut import_parts| {
+        let controls = import_parts.take_lane(crate::render::hud_paint::Material::Controls);
         draw.text.extend(import_parts.texts);
-        import_parts.controls
+        controls
     });
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     draw.sprites.extend(notes.into_iter().flatten());

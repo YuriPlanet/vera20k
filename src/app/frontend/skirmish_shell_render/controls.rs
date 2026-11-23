@@ -569,6 +569,7 @@ pub(super) fn paint_control(
                 paint_trackbar_plaque(out, chrome, rect, SHELL_CONTROL_DEPTH, scale);
             }
             if let Some(thumb) = chrome.trackbar_thumb_trakgrip {
+                let before = out.len();
                 push_entry_top_clipped(
                     out,
                     thumb,
@@ -584,8 +585,12 @@ pub(super) fn paint_control(
                 // A disabled window darkens the thumb rect with the overlay
                 // alpha (`0x0061E0B0..0x0061E0D4`). RESIDUAL: native also
                 // darkens the backdrop under TRAKGRIP's transparent texels.
-                if disabled && let Some(sprite) = out.last_mut() {
-                    sprite.tint = [DISABLED_OVERLAY_KEEP; 3];
+                // Only the thumb's own quad: a clipped-away thumb pushes
+                // none, and what is before it in `out` is not the thumb's.
+                if disabled {
+                    for sprite in &mut out[before..] {
+                        sprite.tint = [DISABLED_OVERLAY_KEEP; 3];
+                    }
                 }
             }
             let base = scale.base_rect(rect);

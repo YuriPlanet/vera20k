@@ -10,7 +10,7 @@ use crate::app::frontend::menu_page_render::{
 use crate::app::frontend::shell_pass::{ShellComposition, TexturedDraw, encode_shell_pass};
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
-    GuiStyle, paint_gui_ids, paint_gui_styled,
+    GuiStyle, paint_gui_ids_into, paint_gui_styled_into,
 };
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::ShellTextDraw;
@@ -110,17 +110,15 @@ pub(crate) fn render_movie_list(
                 rows_of: Some(&rows_of),
                 ..Default::default()
             };
-            frame
-                .over
-                .extend(paint_gui_styled(state, gui, node, page.scale, &[], style));
+            let over = &mut frame.over;
+            paint_gui_styled_into(over, state, gui, node, page.scale, &[], style);
         }
         frame.list_boxes.push((layout.list, bar));
         if let Some((gui, root)) = frame.buttons {
             let prompt = [MOVIE_LIST_PROMPT];
             let style = GuiStyle::default();
-            frame
-                .over
-                .extend(paint_gui_ids(state, gui, root, prompt, page.scale, style));
+            let over = &mut frame.over;
+            paint_gui_ids_into(over, state, gui, root, prompt, page.scale, style);
         }
     }
     encode_family_page(state, encoder, destination, frame);

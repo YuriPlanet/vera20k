@@ -4,7 +4,8 @@
 //! the active-game parent and button art; outside, the seed browser over
 //! `0x105`, VERA's Setups page and Single Player's Load `0xB7`.
 
-use super::gui_paint::{ButtonArt, CellRow, GuiPaint, GuiStyle, paint_gui_into};
+use super::gui_paint::{ButtonArt, CellRow, GuiStyle, paint_gui_into};
+use crate::render::hud_paint::{HudPaint, Material};
 use super::in_game_shell::{InGamePaint, render_in_game_shell_frame};
 use super::shell_box::{BoxLook, push_skirmish_box, skirmish_parts};
 use super::{SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB};
@@ -77,9 +78,9 @@ pub(crate) fn paint_saved_browser<I>(
     browser: &SavedSeedBrowserState<I>,
     buttons: ButtonArt,
     rows: bool,
-) -> GuiPaint {
+) -> HudPaint {
     let ui = &browser.ui;
-    let mut paint = GuiPaint::default();
+    let mut paint = HudPaint::default();
     let Some(root) = ui.root_in(BROWSER_DIALOG) else {
         return paint;
     };
@@ -149,7 +150,7 @@ pub(super) fn seed_browser_paint<I>(
     layout: &SavedSeedLayout,
     browser: &SavedSeedBrowserState<I>,
     title: &str,
-) -> GuiPaint {
+) -> HudPaint {
     let mut paint =
         paint_saved_browser(state, Some(atlas), layout, browser, ButtonArt::PanelCentred, true);
     paint.texts.push(crate::render::shell_text::draw_in_rect_scaled(
@@ -162,14 +163,9 @@ pub(super) fn seed_browser_paint<I>(
         super::SHELL_DROPDOWN_TEXT_DEPTH - 0.00012,
         layout.scale.factor(),
     ));
-    push_saved_browser_box(
-        state,
-        Some(atlas),
-        layout,
-        browser,
-        &mut paint.controls,
-        &mut paint.texts,
-    );
+    paint.draw(Material::Controls, |sprites, texts| {
+        push_saved_browser_box(state, Some(atlas), layout, browser, sprites, texts)
+    });
     paint
 }
 
@@ -199,7 +195,7 @@ pub(crate) fn render_saved_game_shell(
             ButtonArt::Host,
             true,
         );
-        paint.controls.extend(widgets.controls);
+        paint.controls.extend(widgets.lane(Material::Controls).copied());
         paint.texts.extend(widgets.texts);
         // Action and Back from their nodes on the side's type-2 art. They
         // keep the pushed look while they hold the press, on the pointer or

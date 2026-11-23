@@ -10,13 +10,14 @@
 use vera20k_gui::{Gui, NodeId};
 
 use super::chrome::{push_rect_outline, push_solid_rect, type3_button_frames};
-use super::gui_paint::{BoxStyle, ButtonArt, GuiPaint, GuiStyle, paint_gui_into};
+use super::gui_paint::{BoxStyle, ButtonArt, GuiStyle, paint_gui_into};
 use super::{
     OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
     SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_MODAL_PANEL_RGB,
 };
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint::{ModalDepths, ModalDraw, SHELL_TEXT_RGB_ENABLED, paint_modal_sprites};
 use crate::render::shell_text::ShellTextDraw;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
@@ -92,7 +93,7 @@ pub(crate) fn controller_tree(ui: &DialogController, dialog: DialogResourceId) -
 /// texts paint.
 #[allow(clippy::too_many_arguments)]
 fn paint_box_into(
-    paint: &mut GuiPaint,
+    paint: &mut HudPaint,
     state: &AppState,
     atlas: Option<&SkirmishShellChromeAtlas>,
     tree: BoxTree<'_>,
@@ -102,14 +103,16 @@ fn paint_box_into(
     look: BoxLook<'_>,
 ) {
     if let Some(atlas) = atlas {
-        paint.controls.extend(paint_modal_sprites(
-            look.background,
-            type3_button_frames(atlas),
-            parts.dialog,
-            &[],
-            parts.scale,
-            look.depths,
-        ));
+        paint.draw(Material::Controls, |out, _| {
+            out.extend(paint_modal_sprites(
+                look.background,
+                type3_button_frames(atlas),
+                parts.dialog,
+                &[],
+                parts.scale,
+                look.depths,
+            ))
+        });
     }
     let Some((gui, root)) = tree else {
         return;
@@ -157,10 +160,10 @@ pub(crate) fn paint_shell_box(
     pressed: impl Fn(u16) -> bool,
     look: BoxLook<'_>,
 ) -> ModalDraw {
-    let mut paint = GuiPaint::default();
+    let mut paint = HudPaint::default();
     paint_box_into(&mut paint, state, atlas, tree, shell_box, parts, &pressed, look);
     ModalDraw {
-        sprites: paint.controls,
+        sprites: paint.take_lane(Material::Controls),
         text: paint.texts,
     }
 }
@@ -169,14 +172,14 @@ pub(crate) fn paint_shell_box(
 /// which the texts queued before them give up when the host asks
 /// ([`Self::push_texts`]).
 pub(crate) struct SkirmishBoxDraw {
-    paint: GuiPaint,
+    paint: HudPaint,
     dialog: RectPx,
 }
 
 impl SkirmishBoxDraw {
     /// Its sprites after `out`'s.
     pub(crate) fn push_sprites(&mut self, out: &mut Vec<SpriteInstance>) {
-        out.append(&mut self.paint.controls);
+        self.paint.drain_lane(Material::Controls, out);
     }
 
     /// Its texts after `out`'s, which give up the box's rect first when
@@ -199,7 +202,7 @@ pub(crate) fn skirmish_parts(shell_box: &ShellBox, (w, h): (i32, i32)) -> BoxPar
 /// missing.
 #[allow(clippy::too_many_arguments)]
 fn skirmish_box_into(
-    mut paint: GuiPaint,
+    mut paint: HudPaint,
     state: &AppState,
     atlas: Option<&SkirmishShellChromeAtlas>,
     tree: BoxTree<'_>,
@@ -210,9 +213,10 @@ fn skirmish_box_into(
 ) -> SkirmishBoxDraw {
     if let (Some(atlas), None) = (atlas, look.background) {
         let (at, edge) = (parts.dialog, OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68);
-        let out = &mut paint.controls;
-        push_solid_rect(out, atlas, at, SHELL_MODAL_PANEL_RGB, look.depths.background);
-        push_rect_outline(out, atlas, at, edge, SHELL_DROPDOWN_DEPTH - 0.00015);
+        paint.draw(Material::Controls, |out, _| {
+            push_solid_rect(out, atlas, at, SHELL_MODAL_PANEL_RGB, look.depths.background);
+            push_rect_outline(out, atlas, at, edge, SHELL_DROPDOWN_DEPTH - 0.00015);
+        });
     }
     paint_box_into(&mut paint, state, atlas, tree, shell_box, parts, pressed, look);
     SkirmishBoxDraw {
@@ -233,7 +237,7 @@ pub(crate) fn skirmish_box(
     pressed: impl Fn(u16) -> bool,
     look: BoxLook<'_>,
 ) -> SkirmishBoxDraw {
-    let paint = GuiPaint::default();
+    let paint = HudPaint::default();
     skirmish_box_into(paint, state, atlas, tree, shell_box, parts, &pressed, look)
 }
 
@@ -292,14 +296,16 @@ pub(crate) fn choose_map_prompt_box(
         }
         .or_else(|| atlas.mode_two_dialog_background(None))
     });
-    let mut paint = GuiPaint::default();
+    let mut paint = HudPaint::default();
     if let (Some(atlas), Kind::Downloading) = (atlas, prompt.kind)
         && let Some(progress) = crate::app::map_library::download_progress(state)
     {
         let track = parts.progress_track();
         let depth = BoxLook::skirmish(None).depths.button;
         let (white, rgb) = (atlas.white_pixel, super::SHELL_LABEL_TEXT_RGB);
-        super::gui_paint::push_progress(&mut paint.controls, white, track, rgb, progress, depth);
+        paint.draw(Material::Controls, |out, _| {
+            super::gui_paint::push_progress(out, white, track, rgb, progress, depth)
+        });
     }
     // Its widgets' captured button keeps its pushed look off the pointer too.
     let controller = &state.frontend.shell_controller;

@@ -3,7 +3,8 @@
 //! compact popup (background mode 2) with owner-draw buttons, NewEdits and
 //! an owner-draw list, their looks read from the dialogs' widgets.
 
-use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, HostRows, paint_gui_styled};
+use super::gui_paint::{ButtonArt, GuiStyle, HostRows, paint_gui_styled};
+use crate::render::hud_paint::{HudPaint, Material};
 use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
 use crate::app::AppState;
 use crate::render::shell_paint;
@@ -46,8 +47,8 @@ fn paint_box_on(state: &AppState, dialog: RectPx, scale: ShellScale) -> WolLobby
 }
 
 /// Appends a widget paint's sprites and texts to the box's.
-fn extend(paint: &mut WolLobbyPaint, widgets: GuiPaint) {
-    paint.controls.extend(widgets.controls);
+fn extend(paint: &mut WolLobbyPaint, widgets: HudPaint) {
+    paint.controls.extend(widgets.lane(Material::Controls).copied());
     paint.texts.extend(widgets.texts);
 }
 
