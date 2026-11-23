@@ -316,6 +316,17 @@ pub(crate) enum Picture {
     Status { host: bool, accepted: bool },
     /// C2/C9's emote pictures (`wodact` released, `wouact` pressed).
     Emote,
+    /// An image button's PCX faces on the page art ([`GuiStyle::art`]),
+    /// the pressed one while pushed, centred on the node at their size
+    /// grown with the page (a face larger than the node overhangs it
+    /// evenly), on [`GuiPaint::icons`] (the WOL lobby's and buddy list's).
+    Icon {
+        released: &'static str,
+        pressed: &'static str,
+    },
+    /// The LAN observer image, on or off, clipped and centred: a checkbox
+    /// that shows as it (the lobbies' and buddy list's eye).
+    Observer { on: bool },
 }
 
 /// Share the right-panel heading's text width while keeping the retail
@@ -827,9 +838,16 @@ pub(crate) fn paint_gui_into(
                             .picture_of
                             .zip(id(node))
                             .and_then(|(picture_of, id)| picture_of(id));
-                        if let Some(picture) = picture {
-                            let out = &mut paint.controls;
-                            push_picture(out, atlas, picture, rect, pressed, scale);
+                        match (picture, style.art) {
+                            (Some(Picture::Icon { released, pressed: down }), Some(art)) => {
+                                let face = if pressed { down } else { released };
+                                push_page_icon(&mut paint.icons, art, face, rect, scale);
+                            }
+                            (Some(Picture::Icon { .. }), None) | (None, _) => {}
+                            (Some(picture), _) => {
+                                let out = &mut paint.controls;
+                                push_picture(out, atlas, picture, rect, pressed, scale);
+                            }
                         }
                         continue;
                     }
@@ -955,6 +973,14 @@ pub(crate) fn paint_gui_into(
                 paint
                     .texts
                     .push(text(state, &label, at, align, glyph, rgb, depth));
+            }
+            // A checkbox that shows as the host's picture (the observer
+            // image): no face or caption.
+            NodeKind::Checkbox if style.picture_of.zip(id(node)).is_some_and(|(f, id)| f(id).is_some()) => {
+                let picture = style.picture_of.zip(id(node)).and_then(|(f, id)| f(id));
+                if let (Some(picture), Some(atlas)) = (picture, atlas) {
+                    push_picture(&mut paint.controls, atlas, picture, rect, false, scale);
+                }
             }
             NodeKind::Checkbox => {
                 // `Checkbox { checked }` is this face, never dimmed.
@@ -1624,6 +1650,13 @@ fn push_picture(
                 push_entry_fitted(out, entry, rect, scale, SHELL_SWATCH_DEPTH);
             }
         }
+        Picture::Observer { on } => {
+            if let Some(entry) = atlas.lan_observer_toggle(on) {
+                push_flag_entry_clipped_centered(out, entry, rect, scale, SHELL_CONTROL_DEPTH);
+            }
+        }
+        // On the page art: [`push_page_icon`].
+        Picture::Icon { .. } => {}
         Picture::Emote => {
             let (Some(released), pressed_art) = atlas.wol_emote_images() else {
                 return;
@@ -1642,6 +1675,24 @@ fn push_picture(
             }
         }
     }
+}
+
+/// [`Picture::Icon`]'s `face` from the page art, centred on `rect` in base
+/// pixels at its size grown with the page.
+fn push_page_icon(
+    out: &mut Vec<SpriteInstance>,
+    art: &WolPageArt,
+    face: &str,
+    rect: RectPx,
+    scale: ShellScale,
+) {
+    let Some((_, entry)) = art.icons.iter().find(|(name, _)| name == face) else {
+        return;
+    };
+    let (w, h) = entry.native_size();
+    let base = scale.base_rect(rect);
+    let [x, y] = scale.scale_point([base.x + (base.w - w) / 2, base.y + (base.h - h) / 2]);
+    shell_paint::push_entry_grown(out, *entry, x, y, scale, SHELL_CONTROL_DEPTH - 0.00003);
 }
 
 /// A `Bar` node's fill share (0..=100) and colours.
