@@ -130,15 +130,21 @@ pub(crate) enum Mark {
     PowerOff,
     Rank,
     SelfHeal,
+    /// Phobos' mobile shield PIPBRD.
+    ShieldBackground,
 }
 
-const MARKS: [(Mark, &str); 5] = [
+const MARKS: [(Mark, &str); 6] = [
     (Mark::BombClock, "bomb_clock"),
     (Mark::Wrench, "wrench"),
     (Mark::PowerOff, "power_off"),
     (Mark::Rank, "rank"),
     (Mark::SelfHeal, "self_heal"),
+    (Mark::ShieldBackground, "shield_background"),
 ];
+
+/// State bit: the shield's pips are asked for (after the marks').
+const SHIELD: u32 = 1 << 10;
 
 /// A mark's state bit, after the bars' and the scale's.
 const fn mark_bit(mark: Mark) -> u32 {
@@ -236,6 +242,32 @@ fn templates() -> Vec<StatusTemplate> {
             ..Default::default()
         });
     }
+    // Phobos shield bars (`DrawShieldBar_Other`, `_Building`): the codes
+    // are the frames the shield type picks for full and empty pips. A
+    // unit's row starts two pixels right of and one under its bracket,
+    // a building's walks up its roof from the bracket.
+    all.push(StatusTemplate {
+        name: "shield.unit".into(),
+        category: class_bit(HealthClass::Vehicle) | class_bit(HealthClass::Infantry),
+        state: SHIELD,
+        elements: vec![Element::Slots {
+            at: at(2, 1),
+            step: (2, 0),
+            arts: (0..MAX_SLOT_ARTS as u32).map(pips).collect(),
+        }],
+        ..Default::default()
+    });
+    all.push(StatusTemplate {
+        name: "shield.building".into(),
+        category: class_bit(HealthClass::Building),
+        state: SHIELD,
+        elements: vec![Element::Slots {
+            at: at(0, 0),
+            step: (-4, 2),
+            arts: (0..MAX_SLOT_ARTS as u32).map(pips).collect(),
+        }],
+        ..Default::default()
+    });
     all.push(StatusTemplate {
         name: "scale.building".into(),
         category: class_bit(HealthClass::Building),
@@ -461,6 +493,47 @@ pub(crate) fn mark(mark: Mark, frame: usize) -> Option<(usize, [i32; 2])> {
         WorldOp::Image { rect, art } => Some((art.0 as usize, [rect.x, rect.y])),
         _ => None,
     })
+}
+
+/// A shield bar's pips of an object of `class`, in order, as the built-in
+/// shield templates lay them out: each pip's frame and offset from the
+/// bracket (the unit's base). `frames` are the frames the shield type picks
+/// for each pip in turn.
+#[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+pub(crate) fn shield_pips(
+    class: HealthClass,
+    frames: impl IntoIterator<Item = usize>,
+    slots: &mut Vec<Slot>,
+    cmds: &mut Vec<WorldCmd<'static>>,
+    mut out: impl FnMut(usize, [i32; 2]),
+) {
+    slots.clear();
+    slots.extend(frames.into_iter().enumerate().map(|(index, frame)| Slot {
+        index: u16::try_from(index).unwrap_or(u16::MAX),
+        code: u16::try_from(frame).unwrap_or(u16::MAX),
+        lift: 0,
+    }));
+    if slots.is_empty() {
+        return;
+    }
+    let object = ObjectView {
+        id: 0,
+        x: 0,
+        y: 0,
+        type_id: 0,
+        category: class_bit(class),
+        relation: 0,
+        state: SHIELD,
+        values: &[],
+        slots,
+    };
+    cmds.clear();
+    BUILT_IN.paint_status(std::slice::from_ref(&object), cmds);
+    for cmd in cmds.iter() {
+        if let WorldOp::Image { rect, art } = cmd.op {
+            out(art.0 as usize, [rect.x, rect.y]);
+        }
+    }
 }
 
 /// `point` moved by a template's `offset`; untouched where there is none,

@@ -1629,29 +1629,31 @@ fn shield_bar_instances(
         })
     };
     if building {
-        for index in 0..total {
-            strip.fills.extend(instance(
-                frame,
-                (
-                    bracket.0 - 4.0 * index as f32,
-                    bracket.1 + 2.0 * index as f32,
-                ),
-            ));
-        }
         let empty_frame = ty
             .pips_building_empty()
             .or_else(|| globals.pips_building_empty())
             .unwrap_or(0);
         let empty_frame = usize::try_from(empty_frame.max(0)).unwrap_or(0);
-        for index in total..length {
-            strip.fills.extend(instance(
-                empty_frame,
-                (
-                    bracket.0 - 4.0 * index as f32,
-                    bracket.1 + 2.0 * index as f32,
-                ),
-            ));
-        }
+        // The built-in shield template lays the bar out
+        // (`health_templates`): full pips, then empty ones, walking [-4,+2].
+        // Subtracting the negated step keeps the original `- 4.0 * index`.
+        health_templates::shield_pips(
+            HealthClass::Building,
+            (0..total.max(0))
+                .map(|_| frame)
+                .chain((total.max(0)..length).map(|_| empty_frame)),
+            &mut Vec::new(),
+            &mut Vec::new(),
+            |frame, offset| {
+                strip.fills.extend(instance(
+                    frame,
+                    (
+                        bracket.0 - offset[0].wrapping_neg() as f32,
+                        bracket.1 + offset[1] as f32,
+                    ),
+                ));
+            },
+        );
         return;
     }
     let base = (bracket.0, bracket.1 + bracket_delta);
@@ -1664,20 +1666,36 @@ fn shield_bar_instances(
         // Phobos DrawShieldBar_Other (0x6F683C) draws PIPBRD with E00;
         // keep its texture/material separate from the following PIPS/600.
         // https://github.com/Phobos-developers/Phobos/blob/b90ab4bcba3f4b0b8ce74d2119ac0d561eaccc8f/src/New/Entity/ShieldClass.cpp#L1195-L1209
-        strip.shield_background = board
-            .instance(board_frame, (base.0 + offset as f32, base.1), depth)
+        strip.shield_background = health_templates::mark(Mark::ShieldBackground, board_frame)
+            .and_then(|(board_frame, shift)| {
+                board.instance(
+                    board_frame,
+                    health_templates::shifted((base.0 + offset as f32, base.1), shift),
+                    depth,
+                )
+            })
             .map(|mut instance| {
                 instance.palette_light =
                     crate::render::palette_light::PaletteLight::plain(53, 1000);
                 instance
             });
     }
-    for index in 0..total {
-        strip.fills.extend(instance(
-            frame,
-            (base.0 + 2.0 * (index + 1) as f32, base.1 + 1.0),
-        ));
-    }
+    health_templates::shield_pips(
+        if infantry {
+            HealthClass::Infantry
+        } else {
+            HealthClass::Vehicle
+        },
+        (0..total.max(0)).map(|_| frame),
+        &mut Vec::new(),
+        &mut Vec::new(),
+        |frame, offset| {
+            strip.fills.extend(instance(
+                frame,
+                (base.0 + offset[0] as f32, base.1 + offset[1] as f32),
+            ));
+        },
+    );
 }
 
 /// Phobos `TechnoExt::DrawInsignia`'s visibility half
