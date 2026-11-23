@@ -926,35 +926,6 @@ pub(crate) fn build_tooltip_instances(
 /// Returns `(fill quads, outline quads, text quads)`. `camera_offset` must be
 /// the live world camera: the UI pipeline subtracts it in the shader, so
 /// passing zero here walks the popup off screen.
-/// [`draw_tooltip`] through a fresh tree, for the tests.
-#[cfg(test)]
-pub(crate) fn tooltip_quads(
-    font: &crate::render::bit_font::BitFont,
-    text: &str,
-    tip_xy: [i32; 2],
-    region: [f32; 4],
-    tint: [f32; 3],
-    camera_offset: [f32; 2],
-    with_fill: bool,
-    place: crate::ui::field_layout::TooltipPlace,
-) -> (
-    Vec<SpriteInstance>,
-    Vec<SpriteInstance>,
-    Vec<SpriteInstance>,
-) {
-    draw_tooltip(
-        font,
-        text,
-        tip_xy,
-        region,
-        tint,
-        camera_offset,
-        with_fill,
-        place,
-        &mut TextHud::default(),
-    )
-}
-
 pub(crate) fn draw_tooltip(
     font: &crate::render::bit_font::BitFont,
     text: &str,
@@ -1097,6 +1068,34 @@ pub(crate) fn size_tip_box(
 mod tests {
     use super::*;
     use crate::render::bit_font::tests::make_test_font;
+
+    /// [`draw_tooltip`] through a fresh tree.
+    fn tooltip_quads(
+        font: &crate::render::bit_font::BitFont,
+        text: &str,
+        tip_xy: [i32; 2],
+        region: [f32; 4],
+        tint: [f32; 3],
+        camera_offset: [f32; 2],
+        with_fill: bool,
+        place: crate::ui::field_layout::TooltipPlace,
+    ) -> (
+        Vec<SpriteInstance>,
+        Vec<SpriteInstance>,
+        Vec<SpriteInstance>,
+    ) {
+        draw_tooltip(
+            font,
+            text,
+            tip_xy,
+            region,
+            tint,
+            camera_offset,
+            with_fill,
+            place,
+            &mut TextHud::default(),
+        )
+    }
 
     /// Retail English `TXT_MONEY_FORMAT_2`.
     const RETAIL_MONEY_FORMAT_2: &str = "%s $%d";
