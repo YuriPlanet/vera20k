@@ -14,7 +14,6 @@ use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::in_game_shell::{InGameShellLayout, InGameShellSizes};
-use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::sidebar::command_bar::spacer_pieces;
 use crate::ui::sidebar::{ArtKey, SidebarPart};
 
@@ -196,15 +195,6 @@ impl<'a> InGamePaint<'a> {
         self.state.csf_label(key, fallback)
     }
 
-    /// A right-panel owner-draw button in `look`: its SIDEBTTN frame
-    /// ([`super::pause_menu::button_frame`]) and centred caption, in the
-    /// side's colour while disabled or lit.
-    pub(super) fn owner_button(&mut self, rect: RectPx, caption: &str, look: PauseMenuButtonState) {
-        let (font, side) = (&self.state.renderer.bit_font, self.side_buttons());
-        let (art, texts) = (&mut self.art, &mut self.texts);
-        super::gui_paint::push_side_button(art, texts, font, side, rect, Some(caption), look, 1.0);
-    }
-
     /// This shell's type-2 button art for [`super::gui_paint::ButtonArt::Side`].
     pub(super) fn side_buttons(&self) -> super::gui_paint::SideButtons {
         super::gui_paint::SideButtons {
@@ -226,10 +216,21 @@ impl<'a> InGamePaint<'a> {
         ids: &[u16],
         style: super::gui_paint::GuiStyle<'_>,
     ) {
-        let Some(root) = ui.top_id().and_then(|dialog| ui.root_in(dialog)) else {
-            return;
-        };
-        let (state, gui) = (self.state, ui.gui());
+        if let Some(root) = ui.top_id().and_then(|dialog| ui.root_in(dialog)) {
+            self.nodes_in(ui.gui(), root, ids, style);
+        }
+    }
+
+    /// [`Self::nodes`] of the dialog rooted at `root` in `gui`, which may lie
+    /// under another.
+    pub(super) fn nodes_in(
+        &mut self,
+        gui: &vera20k_gui::Gui,
+        root: vera20k_gui::NodeId,
+        ids: &[u16],
+        style: super::gui_paint::GuiStyle<'_>,
+    ) {
+        let state = self.state;
         let atlas = state.frontend.skirmish_shell_chrome.as_ref();
         // The lanes move in and back out: no new buffers.
         let mut paint = super::gui_paint::GuiPaint {
@@ -261,20 +262,14 @@ impl<'a> InGamePaint<'a> {
 
     /// A static's text in the label colour.
     pub(super) fn text(&mut self, value: &str, rect: RectPx, align: ShellAlign) {
-        self.text_rgb(value, rect, super::SHELL_LABEL_TEXT_RGB, align);
-    }
-
-    pub(super) fn text_rgb(&mut self, value: &str, rect: RectPx, rgb: [f32; 3], align: ShellAlign) {
-        let at = super::text::rect_to_text_rect(rect);
-        let depth = super::SHELL_CONTROL_TEXT_DEPTH;
         super::text::push_text_draw(
             &mut self.texts,
             self.state,
             value,
-            at,
-            rgb,
+            super::text::rect_to_text_rect(rect),
+            super::SHELL_LABEL_TEXT_RGB,
             align,
-            depth,
+            super::SHELL_CONTROL_TEXT_DEPTH,
             1.0,
         );
     }

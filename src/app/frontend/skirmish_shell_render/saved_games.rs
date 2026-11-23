@@ -13,7 +13,6 @@ use crate::render::batch::SpriteInstance;
 use crate::render::shell_text::ShellTextDraw;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::ShellAlign;
-use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::shell::saved_games::{saved_game_layout, saved_game_title_label};
 use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BACK, BROWSER_DIALOG, LIST};
 use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedLayout};
@@ -197,28 +196,41 @@ pub(crate) fn render_saved_game_shell(
         );
         paint.controls.extend(widgets.controls);
         paint.texts.extend(widgets.texts);
-        for (id, rect, label, enabled) in [
-            (
-                ACTION,
-                layout.action,
-                browser.action_label(),
-                browser.action_enabled(),
-            ),
-            (BACK, layout.back, ("GUI:Back", "Back"), true),
-        ] {
-            // A confirmation drops the browser's press while open; its buttons
-            // are painted by the common prompt renderer, not the underlying column.
-            let pressed = browser.prompt.is_none() && browser.pressed(id);
-            let caption = paint.label(label);
-            paint.owner_button(
-                rect,
-                &caption,
-                PauseMenuButtonState {
-                    pressed,
-                    highlighted: false,
-                    enabled,
-                },
-            );
+        // Action and Back from their nodes on the side's type-2 art. They
+        // keep the pushed look while they hold the press, on the pointer or
+        // not; a confirmation drops the browser's press while open (its
+        // buttons are the common prompt renderer's).
+        let text_of = |id: i32| -> Option<String> {
+            match u16::try_from(id).ok()? {
+                ACTION => {
+                    let (key, fallback) = browser.action_label();
+                    Some(state.csf_label(key, fallback))
+                }
+                BACK => Some(state.csf_label("GUI:Back", "Back")),
+                _ => None,
+            }
+        };
+        let enabled_of = |id: i32| -> Option<bool> {
+            match u16::try_from(id).ok()? {
+                ACTION => Some(browser.action_enabled()),
+                BACK => Some(true),
+                _ => None,
+            }
+        };
+        let pressed_of = |id: i32| -> Option<bool> {
+            let id = u16::try_from(id).ok()?;
+            matches!(id, ACTION | BACK).then(|| browser.prompt.is_none() && browser.pressed(id))
+        };
+        let style = GuiStyle {
+            buttons: ButtonArt::Side,
+            side: Some(paint.side_buttons()),
+            text_of: Some(&text_of),
+            enabled_of: Some(&enabled_of),
+            pressed_of: Some(&pressed_of),
+            ..GuiStyle::default()
+        };
+        if let Some(root) = browser.ui.root_in(BROWSER_DIALOG) {
+            paint.nodes_in(browser.ui.gui(), root, &[ACTION, BACK], style);
         }
         // The box's clipping excludes all underlying text, the active-game
         // title and column labels included.

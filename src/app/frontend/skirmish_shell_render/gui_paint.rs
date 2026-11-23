@@ -256,6 +256,10 @@ pub(crate) struct GuiStyle<'a> {
     /// The host's enable for a node by its `Id`, in place of its `Enabled`
     /// (a button the host greys while it still takes presses).
     pub(crate) enabled_of: Option<&'a dyn Fn(i32) -> Option<bool>>,
+    /// Whether a button shows pushed by its `Id`, in place of its art's
+    /// rule ([`ButtonArt::pushed`]): a host whose buttons keep the pushed
+    /// look off the pointer, or lose it under a box.
+    pub(crate) pressed_of: Option<&'a dyn Fn(i32) -> Option<bool>>,
     /// Lists paint as the shell dialogs' own ([`super::controls::list_view_controls`]:
     /// frame, selection, the control scrollbar) rather than as the WOL
     /// pages' over their art ([`super::list::paint_list`]).
@@ -300,6 +304,7 @@ impl Default for GuiStyle<'_> {
             cells_of: None,
             art: None,
             enabled_of: None,
+            pressed_of: None,
             control_lists: false,
             combos: ComboArt::Plain,
             skirmish_lists: false,
@@ -616,7 +621,14 @@ pub(crate) fn paint_gui_into(
                     .zip(id(node))
                     .and_then(|(art_of, id)| art_of(id))
                     .unwrap_or(style.buttons);
-                let pressed = art.pushed(held, captured) == Some(node);
+                let pressed = match style
+                    .pressed_of
+                    .zip(id(node))
+                    .and_then(|(pressed_of, id)| pressed_of(id))
+                {
+                    Some(pressed) => pressed,
+                    None => art.pushed(held, captured) == Some(node),
+                };
                 if art == ButtonArt::Side {
                     let Some(side) = style.side else { continue };
                     let look = PauseMenuButtonState {
