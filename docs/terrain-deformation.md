@@ -46,6 +46,14 @@ cannon blast with `Deform=100%` always does). The height of the blast does not m
 the air dents the ground under it too. Only after the draw, a blast at or above the deck of a high
 bridge leaves the ground under the bridge alone.
 
+Firestorm also rolled in its wide-area damage (Firestorm 2.0 0x460440), once for the middle cell and
+again in each cell's explosion around it. It used that for a dying object with `Explodes=`, for a
+dying harvester's tiberium and for a nuke whose blast animation could not be made. Yuri's Revenge
+keeps that function (`0x0048A700`) without the roll, and nothing calls it. The same three blasts
+explode once instead: a dying `Explodes=` object fires its death weapon, a harvester's tiberium
+does nothing (Ares adds one blast), and the nuke's fallback is one ordinary explosion. Each of these
+explosions rolls once, as above.
+
 **Meteors** (Firestorm 2.0 0x4151B1 and 0x65E58D). A landing meteor, a cartoon one or a voxel one,
 that is not on a bridge deck dents its landing cell when `CraterLevel=` is not 0; retail sets 1.
 Above 1 it also dents the four cells diagonal to it, above 2 all eight cells around it, and above 3
@@ -60,7 +68,8 @@ later dent replaces it, so of a meteor's dents only the last one's second step c
 sinks a level, and each corner around it that would be more than a level higher sinks with it, so no
 slope is steeper than one level per cell. A corner stays where it is if sinking would take it below
 `DeformLowestLevel=` or leave it above Level 12. If a corner that must move cannot, nothing changes
-at all.
+at all. Yuri's Revenge ground can reach Level 14, and VERA keeps Firestorm's top: a corner at
+Level 14 stays where it is.
 Then every cell with a corner that moved, or tried to, is rewritten: its Level, its slope and the
 theater's clear tile or its ramp, its smudge gone, and each vehicle and soldier on it set back on the
 ground.

@@ -200,6 +200,16 @@ impl Simulation {
     /// above a high bridge's deck leaves the ground: the cell's bridge flag
     /// (`+0xA4 & 0x1000`, gamemd's `0x100`) and the ground under the impact
     /// (0x51E0A0) plus the deck height.
+    ///
+    /// Firestorm's Wide_Area_Damage (Firestorm 2.0 0x460440) rolls once more
+    /// for its centre before its per-cell explosion damage. gamemd keeps that
+    /// function (`0x0048A700`) without the roll and with no caller. Of the
+    /// Firestorm blasts that called it, a dying `Explodes=` object fires its
+    /// death weapon (Fire_Death_Weapon `0x0070D690`) and the nuke's ground
+    /// zero (`0x004251F0`, reached in both games only when the detonation's
+    /// anim cannot be allocated) is one Apply_area_damage, each rolling here
+    /// once; a dying unit's tiberium (`UnitClass::Death_Explosion`
+    /// `0x00738749`) is only summed.
     pub(crate) fn roll_terrain_deformation(
         &mut self,
         rules: &RuleSet,
