@@ -9,7 +9,7 @@ use crate::i18n::{tr, tr_count, tr_fill};
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_paint::{self, PaintLabel};
-use crate::render::shell_text::{self, ShellTextDraw, TextRect};
+use crate::render::shell_text::{ShellTextDraw, TextRect};
 use crate::skirmish_launch::{LaunchCountry, LaunchStartPosition};
 use crate::ui::shell::geom::{ShellAlign, ShellScale};
 use crate::ui::shell::static_reveal::StaticPaint;
@@ -22,7 +22,7 @@ use crate::ui::skirmish_shell::{
 use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, HostRows, paint_gui_with};
 use super::{
     COMBODROPWIN_TEXT_TRUNCATION_SCROLLBAR_RESERVE_PX, SHELL_CONTROL_TEXT_DEPTH,
-    SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
+    SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F, SHELL_LABEL_TEXT_RGB,
 };
 
 pub(super) fn checkbox_label(id: SkirmishCheckboxId) -> (&'static str, &'static str) {
@@ -163,13 +163,6 @@ pub(super) fn combo_dropdown_text_fit_width(content: RectPx, scale: ShellScale) 
         .round()
         .max(0.0) as u32
 }
-
-/// A list row's text inset from its left edge, grown with the page.
-fn list_text_inset(scale: ShellScale) -> i32 {
-    (LIST_TEXT_INSET as f32 * scale.factor()).round() as i32
-}
-
-const LIST_TEXT_INSET: i32 = 2;
 
 pub(super) fn combo_face_text_fit_width(rect: RectPx, scale: ShellScale) -> u32 {
     // The truncation test runs on gamemd's glyph metrics, so the stretched face's
@@ -476,10 +469,10 @@ pub(super) fn random_map_paint(
     };
     // Surprise Me and Generate are owner-draw type 3 (MNBTTN), captions
     // centred on the whole button; VERA's Extras
-    // rows are framed plates; Ares' Urban Areas box paints as a checkbox.
+    // rows are framed plates; Ares' Urban Areas button shows as its box.
     let art_of = |id: i32| match id {
         0x621 | 0x620 => Some(ButtonArt::ModalCentred),
-        5000 => Some(ButtonArt::Host),
+        5000 => Some(ButtonArt::CheckboxFace),
         0x7420..0x7427 => Some(match modal.extras_row((id - 0x7420) as usize) {
             Some(_) => ButtonArt::Plate,
             None => ButtonArt::Host,
@@ -565,6 +558,32 @@ pub(super) fn choose_map_paint(
         .choose_map_modal
         .as_ref()?;
     let rows_of = |id| Some(choose_map_rows(state, modal, layout, id == 0x6EB));
+    // VERA's search line over the map list shows the search with its
+    // composition, or names itself while empty; an empty list says why.
+    // The line takes its text once a frame: it moves in, not a copy.
+    let search = map_search_display(state, &modal.search);
+    let empty = search.is_empty();
+    let search = std::cell::Cell::new(Some(search));
+    let text_of = |id: i32| {
+        (id == i32::from(choose_map_page::MAP_SEARCH))
+            .then(|| search.take())
+            .flatten()
+    };
+    let hint_of = |id: i32| {
+        (id == i32::from(choose_map_page::MAP_SEARCH) && empty)
+            .then(|| (tr("VERA:MapSearchHint"), choose_map_page::MAP_SEARCH_INSET.x))
+    };
+    let edit_face_of = |id: i32| {
+        (id == i32::from(choose_map_page::MAP_SEARCH)).then_some(super::gui_paint::EditFace::SearchLine)
+    };
+    let empty_of = |id: i32| {
+        (id == i32::from(choose_map_page::MAP_LIST))
+            .then(|| choose_map_empty_text(state, modal))
+            .flatten()
+    };
+    // Native owner-draw lists keep the composed backing; only the
+    // asset-missing fallback fills the search line.
+    let backed = super::modals::choose_map_background_entry(atlas, layout).is_some();
     let style = GuiStyle {
         // The right column shows while no slide runs.
         buttons: if sliding {
@@ -573,11 +592,15 @@ pub(super) fn choose_map_paint(
             ButtonArt::Panel
         },
         rows_of: Some(&rows_of),
+        text_of: Some(&text_of),
+        hint_of: Some(&hint_of),
+        edit_face_of: Some(&edit_face_of),
+        edit_fill: (!backed).then_some(super::SHELL_MODAL_PANEL_RGB),
+        empty_of: Some(&empty_of),
         ..Default::default()
     };
     let gui = state.frontend.shell_controller.gui();
     let mut paint = paint_gui_with(state, atlas, gui, root, layout.scale, &[], style);
-    push_choose_map_search_text(&mut paint.texts, state, modal, layout);
     paint.texts.extend(super::paint_map_dialog_statics(
         &state.renderer.bit_font,
         &statics,
@@ -652,20 +675,13 @@ fn choose_map_rows(
         .collect()
 }
 
-/// VERA: an empty Online Maps or Favorites list's reason, wrapped down the
-/// list, and the search box over the map list (typing anywhere fills it). An
-/// empty box says so in the label colour: the disabled red does not read
-/// over the chooser's background.
-fn push_choose_map_search_text(
-    out: &mut Vec<ShellTextDraw>,
+/// VERA: why an empty Online Maps or Favorites list is empty, which it
+/// shows down the list.
+fn choose_map_empty_text(
     state: &AppState,
     modal: &crate::ui::skirmish_shell::ChooseMapModalState,
-    layout: &ChooseMapModalLayout,
-) {
-    let scale = layout.scale;
-    let depth = SHELL_DROPDOWN_TEXT_DEPTH - 0.00009;
-    let geometry = modal.map_geometry(layout);
-    let empty = if modal.map_row_count() > 0 {
+) -> Option<String> {
+    if modal.map_row_count() > 0 {
         None
     } else if modal.random_maps_selected() && modal.search.is_empty() {
         Some(tr("VERA:NoRandomMaps"))
@@ -679,60 +695,8 @@ fn push_choose_map_search_text(
         }))
     } else {
         None
-    };
-    if let Some(empty) = empty {
-        let row = geometry.row(0);
-        let inset = list_text_inset(scale);
-        let rect = RectPx::new(
-            row.x + inset,
-            row.y,
-            row.w - inset,
-            geometry.content.y + geometry.content.h - row.y,
-        );
-        let rgb = SHELL_LABEL_TEXT_RGB;
-        let (align, factor) = (ShellAlign::NONE, scale.factor());
-        out.push(shell_text::draw_in_rect_scaled(
-            &state.renderer.bit_font,
-            &empty,
-            TextRect::of(rect),
-            rgb,
-            align,
-            [0.0, 0.0],
-            depth,
-            factor,
-        ));
     }
-    let field = scale.derive_rect(layout.map_search, |rect| {
-        RectPx::new(
-            rect.x + LIST_TEXT_INSET,
-            rect.y,
-            rect.w - LIST_TEXT_INSET,
-            rect.h,
-        )
-    });
-    let display_search = map_search_display(state, &modal.search);
-    let hint;
-    let search = if display_search.is_empty() {
-        hint = tr("VERA:MapSearchHint");
-        &*hint
-    } else {
-        let box_w = scale.base_rect(layout.map_search).w;
-        map_search_tail(&state.renderer.bit_font, &display_search, box_w).0
-    };
-    out.push(shell_text::draw_in_rect_scaled(
-        &state.renderer.bit_font,
-        search,
-        TextRect::of(field),
-        SHELL_LABEL_TEXT_RGB,
-        ShellAlign::V_CENTER,
-        [0.0, 0.0],
-        depth,
-        scale.factor(),
-    ));
 }
-
-/// The search caret's width, in 800x600 numbers like a NewEdit's.
-pub(super) const MAP_SEARCH_CARET_W: i32 = 2;
 
 /// The committed query plus the currently composed IME text, for display
 /// only; filtering still uses the committed query.
@@ -746,22 +710,6 @@ pub(super) fn map_search_display(state: &AppState, search: &str) -> String {
     format!("{search}{composition}")
 }
 
-/// The end of `search` that fits a `box_w` wide search box with the caret
-/// after it, and that text's width: a long search scrolls its start out of
-/// the box. All in 800x600 numbers.
-pub(super) fn map_search_tail<'a>(font: &BitFont, search: &'a str, box_w: i32) -> (&'a str, i32) {
-    let room = box_w - 2 * LIST_TEXT_INSET - MAP_SEARCH_CARET_W;
-    let mut tail = search;
-    loop {
-        let width = font.text_width(tail) as i32;
-        let mut chars = tail.chars();
-        if width <= room || chars.next().is_none() {
-            return (tail, width);
-        }
-        tail = chars.as_str();
-    }
-}
-
 /// Where the search caret goes: after the text, inside the box. `None`
 /// while the box is empty and shows its hint.
 pub(super) fn map_search_caret_rect(
@@ -773,14 +721,8 @@ pub(super) fn map_search_caret_rect(
     if search.is_empty() {
         return None;
     }
-    let base = scale.base_rect(map_search);
-    let (_, width) = map_search_tail(font, search, base.w);
-    Some(scale.scale_rect(RectPx::new(
-        base.x + LIST_TEXT_INSET + width,
-        base.y + 2,
-        MAP_SEARCH_CARET_W,
-        base.h - 4,
-    )))
+    let inset = crate::ui::skirmish_shell::choose_map_page::MAP_SEARCH_INSET;
+    Some(super::gui_paint::search_line_tail(font, search, map_search, inset, scale).1)
 }
 
 pub(super) fn push_start_marker_labels(
@@ -1083,12 +1025,13 @@ mod tests {
         let long = "a".repeat(40);
         // 196 less two 2 px insets and the 2 px caret leaves 190: 27 of the
         // font's 7 px advances.
-        assert_eq!(map_search_tail(&font, &long, field.w), (&long[13..], 189));
-        let caret =
-            map_search_caret_rect(&font, &long, field, crate::ui::shell::geom::RETAIL_SCALE)
-                .unwrap();
+        let inset = crate::ui::skirmish_shell::choose_map_page::MAP_SEARCH_INSET;
+        let scale = crate::ui::shell::geom::RETAIL_SCALE;
+        let (tail, _) = super::super::gui_paint::search_line_tail(&font, &long, field, inset, scale);
+        assert_eq!(tail, &long[13..]);
+        let caret = map_search_caret_rect(&font, &long, field, scale).unwrap();
         assert_eq!(caret, RectPx::new(529, 121, 2, 13));
-        assert!(caret.x + caret.w <= field.x + field.w - LIST_TEXT_INSET);
+        assert!(caret.x + caret.w <= field.x + field.w - 2);
         assert_eq!(
             map_search_caret_rect(&font, "", field, crate::ui::shell::geom::RETAIL_SCALE),
             None

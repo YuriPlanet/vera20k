@@ -381,6 +381,8 @@ pub(super) fn dispatch_draw_passes(
     // The sidebar's surface is complete before the frame begins; the
     // screen-fixed block copies it in.
     draw_sidebar_surface(state, encoder, data);
+    // The Surrender box paints from its nodes, kept on its layout.
+    crate::app::input::surrender::sync(state);
     let pool: &InstanceBufferPool = &state.renderer.instance_pool;
     let pose_cache = state.renderer.vxl_pose_frame_cache.borrow();
     let world_depth = state
@@ -1314,8 +1316,6 @@ pub(super) fn dispatch_draw_passes(
             [tac_x, tac_y, tac_w, tac_h],
             bar_under,
         );
-    // The Surrender box paints from its nodes, kept on its layout.
-    crate::app::input::surrender::sync(state);
     let page_draw = crate::app::frontend::skirmish_shell_render::in_match_page_draw(state);
     let mut pass = begin_main_load_pass(encoder, view, frame_depth);
 

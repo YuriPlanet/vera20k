@@ -87,8 +87,19 @@ impl App {
         controller.ensure_active(MOVIE_LIST_DIALOG);
         controller.set_scale(layout.page.scale);
         if let Some(rows) = state.frontend.movie_list.as_ref() {
+            // The buttons and the prompt first: the list's id counts as built.
+            if let Some(root) = controller.root_in(MOVIE_LIST_DIALOG) {
+                let nodes = crate::ui::movies_credits_shell::movie_list_nodes;
+                crate::ui::shell::page::ensure_built(controller.gui_mut(), root, nodes);
+            }
             let list = (rows.len(), retained_movie_row(rows, retained), 0);
-            family_list_node(controller, MOVIE_LIST_DIALOG, layout.list, list);
+            if let Some(node) = family_list_node(controller, MOVIE_LIST_DIALOG, layout.list, list) {
+                // Its rows draw top-left (`Shell__DrawTextAligned`, flags 0).
+                let gui = controller.gui_mut();
+                let id = crate::ui::movies_credits_shell::FAMILY_LIST_ID;
+                let _ = gui.set(node, vera20k_gui::Prop::Id, vera20k_gui::Value::Int(id));
+                let _ = gui.set(node, vera20k_gui::Prop::Align, vera20k_gui::Value::Int(0));
+            }
         }
         layout
     }
@@ -111,8 +122,8 @@ impl App {
     pub(super) fn handle_movie_list_mouse(state: &mut AppState, down: Option<bool>) {
         use crate::app::frontend::shell_transition::ShellSlideKind::MovieList;
         let layout = Self::movie_list_sync(state);
-        let rect_of = |id| layout.page.button_rect(id);
-        let nodes = || crate::ui::movies_credits_shell::MOVIE_LIST_PAGE.nodes();
+        let rect_of = |id| layout.rect_of(id);
+        let nodes = crate::ui::movies_credits_shell::movie_list_nodes;
         match Self::screen_page_pointer(state, MOVIE_LIST_DIALOG, nodes, rect_of, &[], down) {
             Some(crate::ui::movies_credits_shell::PLAY_MOVIE_CONTROL) => {
                 if family_list_selected(&state.frontend.shell_controller, MOVIE_LIST_DIALOG)

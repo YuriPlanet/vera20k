@@ -20,7 +20,7 @@ use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{BoxParts, Footer, ShellBox, control};
 use crate::util::mod_package::{ModImport, PreparedModImport};
 use crate::util::time::{Duration, Instant};
-use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ROW_HEIGHT, ShellListGeometry};
+use vera20k_gui::shell::list::ROW_HEIGHT;
 use vera20k_gui::{NodeId, NodeKind, Prop, Value};
 
 use super::{App, AppState};
@@ -296,16 +296,30 @@ fn list_node(state: &AppState, dialog: DialogResourceId) -> Option<NodeId> {
         .find(|node| gui.tree().kind(*node) == Ok(NodeKind::List))
 }
 
-/// Builds the preview's parts list in its box once (with no id, so the
-/// box's buttons still build), from the selection's rows, selected row and
-/// top, the selected row in view; keeps it on its rect and row count.
+/// The parts list's host id: past the box's 16-bit control ids, so the
+/// box's rect sync leaves its window alone and no press names it (the
+/// update offer's list is `0x1_0001`).
+pub(crate) const LIST_ID: i32 = 0x1_0002;
+
+/// The open preview's parts list node and its rows, if built.
+pub(crate) fn node(state: &AppState) -> Option<(NodeId, &[String])> {
+    let (selection, _, dialog) = preview_box(state)?;
+    Some((list_node(state, dialog)?, &selection.rows))
+}
+
+/// Builds the preview's parts list in its box once, after the box's
+/// buttons (its id counts as built), from the selection's rows, selected
+/// row and top, the selected row in view; keeps it on its rect and row
+/// count.
 pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let (selection, layout, dialog) = preview_box(state)?;
     let rect = list_rect(&layout);
     let (rows, selected, top) = (selection.rows.len(), selection.selected, selection.top);
     let scale = layout.scale;
     let built = list_node(state, dialog);
-    let controller = &mut state.frontend.shell_controller;
+    let frontend = &mut state.frontend;
+    let shell_box = &frontend.shell_message_box.as_ref()?.shell_box;
+    let controller = &mut frontend.shell_controller;
     // The list's metrics follow the box's scale, as its paint does.
     controller.set_scale_in(dialog, scale);
     let root = controller.root_in(dialog)?;
@@ -314,7 +328,12 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let node = match built {
         Some(node) => node,
         None => {
+            crate::ui::shell::page::ensure_built(gui, root, || shell_box.nodes());
             let node = gui.create(NodeKind::List, Some(root)).ok()?;
+            let _ = gui.set(node, Prop::Id, Value::Int(LIST_ID));
+            // Each row's text inset from both ends.
+            let inset = RectPx::new(ROW_TEXT_INSET, 0, ROW_TEXT_INSET, 0);
+            let _ = gui.set(node, Prop::TextInset, Value::Rect(inset));
             let _ = gui.set(node, Prop::RowCount, int(rows));
             let _ = gui.set(node, Prop::Rect, Value::Rect(rect));
             let _ = gui.set(node, Prop::Top, int(top));
@@ -377,35 +396,6 @@ pub(crate) fn follow_list(state: &mut AppState) {
             button.enabled = !disabled;
         }
     }
-}
-
-/// What the open preview's list paints: its geometry, its rows, top and
-/// selected row, and the scrollbar part shown pushed.
-pub(crate) struct PartsView<'a> {
-    pub(crate) geometry: ShellListGeometry,
-    pub(crate) rows: &'a [String],
-    pub(crate) top: usize,
-    pub(crate) selected: Option<usize>,
-    pub(crate) pressed: Option<ListScrollPart>,
-    /// Each row's text inset, in 800x600 pixels.
-    pub(crate) text_inset: i32,
-}
-
-pub(crate) fn parts_view(state: &AppState) -> Option<PartsView<'_>> {
-    let (selection, layout, dialog) = preview_box(state)?;
-    let view = list_node(state, dialog)
-        .and_then(|node| state.frontend.shell_controller.gui().list_view(node));
-    let top = view.map_or(selection.top, |view| view.top);
-    let selected = view.map_or(selection.selected, |view| view.selected);
-    let metrics = ListMetrics::scaled(layout.scale);
-    Some(PartsView {
-        geometry: ShellListGeometry::new(list_rect(&layout), selection.rows.len(), top, metrics),
-        rows: &selection.rows,
-        top,
-        selected,
-        pressed: view.and_then(|view| view.pressed),
-        text_inset: ROW_TEXT_INSET,
-    })
 }
 
 /// The box's own input reaches the parts list through the gui; this only

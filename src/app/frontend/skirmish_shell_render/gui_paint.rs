@@ -24,6 +24,8 @@
 //! button ([`Picture`], [`ButtonArt::Image`]) and its chat edit under its
 //! boxes ([`GuiStyle::focus_of`], [`GuiStyle::ime_target`]).
 
+use std::borrow::Cow;
+
 use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
 
 use super::controls::{ControlPaint, dropdown_scroll_part, paint_control, push_popup_instances};
@@ -146,6 +148,10 @@ pub(crate) enum ButtonArt {
     /// when it has none) while pushed, copied 1:1 at the rect's top-left
     /// and cut to the rect, with no frame or caption (`0x6131D7..0x613237`).
     Image,
+    /// The shell's checkbox face on the rect, checked while `Toggled`, no
+    /// pushed look: a button that keeps a button's presses and events but
+    /// shows as a box (Ares' Urban Areas, whose caption is its own static).
+    CheckboxFace,
 }
 
 impl ButtonArt {
@@ -232,6 +238,23 @@ pub(crate) enum FrameArt {
     /// A List node's scrollbar alone, as its geometry places it, its held
     /// part pushed; no frame or rows (VERA's roster's).
     ListBar,
+    /// A list's two frame rings ([`super::list::paint_list_frame`]) on the
+    /// node's rect less `inset` (base pixels, as a `TextInset`), no
+    /// caption: the WOL pages' `BS_GROUPBOX` frames.
+    ListRings { inset: RectPx },
+}
+
+/// How an edit paints in place of a NewEdit ([`GuiStyle::edit_face_of`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EditFace {
+    /// VERA's search line ([`push_search_line`]), on a framed edit
+    /// (`TextInset`).
+    SearchLine,
+    /// An editable combo's edit, inside the combo's face: no frame of its
+    /// own, its caret and text in its rect (the face's text area), the
+    /// text from its first visible unit and no composition (the WOL
+    /// login's nickname).
+    ComboText,
 }
 
 /// How a dialog's combos paint their face.
@@ -370,6 +393,26 @@ pub(crate) struct GuiStyle<'a> {
     /// its one-pixel resource frame, BC6's chat); the node keeps the whole
     /// rect for its hits and its caret's scrolling.
     pub(crate) edit_inset: Option<i32>,
+    /// An edit's hint by its `Id` while it shows nothing (the host's word),
+    /// with its left inset in base pixels: drawn in the edit's rect less
+    /// that inset, vertically centred in the style's colour, after the
+    /// edit's own paint (VERA's search boxes).
+    pub(crate) hint_of: Option<&'a dyn Fn(i32) -> Option<(String, i32)>>,
+    /// An edit's face by its `Id`, in place of the NewEdit's ([`EditFace`]).
+    pub(crate) edit_face_of: Option<&'a dyn Fn(i32) -> Option<EditFace>>,
+    /// A list's message by its `Id` while it holds no rows (why it is
+    /// empty), wrapped down the list from its first row.
+    pub(crate) empty_of: Option<&'a dyn Fn(i32) -> Option<String>>,
+    /// The lists' rows and scrollbar track are backed with the panel
+    /// colour, for lists no art backs ([`super::list::paint_list`]'s
+    /// `solid_fill`).
+    pub(crate) solid_lists: bool,
+    /// Where row `row` of a list (by its `Id`) starts its text, in base
+    /// pixels into the row, in place of its `TextInset`: rounded once at
+    /// the page's scale onto the row's left, and run to the list window's
+    /// right edge (rows wrapped narrower than the list, such as hanging
+    /// lines under a bullet).
+    pub(crate) indent_of: Option<&'a dyn Fn(i32, usize) -> Option<i32>>,
 }
 
 impl Default for GuiStyle<'_> {
@@ -402,6 +445,11 @@ impl Default for GuiStyle<'_> {
             ime_target: None,
             clipped_faces: false,
             edit_inset: None,
+            hint_of: None,
+            edit_face_of: None,
+            empty_of: None,
+            solid_lists: false,
+            indent_of: None,
         }
     }
 }
@@ -420,12 +468,12 @@ impl GuiStyle<'_> {
 }
 
 /// A node's caption: `Label` is a string key (shown as the key when
-/// missing), `Text` a literal.
-fn label_of(state: &AppState, gui: &Gui, node: NodeId) -> Option<String> {
+/// missing), `Text` a literal (borrowed, not copied).
+fn label_of<'g>(state: &AppState, gui: &'g Gui, node: NodeId) -> Option<Cow<'g, str>> {
     match gui.get(node, Prop::Label).ok().flatten() {
-        Some(Value::Text(key)) => Some(state.csf_label(key, key)),
+        Some(Value::Text(key)) => Some(Cow::Owned(state.csf_label(key, key))),
         _ => match gui.get(node, Prop::Text).ok().flatten() {
-            Some(Value::Text(text)) => Some(text.clone()),
+            Some(Value::Text(text)) => Some(Cow::Borrowed(text.as_str())),
             _ => None,
         },
     }
@@ -642,7 +690,7 @@ pub(crate) fn paint_gui_into(
         .zip(id(node))
         .and_then(|(text_of, id)| text_of(id))
     {
-        Some(text) => Some(text),
+        Some(text) => Some(Cow::Owned(text)),
         None => label_of(state, gui, node),
     };
     let mut stack = vec![root];
@@ -749,6 +797,11 @@ pub(crate) fn paint_gui_into(
                             push_picture(out, atlas, picture, rect, pressed, scale);
                         }
                         continue;
+                    }
+                    (ButtonArt::CheckboxFace, Some(_)) => {
+                        let checked = flag(gui, node, Prop::Toggled, false);
+                        let control = ControlPaint::Checkbox { checked, rect };
+                        paint_control(&mut paint.controls, &chrome, control, scale);
                     }
                     (
                         ButtonArt::Panel | ButtonArt::PanelCentred | ButtonArt::PanelType2,
@@ -959,9 +1012,26 @@ pub(crate) fn paint_gui_into(
                         view.top,
                         selected,
                         view.pressed,
-                        false,
+                        style.solid_lists,
                         scale,
                     ),
+                }
+                // An empty list's message from its first row's text start
+                // (two pixels in, grown with the page) to its content's end.
+                let empty = (view.rows == 0 && !covered)
+                    .then(|| style.empty_of.zip(id(node)))
+                    .flatten()
+                    .and_then(|(empty_of, id)| empty_of(id));
+                if let Some(empty) = empty {
+                    let row = geometry.row(0);
+                    let left = (2.0 * scale.factor()).round() as i32;
+                    let content = geometry.content;
+                    let h = content.y + content.h - row.y;
+                    let at = RectPx::new(row.x + left, row.y, row.w - left, h);
+                    let rgb = style.rgb;
+                    paint
+                        .texts
+                        .push(text(state, &empty, at, ShellAlign::NONE, glyph, rgb, depth));
                 }
                 if let Some(cells) = cells {
                     let rows = cells.into_iter().skip(view.top).take(geometry.visible_rows);
@@ -980,14 +1050,25 @@ pub(crate) fn paint_gui_into(
                         .collect(),
                 };
                 let shown = rows.into_iter().skip(view.top).take(geometry.visible_rows);
+                let right = geometry.outer.x + geometry.outer.w - 1;
                 for (visible, (row, packed)) in shown.enumerate().filter(|_| !covered) {
                     let r = geometry.row(visible);
-                    let at = inset(gui, node, r, scale).unwrap_or(RectPx::new(
-                        r.x + 2,
-                        r.y,
-                        r.w - 2,
-                        r.h,
-                    ));
+                    let indent = style
+                        .indent_of
+                        .zip(id(node))
+                        .and_then(|(indent_of, id)| indent_of(id, view.top + visible));
+                    let at = match indent {
+                        Some(indent) => {
+                            let x = r.x + (indent as f32 * scale.factor()).round() as i32;
+                            RectPx::new(x, r.y, right - x, r.h)
+                        }
+                        None => inset(gui, node, r, scale).unwrap_or(RectPx::new(
+                            r.x + 2,
+                            r.y,
+                            r.w - 2,
+                            r.h,
+                        )),
+                    };
                     let rgb = match packed {
                         u32::MAX => normal,
                         c => {
@@ -1000,10 +1081,10 @@ pub(crate) fn paint_gui_into(
                 }
             }
             // NewEdit `0x00614B30` as `push_new_edit` paints it, or framed in
-            // its rect with a `TextInset` field; the open IME composition
-            // shows in the focused one, a whole-text selection fills behind it.
-            // An edit with no area (the Choose Map search line, which the
-            // host paints itself) draws nothing.
+            // its rect with a `TextInset` field (or as a search line); the
+            // open IME composition shows in the focused one, a whole-text
+            // selection fills behind it; the host's hint follows. An edit
+            // with no area draws nothing.
             NodeKind::Edit if rect.w <= 0 || rect.h <= 0 => {}
             NodeKind::Edit => {
                 let Some(atlas) = atlas else { continue };
@@ -1022,6 +1103,63 @@ pub(crate) fn paint_gui_into(
                 };
                 edit.focused |= style.caret_of.is_some() && caret;
                 let rgb = text_rgb(gui, node, true, style.rgb, None);
+                let hint = style
+                    .hint_of
+                    .zip(id(node))
+                    .and_then(|(hint_of, id)| hint_of(id));
+                let hint = hint.filter(|_| !covered).map(|(hint, x)| {
+                    let at = scale.derive_rect(rect, |r| RectPx::new(r.x + x, r.y, r.w - x, r.h));
+                    text(state, &hint, at, ShellAlign::V_CENTER, glyph, rgb, depth)
+                });
+                let face = style
+                    .edit_face_of
+                    .zip(id(node))
+                    .and_then(|(edit_face_of, id)| edit_face_of(id));
+                if face == Some(EditFace::ComboText) {
+                    if caret {
+                        super::controls::push_new_edit_caret(
+                            &mut paint.controls,
+                            atlas,
+                            font,
+                            &edit,
+                            rect,
+                            super::SHELL_EDIT_CARET_DEPTH,
+                            scale,
+                        );
+                    }
+                    if !covered {
+                        let shown = edit.painted_text();
+                        let align = ShellAlign::V_CENTER;
+                        paint
+                            .texts
+                            .push(text(state, &shown, rect, align, glyph, rgb, depth));
+                    }
+                    paint.texts.extend(hint);
+                    continue;
+                }
+                if face == Some(EditFace::SearchLine)
+                    && let Ok(Some(Value::Rect(text_inset))) = gui.get(node, Prop::TextInset)
+                {
+                    // The host's text (with its own composition), else the edit's.
+                    let shown = match style.text_of.zip(id(node)).and_then(|(f, id)| f(id)) {
+                        Some(shown) => shown,
+                        None => edit.painted_text(),
+                    };
+                    let line = SearchLine {
+                        rect,
+                        inset: *text_inset,
+                        fill: style.edit_fill,
+                        look: TextLook {
+                            align: ShellAlign::V_CENTER,
+                            glyph,
+                            rgb,
+                        },
+                    };
+                    let shown = Some(shown.as_str()).filter(|_| !covered);
+                    push_search_line(paint, font, atlas, line, shown, scale);
+                    paint.texts.extend(hint);
+                    continue;
+                }
                 let Some(field) = inset(gui, node, rect, scale) else {
                     let (out, texts) = (&mut paint.controls, &mut paint.texts);
                     let painted = match style.edit_inset {
@@ -1043,6 +1181,7 @@ pub(crate) fn paint_gui_into(
                         depth,
                         scale,
                     );
+                    paint.texts.extend(hint);
                     continue;
                 };
                 if let Some(fill) = style.edit_fill {
@@ -1072,6 +1211,7 @@ pub(crate) fn paint_gui_into(
                     (caret && !selected, rgb, depth),
                     scale,
                 );
+                paint.texts.extend(hint);
             }
             NodeKind::Text => {
                 if let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) {
@@ -1279,6 +1419,17 @@ pub(crate) fn push_frame(
         }
         // [`push_list_bar`]: it needs the list's own geometry.
         FrameArt::ListBar => {}
+        FrameArt::ListRings { inset } => {
+            let window = scale.derive_rect(rect, |r| {
+                RectPx::new(
+                    r.x + inset.x,
+                    r.y + inset.y,
+                    r.w - inset.x - inset.w,
+                    r.h - inset.y - inset.h,
+                )
+            });
+            super::list::paint_list_frame_px(controls, white, window);
+        }
     }
 }
 
@@ -1368,6 +1519,90 @@ pub(crate) fn push_bar(
     let fill = bar::fill_rect(rect, look.percent);
     let depth = SHELL_CONTROL_DEPTH - 0.00001;
     super::chrome::push_solid_rect_px(out, white, fill, look.fill, depth);
+}
+
+/// A search line's caret width, in base pixels, as a NewEdit's.
+pub(crate) const SEARCH_CARET_W: i32 = 2;
+
+/// A search line ([`EditFace::SearchLine`]): its rect, its `TextInset`
+/// (base pixels), the fill no art backs and its text's look.
+#[derive(Clone, Copy)]
+pub(crate) struct SearchLine {
+    pub(crate) rect: RectPx,
+    pub(crate) inset: RectPx,
+    pub(crate) fill: Option<[f32; 3]>,
+    pub(crate) look: TextLook,
+}
+
+/// The end of `shown` a search line on `rect` (less `inset`, base pixels)
+/// shows with the caret after it, and the caret's rect on the window: a
+/// long text scrolls its start out of the field. Widths are 800x600
+/// numbers.
+pub(crate) fn search_line_tail<'a>(
+    font: &BitFont,
+    shown: &'a str,
+    rect: RectPx,
+    inset: RectPx,
+    scale: ShellScale,
+) -> (&'a str, RectPx) {
+    let base = scale.base_rect(rect);
+    let field = RectPx::new(
+        base.x + inset.x,
+        base.y + inset.y,
+        base.w - inset.x - inset.w,
+        base.h - inset.y - inset.h,
+    );
+    let room = field.w - SEARCH_CARET_W;
+    let mut tail = shown;
+    let width = loop {
+        let width = font.text_width(tail) as i32;
+        let mut chars = tail.chars();
+        if width <= room || chars.next().is_none() {
+            break width;
+        }
+        tail = chars.as_str();
+    };
+    let caret = RectPx::new(field.x + width, field.y + 2, SEARCH_CARET_W, field.h - 4);
+    (tail, scale.scale_rect(caret))
+}
+
+/// VERA's search line on `line.rect`: the fill when no art backs it, the
+/// list's two frame rings round it, and the text (`shown`, none under an
+/// overlay) from the inset's left, its tail kept in the field with a steady
+/// caret after it while it holds any: the line has no focus to lose. The
+/// inset's right edge only bounds the tail.
+fn push_search_line(
+    paint: &mut GuiPaint,
+    font: &BitFont,
+    atlas: &SkirmishShellChromeAtlas,
+    line: SearchLine,
+    shown: Option<&str>,
+    scale: ShellScale,
+) {
+    let SearchLine { rect, inset, fill, look } = line;
+    let depth = SHELL_CONTROL_DEPTH;
+    if let Some(fill) = fill {
+        super::chrome::push_solid_rect(&mut paint.controls, atlas, rect, fill, depth);
+    }
+    super::list::paint_list_frame(&mut paint.controls, atlas, rect);
+    let Some(shown) = shown.filter(|shown| !shown.is_empty()) else {
+        return;
+    };
+    let (tail, caret) = search_line_tail(font, shown, rect, inset, scale);
+    super::chrome::push_solid_rect(&mut paint.controls, atlas, caret, look.rgb, depth);
+    let field = scale.derive_rect(rect, |r| {
+        RectPx::new(r.x + inset.x, r.y + inset.y, r.w - inset.x, r.h - inset.y - inset.h)
+    });
+    paint.texts.push(shell_text::draw_in_rect_scaled(
+        font,
+        tail,
+        rect_to_text_rect(field),
+        look.rgb,
+        look.align,
+        [0.0; 2],
+        SHELL_CONTROL_TEXT_DEPTH,
+        look.glyph,
+    ));
 }
 
 /// A multi-cell row on `row`: its fill, then its cells' texts and pictures.

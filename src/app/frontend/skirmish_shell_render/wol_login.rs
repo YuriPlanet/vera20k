@@ -7,11 +7,9 @@
 
 use vera20k_gui::NodeKind;
 
-use super::controls::push_new_edit_caret;
-use super::gui_paint::{self, GuiPaint, GuiStyle, HostRows};
-use super::text::combo_face_text_color;
+use super::gui_paint::{self, EditFace, GuiPaint, GuiStyle, HostRows};
 use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
-use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_EDIT_CARET_DEPTH, SHELL_LABEL_TEXT_RGB};
+use super::SHELL_LABEL_TEXT_RGB;
 use crate::app::AppState;
 use crate::render::shell_paint;
 use crate::render::shell_text;
@@ -96,33 +94,15 @@ pub(crate) fn paint_wol_login_children(
         gui_paint::paint_gui_styled(state, gui, *panel, scale, &[], style)
     });
     // The combo's NewEdit has no frame of its own: its caret and text paint
-    // in the face's text area. ComboDrop's edit-child geometry is untraced;
-    // the face's text rect stands in for it.
+    // in the face's text area, its window. ComboDrop's edit-child geometry
+    // is untraced; the face's text rect stands in for it.
     if let Some(node) = ui.control(DIALOG, NICKNAME) {
-        let edit = gui.edit_state(node).unwrap_or_default();
-        let combo_text = layout.nickname_text_rect();
-        let font = &state.renderer.bit_font;
-        if ui.caret_visible(node) {
-            push_new_edit_caret(
-                &mut paint.controls,
-                atlas,
-                font,
-                &edit,
-                combo_text,
-                SHELL_EDIT_CARET_DEPTH,
-                scale,
-            );
-        }
-        paint.texts.push(shell_text::draw_in_rect_scaled(
-            font,
-            &edit.painted_text(),
-            shell_text::TextRect::of(combo_text),
-            combo_face_text_color(false),
-            ShellAlign::V_CENTER,
-            [0.0; 2],
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        ));
+        let face = |id: i32| (id == i32::from(NICKNAME)).then_some(EditFace::ComboText);
+        let style = GuiStyle {
+            edit_face_of: Some(&face),
+            ..style
+        };
+        paint.extend(gui_paint::paint_gui_styled(state, gui, node, scale, &[], style));
     }
     paint
 }

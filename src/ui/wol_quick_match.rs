@@ -50,16 +50,24 @@ pub(crate) fn tooltip_key(control: u16) -> Option<&'static str> {
 
 const TRANSCRIPT_HELP: &str = "STT:WOLMatchOutput";
 
-/// `0x117`'s widgets: Cancel and the transcript (`LBS_NOSEL`: a row press
-/// selects nothing it shows, and plays nothing).
+/// `0x117`'s widgets: Cancel, the caption and the transcript (`LBS_NOSEL`:
+/// a row press selects nothing it shows, and plays nothing), its rows the
+/// page's, inset two pixels each side.
 pub(crate) fn spec() -> NodeSpec {
     NodeSpec::new(NodeKind::Dialog)
         .children(page::menu_buttons(&PAGE))
         .child(
+            NodeSpec::new(NodeKind::Text)
+                .id(CAPTION.into())
+                .with(Prop::Label, Value::Text(MATCH_STATUS_KEY.into())),
+        )
+        .child(
             NodeSpec::new(NodeKind::List)
                 .id(TRANSCRIPT.into())
                 .tooltip(TRANSCRIPT_HELP)
-                .with(Prop::RowCount, Value::Int(0)),
+                .with(Prop::RowCount, Value::Int(0))
+                .with(Prop::NoSelectionFill, Value::Bool(true))
+                .with(Prop::TextInset, Value::Rect(RectPx::new(2, 0, 2, 0))),
         )
 }
 

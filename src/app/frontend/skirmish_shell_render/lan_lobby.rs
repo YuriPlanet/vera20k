@@ -5,14 +5,11 @@ use super::chrome::*;
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
-use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
+use super::SHELL_CONTROL_DEPTH;
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::render::shell_paint;
-use crate::render::shell_text::{self, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS};
-use crate::ui::shell::geom::{RectPx, ShellAlign};
+use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS, STATUS, TITLE};
 use crate::util::time::Instant;
 
 /// Whether box button `id` shows pushed (612B70).
@@ -108,7 +105,6 @@ pub(crate) fn render_lan_lobby(
         .skirmish_shell_chrome
         .as_ref()
         .expect("BB control art");
-    let font = &state.renderer.bit_font;
     // BB's native background is precisely the ordinary MNSCRN shell family.
     let mut art =
         super::launcher_options::launcher_background_instances(atlas, width, height, scale);
@@ -133,31 +129,11 @@ pub(crate) fn render_lan_lobby(
     let mut controls = Vec::new();
     let mut texts = Vec::new();
     let mut overlay = ShellFrameOverlay::default();
-    let text = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| -> ShellTextDraw {
-        shell_text::draw_in_rect_scaled(
-            font,
-            value,
-            shell_text::TextRect::of(rect),
-            rgb,
-            align,
-            [0.0; 2],
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        )
-    };
     // VERA's Create Game box shows over the bare backdrop, as the online
     // lobby's does.
     let gui = state.frontend.shell_controller.gui();
     let root = state.frontend.shell_controller.root_in(PAGE.dialog);
     if !leaving {
-        for (id, key) in crate::ui::lan_shell::LABELS {
-            texts.push(text(
-                &state.csf_label(key, key),
-                layout.rect(id).unwrap_or_default(),
-                ShellAlign::NONE,
-                SHELL_LABEL_TEXT_RGB,
-            ));
-        }
         let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
         // The column's buttons (left to the slide while it runs), the lists
         // with their rows as their widgets hold them and the observer box.
@@ -191,14 +167,27 @@ pub(crate) fn render_lan_lobby(
                 _ => return None,
             })
         };
-        // The column's captions; Join reads Observe for an observer.
+        // The column's captions, Join's Observe for an observer; the heading
+        // and the status line while they reveal.
         let text_of = |id: i32| {
             let id = u16::try_from(id).ok()?;
             let key = match id {
+                TITLE => return title.map(|_| state.csf_label(PAGE.title_key, "Lobby")),
+                STATUS => return status.as_ref().map(|status| status.text.to_string()),
                 JOIN if observer => "GUI:Observe",
                 id => PAGE.button(id)?.csf_key,
             };
             Some(state.csf_label(key, key))
+        };
+        let reveal_of = |id: i32| match u16::try_from(id).ok()? {
+            TITLE => title.map(|reveal| PathAReveal {
+                count: reveal.count,
+                range: reveal.range,
+                base_rgb: [255, 255, 0],
+                highlight_rgb: [255; 3],
+            }),
+            STATUS => status.as_ref()?.path_a_reveal,
+            _ => None,
         };
         let enabled_of = |_| Some(lobby.enabled);
         // An edit's caret blinks while it has BB's focus, under the message
@@ -215,6 +204,7 @@ pub(crate) fn render_lan_lobby(
             enabled_of: Some(&enabled_of),
             rows_of: Some(&rows_of),
             control_lists: true,
+            reveal_of: Some(&reveal_of),
             ..Default::default()
         };
         if let Some(root) = root {
@@ -236,28 +226,6 @@ pub(crate) fn render_lan_lobby(
                 SHELL_CONTROL_DEPTH,
             );
         }
-        if let Some(reveal) = title {
-            texts.push(shell_text::draw_in_rect_path_a_scaled(
-                font,
-                &state.csf_label(PAGE.title_key, "Lobby"),
-                shell_text::TextRect::of(layout.page.title),
-                ShellAlign::PANEL_TITLE,
-                [0.0; 2],
-                SHELL_CONTROL_TEXT_DEPTH,
-                PathAReveal {
-                    count: reveal.count,
-                    range: reveal.range,
-                    base_rgb: [255, 255, 0],
-                    highlight_rgb: [255; 3],
-                },
-                scale.factor(),
-            ));
-        }
-        texts.extend(shell_paint::paint_labels_scaled(
-            font,
-            &status.into_iter().collect::<Vec<_>>(),
-            scale.factor(),
-        ));
         if let Some(key) = runtime.modal {
             use crate::app::shell_lan::{MODAL, OK};
             let body = runtime

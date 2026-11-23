@@ -8,8 +8,7 @@ use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, SideButtons, paint_gui_sty
 use super::{chrome::*, *};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
-use crate::render::shell_text::{self, TextRect};
-use crate::render::shell_text_reveal::PathAReveal;
+use crate::app::frontend::menu_page_render::{PanelStatic, paint_panel_statics};
 use crate::ui::main_menu_dialogs::options::OptionsDialogState;
 use crate::ui::main_menu_dialogs::options::shell::{Control, LauncherOptionsLayout};
 use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
@@ -213,7 +212,6 @@ pub(crate) fn render_launcher_options(
             SHELL_CONTROL_DEPTH,
         );
     }
-    let font = &state.renderer.bit_font;
     let mut texts = Vec::new();
     if let Some(wave) = wave.as_ref() {
         let common = crate::ui::skirmish_shell::compute_layout_on(
@@ -229,28 +227,13 @@ pub(crate) fn render_launcher_options(
             SHELL_CONTROL_DEPTH,
         );
     }
-    if let Some(window) = title {
-        texts.push(shell_text::draw_in_rect_path_a_scaled(
-            font,
-            dialog.shell_title_text(),
-            TextRect {
-                x: layout.title.x,
-                y: layout.title.y,
-                w: layout.title.w as u32,
-                h: layout.title.h as u32,
-            },
-            ShellAlign::H_CENTER | ShellAlign::PANEL_FACE,
-            [0.0, 0.0],
-            SHELL_CONTROL_TEXT_DEPTH,
-            PathAReveal {
-                count: window.count,
-                range: window.range,
-                base_rgb: [255, 255, 0],
-                highlight_rgb: [255, 255, 255],
-            },
-            scale.factor(),
-        ));
-    }
+    // The heading and the status line from the panel's widgets, the
+    // heading before the page's text and the status line after it.
+    let heading = title.map(|window| {
+        let align = ShellAlign::H_CENTER | ShellAlign::PANEL_FACE;
+        PanelStatic::title(dialog.shell_title_text(), layout.title, align, window)
+    });
+    texts.extend(paint_panel_statics(state, [heading, None], scale));
     let column = if sliding {
         ColumnArt::Hidden
     } else {
@@ -260,11 +243,8 @@ pub(crate) fn render_launcher_options(
     let page = page.unwrap_or_default();
     instances.extend(page.controls);
     texts.extend(page.texts);
-    texts.extend(crate::render::shell_paint::paint_labels_scaled(
-        font,
-        &status_label.into_iter().collect::<Vec<_>>(),
-        scale.factor(),
-    ));
+    let status = status_label.map(PanelStatic::status);
+    texts.extend(paint_panel_statics(state, [None, status], scale));
     super::in_game_shell::render_shell_frame(
         state,
         encoder,

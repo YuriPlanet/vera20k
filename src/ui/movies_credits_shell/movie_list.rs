@@ -8,11 +8,11 @@
 //! obfuscated `[Network] NetID` (owned by the options profile), and are raised
 //! by `0x005FBF80` whenever Play_Movie resolves a campaign movie name.
 
-use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
+use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
-use crate::ui::shell::geom::{RectPx, dlu_rect};
+use crate::ui::shell::geom::{RectPx, ShellAlign, dlu_rect};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use vera20k_gui::shell::list::list_box_rect;
 
@@ -24,6 +24,15 @@ pub const PLAY_MOVIE_CONTROL: u16 = 0x0745;
 pub const MOVIE_LIST_TOOLTIP_KEY: &str = "GUI:SelectMovie";
 /// Static `0x40C` caption (kind 0: drawn at once, centered, top-aligned).
 pub const MOVIE_LIST_PROMPT_KEY: &str = "GUI:SelectMovie";
+/// The prompt static `0x40C`.
+pub const MOVIE_LIST_PROMPT: u16 = 0x040C;
+
+/// The movie list's host id, which it takes once the page's other widgets
+/// are built ([`crate::ui::shell::page::ensure_built`] counts any id): past
+/// the dialog's 16-bit control ids, so the page's rect sync
+/// ([`menu_page::sync_nodes`]) leaves its window alone and no button press
+/// names it; the painter finds its rows by it.
+pub const FAMILY_LIST_ID: i32 = 0x1_0000;
 
 /// RT_DIALOG `0x129` right-panel buttons. Dialog proc `0x0052D870` writes
 /// the selected row's item data (its movie table entry) for Play Movie and
@@ -60,6 +69,28 @@ pub fn compute_movie_list_layout(screen_w: u32, screen_h: u32) -> MovieListLayou
 }
 
 vera20k_gui::scaled_rects!(MovieListLayout { page, list, prompt });
+
+impl MovieListLayout {
+    /// Where control `id` of [`movie_list_nodes`] sits.
+    pub fn rect_of(&self, id: u16) -> Option<RectPx> {
+        match id {
+            MOVIE_LIST_PROMPT => Some(self.prompt),
+            _ => self.page.button_rect(id),
+        }
+    }
+}
+
+/// `0x129`'s widgets but its list ([`build_family_list`]): the column's
+/// buttons and the prompt.
+pub fn movie_list_nodes() -> NodeSpec {
+    let centred = Value::Int(ShellAlign::H_CENTER.0.into());
+    MOVIE_LIST_PAGE.nodes().child(
+        NodeSpec::new(NodeKind::Text)
+            .id(MOVIE_LIST_PROMPT.into())
+            .label(MOVIE_LIST_PROMPT_KEY)
+            .with(Prop::Align, centred),
+    )
+}
 
 /// The list box (subclass `0x0061A948`) as a `List` node under `parent`:
 /// window `rect` (its `Rect` the paint surface, [`list_box_rect`]), `rows`

@@ -264,8 +264,8 @@ pub(crate) fn render_multiplayer_setup(
         ..room_style
     };
     if !leaving && ui.notice.is_none() {
-        let labels = paint_node(nodes.labels, room_text);
-        texts.extend(labels.texts);
+        let statics = paint_node(nodes.labels, room_text);
+        texts.extend(statics.texts);
         if view.pages.len() > 1 {
             // Ordinary MNBTTN buttons, as Game Options' OK; one with no page
             // to go to is hidden. The line between them names the page.

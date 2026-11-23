@@ -10,16 +10,17 @@ use crate::app::frontend::menu_page_render::{
 use crate::app::frontend::shell_pass::{ShellComposition, TexturedDraw, encode_shell_pass};
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::batch::SpriteInstance;
-use crate::render::shell_paint::{PaintLabel, SHELL_TEXT_RGB_ENABLED};
+use crate::app::frontend::skirmish_shell_render::gui_paint::{
+    GuiStyle, paint_gui_ids, paint_gui_styled,
+};
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::ShellTextDraw;
-use crate::ui::main_menu_shell::RectPx;
 use crate::ui::movies_credits_shell::{
-    MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY,
-    find_family_list,
+    FAMILY_LIST_ID, MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT, MOVIE_LIST_TOOLTIP_KEY,
+    find_family_list, movie_list_nodes,
 };
 use crate::ui::shell::descriptor::DialogResourceId;
-use crate::ui::shell::geom::{ShellAlign, ShellScale};
+use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::menu_page;
 use vera20k_gui::ListView;
 use vera20k_gui::shell::list::ShellListGeometry;
@@ -89,8 +90,8 @@ pub(crate) fn render_movie_list(
     }
     let layout = crate::app::frontend::shell_layout::movie_list_layout(state);
     let (page, dialog) = (&layout.page, MOVIE_LIST_DIALOG);
-    let rect_of = |id| page.button_rect(id);
-    let tree = page_tree(state, dialog, || MOVIE_LIST_PAGE.nodes(), rect_of, &[]);
+    let rect_of = |id| layout.rect_of(id);
+    let tree = page_tree(state, dialog, movie_list_nodes, rect_of, &[]);
     let status = |state: &AppState| movie_list_status_key(state).map(str::to_owned);
     let kind = ShellSlideKind::MovieList;
     let panel = page_panel_state(state, kind, true, status, page.status_help);
@@ -103,37 +104,44 @@ pub(crate) fn render_movie_list(
         FamilyFrame::new("Movie List Shell", page, panel, title).on(state, dialog, &tree);
     frame.backdrop = true;
     if !leaving {
+        // The list over its widget, its rows the movies' captions: only the
+        // rows it shows are named.
+        let controller = &state.frontend.shell_controller;
+        let gui = controller.gui();
         let mut bar = None;
         if let Some(list) = state.frontend.movie_list.as_ref()
-            && let Some((sprites, geometry, view)) =
-                paint_family_list(state, dialog, page.scale)
+            && let Some(node) = find_family_list(controller, dialog)
+            && let Some(geometry) = gui.list_geometry(node)
         {
             bar = geometry.scrollbar;
-            frame.over.controls.extend(sprites);
-            for (visible, movie) in list
-                .iter()
-                .skip(view.top)
-                .take(geometry.visible_rows)
-                .enumerate()
-            {
-                let row = geometry.row(visible);
-                frame.labels.push(PaintLabel {
-                    text: state.csf_text(movie.label_key).into(),
-                    rect: RectPx::new(row.x + 2, row.y, row.w - 2, row.h),
-                    align: ShellAlign::NONE,
-                    rgb: SHELL_TEXT_RGB_ENABLED,
-                    path_a_reveal: None,
-                });
-            }
+            let top = gui.list_view(node).map_or(0, |view| view.top);
+            let shown = top..top + geometry.visible_rows;
+            let rows_of = |id: i32| {
+                (id == FAMILY_LIST_ID).then(|| {
+                    let rows = list.iter().enumerate();
+                    rows.map(|(row, movie)| match shown.contains(&row) {
+                        true => (state.csf_text(movie.label_key), u32::MAX),
+                        false => (String::new(), u32::MAX),
+                    })
+                    .collect()
+                })
+            };
+            let style = GuiStyle {
+                rows_of: Some(&rows_of),
+                ..Default::default()
+            };
+            frame
+                .over
+                .extend(paint_gui_styled(state, gui, node, page.scale, &[], style));
         }
         frame.list_boxes.push((layout.list, bar));
-        frame.labels.push(PaintLabel {
-            text: state.csf_text(MOVIE_LIST_PROMPT_KEY).into(),
-            rect: layout.prompt,
-            align: ShellAlign::H_CENTER,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        });
+        if let Some((gui, root)) = frame.buttons {
+            let prompt = [MOVIE_LIST_PROMPT];
+            let style = GuiStyle::default();
+            frame
+                .over
+                .extend(paint_gui_ids(state, gui, root, prompt, page.scale, style));
+        }
     }
     encode_family_page(state, encoder, destination, frame);
     Ok(true)
@@ -234,6 +242,7 @@ pub(crate) fn render_credits_roll(
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
+    use crate::ui::main_menu_shell::RectPx;
     use vera20k_gui::shell::list::{ListMetrics, list_box_geometry};
 
     #[test]

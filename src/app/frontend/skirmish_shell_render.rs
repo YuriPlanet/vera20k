@@ -60,14 +60,15 @@ pub(crate) fn choose_map_search_ime_area(
 
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellFrameWave;
-use crate::app::loading::init::MapMenuEntry;
 #[cfg(test)]
 use crate::map::preview::PreviewSourceBounds;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_text::ShellTextDraw;
 use crate::render::shell_transition_pass::ShellRenderTarget;
-use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
+use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
+#[cfg(test)]
+use crate::render::skirmish_shell_chrome::SkirmishShellChromeEntry;
 use crate::skirmish_launch::LaunchCountry;
 #[cfg(test)]
 use crate::ui::shell::geom::ShellAlign;
@@ -170,12 +171,26 @@ fn flag_name_for_country_choice<'a>(
     })
 }
 
-fn flag_entry(atlas: &SkirmishShellChromeAtlas, label: &str) -> Option<SkirmishShellChromeEntry> {
-    atlas
-        .flags
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case(label))
-        .map(|(_, entry)| *entry)
+/// Each shown row's flag on `0x102`'s widgets: the player's, and each
+/// active computer row's in view of `shown` row slots.
+fn show_skirmish_flags(state: &mut AppState, root: vera20k_gui::NodeId, shown: usize) {
+    let frontend = &mut state.frontend;
+    let shell = &frontend.skirmish_shell_state;
+    let maps = frontend.scenario_catalog.shell_maps();
+    let flag = |slot: usize| {
+        if slot == 0 {
+            let (random, country) = (shell.player_country_random, shell.player_country);
+            return flag_name_for_country_choice(&shell.country_catalog, random, country);
+        }
+        let (_, row, opponent) = shell.paged_opponents(shown).find(|(at, ..)| *at == slot)?;
+        if !player_row_visible(shell, maps, row) || !opponent.is_active() {
+            return None;
+        }
+        let (random, country) = (opponent.country_random, opponent.country);
+        flag_name_for_country_choice(&shell.country_catalog, random, country)
+    };
+    let gui = frontend.shell_controller.gui_mut();
+    crate::ui::skirmish_shell::page::show_flags(gui, root, flag);
 }
 
 /// Depth of `0x6B`'s slide column, with the steady chooser buttons.
@@ -203,7 +218,6 @@ fn push_panel_chrome(
 
 fn build_skirmish_shell_instances(
     atlas: &SkirmishShellChromeAtlas,
-    font: &BitFont,
     layout: &SkirmishShellLayout,
     choose_map_layout: Option<&ChooseMapModalLayout>,
     // The seed browser covers `0x105`.
@@ -212,18 +226,12 @@ fn build_skirmish_shell_instances(
     // VERA's Setups page covers `0x102`.
     setups_layout: bool,
     shell: &SkirmishShellState,
-    search_display: &str,
-    maps: &[MapMenuEntry],
     wave: Option<&ShellFrameWave>,
     leaving: bool,
-    // `0x102`'s widgets as the GUI paints them, and the computer rows'
-    // scrollbar arrow its List draws pushed.
-    // The random-map Advanced scrollbar's widget.
-    (page, opponent_arrow, advanced_bar): (
-        &[SpriteInstance],
-        Option<vera20k_gui::shell::list::ListScrollPart>,
-        Option<vera20k_gui::ScrollBarView>,
-    ),
+    // `0x102`'s widgets as the GUI paints them (the computer rows'
+    // scrollbar and the flags among them), and the random-map Advanced
+    // scrollbar's widget.
+    (page, advanced_bar): (&[SpriteInstance], Option<vera20k_gui::ScrollBarView>),
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::new();
     // Every page of the family starts with the right panel and the lower
@@ -257,7 +265,7 @@ fn build_skirmish_shell_instances(
                 push_random_map_setup_modal_control_instances(&mut instances, atlas, setup_layout, modal, advanced_bar);
             }
         } else {
-            let interior = push_choose_map_background_instances(
+            push_choose_map_background_instances(
                 &mut instances,
                 atlas,
                 layout,
@@ -272,10 +280,7 @@ fn build_skirmish_shell_instances(
                 push_choose_map_modal_control_instances(
                     &mut instances,
                     atlas,
-                    font,
                     choose_map_layout,
-                    interior,
-                    search_display,
                     wave.is_none(),
                 );
             }
@@ -326,43 +331,6 @@ fn build_skirmish_shell_instances(
     // The widgets, the name box among them, follow the parent background:
     // this batch has no depth test and paints in queue order.
     instances.extend_from_slice(page);
-    push_opponent_scrollbar_instances(&mut instances, atlas, layout, shell, maps, opponent_arrow);
-
-    if let Some(flag) = flag_name_for_country_choice(
-        &shell.country_catalog,
-        shell.player_country_random,
-        shell.player_country,
-    )
-    .and_then(|name| flag_entry(atlas, name))
-    {
-        push_flag_entry_clipped_centered(
-            &mut instances,
-            flag,
-            layout.flags[0],
-            layout.scale,
-            0.00057,
-        );
-    }
-    for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
-        if !player_row_visible(shell, maps, row) || !opponent.is_active() {
-            continue;
-        }
-        let entry = flag_name_for_country_choice(
-            &shell.country_catalog,
-            opponent.country_random,
-            opponent.country,
-        )
-        .and_then(|name| flag_entry(atlas, name));
-        if let Some(flag) = entry {
-            push_flag_entry_clipped_centered(
-                &mut instances,
-                flag,
-                layout.flags[slot],
-                layout.scale,
-                0.00057,
-            );
-        }
-    }
     instances
 }
 
@@ -423,13 +391,6 @@ fn render_skirmish_shell_with_atlas(
         .choose_map_modal
         .as_ref()
         .map(|_| crate::app::frontend::shell_layout::choose_map_layout(state));
-    let search_display = state
-        .frontend
-        .skirmish_shell_state
-        .choose_map_modal
-        .as_ref()
-        .map(|modal| text::map_search_display(state, &modal.search))
-        .unwrap_or_default();
     // `0x105` and the seed browser each replace the page beneath them, and both
     // the sprite pass and the text pass need the same rects: one layout per page
     // per frame, from the same seam the input handlers read.
@@ -566,6 +527,9 @@ fn render_skirmish_shell_with_atlas(
     let page_root = parent_showing
         .then(|| crate::app::App::sync_skirmish_page(state))
         .flatten();
+    if let Some(root) = page_root {
+        show_skirmish_flags(state, root, layout.shown_rows);
+    }
     let page_paint = page_root.map_or_else(Default::default, |root| {
         let gui = state.frontend.shell_controller.gui();
         // While a slide runs the column's art covers the buttons.
@@ -588,13 +552,20 @@ fn render_skirmish_shell_with_atlas(
             let packed = |pickable| if pickable { u32::MAX } else { 0x0000_009F };
             Some(rows.into_iter().map(|(text, pickable)| (text, packed(pickable))).collect())
         };
+        // VERA's computer-row scrollbar only scrolls: its list has no rows.
+        let scroll = crate::ui::skirmish_shell::page::OPPONENT_SCROLL;
+        let cells_of =
+            |id: i32| (id == i32::from(scroll)).then(Vec::<gui_paint::CellRow>::new);
         let style = gui_paint::GuiStyle {
             buttons,
             caret_of: Some(&caret_of),
             rows_of: Some(&menu_rows),
+            cells_of: Some(&cells_of),
             skirmish_lists: true,
             ..Default::default()
         };
+        // The scrollbar (first in the tree) stands clear of the widgets; the
+        // row flags (last) paint over them.
         gui_paint::paint_gui_with(state, atlas, gui, root, layout.scale, &[], style)
     });
     // The chooser, `0x105`, or the saved-file browser over either page.
@@ -641,20 +612,16 @@ fn render_skirmish_shell_with_atlas(
     } else {
         build_skirmish_shell_instances(
             atlas,
-            &state.renderer.bit_font,
             &layout,
             choose_map_layout.as_ref(),
             seed_layout.is_some(),
             setup_layout,
             setups_layout.is_some(),
             &state.frontend.skirmish_shell_state,
-            &search_display,
-            state.frontend.scenario_catalog.shell_maps(),
             wave.as_ref(),
             leaving,
             (
                 &page_paint.controls,
-                crate::ui::skirmish_shell::page::opponent_arrow(&state.frontend.shell_controller),
                 crate::ui::skirmish_shell::random_map_page::scrollbar_view(&state.frontend.shell_controller),
             ),
         )

@@ -121,29 +121,6 @@ pub(crate) fn render_saved_game_loading(
     painted
 }
 
-/// Native owner-draw listboxes preserve a composed backing surface. On the
-/// exact-800 chooser that backing is the Customize Battle artwork; the solid
-/// interior exists only to keep the asset-missing fallback readable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum BackdropInteriorPaint {
-    PreserveBacking,
-    OpaqueFallback,
-}
-
-impl BackdropInteriorPaint {
-    const fn paints_solid_fill(self) -> bool {
-        matches!(self, Self::OpaqueFallback)
-    }
-}
-
-const fn backdrop_interior(retail_background_available: bool) -> BackdropInteriorPaint {
-    if retail_background_available {
-        BackdropInteriorPaint::PreserveBacking
-    } else {
-        BackdropInteriorPaint::OpaqueFallback
-    }
-}
-
 pub(super) fn choose_map_background_entry(
     atlas: &SkirmishShellChromeAtlas,
     layout: &ChooseMapModalLayout,
@@ -180,10 +157,8 @@ pub(super) fn push_choose_map_background_instances(
     shell_layout: &SkirmishShellLayout,
     modal_layout: &ChooseMapModalLayout,
     brightness: f32,
-) -> BackdropInteriorPaint {
-    let background = choose_map_background_entry(atlas, modal_layout);
-    let interior = backdrop_interior(background.is_some());
-    if let Some(background) = background {
+) {
+    if let Some(background) = choose_map_background_entry(atlas, modal_layout) {
         let (x, y) = modal_layout
             .scale
             .dialog_origin_or((modal_layout.screen.x, modal_layout.screen.y));
@@ -215,43 +190,17 @@ pub(super) fn push_choose_map_background_instances(
             SHELL_DROPDOWN_DEPTH - 0.00009,
         );
     }
-    interior
 }
 
-/// Choose Map's own art beside its widgets ([`super::text::choose_map_paint`]).
+/// Choose Map's own art beside its widgets ([`super::text::choose_map_paint`]):
+/// while no slide runs, the preview static's outline (validate-only while
+/// one does, `0x00606800`).
 pub(super) fn push_choose_map_modal_control_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
-    font: &crate::render::bit_font::BitFont,
     layout: &ChooseMapModalLayout,
-    interior: BackdropInteriorPaint,
-    search_display: &str,
     steady: bool,
 ) {
-    // VERA: the search box wears the list's frame, with a caret after its
-    // text. It has no focus to lose, so the caret does not blink.
-    if interior.paints_solid_fill() {
-        push_solid_rect(
-            out,
-            atlas,
-            layout.map_search,
-            SHELL_MODAL_PANEL_RGB,
-            SHELL_DROPDOWN_DEPTH - 0.00010,
-        );
-    }
-    super::list::paint_list_frame(out, atlas, layout.map_search);
-    if let Some(caret) =
-        super::text::map_search_caret_rect(font, search_display, layout.map_search, layout.scale)
-    {
-        push_solid_rect(
-            out,
-            atlas,
-            caret,
-            SHELL_LABEL_TEXT_RGB,
-            SHELL_DROPDOWN_DEPTH - 0.00012,
-        );
-    }
-    // While a slide runs the preview static is validate-only (`0x00606800`).
     if steady {
         push_rect_outline(
             out,
@@ -349,10 +298,8 @@ pub(super) fn push_generic_shell_background_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     layout: &SkirmishShellLayout,
-) -> BackdropInteriorPaint {
-    let background = generic_shell_background_entry(atlas, layout);
-    let interior = backdrop_interior(background.is_some());
-    if let Some(background) = background {
+) {
+    if let Some(background) = generic_shell_background_entry(atlas, layout) {
         let (x, y) = common_shell_origin(layout);
         push_entry_grown(
             out,
@@ -379,12 +326,11 @@ pub(super) fn push_generic_shell_background_instances(
             SHELL_DROPDOWN_DEPTH - 0.00009,
         );
     }
-    interior
 }
 
 /// The random-map dialog `0x105`'s own art beside its widgets
-/// ([`super::text::random_map_paint`]): VERA's Advanced scrollbar, Ares'
-/// Urban Areas box and the progress bar while a map generates.
+/// ([`super::text::random_map_paint`]): VERA's Advanced scrollbar and the
+/// progress bar while a map generates.
 pub(super) fn push_random_map_setup_modal_control_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
@@ -407,20 +353,6 @@ pub(super) fn push_random_map_setup_modal_control_instances(
                 scrollbar: bar.bar,
                 thumb: bar.thumb,
                 pressed_part: None,
-            },
-            layout.scale,
-        );
-    }
-    // Ares' Urban Areas box (control 5000 of Ares' dialog 261), drawn as the
-    // shell's own checkbox when Ares.dll is loaded; the Advanced view's
-    // seventh slider takes its place.
-    if modal.ares && !modal.advanced {
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::Checkbox {
-                checked: modal.options.urban_areas,
-                rect: layout.rect(5000),
             },
             layout.scale,
         );
