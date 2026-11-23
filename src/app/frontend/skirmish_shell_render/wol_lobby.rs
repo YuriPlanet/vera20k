@@ -284,11 +284,9 @@ fn game_cells(
             if modern {
                 let width = name_w.max(1) as u32;
                 if !font.fitted(Fit::TIGHTEST, |font| font.text_width(&game.text) <= width) {
-                    caption = font.fitted(Fit::NONE, |font| {
-                        let cut = width.saturating_sub(font.text_width("..."));
-                        let end = font.truncate_to_width(&game.text, cut);
-                        std::borrow::Cow::Owned(format!("{end}..."))
-                    });
+                    caption = std::borrow::Cow::Owned(font.fitted(Fit::NONE, |font| {
+                        font.truncate_with_ellipsis(&game.text, width, "...")
+                    }));
                 }
             }
             row.text(name_x, name_w.max(1), &caption, v, rgb);
