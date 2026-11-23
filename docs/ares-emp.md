@@ -181,7 +181,8 @@ the same queued EMPAIRecoverMission/Hunt as AI Drive.
 
 Delivery10062320 tests no mover, so neither does the Rust admission.
 Each admitted mover reaches only shared owners: Deactivate's Power_Off (Hover's
-override516BF0 spins it down and settles it), the Ares deactivated-Unit stop of
+override516BF0 spins it down and settles it; Fly's4CFD20 spins a moving
+landed Aircraft), the Ares deactivated-Unit stop of
 TechnoClass_Update1004B320, Teleport's deactivated MoveTo refusal1005D3E0, and
 for a flying Aircraft, a V3 or Dreadnought rocket included, the crash of
 enableEMPEffect10062B40. A falling object keeps falling, since ObjectAI5F3F11
@@ -443,7 +444,9 @@ can draw for authored RandomRate/bounce settings. Counter writes
 are delivery/cap and one decrement per actual AI visit; Deactivate/Reactivate keep
 their existing mission/destination timer writes. Anim expiry writes loop_remaining=0.
 The building kinds add no draws or DetachAll of their own; their owners keep
-theirs: a Hover Robot Tank's Deactivate draws twice (Power_Off), and a factory
+theirs: a Hover Robot Tank's Deactivate draws twice (Power_Off), as does a
+moving landed Aircraft's (Fly's Power_Off, whose Stop_Moving may draw again in
+Find_Attack_Cell), and a factory
 queue's suspend/resume and a Super's hold/release pause and resume their
 timers. The undeploy copy writes the unit's counter only.
 
@@ -464,10 +467,12 @@ Delivery's bunker test (10062357..10062376) spares a victim whose
 BunkerLinkedItem is a Building, a tank in a Tank Bunker, unless the Warhead
 PenetratesBunker; the bunker itself is an ordinary building victim.
 
-Still open: a landed Aircraft's Deactivate reaches Fly's Power_Off
-override4CFD20, whose Random(20, 30) spin and stop are not ported
-(`locomotor_power_off`); the base flag write runs instead, without those two
-scenario draws. A LaserFencePost's fence sections are neither dropped by
+A landed Aircraft's Deactivate reaches Fly's Power_Off override4CFD20: a
+moving one spins at Random(20, 30) either way (two Scenario draws) and stops,
+and Fly Process turns it while it stays offline (spin step4CE5A0;
+`Simulation::fly_power_off`, `fly_spin_step`).
+
+Still open: a LaserFencePost's fence sections are neither dropped by
 DisableStuff nor rebuilt by EnableStuff (4533A0), since VERA builds none
 (trigger: an EMP hit on a mod's post; effect: no fence to drop; frequency:
 mods with LaserFencePost types). The Super pass still reads only a provider's

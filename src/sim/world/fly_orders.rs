@@ -624,6 +624,59 @@ impl Simulation {
         true
     }
 
+    /// `FlyLocomotionClass::Power_Off @ 0x004CFD20` (ILocomotion `+0x5C`)
+    /// up to the base flag write, [`Self::locomotor_power_off`]'s Fly arm:
+    /// a moving Fly (Is_Moving, `0x004CCA90`) spins at a SpinRate of
+    /// Scenario `RandomRanged(20, 30)`, negated when a second
+    /// `RandomRanged(0, 99)` is below 50, then stops
+    /// ([`Self::fly_stop_moving`]) and clears its fall counter. Process's
+    /// spin step turns it ([`Self::fly_spin_step`]). Nothing while it is
+    /// still, or for another locomotor.
+    pub(crate) fn fly_power_off(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        let moving = self
+            .substrate
+            .entities
+            .get(id)
+            .filter(|entity| {
+                entity
+                    .locomotor
+                    .as_ref()
+                    .is_some_and(|locomotor| locomotor.active_kind() == LocomotorKind::Fly)
+            })
+            .and_then(crate::sim::movement::motion_query::is_moving)
+            .unwrap_or(false);
+        if !moving {
+            return;
+        }
+        let rate = self.scenario_rng.next_range_i32_inclusive(20, 30);
+        let negate = self.scenario_rng.next_range_i32_inclusive(0, 99) < 50;
+        self.fly_state_mut(id)
+            .expect("moving Fly")
+            .start_spin(if negate { rate.wrapping_neg() } else { rate });
+        self.fly_stop_moving(id, rules, registry, frame_effects);
+        if let Some(state) = self.fly_state_mut(id) {
+            state.clear_fall();
+        }
+    }
+
+    fn fly_state_mut(
+        &mut self,
+        id: u64,
+    ) -> Option<&mut crate::sim::movement::fly_height::FlyRuntime> {
+        self.substrate
+            .entities
+            .get_mut(id)?
+            .locomotor
+            .as_mut()?
+            .fly_runtime_mut()
+    }
+
     /// `FlyLocomotionClass::Stop_Moving @ 0x004CCFD0` (ILocomotion `+0x48`),
     /// [`Self::locomotor_stop_moving`]'s Fly arm: [`Self::fly_stop_order`],
     /// then its effect. A self-destruct is `ReceiveDamage` of the owner's own
@@ -647,13 +700,7 @@ impl Simulation {
             None => {}
             Some(FlyStopOrder::SelfDestruct) => {
                 self.receive_own_health_c4(id, rules, registry, frame_effects);
-                if let Some(state) = self
-                    .substrate
-                    .entities
-                    .get_mut(id)
-                    .and_then(|entity| entity.locomotor.as_mut())
-                    .and_then(|locomotor| locomotor.fly_runtime_mut())
-                {
+                if let Some(state) = self.fly_state_mut(id) {
                     state.clear_destination();
                 }
             }

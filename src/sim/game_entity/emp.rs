@@ -478,10 +478,10 @@ mod receiver {
             // fabricated immunity. An unsupported victim is observable to tests.
             // Native10062320 tests no mover. Every admitted one reaches only
             // shared owners: Deactivate's Power_Off (Hover's override spins and
-            // settles), the Ares deactivated-Unit stop, Teleport's deactivated
-            // MoveTo refusal1005D3E0, and for a flying Aircraft (a Rocket too)
-            // the crash of enableEMPEffect10062B40 or the inlined Threshold
-            // in-air arm. A falling object keeps falling (ObjectAI5F3F11 tests
+            // settles, Fly's spins a moving one), the Ares deactivated-Unit
+            // stop, Teleport's deactivated MoveTo refusal1005D3E0, and for a
+            // flying Aircraft (a Rocket too) the crash of enableEMPEffect10062B40
+            // or the inlined Threshold in-air arm. A falling object keeps falling (ObjectAI5F3F11 tests
             // no deactivation) and lands offline; a mind-controlled one keeps
             // its controller. A Tunnel mover keeps the base Power_Off and a
             // Process (0x00728E30) that tests no power. Deactivate's

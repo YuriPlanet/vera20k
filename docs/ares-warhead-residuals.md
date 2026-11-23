@@ -95,6 +95,6 @@ DontScore=yes              ; ... as does any DontScore/Insignificant type
   authored Rules. Trigger: `CanMakeStuffUp=yes`, set by no retail INI.
   Effect: the authored values stay in force; the draws, their order and the
   infantry pass match the DLL.
-- EMP: a landed Aircraft's Fly Power_Off spin and a LaserFencePost's fence
-  recalc ([ares-emp.md](ares-emp.md)); every Foot mover, Tunnel included,
-  and every EMP-prone building is covered.
+- EMP: a LaserFencePost's fence recalc ([ares-emp.md](ares-emp.md)); every
+  Foot mover, Tunnel and a landed Aircraft's Fly spin included, and every
+  EMP-prone building is covered.

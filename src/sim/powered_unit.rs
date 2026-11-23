@@ -36,14 +36,17 @@
 //! (`CanBeSelectedNow`, `0x006FC041`; a click still selects it), the fire
 //! error (`0x006FC117`, ILLEGAL), the select voice (`0x00708EFD`) and the
 //! voxel draw (`0x0073C143`, half intensity). Deactivate's Power_Off spins a
-//! Hover down (`movement::hover`), and a warp ends the hover of a
+//! Hover down (`movement::hover`) and a moving Fly (`world::fly_orders`),
+//! and a warp ends the hover of a
 //! `PoweredUnit=` type whose house has no powered center (`0x00718864`,
 //! `movement::teleport_chrono`).
 //!
 //! Ledger: Deactivate draws twice from the Scenario stream through Hover's
 //! Power_Off when its Is_Powered holds (`0x00516C70`: the powered byte,
 //! which a working tank keeps, or any height) and it is neither sleeping
-//! nor entering; an offline Unit draws twice on each of its spark frames. Timers: the
+//! nor entering, and twice through Fly's (`0x004CFD20`) for a moving Fly,
+//! whose second Stop_Moving may draw again (Find_Attack_Cell) and writes a
+//! new destination; an offline Unit draws twice on each of its spark frames. Timers: the
 //! mission and destination timers ResetOrdersToGuard writes. Detaches: none.
 //! `tools/robot_offline_oracle.py` executes Hover's Power_Off and the spark
 //! arm (`powered_unit_tests`).
@@ -324,12 +327,7 @@ impl Simulation {
         self.reset_orders_to_guard(id, rules, effects);
         self.object_deselect(id);
         if foot {
-            Self::locomotor_power_off(
-                &mut self.scenario_rng,
-                &mut self.substrate,
-                &self.resolved_terrain,
-                id,
-            );
+            self.locomotor_power_off(id, rules, Some(rules.overlay_registry()), effects);
         }
         let quiet = self.ares_activation_sound_mutex(rules);
         Self::latch_deactivated(
