@@ -89,11 +89,15 @@ Not ported:
 - Trigger event 55, which Firestorm raises when a limpet attaches to an object with a tag.
   Yuri's Revenge's event 55 is a different event, so a Tiberian Sun map's trigger on it
   does not fire.
-- The limpeted health-bar cue. Firestorm adds 8 to a limpeted vehicle's PIPBRD frame (3 for
-  a vehicle, `0x0062C3D3..0x0062C409`) and draws a limpeted building's selection box in
-  colour 5 where others use 15 (`0x0062B122..0x0062B14B`, `0x0062BED0`). Yuri's Revenge's
-  PIPBRD.SHP has two frames, vehicle and infantry, and gamemd draws no building selection
-  box, so neither has anything to land on. A limpeted object looks like any other.
+- The limpeted selection cue. Firestorm adds 8 to a limpeted vehicle's selection-bracket
+  frame (3 for a vehicle, `0x0062C3D3..0x0062C409`), and that shape is SELECT.SHP
+  (loaded at `0x005879D0`), not PIPBRD.SHP, which Tiberian Sun does not have. Firestorm's
+  SELECT.SHP has 16 frames, Tiberian Sun's 8: the same four bracket sizes repeated. It
+  also draws a limpeted building's selection box in colour 5 where others use 15
+  (`0x0062B122..0x0062B14B`, `0x0062BED0`). gamemd loads no SELECT.SHP and draws no
+  building selection box; its health bar takes PIPBRD.SHP frame 0 for a vehicle and 1 for
+  infantry (`DrawHealthBar` `0x006F693F`, `0x006F68AB`), with no limpet term. Neither cue
+  has anything to land on, so a limpeted object looks like any other.
 - An EMP on a limpet mine. Firestorm gives it a call of its own (`0x0042AA70`) in place of
   the EMP disable; VERA treats it as any building.
 - The repair cursor over a limpeted building at full health, which Firestorm allows

@@ -2466,6 +2466,10 @@ pub(crate) fn techno_extras_for_parent(
     }
     let delta = object.map_or(0.0, |object| object.pixel_selection_bracket_delta as f32);
     let infantry = entity.category() == EntityCategory::Infantry;
+    // DrawHealthBar's unit arm draws PIPBRD.SHP ([0x00AC1478]) frame 1 for
+    // infantry (0x006F68AB) and frame 0 otherwise (0x006F693F), with no limpet
+    // term (`health_templates`). Firestorm's limpet +8 (0x0062C3D3..0x0062C409)
+    // indexes SELECT.SHP, which gamemd never loads (docs/ts-limpets.md).
     let (num_pips, class) = if infantry {
         (UNIT_PIPS_INFANTRY, HealthClass::Infantry)
     } else {
