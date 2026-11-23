@@ -136,7 +136,20 @@ build check first, and a rollback reads and compares the folder's AI INI as that
 did. With a
 mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
 folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so players whose copies of a mod differ are
-refused as on any rules difference. The effective declarations from `mod.ini` that
+refused as on any rules difference. A file that only shows, plays or tells one player
+something is left out by the ending of its name (`mod_files::SHOWN_KINDS`): text tables
+(`.csf`), fonts (`.fnt`), movies (`.bik`, `.vqa`), pictures only screens draw (`.pcx`, `.png`,
+`.jpg`, `.jpeg`, `.bmp`, `.gif`, `.ico`, `mouse.sha`) and documents (`.txt`, `.md`, `.pdf`, `.rtf`,
+`.htm`, `.html`, `.url`, `.log`). The simulation side reads no file of these kinds, and a
+Rules, Art, AI or mode INI or a map that includes one is compared as it was read, so players
+of one mod with another translation or other screens play together. A sound, EVA or theme
+INI that includes one is no longer compared with it, as those INIs are not without a mod.
+Sounds, music and palettes still count: the
+sound, EVA and theme lists number what a map's triggers name, a theme counts only while
+its WAV is there, and whether a palette loads decides a building's death animation. So
+does every archive, which can hold any file whatever it is named for. Nothing new is
+exchanged: a game from before this is another build and is refused by the build check
+first, and a rollback compares those files again. The effective declarations from `mod.ini` that
 select what a match plays and the modes and maps a game offers also take part in this
 agreement: the Rules, Art, AI, mode roster and map catalog files
 (`IniRoots::agreed_files`), every archive name and the Ares requirement. Its display
