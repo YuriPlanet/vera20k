@@ -108,7 +108,7 @@ impl ShellBoxTree {
     fn holds(&self, shell_box: &ShellBox) -> bool {
         let count = self.gui.tree().children(self.root).map_or(0, <[NodeId]>::len);
         count == shell_box.buttons.len() + 2
-            && (shell_box.buttons.iter().enumerate()).all(|(index, button)| {
+            && shell_box.buttons.iter().enumerate().all(|(index, button)| {
                 let node = self.child(index + 1);
                 node.and_then(|node| self.gui.id_of(node)) == Some(i32::from(button.id))
             })
