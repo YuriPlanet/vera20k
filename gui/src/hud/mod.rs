@@ -1,24 +1,22 @@
 //! A retained heads-up display: layered node trees over a world the host
-//! draws, plus status templates and draw lists anchored in that world.
+//! draws, plus status templates evaluated per object in that world
+//! ([`world`]).
 //!
 //! Everything a host passes in or reads out is plain data: handles, integers,
 //! strings and colours. No callbacks are kept and no GPU type appears, so a
 //! bridge (a script or a sandboxed module) can forward the calls unchanged.
 //!
 //! The HUD is no security boundary. Such a bridge keeps its own handle table,
-//! checks [`Hud::origin`] (and [`world::World::template_origin`]) before a
-//! change, undoes its changes to others' items, expects [`Hud::remove_origin`]
-//! to take others' nodes beneath its own, and numbers the enums for its wire.
-//! Events may name a node removed since they were queued.
+//! checks [`Hud::origin`] before a change, undoes its changes to others'
+//! items, expects [`Hud::remove_origin`] to take others' nodes beneath its
+//! own, and numbers the enums for its wire.
 //!
-//! A frame: [`Hud::layout`], [`Hud::input`] against that layout,
-//! [`Hud::drain_events`], the host's changes, [`Hud::layout`], [`Hud::paint`].
+//! A frame: the host's changes, [`Hud::layout`], [`Hud::paint`].
 
 #[cfg(test)]
 mod contract_tests;
 #[cfg(test)]
 mod client_bridge_tests;
-mod input;
 mod layout;
 mod paint;
 pub mod world;
@@ -28,9 +26,7 @@ use std::collections::HashMap;
 use crate::node::{NodeId, NodeKind, Prop, Refused, Tree, Value};
 use crate::Rect;
 
-pub use input::{ClickOrder, HoverOrder, HudEvent, InputPolicy, Pointer, Response};
-pub use layout::Hold;
-pub use paint::{ButtonState, PaintCmd, PaintOp, batches};
+pub use paint::{PaintCmd, PaintOp};
 
 /// Empties `buffer` for the next frame, free of what the last frame's
 /// commands borrowed. It keeps the allocation only where `A` and `B` have
@@ -41,7 +37,7 @@ pub fn recycle<A, B>(mut buffer: Vec<A>) -> Vec<B> {
     buffer.into_iter().filter_map(|_| None).collect()
 }
 
-/// Bottom to top. A visible node in `Modal` blocks every layer beneath it.
+/// Bottom to top.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Layer {
     Field,
@@ -53,7 +49,7 @@ pub enum Layer {
 }
 
 impl Layer {
-    /// `Modal` and `System` take the whole pointer, so only the host enters them.
+    /// Only the host enters `Modal` and `System`.
     pub fn host_only(self) -> bool {
         self >= Layer::Modal
     }
@@ -98,27 +94,22 @@ pub struct Hud {
     /// Each layer's roots, bottom to top.
     pub(crate) roots: [Vec<NodeId>; 5],
     pub(crate) layout: layout::Layout,
-    pub(crate) input: input::State,
-    pub world: world::World,
     revision: u64,
 }
 
 impl Hud {
-    pub fn new(max_nodes: usize, policy: InputPolicy) -> Self {
+    pub fn new(max_nodes: usize) -> Self {
         Hud {
             tree: Tree::new(max_nodes),
             meta: HashMap::new(),
             roots: Default::default(),
             layout: Default::default(),
-            input: input::State::new(policy),
-            world: Default::default(),
             revision: 0,
         }
     }
 
-    /// Changes whenever a node changes or the hovered or pressed one does;
-    /// with [`world::World::revision`] it tells the host whether a still
-    /// picture needs a redraw.
+    /// Changes whenever a node changes, so the host knows when to lay out
+    /// again.
     pub fn revision(&self) -> u64 {
         self.revision
     }
@@ -166,31 +157,17 @@ impl Hud {
     pub fn clear(&mut self, id: NodeId, prop: Prop) -> Result<(), Refused> {
         if self.tree.clear(id, prop)? {
             self.revision += 1;
-            self.forget_inactive();
         }
         Ok(())
     }
 
-    /// Geometry takes effect at the next [`Self::layout`]. A `Command` has at
-    /// most [`world::MAX_TEXT_BYTES`].
+    /// Geometry takes effect at the next [`Self::layout`].
     pub fn set(&mut self, id: NodeId, prop: Prop, value: Value) -> Result<(), Refused> {
         if self.tree.get(id, prop)? == Some(&value) {
             return Ok(());
         }
-        // Every queued click holds a copy.
-        if let (Prop::Command, Value::Text(text)) = (prop, &value)
-            && text.len() > world::MAX_TEXT_BYTES
-        {
-            return Err(Refused::Limit);
-        }
         self.tree.set(id, prop, value)?;
         self.revision += 1;
-        if matches!(
-            prop,
-            Prop::Visible | Prop::Enabled | Prop::Clickable | Prop::Hoverable
-        ) {
-            self.forget_inactive();
-        }
         Ok(())
     }
 
@@ -211,19 +188,12 @@ impl Hud {
     /// Removes the node and its subtree.
     pub fn remove(&mut self, id: NodeId) -> Result<(), Refused> {
         self.tree.remove(id)?;
-        let tree = &self.tree;
-        self.meta.retain(|id, _| tree.node(*id).is_ok());
-        for roots in &mut self.roots {
-            roots.retain(|id| tree.node(*id).is_ok());
-        }
-        self.revision += 1;
-        self.forget_inactive();
+        self.forget_removed();
         Ok(())
     }
 
-    /// Removes all that `origin` made: its nodes with their subtrees, its
-    /// templates and its draw lists. What others made beneath its nodes goes
-    /// too, so their handles to it become `Stale`.
+    /// Removes the nodes `origin` made, with their subtrees. What others made
+    /// beneath them goes too, so their handles to it become `Stale`.
     pub fn remove_origin(&mut self, origin: Origin) {
         // In paint order, not the map's, so the ids given out next are the same in every run.
         let mut made = Vec::new();
@@ -234,15 +204,18 @@ impl Hud {
         });
         if !made.is_empty() {
             self.tree.remove_all(&made);
-            let tree = &self.tree;
-            self.meta.retain(|id, _| tree.node(*id).is_ok());
-            for roots in &mut self.roots {
-                roots.retain(|id| tree.node(*id).is_ok());
-            }
-            self.revision += 1;
-            self.forget_inactive();
+            self.forget_removed();
         }
-        self.world.remove_origin(origin);
+    }
+
+    /// Drops the bookkeeping of nodes the tree no longer has.
+    fn forget_removed(&mut self) {
+        let tree = &self.tree;
+        self.meta.retain(|id, _| tree.node(*id).is_ok());
+        for roots in &mut self.roots {
+            roots.retain(|id| tree.node(*id).is_ok());
+        }
+        self.revision += 1;
     }
 
     /// The node named `name` (ASCII case aside): `from`'s own first, then

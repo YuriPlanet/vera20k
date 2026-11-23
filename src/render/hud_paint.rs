@@ -296,13 +296,13 @@ fn clip_from(instances: &mut Vec<SpriteInstance>, start: usize, clip: Rect, spac
 #[cfg(all(test, tests_render_a_r))]
 mod tests {
     use super::*;
-    use vera20k_gui::hud::{InputPolicy, Layer, Origin};
+    use vera20k_gui::hud::{Layer, Origin};
     use vera20k_gui::{NodeKind, Prop, Value};
 
     #[test]
     fn a_clipped_hud_keeps_paint_order_and_cuts_each_quad_with_its_texture() {
         let font = crate::render::bit_font::tests::make_test_font(&[(u16::from(b'a'), 4)], 3);
-        let mut hud = Hud::new(16, InputPolicy::default());
+        let mut hud = Hud::new(16);
         let root = hud
             .create_root(Layer::Field, Origin::Host, NodeKind::Panel)
             .unwrap();

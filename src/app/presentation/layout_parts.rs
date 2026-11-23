@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use vera20k_gui::hud::{Hud, InputPolicy, Layer, Origin};
+use vera20k_gui::hud::{Hud, Layer, Origin};
 use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Rgba, Value};
 
 use crate::app::AppState;
@@ -471,7 +471,7 @@ impl PartsHud {
         Self {
             holder,
             // As many as the layout has: no part is left out for a limit.
-            hud: Hud::new(usize::MAX, InputPolicy::default()),
+            hud: Hud::new(usize::MAX),
             nodes: Vec::new(),
             used: 0,
             laid_out: 0,

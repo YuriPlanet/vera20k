@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use vera20k_gui::hud::{Hud, InputPolicy, Layer, Origin};
+use vera20k_gui::hud::{Hud, Layer, Origin};
 use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Rgba, Value};
 
 use crate::render::batch::SpriteInstance;
@@ -41,7 +41,7 @@ pub(crate) struct TextHud {
 impl Default for TextHud {
     fn default() -> Self {
         Self {
-            hud: Hud::new(usize::MAX, InputPolicy::default()),
+            hud: Hud::new(usize::MAX),
             name: None,
             part: None,
             nodes: Vec::new(),
