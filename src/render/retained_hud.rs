@@ -11,6 +11,13 @@
 //! piece does, so a still frame costs a compare per piece and no layout.
 //! The host hands each node its exact place on the target ([`NodeDraw`]),
 //! so the instances are the ones the host drew itself.
+//!
+//! A HUD may also draw into a tree it does not own: the match's GUI, whose
+//! chrome layer holds the sidebar's and the command bar's buttons, lends
+//! itself to a frame ([`RetainedHud::begin_in`], [`RetainedHud::finish_in`]).
+//! There the parts are the chrome's own nodes ([`RetainedHud::part_node`]),
+//! a button is drawn by its own node ([`RetainedHud::adopt`]), and the frame
+//! paints those parts alone, in the order it drew them.
 
 use vera20k_gui::{Gui, Layer, NodeId, NodeKind, Origin, Prop, Rect, Rgba, Value};
 
@@ -21,9 +28,9 @@ use crate::render::hud_paint::{HudPaint, HudSpace, NodeDraw};
 /// what is off screen is the lanes' to clip.
 const UNBOUNDED: Rect = Rect::new(i32::MIN / 2, i32::MIN / 2, i32::MAX, i32::MAX);
 
-/// The `Art` every picture node names; which picture it is, its
-/// [`NodeDraw`] says.
-const PICTURE: &str = "picture";
+/// The `Art` every picture node names, and every chrome button that draws
+/// its own picture; which picture it is, its [`NodeDraw`] says.
+pub(crate) const PICTURE: &str = "picture";
 
 /// What becomes of the nodes a frame no longer reaches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,9 +56,17 @@ pub(crate) struct RetainedHud {
     run: usize,
     /// The tree's revision at its last layout.
     laid_out: Option<u64>,
+    /// The viewport of the tree's last layout, which a lent tree's other
+    /// users may have changed.
+    viewport: Option<Rect>,
     /// The nodes to remove at once, kept for its allocation.
     removed: Vec<NodeId>,
     paint: HudPaint,
+    /// Whether the tree is lent to each frame ([`Self::lent`]); `hud` holds
+    /// an empty one between frames.
+    lent: bool,
+    /// Which lent tree the entries are nodes of.
+    tree: Option<u64>,
 }
 
 #[derive(Default)]
@@ -74,6 +89,9 @@ struct Entry {
     /// The part it is in.
     parent: Option<NodeId>,
     shown: bool,
+    /// A node of the lent tree's own ([`RetainedHud::adopt`]): never removed
+    /// nor hidden here.
+    adopted: bool,
     rect: Option<Rect>,
     color: Option<Rgba>,
     text: String,
@@ -93,9 +111,40 @@ impl RetainedHud {
             runs: (0..runs.max(1)).map(|_| Run::default()).collect(),
             run: 0,
             laid_out: None,
+            viewport: None,
             removed: Vec::new(),
             paint: HudPaint::default(),
+            lent: false,
+            tree: None,
         }
+    }
+
+    /// A HUD that draws into a tree lent to each frame ([`Self::begin_in`]),
+    /// its nodes made by `origin`, with `runs` runs. Every piece of it goes
+    /// into a part of that tree ([`Self::part_node`]); one outside any is
+    /// refused.
+    pub(crate) fn lent(origin: Origin, runs: usize, rest: Rest) -> Self {
+        Self {
+            lent: true,
+            ..Self::new(Layer::Panels, origin, 0, runs, rest)
+        }
+    }
+
+    /// Start a frame in `gui`, lent to it until [`Self::finish_in`] hands it
+    /// back: whoever reads `gui` meanwhile finds an empty tree. `tree` names
+    /// the nodes the frame draws into (a chrome built anew is another): the
+    /// last frame's nodes, of an older one, are forgotten without a change.
+    pub(crate) fn begin_in(&mut self, gui: &mut Gui, tree: u64) {
+        debug_assert!(self.lent, "a HUD with a tree of its own");
+        std::mem::swap(&mut self.hud, gui);
+        if self.tree != Some(tree) {
+            for run in &mut self.runs {
+                run.entries.clear();
+            }
+            self.laid_out = None;
+            self.tree = Some(tree);
+        }
+        self.begin();
     }
 
     /// Start a frame: the pieces added from here replace the last frame's,
@@ -120,11 +169,58 @@ impl RetainedHud {
     /// itself; its pieces keep their places and order. Refused, the pieces
     /// are roots.
     pub(crate) fn part(&mut self, name: Option<&'static str>) {
+        debug_assert!(!self.lent, "a lent tree's parts are its own");
         self.runs[self.run].part = None;
         let part = self
             .next(NodeKind::Panel, name, None, NodeDraw::default())
             .map(|at| self.runs[self.run].entries[at].node);
         self.runs[self.run].part = part;
+    }
+
+    /// Start the part `part`, a node of the lent tree, in the run: the
+    /// pieces added from here until the next part are its children. None
+    /// refuses them.
+    pub(crate) fn part_node(&mut self, part: Option<NodeId>) {
+        self.runs[self.run].part = part;
+    }
+
+    /// The frame's next piece is `node`, the lent tree's own (a button of
+    /// the chrome, which takes the pointer there): moved to `rect` (none
+    /// keeps its place) and drawn as `draw`, which a frame that draws
+    /// nothing of it leaves at its default. The node stays in its tree and
+    /// shown whatever the frames do; this HUD changes its `Rect` alone.
+    pub(crate) fn adopt(&mut self, node: NodeId, rect: Option<Rect>, draw: NodeDraw) {
+        let run = self.run;
+        let used = self.runs[run].used;
+        let same = self.runs[run]
+            .entries
+            .get(used)
+            .is_some_and(|entry| entry.adopted && entry.node == node);
+        if !same {
+            self.forget_from(run, used);
+            self.runs[run].entries.push(Entry {
+                node,
+                kind: NodeKind::Button,
+                name: None,
+                parent: None,
+                shown: true,
+                adopted: true,
+                rect: None,
+                color: None,
+                text: String::new(),
+                draw,
+            });
+        }
+        self.runs[run].used += 1;
+        let entry = &mut self.runs[run].entries[used];
+        entry.draw = draw;
+        if let Some(rect) = rect {
+            let rect = Rect::new(rect.x, rect.y, rect.w.max(1), rect.h.max(1));
+            if entry.rect != Some(rect) {
+                entry.rect = Some(rect);
+                let _ = self.hud.set(entry.node, Prop::Rect, Value::Rect(rect));
+            }
+        }
     }
 
     /// The frame's next box: `rect` (pixels in the tree) filled with
@@ -165,13 +261,47 @@ impl RetainedHud {
     /// tree changed and draw the rest through `space`, the text with `font`
     /// at its raster of now (none draws no text).
     pub(crate) fn finish(&mut self, space: HudSpace, font: Option<&BitFont>) -> &HudPaint {
+        debug_assert!(!self.lent, "a lent tree is handed back by finish_in");
+        self.settle();
+        // The paint list names the shown nodes in the runs' order.
+        let runs = &self.runs;
+        let mut at = 0;
+        self.paint
+            .build(&self.hud, space, font, |node| seek(runs, &mut at, node));
+        &self.paint
+    }
+
+    /// [`Self::finish`] of a frame begun by [`Self::begin_in`]: drawn from
+    /// the subtrees of `from` alone, one after the other in that order (the
+    /// parts the frame drew into, not the rest of the lent tree, whose own
+    /// order is its input's), and the tree handed back to `gui`.
+    pub(crate) fn finish_in(
+        &mut self,
+        gui: &mut Gui,
+        from: &[NodeId],
+        space: HudSpace,
+        font: Option<&BitFont>,
+    ) -> &HudPaint {
+        self.settle();
+        let runs = &self.runs;
+        let mut at = 0;
+        self.paint.build_from(&self.hud, Some(from), space, font, |node| {
+            seek(runs, &mut at, node)
+        });
+        std::mem::swap(&mut self.hud, gui);
+        &self.paint
+    }
+
+    /// Drop or hide the nodes the frame no longer has, and lay out where
+    /// the tree changed or another user laid it out elsewhere.
+    fn settle(&mut self) {
         for run in 0..self.runs.len() {
             let used = self.runs[run].used;
             match self.rest {
                 Rest::Remove => self.forget_from(run, used),
                 Rest::Hide => {
                     for entry in &mut self.runs[run].entries[used..] {
-                        if entry.shown {
+                        if entry.shown && !entry.adopted {
                             entry.shown = false;
                             let _ = self.hud.set(entry.node, Prop::Visible, Value::Bool(false));
                         }
@@ -180,16 +310,11 @@ impl RetainedHud {
             }
         }
         let revision = self.hud.revision();
-        if self.laid_out != Some(revision) {
+        if self.laid_out != Some(revision) || self.viewport != Some(self.hud.viewport()) {
             self.hud.layout(UNBOUNDED);
             self.laid_out = Some(revision);
+            self.viewport = Some(self.hud.viewport());
         }
-        // The paint list names the shown nodes in the runs' order.
-        let runs = &self.runs;
-        let mut at = 0;
-        self.paint
-            .build(&self.hud, space, font, |node| seek(runs, &mut at, node));
-        &self.paint
     }
 
     /// The last [`Self::finish`]'s instances.
@@ -232,8 +357,12 @@ impl RetainedHud {
     ) -> Option<usize> {
         let run = self.run;
         let (used, parent) = (self.runs[run].used, self.runs[run].part);
+        // A lent tree takes pieces inside its parts alone.
+        if self.lent && parent.is_none() {
+            return None;
+        }
         let same = self.runs[run].entries.get(used).is_some_and(|entry| {
-            entry.kind == kind && entry.name == name && entry.parent == parent
+            !entry.adopted && entry.kind == kind && entry.name == name && entry.parent == parent
         });
         if !same {
             self.forget_from(run, used);
@@ -258,6 +387,7 @@ impl RetainedHud {
                 name,
                 parent,
                 shown: true,
+                adopted: false,
                 rect: None,
                 color: None,
                 text: String::new(),
@@ -290,15 +420,21 @@ impl RetainedHud {
     }
 
     /// Remove the run's nodes from `kept` on, at once. A removed part takes
-    /// its pieces with it; theirs are then gone.
+    /// its pieces with it; theirs are then gone. An adopted node is only
+    /// forgotten: it stays in its tree, and draws nothing until a frame
+    /// adopts it again ([`seek`] gives it the default draw).
     fn forget_from(&mut self, run: usize, kept: usize) {
         let entries = &mut self.runs[run].entries;
         if kept >= entries.len() {
             return;
         }
         self.removed.clear();
-        self.removed
-            .extend(entries[kept..].iter().map(|entry| entry.node));
+        self.removed.extend(
+            entries[kept..]
+                .iter()
+                .filter(|entry| !entry.adopted)
+                .map(|entry| entry.node),
+        );
         entries.truncate(kept);
         self.hud.remove_all(&self.removed);
     }

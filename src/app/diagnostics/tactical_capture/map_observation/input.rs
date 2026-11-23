@@ -635,7 +635,8 @@ struct ChromeControl {
 impl ChromeControl {
     fn read(gui: &vera20k_gui::Gui, node: vera20k_gui::NodeId) -> Option<Self> {
         use vera20k_gui::{Prop, Value};
-        let rect = match gui.get(node, Prop::Rect).ok()? {
+        // Where the cursor hits it; its `Rect` is where its picture draws.
+        let rect = match gui.get(node, Prop::HitRect).ok()? {
             Some(Value::Rect(rect)) => *rect,
             _ => vera20k_gui::Rect::default(),
         };

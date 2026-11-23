@@ -60,13 +60,14 @@ fn places_for(
     }
 }
 
-/// The command bar's nodes: command `i` is `0xD6 + i`, Team01..03 take
-/// both buttons (0x55), the rest the left (5); the thumb is last.
-pub(super) fn build(gui: &mut Gui, root: NodeId) -> Result<[NodeId; 12], Refused> {
-    let mut nodes = [root; 12];
+/// The command bar's buttons under `bar`, each also the picture it draws:
+/// command `i` is `0xD6 + i`, Team01..03 take both buttons (0x55), the rest
+/// the left (5); the thumb is last.
+pub(super) fn build(gui: &mut Gui, bar: NodeId) -> Result<[NodeId; 12], Refused> {
+    let mut nodes = [bar; 12];
     for (command, node) in nodes.iter_mut().enumerate() {
         let id = if command == 11 { 0xF0 } else { 0xD6 + command as u16 };
-        *node = button(gui, root, id, if command < 3 { BOTH } else { LEFT })?;
+        *node = drawn_button(gui, bar, id, if command < 3 { BOTH } else { LEFT })?;
     }
     Ok(nodes)
 }

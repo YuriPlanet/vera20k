@@ -1256,7 +1256,7 @@ fn command_bar_fixture() -> (
         };
         if let Some(rect) = placed {
             let rect = Rect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
-            gui.set(*node, Prop::Rect, Value::Rect(rect)).unwrap();
+            gui.set(*node, Prop::HitRect, Value::Rect(rect)).unwrap();
         }
         gui.set(*node, Prop::Enabled, Value::Bool(placed.is_some())).unwrap();
     }
@@ -1288,7 +1288,7 @@ fn command_bar_gesture_resolves_current_layout_and_retained_control() {
         777
     );
     let moved = Rect::new(rect.x + 1, rect.y, rect.w, rect.h);
-    gui.set(handle, Prop::Rect, Value::Rect(moved)).unwrap();
+    gui.set(handle, Prop::HitRect, Value::Rect(moved)).unwrap();
     assert!(
         MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, (&gui, bar), [800, 600])
             .is_err()
@@ -1312,7 +1312,7 @@ fn command_bar_thumb_uses_current_cap_without_inventing_a_button_list_slot() {
         let handle = bar[11];
         let rect = layout.left_cap;
         let rect = Rect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
-        gui.set(handle, Prop::Rect, Value::Rect(rect)).unwrap();
+        gui.set(handle, Prop::HitRect, Value::Rect(rect)).unwrap();
         gui.set(handle, Prop::Id, Value::Int(if open { 0xF0 } else { 0xF1 })).unwrap();
         let (receipt, observed_handle) =
             MapCommandBarGestureReceipt::resolve("Thumb", layout, &slots, (&gui, bar), [800, 600])

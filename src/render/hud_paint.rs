@@ -95,12 +95,33 @@ impl HudPaint {
         hud: &Gui,
         space: HudSpace,
         font: Option<&BitFont>,
+        draw: impl FnMut(NodeId) -> NodeDraw,
+    ) {
+        self.build_from(hud, None, space, font, draw);
+    }
+
+    /// [`Self::build`] of the subtrees of `roots` alone, one after the other
+    /// in that order ([`Gui::paint_from`]), or of the whole tree without
+    /// them.
+    pub(crate) fn build_from(
+        &mut self,
+        hud: &Gui,
+        roots: Option<&[NodeId]>,
+        space: HudSpace,
+        font: Option<&BitFont>,
         mut draw: impl FnMut(NodeId) -> NodeDraw,
     ) {
         self.instances.clear();
         self.runs.clear();
         let mut commands = recycle(std::mem::take(&mut self.commands));
-        hud.paint(&mut commands);
+        match roots {
+            Some(roots) => {
+                for &root in roots {
+                    hud.paint_from(root, &mut commands);
+                }
+            }
+            None => hud.paint(&mut commands),
+        }
         for command in &commands {
             let start = self.instances.len();
             let node = draw(command.node);

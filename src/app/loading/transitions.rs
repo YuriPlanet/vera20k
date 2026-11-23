@@ -791,6 +791,9 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     );
     state.match_state.input.reset_targeting_for_new_world();
     state.match_state.match_presentation.active_sidebar_tab = SidebarTab::default_active_tab();
+    // The match's chrome: the sidebar's and the command bar's nodes, which
+    // take their clicks and draw them, until the match ends.
+    crate::app::input::chrome_input::build_for_match(state);
     // Read_Scenario's Init (`0x00684AC9`). Start_Scenario then changes video
     // mode when the game size differs from the shell's (`0x00683DB8..0x00683DF3`):
     // Change_Video_Mode's Set_View_Dimensions (`0x005610EC`) Inits the empty

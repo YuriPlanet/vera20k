@@ -437,7 +437,9 @@ impl App {
             .match_presentation
             .radar_movies
             .set_active(movie_active);
-        state.match_state.match_presentation.dialog_ui = Default::default();
+        // The menus' dialogs go; the chrome under them (the sidebar's and
+        // the command bar's nodes) stays.
+        state.match_state.match_presentation.dialog_ui.close_all();
         state.match_state.match_presentation.diplomacy_page = Default::default();
         state.match_state.match_presentation.sound_dialog = None;
         if will_be_open {
@@ -448,8 +450,8 @@ impl App {
             // body, so anything still armed here would stay latched for the
             // rest of the match: tactical capture freezes edge auto-scroll
             // and an active minimap press swallows every cursor move. The
-            // chrome's capture went with `dialog_ui` above; its pushed looks
-            // go here.
+            // chrome's capture went with `dialog_ui.close_all` above; its
+            // pushed looks go here.
             state.match_state.input.cancel_tactical_drag();
             crate::app::input::chrome_input::cancel(state);
         }
