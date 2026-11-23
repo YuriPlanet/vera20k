@@ -14,7 +14,7 @@ use super::preview::{
     aspect_fit_rect, build_preview_surface_instance, ensure_map_preview_texture,
     ensure_zoom_texture, project_preview_start_positions, push_start_marker_sprites, zoom_draws,
 };
-use super::text::{push_start_marker_labels, rect_to_text_rect, static_label, status_line_label};
+use super::text::{push_start_marker_labels, static_label, status_line_label};
 use super::{
     SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB, SHELL_LOWER_STRIP_DEPTH,
     SHELL_PARENT_BACKGROUND_DEPTH, SHELL_SWATCH_DEPTH,
@@ -195,7 +195,7 @@ pub(crate) fn render_multiplayer_setup(
             shell_text::draw_in_rect_scaled(
                 font,
                 value,
-                rect_to_text_rect(rect),
+                shell_text::TextRect::of(rect),
                 rgb,
                 align,
                 [0.0; 2],
@@ -1002,7 +1002,7 @@ fn push_roster_cell(
     texts.push(shell_text::draw_in_rect_scaled(
         &state.renderer.bit_font,
         &item.text,
-        rect_to_text_rect(rect),
+        shell_text::TextRect::of(rect),
         rgb,
         align,
         [0.0; 2],

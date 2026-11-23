@@ -9,7 +9,6 @@
 
 use super::chrome::*;
 use super::gui_paint::{ButtonArt, CellRow, ComboArt, GuiStyle, HostRows};
-use super::text::rect_to_text_rect;
 use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
@@ -207,7 +206,7 @@ pub(crate) fn paint_wol_lobby_children(
         paint.texts.push(shell_text::draw_in_rect_scaled(
             font,
             &crate::i18n::tr("VERA:LobbySearchHint"),
-            rect_to_text_rect(hint),
+            shell_text::TextRect::of(hint),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
             [0.0; 2],

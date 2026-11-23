@@ -4,7 +4,6 @@
 //! chrome.
 
 use super::controls::list_view_controls;
-use super::text::rect_to_text_rect;
 use super::wol_lobby::{WolLobbyPaint, row_rgb};
 use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
@@ -30,7 +29,7 @@ pub(crate) fn paint_wol_quick_match_children(
         shell_text::draw_in_rect_scaled(
             font,
             value,
-            rect_to_text_rect(rect),
+            shell_text::TextRect::of(rect),
             rgb,
             ShellAlign::V_CENTER,
             [0.0; 2],

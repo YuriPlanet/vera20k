@@ -24,7 +24,6 @@ use super::chrome::{
     push_ownerdraw_two_pixel_bevel_frame, push_ownerdraw_two_pixel_bevel_frame_px, push_solid_rect,
     push_solid_rect_px, push_tinted_entry,
 };
-use super::text::rect_to_text_rect;
 use super::{
     OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF, SHELL_CONTROL_DEPTH,
     SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE, SHELL_DROPDOWN_DEPTH,
@@ -200,7 +199,7 @@ pub(super) fn push_framed_edit(
         texts.push(shell_text::draw_in_rect_scaled(
             font,
             &text,
-            rect_to_text_rect(at),
+            shell_text::TextRect::of(at),
             rgb,
             ShellAlign::V_CENTER,
             [0.0; 2],

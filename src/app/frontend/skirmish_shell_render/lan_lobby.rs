@@ -5,7 +5,6 @@ use super::chrome::*;
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
-use super::text::rect_to_text_rect;
 use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
@@ -138,7 +137,7 @@ pub(crate) fn render_lan_lobby(
         shell_text::draw_in_rect_scaled(
             font,
             value,
-            rect_to_text_rect(rect),
+            shell_text::TextRect::of(rect),
             rgb,
             align,
             [0.0; 2],
@@ -241,7 +240,7 @@ pub(crate) fn render_lan_lobby(
             texts.push(shell_text::draw_in_rect_path_a_scaled(
                 font,
                 &state.csf_label(PAGE.title_key, "Lobby"),
-                rect_to_text_rect(layout.page.title),
+                shell_text::TextRect::of(layout.page.title),
                 ShellAlign::PANEL_TITLE,
                 [0.0; 2],
                 SHELL_CONTROL_TEXT_DEPTH,

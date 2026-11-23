@@ -7,7 +7,6 @@
 
 use super::chrome::push_flag_entry_clipped_centered;
 use super::controls::list_view_controls;
-use super::text::rect_to_text_rect;
 use super::wol_lobby::{WolLobbyPaint, push_icon, row_rgb};
 use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH};
 use crate::app::AppState;
@@ -34,7 +33,7 @@ pub(crate) fn paint_wol_buddy_children(
         shell_text::draw_in_rect_scaled(
             font,
             value,
-            rect_to_text_rect(rect),
+            shell_text::TextRect::of(rect),
             rgb,
             align,
             [0.0; 2],

@@ -5,7 +5,6 @@
 
 use super::SHELL_LABEL_TEXT_RGB;
 use super::gui_paint::{GuiStyle, HostRows};
-use super::text::rect_to_text_rect;
 use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
 use crate::app::AppState;
 use crate::render::shell_paint::{self, ModalButton, PaintLabel};
@@ -231,7 +230,7 @@ pub(crate) fn paint_wol_verify(
         paint.texts.push(shell_text::draw_in_rect_scaled(
             &state.renderer.bit_font,
             name,
-            rect_to_text_rect(crate::ui::skirmish_shell::checkbox_text_rect(rect, scale)),
+            shell_text::TextRect::of(crate::ui::skirmish_shell::checkbox_text_rect(rect, scale)),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
             [0.0; 2],

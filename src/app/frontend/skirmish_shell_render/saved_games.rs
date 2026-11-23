@@ -131,16 +131,16 @@ pub(super) fn seed_browser_paint<I>(
 ) -> GuiPaint {
     let mut paint =
         paint_saved_browser(state, Some(atlas), layout, browser, ButtonArt::PanelCentred, true);
-    super::text::push_text_draw(
-        &mut paint.texts,
-        state,
+    paint.texts.push(crate::render::shell_text::draw_in_rect_scaled(
+        &state.renderer.bit_font,
         title,
-        super::text::rect_to_text_rect(layout.title),
+        crate::render::shell_text::TextRect::of(layout.title),
         SHELL_LABEL_TEXT_RGB,
         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+        [0.0, 0.0],
         super::SHELL_DROPDOWN_TEXT_DEPTH - 0.00012,
         layout.scale.factor(),
-    );
+    ));
     push_saved_browser_box(
         state,
         Some(atlas),

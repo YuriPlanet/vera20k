@@ -13,7 +13,6 @@ use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
 use super::preview::{build_preview_surface_instance, ensure_map_preview_texture};
-use super::text::rect_to_text_rect;
 use super::{
     SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
     SHELL_PARENT_BACKGROUND_DEPTH,
@@ -72,7 +71,7 @@ pub(crate) fn render_coop_score(
         shell_text::draw_in_rect_scaled(
             font,
             value,
-            rect_to_text_rect(rect),
+            shell_text::TextRect::of(rect),
             rgb,
             align,
             [0.0; 2],

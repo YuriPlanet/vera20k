@@ -9,7 +9,7 @@ use vera20k_gui::NodeKind;
 
 use super::controls::push_new_edit_caret;
 use super::gui_paint::{self, GuiPaint, GuiStyle, HostRows};
-use super::text::{combo_face_text_color, rect_to_text_rect};
+use super::text::combo_face_text_color;
 use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
 use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_EDIT_CARET_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
@@ -116,7 +116,7 @@ pub(crate) fn paint_wol_login_children(
         paint.texts.push(shell_text::draw_in_rect_scaled(
             font,
             &edit.painted_text(),
-            rect_to_text_rect(combo_text),
+            shell_text::TextRect::of(combo_text),
             combo_face_text_color(false),
             ShellAlign::V_CENTER,
             [0.0; 2],
@@ -187,7 +187,7 @@ fn paint_entry_choice(
                 paint.popup_texts.push(shell_text::draw_in_rect_scaled(
                     font,
                     &value,
-                    rect_to_text_rect(bounds),
+                    shell_text::TextRect::of(bounds),
                     rgb,
                     centre,
                     [0.0; 2],
@@ -228,7 +228,7 @@ fn paint_entry_choice(
             shell_text::draw_in_rect_scaled(
                 font,
                 &value,
-                rect_to_text_rect(caption),
+                shell_text::TextRect::of(caption),
                 SHELL_LABEL_TEXT_RGB,
                 centre,
                 [0.0; 2],

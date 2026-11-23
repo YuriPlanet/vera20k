@@ -149,33 +149,7 @@ pub(super) fn button_label_rect_px(rect: RectPx, pressed: bool, scale: ShellScal
     })
 }
 
-/// Emit one caption. `scale` is the page's uniform stretch (
-/// [`crate::ui::shell::geom::ShellScale::uniform`]): the wrap and centring run on
-/// the authored numbers and the glyphs are emitted at `scale` x, so a stretched
-/// page keeps gamemd's text metrics instead of re-wrapping a resized rect.
-/// `1.0` is the retail path, byte-for-byte.
-pub(super) fn push_text_draw(
-    out: &mut Vec<ShellTextDraw>,
-    state: &AppState,
-    label: &str,
-    text_rect: TextRect,
-    color: [f32; 3],
-    align: ShellAlign,
-    depth: f32,
-    scale: f32,
-) {
-    out.push(shell_text::draw_in_rect_scaled(
-        &state.renderer.bit_font,
-        label,
-        text_rect,
-        color,
-        align,
-        [0.0, 0.0],
-        depth,
-        scale,
-    ));
-}
-
+/// [`TextRect::of`], under the name `gui_paint` calls it by.
 pub(super) fn rect_to_text_rect(rect: RectPx) -> TextRect {
     TextRect::of(rect)
 }
@@ -717,16 +691,16 @@ fn push_choose_map_search_text(
         );
         let rgb = SHELL_LABEL_TEXT_RGB;
         let (align, factor) = (ShellAlign::NONE, scale.factor());
-        push_text_draw(
-            out,
-            state,
+        out.push(shell_text::draw_in_rect_scaled(
+            &state.renderer.bit_font,
             &empty,
-            rect_to_text_rect(rect),
+            TextRect::of(rect),
             rgb,
             align,
+            [0.0, 0.0],
             depth,
             factor,
-        );
+        ));
     }
     let field = scale.derive_rect(layout.map_search, |rect| {
         RectPx::new(
@@ -745,16 +719,16 @@ fn push_choose_map_search_text(
         let box_w = scale.base_rect(layout.map_search).w;
         map_search_tail(&state.renderer.bit_font, &display_search, box_w).0
     };
-    push_text_draw(
-        out,
-        state,
+    out.push(shell_text::draw_in_rect_scaled(
+        &state.renderer.bit_font,
         search,
-        rect_to_text_rect(field),
+        TextRect::of(field),
         SHELL_LABEL_TEXT_RGB,
         ShellAlign::V_CENTER,
+        [0.0, 0.0],
         depth,
         scale.factor(),
-    );
+    ));
 }
 
 /// The search caret's width, in 800x600 numbers like a NewEdit's.

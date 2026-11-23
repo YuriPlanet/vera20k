@@ -262,16 +262,16 @@ impl<'a> InGamePaint<'a> {
 
     /// A static's text in the label colour.
     pub(super) fn text(&mut self, value: &str, rect: RectPx, align: ShellAlign) {
-        super::text::push_text_draw(
-            &mut self.texts,
-            self.state,
+        self.texts.push(crate::render::shell_text::draw_in_rect_scaled(
+            &self.state.renderer.bit_font,
             value,
-            super::text::rect_to_text_rect(rect),
+            crate::render::shell_text::TextRect::of(rect),
             super::SHELL_LABEL_TEXT_RGB,
             align,
+            [0.0, 0.0],
             super::SHELL_CONTROL_TEXT_DEPTH,
             1.0,
-        );
+        ));
     }
 }
 
