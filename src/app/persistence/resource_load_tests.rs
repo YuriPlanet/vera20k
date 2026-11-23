@@ -27,7 +27,8 @@ const MISSING_FOLLOW_ID: u64 = 0xBAD_F011;
 #[ignore = "requires VERA20K_VERIFY_PLAYER_SAVE and its matching RA2_DIR"]
 fn external_player_save_resumes_and_saves_again() {
     crate::test_fixture::on_game_stack(|| {
-        let source = std::env::var_os("VERA20K_VERIFY_PLAYER_SAVE").expect("set the input save path");
+        let source =
+            std::env::var_os("VERA20K_VERIFY_PLAYER_SAVE").expect("set the input save path");
         let bytes = std::fs::read(&source).expect("read player save");
         let header = GameSnapshot::read_metadata(&bytes).expect("read player save header");
         let directory = TestDirectory::new("external-player-save");

@@ -164,12 +164,17 @@ impl PreparedSavedGame {
         .map_err(|error| PreparedLoadError::Resources(error.to_string()))?;
         // Asset-dependent simulation metadata participates in this digest.
         // Compare after binding, not against the outgoing world's rules.
-        rules
-            .check_player_save_config_hash(snapshot.rules_hash)
-            .map_err(|expected| SnapshotError::RulesMismatch {
+        // A converted save takes the rules this game has.
+        let expected = rules.simulation_config_hash();
+        if snapshot.rules_hash != expected
+            && snapshot.rules_hash != crate::sim::snapshot::migration::CONVERTED_RULES_HASH
+        {
+            return Err(SnapshotError::RulesMismatch {
                 expected,
                 found: snapshot.rules_hash,
-            })?;
+            }
+            .into());
+        }
         // Native family TypeLoad mutates retained image history after raw
         // fields arrive (Terrain71E211/18, Infantry5249AD/B4). Validate the
         // pre-load resource digest first, then derive the runtime projection
@@ -453,7 +458,12 @@ mod tests;
 #[cfg(all(
     test,
     tests_app,
-    not(any(feature = "phobos", feature = "npatch", feature = "verax", feature = "npbug"))
+    not(any(
+        feature = "phobos",
+        feature = "npatch",
+        feature = "verax",
+        feature = "npbug"
+    ))
 ))]
 #[path = "release_save_tests.rs"]
 mod release_save_tests;

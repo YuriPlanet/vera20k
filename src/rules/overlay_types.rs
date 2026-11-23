@@ -480,18 +480,10 @@ impl OverlayTypeRegistry {
             .collect()
     }
 
-    pub(crate) fn hash_configuration<H: Hasher>(&self, state: &mut H, legacy_images: bool) {
+    pub(crate) fn hash_configuration<H: Hasher>(&self, state: &mut H) {
         b"overlay-image-history-v1".hash(state);
         self.names.hash(state);
-        if legacy_images {
-            self.images
-                .iter()
-                .map(ObjectImageState::hash_fields_before_alternate_theater_art)
-                .collect::<Vec<_>>()
-                .hash(state);
-        } else {
-            self.images.hash(state);
-        }
+        self.images.hash(state);
         for flags in &self.flags {
             flags.damage_levels.hash(state);
             flags.crush_sound.hash(state);

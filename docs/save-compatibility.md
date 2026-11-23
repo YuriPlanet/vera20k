@@ -10,19 +10,19 @@ and selects the result in the load list. Choose Load to resume the game.
 After confirming an overwrite during conversion, the previous contents of
 the destination slot can be recovered from `saves/backups/replaced/`.
 
-Loading requires the resources used by the save. Modified v0.3.8 ART with
-aircraft frame offsets beyond `u16`, or animation particle counts above
-256, can fail the rules check because later engines interpret those values
-differently. The stock retail data falls within these limits.
+Loading requires the resources used by the save. A converted save keeps
+its saved processed rules but not the old writer's rules digest: it loads
+with the rules and assets this game has, and its next ordinary save records
+the current digest. A save from a modded game should be converted with the
+same mod installed.
 
 ## Changing the save format
 
 Compare the source and target with `snapshot-layout --describe` to see the
 saved fields, types and enum variant order. Review their meaning too,
 since adjacent releases can share both the layout ID and description.
-The load path also compares a digest of the processed rules and bound
-assets. When a change affects that digest, check an older save that uses
-the affected assets and verify that different rules are still rejected.
+A change to the rules digest needs no conversion step: converted saves
+carry `CONVERTED_RULES_HASH` and skip the comparison.
 
 Keep the published writers' inputs in the
 [release fixtures](../tools/save_compatibility/fixtures/README.md). Add a

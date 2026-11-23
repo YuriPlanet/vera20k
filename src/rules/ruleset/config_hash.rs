@@ -9,13 +9,6 @@ use crate::util::native_x87::NativeF64Bits;
 
 use super::{RuleSet, default_fog_rate, default_shroud_rate};
 
-#[derive(Clone, Copy)]
-enum ConfigHashFormat {
-    Current,
-    BeforeAlternateTheaterArt,
-    V040,
-}
-
 impl RuleSet {
     /// Compatibility identity for processed rules plus the resolved animation,
     /// effect-frame, terrain-spawner frame, smudge-selection, projectile
@@ -26,28 +19,6 @@ impl RuleSet {
     /// it across platforms, so it folds with the portable
     /// [`StateHasher`](crate::util::state_hasher::StateHasher).
     pub fn simulation_config_hash(&self) -> u64 {
-        self.config_hash(ConfigHashFormat::Current)
-    }
-
-    /// Check a player save against the bound rules, returning the current
-    /// digest for diagnostics on mismatch. A converted save still carries
-    /// the digest its original writer computed.
-    pub fn check_player_save_config_hash(&self, saved: u64) -> Result<(), u64> {
-        let current = self.simulation_config_hash();
-        if saved == current
-            || (!self.animation_sequences.is_empty()
-                && saved == self.config_hash(ConfigHashFormat::V040))
-            || ((!self.anim_type_images.is_empty() || !self.overlay_registry.is_empty())
-                && saved == self.config_hash(ConfigHashFormat::BeforeAlternateTheaterArt))
-        {
-            Ok(())
-        } else {
-            Err(current)
-        }
-    }
-
-    fn config_hash(&self, format: ConfigHashFormat) -> u64 {
-        let legacy_images = !matches!(format, ConfigHashFormat::Current);
         let mut hasher = crate::util::state_hasher::StateHasher::new();
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
@@ -163,8 +134,7 @@ impl RuleSet {
         }
         // OverlayRead5FE8BE / InitTheater5FE620 retain typed history that a
         // flattened Image key cannot recover; saved resource plans matter too.
-        self.overlay_registry
-            .hash_configuration(&mut hasher, legacy_images);
+        self.overlay_registry.hash_configuration(&mut hasher);
         // ObjectTypeRead5F93D5 can retain a different Voc ID for identical
         // current text. Keep concrete type identities distinct in the hash.
         b"object-crush-sounds-v1".hash(&mut hasher);
@@ -1541,17 +1511,7 @@ impl RuleSet {
         self.general.weather_con_clouds.hash(&mut hasher);
         self.general.weather_con_bolts.hash(&mut hasher);
         self.bridge_rules.explosions.hash(&mut hasher);
-        match format {
-            ConfigHashFormat::Current | ConfigHashFormat::BeforeAlternateTheaterArt => {
-                self.animation_sequences.hash(&mut hasher)
-            }
-            ConfigHashFormat::V040 => self
-                .animation_sequences
-                .iter()
-                .map(|(name, set)| (name, set.v0_4_0_hash_fields()))
-                .collect::<BTreeMap<_, _>>()
-                .hash(&mut hasher),
-        }
+        self.animation_sequences.hash(&mut hasher);
         self.unit_shp_read_states.hash(&mut hasher);
         self.effect_assets.hash(&mut hasher);
         self.voxel_assets.hash(&mut hasher);
@@ -1741,7 +1701,7 @@ impl RuleSet {
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
         self.hash_building_body_config(&mut hasher);
-        self.hash_building_slot_config(&mut hasher, legacy_images);
+        self.hash_building_slot_config(&mut hasher);
         hasher.finish()
     }
 
@@ -1862,19 +1822,11 @@ impl RuleSet {
 
     /// Slot constructors consume selected names, offsets and the common runtime
     /// metadata. Canonical ordering makes ART section insertion order irrelevant.
-    fn hash_building_slot_config(&self, hasher: &mut impl Hasher, legacy_images: bool) {
+    fn hash_building_slot_config(&self, hasher: &mut impl Hasher) {
         b"building-slot-config-v1".hash(hasher);
         self.anim_type_names.hash(hasher);
         self.anim_type_art_read_states.hash(hasher);
-        if legacy_images {
-            self.anim_type_images
-                .iter()
-                .map(|(name, image)| (name, image.hash_fields_before_alternate_theater_art()))
-                .collect::<Vec<_>>()
-                .hash(hasher);
-        } else {
-            self.anim_type_images.hash(hasher);
-        }
+        self.anim_type_images.hash(hasher);
         self.art_registry.scheduler_anim_types().hash(hasher);
         let mut types = self.anim_type_names.clone();
         types.extend(self.art_registry.scheduler_anim_types().iter().cloned());
@@ -1943,59 +1895,4 @@ impl RuleSet {
             .collect::<BTreeMap<_, _>>()
             .hash(hasher);
     }
-}
-
-#[cfg(all(test, tests_rules_o_z))]
-#[test]
-fn a_historical_digest_validates_anim_images_without_any_sequences() {
-    use crate::rules::{ini_parser::IniFile, object_image::ObjectImageState};
-
-    let mut rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
-    assert!(rules.animation_sequences.is_empty());
-    assert!(rules.overlay_registry.is_empty());
-    rules.anim_type_images = vec![("FIRE".into(), ObjectImageState::new("FLAME"))];
-    let saved = rules.config_hash(ConfigHashFormat::BeforeAlternateTheaterArt);
-    assert_eq!(rules.config_hash(ConfigHashFormat::V040), saved);
-    assert_ne!(rules.simulation_config_hash(), saved);
-    assert_eq!(rules.check_player_save_config_hash(saved), Ok(()));
-
-    rules.anim_type_images[0].1 = ObjectImageState::new("ASH");
-    assert_eq!(
-        rules.check_player_save_config_hash(saved),
-        Err(rules.simulation_config_hash())
-    );
-}
-
-#[cfg(all(test, tests_rules_o_z))]
-#[test]
-fn historical_save_digest_still_checks_preexisting_shp_frames() {
-    use crate::rules::animation_sequence::{ShpVehicleFireFrames, ShpVehicleTurret};
-    use crate::rules::ini_parser::IniFile;
-
-    let mut rules = RuleSet::from_ini(&IniFile::from_str("[VehicleTypes]\n0=TANK\n")).unwrap();
-    rules.animation_sequences.entry("TANK".into()).or_default();
-    let saved = rules.config_hash(ConfigHashFormat::V040);
-    let before_firing_frames = rules.simulation_config_hash();
-    rules
-        .animation_sequences
-        .get_mut("TANK")
-        .unwrap()
-        .set_shp_vehicle_fire(ShpVehicleFireFrames::new(12, 4));
-    assert_ne!(rules.simulation_config_hash(), before_firing_frames);
-    assert_ne!(rules.simulation_config_hash(), saved);
-    assert_eq!(rules.check_player_save_config_hash(saved), Ok(()));
-
-    // Turret frames were already part of the released digest.
-    rules
-        .animation_sequences
-        .get_mut("TANK")
-        .unwrap()
-        .set_shp_vehicle_turret(ShpVehicleTurret {
-            start_frame: 32,
-            facings: 32,
-        });
-    assert_eq!(
-        rules.check_player_save_config_hash(saved),
-        Err(rules.simulation_config_hash())
-    );
 }

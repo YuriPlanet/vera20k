@@ -168,24 +168,6 @@ pub(crate) struct ObjectImageState {
 }
 
 impl ObjectImageState {
-    /// Rules digest of the original image record through eb05f451e. Both Anim
-    /// and Overlay histories hashed these fields in declaration order.
-    pub(super) fn hash_fields_before_alternate_theater_art(&self) -> impl std::hash::Hash + '_ {
-        (
-            &self.image,
-            self.alternate_arctic_art,
-            self.arctic_applied,
-            self.theater,
-            self.new_theater,
-            self.voxel,
-            &self.shp_loads,
-            &self.anim_bounds_loads,
-            &self.anim_theater_bounds_loads,
-            &self.voxel_load,
-            &self.model_slots,
-        )
-    }
-
     /// ObjectTypeConstructor5F7090/5F7148/5F714E: ImageFile starts with
     /// stored ID; the alternate-art input and applied latch both start false.
     pub(crate) fn new(stored_id: &str) -> Self {

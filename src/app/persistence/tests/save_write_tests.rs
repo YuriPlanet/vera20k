@@ -144,7 +144,7 @@ fn conversion_overwrites_only_the_selected_slot_and_keeps_its_path() {
     feature = "verax",
     feature = "npbug"
 )))]
-fn conversion_preserves_the_replaced_slot_when_the_new_save_fails_rule_admission() {
+fn conversion_preserves_the_replaced_slot_and_takes_the_current_rules() {
     use super::save_migration::SaveMigrationError;
     use crate::sim::snapshot::migration;
 
@@ -176,10 +176,13 @@ fn conversion_preserves_the_replaced_slot_when_the_new_save_fails_rule_admission
         .unwrap();
     assert_eq!(written, target);
     let converted = repository.read(&target).unwrap();
-    assert!(matches!(
-        GameSnapshot::load_validated(&converted, header.map_hash, expected_rules, &header.map_name),
-        Err(SnapshotError::RulesMismatch { expected, found }) if expected == expected_rules && found == header.rules_hash
-    ));
+    // Whatever digest the old writer recorded, the converted save defers to
+    // the rules the game has when it loads.
+    assert_ne!(header.rules_hash, expected_rules);
+    assert_eq!(
+        GameSnapshot::read_metadata(&converted).unwrap().rules_hash,
+        migration::CONVERTED_RULES_HASH
+    );
     let attempt = std::fs::read_dir(&replaced)
         .unwrap()
         .next()

@@ -19,6 +19,12 @@ const ALTERNATE_THEATER_ART: u32 = 0xCB54_5137;
 // spin, whose rate is read only while spinning.
 const BRIDGE_DECK_AND_FLY_SPIN: u32 = 0xCADF_6067;
 
+/// The rules digest a converted save carries: the loader takes the rules the
+/// game has instead of proving the digest the old writer computed, whose
+/// recipe changes with most rules ports. The world keeps its saved processed
+/// rules; the next ordinary save records the current digest.
+pub const CONVERTED_RULES_HASH: u64 = 0;
+
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
     #[error("this build cannot write the audited migration target (layout {0:#010x})")]
@@ -144,6 +150,7 @@ pub fn migrate_named(mut bytes: Vec<u8>, description: &str) -> Result<Vec<u8>, M
         save_codec::deserialize_with_remainder(&bytes)?;
     let header_len = bytes.len() - world.len();
     header.description = description.to_owned();
+    header.rules_hash = CONVERTED_RULES_HASH;
     let replacement = save_codec::serialize(&header)?;
     // A longer name needs only a few extra bytes, even for a very large world.
     bytes.reserve_exact(replacement.len().saturating_sub(header_len));

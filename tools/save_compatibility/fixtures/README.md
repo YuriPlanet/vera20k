@@ -34,14 +34,14 @@ restores both and removes the expired glow on the next tick.
 
 The sequence scenario registers one building, `POST`. Its idle animation adds
 a real entry to the rules animation catalog. v0.4.0 hashed that catalog before
-the SHP firing layout became part of each entry. The desktop test loads the
-historical digest, executes the queued command, saves with the current digest
-and reloads the result.
+the SHP firing layout became part of each entry. The desktop test converts
+it, executes the queued command, saves with the current digest and reloads
+the result.
 
 The image-states scenario registers the authored `COMPATGLOW` animation and
 a `POST` overlay using the same picture. The writer at `eb05f451e` included
 both types' image state in the rules digest before the alternate-theater ART
-flag existed. Its save checks both registries during loading.
+flag existed. Its test checks both registries after conversion.
 
 To reproduce a fixture, create a detached worktree at its writer commit. Run
 the following from that worktree with your current checkout available at
