@@ -42,6 +42,7 @@ use crate::ui::shell::checkbox::CheckboxFace;
 use crate::ui::shell::geom::{FAMILY_CAPTION_W, RectPx, ShellAlign, ShellScale};
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::sidebar::SidebarTheme;
+use vera20k_gui::shell::bar;
 use vera20k_gui::shell::trackbar::value_text_rect;
 
 /// Sprites (skirmish atlas), page-art pictures and texts of a dialog's
@@ -443,23 +444,13 @@ pub(crate) fn paint_gui_children(
     root: NodeId,
     scale: ShellScale,
 ) -> GuiPaint {
-    paint_gui_children_under(state, gui, root, scale, &[])
+    paint_gui_styled(state, gui, root, scale, &[], GuiStyle::default())
 }
 
-/// [`paint_gui_children`] under `overlays` that paint with the widgets'
-/// sprites but before their text (an open list in a box): the captions of
-/// the nodes an overlay meets are left out, so they don't show through it.
-pub(crate) fn paint_gui_children_under(
-    state: &AppState,
-    gui: &Gui,
-    root: NodeId,
-    scale: ShellScale,
-    overlays: &[RectPx],
-) -> GuiPaint {
-    paint_gui_styled(state, gui, root, scale, overlays, GuiStyle::default())
-}
-
-/// [`paint_gui_children_under`] in the host's `style`.
+/// [`paint_gui_children`] in the host's `style`, under `overlays` that
+/// paint with the widgets' sprites but before their text (an open list in
+/// a box): the captions of the nodes an overlay meets are left out, so they
+/// don't show through it.
 pub(crate) fn paint_gui_styled(
     state: &AppState,
     gui: &Gui,
@@ -1032,17 +1023,17 @@ pub(crate) fn paint_gui_into(
                     );
                 }
             }
-            // 0x0064A7B0's bar: the outline in `Background`, the fill
-            // `Fill` percent wide in `Color`.
+            // A bar's one meaning (`vera20k_gui::shell::bar`): the outline
+            // in `Background`, the fill `Fill` percent wide in `Color`, here
+            // the style's without one.
             NodeKind::Bar => {
-                let bar = BarLook {
-                    percent: int(gui, node, Prop::Fill, 100),
-                    outline: color(gui, node, Prop::Background).unwrap_or_else(|| {
-                        crate::ui::shell::connection::BAR_OUTLINE_RGB.map(|c| f32::from(c) / 255.0)
-                    }),
+                let look = BarLook {
+                    percent: int(gui, node, Prop::Fill, bar::FULL),
+                    outline: color(gui, node, Prop::Background)
+                        .unwrap_or_else(|| bar::OUTLINE_RGB.map(|c| f32::from(c) / 255.0)),
                     fill: color(gui, node, Prop::Color).unwrap_or(style.rgb),
                 };
-                push_bar(&mut paint.controls, white, rect, bar);
+                push_bar(&mut paint.controls, white, rect, look);
             }
             _ => {}
         }
@@ -1187,17 +1178,17 @@ pub(crate) struct BarLook {
 }
 
 /// 0x0064A7B0's bar on `rect`: the one-pixel outline, then the fill
-/// ([`crate::ui::shell::connection::bar_fill_rect`]) just over it.
+/// ([`bar::fill_rect`]) just over it.
 pub(crate) fn push_bar(
     out: &mut Vec<SpriteInstance>,
     white: Option<SkirmishShellChromeEntry>,
     rect: RectPx,
-    bar: BarLook,
+    look: BarLook,
 ) {
-    super::chrome::push_rect_outline_px(out, white, rect, bar.outline, SHELL_CONTROL_DEPTH);
-    let fill = crate::ui::shell::connection::bar_fill_rect(rect, bar.percent);
+    super::chrome::push_rect_outline_px(out, white, rect, look.outline, SHELL_CONTROL_DEPTH);
+    let fill = bar::fill_rect(rect, look.percent);
     let depth = SHELL_CONTROL_DEPTH - 0.00001;
-    super::chrome::push_solid_rect_px(out, white, fill, bar.fill, depth);
+    super::chrome::push_solid_rect_px(out, white, fill, look.fill, depth);
 }
 
 /// A multi-cell row on `row`: its fill, then its cells' texts and pictures.
@@ -1786,7 +1777,8 @@ mod tests {
 
     #[test]
     fn a_bar_paints_as_the_hand_connection_bar() {
-        use crate::ui::shell::connection::{BAR_OUTLINE_RGB, bar_paint};
+        use crate::ui::shell::connection::bar_paint;
+        use vera20k_gui::shell::bar::OUTLINE_RGB as BAR_OUTLINE_RGB;
         let white = Some(entry(1.0, 1.0, 0.9));
         let rgb = |unit: [u8; 3]| unit.map(|c| f32::from(c) / 255.0);
         let rect = RectPx::new(500, 120, 96, 14);

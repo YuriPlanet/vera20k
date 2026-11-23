@@ -23,7 +23,7 @@ use std::cell::RefCell;
 use crate::render::batch::{BatchRenderer, BatchTexture, CameraUniform, InstanceBufferPool};
 use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
-use crate::render::hud_paint::{HudPaint, Material};
+use crate::render::hud_paint::Material;
 
 use super::state::FrameTimer;
 use crate::app::match_runtime::sim_host::SimHost;
@@ -65,7 +65,6 @@ struct OverlayFrame {
     timer: FrameTimer,
     pool: InstanceBufferPool,
     view: PanelView,
-    paint: HudPaint,
     size: [u32; 2],
     /// The panel's depth attachment, made when it first shows (`draw`).
     depth: Option<wgpu::TextureView>,
@@ -220,7 +219,6 @@ impl PerformanceOverlay {
                 timer: FrameTimer::new(),
                 pool: InstanceBufferPool::new(),
                 view: PanelView::new(),
-                paint: HudPaint::default(),
                 size: [gpu.config.width, gpu.config.height],
                 depth: None,
                 logged_first_frame: false,
@@ -348,13 +346,13 @@ impl PerformanceOverlay {
         } else {
             0
         };
-        frame.view.paint(&mut frame.paint, font);
+        frame.view.paint(font);
         if !frame.logged_first_frame {
             log::info!(
                 "Performance panel: final window surface {}x{}, {} quads",
                 size[0],
                 size[1],
-                frame.paint.instances().len()
+                frame.view.painted().instances().len()
             );
             frame.logged_first_frame = true;
         }
@@ -394,7 +392,7 @@ impl PerformanceOverlay {
         };
         gpu.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
-        frame.pool.upload(gpu, POOL_KEY, frame.paint.instances());
+        frame.pool.upload(gpu, POOL_KEY, frame.view.painted().instances());
         let view = destination.create_view(&wgpu::TextureViewDescriptor::default());
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Window FPS"),
@@ -422,7 +420,7 @@ impl PerformanceOverlay {
         // The passthrough pipeline compares Always and writes no depth, so
         // the runs paint in order: boxes and bars under the text.
         if let Some((buffer, _)) = frame.pool.get(POOL_KEY) {
-            for (material, range) in frame.paint.runs() {
+            for (material, range) in frame.view.painted().runs() {
                 let texture = match material {
                     Material::Solid => &self.white,
                     Material::Glyphs => font.atlas(),
@@ -521,7 +519,6 @@ fn layout_rows(
         });
         box_top += row_height;
     }
-    view.finish();
     box_top
 }
 
@@ -577,9 +574,8 @@ mod tests {
         placement: PanelPlacement,
     ) -> (f32, Vec<SpriteInstance>) {
         let mut view = PanelView::new();
-        let mut paint = HudPaint::default();
         let bottom = layout_rows(font, rows, placement, &mut view);
-        view.paint(&mut paint, font);
+        let paint = view.paint(font);
         let (material, solids) = paint.runs()[0].clone();
         assert_eq!(material, Material::Solid);
         let solids = solids.start as usize..solids.end as usize;

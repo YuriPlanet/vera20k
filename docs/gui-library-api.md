@@ -405,6 +405,7 @@ pub struct Expiry { pub ms: u32, pub clock: Clock }
 ### 5.6 `Bar`
 
 - `Segments`（§4.3）、`Fill`（0..100）、`Bind`（绑定名，§7.4）、`Smooth`（毫秒）。段数是 `Segments` 的长度。
+- 绘制（`vera20k_gui::shell::bar`，原版 0x0064A7B0）：`Background` 是一像素外框（缺省 255,0,0），`Color` 是其上的填充（缺省白色；对话框绘制取宿主样式色），填充内缩 2 像素、至少 6 像素宽，`Fill` 缺省 100。HUD 的绘制列表与宿主的对话框绘制只用这一种含义。
 - 电量条：`Bind = "PowerRatio"`。宿主计算 `Power` 与 `Drain` 的比例并绑定为一个整数（0..100）。库不知道 Power 与 Drain 的存在。
 - 平滑：`Bind` 设置目标值；库在 `Smooth` 毫秒内把显示的 `Fill` 从当前值移到目标值，动画由库内部启动，宿主不参与。`Smooth = 0` 时立即显示。绑定的 Bar 不接受 `Anim::Fill`（返回 `Refused::Locked`），因此不存在两者冲突。原版电量条是 CdTimer 步进，与线性平滑不同，列为已知差异（§16）。
 

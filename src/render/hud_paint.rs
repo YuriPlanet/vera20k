@@ -90,28 +90,8 @@ pub(crate) struct HudPaint {
 
 impl HudPaint {
     /// Replace the last frame's instances with `hud`'s. A text is literal,
-    /// starts at its node's top left.
+    /// starts at its node's top left, and draws nothing without a `font`.
     pub(crate) fn build(
-        &mut self,
-        hud: &Hud,
-        space: HudSpace,
-        font: &BitFont,
-        draw: impl FnMut(NodeId) -> NodeDraw,
-    ) {
-        self.build_with(hud, space, Some(font), draw);
-    }
-
-    /// [`Self::build`] for a HUD of fills and pictures; a text draws nothing.
-    pub(crate) fn build_pictures(
-        &mut self,
-        hud: &Hud,
-        space: HudSpace,
-        draw: impl FnMut(NodeId) -> NodeDraw,
-    ) {
-        self.build_with(hud, space, None, draw);
-    }
-
-    fn build_with(
         &mut self,
         hud: &Hud,
         space: HudSpace,
@@ -329,7 +309,7 @@ mod tests {
             origin: [100.0, 50.0],
             scale: 2.0,
         };
-        paint.build(&hud, space, &font, |_| NodeDraw::default());
+        paint.build(&hud, space, Some(&font), |_| NodeDraw::default());
         assert_eq!(
             paint.runs(),
             [
