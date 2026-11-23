@@ -1,57 +1,19 @@
-//! Path B upper wrapper for sidebar text. Single-line emission with optional
-//! selected-unit fade (first N characters tinted from side-highlight color
-//! toward the base text color). Side-color highlight table per side
-//! (Allied / Soviet / Yuri).
-//!
-//! Most sidebar callers use the plain pass-through fns; only the Ready cameo
-//! text needs `build_text_with_fade`.
+//! Sidebar text: the side's text colour as a draw tint and as the B0FA1C
+//! users draw it, and the credits counter.
 
-use crate::render::batch::{BatchTexture, SpriteInstance};
+use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::sidebar_chrome::SidebarTheme;
 use crate::ui::sidebar::Rect;
-
-/// The side's sidebar text colour (`72F440`), also the fade endpoint of the
-/// selected-unit text effect: `SideText` of the built-in `veraui.ini`'s
-/// `[Colors]`, read once for each side. A caller with the sidebar's table
-/// at hand takes the layout's (`SidebarChromeLayoutSpec::side_text`) with
-/// [`side_text_tint`].
-pub fn side_highlight_color(theme: SidebarTheme) -> [f32; 3] {
-    side_text_tint(built_in_side_text(theme))
-}
-
-/// `SideText` of the built-in `[Colors]` for the side whose pictures are
-/// `theme`, read once for each side.
-fn built_in_side_text(theme: SidebarTheme) -> [u8; 3] {
-    static COLORS: std::sync::LazyLock<[[u8; 3]; 3]> = std::sync::LazyLock::new(|| {
-        [
-            SidebarTheme::Allied,
-            SidebarTheme::Soviet,
-            SidebarTheme::Yuri,
-        ]
-        .map(|theme| {
-            let [r, g, b, _] = crate::ui::match_layout::built_in_color("SideText", theme)
-                .expect("veraui_default.ini gives every side's SideText");
-            [r, g, b]
-        })
-    });
-    COLORS[theme as usize]
-}
 
 /// A side text colour as a draw tint.
 pub fn side_text_tint(rgb: [u8; 3]) -> [f32; 3] {
     rgb.map(|channel| f32::from(channel) / 255.0)
 }
 
-/// Packed `RadarClass+0x1208` color expanded back to the presentation frame.
+/// Side text colour `rgb` as the B0FA1C users draw it: the packed
+/// `RadarClass+0x1208` color expanded back to the presentation frame.
 /// StripClass::Draw packs the same B0FA1C colour for its labels
-/// (6A9BF3..6A9C46) and its hover outline (6A9A4F). For the built-in side
-/// colour of `theme`; [`native_outline_from`] packs a layout's.
-pub fn native_radar_outline_color(theme: SidebarTheme) -> [f32; 3] {
-    native_outline_from(built_in_side_text(theme))
-}
-
-/// Side text colour `rgb` as the B0FA1C users draw it.
+/// (6A9BF3..6A9C46) and its hover outline (6A9A4F).
 ///
 /// `SetSidebarTextColor @ 0x0072F440` selects the exact RGB;
 /// `RadarClass::Init_For_House @ 0x00652E90` then packs it through the active
@@ -68,125 +30,6 @@ pub fn native_outline_from(rgb: [u8; 3]) -> [f32; 3] {
     let presented =
         super::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION.quantize_rgba8(expanded);
     [presented[0], presented[1], presented[2]].map(|byte| f32::from(byte) / 255.0)
-}
-
-// --- Plain pass-throughs preserved for existing single-color callers ---
-
-pub fn text_width(font: &BitFont, text: &str) -> f32 {
-    font.text_width(text) as f32
-}
-
-pub fn glyph_height(font: &BitFont) -> f32 {
-    font.glyph_height()
-}
-
-pub fn darken_texture(font: &BitFont) -> Option<&BatchTexture> {
-    font.darken_texture()
-}
-
-pub fn texture(font: &BitFont) -> &BatchTexture {
-    font.atlas()
-}
-
-pub fn build_text(
-    font: &BitFont,
-    text: &str,
-    x: f32,
-    y: f32,
-    scale: f32,
-    depth: f32,
-    tint: [f32; 3],
-    camera_offset: [f32; 2],
-) -> Vec<SpriteInstance> {
-    font.build_text(text, x, y, scale, depth, tint, camera_offset)
-}
-
-/// Selected-unit fade. First `fade_param` characters (capped at 8) tint from
-/// `side_highlight` toward `base_color`; subsequent characters use
-/// `base_color`. `fade_param == 0` => no fade (equivalent to `build_text`).
-#[cfg(test)]
-pub fn build_text_with_fade(
-    font: &BitFont,
-    text: &str,
-    x: f32,
-    y: f32,
-    scale: f32,
-    depth: f32,
-    base_color: [f32; 3],
-    side_highlight: [f32; 3],
-    fade_param: u32,
-    camera_offset: [f32; 2],
-) -> Vec<SpriteInstance> {
-    if fade_param == 0 {
-        return font.build_text(text, x, y, scale, depth, base_color, camera_offset);
-    }
-    let chars_to_fade = fade_param.min(8);
-    let mut line_offset: u32 = 9u32.saturating_sub(fade_param) * 0x1F;
-    let mut out: Vec<SpriteInstance> = Vec::with_capacity(text.len());
-    let mut cursor_x = x;
-    let spacing = scale; // CHAR_SPACING = 1
-    let mut emitted = 0u32;
-
-    for (char_idx, ch) in text.chars().enumerate() {
-        if ch == '\r' || ch == '\n' {
-            continue;
-        }
-        let tint = if (char_idx as u32) < chars_to_fade {
-            // Fade from highlight back to the normal text color: line_offset
-            // starts small ((9-fade_param)*0x1F) and grows by 0x1F per char,
-            // so early chars are near highlight, later chars near base.
-            let t = (line_offset.min(255) as f32) / 255.0;
-            lerp_rgb(side_highlight, base_color, t)
-        } else {
-            base_color
-        };
-        if (char_idx as u32) < chars_to_fade {
-            line_offset = line_offset.saturating_add(0x1F);
-        }
-        if ch == ' ' {
-            if emitted > 0 {
-                cursor_x += spacing;
-            }
-            // Match `BitFont::build_text` glyph-emission cursor advance: just
-            // the bare space width. `text_width(" ")` now includes a trailing
-            // char_spacing (matching gamemd's MeasureText) and would
-            // double-count the spacing we already added above.
-            cursor_x += font.space_width as f32 * scale;
-            emitted += 1;
-            continue;
-        }
-        let mut single = font.build_text(
-            &ch.to_string(),
-            cursor_x,
-            y,
-            scale,
-            depth,
-            tint,
-            camera_offset,
-        );
-        if let Some(inst) = single.first() {
-            let w = inst.size[0];
-            if emitted > 0 {
-                for s in &mut single {
-                    s.position[0] += spacing;
-                }
-                cursor_x += spacing;
-            }
-            cursor_x += w;
-        }
-        out.append(&mut single);
-        emitted += 1;
-    }
-    out
-}
-
-#[cfg(test)]
-fn lerp_rgb(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
-    [
-        a[0] + (b[0] - a[0]) * t,
-        a[1] + (b[1] - a[1]) * t,
-        a[2] + (b[2] - a[2]) * t,
-    ]
 }
 
 /// Render depth for the credits glyph quads. Shares the `sidebar_text` layer
@@ -266,17 +109,8 @@ pub fn build_credits_instances(
 mod tests {
     use super::*;
     use crate::render::bit_font::tests::make_test_font;
-
-    #[test]
-    fn the_side_text_colours_are_the_originals() {
-        assert_eq!(
-            side_highlight_color(SidebarTheme::Allied),
-            [164.0 / 255.0, 210.0 / 255.0, 1.0]
-        );
-        for theme in [SidebarTheme::Soviet, SidebarTheme::Yuri] {
-            assert_eq!(side_highlight_color(theme), [1.0, 1.0, 0.0]);
-        }
-    }
+    use crate::render::sidebar_chrome::SidebarTheme;
+    use crate::ui::sidebar::SidebarChromeLayoutSpec;
 
     #[test]
     fn native_radar_outline_color_uses_encoded_batch_tint_contract() {
@@ -287,7 +121,7 @@ mod tests {
             (SidebarTheme::Soviet, [248, 252, 0], [255, 255, 0]),
             (SidebarTheme::Yuri, [248, 252, 0], [255, 255, 0]),
         ] {
-            let tint = native_radar_outline_color(theme);
+            let tint = native_outline_from(SidebarChromeLayoutSpec::for_theme(theme).side_text);
             let bytes = tint.map(|c| (c * 255.0).round() as u8);
             assert_eq!(bytes, display_bytes, "theme={theme:?}");
             assert_eq!(
@@ -298,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn fade_only_first_8_chars() {
+    fn a_text_labels_highlight_fades_in_over_its_last_8_units() {
         let font = make_test_font(
             &[
                 (b'a' as u16, 6),
@@ -314,37 +148,21 @@ mod tests {
             ],
             4,
         );
-        let base = [0.0, 0.0, 0.0];
-        let highlight = [1.0, 1.0, 1.0];
-        let instances = build_text_with_fade(
-            &font,
-            "abcdefghij",
-            0.0,
-            0.0,
-            1.0,
-            0.5,
-            base,
-            highlight,
-            8,
-            [0.0, 0.0],
-        );
+        // Count 10 draws all ten units; the white highlight fades in over
+        // the last eight, newest brightest, and the first two keep the base.
+        let instances = font.build_text_label("abcdefghij", 0.0, 0.0, 0.5, [0.0, 0.0], [0; 3], 10);
         assert_eq!(instances.len(), 10);
-        // Char 0: fade_param=8 -> initial line_offset = (9-8)*0x1F = 0x1F = 31,
-        // t = 31/255 ~ 0.12, tint ~ lerp(white,black,0.12) ~ (0.88,0.88,0.88).
+        assert_eq!(instances[0].tint, [0.0; 3]);
+        assert_eq!(instances[1].tint, [0.0; 3]);
         assert!(
-            instances[0].tint[0] > 0.8,
-            "char 0 tint = {:?} should be near highlight",
-            instances[0].tint
+            instances[2].tint[0] < 0.2,
+            "unit 2 tint = {:?} should be near base",
+            instances[2].tint
         );
-        // Char 7: line_offset has advanced 7 times => 31 + 7*31 = 248,
-        // t = 248/255 ~ 0.97, tint ~ near base black.
         assert!(
-            instances[7].tint[0] < 0.2,
-            "char 7 tint = {:?} should be near base",
-            instances[7].tint
+            instances[9].tint[0] > 0.8,
+            "unit 9 tint = {:?} should be near highlight",
+            instances[9].tint
         );
-        // Chars 8/9 are past the fade band -> pure base color.
-        assert_eq!(instances[8].tint, base);
-        assert_eq!(instances[9].tint, base);
     }
 }
