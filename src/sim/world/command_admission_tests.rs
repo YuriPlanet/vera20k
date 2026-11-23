@@ -1253,3 +1253,106 @@ fn a_shared_house_survives_one_players_surrender() {
     let house = &sim.houses[&shared];
     assert!(house.is_to_die() || house.has_lost());
 }
+
+/// Source: `BuildingClass::Can_Repair @ 0x00452630` reads `ClickRepairable=`
+/// (`+0x157A`); `EventClass::Execute 0x004C6ED2` (the REPAIR receiver) does not
+/// recheck it. The wrench cursor's producer does, so a REPAIR event delivered
+/// without it must be refused by the receiver too.
+#[test]
+fn a_repair_order_obeys_click_repairable_at_the_receiver() {
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[BuildingTypes]\n0=NO\n1=YES\n2=WHOLE\n[NO]\nStrength=100\nClickRepairable=no\n\
+         [YES]\nStrength=100\nClickRepairable=yes\n\
+         [WHOLE]\nStrength=100\nClickRepairable=yes\n",
+    ))
+    .unwrap();
+    let name = "Americans";
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern(name);
+    sim.houses
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
+    for (id, kind, health) in [(1, "NO", 50), (2, "YES", 50), (3, "WHOLE", 100)] {
+        let kind = sim.interner.intern(kind);
+        sim.substrate.entities.insert(
+            crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+                id,
+                12,
+                12,
+                0,
+                0,
+                owner,
+                crate::sim::combat::Health::new(health),
+                kind,
+                EntityCategory::Structure,
+                0,
+                5,
+                false,
+            ),
+        );
+    }
+    let repair = |entity_id| Command::ToggleRepair { entity_id };
+    assert!(!sim.apply_command(name, &repair(1), Some(&rules)));
+    assert!(!sim.entities().get(1).unwrap().building.repairing.is_on());
+    assert!(sim.apply_command(name, &repair(2), Some(&rules)));
+    assert!(sim.entities().get(2).unwrap().building.repairing.is_on());
+    // The native receiver admits a whole building too; the gate is the
+    // wrench's type permission, not the per-frame `can_repair_building` test.
+    assert!(sim.apply_command(name, &repair(3), Some(&rules)));
+}
+
+/// `TechnoClass::IsControllable @ 0x00700C40` (vt+0xA0) is false for an
+/// enslaved object (`SlaveOwner +0x2DC`), which is why the click producers
+/// drop one. A command that reaches the receiver anyway — a replayed native
+/// record or an injected order — must still be refused. A freed slave is a
+/// normal unit and stays orderable.
+#[test]
+fn orders_to_an_enslaved_unit_are_refused_but_a_freed_one_obeys() {
+    let (mut sim, rules, _registry) = super::super::entry_test_fixture::fixture_with_rules("");
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
+    let free = sim
+        .spawn_object("ENGINEER", "Americans", 8, 8, 0, &rules)
+        .unwrap();
+    let enslaved = sim
+        .spawn_object("ENGINEER", "Americans", 10, 8, 0, &rules)
+        .unwrap();
+    sim.entity_mut_for_test(enslaved).unwrap().seldom.slave =
+        crate::sim::slave_manager::SlaveLink::for_test(Some(free), Vec::new());
+    // EjectBunker names the bunker but issues the order to its occupant.
+    let bunker_type = sim.interner.intern("GAPOWR");
+    sim.substrate.entities.insert(
+        crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+            3,
+            12,
+            12,
+            0,
+            0,
+            owner,
+            crate::sim::combat::Health::new(100),
+            bunker_type,
+            EntityCategory::Structure,
+            0,
+            5,
+            false,
+        ),
+    );
+    sim.entity_mut_for_test(3)
+        .unwrap()
+        .bunker
+        .set_bunker_occupant_for_test(Some(enslaved));
+
+    let move_order = |entity_id| Command::Move {
+        entity_id,
+        target_rx: 14,
+        target_ry: 8,
+    };
+    assert!(sim.apply_command("Americans", &move_order(free), Some(&rules)));
+    assert!(!sim.apply_command("Americans", &move_order(enslaved), Some(&rules)));
+    assert!(!sim.can_issue_local_command(&move_order(enslaved), &rules));
+    assert!(!sim.apply_command(
+        "Americans",
+        &Command::EjectBunker { bunker_id: 3 },
+        Some(&rules),
+    ));
+}

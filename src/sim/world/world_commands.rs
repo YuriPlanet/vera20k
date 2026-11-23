@@ -344,6 +344,7 @@ impl Simulation {
             sender.and_then(|source| self.resolve_command_grant_source(command_owner, source));
         if (has_grants && sender.is_some() && granted_source.is_none())
             || self.network_command_actor_foreign(command_owner, granted_source, cmd, rules, None)
+            || self.command_actor_is_enslaved(cmd, rules)
         {
             return false;
         }
@@ -1204,12 +1205,21 @@ impl Simulation {
             // before its only admission: Object+90. Accepted events survive
             // capture; neither sender ownership nor CanRepair is rechecked.
             // Source: original gamemd.exe instructions4C6ED2..4C6F01.
+            // VERA rechecks the wrench's *type* permission here so a REPAIR
+            // event that skipped the cursor (a replayed native record, a
+            // synchronized record, a captured object) cannot toggle a
+            // ClickRepairable=no building. It shares the flags with the click
+            // producer (`BuildingClass::Can_Repair @ 0x00452630`, byte
+            // +0x157A) but keeps the native receiver's admission: a live
+            // full-health building still takes an event; `player_repair_type_admits`
+            // owns the shared decision, `can_repair_building` adds damage.
             Command::ToggleRepair { entity_id } => {
                 if !self
                     .substrate
                     .entities
                     .get(*entity_id)
                     .is_some_and(|entity| entity.lifecycle.object_alive())
+                    || !production::player_repair_type_admits(self, rules, *entity_id)
                 {
                     return false;
                 }
