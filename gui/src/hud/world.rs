@@ -23,6 +23,9 @@ pub const MAX_TYPES_PER_TEMPLATE: usize = 4096;
 /// Counted as supplied, repeats included.
 pub const MAX_BANDS_PER_BAR: usize = 16;
 pub const MAX_SEGMENTS: u16 = 64;
+/// The most pictures a [`Element::Pips`] row shows: one object's whole
+/// command share, as a host's tallest row may need it.
+pub const MAX_PIPS: usize = MAX_COMMANDS_PER_OBJECT;
 /// The most commands one object gets from [`World::paint_status`], of which
 /// other origins than the host get three quarters (384) between them. A
 /// template that could pass its share alone is refused. Where several do
@@ -92,6 +95,16 @@ pub enum Element {
         at: Rect,
         step: (i32, i32),
         count: u16,
+        source: SourceId,
+        full: ArtId,
+        empty: Option<ArtId>,
+    },
+    /// A row as long as the amount's `max`: its first `value` pictures
+    /// `full`, the rest `empty` (none without it), `step` apart from `at`.
+    /// At most [`MAX_PIPS`] are shown.
+    Pips {
+        at: Rect,
+        step: (i32, i32),
         source: SourceId,
         full: ArtId,
         empty: Option<ArtId>,
@@ -488,6 +501,7 @@ fn normalized(mut template: StatusTemplate, origin: Origin) -> Result<StatusTemp
                 bands, background, ..
             } => usize::from(background.is_some()) + usize::from(!bands.is_empty()),
             Element::Segments { count, .. } => usize::from(*count),
+            Element::Pips { .. } => MAX_PIPS,
             Element::Icon { .. } | Element::Number { .. } => 1,
         };
     }
@@ -599,6 +613,32 @@ fn paint_element(object: &ObjectView<'_>, element: &Element, out: &mut Vec<World
             let lit = (count * value + max - 1) / max;
             let shown = if empty.is_some() { count } else { lit };
             // Summed wide, so only the final position saturates.
+            let x = i64::from(at.x) + i64::from(point.0);
+            let y = i64::from(at.y) + i64::from(point.1);
+            for i in 0..shown {
+                let Some(art) = (if i < lit { Some(full) } else { empty }) else {
+                    break;
+                };
+                let rect = bounded(Rect {
+                    x: saturate(x + i * i64::from(step.0)),
+                    y: saturate(y + i * i64::from(step.1)),
+                    ..at
+                });
+                push(WorldOp::Image { rect, art });
+            }
+        }
+        Element::Pips {
+            at,
+            step,
+            source,
+            full,
+            empty,
+        } => {
+            let Some(Amount { value, max }) = amount(object.values, source) else {
+                return;
+            };
+            let shown = i64::from(max.clamp(0, MAX_PIPS as i32));
+            let lit = i64::from(value.clamp(0, max.max(0)));
             let x = i64::from(at.x) + i64::from(point.0);
             let y = i64::from(at.y) + i64::from(point.1);
             for i in 0..shown {
@@ -1214,6 +1254,54 @@ mod tests {
         assert!(ops(&some_lit, &some(0, 8)).is_empty());
         let no_count = world(template(vec![segments(0, Some(EMPTY))]));
         assert!(ops(&no_count, &some(8, 8)).is_empty());
+    }
+
+    fn pips(empty: Option<ArtId>) -> Element {
+        Element::Pips {
+            at: UNIT,
+            step: (-4, 2),
+            source: S0,
+            full: FULL,
+            empty,
+        }
+    }
+
+    #[test]
+    fn pips_show_max_pictures_with_value_of_them_full() {
+        let with_empty = world(template(vec![pips(Some(EMPTY))]));
+        for (value, max, shown, lit) in [
+            (0, 5, 5, 0),
+            (3, 5, 5, 3),
+            (5, 5, 5, 5),
+            (9, 5, 5, 5),
+            (-2, 5, 5, 0),
+            (1, 0, 0, 0),
+            (1, -3, 0, 0),
+            (7, 600, MAX_PIPS as i32, 7),
+        ] {
+            let expected: Vec<_> = (0..shown)
+                .map(|i| WorldOp::Image {
+                    rect: Rect::new(-4 * i, 2 * i, 1, 1),
+                    art: if i < lit { FULL } else { EMPTY },
+                })
+                .collect();
+            assert_eq!(ops(&with_empty, &some(value, max)), expected, "{value}/{max}");
+        }
+        let lit_only = world(template(vec![pips(None)]));
+        assert_eq!(ops(&lit_only, &some(3, 17)).len(), 3);
+        assert!(ops(&lit_only, &some(0, 17)).is_empty());
+        assert!(ops(&lit_only, &[]).is_empty());
+    }
+
+    #[test]
+    fn a_pips_row_takes_a_whole_share_so_only_the_host_adds_one() {
+        let mut shared = World::default();
+        let row = template(vec![pips(None)]);
+        assert!(shared.add_template(Origin::Host, row.clone()).is_ok());
+        assert_eq!(
+            shared.add_template(Origin::Layout, row),
+            Err(Refused::Limit)
+        );
     }
 
     #[test]
