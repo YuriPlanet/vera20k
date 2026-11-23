@@ -423,9 +423,7 @@ pub(crate) fn update_power_bar_anim(state: &mut AppState, wall_ms: u64, visits: 
 /// Current Sidebar geometry, shared by ordinary AI and saved NoInit before
 /// its first draw. The retained native band counts are never clamped to it.
 pub(crate) fn power_bar_budget_px(state: &AppState) -> i32 {
-    // Compute bar height from sidebar layout.
-    let spec = state.match_state.match_presentation.sidebar_layout_spec;
-    let layout = crate::ui::sidebar::compute_layout_with_spec(spec, state.sidebar_frame());
+    let layout = crate::app::presentation::sidebar_render::current_sidebar_layout(state);
     // 63FB20: segment budget is (native strip height + 3) / 3.
     (layout.cameo_grid_bottom - layout.cameo_grid_top) as i32 + 3
 }

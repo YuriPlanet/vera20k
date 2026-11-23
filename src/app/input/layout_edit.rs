@@ -204,7 +204,7 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
     // has it, the map picture as big as the layout makes it, a panel as big
     // as its picture. A part after its panel lies over it, so it is grabbed
     // first.
-    let layout = crate::ui::sidebar::compute_layout_with_spec(spec, frame);
+    let layout = sidebar_render::current_sidebar_layout(state);
     let atlas = sidebar_render::current_sidebar_chrome(state);
     let view = sidebar_render::current_sidebar_view(state);
     let size = |part, key| {
