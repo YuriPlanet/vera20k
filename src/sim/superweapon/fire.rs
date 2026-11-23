@@ -844,6 +844,11 @@ fn launch(
         SuperWeaponKind::SpyPlane => {
             super::spy_plane::launch(sim, rules, owner, sw_type_id, (rx, ry), frame_effects);
         }
+        // VERA's Tiberian Sun type: Firestorm 2.0 SuperClass::Place case 3
+        // (0x60BE21), in every game, Ares or not.
+        SuperWeaponKind::IonCannon => {
+            super::ion_cannon::launch(sim, owner, sw_type_id, (rx, ry));
+        }
         SuperWeaponKind::GenericWarhead => {
             let activated = super::generic_warhead::launch(
                 sim,

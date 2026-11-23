@@ -2273,8 +2273,8 @@ fn sidebar_view_hit(frame: crate::ui::sidebar::SidebarFrame, cursor_x: f32, curs
 /// Action strings come from `[SWType] Action=` in rulesmd.ini. Cursor
 /// frame ranges are pre-loaded in `render/cursor_atlas.rs`.
 ///
-/// Returns `None` for `IonCannon` (TS-legacy, no YR SW uses it) and any
-/// unrecognized string. Caller should fall back to `CursorId::Default`.
+/// Returns `None` for any unrecognized string. Caller should fall back to
+/// `CursorId::Default`.
 pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
     match action {
         "Attack" => Some(CursorId::Attack),
@@ -2290,7 +2290,10 @@ pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
         "GeneticConverter" => Some(CursorId::GeneticMutator),
         "ForceShield" => Some(CursorId::ForceShield),
         "PsychicReveal" => Some(CursorId::PsychicReveal),
-        // IonCannon is TS-legacy — no YR superweapon uses this Action.
+        // VERA's Tiberian Sun Ion Cannon action (Firestorm 2.0 action 37).
+        // RESIDUAL: Firestorm's own ion cursor art is not in YR's mouse
+        // shapes, so it aims with the Attack cursor.
+        "IonCannon" => Some(CursorId::Attack),
         _ => None,
     }
 }

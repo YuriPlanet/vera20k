@@ -205,7 +205,11 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         | SuperWeaponKind::SonarPulse
         | SuperWeaponKind::EMPulse
         | SuperWeaponKind::Firestorm
-        | SuperWeaponKind::DropPod => return None,
+        | SuperWeaponKind::DropPod
+        // VERA's tag is past the `JA`. RESIDUAL: Firestorm speaks a Super's
+        // `RechargeVoice=` (read at 0x60D19B..0x60D1A3), a Tiberian Sun speech file;
+        // VERA reads none of those voice keys.
+        | SuperWeaponKind::IonCannon => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",
