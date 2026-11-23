@@ -93,7 +93,7 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
         return;
     }
     let presentation = &mut state.match_state.match_presentation;
-    presentation.sidebar_projection.queue_scroll(
+    presentation.sidebar_projection.model.queue_scroll(
         presentation.active_sidebar_tab,
         action == WheelAction::SidebarDown,
         visible_rows,
@@ -176,7 +176,7 @@ fn sidebar_cameo_press(
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_factory(sim, sim.interner().get(&owner)?, type_iid?)
+            .model.cameo_factory(sim, sim.interner().get(&owner)?, type_iid?)
             .map(|factory| {
                 (
                     factory.cameo_state(),
@@ -204,7 +204,7 @@ fn sidebar_cameo_press(
                 .match_state
                 .match_presentation
                 .sidebar_projection
-                .cameo_request(type_id)
+                .model.cameo_request(type_id)
         }),
         press,
         at_build_limit,
@@ -286,7 +286,7 @@ fn sidebar_cameo_press(
             .match_state
             .match_presentation
             .sidebar_projection
-            .record_cameo_click(
+            .model.record_cameo_click(
                 &runtime.simulation,
                 &runtime.resources.rules,
                 owner,

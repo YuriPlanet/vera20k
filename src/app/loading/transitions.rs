@@ -739,13 +739,13 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .match_state
         .match_presentation
         .sidebar_projection
-        .reset_cameo_seed();
+        .model.reset_cameo_seed();
     let owner = state.match_state.local_player_owner().map(str::to_owned);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .start_scenario_credits_counter(owner.as_deref());
+        .model.start_scenario_credits_counter(owner.as_deref());
     if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
         runtime
             .simulation

@@ -807,7 +807,7 @@ impl MatchInputState {
     /// the active cursor, even if OutList is full.
     pub(crate) fn submit_building_placement(
         &mut self,
-        sidebar: &mut crate::app::sidebar_projection::SidebarProjectionState,
+        sidebar: &mut crate::app::sidebar_projection::SidebarModel,
     ) {
         if let Some(crate::app::types::TargetingMode::BuildingPlacement(target)) =
             &self.targeting_mode

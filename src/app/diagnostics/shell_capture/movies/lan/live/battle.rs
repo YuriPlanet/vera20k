@@ -1646,13 +1646,13 @@ impl BattleOpening {
                         .match_state
                         .match_presentation
                         .sidebar_projection
-                        .cameo_factory(sim, owner, e1)
+                        .model.cameo_factory(sim, owner, e1)
                         .is_some();
                     let cameo_present = state
                         .match_state
                         .match_presentation
                         .sidebar_projection
-                        .cameo_strips()
+                        .model.cameo_strips()
                         .items(crate::ui::sidebar::SidebarTab::for_category(
                             ProductionCategory::Infantry,
                         ))
@@ -3653,7 +3653,7 @@ fn cameo(state: &mut AppState, type_id: &str, right: bool) -> Result<()> {
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_strips()
+            .model.cameo_strips()
             .items(*tab)
             .iter()
             .any(|cameo| cameo.id == CameoId::Object(id))),

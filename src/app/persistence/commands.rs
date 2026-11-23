@@ -186,7 +186,7 @@ fn prepare_save<'a>(
     let active_tab = saved_active_tab(presentation.active_sidebar_tab);
     let sidebar_order = presentation
         .sidebar_projection
-        .saved_order()
+        .model.saved_order()
         .map(|order| order.with_active_tab(active_tab));
     // Phobos keeps `SWSidebar_Enable` in the scenario extension, so it rides
     // the local presentation envelope rather than the simulation hash.
@@ -231,7 +231,7 @@ fn prepare_save<'a>(
         state
             .match_state
             .local_player_owner()
-            .and_then(|owner| presentation.sidebar_projection.saved_credits_counter(owner)),
+            .and_then(|owner| presentation.sidebar_projection.model.saved_credits_counter(owner)),
     );
     local_view.set_radar_events(presentation.minimap.as_ref().map_or_else(
         Default::default,

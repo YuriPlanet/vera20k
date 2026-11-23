@@ -245,7 +245,7 @@ pub(crate) fn commit_prepared_load(
         .match_state
         .match_presentation
         .sidebar_projection
-        .restore_order(committed.details.sidebar_order);
+        .model.restore_order(committed.details.sidebar_order);
     #[cfg(feature = "phobos")]
     if let Some(expanded) = sw_sidebar_expanded {
         // `ScenarioExt::SWSidebar_Enable` survives the load like the strips.
@@ -257,7 +257,7 @@ pub(crate) fn commit_prepared_load(
         .match_state
         .match_presentation
         .sidebar_projection
-        .restore_credits_counter(owner.as_deref(), committed.credits_counter);
+        .model.restore_credits_counter(owner.as_deref(), committed.credits_counter);
     if let Some(owner) = owner {
         state
             .match_state

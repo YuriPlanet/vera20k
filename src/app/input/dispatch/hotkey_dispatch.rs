@@ -198,7 +198,7 @@ fn handle_hotkey_pressed_inner(
 /// `StripClass::HasEntries` 6ABAC0 gates the switch: a strip with no retained
 /// entry refuses the command outright, so the active tab does not move — VERA
 /// reaches the same gate through the retained strip that also drives
-/// `SidebarProjectionState::selectable_tab`. Structures and Defense then run
+/// `SidebarModel::selectable_tab`. Structures and Defense then run
 /// their completed-building tail; a tab that is already active still runs it,
 /// because native only skips the switch, not the tail.
 fn select_sidebar_tab_command(state: &mut AppState, index: i32) {
@@ -209,7 +209,7 @@ fn select_sidebar_tab_command(state: &mut AppState, index: i32) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .selectable_tab(index)
+        .model.selectable_tab(index)
     else {
         return;
     };
@@ -242,7 +242,7 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .ready_building_for_tab(sim, owner_id, tab)
+            .model.ready_building_for_tab(sim, owner_id, tab)
             .and_then(|(type_id, held)| {
                 // Native hands Manual_Place4FB840 the object's Factory
                 // 5F5C20(0,0), and 4FB840 refuses a null one; placement

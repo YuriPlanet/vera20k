@@ -1537,7 +1537,7 @@ fn after_frame(state: &mut AppState, frame_committed: bool) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_recheck_pending();
+            .model.cameo_recheck_pending();
         // Native Strip AI6A8CF3 requests redraw throughout the authored
         // flash window, even with no input. Reuse the one projection owner
         // only in these windows; ordinary idle ticks do not enumerate cameos.
@@ -1550,7 +1550,7 @@ fn after_frame(state: &mut AppState, frame_committed: bool) {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
+                    .model.cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
             });
         // StripDraw6A9540 asks each entry's availability and reads its
         // Factory while drawing, so the drawn state follows the simulation
@@ -2134,7 +2134,7 @@ fn advance_one_simulation_frame(
         .match_state
         .match_presentation
         .sidebar_projection
-        .production_factory_visits(&rt.simulation);
+        .model.production_factory_visits(&rt.simulation);
     let mut finish = FrameFinish {
         native_frame,
         local_owner_for_fog,
@@ -2220,7 +2220,7 @@ fn advance_one_simulation_frame(
         let mut prepared = initial_save;
         let persistence = &mut state.persistence;
         let mut campaign_save = |sim: &crate::sim::world::Simulation,
-                                 sidebar: &mut crate::app::sidebar_projection::SidebarProjectionState,
+                                 sidebar: &mut crate::app::sidebar_projection::SidebarModel,
                                  elapsed_clock: &mut super::frame_pacer::ScenarioElapsedClock| {
             if let Some(Ok(prepared)) = prepared.as_mut() {
                 // Strip6A8F42 clears requests before MainTick55DBCD.
@@ -2309,7 +2309,7 @@ fn advance_one_simulation_frame(
             other_local_pause,
         )
         .with_sidebar(
-            &mut state.match_state.match_presentation.sidebar_projection,
+            &mut state.match_state.match_presentation.sidebar_projection.model,
             Some(&mut campaign_save),
         )
         .with_outcome_wait(&mut state.match_state.scenario_outcome)
@@ -2892,7 +2892,7 @@ fn finish_simulation_frame(
                 .match_state
                 .match_presentation
                 .sidebar_projection
-                .apply_lifecycle_output(&output, local_house, ares)
+                .model.apply_lifecycle_output(&output, local_house, ares)
             {
                 state
                     .match_state
@@ -3060,7 +3060,7 @@ fn finish_simulation_frame(
             .match_state
             .match_presentation
             .sidebar_projection
-            .asked_types(&[]);
+            .model.asked_types(&[]);
         state.match_state.sim_runtime.ask_sidebar_types(&asked);
         // Main_Tick runs PlanMgr_Process_Frame after the frame's events
         // (0x0055DEA4); its input tail follows their lifecycle outputs.
@@ -3279,7 +3279,7 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
             TriggerEffect::SelectSidebarTab { index } => {
                 refresh_sidebar = true;
                 let presentation = &mut state.match_state.match_presentation;
-                if let Some(tab) = presentation.sidebar_projection.selectable_tab(*index) {
+                if let Some(tab) = presentation.sidebar_projection.model.selectable_tab(*index) {
                     // Trigger6E4100 bypasses the player-input lock, retaining
                     // each strip's independent scroll state.
                     presentation.active_sidebar_tab = tab;
@@ -3297,7 +3297,7 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                         .match_state
                         .match_presentation
                         .sidebar_projection
-                        .flash_cameo(
+                        .model.flash_cameo(
                             *category,
                             *type_index,
                             *duration,

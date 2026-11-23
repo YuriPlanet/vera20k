@@ -80,14 +80,14 @@ pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .set_observer_clock(&owner_name, seconds);
+            .model.set_observer_clock(&owner_name, seconds);
         return;
     }
     let credits = counter_credits(sim, &owner_name);
     let projection = &mut state.match_state.match_presentation.sidebar_projection;
     let mut last_step = None;
     for _ in 0..visits {
-        let Some(step) = projection.advance_credits(&owner_name, credits) else {
+        let Some(step) = projection.model.advance_credits(&owner_name, credits) else {
             break;
         };
         last_step = Some(step);
@@ -286,7 +286,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .replace_view(None);
+            .clear();
         return;
     };
     let Some(owner) = state.match_state.sim_runtime.presentation().map(|runtime| {
@@ -300,7 +300,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .replace_view(None);
+            .clear();
         return;
     };
     // A scenario's first projection seeds its strips from every building's
@@ -310,7 +310,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .needs_cameo_seed(owner)
+        .model.needs_cameo_seed(owner)
     {
         if state.match_state.sim_runtime.is_lent() {
             return;
@@ -329,7 +329,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .asked_types(&seed_additions);
+        .model.asked_types(&seed_additions);
     state.match_state.sim_runtime.ask_sidebar_types(&asked);
     state.match_state.sim_runtime.ensure_frame();
     let inputs = {
@@ -338,7 +338,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             match_state
                 .match_presentation
                 .sidebar_projection
-                .replace_view(None);
+                .clear();
             return;
         };
         // Only a lent tick's frame can miss a type, one asked after the tick
@@ -350,7 +350,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             match_state
                 .match_presentation
                 .sidebar_projection
-                .replace_view(None);
+                .clear();
             return;
         };
         std::sync::Arc::clone(inputs)
@@ -399,32 +399,32 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .set_cameo_columns(spec.columns());
+        .model.set_cameo_columns(spec.columns());
     let reconciled = state
         .match_state
         .match_presentation
         .sidebar_projection
-        .reconcile_cameos(owner, &cameos, visible_rows, &seed_additions, rules.ares());
+        .model.reconcile_cameos(owner, &cameos, visible_rows, &seed_additions, rules.ares());
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .set_observer_entries(inputs.observers.as_ref().map(Vec::len));
+        .model.set_observer_entries(inputs.observers.as_ref().map(Vec::len));
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .set_cameo_frame(sim.session().binary_frame() as i32);
+        .model.set_cameo_frame(sim.session().binary_frame() as i32);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .reconcile_factory_links(sim, owner);
+        .model.reconcile_factory_links(sim, owner);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .advance_cameo_requests(sim, owner);
+        .model.advance_cameo_requests(sim, owner);
     {
         let presentation = &mut state.match_state.match_presentation;
         apply_cameo_transitions(
@@ -445,7 +445,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .displayed_credits_or_seed(&owner_name, inputs.credits);
+        .model.displayed_credits_or_seed(&owner_name, inputs.credits);
     let (
         tab_btn_size,
         repair_btn_size,
@@ -576,7 +576,7 @@ fn build_view(
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_strips(),
+            .model.cameo_strips(),
     );
     // The grids the side's layout adds follow the sidebar's own in the view,
     // and each keeps the row it could really scroll to.
@@ -599,7 +599,7 @@ fn build_view(
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_strips(),
+            .model.cameo_strips(),
     );
     {
         let scroll = &mut state.match_state.match_presentation.added_grid_scroll;
@@ -625,7 +625,7 @@ fn build_view(
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_strips()
+            .model.cameo_strips()
             .scroll_row(inputs.tab);
         sidebar::apply_observer_strip(&mut view, inputs.spec, entries, top, &inputs.gadgets);
     }
@@ -636,7 +636,7 @@ fn build_view(
         .match_state
         .match_presentation
         .sidebar_projection
-        .set_scroll_row(inputs.tab, view.scroll_rows);
+        .model.set_scroll_row(inputs.tab, view.scroll_rows);
     if let Some(atlas) = state
         .match_state
         .match_presentation
@@ -691,7 +691,7 @@ fn build_view(
             .match_state
             .match_presentation
             .sidebar_projection
-            .apply_cameo_draw_state(
+            .model.apply_cameo_draw_state(
                 &mut view,
                 sim,
                 frame,
@@ -1284,7 +1284,7 @@ mod tests {
                 gadgets.set_tab_disabled(index, before.as_bool().unwrap());
             }
             let mut projection = crate::app::sidebar_projection::SidebarProjectionState::default();
-            let reconciled = projection.reconcile_cameos(Default::default(), &[], 3, &[], false);
+            let reconciled = projection.model.reconcile_cameos(Default::default(), &[], 3, &[], false);
             super::apply_cameo_transitions(reconciled.transitions(), &mut active, &mut gadgets);
             for (index, after) in control["disabled_after"]
                 .as_array()
@@ -1334,8 +1334,8 @@ mod tests {
             },
         };
         let mut saved = crate::app::sidebar_projection::SidebarProjectionState::default();
-        saved.reconcile_cameos(owner, &[cameo.clone()], 3, &[infantry], false);
-        let order = saved.saved_order().unwrap();
+        saved.model.reconcile_cameos(owner, &[cameo.clone()], 3, &[infantry], false);
+        let order = saved.model.saved_order().unwrap();
         let mut outgoing = crate::app::sidebar_projection::SidebarProjectionState::default();
         let mut active = SidebarTab::Building;
         let mut gadgets = SidebarGadgetState::default();
@@ -1343,11 +1343,11 @@ mod tests {
         let prepared =
             crate::app::sidebar_projection::prepare_saved_order(Some(order.clone()), &sim, &rules)
                 .unwrap();
-        outgoing.restore_order(prepared);
-        let reconciled = outgoing.reconcile_cameos(owner, &[cameo], 3, &[], false);
+        outgoing.model.restore_order(prepared);
+        let reconciled = outgoing.model.reconcile_cameos(owner, &[cameo], 3, &[], false);
         super::apply_cameo_transitions(reconciled.transitions(), &mut active, &mut gadgets);
         assert_eq!(gadgets.tab_disabled, [true, true, false, true]);
-        assert_eq!(outgoing.saved_order().unwrap().strips(), order.strips());
+        assert_eq!(outgoing.model.saved_order().unwrap().strips(), order.strips());
         assert!(
             !reconciled.build_inserted(),
             "saved entries are not new additions"

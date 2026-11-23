@@ -128,7 +128,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .ready_building_tabs(sim, frame, owner)
+            .model.ready_building_tabs(sim, frame, owner)
     });
     let (tick, frame) = (sim.session().tick(), sim.session().binary_frame() as i32);
     let presentation = &mut state.match_state.match_presentation;
@@ -140,7 +140,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
     {
         presentation
             .sidebar_projection
-            .step_pending_scroll(rows, visits);
+            .model.step_pending_scroll(rows, visits);
     }
     update_tab_flashes_for_owner(
         &mut presentation.sidebar_gadget_state,

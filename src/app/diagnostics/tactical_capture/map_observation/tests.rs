@@ -834,7 +834,7 @@ fn building_placement_projection_reads_actual_issuer_and_independent_saved_targe
 
     assert!(input.begin_building_placement("GAPOWR", 20, issuer));
     input.submit_building_placement(
-        &mut crate::app::sidebar_projection::SidebarProjectionState::default(),
+        &mut crate::app::sidebar_projection::SidebarModel::default(),
     );
     assert!(input.begin_building_placement("GAPILL", 40, issuer));
     let observed = MapBuildingPlacementObservation::capture(&input, &interner);
