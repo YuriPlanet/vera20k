@@ -642,11 +642,7 @@ fn briefing_box(picture: RectPx, text: &str, font: &BitFont, scale: f32) -> Opti
     // Wrapped in the font's own pixels; the glyphs draw `scale` times their
     // size.
     let wrapped = font.wrap_layout(text, ((most_width - 2 * padding) as f32 / scale) as u32);
-    let mut lines: Vec<String> = wrapped
-        .lines
-        .iter()
-        .map(|line| text[line.start_byte..line.end_byte].to_owned())
-        .collect();
+    let mut lines: Vec<String> = wrapped.line_texts(text).map(str::to_owned).collect();
     if lines.len() > most_lines {
         lines.truncate(most_lines - 1);
         lines.push(BRIEFING_CUT.to_owned());
