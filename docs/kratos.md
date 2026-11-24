@@ -77,7 +77,7 @@ AAOnly=yes
 
 Kratos runs the check at its `TechnoClass_CanFire` hook (`0x6FC339`, whose refusal returns
 `0x6FCB7E` = ILLEGAL): the shot stops when the target is not in the air, the firer's
-`LandTargeting` is not `1` (`Land_Not_OK`, which the original already refuses) and the
+`LandTargeting` is not `1` (`Land_Not_OK`, which the original refuses on land) and the
 projectile has `AA=yes`. Without `AA=yes` the key does nothing, as in Kratos
 ([source](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/Status/CanFireCheck.cpp)).
 

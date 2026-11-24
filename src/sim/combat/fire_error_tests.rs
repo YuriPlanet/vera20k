@@ -698,8 +698,8 @@ fn kratos_aa_only_refuses_a_ground_target() {
     assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
     input["verdicts"]["high_flying"] = false.into();
 
-    // LandTargeting 2 (`Land_OK`) is not the `Land_Not_OK` T40 already
-    // refuses, so the piece still stops the shot.
+    // LandTargeting 2 (`Land_Secondary`) is not `Land_Not_OK`, so the piece
+    // still stops the shot.
     input["firer_type"]["land_targeting"] = 2.into();
     assert_eq!(evaluate(&input, false).0, FireError::Illegal as i32);
 

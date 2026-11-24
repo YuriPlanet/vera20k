@@ -1017,9 +1017,9 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     }
     // Kratos `TechnoClass_CanFire` (`0x6FC339`, its refusal returns
     // `0x6FCB7E` = ILLEGAL): `TechnoStatus::CanFire_CheckBullet` stops an
-    // `AAOnly` projectile when the target is not in the air. A firer whose
-    // LandTargeting is 1 (`Land_Not_OK`) never gets here with a low target,
-    // so T40 has already refused it.
+    // `AAOnly` projectile when the target is not in the air. Kratos leaves a
+    // firer whose LandTargeting is 1 (`Land_Not_OK`) to the stock land-target
+    // refusals at T40 and T41 below.
     if facts.kratos
         && weapon.projectile.aa_only
         && weapon.projectile.aa

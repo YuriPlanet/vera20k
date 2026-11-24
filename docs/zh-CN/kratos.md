@@ -73,7 +73,7 @@ AAOnly=yes
 ```
 
 Kratos 把这个检查放在 `TechnoClass_CanFire` 钩子（`0x6FC339`，拒绝时返回 `0x6FCB7E` =
-ILLEGAL）：当目标不在空中、开火者的 `LandTargeting` 不为 `1`（`Land_Not_OK`，原版本来就会
+ILLEGAL）：当目标不在空中、开火者的 `LandTargeting` 不为 `1`（`Land_Not_OK`，原版对陆地目标本来就会
 拒绝）且抛射体带 `AA=yes` 时终止发射。没有 `AA=yes` 时该键不起作用，与 Kratos 一致
 （[源码](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/Status/CanFireCheck.cpp)）。
 
