@@ -163,7 +163,7 @@ enum Whose {
 enum ActionSpec {
     /// `Wasm:name` or `Wasm:name(target,text)`; a `None` source addresses
     /// the mod module (RFC section 2). The text goes to the module as the
-    /// record's `args` (INI registration addendum, section 7).
+    /// record's `args` (RFC 0001 section 6h).
     Module {
         source: Option<ModuleSource>,
         name: String,
@@ -208,7 +208,7 @@ enum IdKind {
     Anim,
     VoxelAnim,
     ParticleSystem,
-    /// A registered module event's name (INI registration addendum).
+    /// A registered module event's name (RFC 0001 section 6h).
     ModuleEvent,
 }
 
@@ -922,7 +922,7 @@ impl Simulation {
         for event in &spec.events {
             let fail = |why: String| format!("[{section}] {}: {why}", event.key);
             // `Event=Wasm:name`: a registered module event (INI
-            // registration addendum, section 6).
+            // RFC 0001 section 6h).
             if let Some(name) = strip_prefix_ci(&event.name, "Wasm:") {
                 let id = self
                     .ext_modules

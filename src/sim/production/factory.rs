@@ -1058,6 +1058,26 @@ impl FactoryRegistry {
             .map(Factory::view)
     }
 
+    /// The factory producing `category` for `owner`: its House slot (a
+    /// player's production), else the first factory a building of that
+    /// owner holds for the category in construction order (a computer
+    /// house's, `BuildingClass+0x524`).
+    pub(crate) fn owner_view(
+        &self,
+        owner: InternedId,
+        category: ProductionCategory,
+    ) -> Option<FactoryView<'_>> {
+        self.view(owner, category).or_else(|| {
+            self.holders_insertion_ordered()
+                .find(|(holder, factory)| {
+                    matches!(holder, FactoryHolder::Building(_))
+                        && factory.owner() == owner
+                        && factory.category() == category
+                })
+                .map(|(_, factory)| factory.view())
+        })
+    }
+
     /// FactoryClass::PointerExpired4CA580, called by Dispatch725957 for
     /// either expiry control: only a matching held product (+58) is cleared.
     /// The factory, queue, stage, balance, rates and timers remain intact.

@@ -21,7 +21,7 @@ use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{
-    ABSTRACT_OBJECT_TARGET_KIND, CELL_TARGET_KIND, Command, CommandEnvelope,
+    ABSTRACT_OBJECT_TARGET_KIND, CELL_TARGET_KIND, Command, CommandEnvelope, CommandSender,
     MEGAMISSION_ACTION_OFFSET, MEGAMISSION_DESTINATION_KIND_OFFSET,
     MEGAMISSION_DESTINATION_VALUE_OFFSET, MEGAMISSION_OPCODE, MEGAMISSION_SECONDARY_KIND_OFFSET,
     MEGAMISSION_SECONDARY_VALUE_OFFSET, MEGAMISSION_SOURCE_KIND_OFFSET,
@@ -716,9 +716,13 @@ impl Simulation {
 
     /// VERA-only: one command and its spawn-refresh report: a Deploy whose MCV left
     /// the store or carries the `TerminalLifetime` dying mark counts as a spawn.
+    ///
+    /// A Wasm module listening hears the outcome afterwards: `Commanded` on
+    /// each actor of an applied command, `OrderRefused` for a refused one
+    /// (`sim::ext_modules::orders`).
     fn apply_one_due_command(
         &mut self,
-        sender: Option<i8>,
+        sender: CommandSender,
         cmd: &CommandEnvelope,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -739,7 +743,8 @@ impl Simulation {
         // release it during settlement. Capture only this derived refresh
         // fact now; the production owner remains the placement authority.
         let placed_building_owner = self.successful_non_wall_placement_owner(cmd, true, rules);
-        let applied = self.apply_command_with_overlays(
+        let cmd_owner_str = self.interner.resolve(cmd.owner).to_string();
+        let outcome = self.apply_command_with_overlays(
             sender,
             cmd.owner,
             &cmd.payload,
@@ -747,6 +752,7 @@ impl Simulation {
             overlay_registry,
             frame_effects,
         );
+        let applied = outcome.is_ok();
         let placed_building_owner = placed_building_owner.filter(|_| applied);
         let synchronous_deploy = applied
             && matches!(cmd.payload, Command::DeployMcv { entity_id }
@@ -771,6 +777,7 @@ impl Simulation {
                     .get(id)
                     .is_some_and(|entity| entity.on_bridge() != before)
             });
+        self.raise_module_command_outcome(rules, frame_effects, cmd, outcome);
         (applied, spawned_entity)
     }
 
@@ -1296,7 +1303,7 @@ impl Simulation {
                     | Command::AssignControlGroup { .. }
                     | Command::MoveFlash { .. } => {
                         let _ = self.apply_one_due_command(
-                            None,
+                            CommandSender::Player(None),
                             command,
                             rules,
                             Some(rules.overlay_registry()),
@@ -1346,10 +1353,12 @@ impl Simulation {
         let mut spawned = false;
         for mut order in crate::sim::ext_modules::take_due_orders(self, rules) {
             self.adjust_staged_megamission_destinations(&mut order, rules, None);
+            // One order is one `Commanded` serial.
+            self.ext_modules.begin_command_group();
             for command in &order {
                 spawned |= self
                     .apply_one_due_command(
-                        None,
+                        CommandSender::HouseOrder,
                         command,
                         rules,
                         Some(rules.overlay_registry()),
@@ -1618,7 +1627,7 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
         };
         if let Some(command) = command {
             let (applied, spawned) = self.sim.apply_one_due_command(
-                entry.record().map(|record| record.house_id()),
+                CommandSender::Player(entry.record().map(|record| record.house_id())),
                 &command,
                 self.rules,
                 Some(self.rules.overlay_registry()),

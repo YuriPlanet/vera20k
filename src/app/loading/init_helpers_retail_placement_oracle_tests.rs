@@ -341,14 +341,17 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
     provider.building_art.set_actually_placed_for_test(true);
     sim.append_house_base_building_for_test(provider_id);
     let gapowr_id = sim.intern(POWER_PLANT);
-    assert!(crate::sim::production::enqueue_by_type(
-        &mut sim,
-        &rules,
-        OWNER,
-        POWER_PLANT,
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        crate::sim::production::enqueue_by_type(
+            &mut sim,
+            &rules,
+            OWNER,
+            POWER_PLANT,
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let category = crate::sim::production::category_for_object(
         rules.object(POWER_PLANT).expect("stock GAPOWR profile"),
     );

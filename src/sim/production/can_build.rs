@@ -153,6 +153,30 @@ pub fn can_build(
     build_limit(sim, rules, owner, obj, count_in_production)
 }
 
+/// VERA, for a Wasm module's house order (RFC 0001 6g): whether `owner`'s
+/// player could choose `obj`, as [`can_build`]'s human arm asks it. A house
+/// no human controls is answered Yes there without its prerequisites, so a
+/// module's order adds the human arm's requirements and prerequisites
+/// (`0x004F7BF1..0x004F7F52`) to CanBuild's own answer.
+pub(crate) fn buildable_by_player(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> bool {
+    if can_build(sim, rules, owner, obj, false, true) == CanBuild::No {
+        return false;
+    }
+    let Some(house) = sim.houses.get(&owner) else {
+        return false;
+    };
+    match requirements_met(sim, rules, owner, house, obj) {
+        RequirementStatus::Overridden => true,
+        RequirementStatus::Complete => owns_prerequisites(sim, rules, house, obj),
+        _ => false,
+    }
+}
+
 /// `HouseClass::CanBuild`'s qualification ahead of the prerequisites
 /// (`0x004F7889..0x004F7BE5`, in the order [`can_build`] lists), which when
 /// Ares plays is `HouseExt::ExtData::RequirementsMet @ 10021FF0`: the status

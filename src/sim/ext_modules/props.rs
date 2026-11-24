@@ -18,6 +18,15 @@
 //! | `Facing`, `TurretFacing` | the body facing (`+0x388`) and the turret's (`+0x370`; a building aims its body), high byte as map facings store them |
 //! | `Armor` | the type's bound armor index |
 //! | `Relation` | `HouseAlliances::is_allied` of the viewpoint house, `multiplay_passive` for Neutral |
+//! | `Destination` | NavCom (`Foot+0x5A4`, `NavigationState::nav_com`): a cell or object reference, 0 for none (always for buildings) |
+//! | `WeaponReady` | the rearm timer (`RearmTimer`) has run out; while it runs GetFireError answers Rearm (`0x006FC94F`) |
+//! | `Deployed` | the native deployed state (`GameEntity::is_fully_deployed`: Unit `+0x6E0`, infantry Doing 28..30) |
+//! | `UnderConstruction` | a building whose BState (`Building+0x534`) is 0, the build-up animation |
+//! | `Parasite` | ParasiteEatingMe (`Foot+0x694`): the object whose parasite holds it, 0 for none |
+//! | `ControlGroup` | `Unsupported`: client only |
+//! | `Visible` | `Simulation::object_seen_by` for the viewpoint house: fog (`FogState::shows_objects_to`, current sight under FogOfWar) and the screen GetVisualState (`0x00703860`) for cloaking and sensors |
+//! | `Engage` | `Simulation::engage_check` for the viewpoint object: GetFireError without range (vt+0x3BC) of the weapon SelectWeapon picks, that Warhead's Verses against the target's armor, and CanFireAt's InRange (`0x006F77B0`) |
+//! | House `Factory.<Kind>.*` | `FactoryRegistry::owner_view`: the House slot, else the first building-held factory of the category |
 //!
 //! Type references read the rules' parsed values: TechnoType `Category`,
 //! `Strength`, `Cost`, `Soylent`, `Speed` (INI percent), `ROT`, `Crushable`,
@@ -28,7 +37,20 @@
 //! `Wall`, `Wood`, `Sparky`, `Fire`, `Conventional`, `Rocker`, `InfDeath`.
 //! All are read-only during a match (the in-match allowlist is empty).
 //!
+//! A query's `viewpoint` may be an object: `Engage` reads for it, the house
+//! viewpoint properties for its owner. Filter clauses keep the trigger house
+//! (no object), so `Engage` there answers `Unsupported`.
+//!
 //! Residuals:
+//! - `Engage` takes the target type's own `Armor=` for the Verses test (no
+//!   `TargetArmor` override, which is preview). A transient GetFireError
+//!   answer (Rearm, Facing, Moving, Busy, Cloaked, MustDeploy, Ammo) reads
+//!   as `Ok` when in range, and hides an Illegal check GetFireError makes
+//!   after it.
+//! - `Visible` follows the translucent fog's rule (current sight under
+//!   FogOfWar), the same for every client; retail rendering under FogOfWar
+//!   darkens but still draws objects on explored cells. A tunnel unit's
+//!   underground ripple counts as visible.
 //! - `Team` and `Tag` answer `Unsupported` for an object in a team or with a
 //!   tag: teams and map tags have no references yet (teams number from their
 //!   own counter, not the creation counter).
@@ -43,7 +65,8 @@
 //!   a value the simulation computes with.
 
 use vera20k_wasm_ext::{
-    Invalid, NAME_TECHNO_TYPE, NAME_WARHEAD, NAME_WEAPON, Query, SCOPE_CELLS, Status,
+    ENGAGE_ILLEGAL, ENGAGE_NO_DAMAGE, ENGAGE_OK, ENGAGE_OUT_OF_RANGE, Invalid, NAME_TECHNO_TYPE,
+    NAME_WARHEAD, NAME_WEAPON, Query, SCOPE_CELLS, Status,
 };
 
 use super::{Host, Ref, cell_ref, decode_ref, house_ref, techno_type, type_ref};
@@ -51,6 +74,8 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
+use crate::sim::combat::fire_error::FireError;
+use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 
@@ -65,8 +90,12 @@ const RELATION_NEUTRAL: i64 = 3;
 /// one in a direct `get` (the property then answers `Unsupported`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct View {
-    /// The viewpoint house's array index.
+    /// The viewpoint house's array index: the query's house, or its
+    /// viewpoint object's owner.
     pub(super) house: Option<usize>,
+    /// The query's viewpoint object, which object viewpoint properties
+    /// (`Engage`) read for.
+    pub(super) object: Option<u64>,
     /// The query's TechnoType ID, which `Placeable` places (cells queries
     /// only).
     pub(super) placing: Option<u32>,
@@ -77,21 +106,30 @@ impl View {
     pub(super) fn of_trigger_house(house: Option<u32>) -> Self {
         Self {
             house: house.map(|index| index as usize),
+            object: None,
             placing: None,
         }
     }
 }
 
 impl Host<'_, '_> {
-    /// A query's view: its `viewpoint`, which must be 0 or a house, and for
-    /// a cells query its TechnoType.
+    /// A query's view: its `viewpoint`, which must be 0, a house or an
+    /// object (whose owner is then the viewpoint house; a gone object leaves
+    /// the house unset), and for a cells query its TechnoType.
     pub(super) fn query_view(&self, query: &Query) -> Result<View, Invalid> {
-        let house = match decode_ref(query.viewpoint)? {
-            None => None,
-            Some(Ref::House(index)) => Some(index),
+        let (house, object) = match decode_ref(query.viewpoint)? {
+            None => (None, None),
+            Some(Ref::House(index)) => (Some(index), None),
+            Some(Ref::Object(id)) => (
+                self.sim
+                    .entities()
+                    .get(id)
+                    .and_then(|entity| self.sim.houses.index_of(entity.owner())),
+                Some(id),
+            ),
             Some(_) => {
                 return Err(Invalid(format!(
-                    "viewpoint {:#x} is not a house",
+                    "viewpoint {:#x} is not a house or an object",
                     query.viewpoint
                 )));
             }
@@ -103,7 +141,11 @@ impl Host<'_, '_> {
             }) if query.scope == SCOPE_CELLS => Some(id),
             _ => None,
         };
-        Ok(View { house, placing })
+        Ok(View {
+            house,
+            object,
+            placing,
+        })
     }
 
     /// The viewpoint house; `Unsupported` without one, `Gone` past the
@@ -250,7 +292,104 @@ impl Host<'_, '_> {
                 Some(o) => o.armor_id().index() as i64,
                 None => return (0, Status::NotFound),
             },
+            "Destination" => match entity.navigation.nav_com() {
+                None => 0,
+                Some(NavTargetRef::Cell { rx, ry }) => cell_ref(rx, ry),
+                Some(NavTargetRef::Object { id }) => id as i64,
+            },
+            "WeaponReady" => i64::from(entity.seldom.rearm_timer.remaining(frame as i32) == 0),
+            "Deployed" => i64::from(entity.is_fully_deployed()),
+            "UnderConstruction" => i64::from(
+                entity.category() == EntityCategory::Structure && entity.in_construction_bstate(),
+            ),
+            "Parasite" => entity.parasite.eater().map_or(0, |eater| eater as i64),
+            // The local player's control group exists only on the client.
+            "ControlGroup" => return (0, Status::Unsupported),
             _ => return (0, Status::Unsupported),
+        };
+        (value, Status::Ok)
+    }
+
+    /// `Visible`: the viewpoint house sees the object now, as its screen
+    /// shows it (`Simulation::object_seen_by`).
+    pub(super) fn visible(&self, entity: &GameEntity, view: View) -> (i64, Status) {
+        match self.viewpoint(view) {
+            Ok(viewer) => (
+                i64::from(self.sim.object_seen_by(self.rules, entity, viewer)),
+                Status::Ok,
+            ),
+            Err(status) => (0, status),
+        }
+    }
+
+    /// `Engage` (`EngageResult`) of the viewpoint object as the shooter
+    /// against object `target` (`Simulation::engage_check`): GetFireError's
+    /// Illegal and Cant are `Illegal`; a Warhead with Verses 0 against the
+    /// target's armor is `NoDamage`; out of InRange is `OutOfRange`; else
+    /// `Ok` (the other GetFireError answers, rearming, facing, moving, busy
+    /// and the like, pass with time). `Unsupported` without a viewpoint
+    /// object, `Gone` once the shooter is gone.
+    pub(super) fn engage(&self, target: u64, view: View) -> (i64, Status) {
+        let Some(shooter) = view.object else {
+            return (0, Status::Unsupported);
+        };
+        if self.sim.entities().get(shooter).is_none() {
+            return (0, Status::Gone);
+        }
+        let (error, no_damage, in_range) = self.sim.engage_check(self.rules, shooter, target);
+        let value = match error {
+            FireError::Illegal | FireError::Cant => ENGAGE_ILLEGAL,
+            _ if no_damage => ENGAGE_NO_DAMAGE,
+            _ if !in_range => ENGAGE_OUT_OF_RANGE,
+            _ => ENGAGE_OK,
+        };
+        (value, Status::Ok)
+    }
+
+    /// A house's `Factory.<Kind>.*` property (appendix 7.5) from the factory
+    /// producing that kind for it (`FactoryRegistry::owner_view`): `Type`
+    /// the object in production, `Progress` its stage (`+0x24`, 54 steps)
+    /// in percent, `Ready` IsComplete (`0x004CA130`), `Queued` the object in
+    /// production plus the entries queued behind it. 0 for each without a
+    /// factory.
+    pub(super) fn factory_property(&self, house: InternedId, name: &str) -> (i64, Status) {
+        use crate::sim::production::{PRODUCTION_STEPS, ProductionCategory};
+        let Some((kind, field)) = name
+            .strip_prefix("Factory.")
+            .and_then(|rest| rest.split_once('.'))
+        else {
+            return (0, Status::Unsupported);
+        };
+        let category = match kind {
+            "Building" => ProductionCategory::Building,
+            "Defense" => ProductionCategory::Defense,
+            "Infantry" => ProductionCategory::Infantry,
+            "Vehicle" => ProductionCategory::Vehicle,
+            "Naval" => ProductionCategory::Ship,
+            "Aircraft" => ProductionCategory::Aircraft,
+            _ => return (0, Status::Unsupported),
+        };
+        if !matches!(field, "Type" | "Progress" | "Ready" | "Queued") {
+            return (0, Status::Unsupported);
+        }
+        let Some(factory) = self.sim.production.factories().owner_view(house, category) else {
+            return (0, Status::Ok);
+        };
+        let value = match field {
+            "Type" => match factory.object {
+                None => 0,
+                Some(object) => match self.sim.interner.type_handle(object.type_id, self.rules) {
+                    Some(handle) => type_ref(NAME_TECHNO_TYPE, handle.0),
+                    None => return (0, Status::NotFound),
+                },
+            },
+            "Progress" if factory.object.is_some() => {
+                i64::from(factory.progress.min(PRODUCTION_STEPS)) * 100
+                    / i64::from(PRODUCTION_STEPS)
+            }
+            "Progress" => 0,
+            "Ready" => i64::from(factory.complete_object().is_some()),
+            _ => i64::from(factory.object.is_some()) + factory.queue.len() as i64,
         };
         (value, Status::Ok)
     }

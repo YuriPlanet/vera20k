@@ -585,6 +585,7 @@ fn load_with_assets_and_mod_module(
         native_rules_owner.selected_rules_root(),
         mod_module,
         &map.ini,
+        native_rules_owner.personal_rules().wasm_budget(),
     )
     .map_err(|error| format!("Wasm extension module: {error}"))?;
     let (scenario_rules, _) = native_rules_owner

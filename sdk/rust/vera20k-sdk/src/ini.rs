@@ -1,4 +1,4 @@
-//! INI names a module registers (RFC 0001 INI addendum): keys on type
+//! INI names a module registers (RFC 0001 section 6h): keys on type
 //! sections, registries (list sections) and module events, so a modder
 //! writes INI and the module implements it.
 //!

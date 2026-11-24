@@ -178,7 +178,7 @@ impl Event {
     /// object or type binding. Asked for each command on a bound object.
     pub const COMMAND_ALLOWED: i32 = 1034;
 
-    // Module INI (RFC 0001 INI addendum, sections 5 and 6).
+    // Module INI (RFC 0001 section 6h).
     /// A module event ([`crate::ini::event`]): the trigger's `id` is the
     /// event ID; [`Trigger::on_module_event`] sets both.
     pub const MODULE_EVENT: i32 = 1040;
@@ -719,6 +719,12 @@ impl EventRecord {
 
     pub fn other(&self) -> Techno {
         Techno(self.other)
+    }
+
+    /// The tag holder: the bound object, or the object or cell whose tag
+    /// holds the trigger (raw reference; 0 for none).
+    pub fn holder(&self) -> i64 {
+        self.holder
     }
 
     pub fn house(&self) -> House {

@@ -1,4 +1,4 @@
-//! INI names modules register (`docs/rfcs/0001-ini-register.zh-CN.md`):
+//! INI names modules register (RFC 0001 section 6h):
 //! keys on sections, registries and module events, and the engine's string
 //! table (parameter texts, the start-of-match records' names and values).
 //!

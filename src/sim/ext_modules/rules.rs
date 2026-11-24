@@ -36,7 +36,18 @@ use vera20k_wasm_ext::{
 };
 
 use super::vars::VarStore;
-use super::{FRAME_BUDGET, ModuleSource, ONCE_BUDGET};
+use super::{FRAME_BUDGET, MAP_FRAME_BUDGET, MIN_BUDGET, ModuleSource, ONCE_BUDGET, SEAT_BUDGET};
+
+/// A budget key's value: at most `ceiling`; below [`MIN_BUDGET`] it is an
+/// error naming the key.
+fn checked_budget(key: &str, value: i64, ceiling: u64) -> Result<u64, String> {
+    match u64::try_from(value) {
+        Ok(value) if value >= MIN_BUDGET => Ok(value.min(ceiling)),
+        _ => Err(format!(
+            "[VeraWasm] {key}={value} is below {MIN_BUDGET} operations per frame"
+        )),
+    }
+}
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::native_processing::{ExtRulesHook, ExtRulesLayer};
 use crate::rules::ruleset::RuleSet;
@@ -60,9 +71,16 @@ pub struct WasmPolicy {
     pub budget: u64,
     /// `MapBudget=`: the map module's operations per frame.
     pub map_budget: u64,
+    /// `SeatBudget=`: what each claimed seat adds to the mod module's
+    /// budget (RFC 0001 6i).
+    pub seat_budget: u64,
     /// `MapWasm=`: whether maps with modules may start under this mod.
     pub map_wasm: bool,
     pub map_ui: MapUi,
+    /// `Controller=`: the lobby offers "mod AI" for computer seats, and
+    /// such a seat's house starts with every domain claimed by the mod
+    /// module (RFC 6i, `claims`).
+    pub controller: bool,
 }
 
 impl Default for WasmPolicy {
@@ -70,33 +88,43 @@ impl Default for WasmPolicy {
         Self {
             api: None,
             budget: FRAME_BUDGET,
-            map_budget: FRAME_BUDGET,
+            map_budget: MAP_FRAME_BUDGET,
+            seat_budget: SEAT_BUDGET,
             map_wasm: true,
             map_ui: MapUi::Overlay,
+            controller: false,
         }
     }
 }
 
 impl WasmPolicy {
-    /// Reads `[VeraWasm]` from the mod's own `rulesmd.ini`. Budgets are
-    /// clamped to 1..=[`FRAME_BUDGET`], the engine ceiling.
-    pub fn read(mod_rules: &IniFile) -> Self {
+    /// Reads `[VeraWasm]` from the mod's own `rulesmd.ini`; `player_budget`
+    /// (the room's `[VERA] WasmBudget=`, 0 for none) replaces `Budget=`.
+    /// Budgets above the engine ceiling are lowered to it; one below
+    /// [`MIN_BUDGET`] refuses the match (RFC 15.4).
+    pub fn read(mod_rules: &IniFile, player_budget: u32) -> Result<Self, String> {
         let section = mod_rules.section_or_empty("VeraWasm");
-        let budget = |key| {
-            let ceiling = i32::try_from(FRAME_BUDGET).unwrap_or(i32::MAX);
-            section.read_int(key, ceiling).clamp(1, ceiling) as u64
+        let budget = |key: &str, default: u64, ceiling: u64| -> Result<u64, String> {
+            let value = section.read_int(key, i32::try_from(default).unwrap_or(i32::MAX));
+            checked_budget(key, i64::from(value), ceiling)
+        };
+        let mod_budget = match player_budget {
+            0 => budget("Budget", FRAME_BUDGET, FRAME_BUDGET)?,
+            value => checked_budget("WasmBudget", i64::from(value), FRAME_BUDGET)?,
         };
         let map_ui = match section.read_name("MapUI", 16) {
             Some(name) if name.eq_ignore_ascii_case("full") => MapUi::Full,
             Some(name) if name.eq_ignore_ascii_case("no") => MapUi::No,
             _ => MapUi::Overlay,
         };
-        Self {
+        Ok(Self {
             api: section.read_name("Api", 16).map(str::to_owned),
-            budget: budget("Budget"),
-            map_budget: budget("MapBudget"),
+            budget: mod_budget,
+            map_budget: budget("MapBudget", MAP_FRAME_BUDGET, FRAME_BUDGET)?,
+            seat_budget: budget("SeatBudget", SEAT_BUDGET, SEAT_BUDGET)?,
             map_wasm: section.read_bool("MapWasm", true),
             map_ui,
+            controller: section.read_bool("Controller", false),
         }
     }
 
@@ -151,6 +179,7 @@ impl PreparedExtModules {
         mod_rules: &IniFile,
         mod_module: Option<&[u8]>,
         map: &IniFile,
+        player_budget: u32,
     ) -> Result<Self, String> {
         let current = crate::util::version::GAME_VERSION;
         if let Some(needs) = map
@@ -162,7 +191,7 @@ impl PreparedExtModules {
                 "this map needs VERA20k {needs} or newer; this is {current}"
             ));
         }
-        let policy = WasmPolicy::read(mod_rules);
+        let policy = WasmPolicy::read(mod_rules, player_budget)?;
         let ini_triggers = super::ini_triggers::IniTriggers::read(mod_rules)
             .map_err(|e| format!("the mod's rulesmd.ini: {e}"))?;
         let mut modules = Vec::new();

@@ -1607,6 +1607,7 @@ fn load_scenario_ext_modules(
         owner.selected_rules_root(),
         mod_module.as_deref(),
         map_ini,
+        owner.personal_rules().wasm_budget(),
     )
     .map_err(|e| anyhow::anyhow!("Wasm extension module: {e}"))
 }

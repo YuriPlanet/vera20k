@@ -1576,6 +1576,9 @@ pub fn add_garrison_occupant(
         sim.ares_occupier_entered(building_id, owner, rules, registry, effects);
     }
     sim.refresh_spatial_threat(building_id, rules, None);
+    // Wasm module `TransportEntered` and `PassengerAdded` in their garrison
+    // form (RFC 0001 appendix 4.3, `value2` 1).
+    sim.raise_module_garrison_entered(rules, effects, building_id, pax_id, count);
     if count == 1 {
         let type_id = sim
             .substrate

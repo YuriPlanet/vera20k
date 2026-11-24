@@ -28,6 +28,7 @@
 //! - the `action` import ([`actions`]): atomic actions and stock trigger
 //!   actions through their owners, for direct calls and trigger actions;
 //! - cell and global properties and `find` over cells ([`cells`]);
+//! - superweapon properties and `find` over superweapons ([`supers`]);
 //! - house orders for computer houses ([`orders`]);
 //! - `rules_get`, and `rules_set` and `on_rules` while the rules are
 //!   processed ([`rules`]).
@@ -48,8 +49,9 @@
 //! Residuals before this leaves preview:
 //! - The in-game notices of a stopped module and of a map's ignored
 //!   `Wasm.Tags` are English only.
-//! - House references use a provisional encoding ([`house_ref`]); the RFC
-//!   puts houses on the objects' creation counter (see there).
+//! - House and superweapon references use provisional encodings
+//!   ([`house_ref`], [`super_ref`]); the RFC puts both on the objects'
+//!   creation counter (see there).
 //! - TechnoType IDs are the rules' registry handles (`TypeHandle`), found by
 //!   name; a type whose ID two categories share reads as the first.
 //! - `set` writes `Health` (1 up to the type's Strength; a write of 0 or
@@ -68,13 +70,14 @@ use vera20k_wasm_ext::{
     NAME_ACTION_KIND, NAME_ANIM, NAME_COUNTRY, NAME_MODULE_EVENT, NAME_PARTICLE_SYSTEM,
     NAME_PROJECTILE, NAME_PROPERTY, NAME_STRING, NAME_SUPER_WEAPON, NAME_TEAM_TYPE,
     NAME_TECHNO_TYPE, NAME_VARIABLE, NAME_VOXEL_ANIM, NAME_WARHEAD, NAME_WEAPON, Order, Query,
-    SCOPE_CELLS, SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SimHost, SimModule, Status,
-    TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    SCOPE_CELLS, SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SCOPE_SUPER_WEAPONS, SimHost,
+    SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
 };
 
 mod actions;
 mod cells;
 mod chains;
+mod claims;
 mod decide;
 mod events;
 mod held;
@@ -85,6 +88,7 @@ pub(crate) mod modifiers;
 mod orders;
 mod props;
 mod rules;
+mod supers;
 pub(crate) mod vars;
 mod writes;
 
@@ -107,11 +111,17 @@ use crate::sim::world::{FrameEffects, Simulation};
 mod triggers;
 pub(crate) use triggers::ModuleEvent;
 
-/// The frame budget B at most (RFC 15.2 proposes about 2 ms on the slowest
-/// platform; open question 7): the limit of one call, and the frame's use
+/// The frame budget B at most and the mod module's default (RFC 15.4,
+/// 0.0.21; open question 7): the limit of one call, and the frame's use
 /// past which no further batch starts. A frame stays below 3B plus the
-/// decision pools (RFC section 5).
-pub const FRAME_BUDGET: u64 = 200_000;
+/// decision pools (RFC section 5). Claimed seats add [`SEAT_BUDGET`] each.
+pub const FRAME_BUDGET: u64 = 500_000;
+/// A map module's default budget (RFC 15.4).
+pub const MAP_FRAME_BUDGET: u64 = 100_000;
+/// What each claimed seat adds by default, and at most (RFC 15.4, 6i).
+pub const SEAT_BUDGET: u64 = 500_000;
+/// A configured budget below this refuses the match (RFC 15.4).
+pub const MIN_BUDGET: u64 = 20_000;
 /// Operations for each one-time call: `vera_init` and `on_scenario_start`.
 pub const ONCE_BUDGET: u64 = 5_000_000;
 
@@ -146,6 +156,17 @@ const HOUSE_REF_BIT: i64 = 1 << 47;
 
 pub const fn house_ref(index: usize) -> i64 {
     HOUSE_REF_BIT | index as i64
+}
+
+/// Superweapon references: bit 46 over (house index << 16) | the
+/// `[SuperWeaponTypes]` index ([`supers`]). A House's Supers are fixed for
+/// the match, so for the reasons given at [`HOUSE_REF_BIT`] they stay off
+/// the creation counter as well; unique against every serial (far below
+/// 2^46) and every house reference (bit 47 clear).
+const SUPER_REF_BIT: i64 = 1 << 46;
+
+const fn super_ref(house: usize, index: usize) -> i64 {
+    SUPER_REF_BIT | ((house as i64) << 16) | index as i64
 }
 
 /// Where a module came from (RFC section 2); mod modules run first.
@@ -402,6 +423,9 @@ pub struct ExtModules {
     decide: decide::DecideState,
     /// Registered INI names and the string table ([`ini_names`]).
     ini: ini_names::IniNames,
+    /// The `Commanded` serials of the current frame ([`orders`]); not
+    /// saved, as a save resumes at a frame boundary.
+    command_serial: orders::CommandSerial,
 }
 
 /// What a save holds: the modules, the modifiers and the variable values
@@ -417,6 +441,8 @@ struct SavedExtModules {
     held: held::ActionHeld,
     #[serde(default)]
     ini: ini_names::IniNames,
+    #[serde(default)]
+    claims: claims::DomainClaims,
 }
 
 impl serde::Serialize for ExtModules {
@@ -444,6 +470,7 @@ impl serde::Serialize for ExtModules {
             rules_ini: self.rules_ini.clone(),
             held: self.held.clone(),
             ini: self.ini.clone(),
+            claims: self.claims.clone(),
         }
         .serialize(serializer)
     }
@@ -458,6 +485,7 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
             rules_ini: saved.rules_ini,
             held: saved.held,
             ini: saved.ini,
+            claims: saved.claims,
             ..Self::default()
         };
         modules.vars.values = saved.vars;
@@ -475,6 +503,12 @@ impl Clone for ExtModules {
 impl ExtModules {
     pub fn is_empty(&self) -> bool {
         self.slots.is_empty()
+    }
+
+    /// The next command starts a new `Commanded` serial: one module order's
+    /// commands share one ([`orders`]).
+    pub(crate) fn begin_command_group(&mut self) {
+        self.command_serial.begin_group();
     }
 
     /// Each loaded module's source and, once it stopped, why.
@@ -553,9 +587,11 @@ impl ExtModules {
             || !values.house.is_empty()
             || !values.object.is_empty();
         let ini = (!self.ini.is_empty()).then(|| fnv1a(self.ini.state_bytes()));
+        let claims = (!self.claims.is_empty()).then(|| fnv1a(self.claims.state_bytes()));
         modules
             .chain(held.then(|| fnv1a(self.held_state_bytes())))
             .chain(ini)
+            .chain(claims)
     }
 
     /// The modifiers and declared-variable values as checksum bytes.
@@ -623,6 +659,9 @@ impl ExtModules {
                 byte.hash(hasher);
             }
         }
+        if !self.claims.is_empty() {
+            self.claims.hash(hasher);
+        }
     }
 }
 
@@ -657,6 +696,11 @@ const fn cell_ref(x: u16, y: u16) -> i64 {
 enum Ref {
     Object(u64),
     House(usize),
+    /// House `house`'s Super of `[SuperWeaponTypes]` entry `index`.
+    SuperWeapon {
+        house: usize,
+        index: usize,
+    },
     Type {
         kind: i32,
         id: u32,
@@ -683,6 +727,10 @@ fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
     let payload = reference & ((1 << REF_KIND_SHIFT) - 1);
     Ok(Some(match reference >> REF_KIND_SHIFT {
         0 if reference & HOUSE_REF_BIT != 0 => Ref::House((payload & !HOUSE_REF_BIT) as usize),
+        0 if reference & SUPER_REF_BIT != 0 => Ref::SuperWeapon {
+            house: ((payload & !SUPER_REF_BIT) >> 16) as usize,
+            index: (payload & 0xFFFF) as usize,
+        },
         0 => Ref::Object(payload as u64),
         REF_TYPE => Ref::Type {
             kind: (payload >> 32) as i32,
@@ -766,7 +814,7 @@ fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
         ),
         TABLE_SCOPE => matches!(
             id,
-            SCOPE_OBJECTS | SCOPE_HOUSES | SCOPE_CELLS | SCOPE_MODIFIERS
+            SCOPE_OBJECTS | SCOPE_HOUSES | SCOPE_CELLS | SCOPE_MODIFIERS | SCOPE_SUPER_WEAPONS
         ),
         _ => false,
     }
@@ -945,6 +993,9 @@ impl SimHost for Host<'_, '_> {
             return Ok(status);
         }
         let name = property_name(prop).unwrap_or_default();
+        if let Some(Ref::SuperWeapon { house, index }) = decode_ref(reference)? {
+            return self.write_super_weapon(house, index, name, value);
+        }
         if let Some(Ref::Object(id)) = decode_ref(reference)?
             && self.sim.entities().get(id).is_some()
         {
@@ -1057,6 +1108,7 @@ impl SimHost for Host<'_, '_> {
             SCOPE_HOUSES => self.find_houses(query, cap),
             SCOPE_CELLS => self.find_cells(query, cap),
             SCOPE_MODIFIERS => self.find_modifiers(query, cap),
+            SCOPE_SUPER_WEAPONS => self.find_super_weapons(query, cap),
             _ => Ok((FindPage::default(), Status::Unsupported)),
         }
     }
@@ -1186,13 +1238,48 @@ const READABLE: &[&str] = &[
     "Facing",
     "TurretFacing",
     "Armor",
+    // Objects for driving a house (props.rs, RFC 0001 6i).
+    "Destination",
+    "WeaponReady",
+    "Deployed",
+    "UnderConstruction",
+    "Parasite",
     // Viewpoint properties: in filter clauses and queries only.
     "Relation",
     "Revealed",
     "Placeable",
+    "Visible",
+    "Engage",
     // Houses.
     "TechLevel",
     "Country",
+    "Factory.Building.Type",
+    "Factory.Building.Progress",
+    "Factory.Building.Ready",
+    "Factory.Building.Queued",
+    "Factory.Defense.Type",
+    "Factory.Defense.Progress",
+    "Factory.Defense.Ready",
+    "Factory.Defense.Queued",
+    "Factory.Infantry.Type",
+    "Factory.Infantry.Progress",
+    "Factory.Infantry.Ready",
+    "Factory.Infantry.Queued",
+    "Factory.Vehicle.Type",
+    "Factory.Vehicle.Progress",
+    "Factory.Vehicle.Ready",
+    "Factory.Vehicle.Queued",
+    "Factory.Naval.Type",
+    "Factory.Naval.Progress",
+    "Factory.Naval.Ready",
+    "Factory.Naval.Queued",
+    "Factory.Aircraft.Type",
+    "Factory.Aircraft.Progress",
+    "Factory.Aircraft.Ready",
+    "Factory.Aircraft.Queued",
+    // Superweapons (supers.rs).
+    "Ready",
+    "ChargePercent",
     // Types and rules (props.rs).
     "Soylent",
     "Speed",
@@ -1225,7 +1312,22 @@ const READABLE: &[&str] = &[
     "MissionTimerRunning",
     "AmbientLight",
     "IonStormActive",
-    // Cells: Passable.<SpeedType>.
+    "AutomationAllowed",
+    // Cells (cells.rs): Zone.<MovementZone>, Obstructed, Passable.<SpeedType>.
+    "Zone.Normal",
+    "Zone.Crusher",
+    "Zone.Destroyer",
+    "Zone.AmphibiousDestroyer",
+    "Zone.AmphibiousCrusher",
+    "Zone.Amphibious",
+    "Zone.Subterrannean",
+    "Zone.Infantry",
+    "Zone.InfantryDestroyer",
+    "Zone.Fly",
+    "Zone.Water",
+    "Zone.WaterBeach",
+    "Zone.CrusherAll",
+    "Obstructed",
     "Passable.Foot",
     "Passable.Track",
     "Passable.Wheel",
@@ -1261,9 +1363,10 @@ impl Host<'_, '_> {
     }
 
     /// A property read for `view` (appendix 7, "Viewpoint"): a filter
-    /// clause reads for the trigger house, a query for its `viewpoint`. A
-    /// direct `get` has none, and the viewpoint properties answer
-    /// `Unsupported` there.
+    /// clause reads for the trigger house, a query for its `viewpoint` (a
+    /// house, or an object: `Engage` reads for it, the house properties for
+    /// its owner). A direct `get` has none, and the viewpoint properties
+    /// answer `Unsupported` there.
     fn read_in(&self, reference: i64, prop: i32, view: View) -> Result<(i64, Status), Invalid> {
         let name = property_name(prop).unwrap_or_default();
         let Some(reference) = decode_ref(reference)? else {
@@ -1271,8 +1374,12 @@ impl Host<'_, '_> {
         };
         Ok(match reference {
             Ref::Object(id) => match self.sim.entities().get(id) {
-                Some(entity) if name == "Relation" => self.relation(entity.owner(), view),
-                Some(entity) => self.object_property(entity, name),
+                Some(entity) => match name {
+                    "Relation" => self.relation(entity.owner(), view),
+                    "Visible" => self.visible(entity, view),
+                    "Engage" => self.engage(id, view),
+                    _ => self.object_property(entity, name),
+                },
                 None => match self.sim.ext_modules.modifiers.get(id) {
                     Some(modifier) => modifier
                         .property(name, self.sim.session.binary_frame())
@@ -1287,6 +1394,7 @@ impl Host<'_, '_> {
                 }
             }
             Ref::House(index) => self.house_property(index, name),
+            Ref::SuperWeapon { house, index } => self.super_weapon_property(house, index, name),
             Ref::Type { kind, id } => type_property(self.rules, kind, id, name)?,
             Ref::Cell { x, y } => self.cell_property(x, y, name, view),
             Ref::Waypoint(number) => match self.waypoint_cell(number) {
@@ -1398,6 +1506,7 @@ impl Host<'_, '_> {
             "IsDefeated" => i64::from(house.is_defeated()),
             "IsHuman" => i64::from(house.is_human()),
             "TechLevel" => i64::from(house.tech_level()),
+            "ControlDomains" => self.sim.ext_modules.claims.mask(index),
             "Country" => match self
                 .sim
                 .interner
@@ -1407,7 +1516,7 @@ impl Host<'_, '_> {
                 Some(country) => type_ref(NAME_COUNTRY, u32::from(country.0)),
                 None => return (0, Status::NotFound),
             },
-            _ => return (0, Status::Unsupported),
+            _ => return self.factory_property(id, name),
         };
         (value, Status::Ok)
     }
@@ -1850,6 +1959,7 @@ impl Simulation {
             ]);
         }
         self.ext_modules.map_ui = policy.map_ui;
+        self.ext_modules.controller = policy.controller;
         if !modules.is_empty() {
             self.ext_modules.rules_ini = Some(rules_ini);
         }
@@ -1958,7 +2068,7 @@ impl Simulation {
             if !self.ext_modules.slots[index].started {
                 self.ext_modules.slots[index].started = true;
                 // The INI start records come first and share the one-time
-                // budget (INI registration addendum, section 5).
+                // budget (RFC 0001 section 6h).
                 let used = match self.deliver_ini_start_records(
                     rules,
                     overlay_registry,
@@ -2093,6 +2203,8 @@ impl Simulation {
         // section 3).
         slot.orders.clear();
         let source = slot.source;
+        // Its house domain claims; the native AI takes them back (RFC 6i).
+        self.ext_modules.claims.release(source);
         self.ext_modules.keep_log(reason.clone());
         self.trigger_runtime
             .module_triggers_mut()
@@ -2130,3 +2242,7 @@ mod event_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_ini_register_tests.rs"]
 mod ini_register_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_order_tests.rs"]
+mod order_tests;

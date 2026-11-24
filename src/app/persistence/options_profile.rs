@@ -248,6 +248,9 @@ pub(crate) struct RetailOptionsProfile {
     /// 0, off, by default; read as
     /// [`crate::rules::personal_rules::admitted_superweapon_limit`] admits it.
     pub(crate) superweapon_limit: u8,
+    /// `[VERA] WasmBudget=`: the Wasm mod module's operations per frame in
+    /// place of the mod's own (RFC 0001 15.4); 0, the mod's, by default.
+    pub(crate) wasm_budget: u32,
     /// `[VERA] SoloSkirmish=`: Start accepts a skirmish that has fewer than two
     /// sides for an undisturbed test match — either no AI row enabled, or every
     /// enabled AI on the local player's own explicit team. Off by default, so
@@ -451,6 +454,7 @@ impl Default for RetailOptionsProfile {
             terrain_deformation: false,
             skirmish_cheats: false,
             superweapon_limit: 0,
+            wasm_budget: 0,
             solo_skirmish: false,
             commander_feedback: true,
             custom_end_game_banner: false,
@@ -488,7 +492,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 45],
+    pub(crate) vera: [(&'static str, String); 46],
 }
 
 impl RetailOptionsLoad {
@@ -735,6 +739,8 @@ impl RetailOptionsProfile {
             self.superweapon_limit = crate::rules::personal_rules::admitted_superweapon_limit(
                 vera.read_int("SuperweaponLimit", i32::from(self.superweapon_limit)),
             );
+            self.wasm_budget =
+                u32::try_from(vera.read_int("WasmBudget", self.wasm_budget as i32)).unwrap_or(0);
             self.auto_repair = vera.read_bool("AutoRepair", self.auto_repair);
             self.ra2_mode = vera.read_bool("RA2Mode", self.ra2_mode);
             self.minimap_beacons = vera.read_bool("MinimapBeacons", self.minimap_beacons);
@@ -983,6 +989,7 @@ impl RetailOptionsProfile {
                     format_bool(self.terrain_deformation).to_string(),
                 ),
                 ("SuperweaponLimit", self.superweapon_limit.to_string()),
+                ("WasmBudget", self.wasm_budget.to_string()),
                 (
                     "SkirmishCheats",
                     format_bool(self.skirmish_cheats).to_string(),
