@@ -90,9 +90,12 @@ pub(crate) struct SidebarProjectionState {
     /// Counts changes of `current_view`, so a standing picture can tell its
     /// sidebar is unchanged without keeping a copy (`redraw_gate`).
     view_revision: u64,
-    /// Last revision at which replacing the view could change its hit regions.
-    /// Refreshing progress and cameo art in place leaves the controls alone.
+    /// Changes when a projected control moves, appears or changes which
+    /// pointer events it accepts.
     placement_revision: u64,
+    /// The minimap gets its aperture from the layout spec. The command bar
+    /// gets its button sizes from the side's art.
+    placement_surface: Option<(crate::ui::sidebar::Rect, crate::ui::sidebar::SidebarTheme)>,
     /// The cameo candidates of one frame's inputs, for the owner and the
     /// right strip's superweapons they were derived with.
     kept_cameos: Option<KeptCameos>,
@@ -358,6 +361,11 @@ impl SidebarProjectionState {
     /// Retain a view just built from `inputs` and the current strips and
     /// Factory links.
     pub(crate) fn replace_built_view(&mut self, view: SidebarView, inputs: SidebarViewInputs) {
+        let surface = (view.layout.minimap_rect(&inputs.spec), inputs.spec.theme);
+        if self.placement_surface != Some(surface) {
+            self.placement_surface = Some(surface);
+            self.placement_revision = self.placement_revision.wrapping_add(1);
+        }
         self.replace_view(Some(view));
         self.view_basis = Some(ViewBasis {
             inputs,
@@ -372,7 +380,14 @@ impl SidebarProjectionState {
         self.view_basis = None;
         if self.current_view != view {
             self.view_revision = self.view_revision.wrapping_add(1);
-            self.placement_revision = self.view_revision;
+            if self
+                .current_view
+                .as_ref()
+                .zip(view.as_ref())
+                .is_none_or(|(old, new)| !same_hit_regions(old, new))
+            {
+                self.placement_revision = self.placement_revision.wrapping_add(1);
+            }
         }
         self.current_view = view;
     }
@@ -404,6 +419,24 @@ impl SidebarProjectionState {
         self.replace_view(None);
         self.model.reset_cameo_seed();
     }
+}
+
+/// The part of the sidebar view used by `app::input::chrome_input::places`.
+/// A cameo keeps its hit region even when its drawn availability changes.
+fn same_hit_regions(a: &SidebarView, b: &SidebarView) -> bool {
+    let scroll = |button: &crate::ui::sidebar::SidebarScrollButton| (button.rect, button.disabled);
+    let tab = |button: &crate::ui::sidebar::SidebarTabButton| (button.rect, button.disabled);
+    let cameo = |item: &crate::ui::sidebar::SidebarItem| item.rect;
+    a.repair_button.rect == b.repair_button.rect
+        && a.sell_button.rect == b.sell_button.rect
+        && scroll(&a.scroll_up_button) == scroll(&b.scroll_up_button)
+        && scroll(&a.scroll_down_button) == scroll(&b.scroll_down_button)
+        && a.top_buttons
+            .iter()
+            .map(scroll)
+            .eq(b.top_buttons.iter().map(scroll))
+        && a.tabs.iter().map(tab).eq(b.tabs.iter().map(tab))
+        && a.items.iter().map(cameo).eq(b.items.iter().map(cameo))
 }
 
 impl SidebarModel {

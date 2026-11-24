@@ -270,8 +270,7 @@ fn chain(
             problems.push(TreeProblem::Loop {
                 section: chain.last().cloned().unwrap_or_default(),
             });
-            // The layouts of the loop still start from the table.
-            next = (!chain.iter().any(|seen| is_table(seen))).then(|| table.to_owned());
+            next = next_stock_base(&chain, table);
             continue;
         }
         let base = files.iter().rev().find_map(|file| {
@@ -287,21 +286,33 @@ fn chain(
                         .map(|base| base.trim().to_owned())
                 })
         });
-        next = match base {
-            Some(base) if exists(files, &base) => Some(base),
-            // A base there is none of: the layout starts as if it named none.
-            Some(_) => {
+        let base = match base {
+            Some(base) if !exists(files, &base) => {
                 problems.push(TreeProblem::MissingBase {
                     section: name.clone(),
                 });
-                (!a_table).then(|| table.to_owned())
+                None
             }
-            None if a_table => None,
-            None => Some(table.to_owned()),
+            other => other,
         };
         chain.push(name);
+        next = base.or_else(|| next_stock_base(&chain, table));
     }
     chain
+}
+
+/// Custom layouts default to the side's table. Nod only contains the ways
+/// it differs from GDI, even when a mod gives it a different `Base=`.
+fn next_stock_base(chain: &[String], table: &str) -> Option<String> {
+    let [gdi, nod] = TABLES;
+    let contains = |table: &str| chain.iter().any(|name| name.eq_ignore_ascii_case(table));
+    if contains(gdi) {
+        None
+    } else if contains(nod) {
+        Some(gdi.to_owned())
+    } else {
+        Some(table.to_owned())
+    }
 }
 
 fn is_table(layout: &str) -> bool {

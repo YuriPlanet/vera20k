@@ -2509,6 +2509,28 @@ mod tests {
     }
 
     #[test]
+    fn a_modded_nod_base_keeps_the_stock_sidebar_and_side_positions() {
+        for (base, problem, radar_y) in [
+            ("Nod", Some(LayoutProblemKind::Loop), 48.0),
+            ("Absent", Some(LayoutProblemKind::MissingLayout), 48.0),
+            ("Custom", None, 63.0),
+        ] {
+            let ini = format!(
+                "[Layouts]\nNod=Nod\n[Nod]\nBase={base}\n\
+                 [Nod.Radar]\nX=4\n[Custom.Radar]\nY=63\n"
+            );
+            let file = MatchLayoutFile::from_bytes(ini.as_bytes());
+            let expected = problem.map_or_else(Vec::new, |kind| expect(&[("[Nod] Base", kind)]));
+            assert_eq!(problems(&file), expected, "Base={base}");
+            let (spec, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod"), false));
+            assert_eq!(spec.parts, SidebarPart::STOCK_ORDER.map(Some));
+            assert_eq!(spec.field, FieldLayout::ORIGINAL);
+            assert_eq!(spec.place(SidebarPart::Diplomacy), [14.0, 5.0]);
+            assert_eq!(spec.place(SidebarPart::Radar), [4.0, radar_y]);
+        }
+    }
+
+    #[test]
     fn a_mod_button_can_inherit_the_stock_diplomacy_button() {
         let file = MatchLayoutFile::from_bytes(
             b"[Layouts]\nGDI=Hud\n[Hud.Side]\nParts=Top,Halt\n\

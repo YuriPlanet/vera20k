@@ -179,15 +179,21 @@ fn only_a_changed_view_moves_the_view_revision() {
     let drawn = view(&sim, &options, &projection, SidebarTab::Building, 600.0);
     projection.replace_view(Some(drawn.clone()));
     let first = projection.view_revision();
+    let placement = projection.placement_revision();
     projection.replace_view(Some(drawn.clone()));
     assert_eq!(projection.view_revision(), first);
     let mut richer = drawn;
     richer.credits += 25;
-    projection.replace_view(Some(richer));
+    projection.replace_view(Some(richer.clone()));
     let second = projection.view_revision();
     assert_ne!(second, first);
+    assert_eq!(projection.placement_revision(), placement);
+    richer.scroll_down_button.disabled = !richer.scroll_down_button.disabled;
+    projection.replace_view(Some(richer));
+    assert_ne!(projection.placement_revision(), placement);
+    let third = projection.view_revision();
     projection.replace_view(None);
-    assert_ne!(projection.view_revision(), second);
+    assert_ne!(projection.view_revision(), third);
 }
 
 /// A render notes the revision of the view it drew and reads that view
