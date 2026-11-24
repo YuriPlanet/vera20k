@@ -272,7 +272,7 @@ fn round_options(
         if words.country == -1 {
             continue;
         }
-        let choices = options::decoded_choices(
+        let choices = super::picks::decoded_pick(
             &human.slot,
             words.country,
             words.color,
@@ -296,7 +296,7 @@ fn round_options(
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
         };
-        let choices = options::decoded_choices(
+        let choices = super::picks::decoded_pick(
             &placeholder,
             words.country,
             words.color,
