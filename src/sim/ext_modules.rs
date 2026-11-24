@@ -419,12 +419,9 @@ pub struct ExtModules {
     decide: decide::DecideState,
     /// Registered INI names and the string table ([`ini_names`]).
     ini: ini_names::IniNames,
-    /// House domain claims (RFC 6i, [`claims`]).
-    claims: claims::DomainClaims,
-    /// The mod's `[VeraWasm] Controller=`, for "mod AI" seats
-    /// ([`Simulation::seat_mod_ai_houses`]). Not saved: seats are given
-    /// when the match starts, and a save carries the claims.
-    controller: bool,
+    /// The `Commanded` serials of the current frame ([`orders`]); not
+    /// saved, as a save resumes at a frame boundary.
+    command_serial: orders::CommandSerial,
 }
 
 /// What a save holds: the modules, the modifiers and the variable values
@@ -502,6 +499,12 @@ impl Clone for ExtModules {
 impl ExtModules {
     pub fn is_empty(&self) -> bool {
         self.slots.is_empty()
+    }
+
+    /// The next command starts a new `Commanded` serial: one module order's
+    /// commands share one ([`orders`]).
+    pub(crate) fn begin_command_group(&mut self) {
+        self.command_serial.begin_group();
     }
 
     /// Each loaded module's source and, once it stopped, why.
@@ -2235,5 +2238,5 @@ mod event_tests;
 mod ini_register_tests;
 
 #[cfg(all(test, tests_sim_c_g))]
-#[path = "ext_modules_drive_tests.rs"]
-mod drive_tests;
+#[path = "ext_modules_order_tests.rs"]
+mod order_tests;

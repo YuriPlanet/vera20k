@@ -39,7 +39,7 @@
 //!   `EventClass::Execute @ 0x004C6CB0`) once the command's house may order
 //!   its actor and before planning detach and the per-type dispatch, for
 //!   every command with an appendix 8.3 number and an actor object
-//!   ([`command_request`]). Player commands from the network and the local
+//!   (`orders::command_request`). Player commands from the network and the local
 //!   queue, module orders (`run_ext_module_orders`) and the `SetMission`
 //!   write all pass there, on every machine in command order. A refused
 //!   command does nothing, as a receiver refusal does; a rally point keeps
@@ -97,7 +97,7 @@
 //!   `on_decide` call (`count` 1), not one batch per module; the step asks
 //!   every house that is not defeated, the Neutral and Special houses too.
 //! - `CommandAllowed`: commands with no 8.3 number (Select, control groups,
-//!   ArchiveObject, Online toggles, MegaMissions other than Enter/Eaten,
+//!   ArchiveObject, Online toggles, MegaMissions other than Enter/Eaten/Harvest,
 //!   Ares trench clicks) and commands without an actor (production,
 //!   placement, superweapons, wall sales) ask nothing; the computer's own
 //!   AI gives missions directly, not through commands, so only module
@@ -118,10 +118,8 @@ use vera20k_wasm_ext::{EventRecord, Export, Invalid, Status, TriggerDef};
 use super::{ModuleEvent, ModuleSource, techno_type};
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::TargetKind;
 use crate::sim::command::Command;
 use crate::sim::intern::InternedId;
-use crate::sim::mission::MissionType;
 use crate::sim::production::{CanBuild, can_build};
 use crate::sim::rng::SimRng;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -514,7 +512,7 @@ impl Simulation {
         if !self.trigger_runtime.module_decides(EVENT_COMMAND_ALLOWED) {
             return CommandAdmission::Allowed;
         }
-        let Some(request) = command_request(command) else {
+        let Some(request) = super::orders::command_request(self, rules, command) else {
             return CommandAdmission::Allowed;
         };
         let mut allowed = Vec::with_capacity(request.actors.len());
@@ -551,117 +549,6 @@ pub(crate) enum CommandAdmission {
     Refused,
     /// A rally point for the producers not refused.
     Narrowed(Command),
-}
-
-/// One command as `CommandAllowed` asks about it (appendix 4.5): its
-/// appendix 8.3 number, its actors, the target object and the target cell.
-struct CommandRequest {
-    number: i32,
-    actors: Vec<u64>,
-    other: u64,
-    cell: Option<(u16, u16)>,
-}
-
-/// The `CommandAllowed` request of a command the receiver executes;
-/// `None` for one without an 8.3 number or without an actor (module docs).
-fn command_request(command: &Command) -> Option<CommandRequest> {
-    let request = |number, actor, other, cell| {
-        Some(CommandRequest {
-            number,
-            actors: vec![actor],
-            other,
-            cell,
-        })
-    };
-    // A MegaMission token: an object goes to `other`, a cell to `cell`.
-    let token = |kind: &Option<TargetKind>| match *kind {
-        Some(TargetKind::Entity(id)) => (id, None),
-        Some(TargetKind::Cell(x, y)) => (0, Some((x, y))),
-        None => (0, None),
-    };
-    match *command {
-        Command::Move {
-            entity_id,
-            target_rx,
-            target_ry,
-        } => request(0, entity_id, 0, Some((target_rx, target_ry))),
-        Command::MoveToObject {
-            entity_id,
-            target_id,
-        } => request(1, entity_id, target_id, None),
-        Command::Stop { entity_id } => request(2, entity_id, 0, None),
-        Command::Attack {
-            attacker_id,
-            target_id,
-        } => request(3, attacker_id, target_id, None),
-        Command::AttackMove {
-            entity_id,
-            ref target,
-            ref destination,
-        } => {
-            // The object attacked, else the destination's object; the
-            // destination's cell, else the attacked cell.
-            let (target_object, target_cell) = token(target);
-            let (destination_object, destination_cell) = token(destination);
-            let other = if target_object != 0 {
-                target_object
-            } else {
-                destination_object
-            };
-            request(4, entity_id, other, destination_cell.or(target_cell))
-        }
-        Command::Guard {
-            entity_id,
-            ref target,
-        } => {
-            let (other, cell) = token(target);
-            request(5, entity_id, other, cell)
-        }
-        Command::DeployMcv { entity_id } => request(6, entity_id, 0, None),
-        Command::UndeployBuilding { entity_id } => request(7, entity_id, 0, None),
-        Command::SetRally {
-            rx,
-            ry,
-            ref producer_ids,
-        } => Some(CommandRequest {
-            number: 8,
-            actors: producer_ids.clone(),
-            other: 0,
-            cell: Some((rx, ry)),
-        }),
-        Command::SellBuilding { entity_id } => request(13, entity_id, 0, None),
-        Command::ToggleRepair { entity_id } => request(14, entity_id, 0, None),
-        Command::EjectBunker { bunker_id } => request(15, bunker_id, 0, None),
-        Command::UnloadPassengers { transport_id } => request(16, transport_id, 0, None),
-        Command::CaptureBuilding {
-            engineer_id,
-            target_building_id,
-        } => request(17, engineer_id, target_building_id, None),
-        Command::PlantC4 {
-            attacker_id,
-            target_building_id,
-        } => request(18, attacker_id, target_building_id, None),
-        Command::ToggleInfantryDeploy { entity_id } => request(20, entity_id, 0, None),
-        Command::ForceAttackCell {
-            attacker_id,
-            target_rx,
-            target_ry,
-        } => request(21, attacker_id, 0, Some((target_rx, target_ry))),
-        Command::Scatter { entity_id } => request(23, entity_id, 0, None),
-        Command::TogglePrimaryFactory { entity_id } => request(24, entity_id, 0, None),
-        // The Enter click (`Command::clicked_mission`): a transport, bunker,
-        // depot, refinery or Grinder as the destination.
-        Command::MegaMission {
-            entity_id,
-            mission: MissionType::Enter | MissionType::Eaten,
-            ref destination,
-            ..
-        } => {
-            let (other, cell) = token(destination);
-            request(25, entity_id, other, cell)
-        }
-        _ => None,
-    }
 }
 
 /// A yes/no result: 1 or 0; anything else keeps the previous result.

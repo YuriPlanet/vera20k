@@ -49,14 +49,18 @@ impl Host<'_, '_> {
             destination,
         };
         let applied = self.sim.apply_command_with_overlays(
-            None,
+            crate::sim::command::CommandSender::Player(None),
             &owner,
             &command,
             self.rules,
             self.overlay_registry,
             self.frame_effects,
         );
-        Ok(if applied { Status::Ok } else { Status::Refused })
+        Ok(if applied.is_ok() {
+            Status::Ok
+        } else {
+            Status::Refused
+        })
     }
 
     /// `Ammo` and `AddAmmo`: the count through the ammo owner, clamped to the

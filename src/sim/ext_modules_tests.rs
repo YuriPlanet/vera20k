@@ -615,7 +615,10 @@ pub(super) fn computer_tank(scene: &mut HeadlessScenario) -> (usize, u64, (u16, 
 }
 
 /// Spawns `type_name` for the first computer house beside its base.
-fn spawn_for_computer(scene: &mut HeadlessScenario, type_name: &str) -> (usize, u64, (u16, u16)) {
+pub(super) fn spawn_for_computer(
+    scene: &mut HeadlessScenario,
+    type_name: &str,
+) -> (usize, u64, (u16, u16)) {
     let rules = &scene.runtime.resources.rules;
     let sim = &mut scene.runtime.simulation;
     let (index, house) = sim

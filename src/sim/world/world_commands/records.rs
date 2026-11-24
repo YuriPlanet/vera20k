@@ -296,6 +296,67 @@ impl Simulation {
         .encode()
     }
 
+    /// The semantic house command a player's production, placement or
+    /// superweapon record stands for, as a Wasm module's `Commanded`,
+    /// `OrderRefused` and `CommandAllowed` describe it
+    /// (`sim::ext_modules::orders`); `None` for other records. It reads the
+    /// record as [`Self::apply_production_record`] and
+    /// [`Self::superweapon_command_from_record`] do and decides nothing.
+    pub(crate) fn house_record_command(
+        &self,
+        record: &CommandRecord,
+        rules: &RuleSet,
+    ) -> Option<Command> {
+        if let Some((_, command)) = self.superweapon_command_from_record(record, rules) {
+            return Some(command);
+        }
+        let (_, record) = self.house_command_record(record)?;
+        let record = record.as_ref();
+        let type_of = |selection: production::ProductionSelection| {
+            self.interner.get(&selection.object_type(rules)?.id)
+        };
+        if let Some(event) = ProductionRecord::decode(record) {
+            let selection = production::ProductionSelection {
+                rtti: event.rtti,
+                type_index: event.type_index,
+                naval: event.naval != 0,
+            };
+            return Some(match event.event {
+                ProductionEvent::Produce => Command::QueueProduction {
+                    type_id: type_of(selection)?,
+                },
+                ProductionEvent::Suspend => Command::SuspendProduction {
+                    category: selection.category(rules)?,
+                },
+                ProductionEvent::Abandon | ProductionEvent::AbandonAll => {
+                    Command::CancelProductionByType {
+                        type_id: type_of(selection)?,
+                        all: event.event == ProductionEvent::AbandonAll,
+                    }
+                }
+            });
+        }
+        let event = PlaceRecord::decode(record)?;
+        let selection = production::ProductionSelection {
+            rtti: event.rtti,
+            type_index: event.type_index,
+            naval: event.naval != 0,
+        };
+        // An empty cell or (-1, -1) takes the producer-exit arm, as
+        // `production::place_production_with_overlays` decides.
+        Some(if matches!((event.x, event.y), (0, 0) | (-1, -1)) {
+            Command::PlaceProducedMobile {
+                category: selection.category(rules)?,
+            }
+        } else {
+            Command::PlaceReadyBuilding {
+                type_id: type_of(selection)?,
+                rx: u16::try_from(event.x).ok()?,
+                ry: u16::try_from(event.y).ok()?,
+            }
+        })
+    }
+
     pub(in crate::sim::world) fn superweapon_command_from_record(
         &self,
         record: &CommandRecord,
