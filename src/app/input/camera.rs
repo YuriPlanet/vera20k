@@ -1609,13 +1609,21 @@ pub(crate) fn commit_camera_scroll(state: &mut AppState, mouse: (f32, f32)) {
         state.match_state.input.camera_y,
     );
     let mut pending = std::mem::take(&mut state.match_state.input.pending_camera_scroll);
+    // A standing frame answers for the view it was captured for, and a lent
+    // tick cannot capture a new one: the camera stays inside the frame's
+    // scope until the tick comes back.
+    let limit = state.match_state.sim_runtime.frame_camera_limit();
     let point = pending.commit(current, mouse, |point| {
-        clamp_camera_point_for_state(
+        let point = clamp_camera_point_for_state(
             state,
             point,
             state.render_width() as f32,
             state.render_height() as f32,
-        )
+        );
+        match limit {
+            Some((min, max)) => (point.0.clamp(min[0], max[0]), point.1.clamp(min[1], max[1])),
+            None => point,
+        }
     });
     state.match_state.input.pending_camera_scroll = pending;
     state.match_state.input.camera_x = point.0;

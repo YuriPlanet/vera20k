@@ -654,6 +654,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
             &scene.runtime,
             &Default::default(),
             false,
+            None,
         )
         .object(plane.stable_id())
         .cloned()
@@ -1404,7 +1405,7 @@ fn only_ares_hides_the_gather_overlay_under_emp() {
             resources: SimResources::new(rules).into(),
         };
         let drawn = |runtime: &SimRuntime| {
-            let frame = PresentationFrame::capture(runtime, &Default::default(), false);
+            let frame = PresentationFrame::capture(runtime, &Default::default(), false, None);
             harvest_overlay(
                 Some(&runtime.resources.rules),
                 &runtime.simulation,

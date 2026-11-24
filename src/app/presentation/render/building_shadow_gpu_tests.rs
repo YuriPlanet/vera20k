@@ -75,6 +75,7 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
         &scene.runtime,
         &Default::default(),
         false,
+        None,
     );
     let record = presented.object(actor_id).unwrap();
     let type_id = sim.interner().resolve(entity.type_ref());

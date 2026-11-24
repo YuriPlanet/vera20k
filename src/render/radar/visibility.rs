@@ -1284,7 +1284,7 @@ impl RadarFacts {
         }
     }
 
-    fn location(&self) -> crate::sim::components::DriveCoord {
+    pub(crate) fn location(&self) -> crate::sim::components::DriveCoord {
         let [x, y, z] = self.location;
         crate::sim::components::DriveCoord { x, y, z }
     }

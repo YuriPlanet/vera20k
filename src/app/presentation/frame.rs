@@ -16,7 +16,16 @@
 //! object, the terrain, the rules, the local player's sight) is answered at
 //! capture by the same functions a draw used to call. Records hold only
 //! results that depend on the world, the committed binary frame and the
-//! local player, never on the camera, the cursor or render caches.
+//! local player, never on the cursor or render caches.
+//!
+//! The answers a draw reads on screen (an object's placement, the local
+//! player's sight of it, its status strip) are captured for the objects the
+//! view reaches and left out for the others, which the draw passes by: the
+//! radar reads every object, so every record keeps its radar facts. The
+//! view is the pass-by window around the camera, published each pass, so a
+//! frame answers for the view it stands for; a camera that leaves that
+//! scope drops the frame, and a lent tick, which cannot capture a new one,
+//! holds the camera inside the scope the frame was captured for.
 
 use crate::app::presentation::instances::TetherDraw;
 use crate::app::presentation::render_pose::RenderPose;
@@ -47,6 +56,9 @@ pub(crate) struct Capture<'a> {
     /// The current house's psychic detection sites
     /// (`Simulation::psychic_detection_sites`), when it has any.
     psychic: Option<(InternedId, Vec<(crate::sim::components::DriveCoord, i32)>)>,
+    /// The window the screen answers are captured for: an object the view
+    /// cannot reach is captured without them.
+    pub(crate) scope: Option<crate::app::presentation::instances::PassByWindow>,
 }
 
 impl Capture<'_> {
@@ -74,6 +86,11 @@ pub(crate) struct ObjectRecord {
     is_voxel: bool,
     on_bridge: bool,
     ion_blast_lift: i8,
+    /// Whether the frame captured the object's screen answers (its
+    /// placement, the local player's sight of it and its status strip): an
+    /// object the view could not reach is captured without them, and the
+    /// draw passes it by.
+    scoped: bool,
     pub(crate) position: crate::sim::components::Position,
     /// The barrel's facing and elevation are the pose's `turret` and
     /// `barrel`, read at the same frame.
@@ -147,6 +164,7 @@ pub(crate) struct ObjectRecord {
     pub(crate) seen: Seen,
     /// What its status strip reads (`ui_overlays`).
     pub(crate) hud: crate::app::presentation::ui_overlays::HudFacts,
+
     /// What the scene's other drawers read of it (`frame_scene`).
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFacts,
 }
@@ -305,7 +323,7 @@ impl LocomotorView {
 }
 
 /// What placing an object reads of the world beside the object.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Place {
     /// `sim::movement::ground_pose::object_world_z_leptons` on the live map.
     pub(crate) world_z_leptons: i32,
@@ -543,10 +561,26 @@ impl Place {
                 }),
         }
     }
+
+    /// The facts the radar reads of every object, whether or not the view
+    /// reaches it: its centre (`object_center_xy`) and its height without
+    /// the map (`object_world_z_leptons(entity, None)`). The radar places
+    /// every object it tracks by them
+    /// (`render::radar::visibility`), so they are not screen facts and
+    /// stay in a record the view passed by.
+    fn radar_facts(entity: &GameEntity) -> Self {
+        Self {
+            center_xy: crate::sim::movement::ground_pose::object_center_xy(entity),
+            world_z_leptons_off_map: crate::sim::movement::ground_pose::object_world_z_leptons(
+                entity, None,
+            ),
+            ..Self::default()
+        }
+    }
 }
 
 /// What the local player sees of an object.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Seen {
     /// `instances::observer_draw_context` for the local player.
     pub(crate) observer: ObserverDrawContext,
@@ -610,14 +644,33 @@ impl Seen {
 impl ObjectRecord {
     fn capture(entity: &GameEntity, at: &Capture<'_>) -> Self {
         let pose = RenderPose::read(entity, at.binary_frame);
-        let answers = Answers::of(entity);
         // `object_location` on the live map, which placing, the HUD and the
         // radar all read.
         let location =
             crate::sim::movement::ground_pose::object_location(entity, at.sim.resolved_terrain());
-        let place = Place::of(entity, &pose, location.z, at);
-        let seen = Seen::of(entity, at);
-        let hud = crate::app::presentation::ui_overlays::HudFacts::capture(entity, at, location);
+        // The screen answers are captured for the objects the view can
+        // reach; the others keep their state and their radar facts, and the
+        // draw passes them by.
+        let span = crate::app::presentation::display_members::ScreenSpan::of_parts(
+            &pose,
+            entity.category(),
+            &entity.position,
+        );
+        let scoped = at.scope.is_none_or(|scope| scope.reaches(span));
+        let answers = Answers::of(entity);
+        let (place, seen, hud) = if scoped {
+            (
+                Place::of(entity, &pose, location.z, at),
+                Seen::of(entity, at),
+                crate::app::presentation::ui_overlays::HudFacts::capture(entity, at, location),
+            )
+        } else {
+            (
+                Place::radar_facts(entity),
+                Seen::default(),
+                crate::app::presentation::ui_overlays::HudFacts::outside_view(entity, at, location),
+            )
+        };
         let scene =
             crate::app::presentation::frame_scene::SceneFacts::capture(entity, at, location);
         let tether_draw =
@@ -710,6 +763,7 @@ impl ObjectRecord {
             place,
             seen,
             hud,
+            scoped,
             scene,
             pose,
             shp_body_facing: if at.rules().ares() {
@@ -751,6 +805,13 @@ impl ObjectRecord {
 
     pub(crate) fn body_facing_current(&self, frame: u32) -> u16 {
         self.body_facing.current(frame)
+    }
+
+    /// Whether the frame captured this object's screen answers: an object
+    /// the view could not reach is captured without them, and the draw
+    /// passes it by.
+    pub(crate) fn is_scoped(&self) -> bool {
+        self.scoped
     }
 
     pub(crate) fn is_object_alive(&self) -> bool {
@@ -1237,6 +1298,9 @@ pub(crate) struct PresentationFrame {
     pub(crate) scene: crate::app::presentation::frame_scene::SceneFrame,
     /// Whether the current house has psychic detection sites.
     pub(crate) psychic_detection: bool,
+    /// The window the screen answers were captured for, and the camera it
+    /// was published with: this frame's scope.
+    scope: Option<(crate::app::presentation::instances::PassByWindow, [f32; 2])>,
 }
 
 /// The resources a frame was captured under; none for a default frame.
@@ -1264,6 +1328,7 @@ impl PresentationFrame {
         runtime: &SimRuntime,
         sidebar_types: &crate::app::sidebar_projection::SidebarTypes,
         status_rows: bool,
+        scope: Option<(crate::app::presentation::instances::PassByWindow, [f32; 2])>,
     ) -> Self {
         let sim = &runtime.simulation;
         let observer_id = sim.session().current_house();
@@ -1276,6 +1341,7 @@ impl PresentationFrame {
             observer_id,
             sidebar_types,
             status_rows,
+            scope: scope.map(|(window, _camera)| window),
             cells: sim
                 .resolved_terrain()
                 .map(crate::map::resolved_terrain::NativeCellQuery::isolated),
@@ -1342,7 +1408,23 @@ impl PresentationFrame {
             parachute_animations,
             scene,
             psychic_detection,
+            scope,
         }
+    }
+
+    /// The camera positions this frame's scope still covers: the camera it
+    /// was captured for, by the margin its window admits with. `None` for a
+    /// frame without a scope, which covers every view.
+    pub(crate) fn camera_range(&self) -> Option<([f32; 2], [f32; 2])> {
+        self.scope
+            .map(|(window, camera)| window.camera_range(camera))
+    }
+
+    /// Whether `camera` is still inside this frame's scope.
+    pub(crate) fn covers_camera(&self, camera: [f32; 2]) -> bool {
+        self.camera_range().is_none_or(|(min, max)| {
+            camera[0] >= min[0] && camera[0] <= max[0] && camera[1] >= min[1] && camera[1] <= max[1]
+        })
     }
 
     pub(crate) fn object(&self, id: u64) -> Option<&ObjectRecord> {
@@ -1458,12 +1540,32 @@ impl PresentationFrame {
         Self::of_test_with_status_rows(sim, rules, false)
     }
 
+    /// [`Self::of_test_with_status_rows`], capturing the screen answers for
+    /// the objects the view `scope` reaches.
+    pub(crate) fn of_test_with_scope(
+        sim: &Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        scope: Option<(crate::app::presentation::instances::PassByWindow, [f32; 2])>,
+    ) -> Self {
+        Self::of_test_captured(sim, rules, false, scope)
+    }
+
     /// [`Self::of_test`], capturing VERA's Convenience Help rows when
     /// `status_rows`.
     pub(crate) fn of_test_with_status_rows(
         sim: &Simulation,
         rules: &crate::rules::ruleset::RuleSet,
         status_rows: bool,
+    ) -> Self {
+        Self::of_test_captured(sim, rules, status_rows, None)
+    }
+
+    /// [`Self::of_test_with_status_rows`], capturing for the view `scope`.
+    fn of_test_captured(
+        sim: &Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        status_rows: bool,
+        scope: Option<(crate::app::presentation::instances::PassByWindow, [f32; 2])>,
     ) -> Self {
         let mut simulation = sim.clone();
         // A fixture may have interned its objects' names elsewhere: give the
@@ -1485,7 +1587,7 @@ impl PresentationFrame {
             simulation,
             resources: std::sync::Arc::new(crate::sim::runtime::SimResources::new(rules.clone())),
         };
-        Self::capture(&runtime, &types, status_rows)
+        Self::capture(&runtime, &types, status_rows, scope)
     }
 }
 

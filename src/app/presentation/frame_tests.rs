@@ -190,3 +190,117 @@ fn an_shp_body_reads_primary_facing_through_the_games_current() {
         [0x3FFC, 0x4000]
     );
 }
+
+/// A frame answers the screen questions for the objects the view reaches,
+/// and keeps the radar facts for every object.
+#[test]
+fn a_frame_answers_for_the_view_and_keeps_every_radar_fact() {
+    use crate::map::entities::EntityCategory;
+    use crate::sim::{combat::Health, game_entity::GameEntity};
+
+    let mut sim = Simulation::new();
+    let owner = sim.intern("Americans");
+    let tank = sim.intern("MTNK");
+    for (id, cell) in [(3u64, 10u16), (7, 200)] {
+        sim.entities_mut_for_test()
+            .insert(GameEntity::new_at_frame_zero_for_test(
+                id,
+                cell,
+                cell,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                tank,
+                EntityCategory::Unit,
+                0,
+                5,
+                false,
+            ));
+    }
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    let all = PresentationFrame::of_test(&sim, rules);
+    assert!(
+        all.objects().all(|record| record.is_scoped()),
+        "a frame without a scope answers for every object"
+    );
+    let near = all.object(3).expect("the near tank");
+    let span = crate::app::presentation::display_members::ScreenSpan::of(near);
+    let window = crate::app::presentation::instances::PassByWindow::around([[
+        span.x - 8.0,
+        span.top - 8.0,
+        span.x + 8.0,
+        span.bottom + 8.0,
+    ]]);
+    let frame = PresentationFrame::of_test_with_scope(&sim, rules, Some((window, [0.0, 0.0])));
+
+    let near = frame.object(3).expect("the near tank");
+    assert!(near.is_scoped(), "the view reaches the near tank");
+    assert_ne!(
+        near.place.center_xy,
+        [0, 0],
+        "the near tank has a placement"
+    );
+    assert_ne!(near.hud.get_coords.x, 0, "the near tank has a status strip");
+
+    let far = frame.object(7).expect("the far tank");
+    assert!(!far.is_scoped(), "the view does not reach the far tank");
+    assert_ne!(
+        far.place.center_xy,
+        [0, 0],
+        "the far tank keeps the centre the radar places it by"
+    );
+    assert_ne!(
+        far.hud.get_coords.x, 0,
+        "the far tank keeps the coordinates the labels and rings place it by"
+    );
+    assert_ne!(
+        far.scene.radar.location().x,
+        0,
+        "the far tank keeps its radar facts"
+    );
+}
+
+/// The camera-range predicate accepts positions within its margin.
+#[test]
+fn a_frame_scope_covers_the_camera_by_the_margin() {
+    use crate::map::entities::EntityCategory;
+    use crate::sim::{combat::Health, game_entity::GameEntity};
+
+    let mut sim = Simulation::new();
+    let owner = sim.intern("Americans");
+    let tank = sim.intern("MTNK");
+    sim.entities_mut_for_test()
+        .insert(GameEntity::new_at_frame_zero_for_test(
+            3,
+            10,
+            10,
+            0,
+            0,
+            owner,
+            Health::new(100),
+            tank,
+            EntityCategory::Unit,
+            0,
+            5,
+            false,
+        ));
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    let camera = [100.0f32, 200.0f32];
+    let window = crate::app::presentation::instances::PassByWindow::around([[
+        camera[0],
+        camera[1],
+        camera[0] + 800.0,
+        camera[1] + 600.0,
+    ]]);
+    let frame = PresentationFrame::of_test_with_scope(&sim, rules, Some((window, camera)));
+    assert!(frame.covers_camera(camera), "the scope covers its camera");
+    assert!(
+        frame.covers_camera([camera[0] + 100.0, camera[1] - 100.0]),
+        "the scope covers a camera inside the margin"
+    );
+    assert!(
+        !frame.covers_camera([camera[0] + 100_000.0, camera[1]]),
+        "the scope does not cover a camera outside the margin"
+    );
+}

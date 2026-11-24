@@ -415,9 +415,15 @@ Not done:
   these changes, run beside it: 9.3–10.6 + 2.7–3.0 ms capture, 6.4–7.4 ms
   copy, 3.4–3.5 ms freeing, 21.8–24.5 ms in all. A record is 1,104 bytes.
   The records are bound by reading 20,000 objects scattered in memory: each
-  touches several cache lines of its `GameEntity`. Left: answer placement,
-  lighting and the status strip only for objects near the screen (radar
-  facts stay for every object).
+  touches several cache lines of its `GameEntity`. The frame answers
+  placement, lighting and the status strip only for the objects the view
+  reaches, and keeps the radar facts for every object: the view is the
+  pass-by window around the camera, published each pass, and the records
+  outside it are passed by like the ones the window admits. A camera that
+  leaves the standing frame's scope drops that frame, and a lent tick, which
+  cannot capture a new one, holds the camera inside the scope it was
+  captured for.
+  Left: measure the capture again on sim-bench's 20,000-unit march.
 - **The simulation thread ticking on its own**, several ticks per hand-off
   (Phase 4's first residual), is the next phase.
 

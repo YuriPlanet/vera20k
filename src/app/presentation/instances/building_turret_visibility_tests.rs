@@ -118,6 +118,7 @@ impl Patriot {
             &self.runtime,
             &Default::default(),
             false,
+            None,
         );
         let input = ShpInputs {
             runtime: &self.runtime,
@@ -180,7 +181,8 @@ fn retail_patriot_turret_appears_on_the_last_buildup_frame() {
             crate::app::presentation::frame::PresentationFrame::capture(
                 &scene.runtime,
                 &Default::default(),
-                false
+                false,
+                None,
             )
             .object(scene.id)
             .unwrap(),

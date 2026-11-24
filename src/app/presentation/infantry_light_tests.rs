@@ -123,7 +123,7 @@ fn assert_shp_light(runtime: &mut SimRuntime, id: u64, light: &CellLightGrid, ex
             .shared_cell_dummy()
             .snapshot(),
     );
-    let frame = PresentationFrame::capture(runtime, &Default::default(), false);
+    let frame = PresentationFrame::capture(runtime, &Default::default(), false, None);
     frame.display_order(sim);
     let viewer = sim.session().current_house();
     let presentation = runtime.presentation_copy(viewer, None);

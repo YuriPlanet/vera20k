@@ -32,21 +32,29 @@ pub(crate) struct ScreenSpan {
 
 impl ScreenSpan {
     pub(crate) fn of(record: &ObjectRecord) -> Self {
+        Self::of_parts(&record.pose, record.category(), &record.position)
+    }
+
+    /// The span of a record's pose, before the record stands.
+    pub(crate) fn of_parts(
+        pose: &crate::app::presentation::render_pose::RenderPose,
+        category: EntityCategory,
+        position: &crate::sim::components::Position,
+    ) -> Self {
         // `RenderPose::read` took this point from
         // `locomotor_visual::screen_position`, where every visitor culls
         // from. An IonBlast lifts the point infantry are drawn at and every
         // object is picked at by `visual_lift`, which may be negative.
-        let [x, y] = record.pose.screen;
-        let lifted = y - record.pose.visual_lift;
+        let [x, y] = pose.screen;
+        let lifted = y - pose.visual_lift;
         let (top, bottom) = (y.min(lifted), y.max(lifted));
-        if record.category() != EntityCategory::Aircraft {
+        if category != EntityCategory::Aircraft {
             return Self { x, top, bottom };
         }
         // An aircraft's shadow lies on the ground straight below it
         // (`aircraft_shadow::pose`), a rocket's lower again by its height:
         // never past twice the body's height above its Z = 0 point.
-        let [world_x, world_y] =
-            crate::sim::movement::ground_pose::position_world_xy(&record.position);
+        let [world_x, world_y] = crate::sim::movement::ground_pose::position_world_xy(position);
         let (_, ground) = crate::util::lepton::absolute_leptons_to_screen(world_x, world_y, 0);
         Self {
             x,

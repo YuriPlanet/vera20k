@@ -613,6 +613,7 @@ impl SlotScene {
             &self.scene.runtime,
             &Default::default(),
             false,
+            None,
         );
         let record = frame.object(self.plant).unwrap();
         let viewer_id = sim.session().current_house();
