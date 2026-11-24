@@ -4,8 +4,6 @@
 //! returned actions into ordinary simulation commands, and records the actual
 //! scheduled tick. This module never mutates simulation state itself.
 
-use crate::app::types::SIM_TICK_MS;
-
 use super::placement::PlacementChoice;
 
 const PRODUCTION_PROGRESS_INTERVALS: u64 = 53;
@@ -829,7 +827,8 @@ impl TacticalScript {
                 ),
             ));
         }
-        let expected_total_sim_ms = observation.tick.saturating_mul(u64::from(SIM_TICK_MS));
+        let expected_total_sim_ms = observation.tick.saturating_mul(1000)
+            / u64::from(crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND);
         if observation.total_sim_ms != expected_total_sim_ms {
             return Err(violation(
                 TacticalFailureCode::ClockDrift,
@@ -1944,7 +1943,8 @@ mod script_tests {
     }
 
     fn observation(tick: u64) -> TacticalObservation {
-        let total_sim_ms = tick * u64::from(SIM_TICK_MS);
+        let total_sim_ms = tick * 1000
+            / u64::from(crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND);
         let mut entities = Vec::new();
         if tick < 2 {
             entities.push(entity(

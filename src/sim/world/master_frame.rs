@@ -783,8 +783,8 @@ impl Simulation {
 
         // Commit the wrapping native frame LATE, after every phase has observed
         // frame N. Stored-start timer consumers therefore capture N, and the
-        // next admitted advance begins on N+1. Host-provided milliseconds are
-        // retained for diagnostics only and never determine the frame.
+        // next admitted advance begins on N+1. The host's step paces the frame
+        // and never sets the session clock, which counts native frames.
         self.session.commit_native_frame(tick_ms);
         self.enter_frame_step(FrameStep::FrameCommit);
         #[cfg(any(test, feature = "test-support"))]
