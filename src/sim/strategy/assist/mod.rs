@@ -268,6 +268,9 @@ pub struct AssistBrain {
     /// up is at a fraction of its strength by definition, and repairing it would
     /// spend credits on a build that is already paid for.
     pub(super) repaired: BTreeSet<u64>,
+    /// Engineer repairs of occupied structures consume the engineer. Do not
+    /// buy/dispatch a second while the first is walking to that same target.
+    pub(super) engineer_repair_after: BTreeMap<u64, u64>,
     /// What each type is for, read out of the warheads once and never
     /// changed. Built on the first frame, because the rules a scenario plays
     /// with are the ones the brain is handed there.
@@ -290,6 +293,9 @@ pub struct AssistBrain {
     /// Courier -> (safe regroup cell, deadline). Once a box disappears, the
     /// collector is recalled instead of being dispatched alone at enemy HQ.
     pub(super) crate_returns: BTreeMap<u64, ((u16,u16), u64)>,
+    /// Multi-house attacks persist on one *visible* opponent until its known
+    /// buildings disappear. Nearby hostile forward bases still outrank this.
+    pub(super) campaign_house: Option<InternedId>,
     /// Last *visible* crate sightings, including those now under fog. Never
     /// populate this from hidden global crate slots.
     pub(super) crate_sightings: BTreeMap<(u16, u16), u64>,
@@ -417,6 +423,9 @@ pub struct AssistBrain {
     /// One repair IFV command per short interval: re-aiming every tick
     /// cancels its Guard healer scan just as movement cancels weapon fire.
     pub(super) repair_ifv_after: BTreeMap<u64, u64>,
+    /// A free Gunner chassis reserved for a mechanic rendezvous. The normal
+    /// assault must not send the empty IFV away before the engineer boards.
+    pub(super) repair_ifv_pending: BTreeMap<u64, u64>,
     /// Spy purchases are independent of engineer captures; one infiltration
     /// expedition must not be starved by unsuccessful engineer rushes.
     pub(super) next_spy_purchase: u64,
@@ -530,12 +539,14 @@ impl AssistBrain {
             yard_reserve: 0,
             repairing: BTreeMap::new(),
             repaired: BTreeSet::new(),
+            engineer_repair_after: BTreeMap::new(),
             roles: None,
             census: Census::default(),
             super_at: BTreeMap::new(),
             chrono_trip: None,
             crate_claims: BTreeMap::new(),
             crate_returns: BTreeMap::new(),
+            campaign_house: None,
             crate_sightings: BTreeMap::new(),
             siege_wait: None,
             assault_wait: None,
@@ -566,6 +577,7 @@ impl AssistBrain {
             spy_still: BTreeMap::new(),
             spy_uniform_retry: BTreeMap::new(),
             repair_ifv_after: BTreeMap::new(),
+            repair_ifv_pending: BTreeMap::new(),
             next_spy_purchase: 0,
             garrison_release_after: BTreeMap::new(),
             combat_board_after: 0,
@@ -769,7 +781,10 @@ impl Brain for AssistBrain {
         self.void_orders_the_world_does_not_show();
         // What each unit is *for*, before anything decides what it does: the
         // membership is rebuilt on its own term, not every frame.
-        self.squads.regroup(obs.tick(), &self.census);
+        let opponents: BTreeSet<_> = obs.visible_enemy_entities()
+            .filter_map(|enemy| obs.visible_enemy_house(enemy.entity_id))
+            .collect();
+        self.squads.regroup_focused(obs.tick(), &self.census, opponents.len() > 1);
         let attack_members = self.squads.squad(squads::Role::Attack)
             .map_or(0, |squad| squad.members.len());
         let signals = strategy::Signals::read(
@@ -989,6 +1004,11 @@ impl Brain for AssistBrain {
         }
         if obs.forces_enabled() {
             orders::bridges(self, rules, obs, out);
+            // Boarding and engineer repairs reserve only a spare specialist.
+            // Run them before generic capture selection, which otherwise
+            // sends every engineer to the first visible neutral building.
+            advanced::combat_carriers(self, rules, obs, out);
+            orders::repair_garrisons(self, rules, obs, out);
             orders::captures(self, rules, obs, out);
             orders::protect_engineer_prizes(self, rules, obs, out);
         }
@@ -1000,7 +1020,6 @@ impl Brain for AssistBrain {
             advanced::secure_outpost(self, rules, obs, out);
             advanced::secure_captured_assets(self, rules, obs, out);
             advanced::relieve_garrison(self, rules, obs, out);
-            advanced::combat_carriers(self, rules, obs, out);
             advanced::repair_ifvs(self, rules, obs, out);
             // While the base is being raided, do not return just-evacuated
             // infantry to their occupied buildings in the same frame.

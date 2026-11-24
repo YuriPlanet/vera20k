@@ -614,6 +614,36 @@ fn product_for<'r>(
     {
         return Some(found);
     }
+    // A damaged tank force needs an actual repair IFV chassis, not just an
+    // engineer that would board one if it happened to exist. Limit this to
+    // *one* Gunner vehicle, and only when a spare engineer's native IFVMode
+    // selects a negative-damage repair weapon under the current mod rules.
+    if category == ProductionCategory::Vehicle
+        && !brain.director.recovering_income()
+        && !brain.director.under_attack_now()
+        && brain.census.refineries > 0 && brain.census.harvesters >= 2
+        && budget.free >= 3_500
+        && brain.census.units.iter().filter(|unit| unit.traits.engineer
+            && unit.controllable()).count() >= 2
+        && brain.census.units.iter().filter(|unit| unit.traits.combat
+            && obs.entity_type(rules, unit.entity_id).is_some_and(|ty|
+                ty.category == ObjectCategory::Vehicle)).count() >= 4
+        && brain.census.units.iter().filter(|unit| unit.health_permille < 850
+            && unit.traits.combat
+            && obs.entity_type(rules, unit.entity_id).is_some_and(|ty|
+                ty.category == ObjectCategory::Vehicle)).count() >= 2
+        && !brain.census.units.iter().any(|unit|
+            obs.entity_type(rules,unit.entity_id).is_some_and(|ty| ty.gunner))
+        && let Some(found) = build::class_types(rules, obs, ObjectCategory::Vehicle)
+            .filter(|(ty, _)| ty.gunner && !ty.naval)
+            .filter(|(carrier, _)| brain.census.units.iter().any(|unit|
+                unit.traits.engineer && obs.entity_type(rules, unit.entity_id)
+                    .is_some_and(|engineer| super::advanced::gunner_repairs(
+                        rules, carrier, engineer.ifv_mode))))
+            .min_by_key(|(ty,_)| (obs.cost_of(rules, ty), ty.id.clone()))
+    {
+        return Some(found);
+    }
     // A scout-revealed safe derrick is a time-limited opportunity, not a
     // generic unit shortfall. Buy the *first* engineer before the native unit
     // suggestion, but never send a lone engineer into a known enemy base.

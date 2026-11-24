@@ -696,7 +696,10 @@ pub(super) fn advance(
     // one when they are caught.
     fighters.retain(|unit| !unit.traits.irreplaceable
         && !brain.crate_claims.contains_key(&unit.entity_id)
-        && !brain.crate_returns.contains_key(&unit.entity_id));
+        && !brain.crate_returns.contains_key(&unit.entity_id)
+        && !brain.repair_ifv_pending.get(&unit.entity_id)
+            .is_some_and(|until| *until > obs.tick())
+        && !super::advanced::repair_ifv_loaded(rules, obs, &brain.census, unit.entity_id));
     if fighters.is_empty() { return false; }
     // No exclusion for a unit whose weapon spends it. It was here with a
     // matching errand of its own, and together they cost fourfold on two seeds
@@ -711,7 +714,17 @@ pub(super) fn advance(
         .census
         .base_cell
         .is_some_and(|home| brain.census.enemies_near(home, THREAT_RADIUS) > 0);
-    let gate = if fighters.len() < super::squads::ARMY_TO_ATTACK && !mop_up(&brain.census) {
+    // An opening on depleted random ore is not an ordinary race to the enemy:
+    // a tank lost outside the yard may be the last tank the house can afford.
+    // This is bounded to the opening, and only uses legitimately *seen* ore
+    // plus the house's measured deliveries, not hidden map deposits.
+    let scarce_opening = tick_limited_scarce_opening(
+        obs.tick(), obs.credits(), brain.income.per_minute(),
+        brain.ore_known.len(), fighters.len(), raided,
+    );
+    let gate = if scarce_opening {
+        "scarce-opening"
+    } else if fighters.len() < super::squads::ARMY_TO_ATTACK && !mop_up(&brain.census) {
         "too-small"
     } else if !super::build::can_replace_units(rules, obs, &brain.census) && raided {
         // A house that cannot replace its army does not spend it — *while it
@@ -770,7 +783,7 @@ pub(super) fn advance(
     // Which target: the whole reading of the enemy -- structures, economy,
     // clean-up, reachability -- is one decision and lives in `targets`.
     let anchor = army.anchor;
-    let (answer, progress) = targets::choose(
+    let (answer, progress) = targets::choose_focused(
         &brain.census,
         &brain.tracked,
         tick,
@@ -779,6 +792,7 @@ pub(super) fn advance(
         &fighters,
         rules,
         obs,
+        brain.campaign_house,
     );
     brain.push_progress = progress;
     let target = match answer {
@@ -794,6 +808,7 @@ pub(super) fn advance(
         }
         targets::Answer::Chosen(chosen) => chosen,
     };
+    brain.campaign_house = obs.visible_enemy_house(target.nearest.0);
     // The reachable target, not the blocker: the push's bookkeeping is about
     // where the army is going, and the blocker is only what it shoots first.
     brain.push_target = Some((target.nearest.0, tick, target.nearest.1));
@@ -1412,6 +1427,33 @@ pub(super) fn advance(
         );
     }
     true
+}
+
+/// Conserve an early, poorly replenished army while factories and defensive
+/// infrastructure recover. The deadline prevents a dry map from causing an
+/// indefinite no-attack stalemate.
+fn tick_limited_scarce_opening(
+    tick: u64, cash: i32, income_per_minute: Option<i32>,
+    known_ore_cells: usize, attack_members: usize, raided: bool,
+) -> bool {
+    !raided && (1_200..5_400).contains(&tick)
+        && known_ore_cells < 12
+        && income_per_minute.is_some_and(|income| income <= 450)
+        && cash < 3_200 && attack_members < 15
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod resource_opening_tests {
+    use super::tick_limited_scarce_opening;
+
+    #[test]
+    fn scarce_income_conserves_opening_army_but_never_blocks_forever() {
+        assert!(tick_limited_scarce_opening(2_000, 900, Some(0), 2, 10, false));
+        assert!(!tick_limited_scarce_opening(6_000, 900, Some(0), 2, 10, false));
+        assert!(!tick_limited_scarce_opening(2_000, 900, Some(0), 2, 10, true));
+        assert!(!tick_limited_scarce_opening(2_000, 900, Some(5000), 2, 10, false));
+        assert!(!tick_limited_scarce_opening(2_000, 900, Some(0), 30, 10, false));
+    }
 }
 
 /// The reach of the weapon the object would actually fire, in cells, rounded

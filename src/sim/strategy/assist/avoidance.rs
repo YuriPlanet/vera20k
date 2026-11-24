@@ -445,6 +445,12 @@ pub(super) fn run(
 ) {
     let tick = obs.tick();
     brain.avoid_retreat_until.retain(|_, until| *until > tick);
+    // A capture mission is a native Capture walk, not necessarily a Move
+    // mission. The old blocked-walker pass ignored these engineers entirely.
+    // Search only the visible approach to their confirmed capture objective;
+    // a nearby escort may open the wall while the engineer stays protected.
+    request_capture_wall_breaches(brain, rules, obs);
+    answer_breaches(brain, rules, obs, out, tick);
     if brain.census.enemies.is_empty() {
         return;
     }
@@ -1014,6 +1020,41 @@ const BREACH_ANSWERS_PER_FRAME: usize = 4;
 /// at a time; the requests that matter are the ones the army is walking into.
 const BREACH_REQUESTS_HELD: usize = 8;
 
+fn request_capture_wall_breaches(
+    brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+) {
+    let mut requested = Vec::new();
+    for engineer in &brain.census.units {
+        if requested.len() >= BREACH_REQUESTS_PER_FRAME { break; }
+        if !engineer.traits.engineer || !engineer.controllable() || engineer.in_service() {
+            continue;
+        }
+        let Some(Goal::Capture { target }) = brain.tracked.primary_goal(engineer.entity_id)
+        else { continue; };
+        let Some((destination, _)) = obs.object_cell_and_type(target) else { continue; };
+        if !obs.is_cell_visible(destination.0, destination.1)
+            || !obs.can_take_building(rules, engineer.entity_id, target) {
+            continue;
+        }
+        let mut sample = engineer.cell;
+        for _ in 0..32 {
+            if sample == destination { break; }
+            sample = step_toward(sample, destination);
+            if !obs.is_cell_visible(sample.0, sample.1) { break; }
+            if obs.wall_at(rules, sample.0, sample.1)
+                && obs.wall_owner_at(sample.0, sample.1) != Some(obs.house())
+                && distance(engineer.cell, sample) <= 16
+            {
+                requested.push(sample);
+                break;
+            }
+        }
+    }
+    if !requested.is_empty() {
+        remember_breaches(brain, obs.tick(), &requested);
+    }
+}
+
 /// Add this frame's closed cells to the brain's standing requests.
 fn remember_breaches(brain: &mut AssistBrain, tick: u64, breaches: &[(u16, u16)]) {
     let until = tick.saturating_add(BREACH_REQUEST_FRAMES);
@@ -1045,7 +1086,9 @@ fn answer_breaches(
         .census
         .units
         .iter()
-        .filter(|unit| unit.traits.combat && unit.controllable() && !unit.in_service())
+        .filter(|unit| unit.traits.combat && unit.controllable() && !unit.in_service()
+            && obs.entity_type(rules, unit.entity_id).is_some_and(|ty|
+                super::build::armament(rules, ty).anti_ground))
         .map(|unit| (unit.entity_id, unit.cell))
         .collect();
     if helpers.is_empty() {

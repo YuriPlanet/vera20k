@@ -20,9 +20,12 @@
 //! order they were written rather than the order they matter in. They answer
 //! one question between them, so they live where the question is asked.
 
+use std::collections::BTreeMap;
+
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::control::observation::{EnemyEntity, Observation};
+use crate::sim::intern::InternedId;
 
 use super::super::census::{Census, Unit};
 use super::super::tracked::Tracker;
@@ -72,6 +75,25 @@ pub(super) fn choose(
     fighters: &[&Unit],
     rules: &RuleSet,
     obs: &Observation<'_>,
+) -> (Answer, (u64, usize)) {
+    choose_focused(census, tracked, tick, progress, anchor, fighters,
+        rules, obs, None)
+}
+
+/// In multi-house games, concentrate on a single opponent's known buildings,
+/// proceeding far to near when selecting a new one. Defence of our own nearby
+/// refineries still takes precedence; the grouping uses *visible* ownership,
+/// never an omniscient scan of the enemy's starting positions.
+pub(super) fn choose_focused(
+    census: &Census,
+    tracked: &Tracker,
+    tick: u64,
+    mut progress: (u64, usize),
+    anchor: (u16, u16),
+    fighters: &[&Unit],
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+    preferred: Option<InternedId>,
 ) -> (Answer, (u64, usize)) {
     // Structures, not units: a base is what a house loses with, and a
     // defending unit walks into the push on its own. Refineries first — a
@@ -207,7 +229,30 @@ pub(super) fn choose(
         .min_by_key(|(distance, enemy)| (*distance,
             cell_distance(anchor, enemy.cell), enemy.entity_id))
         .map(|(_, enemy)| enemy);
-    let nearest = local_raider.unwrap_or(nearest);
+    let focused = if local_raider.is_none() && !mopping_up {
+        let home = census.base_cell.unwrap_or(anchor);
+        let mut owners: BTreeMap<InternedId, i32> = BTreeMap::new();
+        for (_, enemy) in &structures {
+            if let Some(owner) = obs.visible_enemy_house(enemy.entity_id) {
+                owners.entry(owner)
+                    .and_modify(|distance| *distance = (*distance).min(cell_distance(home, enemy.cell)))
+                    .or_insert_with(|| cell_distance(home, enemy.cell));
+            }
+        }
+        if owners.len() > 1 {
+            let focus = preferred.filter(|id| owners.contains_key(id)).or_else(|| {
+                owners.iter().max_by_key(|(owner, distance)| (**distance, **owner))
+                    .map(|(owner, _)| *owner)
+            });
+            focus.and_then(|house| {
+                let group: Vec<_> = targets.iter().copied()
+                    .filter(|enemy| obs.visible_enemy_house(enemy.entity_id) == Some(house))
+                    .collect();
+                reachable_target(&group, anchor, fighters, rules, obs)
+            })
+        } else { None }
+    } else { None };
+    let nearest = local_raider.or(focused).unwrap_or(nearest);
     // The enemy's defenses before its economy while they cover the target: a
     // tesla coil or a pillbox in range of the structure the fist walks at is
     // what kills the fist before it fires a shot, and a spy's blackout only

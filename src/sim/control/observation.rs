@@ -710,6 +710,15 @@ impl<'a> Observation<'a> {
             && self.is_hostile(a) && self.is_hostile(b)
     }
 
+    /// The owner of an *actually visible*, hostile object. Strategic focus
+    /// may group enemy buildings by this id, but never read the owner of an
+    /// entity hidden by fog or of an unprovoked civilian.
+    pub fn visible_enemy_house(&self, id: u64) -> Option<InternedId> {
+        let entity = self.sim.entities().get(id)?;
+        (self.is_cell_visible(entity.position.rx(), entity.position.ry())
+            && self.is_hostile(id)).then_some(entity.owner())
+    }
+
     /// The enemy objects [`Self::enemy_entities`] returns narrowed to what the
     /// house sees this frame (`FogState::is_cell_visible`, the L2 layer).
     ///
@@ -1076,10 +1085,21 @@ impl<'a> Observation<'a> {
             // A `BridgeRepairHut=` whose span is down is the same Capture click
             // and the same consumed engineer: the hut arm answers Repair, and
             // only while there is a span to put back ([`Self::bridge_repair_huts`]).
-            Some(EngineerBuildingAction::Repair(_)) => {
+            Some(EngineerBuildingAction::Repair(true)) => {
                 if self
                     .bridge_repair_huts(rules)
                     .any(|site| site.building_id == building)
+                {
+                    return true;
+                }
+                // A friendly, damaged occupiable building is repaired by the
+                // *same* native CaptureBuilding command, but not by the
+                // ordinary sidebar repair wrench. Its repair cursor is only
+                // legal when the native engineer arm reports Repair(true).
+                if self.own_entities().any(|own| own.entity_id == building)
+                    && self.sim.entities().get(building)
+                        .and_then(|entity| self.sim.object_type(entity.type_ref(), rules))
+                        .is_some_and(|ty| ty.can_be_occupied)
                 {
                     return true;
                 }

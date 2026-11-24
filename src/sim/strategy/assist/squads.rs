@@ -73,7 +73,17 @@ const DEFEND_MAX: usize = 12;
 /// fist and an opening of two soldiers and a harvester marched at a construction
 /// yard. Four is a squad: enough that a lone straggler does not walk into an
 /// empty yard, few enough that a ten-unit fist still forms at twelve.
-const PEACETIME_GARRISON: usize = 4;
+const PEACETIME_GARRISON: usize = 7;
+
+/// Even a small opening needs a live defender. A strict `fighters / 3`
+/// rounded down to zero for the first two soldiers, leaving the yard empty.
+fn standing_garrison(fighters: usize) -> usize {
+    if fighters == 0 { return 0; }
+    // A five-man opening still needs its four-unit raiding detachment; keep
+    // one sentinel, then scale the standing reserve as the economy grows.
+    if fighters <= 5 { return 1; }
+    PEACETIME_GARRISON.min((fighters + 2) / 3).min(fighters)
+}
 
 /// How near the base a hostile has to be for it to be a raid on the base, in
 /// cells: the push step's own threat ring, because "the base is threatened"
@@ -253,6 +263,15 @@ impl Squads {
     /// Rebuild the membership from the ledger, if the term has run or a new
     /// raid needs an answer.
     pub(super) fn regroup(&mut self, tick: u64, census: &Census) {
+        self.regroup_focused(tick, census, false);
+    }
+
+    /// Keep one fist in a multi-house war. Optional harassment is valuable in
+    /// a 1v1, but sending four units toward a second opponent while the main
+    /// force attacks the first is the losing two-front fight reported in V23.
+    pub(super) fn regroup_focused(
+        &mut self, tick: u64, census: &Census, multiple_houses: bool,
+    ) {
         let raid = home_threat(census);
         let new_raid = raid
             .map(|(target, _)| target)
@@ -356,7 +375,7 @@ impl Squads {
                 .min((census.fighters / 2).max(1))
                 .min(census.fighters)
         } else {
-            PEACETIME_GARRISON.min(census.fighters / 3)
+            standing_garrison(census.fighters)
         };
         if want > 0 {
             let mut nearest: Vec<&Unit> = census
@@ -412,7 +431,7 @@ impl Squads {
         // Not the whole army either way — a raid is worth a handful, and the
         // house still needs something at home for the raid that answers it.
         let fist_needs = usize::from(census.fighters >= ARMY_TO_ATTACK) * ARMY_TO_ATTACK;
-        if census.fighters >= taken.len() + fist_needs + HARASS_MAX {
+        if !multiple_houses && census.fighters >= taken.len() + fist_needs + HARASS_MAX {
             let mut nearest: Vec<&Unit> = census
                 .units
                 .iter()
@@ -516,6 +535,17 @@ fn home_threat(census: &Census) -> Option<(u64, (u16, u16))> {
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn standing_garrison_scales_without_consuming_small_opening() {
+        assert_eq!(standing_garrison(0), 0);
+        assert_eq!(standing_garrison(1), 1);
+        assert_eq!(standing_garrison(5), 1);
+        assert_eq!(standing_garrison(6), 2);
+        assert_eq!(standing_garrison(12), 4);
+        assert_eq!(standing_garrison(21), 7);
+        assert_eq!(standing_garrison(50), 7);
+    }
 
     /// One fighting unit of the ledger's, for the tests that only need to know
     /// how many there are and where they stand.
@@ -725,10 +755,9 @@ mod tests {
         census.fighters = 1;
         let mut squads = Squads::new();
         squads.regroup(0, &census);
-        assert!(
-            squads.squad(Role::Defend).is_none(),
-            "nothing to answer yet"
-        );
+        assert!(squads.squad(Role::Defend).is_some_and(|squad|
+            squad.members.contains(&0) && squad.target.is_none()),
+            "one opening sentinel stays at the yard before a raid appears");
 
         census
             .enemies
@@ -803,6 +832,24 @@ mod tests {
             1,
             "and one rifleman stays home"
         );
+    }
+
+    #[test]
+    fn a_multi_house_game_keeps_one_main_fist_instead_of_raiding_second_front() {
+        let mut census = Census::default();
+        census.base_cell = Some((20, 20));
+        for id in 0..25u64 {
+            census.units.push(unit(id, (24, 24)));
+        }
+        census.fighters = 25;
+        let mut single = Squads::new();
+        single.regroup_focused(0, &census, false);
+        assert!(single.squad(Role::Harass).is_some_and(|team| !team.members.is_empty()));
+
+        let mut multi = Squads::new();
+        multi.regroup_focused(0, &census, true);
+        assert!(multi.squad(Role::Harass).is_none_or(|team| team.members.is_empty()));
+        assert!(multi.squad(Role::Attack).is_some_and(|team| team.members.len() >= 10));
     }
 
     /// An army that is still growing is not an army that should leave the

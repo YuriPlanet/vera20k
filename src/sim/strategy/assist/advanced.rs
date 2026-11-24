@@ -47,7 +47,13 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
         .filter(|enemy| sites.iter().any(|site| {
             let air = obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
                 ty.category == ObjectCategory::Aircraft || (ty.jumpjet && !obs.is_deployed(enemy.entity_id)));
-            let radius = alarm_radius(air);
+            // A mind-controller creeping toward the yard is an emergency
+            // before it enters ordinary tank weapon range; once it has stolen
+            // a defender, the stolen tank is a threat of its own.
+            let psychic = obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
+                super::tactics::mind_control_reach(rules, ty).is_some());
+            let radius = if psychic { alarm_radius(air).max(24) }
+                else { alarm_radius(air) };
             squared_distance(*site, enemy.cell) <= radius * radius
         }) || brain.census.units.iter().any(|miner| miner.traits.harvester
                 && squared_distance(miner.cell, enemy.cell) <= 8 * 8))
@@ -114,9 +120,11 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
                         .filter_map(|name| rules.warhead(name))
                         .any(|warhead| warhead.parasite)
                 });
-                let airborne = obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
-                    ty.category == ObjectCategory::Aircraft || ty.jumpjet);
-                (!airborne, !parasite_weapon, !attacks_asset, sites.iter()
+                let (airborne, controller) = obs.entity_type(rules, enemy.entity_id)
+                    .map(|ty| (ty.category == ObjectCategory::Aircraft || ty.jumpjet,
+                        super::tactics::mind_control_reach(rules, ty).is_some()))
+                    .unwrap_or((false, false));
+                (!airborne, !controller, !parasite_weapon, !attacks_asset, sites.iter()
                     .map(|site| squared_distance(*site, enemy.cell)).min().unwrap_or(i32::MAX),
                     enemy.entity_id)
             });
@@ -313,9 +321,23 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
     obs: &Observation<'_>, out: &mut Outbox) {
     if brain.director.recovering_income() || brain.director.under_attack_now()
         || obs.tick() < brain.combat_board_after { return; }
+    brain.repair_ifv_pending.retain(|_, until| *until > obs.tick());
     let reserves = brain.squads.squad(Role::Defend)
         .map(|s| s.members.clone()).unwrap_or_default();
-    if reserves.len() < 4 { return; }
+    if reserves.len() < 2 { return; }
+    let attackers = brain.squads.squad(Role::Attack)
+        .map(|s| s.members.clone()).unwrap_or_default();
+    // Once a mechanic is riding a repair IFV, another vehicle must not spend
+    // the next engineer. This specialist remains behind the main tank wave.
+    let repair_carrier_exists = brain.census.units.iter().any(|u| {
+        obs.entity_type(rules, u.entity_id).is_some_and(|carrier_ty| {
+            carrier_ty.gunner && brain.census.units.iter().any(|passenger| {
+                obs.inside_transport(passenger.entity_id) == Some(u.entity_id)
+                    && obs.entity_type(rules, passenger.entity_id).is_some_and(|kind|
+                        gunner_repairs(rules, carrier_ty, kind.ifv_mode))
+            })
+        })
+    });
     for carrier in &brain.census.units {
         if !carrier.controllable() || carrier.in_service()
             || ordered_this_frame(out, carrier.entity_id) { continue; }
@@ -354,24 +376,54 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
         let engineer_count = brain.census.units.iter().filter(|u| {
             u.traits.engineer && u.controllable() && !u.in_service()
         }).count();
-        if ty.gunner && wounded_vehicles > 0 && engineer_count >= 2 {
+        let tank_force = brain.census.units.iter().filter(|u| u.traits.combat
+            && obs.entity_type(rules,u.entity_id).is_some_and(|kind|
+                kind.category == ObjectCategory::Vehicle)).count();
+        let prepare_repair = wounded_vehicles > 0
+            || (tank_force >= 5 && obs.credits() >= 3_000);
+        if ty.gunner && !repair_carrier_exists && prepare_repair
+            && engineer_count >= 2
+            && (!attackers.contains(&carrier.entity_id)
+                || brain.census.base_cell.is_some_and(|home|
+                    squared_distance(home, carrier.cell) <= 18 * 18))
+            && obs.attack_target(carrier.entity_id).is_none() {
             let engineer = brain.census.units.iter()
                 .filter(|u| u.traits.engineer && u.controllable() && !u.in_service()
                     && !ordered_this_frame(out, u.entity_id)
                     && !brain.tracked.held(obs.tick(), u.entity_id)
                     && obs.can_enter_transport(rules, u.entity_id, carrier.entity_id)
-                    && squared_distance(u.cell, carrier.cell)
-                        <= CARRIER_BOARD_RANGE * CARRIER_BOARD_RANGE)
+                    && squared_distance(u.cell, carrier.cell) <= 24 * 24)
                 .filter(|u| obs.entity_type(rules, u.entity_id)
                     .is_some_and(|engineer_ty| gunner_repairs(rules, ty, engineer_ty.ifv_mode)))
                 .min_by_key(|u| (squared_distance(u.cell, carrier.cell), u.entity_id));
-            if let Some(engineer) = engineer
-                && issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
-                    engineer.entity_id, TrackedKind::Enter, Some(carrier.entity_id),
-                    Some(carrier.cell), Goal::Enter { target: carrier.entity_id })
-            {
-                brain.combat_board_after = obs.tick().saturating_add(CARRIER_RETRY);
-                break;
+            if let Some(engineer) = engineer {
+                let near = squared_distance(engineer.cell, carrier.cell)
+                    <= CARRIER_BOARD_RANGE * CARRIER_BOARD_RANGE;
+                let issued = if near {
+                    issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
+                        engineer.entity_id, TrackedKind::Enter, Some(carrier.entity_id),
+                        Some(carrier.cell), Goal::Enter { target: carrier.entity_id })
+                } else if !brain.tracked.held(obs.tick(), carrier.entity_id)
+                    && !obs.visible_enemy_entities().any(|enemy|
+                        squared_distance(enemy.cell, engineer.cell) <= 8 * 8) {
+                    // The IFV is faster than a fragile engineer. Drive the
+                    // empty carrier to the protected infantry instead of
+                    // asking an engineer to cross the battlefield alone.
+                    issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
+                        carrier.entity_id, TrackedKind::Move, None,
+                        Some(engineer.cell), Goal::Move { cell: engineer.cell })
+                } else { false };
+                if issued {
+                    brain.combat_board_after = obs.tick().saturating_add(CARRIER_RETRY);
+                    brain.repair_ifv_pending.insert(carrier.entity_id,
+                        obs.tick().saturating_add(300));
+                    log::info!("auto play: engineer {} repair IFV rendezvous {} near={near}",
+                        engineer.entity_id, carrier.entity_id);
+                    break;
+                }
+                // Reserve the free Gunner seat for the requested engineer;
+                // do not fill it with a rifleman in this same frame.
+                continue;
             }
         }
         let soldiers = brain.census.units.iter()
@@ -408,12 +460,25 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
 /// Native Gunner mode points to the carrier's weapon slot, not to the
 /// Engineer's own primary weapon. Negative damage is the normal repair
 /// bullet; this also covers a mod's equivalent mode without a type-name list.
-fn gunner_repairs(
+pub(super) fn gunner_repairs(
     rules: &RuleSet, carrier: &crate::rules::object_type::ObjectType, mode: i32,
 ) -> bool {
     usize::try_from(mode).ok().and_then(|slot| carrier.weapon_at(slot))
         .and_then(|name| rules.weapon(name))
         .is_some_and(|weapon| weapon.damage < 0)
+}
+
+/// A loaded engineer IFV is a workshop, not an expendable lone assault car.
+pub(super) fn repair_ifv_loaded(
+    rules: &RuleSet, obs: &Observation<'_>, census: &super::census::Census,
+    carrier: u64,
+) -> bool {
+    let Some(ty) = obs.entity_type(rules, carrier) else { return false; };
+    ty.gunner && census.units.iter().any(|passenger| {
+        obs.inside_transport(passenger.entity_id) == Some(carrier)
+            && obs.entity_type(rules, passenger.entity_id).is_some_and(|kind|
+                gunner_repairs(rules, ty, kind.ifv_mode))
+    })
 }
 
 /// Repair IFVs need to *stop* next to a damaged tank and enter native Guard

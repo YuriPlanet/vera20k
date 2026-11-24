@@ -2594,6 +2594,61 @@ pub(super) fn repairs(
     }
 }
 
+/// Occupied civilian buildings have no ordinary repair-wrench path. The
+/// native engineer's `Repair(true)` cursor issues `CaptureBuilding`, consumes
+/// the engineer and restores the structure. Reserve that costly action for
+/// valuable, seriously damaged positions rather than every scratched house.
+pub(super) fn repair_garrisons(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+) {
+    if brain.director.recovering_income() || brain.director.under_attack_now() {
+        return;
+    }
+    let tick = obs.tick();
+    brain.engineer_repair_after.retain(|_, retry| tick < *retry);
+    let engineers: Vec<_> = brain.census.units.iter()
+        .filter(|unit| unit.traits.engineer && unit.controllable()
+            && !unit.in_service() && !ordered_this_frame(out, unit.entity_id)
+            && !brain.tracked.held(tick, unit.entity_id))
+        .collect();
+    // At least one engineer must remain available for a new oil well, factory
+    // or enemy construction yard. Repair is a sacrifice, not a free wrench.
+    if engineers.len() < 2 { return; }
+    let mut sites: Vec<_> = obs.own_entities().filter_map(|site| {
+        let ty = obs.object_type(rules, site.type_id)?;
+        if !ty.can_be_occupied || !ty.repairable
+            || brain.engineer_repair_after.contains_key(&site.entity_id) {
+            return None;
+        }
+        let full = obs.max_health(rules, site.type_id)?;
+        if full <= 0 || i64::from(site.health) * 100 >= i64::from(full) * 72 {
+            return None;
+        }
+        if obs.visible_enemy_entities().any(|enemy|
+            squared_distance(enemy.cell, site.cell) <= 9 * 9) { return None; }
+        Some((site.entity_id, site.cell, site.health, full))
+    }).collect();
+    sites.sort_by_key(|(id, _, hp, full)|
+        (i64::from(*hp) * 1000 / i64::from(*full), *id));
+    for (target, cell, _, _) in sites {
+        let Some(engineer) = engineers.iter().copied()
+            .filter(|unit| obs.can_take_building(rules, unit.entity_id, target)
+                && reachable(rules, obs, unit.entity_id, cell)
+                && squared_distance(unit.cell, cell) <= 40 * 40)
+            .min_by_key(|unit| (squared_distance(unit.cell, cell), unit.entity_id))
+        else { continue; };
+        if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
+            engineer.entity_id, TrackedKind::Capture, Some(target), Some(cell),
+            Goal::Capture { target }) {
+            brain.engineer_repair_after.insert(target, tick.saturating_add(450));
+            log::info!("auto play: engineer {} repairs occupied building {} at {:?}",
+                engineer.entity_id, target, cell);
+            break;
+        }
+    }
+}
+
 /// Whether a unit's click on an enemy building is a Capture click: the two
 /// flags the per-cell handler branches on, an engineer's by `Engineer=` and a
 /// spy's by `Infiltrate=` (which `Engineer=` also implies, per

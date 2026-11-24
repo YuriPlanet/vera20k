@@ -56,11 +56,19 @@ pub(super) const WALL_CREDITS: i32 = 2_000;
 /// opening.
 pub(super) const WALL_MIN_STRUCTURES: usize = 6;
 
-/// Cells a house may have walled. The outline of a base with a yard, two
-/// refineries, a factory, a barracks and a lab is around fifty cells, and the
-/// engine's own fill closes most of them from a handful of segments. Past this
-/// the walls are eating the defenses' whole queue.
-pub(super) const WALL_SEGMENT_CAP: usize = 56;
+/// V24 permits only eight individual front-line segments, and refuses all
+/// native autofill. The old ~56-cell enclosure obstructed our own vehicles;
+/// never recreate the closed ring without a real gate/path guarantee.
+pub(super) const WALL_SEGMENT_CAP: usize = 8;
+
+/// Only the central enemy-facing arc is eligible, leaving the sides and the
+/// entire rear open. This restriction also applies to the autofill check.
+fn forward_arc(cell: (u16,u16), centre: (u16,u16), direction: (i32,i32)) -> bool {
+    let x = i32::from(cell.0) - i32::from(centre.0);
+    let y = i32::from(cell.1) - i32::from(centre.1);
+    let dot = x * direction.0 + y * direction.1;
+    dot > 0 && (x * direction.1 - y * direction.0).abs() <= dot
+}
 
 /// The wall segment the base wants: the cell to put it on, the run it closes,
 /// and how much of the wall already stands.
@@ -300,17 +308,9 @@ pub(super) fn next_segment(
         .object_type(rules, wall)
         .and_then(|ty| ty.guard_range)
         .map_or(0, |range| range.to_num::<i32>().max(0) as usize);
-    // One gate for the whole outline, on the side away from the enemy: the
-    // house's own units come and go through it, and one cell is the smallest
-    // hole an attack can use. Everything else is closed — a three-sided pen is
-    // what "the base is only half enclosed" looks like on the map.
-    //
-    // The gate is treated as blocked by the fill scan as well: `MapClass` fills
-    // whatever lies between two of this house's walls, so a run planned straight
-    // across the gate would build over it.
-    // Two cells of gate, not one: one cell is a doorway a column of tanks
-    // wedges in, and the whole point of the ring is that the house's units get
-    // out faster than an attack gets in.
+    // The former ring's back gate is an additional exclusion zone. The new
+    // front arc is deliberately open on the sides and rear, and native
+    // autofill is disabled by rejecting sites with any gap-filling potential.
     let mut gate: Vec<(u16, u16)> = Vec::new();
     if let Some(first) = gate_cell(&ring, centre, direction) {
         gate.push(first);
@@ -331,14 +331,19 @@ pub(super) fn next_segment(
     let best = ring
         .iter()
         .copied()
-        .filter(|(x, y)| free(*x, *y))
+        .filter(|(x, y)| free(*x, *y)
+            && forward_arc((*x,*y), centre, direction)
+            // Do not barricade the refinery's immediate unloading lane.
+            && brain.census.refinery_cells.iter().all(|bay|
+                super::squared_distance(*bay, (*x,*y)) > 3 * 3)
+            // The native placement may fill *every* cardinal run, not just
+            // the ring we drew. Only single-cell walls are permitted until
+            // the whole native fill footprint is proved route-safe.
+            && autofill_gain((*x,*y), limit,
+                |x,y| obs.wall_owner_at(x,y) == Some(house), &free) == 0)
         .map(|cell| {
-            let fill = autofill_gain(
-                cell,
-                limit,
-                |x, y| obs.wall_owner_at(x, y) == Some(house),
-                &clear,
-            );
+            let fill = autofill_gain(cell, limit,
+                |x,y| obs.wall_owner_at(x,y) == Some(house), &clear);
             let side = (i32::from(cell.0) - i32::from(centre.0)) * direction.0
                 + (i32::from(cell.1) - i32::from(centre.1)) * direction.1;
             // The end of the run, not the cell beside the last one: a segment is
@@ -623,10 +628,8 @@ pub(super) fn queue_segment(
     if free_credits < WALL_CREDITS {
         return false;
     }
-    // A unit standing on the ring is a hole the plan keeps going round, and
-    // it is also how a unit ends up inside the pen: nudge it off every frame,
-    // not only once the last piece has been placed and the plan gives up.
-    clear_the_ring(brain, rules, obs, out, obs.tick());
+    // Never forcibly scatter miners/MCVs to make a wall. The partial arc
+    // planner simply skips occupied cells and will try them another frame.
     let line = brain.census.line(ProductionCategory::Defense);
     if line.busy() {
         return false;
@@ -653,6 +656,24 @@ pub(super) fn queue_segment(
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn safe_wall_is_a_short_open_enemy_facing_arc() {
+        let centre = (20, 20);
+        // Facing east. Forward and near the centreline are allowed.
+        assert!(forward_arc((23, 20), centre, (1, 0)));
+        assert!(forward_arc((23, 22), centre, (1, 0)));
+        // Rear, flank and reverse side must stay open for tanks and miners.
+        assert!(!forward_arc((17, 20), centre, (1, 0)));
+        assert!(!forward_arc((20, 17), centre, (1, 0)));
+        assert!(!forward_arc((20, 23), centre, (1, 0)));
+        assert!(!forward_arc((20, 20), centre, (1, 0)));
+        // A source to the north rotates the safe arc without a hardcoded map
+        // quadrant or orientation.
+        assert!(forward_arc((20, 17), centre, (0, -1)));
+        assert!(!forward_arc((23, 20), centre, (0, -1)));
+        assert_eq!(WALL_SEGMENT_CAP, 8);
+    }
 
     /// The plan asks the placement's own question about a cell.
     ///

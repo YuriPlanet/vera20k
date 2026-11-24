@@ -154,6 +154,9 @@ pub(super) fn spend(
     // Native Building and Defense factories are independent. The main build
     // choice must not make the second strip look busy (or vice versa).
     queue_defense_in_parallel(brain, rules, obs, budget, out);
+    // A few *open* forward wall cells, only after the base has functioning
+    // firepower and a budget surplus. Walls cannot outrank a bomber defence.
+    queue_safe_walls(brain, rules, obs, budget, out);
     // After the structure decision, because `build_next` is the owner that
     // clears the hold; a reserve set before it would be zeroed by it.
     hold_for_a_second_base(brain, rules, obs, budget);
@@ -255,7 +258,7 @@ fn place_finished(
         let attempt = job.attempt;
         // Walls follow the ring plan only on the first attempt: a failed
         // special site must not shadow every subsequent generic alternative.
-        let planned = (attempt == 0).then(|| obs
+        let planned = obs
             .object_type(rules, type_id)
             .filter(|ty| ty.wall)
             .and_then(|_| super::walls::next_segment(brain, rules, obs))
@@ -265,8 +268,12 @@ fn place_finished(
                     segment.cell, segment.standing, segment.fill
                 );
                 segment.cell
-            })).flatten();
-        let cell = planned.or_else(|| placement.cell_for_where(type_id, attempt, &allowed));
+            });
+        // A ready wall must *never* fall back to an arbitrary build site:
+        // that bypasses the traffic safeguards and can close the miner road.
+        let cell = if is_wall { planned } else {
+            placement.cell_for_where(type_id, attempt, &allowed)
+        };
         let Some(cell) = cell else {
             if obs.forces_enabled()
                 && let Some((blocked, units)) = placement.site_blocked_by_own_units(type_id, &allowed)
@@ -662,11 +669,32 @@ fn queue_defense_in_parallel(
             && sites.iter().any(|site|
                 super::squared_distance(*site, enemy.cell) <= 32 * 32)
     }).count();
-    let (aa, _) = armed_defenses(rules, obs, &brain.census);
+    let (aa, ring) = armed_defenses(rules, obs, &brain.census);
     let urgent_air = approaching_air > 0 && aa < if approaching_air >= 2 { 2 } else { 1 };
+    let has_ground = brain.census.units.iter().any(|unit| {
+        obs.object_type(rules, unit.type_id).is_some_and(|ty|
+            ty.category == ObjectCategory::Building
+                && !ty.construction_yard && armament(rules, ty).anti_ground)
+    });
+    let psychic_near = obs.visible_enemy_entities().any(|enemy| {
+        obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
+            super::tactics::mind_control_reach(rules, ty).is_some())
+            && sites.iter().any(|site|
+                super::squared_distance(*site, enemy.cell) <= 26 * 26)
+    });
+    // One anti-air weapon is a *baseline*, not an emergency purchase to
+    // consider only after a Kirov enters view. A mature base aims for two.
+    // If income is weak, keep cash for the next harvester and first factory.
+    let solvent = budget.free >= 2_800
+        && (budget.income.is_some_and(|income| income > 600)
+            || obs.credits() >= 5_500);
+    let baseline_air = solvent && aa < if brain.census.refineries >= 2 { 2 } else { 1 };
+    let baseline_ground = solvent && !has_ground && ring < 2;
+    let urgent_ground = psychic_near && !has_ground;
     if brain.census.line(ProductionCategory::Defense).busy()
         || brain.census.refineries == 0 || brain.census.harvesters == 0
-        || (!urgent_air && !brain.director.permits_build(Item::Defense))
+        || (!urgent_air && !urgent_ground && !baseline_air && !baseline_ground
+            && !brain.director.permits_build(Item::Defense))
         || plan::power_short(rules, obs, &brain.census)
     { return; }
     let already_queued = out.intents.iter().any(|intent| {
@@ -691,15 +719,18 @@ fn queue_defense_in_parallel(
     // Respect the normal defense quota/gates instead of blindly filling the
     // second strip. When a remote guard point is needed, preserve its site
     // anchor through the same placement mission as other frontier buildings.
-    let focused = if urgent_air { None }
+    let focused = if urgent_air || urgent_ground || baseline_air || baseline_ground { None }
         else { frontier.as_ref().map(|(_, anchor)| *anchor) };
-    let emergency = if urgent_air {
-        defense_building(rules, obs, &brain.census)
-            .filter(|(ty, _)| armament(rules, ty).anti_air)
-            .map(|(ty, type_id)| plan::Chosen {
-                step: None, item: Item::Defense, ty, type_id,
-            })
+    let specialized = if urgent_air {
+        specialized_defense(rules, obs, true)
+    } else if urgent_ground || baseline_ground {
+        specialized_defense(rules, obs, false)
+    } else if baseline_air {
+        specialized_defense(rules, obs, true)
     } else { None };
+    let emergency = specialized.map(|(ty, type_id)| plan::Chosen {
+        step: None, item: Item::Defense, ty, type_id,
+    });
     let Some(chosen) = emergency.or_else(|| frontier.map(|(plan, _)| plan)).or_else(||
         plan::answer_where(rules, obs, &brain.census, budget, None,
             |item| item == Item::Defense)
@@ -725,6 +756,72 @@ fn queue_defense_in_parallel(
         brain.outpost_builds.insert(chosen.type_id, anchor);
     }
     out.intent(Intent::QueueProduction { type_id: chosen.type_id });
+}
+
+/// Choose the *actual* AA/ground weapon rather than asking the default tower
+/// selector for a missile that its other priority may have excluded. Read the
+/// same native rules/house prerequisites and prefer dual-purpose coverage.
+fn specialized_defense<'r>(
+    rules: &'r RuleSet, obs: &Observation<'_>, air: bool,
+) -> Option<(&'r ObjectType, InternedId)> {
+    let names = base_defenses(rules, obs);
+    let candidates: Vec<_> = if names.is_empty() {
+        class_types(rules, obs, ObjectCategory::Building).collect()
+    } else {
+        names.iter().filter_map(|name| {
+            let ty = rules.object(name)?;
+            let id = obs.type_id(name)?;
+            (obs.can_build(rules, ty, true) != CanBuild::No
+                && house_owns(rules, obs, ty)).then_some((ty, id))
+        }).collect()
+    };
+    candidates.into_iter()
+        .filter(|(ty, _)| {
+            let arm = armament(rules, ty);
+            arm.range > 0 && if air { arm.anti_air } else { arm.anti_ground }
+        })
+        .max_by_key(|(ty, _)| {
+            let arm = armament(rules, ty);
+            (arm.anti_air && arm.anti_ground, arm.range,
+                std::cmp::Reverse(obs.cost_of(rules, ty)), ty.id.clone())
+        })
+}
+
+/// A finite, open forward barricade after native military essentials. The
+/// Defense strip cannot contain a queued tower or wall while this is issued,
+/// and `walls::next_segment` refuses segments with unplanned native autofill.
+fn queue_safe_walls(
+    brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+    budget: &Budget, out: &mut Outbox,
+) {
+    if brain.census.refineries < 2 || brain.census.harvesters < 2
+        || budget.free < 5_000 || budget.income.is_some_and(|income| income <= 0)
+        || brain.director.under_attack_now()
+        || brain.census.line(ProductionCategory::Defense).busy()
+        || out.intents.iter().any(|intent| matches!(intent, Intent::QueueProduction { type_id }
+            if obs.object_type(rules, *type_id).is_some_and(|ty|
+                crate::sim::production::category_for_object(ty) == ProductionCategory::Defense)))
+    { return; }
+    let (air, total) = armed_defenses(rules, obs, &brain.census);
+    if air == 0 || total < 2 { return; }
+    let Some(segment) = super::walls::next_segment(brain, rules, obs) else { return; };
+    if obs.in_production(rules, segment.type_id)
+        || !obs.object_type(rules, segment.type_id).is_some_and(|ty|
+            obs.wall_site_admits(rules, ty, segment.cell.0, segment.cell.1))
+    { return; }
+    let price = obs.object_type(rules, segment.type_id)
+        .map_or(i32::MAX, |ty| obs.cost_of(rules, ty).max(0));
+    let committed = out.intents.iter().filter_map(|intent| match intent {
+        Intent::QueueProduction { type_id } => obs.object_type(rules, *type_id)
+            .map(|ty| obs.cost_of(rules, ty).max(0)),
+        _ => None,
+    }).fold(0i32, |sum, price| sum.saturating_add(price));
+    if !two_strip_budget_admits(budget.free.saturating_sub(2_500), committed, price) {
+        return;
+    }
+    out.intent(Intent::QueueProduction { type_id: segment.type_id });
+    log::info!("auto play: safe front wall at {:?}, existing={} native_fill={}",
+        segment.cell, segment.standing, segment.fill);
 }
 
 /// Both native construction strips may work in the same frame, but both
