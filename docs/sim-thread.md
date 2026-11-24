@@ -495,3 +495,34 @@ Two attempts to remove those inline searches, both measured and reverted:
   expansion because it walks its own code-2 chains where a batch shares one
   cell's chain across the searches that ask about it.
 
+## Sharded object pass, costed
+
+The pass ([`Simulation::advance_live_object_pass`]) walks live objects in
+stable-id order and each turn writes several owners besides its own entity: the
+substrate's cell and occupancy records, terrain objects, production queues, fog
+and shroud, sound events, another entity's health and lifecycle through damage
+and kills, and the path batch's registrations. The vision planes are the
+exception the pass already defers and applies in parallel.
+
+Sharding therefore cannot call today's turn as it stands: every one of those
+writes needs a shard-local overlay with a merge ordered by shard, and every
+read needs the rule "writes my shard made, then the frame's start", which
+makes a write visible to another shard one tick late. That is the deviation
+`8e89f2c1a` measured: reverses of the same snapshot diverge, and with the
+path batch off they still do.
+
+Measured basis for the payoff: the pass is about 92% of a 30-house frame
+(53 of 57 ms in the telemetry build, 43.8 ms release), and `27a76128a` found
+0.35% of the write time crossing objects. Amdahl with that share: 5× on the
+pass leaves 15–16 ms, 8× leaves 11–12 ms, both inside 22 ms.
+
+The work is not the 3,395 `self.` sites; it is the per-writer overlay and the
+merge order, so the first change is the one that costs nothing to keep:
+route the pass through an overlay that stages every write and applies it in
+the same stable-id order, single-threaded, with a per-owner staged-write
+counter. Behavior must stay identical (hash `7fca7db00cb332dc` on the
+30-house map); what it buys is the journal's real breadth and cost and the
+list of owners whose writes actually cross objects. Running K shards
+concurrently is the second change, and only that one carries the deviation.
+
+
