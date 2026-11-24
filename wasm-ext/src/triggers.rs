@@ -55,6 +55,8 @@ pub const EVENT_VARIABLE_POLL: i32 = 1030;
 pub const EVENT_MODULE: i32 = 1040;
 pub const EVENT_INI_ENTRY: i32 = 1041;
 pub const EVENT_INI_KEY: i32 = 1042;
+/// `OrderRefused` (RFC 0001 6i): an order refused in the command step.
+pub const EVENT_ORDER_REFUSED: i32 = 1043;
 
 /// The stock event kinds (appendix 4.1).
 pub const STOCK_EVENTS: std::ops::RangeInclusive<i32> = 0..=61;

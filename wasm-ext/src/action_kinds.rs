@@ -68,6 +68,8 @@ pub const ATOMIC_ACTIONS: &[&str] = &[
     "CreateTeamUnlimited", "DisbandTeam", "AddTeamMember", "RemoveTeamMember",
     // 1041 is reserved; 1042 comes from RFC 0001 section 6h
     "ApplyEffect", "RaiseEvent",
+    // RFC 0001 6i: engine-side routines, reserved (later)
+    "AttachRoutine", "DetachRoutine",
 ];
 
 /// An action kind's ID by name, ASCII case-insensitive.

@@ -236,7 +236,64 @@ pub const PROPERTIES: &[&str] = &[
     // 7.6 Cells: Passable.<SpeedType>
     "Passable.Foot", "Passable.Track", "Passable.Wheel", "Passable.Hover", "Passable.Winged",
     "Passable.Float", "Passable.Amphibious", "Passable.FloatBeach",
+    // RFC 0001 6i (0.0.21): driving a house. 7.1 objects
+    "Destination", "WeaponReady", "Deployed", "UnderConstruction", "Parasite", "ControlGroup",
+    // (`Visible` shares the client node property's ID)
+    "Engage",
+    // 7.5 houses
+    "ControlDomains",
+    "Factory.Building.Type", "Factory.Building.Progress", "Factory.Building.Ready",
+    "Factory.Building.Queued",
+    "Factory.Defense.Type", "Factory.Defense.Progress", "Factory.Defense.Ready",
+    "Factory.Defense.Queued",
+    "Factory.Infantry.Type", "Factory.Infantry.Progress", "Factory.Infantry.Ready",
+    "Factory.Infantry.Queued",
+    "Factory.Vehicle.Type", "Factory.Vehicle.Progress", "Factory.Vehicle.Ready",
+    "Factory.Vehicle.Queued",
+    "Factory.Naval.Type", "Factory.Naval.Progress", "Factory.Naval.Ready",
+    "Factory.Naval.Queued",
+    "Factory.Aircraft.Type", "Factory.Aircraft.Progress", "Factory.Aircraft.Ready",
+    "Factory.Aircraft.Queued",
+    // 7.6 cells: Zone.<MovementZone> in MovementZone order, then Obstructed
+    "Zone.Normal", "Zone.Crusher", "Zone.Destroyer", "Zone.AmphibiousDestroyer",
+    "Zone.AmphibiousCrusher", "Zone.Amphibious", "Zone.Subterrannean", "Zone.Infantry",
+    "Zone.InfantryDestroyer", "Zone.Fly", "Zone.Water", "Zone.WaterBeach", "Zone.CrusherAll",
+    "Obstructed",
+    // 7.8 global
+    "AutomationAllowed",
 ];
+
+/// `Domain` (appendix 8.3, enum 25): the bits of a house's `ControlDomains`.
+pub const DOMAIN_PRODUCTION: i64 = 1 << 0;
+pub const DOMAIN_FORCES: i64 = 1 << 1;
+pub const DOMAIN_ABILITIES: i64 = 1 << 2;
+pub const DOMAIN_SUPER_WEAPONS: i64 = 1 << 3;
+pub const DOMAIN_ALL: i64 = 0b1111;
+
+/// `RefuseReason` (appendix 8.3, enum 26): `OrderRefused`'s `value2`.
+pub mod refuse_reason {
+    pub const OTHER: i64 = 0;
+    pub const GONE: i64 = 1;
+    pub const IGNORES_ORDERS: i64 = 2;
+    pub const ILLEGAL_TARGET: i64 = 3;
+    pub const PREREQUISITE: i64 = 4;
+    pub const CANNOT_AFFORD: i64 = 5;
+    pub const QUEUE_FULL: i64 = 6;
+    pub const CANNOT_PLACE: i64 = 7;
+    pub const NOT_READY: i64 = 8;
+    pub const VETOED: i64 = 9;
+    pub const RATE_LIMITED: i64 = 10;
+}
+
+/// `EngageResult` (appendix 8.3, enum 27): the `Engage` property.
+pub const ENGAGE_OK: i64 = 0;
+pub const ENGAGE_ILLEGAL: i64 = 1;
+pub const ENGAGE_OUT_OF_RANGE: i64 = 2;
+pub const ENGAGE_NO_DAMAGE: i64 = 3;
+
+/// Factory kinds of the `Factory.<Kind>.*` properties and `TakeProduct`'s
+/// value (appendix 7.5, 8.3), in that order.
+pub const FACTORY_KINDS: [&str; 6] = ["Building", "Defense", "Infantry", "Vehicle", "Naval", "Aircraft"];
 
 /// A property's ID by name, ASCII case-insensitive.
 pub fn property_id(name: &str) -> Option<i32> {
@@ -741,6 +798,16 @@ impl Limits {
     pub const MOD: Self = Self {
         memory_bytes: 32 << 20,
     };
+
+    /// Memory a "mod AI" seat adds to the mod module (RFC 0001 15.4).
+    pub const SEAT_MEMORY: usize = 8 << 20;
+
+    /// These limits with `seats` "mod AI" seats added.
+    pub const fn with_seats(self, seats: usize) -> Self {
+        Self {
+            memory_bytes: self.memory_bytes + seats * Self::SEAT_MEMORY,
+        }
+    }
 }
 
 /// Why a module could not be loaded. It never runs; the match should not start.
