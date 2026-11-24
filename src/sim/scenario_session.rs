@@ -1084,9 +1084,10 @@ pub struct ScenarioSession {
     /// the wrapping native frame so long-running diagnostics and command
     /// bookkeeping do not lose their ordering at the 32-bit wrap.
     tick: u64,
-    /// Diagnostic accumulation of the nominal milliseconds supplied by the
-    /// host for each admitted frame. Gameplay must not derive timer state,
-    /// cadence, or the native frame from this value.
+    /// Simulated time. One admitted frame is one native logic frame, so this
+    /// reads `frames * 1000 / 15`, not the milliseconds the host paced the
+    /// frame at. Gameplay must not derive timer state, cadence, or the native
+    /// frame from this value.
     total_sim_ms: u64,
     /// Wrapping native gameplay-frame counter. One admitted `advance_tick`
     /// executes entirely under frame N, then commits N+1 at the late tail.
@@ -1256,11 +1257,17 @@ impl ScenarioSession {
     // ---- Operations ------------------------------------------------------
 
     /// The late frame commit (Main_Tick's tail): the wrapping native frame
-    /// advances after every phase observed frame N; host milliseconds are
-    /// diagnostic only.
-    pub(crate) fn commit_native_frame(&mut self, tick_ms: u32) {
-        self.total_sim_ms = self.total_sim_ms.saturating_add(u64::from(tick_ms));
+    /// advances after every phase observed frame N.
+    ///
+    /// The simulated clock follows that native frame. `host_tick_ms` is the
+    /// step the caller paced the frame at — 22 ms in the client, 66 ms in
+    /// headless tools, a relay's `1000 / FPS` online — and it does not set the
+    /// clock, so a client trace, a headless digest and a capture report the
+    /// same simulated time for the same frame count.
+    pub(crate) fn commit_native_frame(&mut self, _host_tick_ms: u32) {
         self.binary_frame = self.binary_frame.wrapping_add(1);
+        self.total_sim_ms = u64::from(self.binary_frame).saturating_mul(1000)
+            / u64::from(crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND);
     }
 
     /// The Rust tick ordinal reaches the executed tick after the drain.
