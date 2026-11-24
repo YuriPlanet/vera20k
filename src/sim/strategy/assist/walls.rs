@@ -19,13 +19,11 @@
 //!   ([`crate::sim::production::wall_placement`]). A straight run is therefore
 //!   closed by placing its two ends, the way a player drags one down a line,
 //!   and it costs two slots rather than one per cell.
-//! - A wall blocks its owner's units as well, and retail has no gate this house
-//!   can build, so the ring is closed all the way round except one cell on the
-//!   side away from the enemy ([`gate_cell`]): that is where the yard's own
-//!   units come and go, and one cell is the smallest hole an attack can use. A
-//!   half-ring — the enemy-facing arc alone — is not a wall: it leaves three
-//!   sides of a captured lab open, which is what "the base is only half
-//!   enclosed" looks like on the map.
+//! - Protect the *building* rather than surrounding every factory and mine
+//!   with an impermeable base wall. The immediate one-cell perimeter of a
+//!   `ProtectWithWall` structure has no friendly vehicle throughput to block;
+//!   the ring does not enclose the surrounding production base. A native
+//!   autofill that reaches outside this perimeter is never authorized.
 //!
 //! The result is a segment plan, not a picture: the next cell to fill is
 //! computed from the base as it stands, so a wall that was interrupted, a
@@ -54,21 +52,12 @@ pub(super) const WALL_CREDITS: i32 = 2_000;
 /// Structures on the map before the base is worth walling: a yard and a
 /// refinery do not need an outline, and the first minutes belong to the
 /// opening.
-pub(super) const WALL_MIN_STRUCTURES: usize = 6;
+pub(super) const WALL_MIN_STRUCTURES: usize = 4;
 
-/// V24 permits only eight individual front-line segments, and refuses all
-/// native autofill. The old ~56-cell enclosure obstructed our own vehicles;
-/// never recreate the closed ring without a real gate/path guarantee.
-pub(super) const WALL_SEGMENT_CAP: usize = 8;
-
-/// Only the central enemy-facing arc is eligible, leaving the sides and the
-/// entire rear open. This restriction also applies to the autofill check.
-fn forward_arc(cell: (u16,u16), centre: (u16,u16), direction: (i32,i32)) -> bool {
-    let x = i32::from(cell.0) - i32::from(centre.0);
-    let y = i32::from(cell.1) - i32::from(centre.1);
-    let dot = x * direction.0 + y * direction.1;
-    dot > 0 && (x * direction.1 - y * direction.0).abs() <= dot
-}
+/// Several small *individual* building rings, not a ring around the entire
+/// base. This is a total lifetime cap per house, so a map with dozens of
+/// captured labs cannot spend its entire economy on walls.
+pub(super) const WALL_SEGMENT_CAP: usize = 72;
 
 /// The wall segment the base wants: the cell to put it on, the run it closes,
 /// and how much of the wall already stands.
@@ -227,8 +216,8 @@ pub(super) fn wall_type(
 
 /// The next wall segment the base wants, when it wants one.
 ///
-/// `None` while the base is too small, too poor, already walled enough, or has
-/// no enemy to face: a wall is only ever built toward something.
+/// `None` while the base is too small, the defense strip is occupied,
+/// or no legal placement can safely protect an eligible foundation.
 pub(super) fn next_segment(
     brain: &mut AssistBrain,
     rules: &RuleSet,
@@ -287,20 +276,6 @@ pub(super) fn next_segment(
     if standing >= WALL_SEGMENT_CAP {
         return None;
     }
-    // The enemy side: the nearest hostile object to the base's centre, so the
-    // wall faces the way an attack has to come from. A house that has seen no
-    // enemy builds no wall.
-    let enemy = brain
-        .census
-        .enemies
-        .iter()
-        .map(|enemy| (enemy.cell, chebyshev(enemy.cell, centre)))
-        .min_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)))?
-        .0;
-    let direction = (
-        i32::from(enemy.0) - i32::from(centre.0),
-        i32::from(enemy.1) - i32::from(centre.1),
-    );
     // How far the engine looks for this house's own wall when it fills a gap:
     // the wall type's own `GuardRange`, in cells. A type without one closes
     // nothing, and the plan falls back to the cell beside the last one.
@@ -308,31 +283,14 @@ pub(super) fn next_segment(
         .object_type(rules, wall)
         .and_then(|ty| ty.guard_range)
         .map_or(0, |range| range.to_num::<i32>().max(0) as usize);
-    // The former ring's back gate is an additional exclusion zone. The new
-    // front arc is deliberately open on the sides and rear, and native
-    // autofill is disabled by rejecting sites with any gap-filling potential.
-    let mut gate: Vec<(u16, u16)> = Vec::new();
-    if let Some(first) = gate_cell(&ring, centre, direction) {
-        gate.push(first);
-        if let Some(next) = ring
-            .iter()
-            .copied()
-            .filter(|cell| chebyshev(*cell, first) == 1)
-            .min_by_key(|cell| {
-                let dx = i32::from(cell.0) - i32::from(centre.0);
-                let dy = i32::from(cell.1) - i32::from(centre.1);
-                (dx * direction.0 + dy * direction.1, *cell)
-            })
-        {
-            gate.push(next);
-        }
-    }
-    let clear = |x: u16, y: u16| free(x, y) && !gate.contains(&(x, y));
+    // A completely open back/flank was the reason engineers could still
+    // enter a walled yard. Close the local building perimeter on every side;
+    // native autofill outside that perimeter remains forbidden to preserve
+    // base routes and refinery unloading lanes.
     let best = ring
         .iter()
         .copied()
         .filter(|(x, y)| free(*x, *y)
-            && forward_arc((*x,*y), centre, direction)
             // Do not barricade the refinery's immediate unloading lane.
             && brain.census.refinery_cells.iter().all(|bay|
                 super::squared_distance(*bay, (*x,*y)) > 3 * 3)
@@ -341,26 +299,13 @@ pub(super) fn next_segment(
             // the whole native fill footprint is proved route-safe.
             && autofill_gain((*x,*y), limit,
                 |x,y| obs.wall_owner_at(x,y) == Some(house), &free) == 0)
-        .map(|cell| {
-            let fill = autofill_gain(cell, limit,
-                |x,y| obs.wall_owner_at(x,y) == Some(house), &clear);
-            let side = (i32::from(cell.0) - i32::from(centre.0)) * direction.0
-                + (i32::from(cell.1) - i32::from(centre.1)) * direction.1;
-            // The end of the run, not the cell beside the last one: a segment is
-            // worth the gap it closes, because the engine builds the cells
-            // between for free. Among equal gaps the cell nearest the enemy goes
-            // first, so an empty outline starts on the side an attack comes
-            // from; then the lower cell, so the answer does not depend on the
-            // scan's own order.
-            (fill, side, std::cmp::Reverse(cell))
-        })
-        .max();
-    let (fill, _, std::cmp::Reverse(cell)) = best?;
+        .min_by_key(|cell| (super::squared_distance(*cell, centre), *cell));
+    let cell = best?;
     Some(Segment {
         type_id: wall,
         cell,
         standing,
-        fill,
+        fill: 0,
     })
 }
 
@@ -449,10 +394,11 @@ fn base_targets(
             u16::try_from(sy / count).unwrap_or(0),
         )
     };
-    // Centred once on everything to drop the far-flung outliers, then again on
-    // what is left: one captured derrick must not drag the wall across the map.
-    let rough = centre(&targets);
-    targets.retain(|(_, cell, _)| chebyshev(*cell, rough) <= BASE_WALL_RADIUS);
+    // Anchor to the first long-lived protected site rather than the average
+    // of two distant yards: a newly captured foreign construction yard must
+    // not pull the main base's wall centre into empty terrain.
+    let anchor = targets[0].1;
+    targets.retain(|(_, cell, _)| chebyshev(*cell, anchor) <= BASE_WALL_RADIUS);
     Some((
         centre(&targets),
         targets
@@ -479,7 +425,7 @@ fn chebyshev(a: (u16, u16), b: (u16, u16)) -> i32 {
 /// One owner for the outline: the planner picks segments from it and the
 /// unblocking pass clears the units off it, and two computations of "the ring"
 /// would disagree about the cell that matters.
-fn planned_ring(rules: &RuleSet, obs: &Observation<'_>) -> Option<((u16, u16), Vec<(u16, u16)>)> {
+pub(super) fn planned_ring(rules: &RuleSet, obs: &Observation<'_>) -> Option<((u16, u16), Vec<(u16, u16)>)> {
     let (centre, targets) = base_targets(rules, obs)?;
     let blocked = blocked_cells(rules, obs);
     let mut ring: Vec<(u16, u16)> = Vec::new();
@@ -507,7 +453,7 @@ fn planned_ring(rules: &RuleSet, obs: &Observation<'_>) -> Option<((u16, u16), V
 /// Only the house's own orderable ground units are moved, only outwards, and
 /// only while nothing else is being built on the ring — a unit already walking
 /// somewhere is not this pass's.
-fn clear_the_ring(
+pub(super) fn clear_the_ring(
     brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
@@ -525,7 +471,10 @@ fn clear_the_ring(
         .census
         .units
         .iter()
-        .filter(|unit| unit.orderable && !unit.hand && !unit.in_service())
+        .filter(|unit| unit.orderable && !unit.hand && !unit.in_service()
+            && !unit.traits.harvester && !unit.traits.irreplaceable
+            && obs.destination(unit.entity_id).is_none()
+            && obs.attack_target(unit.entity_id).is_none())
         .filter(|unit| {
             ring.contains(&unit.cell)
                 && !blocked_by_structure.contains(&unit.cell)
@@ -658,21 +607,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn safe_wall_is_a_short_open_enemy_facing_arc() {
-        let centre = (20, 20);
-        // Facing east. Forward and near the centreline are allowed.
-        assert!(forward_arc((23, 20), centre, (1, 0)));
-        assert!(forward_arc((23, 22), centre, (1, 0)));
-        // Rear, flank and reverse side must stay open for tanks and miners.
-        assert!(!forward_arc((17, 20), centre, (1, 0)));
-        assert!(!forward_arc((20, 17), centre, (1, 0)));
-        assert!(!forward_arc((20, 23), centre, (1, 0)));
-        assert!(!forward_arc((20, 20), centre, (1, 0)));
-        // A source to the north rotates the safe arc without a hardcoded map
-        // quadrant or orientation.
-        assert!(forward_arc((20, 17), centre, (0, -1)));
-        assert!(!forward_arc((23, 20), centre, (0, -1)));
-        assert_eq!(WALL_SEGMENT_CAP, 8);
+    fn protected_building_can_receive_walls_on_every_side() {
+        let ring = perimeter((20, 20), (3, 3));
+        assert!(ring.contains(&(19, 21)), "west blocks engineer entry");
+        assert!(ring.contains(&(23, 21)), "east blocks engineer entry");
+        assert!(ring.contains(&(21, 19)), "north blocks engineer entry");
+        assert!(ring.contains(&(21, 23)), "south blocks engineer entry");
+        assert!(WALL_SEGMENT_CAP >= ring.len());
     }
 
     /// The plan asks the placement's own question about a cell.

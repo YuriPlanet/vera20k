@@ -47,6 +47,20 @@ pub(super) fn ground_reach(rules: &RuleSet, ty: &ObjectType) -> i32 {
     }).max().unwrap_or(0)
 }
 
+
+/// Some powered defenses (the retail Yuri psychic tower in particular) have
+/// no IsBaseDefense flag and deal control instead of direct HP damage. Their
+/// weapon range still blocks ordinary short-range advances.
+pub(super) fn dangerous_battery(rules: &RuleSet, ty: &ObjectType) -> bool {
+    ty.category == ObjectCategory::Building
+        && (ty.is_base_defense || super::tactics::mind_control_reach(rules, ty).is_some())
+}
+
+pub(super) fn battery_reach(rules: &RuleSet, ty: &ObjectType) -> i32 {
+    ground_reach(rules, ty)
+        .max(super::tactics::mind_control_reach(rules, ty).unwrap_or(0))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Counter { Standoff, Air, Heavy }
 
@@ -142,9 +156,9 @@ pub(super) fn focus(brain: &AssistBrain, rules: &RuleSet,
     let mut guns: Vec<_> = obs.visible_enemy_entities().take(BATTERY_LOOK)
         .filter_map(|enemy| {
             let ty = obs.entity_type(rules, enemy.entity_id)?;
-            if !ty.is_base_defense || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
+            if !dangerous_battery(rules, ty) || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
             { return None; }
-            let reach = ground_reach(rules, ty);
+            let reach = battery_reach(rules, ty);
             if reach < 7 { return None; }
             let near_front = front.is_some_and(|cell| cell_distance(cell, enemy.cell) <= 22);
             let near_army = front_units.iter().any(|cell|
@@ -285,6 +299,50 @@ pub(super) fn prefers_air_line(brain: &AssistBrain, rules: &RuleSet,
                 < desired_count(picked.kind,battery.reach,battery.nearby_guns))
 }
 
+/// A siege battalion cannot buy a Prism/V3/other advanced standoff cannon
+/// until its *native* prerequisite structure exists. Without a persistent
+/// research request the cheap barracks and factory cycles exhaust the wallet
+/// before any laboratory becomes affordable.
+pub(super) fn technology_step<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>,
+) -> Option<super::plan::Chosen<'r>> {
+    if brain.census.fighters < 10 || brain.census.refineries == 0
+        || brain.census.harvesters == 0 || brain.director.under_attack_now()
+        || brain.director.recovering_income()
+        || build::count_in(obs, rules, &brain.census, &rules.build_tech_types) > 0
+    { return None; }
+    let battery = focus(brain, rules, obs)?;
+    let tower = obs.entity_type(rules, battery.id)?;
+    let already_ranged = brain.census.units.iter().any(|unit| unit.controllable()
+        && unit.traits.combat && obs.entity_type(rules, unit.entity_id)
+            .is_some_and(|ty| valid_ground_reach(rules, ty, tower) > battery.reach + 1));
+    if already_ranged { return None; }
+    let (item, selected) = if let Some(lab) = build::tech_building(rules, obs) {
+        (super::plan::Item::Tech, lab)
+    } else if build::count_in(obs, rules, &brain.census, &rules.build_radar_types) == 0 {
+        (super::plan::Item::Radar,
+            build::first_buildable(rules, obs, &rules.build_radar_types)?)
+    } else { return None; };
+    Some(super::plan::Chosen {
+        step: None, item, ty: selected.0, type_id: selected.1,
+    })
+}
+
+/// An unlocked counter has a real cost. Until the wallet can pay it, do not
+/// buy a stream of riflemen which repeatedly resets the saved amount.
+pub(super) fn saving_for_counter(
+    brain: &AssistBrain, rules: &RuleSet, obs: &Observation<'_>, free: i32,
+) -> bool {
+    if brain.census.refineries == 0 || brain.census.harvesters == 0
+        || brain.director.under_attack_now() || brain.director.recovering_income()
+    { return false; }
+    let Some(battery) = focus(brain, rules, obs) else { return false; };
+    let Some(picked) = choice(brain, rules, obs, battery) else { return false; };
+    picked.price > free && !obs.in_production(rules, picked.id)
+        && counter_held(brain, rules, obs, battery, picked.kind)
+            < desired_count(picked.kind, battery.reach, battery.nearby_guns)
+}
+
 /// Some(None) reserves the selected production line's money; the other lines
 /// remain free to respond to emergencies and save for the tech prerequisite.
 pub(super) fn purchase<'r>(brain: &AssistBrain, rules: &'r RuleSet,
@@ -322,12 +380,13 @@ pub(super) fn avoid_solo_tower_attack(
     rules: &RuleSet, obs: &Observation<'_>, actor: u64, target: u64,
 ) -> bool {
     let Some(tower) = obs.entity_type(rules,target) else { return false; };
-    if !tower.is_base_defense || !obs.visible_enemy_building_operational(rules,target) {
+    if !dangerous_battery(rules, tower) || !obs.visible_enemy_building_operational(rules,target) {
         return false;
     }
     let Some(actor_ty) = obs.entity_type(rules,actor) else { return false; };
     if is_flying(actor_ty) { return false; }
-    let hostile_range = super::tactics::actual_threat_reach(rules,obs,target,actor);
+    let hostile_range = super::tactics::actual_threat_reach(rules,obs,target,actor)
+        .max(battery_reach(rules, tower));
     let friendly_range = super::tactics::actual_threat_reach(rules,obs,actor,target);
     hostile_range >= 7 && friendly_range <= hostile_range + 1
 }
@@ -405,6 +464,19 @@ pub(super) fn air_strike(brain: &mut AssistBrain, rules: &RuleSet,
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn psychic_tower_is_a_real_battery_even_without_is_base_defense() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+        else { return; };
+        let controller = rules.object("YAPSYT").expect("psychic tower");
+        assert!(!controller.is_base_defense);
+        assert!(dangerous_battery(&rules, controller));
+        assert!(battery_reach(&rules, controller) >= 7);
+        let prism = rules.object("ATESLA").expect("prism tower");
+        assert!(dangerous_battery(&rules, prism));
+        assert!(battery_reach(&rules, prism) >= 8);
+    }
 
     #[test]
     fn retail_fragile_v3_and_prism_are_standoff_answers() {

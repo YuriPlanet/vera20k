@@ -286,7 +286,8 @@ impl Director {
             .filter(|enemy| advance::cell_distance(enemy.cell, op.cell) <= 16)
             .filter(|enemy| obs.object_type(rules, enemy.type_id).is_some_and(|ty|
                 ty.category != ObjectCategory::Building
-                    || ty.is_base_defense && obs.visible_enemy_building_operational(
+                    || super::siege_counter::dangerous_battery(rules, ty)
+                        && obs.visible_enemy_building_operational(
                         rules, enemy.entity_id)))
             .take(128).collect();
         if op.stage == Stage::Clear {
@@ -394,7 +395,7 @@ impl Director {
                         && advance::cell_distance(unit.cell,enemy.cell) <= reach + 2
                     ).min_by_key(|enemy| (
                         !obs.entity_type(rules, enemy.entity_id)
-                            .is_some_and(|ty| ty.is_base_defense),
+                            .is_some_and(|ty| super::siege_counter::dangerous_battery(rules, ty)),
                         advance::cell_distance(enemy.cell,unit.cell), enemy.entity_id,
                     ));
                     if let Some(enemy) = reachable_threat {

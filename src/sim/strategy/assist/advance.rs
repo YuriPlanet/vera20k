@@ -140,7 +140,8 @@ pub(super) fn prepare_siege_charge(
     let Some((_, _, campaign_cell)) = brain.push_target else { return; };
     let Some(squad) = brain.squads.squad(super::squads::Role::Attack) else { return; };
     let towers: Vec<_> = obs.visible_enemy_entities().filter(|enemy|
-        obs.entity_type(rules, enemy.entity_id).is_some_and(|ty| ty.is_base_defense)
+        obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
+            super::siege_counter::dangerous_battery(rules, ty))
             && obs.visible_enemy_building_operational(rules, enemy.entity_id)
             && cell_distance(enemy.cell, campaign_cell) <= 14
     ).collect();
@@ -151,7 +152,7 @@ pub(super) fn prepare_siege_charge(
             unit.entity_id == *id && cell_distance(unit.cell, enemy.cell) <= 24))
     }).max_by_key(|enemy| {
         let reach = obs.entity_type(rules, enemy.entity_id)
-            .map_or(0, |ty| super::siege_counter::ground_reach(rules, ty));
+            .map_or(0, |ty| super::siege_counter::battery_reach(rules, ty));
         (reach, std::cmp::Reverse(enemy.entity_id))
     });
     let Some(battery) = battery else { return; };
@@ -251,11 +252,12 @@ fn isolated_battery_approach(
         || ty.naval { return None; }
     obs.visible_enemy_entities().filter_map(|enemy| {
         let gun = obs.entity_type(rules, enemy.entity_id)?;
-        if !gun.is_base_defense
+        if !super::siege_counter::dangerous_battery(rules, gun)
             || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
         { return None; }
         let reach = super::tactics::effective_reach_against(
-            rules, obs, enemy.entity_id, actor);
+            rules, obs, enemy.entity_id, actor)
+            .max(super::siege_counter::battery_reach(rules, gun));
         if reach < 7 { return None; }
         // A handful of ordinary tanks nearby does NOT make the approach
         // safe. Actual synchronized, high-HP charges have their own one-shot
@@ -890,10 +892,10 @@ fn stage_siege(
 ) -> usize {
     let gunline: Vec<_> = obs.visible_enemy_entities().filter_map(|enemy| {
         let ty = obs.entity_type(rules,enemy.entity_id)?;
-        if !ty.is_base_defense
+        if !super::siege_counter::dangerous_battery(rules,ty)
             || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
             || cell_distance(enemy.cell,target) > 14 { return None; }
-        let reach = super::siege_counter::ground_reach(rules,ty);
+        let reach = super::siege_counter::battery_reach(rules,ty);
         (reach >= 4).then_some((enemy.entity_id,enemy.cell,reach))
     }).collect();
     let mut issued = 0;
@@ -907,7 +909,9 @@ fn stage_siege(
             || super::orders::ordered_this_frame(out,unit.entity_id)
         { continue; }
         let Some((id,gun,reach)) = gunline.iter().copied()
-            .filter(|(id,_,_)| obs.can_hurt(rules,*id,unit.entity_id))
+            .filter(|(id,_,_)| obs.can_hurt(rules,*id,unit.entity_id)
+                || obs.entity_type(rules,*id).is_some_and(|ty|
+                    super::tactics::mind_control_reach(rules, ty).is_some()))
             .min_by_key(|(id,at,_)| (cell_distance(*at,unit.cell),*id))
         else { continue; };
         // A prism/V3-style battery already has a winning range trade. Its
@@ -959,10 +963,10 @@ fn stage_strategic_reserve(
 ) -> usize {
     let guns: Vec<_> = obs.visible_enemy_entities().filter_map(|enemy| {
         let ty = obs.entity_type(rules, enemy.entity_id)?;
-        if !ty.is_base_defense
+        if !super::siege_counter::dangerous_battery(rules,ty)
             || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
         { return None; }
-        let reach = super::siege_counter::ground_reach(rules, ty);
+        let reach = super::siege_counter::battery_reach(rules, ty);
         (reach > 0 && cell_distance(front, enemy.cell) <= 28)
             .then_some((enemy.entity_id, enemy.cell, reach))
     }).collect();
@@ -1106,13 +1110,9 @@ fn limited_front_skirmish(
             // lone artillery unit may walk into the other towers around it.
             // It can fire from its safe present position, or wait for its wave.
             if obs.entity_type(rules, enemy.entity_id)
-                .is_some_and(|ty| ty.is_base_defense)
-                && cell_distance(unit.cell, enemy.cell) > ours
-                && !battery_wave_ready(fighters.iter().filter(|friend|
-                    friend.controllable() && friend.traits.combat
-                        && cell_distance(friend.cell, unit.cell) <= 9
-                        && obs.can_hurt(rules, friend.entity_id, enemy.entity_id)
-                    ).count())
+                .is_some_and(|ty| super::siege_counter::dangerous_battery(rules, ty))
+                && (cell_distance(unit.cell, enemy.cell) > ours
+                    || super::tactics::unsafe_post(rules, obs, unit.entity_id, unit.cell))
             { return None; }
             let control = obs.entity_type(rules,enemy.entity_id)
                 .is_some_and(|ty| super::tactics::mind_control_reach(rules,ty).is_some());
@@ -1152,7 +1152,7 @@ fn assign_breach_battery(
 ) -> bool {
     let batteries: Vec<_> = obs.visible_enemy_entities().filter_map(|enemy| {
         let ty = obs.entity_type(rules, enemy.entity_id)?;
-        (ty.is_base_defense
+        (super::siege_counter::dangerous_battery(rules,ty)
             && obs.visible_enemy_building_operational(rules, enemy.entity_id)
             && cell_distance(enemy.cell, target) <= 14)
             .then_some(enemy)
@@ -1532,7 +1532,7 @@ pub(super) fn advance(
                 if let Some(battery) = obs.visible_enemy_entities().filter(|enemy|
                     cell_distance(enemy.cell, target_cell) <= 14)
                     .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
-                        .is_some_and(|ty| ty.is_base_defense)
+                        .is_some_and(|ty| super::siege_counter::dangerous_battery(rules, ty))
                         && obs.visible_enemy_building_operational(rules, enemy.entity_id))
                     .max_by_key(|enemy| obs.entity_type(rules, enemy.entity_id)
                         .map_or(0, |ty| weapon_range_cells(rules, ty, false)))

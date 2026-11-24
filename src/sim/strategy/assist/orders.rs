@@ -1168,13 +1168,24 @@ const FRONT_GARRISON_REACH_CELLS: i32 = 32;
 /// Surplus occupiers can establish map-wide outposts without stripping the
 /// mobile home screen. Only currently observed, reachable buildings qualify.
 const MAP_GARRISON_REACH_CELLS: i32 = 28;
+/// Reserve the opening's occupiers for forward mineral chokes and discovered
+/// enemy approaches. Filling ten home buildings before scouting a rich seam
+/// permanently strands the only riflemen that could contest it.
+const HOME_GARRISON_OPENING_CAP: usize = 1;
+
+fn garrison_priority(enemy_front: bool, ore: usize, forward: bool) -> u8 {
+    if enemy_front { 0 }
+    else if ore >= ORE_GARRISON_MIN_CELLS { 1 }
+    else if forward { 2 }
+    else { 3 }
+}
 
 /// A Capture click targets the building's *occupied* cell. Zone connectivity
 /// at that coordinate often reports false even when an infantryman can reach
 /// the entrance. Require reachable, walkable ground adjacent to the footprint
 /// instead, including larger MOD foundations. This only rejects impossible
 /// walks; the native Capture action still decides final admission.
-fn building_approachable(
+pub(super) fn building_approachable(
     obs: &Observation<'_>, zone: MovementZone,
     from: (u16, u16), building: (u16, u16),
 ) -> bool {
@@ -1321,7 +1332,39 @@ pub(super) fn garrison(
     let mut available_mobiles = brain.census.units.iter()
         .filter(|unit| unit.controllable() && unit.traits.combat
             && obs.inside_transport(unit.entity_id).is_none()).count();
-    for unit in &brain.census.units {
+    // Count existing home occupants and already accepted home Capture tasks.
+    // A global population limit alone is insufficient: the first three home
+    // buildings used to consume every available rifleman before a mineral
+    // choke entered vision, and a later front-room bonus could not un-garrison
+    // those soldiers.
+    let home = brain.census.base_cell;
+    let is_home = |cell: (u16, u16)| home.is_some_and(|base|
+        squared_distance(cell, base) <= HOME_REACH_CELLS * HOME_REACH_CELLS);
+    let mut home_placed = brain.census.units.iter().filter(|unit|
+        unit.traits.occupier && obs.inside_transport(unit.entity_id)
+            .and_then(|id| obs.object_cell_and_type(id))
+            .is_some_and(|(cell, _)| is_home(cell))
+    ).count();
+    home_placed += billets.iter().filter(|billet| is_home(billet.cell))
+        .map(|billet| brain.tracked.tasks.pending_at(JobKind::Garrison, billet.building_id))
+        .sum::<usize>();
+    // Choose *which soldiers get a turn* by strategic objective, not entity
+    // storage order. The nearest home soldier no longer takes the frame's
+    // order budget before the soldier beside the contested ore field.
+    let mut personnel: Vec<_> = brain.census.units.iter().filter(|unit|
+        unit.traits.occupier && unit.controllable()).collect();
+    personnel.sort_unstable_by_key(|unit| billets.iter().filter_map(|billet| {
+        let ore = ore_sites.get(&billet.building_id).copied().unwrap_or(0);
+        let front = front_ids.contains(&billet.building_id);
+        let reach = if ore >= ORE_GARRISON_MIN_CELLS { ORE_GARRISON_REACH_CELLS }
+            else if front { FRONT_GARRISON_REACH_CELLS }
+            else { HOME_REACH_CELLS };
+        let distance = squared_distance(unit.cell, billet.cell);
+        (distance <= reach * reach).then_some((
+            garrison_priority(enemy_front_ids.contains(&billet.building_id),ore,front),
+            distance, unit.entity_id))
+    }).min().unwrap_or((4, i32::MAX, unit.entity_id)));
+    for unit in personnel {
         if issued >= FORCE_ORDERS_PER_FRAME || garrisoned >= limit {
             break;
         }
@@ -1362,6 +1405,14 @@ pub(super) fn garrison(
                 } else { HOME_REACH_CELLS.pow(2) }))
             .filter(|billet| room_left.get(&billet.building_id).copied().unwrap_or(0) > 0)
             .filter(|billet| {
+                let ore = ore_sites.get(&billet.building_id).copied().unwrap_or(0);
+                let important = garrison_priority(
+                    enemy_front_ids.contains(&billet.building_id), ore,
+                    front_ids.contains(&billet.building_id)) < 3;
+                important || !is_home(billet.cell)
+                    || home_placed < HOME_GARRISON_OPENING_CAP
+            })
+            .filter(|billet| {
                 // Preserve a minimal mobile base defense while sending the
                 // paradropped/front-line infantry to available cover.
                 // A distant outpost is optional; unlike a defended mineral
@@ -1380,10 +1431,9 @@ pub(super) fn garrison(
                 // lanes, then ordinary home houses. The final distance is a
                 // tie-break, not the whole strategy for a mineral chokepoint.
                 let ore = ore_sites.get(&billet.building_id).copied().unwrap_or(0);
-                let priority = if enemy_front_ids.contains(&billet.building_id) { 0 }
-                    else if ore >= ORE_GARRISON_MIN_CELLS { 1 }
-                    else if front_ids.contains(&billet.building_id) { 2 }
-                    else { 3 };
+                let priority = garrison_priority(
+                    enemy_front_ids.contains(&billet.building_id), ore,
+                    front_ids.contains(&billet.building_id));
                 (priority, usize::MAX - ore,
                     squared_distance(unit.cell, billet.cell), billet.building_id)
             })
@@ -1404,6 +1454,9 @@ pub(super) fn garrison(
             issued += 1;
             garrisoned += 1;
             available_mobiles = available_mobiles.saturating_sub(1);
+            if is_home(billet.cell) {
+                home_placed += 1;
+            }
             if let Some(room) = room_left.get_mut(&billet.building_id) {
                 *room = room.saturating_sub(1);
             }
@@ -4153,7 +4206,7 @@ pub(super) fn supers(
         // actual emergency over valuable infrastructure can justify that cost.
         if super_weapon.kind == SuperWeaponKind::ForceShield
             && rules.general.force_shield_blackout_duration > 0
-            && !shield_blackout_worth_it(rules, obs, cell)
+            && !shield_blackout_worth_it(brain, rules, obs, cell)
         {
             continue;
         }
@@ -4180,44 +4233,43 @@ fn super_launch_affordable(money_amount: i32, credits: i32, reserve: i32) -> boo
     credits.saturating_sub(debit) >= reserve
 }
 
-/// A shield that cuts all house power is an emergency last resort. It should
-/// cover a critical building that is being actively fired on by multiple
-/// visible enemies, or one already near destruction. Enemy proximity alone
-/// is not evidence that shutting off every powered defense is a good trade.
+/// A shield that cuts all house power is an emergency last resort. Protect
+/// the home yard (or *last* refinery), not every new foreign building we have
+/// just captured: trading the entire army's AA and powered towers for a remote
+/// prize is normally far worse than losing the prize.
 fn shield_blackout_worth_it(
-    rules: &RuleSet, obs: &Observation<'_>, cell: (u16, u16),
+    brain: &AssistBrain, rules: &RuleSet, obs: &Observation<'_>, cell: (u16, u16),
 ) -> bool {
     let radius = rules.general.force_shield_radius.max(1);
+    let Some(home) = brain.census.base_cell else { return false; };
     obs.own_entities().any(|building| {
         let Some(ty) = obs.entity_type(rules, building.entity_id) else {
             return false;
         };
         if ty.category != ObjectCategory::Building
-            || !(ty.construction_yard || ty.refinery || ty.resource_destination)
+            || !(ty.construction_yard
+                || (ty.refinery && brain.census.refineries <= 1))
+            || squared_distance(building.cell, home) > 12 * 12
             || super::squared_distance(building.cell, cell) > radius * radius
         {
             return false;
         }
-        // A projectile already in flight can kill a yard before the shooter
-        // appears nearby. The shield decision must observe *incoming damage*,
-        // not only whether one or two guns are currently targeting the site.
         let incoming: i32 = obs.incoming_shots(building.entity_id)
             .fold(0i32, |sum, shot| sum.saturating_add(shot.damage.max(0)));
-        if incoming >= building.health.max(1) { return true; }
         let attackers = obs.visible_enemy_entities()
             .filter(|enemy| obs.attack_target(enemy.entity_id) == Some(building.entity_id))
             .count();
-        let lethal_attacker = obs.visible_enemy_entities().any(|enemy| {
-            if obs.attack_target(enemy.entity_id) != Some(building.entity_id)
-                || !obs.can_hurt(rules, enemy.entity_id, building.entity_id)
-            { return false; }
-            let Some(gun) = obs.entity_type(rules, enemy.entity_id) else { return false; };
-            super::avoidance::kills_outright(rules, gun, ty, building.health.max(0))
-        });
-        attackers >= 2 || lethal_attacker || (attackers >= 1 &&
-            i64::from(building.health.max(0)) * 100
-                < i64::from(ty.strength.max(1)) * 55)
+        shield_emergency(building.health, ty.strength, incoming, attackers)
     })
+}
+
+fn shield_emergency(health: i32, strength: i32, incoming: i32, attackers: usize) -> bool {
+    // Multiple attackers alone are NOT an emergency: a blackout disables the
+    // very defensive towers that could stop them. Only lethal shots in flight
+    // or a critically damaged home asset under sustained fire merit a shield.
+    health > 0 && (incoming >= health
+        || attackers >= 2 && incoming > 0
+            && i64::from(health) * 100 <= i64::from(strength.max(1)) * 20)
 }
 
 fn allowed_by_shell(super_weapons_enabled: bool, disableable_from_shell: bool) -> bool {
@@ -4281,7 +4333,7 @@ fn landing_cell(
         // first. The fog is this player's own information, not all entities.
         Aim::Recon => recon_cell(obs, brain.census.base_cell)
             .or_else(|| enemy_structure_cell(brain, rules, obs)),
-        Aim::Shield => threatened_building(obs, rules),
+        Aim::Shield => threatened_building(brain, obs, rules),
         Aim::Curtain => engaged_vehicle(brain, rules, obs),
         Aim::Genetic => genetic_cluster(rules, obs),
     }
@@ -4372,21 +4424,27 @@ fn genetic_cluster(rules: &RuleSet, obs: &Observation<'_>) -> Option<(u16,u16)> 
 
 /// The Force Shield goes over the threatened *structure*, never an arbitrary
 /// empty base location or an enemy. Otherwise it stays charged.
-fn threatened_building(obs: &Observation<'_>, rules: &RuleSet) -> Option<(u16, u16)> {
+fn threatened_building(brain: &AssistBrain, obs: &Observation<'_>, rules: &RuleSet)
+    -> Option<(u16, u16)>
+{
     obs.own_entities()
         .filter_map(|entity| {
             let ty = obs.object_type(rules, entity.type_id)?;
-            if ty.category != ObjectCategory::Building {
+            if ty.category != ObjectCategory::Building
+                || !(ty.construction_yard
+                    || ty.refinery && brain.census.refineries <= 1)
+                || !brain.census.base_cell.is_some_and(|home|
+                    squared_distance(entity.cell, home) <= 12 * 12)
+            {
                 return None;
             }
             let incoming: i32 = obs.incoming_shots(entity.entity_id)
                 .fold(0i32, |sum, shot| sum.saturating_add(shot.damage.max(0)));
-            let imminent = incoming >= entity.health.max(1);
-            let distance = obs.visible_enemy_entities()
-                .map(|enemy| squared_distance(entity.cell, enemy.cell))
-                .min().unwrap_or(i32::MAX);
-            (imminent || distance <= 12 * 12).then_some((
-                (imminent, ty.construction_yard, ty.refinery, ty.power > 0, -distance),
+            let attackers = obs.visible_enemy_entities()
+                .filter(|enemy| obs.attack_target(enemy.entity_id) == Some(entity.entity_id))
+                .count();
+            shield_emergency(entity.health, ty.strength, incoming, attackers).then_some((
+                (ty.construction_yard, incoming, -entity.health),
                 entity.cell,
             ))
         })
@@ -4816,5 +4874,27 @@ mod v28_slave_miner_strategy_tests {
         assert!(!slave_relocation_worthwhile(0, 8, 40, 14));
         assert!(!slave_relocation_worthwhile(0, 100, 8, 14));
         assert!(slave_relocation_worthwhile(0, 80, 60, 14));
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v41_defense_regression_tests {
+    use super::*;
+
+    #[test]
+    fn field_houses_beat_home_houses_and_opening_stays_mobile() {
+        assert_eq!(garrison_priority(true, 0, false), 0);
+        assert_eq!(garrison_priority(false, ORE_GARRISON_MIN_CELLS, false), 1);
+        assert_eq!(garrison_priority(false, 0, true), 2);
+        assert_eq!(garrison_priority(false, 0, false), 3);
+        assert_eq!(HOME_GARRISON_OPENING_CAP, 1);
+    }
+
+    #[test]
+    fn force_shield_blackout_requires_actual_home_emergency() {
+        assert!(!shield_emergency(400, 500, 40, 2));
+        assert!(!shield_emergency(400, 500, 0, 12));
+        assert!(shield_emergency(80, 500, 40, 2));
+        assert!(shield_emergency(80, 500, 80, 1));
     }
 }

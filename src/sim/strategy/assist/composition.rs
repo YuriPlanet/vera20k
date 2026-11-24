@@ -155,6 +155,11 @@ pub(super) fn fill_lines(
     // play test reports as "only infantry and dogs, no tank all match".
     let vehicle_floor =
         super::economy::line_vehicle_floor(rules, obs).unwrap_or(COMBAT_MIN_CREDITS);
+    // A legal anti-battery unit may cost more than the current wallet.
+    // Treat it as a real procurement commitment, not a soft recommendation:
+    // otherwise cheaper infantry or line tanks continually consume its bank.
+    let siege_bank = super::siege_counter::saving_for_counter(
+        brain, rules, obs, budget.free);
     // Whether the barracks stops this frame.
     //
     // Two failure modes meet here, and the arm has to avoid both:
@@ -281,6 +286,12 @@ pub(super) fn fill_lines(
         ]
     };
     for category in order {
+        if siege_bank && !brain.director.under_attack_now() {
+            // Economically functional bases retain the money to buy the
+            // requested counter when its native price is reached. Emergency
+            // home defence and restoration of the last miner run above this.
+            continue;
+        }
         // An army that already holds its share of infantry stops buying it,
         // so the wallet can reach a vehicle — unless the wallet is so far under
         // that price that one soldier would not set the saving back. Then the

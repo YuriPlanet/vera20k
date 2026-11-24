@@ -149,16 +149,17 @@ pub(super) fn need_siege(
     let (defensive_reach, _defense, defender_id) = obs.visible_enemy_entities()
         .filter_map(|enemy| {
             let ty = obs.entity_type(rules,enemy.entity_id)?;
-            if !ty.is_base_defense
+            if !super::siege_counter::dangerous_battery(rules,ty)
                 || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
                 || distance(enemy.cell,target) > 14
                 // Don't park the entire army at home because a gun exists
                 // on the far side of the map. Wait for artillery only when
                 // the main force is actually approaching its defended line.
                 || !fighters.iter().any(|unit| distance(unit.cell,enemy.cell) <= 18
-                    && obs.can_hurt(rules,enemy.entity_id,unit.entity_id))
+                    && (obs.can_hurt(rules,enemy.entity_id,unit.entity_id)
+                        || mind_control_reach(rules,ty).is_some()))
             { return None; }
-            let reach = super::siege_counter::ground_reach(rules,ty);
+            let reach = super::siege_counter::battery_reach(rules,ty);
             (reach >= 4).then_some((reach,ty,enemy.entity_id))
         })
         .max_by_key(|(reach,ty,id)| (*reach,ty.strength,*id))?;

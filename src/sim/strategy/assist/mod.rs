@@ -552,6 +552,9 @@ pub struct AssistBrain {
     /// A visible economic victim is locked for a bounded raid, preventing
     /// the detachment from changing miners whenever positions change.
     pub(super) harass_focus: Option<(u64, u64)>,
+    /// A previously *seen* mine or unloading yard. Only a navigation hint for
+    /// the raiders, never permission to Attack an entity through fog.
+    pub(super) harass_site: Option<((u16, u16), u64)>,
     /// The object whose orders are traced, from AUTOPLAY_TRACE: a diagnostic
     /// switch read once at construction, never a decision input. "Why did this
     /// unit do that" is the question every play test asks, and until now the
@@ -678,6 +681,7 @@ impl AssistBrain {
             armour_wave_wait: None,
             siege_charge: None,
             harass_focus: None,
+            harass_site: None,
             trace: std::env::var("AUTOPLAY_TRACE")
                 .ok()
                 .and_then(|raw| raw.trim().parse::<u64>().ok()),
@@ -1143,6 +1147,15 @@ impl Brain for AssistBrain {
             orders::pack_captured_yard(self, rules, obs, out);
         }
         if obs.forces_enabled() {
+            // A stationary guard blocking a requested protective ring is
+            // asked to take one safe step; active workers and assigned units
+            // are left under their original task manager.
+            if self.wall_type.is_some() && obs.tick() % 45 == 0
+                && self.census.refineries > 0 && self.census.harvesters > 0
+                && self.census.units.len() < 220
+            {
+                walls::clear_the_ring(self, rules, obs, out, obs.tick());
+            }
             advanced::avoid_invulnerable_assault(self, rules, obs, out);
             advanced::protect_base(self, rules, obs, out);
             advanced::station_home_reserve(self, rules, obs, out);

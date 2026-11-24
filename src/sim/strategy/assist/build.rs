@@ -172,10 +172,11 @@ pub(super) fn spend(
     build_next(brain, rules, obs, budget, out);
     // Native Building and Defense factories are independent. The main build
     // choice must not make the second strip look busy (or vice versa).
-    queue_defense_in_parallel(brain, rules, obs, budget, out);
-    // A few *open* forward wall cells, only after the base has functioning
-    // firepower and a budget surplus. Walls cannot outrank a bomber defence.
+    // An existing two-tower defensive screen permits gradual protection of
+    // actual `ProtectWithWall=` sites. Queue it *before* the generic second
+    // strip's endless tower request, or the wall strip can never run at all.
     queue_safe_walls(brain, rules, obs, budget, out);
+    queue_defense_in_parallel(brain, rules, obs, budget, out);
     // After the structure decision, because `build_next` is the owner that
     // clears the hold; a reserve set before it would be zeroed by it.
     hold_for_a_second_base(brain, rules, obs, budget);
@@ -397,11 +398,17 @@ fn own_units_on_foundation(
         .collect()
 }
 
-/// Do not reserve imaginary wall slots around friendly buildings. Auto wall
-/// rings are deliberately disabled until their real passability and autofill
-/// effects are proven safe for miners and the MCV.
-fn wall_ring(_rules: &RuleSet, _obs: &Observation<'_>) -> BTreeSet<(u16, u16)> {
-    BTreeSet::new()
+/// Once a perimeter is *being built*, do not let the construction queue
+/// stamp a factory over the remaining intended segments. Prior to the first
+/// wall, leave normal expansion free; a wall must not stall the opening.
+fn wall_ring(rules: &RuleSet, obs: &Observation<'_>) -> BTreeSet<(u16, u16)> {
+    let Some((_, ring)) = super::walls::planned_ring(rules, obs) else {
+        return BTreeSet::new();
+    };
+    if !ring.iter().any(|(x,y)| obs.wall_owner_at(*x,*y) == Some(obs.house())) {
+        return BTreeSet::new();
+    }
+    ring.into_iter().collect()
 }
 
 /// The wallet the house keeps for the harvesters it has not built yet.
@@ -451,11 +458,8 @@ fn build_next(
     // left over from a decision that has since been paid for would starve the
     // factories of money nobody is saving.
     brain.yard_reserve = 0;
-    // Do not automatically close wall rings until their gate connectivity is
-    // verified *after* native overlay autofill. A two-cell planned gap can be
-    // blocked by terrain or another building, stranding miners and tanks.
-    // Wall construction remains available to players and scripted teams; the
-    // unattended planner favors armed towers over speculative fortifications.
+    // Defensive walls are planned on their independent factory line. The
+    // outline protects eligible buildings, but refinery lanes remain open.
 
     // A structure the yard has finished and not yet put down is *owned*: it is
     // waiting for a cell, not for a buyer. Starting another because the count
@@ -504,7 +508,8 @@ fn build_next(
         Some((plan::Chosen { step: None, item, ty: chosen.0, type_id: chosen.1 }, anchor))
     });
     let focused = frontier.as_ref().map(|(_,anchor)| *anchor);
-    let Some(mut chosen) = frontier.map(|(chosen, _)| chosen).or_else(|| next_building_for(
+    let Some(mut chosen) = frontier.map(|(chosen, _)| chosen).or_else(|| {
+        let regular = next_building_for(
         rules,
         obs,
         &brain.census,
@@ -514,7 +519,21 @@ fn build_next(
         // A busy Defense strip must never hide a ready main construction strip.
         |item| item != Item::Defense && brain.director.permits_build(item),
         brain.asset_ops.technology_window(tick),
-    )) else {
+        );
+        // Power and income recovery always outrank research. Otherwise a
+        // sizeable battalion stalled before a tower banks for the next native
+        // radar/laboratory prerequisite instead of buying another line tank.
+        let urgent = regular.as_ref().is_some_and(|plan|
+            matches!(plan.item, Item::Power | Item::Refinery | Item::Weapons)
+            && (plan::power_short(rules,obs,&brain.census)
+                || brain.census.refineries == 0
+                || brain.census.harvesters == 0));
+        if urgent || plan::needs_power_reserve(rules,obs,&brain.census,budget.free) {
+            regular
+        } else {
+            super::siege_counter::technology_step(brain,rules,obs).or(regular)
+        }
+    }) else {
         return;
     };
     // Frontier decisions bypass `next_building_for`: a remote defensive
@@ -616,6 +635,8 @@ fn build_next(
         Item::Power | Item::Weapons if brain.director.recovering_income() => {
             budget.free.max(0)
         }
+        Item::Radar | Item::Tech if super::siege_counter::technology_step(brain,rules,obs)
+            .is_some_and(|want| want.type_id == type_id) => budget.free.max(0),
         Item::Aircraft | Item::Radar | Item::Tech | Item::Superweapon
         | Item::SupportSuperweapon => {
             price.saturating_sub(budget.free).max(0)
@@ -857,23 +878,23 @@ fn specialized_defense<'r>(
         })
 }
 
-/// A finite, open forward barricade after native military essentials. The
+/// Small per-building anti-infiltration perimeters after military essentials. The
 /// Defense strip cannot contain a queued tower or wall while this is issued,
 /// and `walls::next_segment` refuses segments with unplanned native autofill.
 fn queue_safe_walls(
     brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
     budget: &Budget, out: &mut Outbox,
 ) {
-    if brain.census.refineries < 2 || brain.census.harvesters < 2
-        || budget.free < 5_000 || budget.income.is_some_and(|income| income <= 0)
+    if brain.census.refineries < 1 || brain.census.harvesters < 1
+        || budget.free < 3_500 || budget.income.is_some_and(|income| income <= 0)
         || brain.director.under_attack_now()
         || brain.census.line(ProductionCategory::Defense).busy()
         || out.intents.iter().any(|intent| matches!(intent, Intent::QueueProduction { type_id }
             if obs.object_type(rules, *type_id).is_some_and(|ty|
                 crate::sim::production::category_for_object(ty) == ProductionCategory::Defense)))
     { return; }
-    let (air, total) = armed_defenses(rules, obs, &brain.census);
-    if air == 0 || total < 2 { return; }
+    let (_, total) = armed_defenses(rules, obs, &brain.census);
+    if total < 2 { return; }
     let Some(segment) = super::walls::next_segment(brain, rules, obs) else { return; };
     if obs.in_production(rules, segment.type_id)
         || !obs.object_type(rules, segment.type_id).is_some_and(|ty|
@@ -890,7 +911,7 @@ fn queue_safe_walls(
         return;
     }
     out.intent(Intent::QueueProduction { type_id: segment.type_id });
-    log::info!("auto play: safe front wall at {:?}, existing={} native_fill={}",
+    log::info!("auto play: protective wall at {:?}, existing={} native_fill={}",
         segment.cell, segment.standing, segment.fill);
 }
 

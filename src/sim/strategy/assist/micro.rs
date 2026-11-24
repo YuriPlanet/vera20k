@@ -27,7 +27,7 @@
 use std::collections::BTreeSet;
 
 use crate::rules::locomotor_type::MovementZone;
-use crate::rules::object_type::ObjectCategory;
+use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::control::brain::Outbox;
 use crate::sim::control::observation::{EnemyEntity, Observation};
@@ -86,12 +86,16 @@ pub(super) fn run(
             team.members.contains(&unit.entity_id) && unit.controllable()
                 && !unit.in_service()).copied()).collect();
     let raid_target = mining_raid_objective(rules, obs, brain, &raiders);
-    if let Some((id, _)) = raid_target {
+    if let Some((id, cell)) = raid_target {
         let since = brain.harass_focus.filter(|(old, until)|
             *old == id && tick < *until);
         brain.harass_focus = Some(since.unwrap_or((id, tick.saturating_add(900))));
+        brain.harass_site = Some((cell, tick.saturating_add(900)));
     } else {
         brain.harass_focus = None;
+        if brain.harass_site.is_some_and(|(_, until)| tick >= until) {
+            brain.harass_site = None;
+        }
     }
     // Snapshotted: the ledger and the teams are borrowed while they are read,
     // and the intent table is written below.
@@ -625,9 +629,25 @@ pub(super) fn run(
                         continue;
                     }
                 }
-                // No vulnerable *visible* harvester: explore a legal, safe
-                // frontier. Don't attack-move into the last known refinery's
-                // tower network on an obsolete economic sighting.
+                // Keep a *recently observed* mining corridor on the raiders'
+                // route while the moving miner vanishes into fog or transforms
+                // into a deployed enslaving refinery. This is only a Move to
+                // a known location; attacking a hidden entity remains illegal.
+                if let Some((site, until)) = brain.harass_site
+                    && tick < until
+                    && super::advance::cell_distance(item.cell, site) > 7
+                    && super::orders::reachable(rules, obs, item.entity_id, site)
+                    && safe_mining_raid_leg(rules, obs, item.entity_id, item.cell, site)
+                {
+                    if super::orders::issue_tracked(
+                        &mut brain.tracked, brain.trace, out, rules, obs,
+                        item.entity_id, TrackedKind::Move, None, Some(site),
+                        Goal::Move { cell: site },
+                    ) { issued += 1; }
+                    continue;
+                }
+                // No vulnerable *visible* miner: explore a legal, safe
+                // frontier. Never blindly attack-move into old enemy fire.
                 let Some(cell) = nearest_unexplored(obs, item.cell, item.zone)
                     .filter(|cell| safe_mining_raid_leg(
                         rules, obs, item.entity_id, item.cell, *cell))
@@ -1037,8 +1057,9 @@ fn safe_mining_raid_leg(
     }
     !obs.visible_enemy_entities().any(|defender| {
         let Some(ty) = obs.entity_type(rules, defender.entity_id) else { return false; };
-        if !ty.is_base_defense || !obs.visible_enemy_building_operational(
-            rules, defender.entity_id)
+        if !super::siege_counter::dangerous_battery(rules, ty)
+            || !obs.visible_enemy_building_operational(
+                rules, defender.entity_id)
         { return false; }
         let reach = super::tactics::effective_reach_against(
             rules, obs, defender.entity_id, actor,
@@ -1070,10 +1091,14 @@ fn mining_raid_objective(
     obs.visible_enemy_entities().filter_map(|enemy| {
         let ty = obs.entity_type(rules, enemy.entity_id)?;
         let traits = super::census::Traits::of(rules, ty);
-        let rank = if traits.harvester { 0u8 } else if traits.refinery { 1 } else { return None; };
+        // A deployed slave mine is not an ordinary refinery: it *is* both the
+        // workforce and the output point, and destroying it severs the whole
+        // slave-harvesting economy. Match the retail `Enslaves=` property in
+        // both mobile (`SMIN`) and deployed (`YAREFN`) forms, not their IDs.
+        let rank = mining_objective_rank(ty, traits.harvester, traits.refinery)?;
         let safe = actors.iter().filter(|unit|
             obs.can_hurt(rules, unit.entity_id, enemy.entity_id)
-                && super::orders::reachable(rules, obs, unit.entity_id, enemy.cell)
+                && raid_target_reachable(rules, obs, unit.entity_id, ty, enemy.cell)
                 && safe_mining_raid_leg(rules, obs,
                     unit.entity_id, unit.cell, enemy.cell)
         ).count();
@@ -1087,6 +1112,33 @@ fn mining_raid_objective(
     }).min_by_key(|(not_held, rank, distance, id, _)|
         (*not_held, *rank, *distance, *id))
         .map(|(_, _, _, id, cell)| (id, cell))
+}
+
+/// Both retail SMIN and YAREFN set ResourceGatherer *and*
+/// ResourceDestination. The native object category is the distinction:
+/// the parked mine's slaves and output point are one stationary economy,
+/// whereas the mobile vehicle can still escape and relocate.
+fn mining_objective_rank(ty: &ObjectType, harvester: bool, refinery: bool) -> Option<u8> {
+    if ty.enslaves.is_some() && ty.category == ObjectCategory::Building { Some(0) }
+    else if ty.enslaves.is_some() && ty.category == ObjectCategory::Vehicle { Some(1) }
+    else if harvester { Some(2) }
+    else if refinery { Some(3) }
+    else { None }
+}
+
+/// The centre of a deployed mine occupies ground. A zone query to that exact
+/// square can fail although a tank can legally approach its *perimeter* to
+/// attack it. Preserve the regular connected-zone check for moving miners.
+fn raid_target_reachable(
+    rules: &RuleSet, obs: &Observation<'_>, actor: u64,
+    target: &ObjectType, target_cell: (u16,u16),
+) -> bool {
+    if target.category != ObjectCategory::Building {
+        return super::orders::reachable(rules, obs, actor, target_cell);
+    }
+    let Some((from, type_id)) = obs.object_cell_and_type(actor) else { return false; };
+    let Some(unit) = obs.object_type(rules, type_id) else { return false; };
+    super::orders::building_approachable(obs,unit.movement_zone,from,target_cell)
 }
 
 /// Never chase a harvester all the way into a turret's coverage. The most
@@ -1545,5 +1597,23 @@ mod priority_regression_tests {
         assert!(!preserve_existing_attack(true,true,true));
         assert!(preserve_existing_attack(true,true,false));
         assert!(!preserve_existing_attack(false,true,false));
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v41_slaveminer_raid_tests {
+    use super::*;
+
+    #[test]
+    fn deployed_slave_mine_precedes_mobile_miner_and_normal_refinery() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+        else { return; };
+        let deployed = rules.object("YAREFN").expect("Yuri deployed slave mine");
+        let mobile = rules.object("SMIN").expect("Yuri mobile slave miner");
+        assert!(deployed.enslaves.is_some() && mobile.enslaves.is_some());
+        assert_eq!(mining_objective_rank(deployed, true, true), Some(0));
+        assert_eq!(mining_objective_rank(mobile, true, true), Some(1));
+        let refinery = rules.object("GAREFN").expect("normal refinery");
+        assert_eq!(mining_objective_rank(refinery, false, true), Some(3));
     }
 }
