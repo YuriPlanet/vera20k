@@ -43,8 +43,10 @@ SizeLimit=15              ; the largest Size= that may enter
   on its own `ToOverlay=` overlay on its damaged stage at any index, not
   only GASAND, GAWALL and NAWALL. Otherwise the `[General]` WallTower and
   gate lists decide as before (Ares `10015780`, hook `0x47C8AB`;
-  `sim::build_site`). Retail names GADUMY for every gate; GAGATE_A is a
-  `Gate=yes` type with TechLevel -1.
+  `sim::build_site`). The placed gate then sells its owner's wall of any
+  `Wall=yes` overlay under its foundation (Ares `100156F0`, hook
+  `0x440709`; `world_spawn::wall_unlimbo`). Retail names GADUMY for every
+  gate; GAGATE_A is a `Gate=yes` type with TechLevel -1.
 - **Trench lines.** `IsTrench=` (BuildingTypeExt `+0x84`) makes a type
   linkable like a firestorm section: placing it fills the gap up to
   `GuardRange` cells to a same-house or allied trench of the same kind, and
@@ -108,13 +110,6 @@ SizeLimit=15              ; the largest Size= that may enter
 
 ## Not included
 
-- Ares' wall test in the `Gate=` arm of `BuildingClass::Unlimbo @ 0x00440580`
-  (hook `0x440709`). VERA ports the stock arm (a placed gate sells its
-  house's walls under its foundation, and the WallTower arm at
-  `0x004405BC`): `sim::world::world_spawn::wall_unlimbo`. It tests the
-  stock overlay ids 0, 2 and 0x1A; Ares' hook, which admits any `Wall=`
-  overlay there, is not ported, so under Ares a mod wall stays under a
-  gate. No retail buildable type is a gate or WallTower.
 - Trench traversal: the cursor and click rows are those of a selection of
   buildings only; a mixed selection with a trench does not offer them,
   and Ctrl+Alt over a friendly trench keeps its stock empty answer. The
@@ -134,7 +129,7 @@ SizeLimit=15              ; the largest Size= that may enter
 
 | Hook | Ares.dll | Name | Disposition |
 |---|---|---|---|
-| `0x440709` | `100156F0` | BuildingClass_Put | residual: the stock gate arm is ported with the stock wall ids; the hook's wall test is not (above) |
+| `0x440709` | `100156F0` | BuildingClass_Put | ported: in the `Gate=` arm of `BuildingClass::Unlimbo`, a placed gate sells its owner's wall of any `Wall=yes` overlay under its foundation, the walls the placement hook `0x47C8AB` lets it stand on, not only overlays 0, 2 and 0x1A (`world_spawn::wall_unlimbo`) |
 | `0x47C8AB` | `10015780` | CellClass_CanThisExistHere_GateOnWall | ported: `sim::build_site::overlay_admits` |
 | `0x480534` | `10015740` | CellClass_AttachesToNeighbourOverlay | ported: `sim::cell_kernel::wall_connection_step` |
 | `0x4574D2` | `10015E70` | BuildingClass_Infiltrate_Standard | not applicable: a sidebar repaint; VERA redraws the sidebar every frame |

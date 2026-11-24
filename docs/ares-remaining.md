@@ -21,7 +21,7 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1055; the chain docs give 389 more a disposition
+  removed). The engine source cites 1060; the chain docs give 384 more a disposition
   (ported elsewhere, equivalent, not applicable, skipped or residual); 4 are
   untouched, listed at the end. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
@@ -35,19 +35,10 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   `tooltips::retail_ifv_tip_names_its_turret_or_passenger`) compare against English text.
   They fail the same way on main.
 
-## Blocked on gamemd logic VERA does not port
+## Stock gap found in passing
 
-These Ares features hook stock gamemd code that VERA has no port of.
-Porting that stock code changes games without Ares too, so it belongs in its own native chain
-first; the Ares part is then small. None of them is reachable with retail YR data.
-
-| Ares feature (keys, hooks) | Needs this stock gamemd logic | Retail |
-|---|---|---|
-| Gate placement selling walls (0x440709, 100156F0) | The hook's wall test in BuildingClass::Unlimbo's Gate arm; the stock arm is ported with the stock wall ids | A mod `Wall=` overlay stays under a gate |
-
-Stock gap found in passing, with no Ares dependency: Generate_Starting_Units (0x5D6D80)
-stops for every later house when one house has no starting-unit candidates; VERA skips
-only that house.
+With no Ares dependency: Generate_Starting_Units (0x5D6D80) stops for every later house
+when one house has no starting-unit candidates; VERA skips only that house.
 
 ## Ares mechanisms ported in part
 
