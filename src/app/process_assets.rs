@@ -870,7 +870,7 @@ impl ProcessAssets {
             .map(|name| {
                 let bytes = match &shipped {
                     Some(shipped) => shipped.used(&name).and_then(|used| used.shipped_bytes()),
-                    None => assets.get_with_source_ref(&name).map(|(bytes, _)| bytes),
+                    None => assets.installed_file(&name).map(|(_, bytes)| bytes),
                 };
                 let digest = bytes.and_then(|bytes| {
                     IniFile::from_bytes(bytes)
@@ -1948,6 +1948,59 @@ mod tests {
         // file, as `nmd` picks New Urban's `urbannmd.ini` for Urban.
         assert!(changed.stock_ini_roots());
         assert!(!started(Some("nmd"), None).stock_ini_roots());
+    }
+
+    #[test]
+    fn a_maps_pinned_snow_keeps_the_mods_lobby_agreement() {
+        use crate::map::theater::{TerrainFiles, load_theater_with};
+        let dir = crate::map::theater::terrain_test_install("pinned-mod-agreement");
+        for (file, bytes) in [
+            ("rulesmd.ini", "[General]"),
+            ("artmd.ini", "[UNIT]"),
+            ("aimd.ini", "[AI]"),
+        ] {
+            std::fs::write(dir.path().join(file), bytes).unwrap();
+        }
+        let folder = dir.path().join("mod");
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(
+            folder.join("snowmd.ini"),
+            "[TileSet0000]\nFileName=modice\nTilesInSet=1\n",
+        )
+        .unwrap();
+        std::fs::write(folder.join("modice01.sno"), b"mod tile").unwrap();
+        let agreement = |pinned| {
+            let mut assets =
+                AssetManager::with_mod(dir.path(), Some(&folder), MediaArchiveMode::STOCK_DIGITAL)
+                    .unwrap();
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+            process.initialize_sources_if_needed(&assets).unwrap();
+            if pinned {
+                // Same pin boundary as a map using bundled ice, before the first
+                // agreement, so its lazy comparison of the mod's tiles runs here.
+                load_theater_with(&mut assets, "SNOW", TerrainFiles::Original).unwrap();
+                assert!(assets.names_pinned());
+            }
+            process.return_from_loading(assets);
+            (
+                process.multiplayer_rules_digest("").unwrap(),
+                process.multiplayer_rules_parts(&[""]).unwrap(),
+            )
+        };
+        let expected = agreement(false);
+        let parts: serde_json::Value = serde_json::from_str(&expected.1[0].json()).unwrap();
+        let file = |id| {
+            parts["files"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|f| f["id"] == id)
+                .unwrap()
+        };
+        assert_eq!(file("theater:snowmd.ini")["source"], "mod");
+        assert_eq!(file("theater:snowmd.ini")["changed"], true);
+        assert_eq!(file("tiles")["changed"], true);
+        assert_eq!(agreement(true), expected);
     }
 
     /// VERA: a theater's tiles decide its cells' land and height, and map
