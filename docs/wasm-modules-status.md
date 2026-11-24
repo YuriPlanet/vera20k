@@ -345,9 +345,9 @@ modders INI names.
   (`SavedExtModules::ini`) and in the state hash and checksum.
 - Demo mods, configured only in INI (`sdk/examples/ini-shield`, `ini-aura`,
   `ini-counter`, `ini-academy`, each with `rulesmd.ini` and a Chinese README):
-  `ini_demo_mods_reach_their_marks` plays 3000 frames with each and checks its
-  `DEMO-OK` marks when `VERA20K_TEST_INI_DEMOS` lists
-  `module.wasm|rulesmd.ini|marks` entries (`;`-separated): shield
+  `ini_demo_mods_reach_their_marks` plays 3000 frames with each (or the entry's
+  optional fourth field) and checks its `DEMO-OK` marks when `VERA20K_TEST_INI_DEMOS`
+  lists `module.wasm|rulesmd.ini|marks[|frames]` entries (`;`-separated): shield
   `entry,key,absorb,broken,restore`, aura `entry,key,apply,event,action`, counter
   `entry,count,reward,event`, academy `entry,key,enter,promote,event,action`. All
   pass (2026-11-24). Known gaps they found: `CreateObject` cannot target a factory
@@ -380,7 +380,10 @@ seat budgets are separate work).
   - `Production`: the chooser block of `HouseClass::Update`
     (`update_production_choices`), `Factory_AI`'s start of production
     (`factory_ai`), `AI_Manage_Build_Queue` and `Fire_Sale` in the strategy tick,
-    the house AI's MCV deploy (`owner_builds_its_own_base`).
+    the house AI's MCV deploy (`owner_builds_its_own_base`); a refused deploy falls
+    back to Guard instead of Hunt (`finish_initial_attempt`), and a claim that newly
+    covers `Production` turns an MCV the house AI already sent to Hunt into Guard
+    (`mcv_deploy::yield_base_hunts`), so Mission_Hunt's deploy arm does not deploy it.
   - `Forces`: team creation and AI triggers (`update_team_creation`), the house's
     teams in `TeamClass::AI` (`team_ai`, the teams stand still), `All_To_Hunt` in the
     strategy tick, the regroup after an MCV deploys.
@@ -400,8 +403,13 @@ seat budgets are separate work).
   README): claims every computer house and plays it through orders only (MCV deploy,
   a four-building order placed at `Placeable` cells, infantry and tanks let out with
   `TakeProduct`, `AttackMove` at the player's base), hearing `Commanded`,
-  `OrderRefused` and `Birth`. Its `ini_demo_mods_reach_their_marks` marks:
-  `claim,deploy,build,place,train,attack,order-rejected,native-idle`. SDK:
+  `OrderRefused` and `Birth`; it attacks once its war factory stands. Its
+  `ini_demo_mods_reach_their_marks` marks, over 4500 frames (the refinery and war
+  factory take about 1260 frames each):
+  `claim,deploy,build,place,train,attack,order-rejected,native-idle,base|4500`; the
+  house stands all four buildings by frame 2400 and attacks with 40 units. `find`
+  also returns the product a factory holds (off the map), so the demo counts a
+  building as standing only beyond the one the building factory holds. SDK:
   `Event::ORDER_REFUSED`, `Order::take_product`.
 
 ## Done (phase 1c: reads for driving a house)

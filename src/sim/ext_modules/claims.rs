@@ -43,7 +43,12 @@
 //!     `phobos_last_legs_actions`);
 //!   - the house AI's MCV deploy (`mcv_deploy::owner_builds_its_own_base`,
 //!     read by `UnitClass::AI`'s Hunt queue `0x007363DE..0x0073645B` and
-//!     `Mission_Guard`'s Unload arm `0x007408C7..`).
+//!     `Mission_Guard`'s Unload arm `0x007408C7..`); the Hunt that
+//!     `Mission_Unload` queues after a refused deploy (`0x0073DDCB..`,
+//!     `mcv_deploy::finish_initial_attempt`) becomes Guard; and when the
+//!     claim starts, an MCV the house AI already sent to Hunt queues Guard
+//!     (`mcv_deploy::yield_base_hunts`), so Mission_Hunt's deploy arm does
+//!     not deploy it.
 //! - `Forces`:
 //!   - the team block of `HouseClass::Update` (`0x004F8A00..0x004F8B08`,
 //!     `ai_team_creation::update_team_creation`): AI trigger evaluation
@@ -88,9 +93,10 @@
 
 use std::collections::BTreeMap;
 
-use vera20k_wasm_ext::{DOMAIN_ALL, Invalid, Status};
+use vera20k_wasm_ext::{DOMAIN_ALL, DOMAIN_PRODUCTION, Invalid, Status};
 
 use super::{Host, ModuleSource};
+use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
 
@@ -214,6 +220,36 @@ impl Simulation {
                 .is_some_and(|index| claims.mask(index) & domain != 0)
     }
 
+    /// `source` holds exactly `bits` on house `owner` (array index `index`;
+    /// [`DomainClaims::write`]). A claim that newly covers `Production`
+    /// turns the house AI's MCV Hunt into Guard
+    /// ([`crate::sim::mcv_deploy::yield_base_hunts`]).
+    fn write_claim(
+        &mut self,
+        owner: InternedId,
+        index: u32,
+        source: ModuleSource,
+        bits: u8,
+        rules: &RuleSet,
+    ) -> Status {
+        let claims = &mut self.ext_modules.claims;
+        let had_production = claims.mask(index as usize) & DOMAIN_PRODUCTION != 0;
+        let status = claims.write(index, source, bits);
+        if !had_production && claims.mask(index as usize) & DOMAIN_PRODUCTION != 0 {
+            crate::sim::mcv_deploy::yield_base_hunts(self, owner, rules);
+        }
+        status
+    }
+
+    /// The mod module claims `bits` of house `name`, as its `ControlDomains`
+    /// write does.
+    #[cfg(test)]
+    pub(crate) fn claim_for_test(&mut self, name: &str, bits: u8, rules: &RuleSet) -> Status {
+        let owner = self.interner.get(name).expect("house");
+        let index = self.houses.index_of(owner).expect("house index") as u32;
+        self.write_claim(owner, index, ModuleSource::Mod, bits, rules)
+    }
+
     /// "Mod AI" seats (module docs): each house named in `houses` starts
     /// with every domain claimed by the mod module when the mod is a
     /// controller and its module runs; otherwise the native AI plays it and
@@ -285,8 +321,6 @@ impl Host<'_, '_> {
         };
         Ok(self
             .sim
-            .ext_modules
-            .claims
-            .write(index, self.source, value as u8))
+            .write_claim(owner, index, self.source, value as u8, self.rules))
     }
 }
