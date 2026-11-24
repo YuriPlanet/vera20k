@@ -608,13 +608,12 @@ fn c4_on_cabhut_collapses_bridge_and_hut_survives() {
 /// `seal`'s C4 charge on `target`, planted this frame.
 fn plant_c4(sim: &mut Simulation, rules: &RuleSet, target: u64, seal: u64) {
     let frame = sim.session.binary_frame() as i32;
-    sim.substrate
-        .entities
-        .get_mut(target)
-        .unwrap()
+    let entity = sim.substrate.entities.get_mut(target).unwrap();
+    let note = entity.note_names();
+    entity
         .building
         .pending_c4_detonation
-        .plant(frame, rules.c4_delay_frames(), seal);
+        .plant(frame, rules.c4_delay_frames(), seal, note);
 }
 
 /// C4 on a CABHUT with nothing for its bridge sweep to drop clears the charge

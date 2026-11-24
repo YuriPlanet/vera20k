@@ -1072,7 +1072,7 @@ impl PendingEntry {
 
     /// A class destination setter's store of the Techno it waits for (see the
     /// type).
-    pub(crate) fn install(&mut self, target: u64) {
+    pub(crate) fn install(&mut self, target: u64, _: crate::sim::game_entity::NameNote) {
         self.0 = Some(target);
     }
 

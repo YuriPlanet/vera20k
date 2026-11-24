@@ -280,7 +280,7 @@ fn original_particle_constructor_separates_supplied_coordinate_from_owner_target
             .get_mut(roles["owner"])
             .unwrap()
             .attack_target
-            .set(target(&roles, &input["tarcom"]));
+            .set_for_test(target(&roles, &input["tarcom"]));
         if input["cell_bridge"] == true {
             sim.resolved_terrain
                 .as_mut()
@@ -328,7 +328,7 @@ fn birth(rules: &RuleSet, row: &Value) -> (Simulation, Roles, u64) {
         .get_mut(owner)
         .unwrap()
         .attack_target
-        .set(Some(TargetKind::Entity(roles["target"])));
+        .set_for_test(Some(TargetKind::Entity(roles["target"])));
     let id = sim
         .spawn_particle_system(
             rules.ps_type_id_by_name("WeldingSys").unwrap(),
@@ -346,7 +346,7 @@ fn birth(rules: &RuleSet, row: &Value) -> (Simulation, Roles, u64) {
         .unwrap()
         .seldom
         .spark_particle_system
-        .bind(Some(id));
+        .set_for_test(Some(id));
     (sim, roles, id)
 }
 
@@ -988,7 +988,7 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
             .unwrap()
             .seldom
             .spark_particle_system
-            .bind(live.then_some(id));
+            .set_for_test(live.then_some(id));
         restore_rng(&mut sim, &row["rng_before"]);
         let mut weapon = rules.weapon("RepairBullet").unwrap().clone();
         weapon.use_spark_particles = row["input"]["use_spark_particles"].as_bool().unwrap();

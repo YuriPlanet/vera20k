@@ -277,7 +277,8 @@ impl Simulation {
         if repair {
             // `0x0041ABC4`.
             if let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity.pending_entry.install(building);
+                let note = entity.note_names();
+                entity.pending_entry.install(building, note);
             }
             destination = None;
         }

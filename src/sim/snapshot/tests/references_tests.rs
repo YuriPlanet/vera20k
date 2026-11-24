@@ -45,7 +45,7 @@ fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
         .unwrap()
         .seldom
         .spark_particle_system
-        .bind(Some(particle_id));
+        .set_for_test(Some(particle_id));
     sim.set_logic_order_for_test(vec![particle_id, entity_id]);
 
     let bytes = GameSnapshot::save_validated(&sim, 7, 8, "Restore fixture", 9);

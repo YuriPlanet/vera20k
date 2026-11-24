@@ -235,6 +235,7 @@ impl GameEntity {
     /// independently with the building power owner's fixture hook.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_temporal_for_test(&mut self, state: TemporalState) {
+        let _ = self.note_names();
         self.temporal = state;
         self.set_building_online_for_test(!self.temporal.is_warped());
     }
@@ -1625,10 +1626,13 @@ impl Simulation {
 }
 
 impl crate::sim::world::ObjectSubstrate {
+    /// The link's target is a name the pointer-expiry index reads, so the
+    /// attacker is noted ([`GameEntity::note_names`]).
     fn temporal_link_mut(&mut self, attacker: u64) -> Option<&mut TemporalLink> {
-        self.entities
-            .get_mut(attacker)
-            .and_then(|entity| entity.temporal.link.as_deref_mut())
+        self.entities.get_mut(attacker).and_then(|entity| {
+            let _ = entity.note_names();
+            entity.temporal.link.as_deref_mut()
+        })
     }
     fn set_temporal_head(&mut self, target: u64, head: Option<u64>) {
         if let Some(entity) = self.entities.get_mut(target) {
@@ -1680,6 +1684,8 @@ impl crate::sim::world::ObjectSubstrate {
             next_link.prev = Some(to);
         }
         if let Some(entity) = self.entities.get_mut(to) {
+            // The moved link's target is a name the pointer-expiry index reads.
+            let _ = entity.note_names();
             entity.temporal.link = Some(link);
         }
         true

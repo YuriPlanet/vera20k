@@ -2243,7 +2243,8 @@ pub(super) fn emit_admitted_fire(
                 .link_to_owner_fire_slot(system);
         }
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.seldom.fire_particle_system.bind(system);
+            let note = firer.note_names();
+            firer.seldom.fire_particle_system.bind(system, note);
         }
     }
     // FireAt6FF1AD..6FF1F5: after successful Bullet::Fire and recoil, before
@@ -2259,7 +2260,8 @@ pub(super) fn emit_admitted_fire(
     {
         let system = fireat_attached_system(world, rules, weapon, snap, launch);
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.seldom.spark_particle_system.bind(system);
+            let note = firer.note_names();
+            firer.seldom.spark_particle_system.bind(system, note);
         }
     }
     // FireAt6FF1FB..6FF26E: an IsRailgun weapon with no live +314 system runs
@@ -2308,7 +2310,8 @@ pub(super) fn emit_admitted_fire(
                 )
             });
         if !detached && let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.seldom.railgun_particle_system.bind(system);
+            let note = firer.note_names();
+            firer.seldom.railgun_particle_system.bind(system, note);
         }
     }
     // GetROF (`0x006FCFA0`) reads its weapon through GetWeapon (vt+0x3F8,
@@ -2716,13 +2719,11 @@ fn commit_fire_bookkeeping(
     // `SpawnManagerClass::SetTarget` only queues a target that differs from the
     // live one; the manager's own AI pass promotes it.
     for &(parent_id, target) in &spawn_target_updates {
-        if let Some(manager) = world
-            .substrate
-            .entities
-            .get_mut(parent_id)
-            .and_then(|e| e.spawn_manager.as_mut())
-        {
-            manager.set_target(Some(target));
+        if let Some(parent) = world.substrate.entities.get_mut(parent_id) {
+            let note = parent.note_names();
+            if let Some(manager) = parent.spawn_manager.as_mut() {
+                manager.queue_target(Some(target), note);
+            }
         }
     }
     // Drain weapons: `0x0070FD70` installs the reciprocal

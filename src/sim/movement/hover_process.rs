@@ -1441,7 +1441,8 @@ mod tests {
         let destination = crate::sim::components::NavTargetRef::cell(15, 15);
         let actor = sim.substrate.entities.get_mut(id).unwrap();
         let at = ground_pose::position_world_coord(&actor.position);
-        actor.navigation.publish_nav_com(Some(destination));
+        let note = actor.note_names();
+        actor.navigation.publish_nav_com(Some(destination), note);
         actor.mission_leaf.set_infantry_doing_verified(27).unwrap();
         runtime_mut(actor).unwrap().destination = Some(at);
         sim.hover_path_and_arrival(id, 0, &rules, Some(&registry), &mut FrameEffects::default())

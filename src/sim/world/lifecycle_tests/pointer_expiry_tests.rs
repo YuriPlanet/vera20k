@@ -814,14 +814,14 @@ fn particle_system_retirement_clears_only_the_indexed_techno_spark_link() {
         .unwrap()
         .seldom
         .spark_particle_system
-        .bind(Some(1));
+        .set_for_test(Some(1));
     sim.substrate
         .entities
         .get_mut(4)
         .unwrap()
         .seldom
         .spark_particle_system
-        .bind(Some(2));
+        .set_for_test(Some(2));
     sim.substrate
         .particle_systems
         .get_mut(1)
@@ -892,7 +892,7 @@ fn techno_spark_pointer_expiry_is_exact_and_independent_of_control() {
             .unwrap()
             .seldom
             .spark_particle_system
-            .bind(Some(1));
+            .set_for_test(Some(1));
         let before = [
             sim.main_rng.native_state_hex(),
             sim.scenario_rng.native_state_hex(),

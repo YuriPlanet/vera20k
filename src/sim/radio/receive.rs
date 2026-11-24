@@ -2501,7 +2501,8 @@ fn radio_hello(
     let Some(this) = substrate.entities.get_mut(receiver) else {
         return RadioResponse::None;
     };
-    match this.seldom.radio_contacts.insert(from) {
+    let note = this.note_names();
+    match this.seldom.radio_contacts.admit(from, note) {
         Some(_) => RadioResponse::Roger,
         None => RadioResponse::Negatory,
     }

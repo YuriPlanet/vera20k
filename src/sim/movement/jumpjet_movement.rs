@@ -575,15 +575,14 @@ impl JumpjetOrderHost for WorldOrderHost<'_> {
         let (x, y) = self
             .terrain()
             .native_cell_coord(self.cell_identity([destination.x, destination.y]));
-        self.sim
-            .substrate
-            .entities
-            .get_mut(self.id)
-            .unwrap()
-            .navigation
-            .store_nav_com(Some(crate::sim::components::NavTargetRef::cell(
+        let entity = self.sim.substrate.entities.get_mut(self.id).unwrap();
+        let note = entity.note_names();
+        entity.navigation.store_nav_com(
+            Some(crate::sim::components::NavTargetRef::cell(
                 x as u16, y as u16,
-            )));
+            )),
+            note,
+        );
     }
 }
 

@@ -44,12 +44,18 @@ impl AttachedParticleSystem {
     }
 
     /// The native producer stores the constructor result, including NULL.
-    pub(crate) fn bind(&mut self, system: Option<u64>) {
+    pub(crate) fn bind(&mut self, system: Option<u64>, _: crate::sim::game_entity::NameNote) {
         self.system = system;
     }
 
     pub(crate) fn forget(&mut self) {
         self.system = None;
+    }
+
+    /// Install a fixture's system.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_for_test(&mut self, system: Option<u64>) {
+        self.bind(system, crate::sim::game_entity::NameNote::fixture());
     }
 }
 
@@ -79,6 +85,7 @@ impl DamageSmoke {
     /// Install a fixture's system.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, system: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.system = system;
     }
 }
@@ -193,7 +200,8 @@ impl Simulation {
         let system =
             self.spawn_particle_system(selected, coords, None, Some(id), IVec3::ZERO, None, rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.seldom.spark_particle_system.bind(system);
+            let note = entity.note_names();
+            entity.seldom.spark_particle_system.bind(system, note);
         }
     }
 
@@ -558,6 +566,8 @@ impl Simulation {
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            // A name the pointer-expiry index reads.
+            let _ = entity.note_names();
             entity.seldom.damage_smoke_system_id.system = Some(system_id);
         }
     }
@@ -597,7 +607,8 @@ impl Simulation {
         let system =
             self.spawn_particle_system(type_id, coords, cell, None, IVec3::ZERO, None, rules);
         if let Some(entity) = self.substrate.entities.get_mut(building_id) {
-            entity.building.natural_particle_system.bind(system);
+            let note = entity.note_names();
+            entity.building.natural_particle_system.bind(system, note);
         }
     }
 
@@ -673,7 +684,11 @@ impl Simulation {
             rules,
         );
         if let Some(entity) = self.substrate.entities.get_mut(building_id) {
-            entity.building.destroy_smoke_particle_system.bind(system);
+            let note = entity.note_names();
+            entity
+                .building
+                .destroy_smoke_particle_system
+                .bind(system, note);
         }
     }
 }
