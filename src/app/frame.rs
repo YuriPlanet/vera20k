@@ -867,9 +867,9 @@ impl App {
             let _ = state.renderer.gpu.device.poll(wgpu::PollType::Poll);
         }
         state.platform.frame_pacer.clear_render_continuation();
-        if matches!(pass, FramePass::Draw) {
-            crate::app::cncnet::SpawnSlowPc::spend(crate::app::cncnet::SpawnSlowPc::of(state).draw);
-        }
+        // A slow PC's picture costs it every pass, drawn or not: a hidden
+        // spawn window's passes seldom draw, and a slow GPU never skips.
+        crate::app::cncnet::SpawnSlowPc::spend(crate::app::cncnet::SpawnSlowPc::of(state).draw);
         #[cfg(feature = "telemetry-dashboard")]
         crate::app::telemetry_capture::synchronize_observer(state);
         if let Some(session) = hidden_run.as_deref_mut() {

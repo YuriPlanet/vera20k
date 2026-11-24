@@ -381,56 +381,110 @@ impl MatchSeedClock for SpawnSeedClock {
     }
 }
 
-/// Spawn-only test switches (tools/spawn/README.md): with
-/// `VERA20K_SPAWN_SLOW_DRAW_MS` and `VERA20K_SPAWN_SLOW_TICK_MS`, a `-SPAWN`
-/// multiplayer launch plays as a slow PC once its match is on screen, each
-/// drawn picture and each simulation tick taking that many milliseconds more.
-/// The tick's delay is inside the cost the relay's pace reports carry. Read
-/// only for such launches; ordinary play never consults them.
+/// Spawn-only test switch (tools/spawn/README.md): with
+/// `VERA20K_SPAWN_SLOW_PLAN`, a `-SPAWN` multiplayer launch plays as a slow
+/// PC once its match is on screen, each frame pass (drawn or not) and each
+/// simulation tick taking that many milliseconds more. The plan is
+/// `second:draw_ms:tick_ms[:unreported_ms]` points, comma separated, from
+/// the match's start; the delays go linearly between points and hold after
+/// the last, so one point is a PC slow by the same amount throughout and
+/// several make it slow down, speed up or hitch as a match grows. The tick's
+/// delay is inside the cost the relay's pace reports carry; the unreported
+/// one is spent on each tick too but outside it, as a world copy for the
+/// picture is (2026-11-21, match 1e9fac21: 8 ms ticks, 55 frames a second).
+/// Read only for such launches; ordinary play never consults it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct SpawnSlowPc {
     pub(crate) draw: std::time::Duration,
     pub(crate) tick: std::time::Duration,
+    pub(crate) unreported: std::time::Duration,
 }
+
+/// One point of `VERA20K_SPAWN_SLOW_PLAN`: seconds into the match, then the
+/// draw, tick and unreported tick delays in milliseconds.
+type SlowPoint = (f64, [f64; 3]);
 
 impl SpawnSlowPc {
     pub(crate) fn of(state: &AppState) -> Self {
         let progress = &state.frontend.external_progress;
-        if !state.frontend.external_launch
-            || progress.mode == ExternalLaunchMode::Single
-            || progress.match_started.is_none()
-        {
+        if !state.frontend.external_launch || progress.mode == ExternalLaunchMode::Single {
             return Self::default();
         }
-        Self::requested()
+        let Some(started) = progress.match_started else {
+            return Self::default();
+        };
+        Self::at(Self::plan(), started.elapsed().as_secs_f64())
+    }
+
+    /// The delays `plan` gives `second` into the match.
+    fn at(plan: &[SlowPoint], second: f64) -> Self {
+        let Some(&(_, mut delays)) = plan.first() else {
+            return Self::default();
+        };
+        for pair in plan.windows(2) {
+            let ((from, before), (to, after)) = (pair[0], pair[1]);
+            if second >= to {
+                delays = after;
+            } else if second > from {
+                let share = (second - from) / (to - from);
+                delays = std::array::from_fn(|i| before[i] + (after[i] - before[i]) * share);
+            }
+        }
+        let millis = |value: f64| std::time::Duration::from_secs_f64(value.max(0.0) / 1000.0);
+        Self {
+            draw: millis(delays[0]),
+            tick: millis(delays[1]),
+            unreported: millis(delays[2]),
+        }
+    }
+
+    /// `VERA20K_SPAWN_SLOW_PLAN`'s points in time order; None when malformed.
+    fn parse(text: &str) -> Option<Vec<SlowPoint>> {
+        let mut plan = text
+            .split(',')
+            .filter(|point| !point.trim().is_empty())
+            .map(|point| {
+                let fields = point
+                    .trim()
+                    .split(':')
+                    .map(|field| field.trim().parse::<f64>().ok())
+                    .collect::<Option<Vec<_>>>()?;
+                match fields[..] {
+                    [second, draw, tick] => Some((second, [draw, tick, 0.0])),
+                    [second, draw, tick, unreported] => Some((second, [draw, tick, unreported])),
+                    _ => None,
+                }
+            })
+            .collect::<Option<Vec<_>>>()?;
+        plan.sort_by(|a, b| a.0.total_cmp(&b.0));
+        Some(plan)
     }
 
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    fn requested() -> Self {
-        static REQUESTED: std::sync::OnceLock<SpawnSlowPc> = std::sync::OnceLock::new();
-        *REQUESTED.get_or_init(|| {
-            let millis = |name| {
-                std::time::Duration::from_millis(
-                    std::env::var(name)
-                        .ok()
-                        .and_then(|value| value.trim().parse().ok())
-                        .unwrap_or(0),
-                )
+    fn plan() -> &'static [SlowPoint] {
+        static PLAN: std::sync::OnceLock<Vec<SlowPoint>> = std::sync::OnceLock::new();
+        PLAN.get_or_init(|| {
+            let Ok(text) = std::env::var("VERA20K_SPAWN_SLOW_PLAN") else {
+                return Vec::new();
             };
-            let slow = SpawnSlowPc {
-                draw: millis("VERA20K_SPAWN_SLOW_DRAW_MS"),
-                tick: millis("VERA20K_SPAWN_SLOW_TICK_MS"),
-            };
-            if slow != SpawnSlowPc::default() {
-                log::info!("Spawn test switch: playing as a slow PC, {slow:?}");
+            match Self::parse(&text) {
+                Some(plan) => {
+                    log::info!("Spawn test switch: playing as a slow PC, plan {plan:?}");
+                    plan
+                }
+                None => {
+                    log::warn!(
+                        "Spawn test switch: ignoring malformed VERA20K_SPAWN_SLOW_PLAN {text:?}"
+                    );
+                    Vec::new()
+                }
             }
-            slow
         })
     }
 
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-    fn requested() -> Self {
-        Self::default()
+    fn plan() -> &'static [SlowPoint] {
+        &[]
     }
 
     /// Spend `delay` on this thread, as a slow PC would.
@@ -1057,6 +1111,29 @@ impl App {
 mod tests {
     use super::*;
     use crate::app::frontend::cncnet_spawn::{SpawnGame, SpawnRequest};
+
+    #[test]
+    fn a_slow_plan_goes_linearly_between_its_points_and_holds_after() {
+        use std::time::Duration;
+        let plan = SpawnSlowPc::parse("120:10:2:6, 0:0:0,180:4:0").unwrap();
+        let at = |second| SpawnSlowPc::at(&plan, second);
+        assert_eq!(at(0.0), SpawnSlowPc::default());
+        assert_eq!(at(60.0).draw, Duration::from_millis(5));
+        assert_eq!(at(60.0).tick, Duration::from_millis(1));
+        assert_eq!(at(60.0).unreported, Duration::from_millis(3));
+        assert_eq!(at(150.0).draw, Duration::from_millis(7));
+        assert_eq!(at(1000.0).draw, Duration::from_millis(4));
+        assert_eq!(at(1000.0).tick, Duration::ZERO);
+        let steady = SpawnSlowPc::parse("0:8:1").unwrap();
+        assert_eq!(
+            SpawnSlowPc::at(&steady, 999.0).draw,
+            Duration::from_millis(8)
+        );
+        assert_eq!(SpawnSlowPc::at(&[], 5.0), SpawnSlowPc::default());
+        assert!(SpawnSlowPc::parse("0:8").is_none());
+        assert!(SpawnSlowPc::parse("0:8:1:2:3").is_none());
+        assert!(SpawnSlowPc::parse("x:1:2").is_none());
+    }
 
     #[test]
     fn spawn_action_switches_are_off_by_default_and_fire_once() {

@@ -15,10 +15,16 @@ directories (docs/spawn.md). Nothing here is used by ordinary play.
   Grants and ordering certificates are signed by `relay_grant.mjs` in the
   lobby's format (docs/lobby-protocol.md): `VO1C`, or `VO2C` with
   `--pacing on|off|continuous` (`run.sh`: `PACING=on|off|continuous`). Results go to `OUT/results.json`.
-* `SLOW=K` makes source K a slow PC: the spawn-only switches
-  `VERA20K_SPAWN_SLOW_DRAW_MS` and `VERA20K_SPAWN_SLOW_TICK_MS` (`run.sh`:
-  `SLOW_DRAW_MS`, `SLOW_TICK_MS`) add that many milliseconds to each drawn
-  picture and to each simulation tick, the tick's inside its reported cost.
+* `SLOW=K` makes source K a slow PC: the spawn-only switch
+  `VERA20K_SPAWN_SLOW_PLAN` (`run.sh`: `SLOW_PLAN`) is
+  `second:draw_ms:tick_ms[:unreported_ms]` points, comma separated, from the
+  match's start; that many milliseconds go on each frame pass (drawn or not,
+  so hidden windows pay it too) and each simulation tick (inside its
+  reported cost), and the optional last on each tick outside that cost (a
+  PC whose ticks look quick but run slowly, as 1e9fac21's did), linear
+  between points and held after the last. `0:0:20` is a PC whose
+  simulation is slow throughout; `0:0:0,300:0:3:12` one that slows as the
+  match grows. Catching up runs the same ticks, so it slows too.
   `SPEED=0` plays at 60 frames a second. Each client's `External launch result`
   line carries its `network_quality` (catch-up seconds, largest backlog,
   slowdowns).

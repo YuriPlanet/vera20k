@@ -17,9 +17,11 @@
 #                    match (default 60); on a score screen Leave is Continue
 #   PACING=on|off|continuous  relay: sign a VO2C certificate with that pacing flag
 #   SPEED=N          GameSpeed setting (default 2, 30 frames a second; 0 is 60)
-#   SLOW=K           source K plays as a slow PC: SLOW_DRAW_MS (default 0) more
-#                    per drawn picture and SLOW_TICK_MS (default 0) more per
-#                    simulation tick (VERA20K_SPAWN_SLOW_DRAW_MS / _TICK_MS)
+#   SLOW=K           source K plays as a slow PC by SLOW_PLAN
+#                    (VERA20K_SPAWN_SLOW_PLAN): "second:draw_ms:tick_ms[:ms],..."
+#                    milliseconds more per frame pass and per simulation
+#                    tick (and per tick outside its reported cost), linear
+#                    between points from the match's start
 #   AI=N             N computer houses after the humans (relay: PLAYERS=1 allowed)
 #   STARTS=A,B,...   each source's start (-2 none); humans on one start share its House
 #   ALONE=on         relay, PLAYERS=1: a certificate the relay orders alone
@@ -120,7 +122,7 @@ while [ "$source" -lt "$players" ]; do
     hooks="VERA20K_SPAWN_LEAVE_AFTER_SECONDS=$act"
   fi
   if [ "$source" = "${SLOW:-none}" ]; then
-    hooks="$hooks VERA20K_SPAWN_SLOW_DRAW_MS=${SLOW_DRAW_MS:-0} VERA20K_SPAWN_SLOW_TICK_MS=${SLOW_TICK_MS:-0}"
+    hooks="$hooks VERA20K_SPAWN_SLOW_PLAN=${SLOW_PLAN:-0:0:0}"
   fi
   rm -f "$out/p$source/spawn_result.json"
   # VERA20K_SPAWN_HIDDEN_WINDOW=1: invisible window, no Dock/menu bar entry.
