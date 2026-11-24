@@ -184,17 +184,7 @@ impl Simulation {
         // the sound prefix (`FootClass::AI`'s edge sounds) and the commit
         // that publishes pending overlay Recalcs and smudge dirt.
         effects.flush_sound(self, rules);
-        if self
-            .overlay_grid
-            .as_ref()
-            .is_some_and(|grid| grid.has_synchronous_navigation_cells())
-            || self
-                .smudge_grid
-                .as_ref()
-                .is_some_and(|grid| grid.has_dirty())
-        {
-            let _ = self.commit_no_fire(rules, effects);
-        }
+        let _ = self.commit_no_fire(rules, effects);
         SleepVisit::Counted
     }
 

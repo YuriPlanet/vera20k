@@ -236,6 +236,12 @@ impl Simulation {
         if let Some(id) = observed_direct {
             crate::sim::combat::receiver_fixture::observe_fire_visit(self, id, "entry");
         }
+        // A visit that holds no target emits nothing, so its transaction would
+        // commit nothing: it ends here (VERA-only, results unchanged).
+        if crate::sim::combat::world_fire::visit_without_target(self, &visit, rules, frame_effects)
+        {
+            return self.commit_no_fire(rules, frame_effects);
+        }
         let mut run =
             crate::sim::combat::world_receiver::ReceiverRun::default().with_effects(frame_effects);
         let mut emit = crate::sim::combat::CombatEmit::default();
@@ -255,7 +261,6 @@ impl Simulation {
             // The receiver already committed these inline before returning.
             damage_events: _,
             remove_attack: _,
-            unit_facing: _,
             spawn_target_updates: _,
             drain_links: _,
         } = emit;
@@ -281,6 +286,10 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: &mut FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
+        // With neither pending, the commit writes nothing.
+        if !self.commit_work_pending() {
+            return damage_consequences::DamageCommitReceipt::default();
+        }
         damage_consequences::DamageConsequences::live_fire(
             Default::default(),
             Vec::new(),
