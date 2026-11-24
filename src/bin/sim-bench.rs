@@ -37,6 +37,19 @@
 //! launch's local house sits the match out, as in the match scenario, and no
 //! command is issued. `--ticks` defaults to 9000, ten minutes of game time.
 //!
+//! `--scenario battle` is the scale benchmark's battle (docs/scale-benchmark.md):
+//! the map itself makes the armies. It loads as a skirmish does, and the
+//! launch's local house plays too, so every start fights. `tools.scale_map
+//! --battle` writes its map, whose triggers give every start house an army,
+//! send it to hunt and replace each object that dies. No command is issued.
+//! `--ticks` defaults to [`BATTLE_TICKS`], of which the first
+//! [`BATTLE_WARMUP`] are left out of the measured window. Every
+//! `PROGRESS_EVERY` ticks it prints how many mobile objects live, how many
+//! were lost and made since the last line and how many objects of any kind
+//! (shots and anims too) the frames made; the run fails when a window of the
+//! measured part loses nothing or the battle falls under [`BATTLE_UNITS`]
+//! mobile objects, so a timing never comes from a battle that stopped.
+//!
 //! `--watchers N` (skirmish only) plays the match VERA's room starts when
 //! everyone in it watches while only AI play: the launch seats N watching
 //! humans ahead of the computer houses and loads the map as a LAN game, so
@@ -96,6 +109,12 @@
 //! cells the searches expanded, with the code-2 re-paths' share at each
 //! urgency.
 //!
+//! `--threads N` gives the worker pool N threads instead of one per CPU
+//! thread; no result depends on it. The `measured` line gives the mean, p50,
+//! p95, p99 and largest frame of the window after the warm-up, and the
+//! process's CPU time per frame there over every thread (Unix only), whose
+//! ratio to the wall time is how many cores the frame kept busy.
+//!
 //! Beside each frame's wall time, the CSV's `cpu_ms` column and the
 //! `main_thread_cpu_*` line give the main thread's CPU time (Unix only). On a
 //! machine other work keeps busy it moves far less than wall time, so it
@@ -144,6 +163,13 @@ use sim_bench_match::MatchScenario;
 const PROGRESS_EVERY: u64 = 100;
 /// The skirmish scenario's default run, ten minutes of game time.
 const SKIRMISH_TICKS: u64 = 9000;
+/// The battle scenario's default run: the warm-up, then a minute of game time
+/// at the client's step.
+const BATTLE_TICKS: u64 = BATTLE_WARMUP + 2700;
+/// The battle's first contacts, before every front fights.
+const BATTLE_WARMUP: u64 = 300;
+/// The fewest mobile objects the battle may hold in its measured window.
+const BATTLE_UNITS: usize = 19_000;
 /// `--lan`'s MaxAhead: a LAN host's protocol-2 floor
 /// (`net::lockstep::initial_multiplayer_max_ahead`).
 const LAN_MAX_AHEAD: i32 = 10;
@@ -153,6 +179,7 @@ enum ScenarioKind {
     March,
     Match,
     Skirmish,
+    Battle,
 }
 
 struct Args {
@@ -180,6 +207,7 @@ struct Args {
     frame_hashes: Option<PathBuf>,
     client_timing: bool,
     presentation_frame: bool,
+    threads: Option<usize>,
     isolation_report: Option<PathBuf>,
     prior_maps: Vec<String>,
     isolation_mode: Option<ScenarioGameMode>,
@@ -188,7 +216,8 @@ struct Args {
 
 impl Args {
     fn tick_ms(&self) -> u32 {
-        if self.client_timing {
+        // The battle is the client's match, at the client's step.
+        if self.client_timing || self.scenario == ScenarioKind::Battle {
             1000 / vera20k_core::util::fixed_math::SIM_TICK_HZ
         } else {
             SIM_TICK_MS
@@ -228,6 +257,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         frame_hashes: None,
         client_timing: false,
         presentation_frame: false,
+        threads: None,
         isolation_report: None,
         prior_maps: Vec::new(),
         isolation_mode: None,
@@ -253,9 +283,10 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
                     "march" => ScenarioKind::March,
                     "match" => ScenarioKind::Match,
                     "skirmish" => ScenarioKind::Skirmish,
+                    "battle" => ScenarioKind::Battle,
                     other => {
                         return Err(format!(
-                            "unknown scenario {other}: march, match or skirmish"
+                            "unknown scenario {other}: march, match, skirmish or battle"
                         ));
                     }
                 }
@@ -290,6 +321,14 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--no-sleep" => args.no_sleep = true,
             "--sleep-check" => args.sleep_check = true,
             "--presentation-frame" => args.presentation_frame = true,
+            "--threads" => {
+                args.threads = Some(
+                    usize::try_from(number(value()?)?)
+                        .ok()
+                        .filter(|&threads| threads > 0)
+                        .ok_or("--threads needs a positive number")?,
+                )
+            }
             "--state-isolation-report" => args.isolation_report = Some(PathBuf::from(value()?)),
             "--prior-map" => args.prior_maps.push(value()?),
             "--isolation-mode" => {
@@ -321,7 +360,10 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
     }
     let marched = args.scenario == ScenarioKind::March;
     if marched && args.computers.is_some() && args.isolation_report.is_none() {
-        return Err("--computers is a match and skirmish option".to_string());
+        return Err("--computers is a match, skirmish and battle option".to_string());
+    }
+    if args.scenario == ScenarioKind::Battle && args.houses.is_some() {
+        return Err("the battle seats every start: --computers sets how many".to_string());
     }
     if !marched && let Some(flag) = march_flag {
         return Err(format!("{flag} is a march option"));
@@ -537,6 +579,104 @@ enum Plan {
     March(Vec<Vec<CommandEnvelope>>),
     Match(MatchScenario),
     Skirmish,
+    Battle(Battle),
+}
+
+/// The battle scenario's watch over its own workload: the mobile objects
+/// alive at the last progress line, and what the windows since the warm-up
+/// held.
+#[derive(Default)]
+struct Battle {
+    /// The mobile objects' ids at the last progress line, ascending.
+    mobile: Vec<u64>,
+    /// `Simulation::next_stable_object_id` at the last progress line.
+    next_id: u64,
+    /// The fewest mobile objects a measured window ended with.
+    fewest: Option<usize>,
+    /// The measured windows' losses and objects made.
+    lost: usize,
+    made: u64,
+    /// A measured window that lost no mobile object.
+    quiet_window: Option<u64>,
+}
+
+/// The ids of the mobile objects on the map, ascending.
+fn mobile_ids(runtime: &SimRuntime) -> Vec<u64> {
+    use vera20k_core::map::entities::EntityCategory;
+    runtime
+        .simulation
+        .entities()
+        .values()
+        .filter(|entity| {
+            entity.category() != EntityCategory::Structure
+                && entity.is_alive()
+                && !entity.in_limbo()
+        })
+        .map(|entity| entity.stable_id())
+        .collect()
+}
+
+impl Battle {
+    fn start(runtime: &SimRuntime) -> Self {
+        Self {
+            mobile: mobile_ids(runtime),
+            next_id: runtime.simulation.next_stable_object_id(),
+            ..Self::default()
+        }
+    }
+
+    /// One progress line's worth: what changed since the last one. `tick`
+    /// counts the completed frames.
+    fn progress(&mut self, runtime: &SimRuntime, tick: u64) -> String {
+        let mobile = mobile_ids(runtime);
+        // Both lists ascend, as the store does.
+        let lost = self
+            .mobile
+            .iter()
+            .filter(|id| mobile.binary_search(id).is_err())
+            .count();
+        let new = mobile
+            .iter()
+            .filter(|id| self.mobile.binary_search(id).is_err())
+            .count();
+        let next_id = runtime.simulation.next_stable_object_id();
+        let made = next_id - self.next_id;
+        if tick > BATTLE_WARMUP {
+            self.fewest = Some(
+                self.fewest
+                    .map_or(mobile.len(), |few| few.min(mobile.len())),
+            );
+            self.lost += lost;
+            self.made += made;
+            if lost == 0 {
+                self.quiet_window.get_or_insert(tick);
+            }
+        }
+        let line = format!(
+            "mobile={} lost={lost} new={new} objects_made={made} shots_live={} live_objects={}",
+            mobile.len(),
+            runtime.simulation.projectiles().len(),
+            runtime.simulation.entities().len(),
+        );
+        self.mobile = mobile;
+        self.next_id = next_id;
+        line
+    }
+
+    /// Whether the measured windows were the battle the benchmark names.
+    fn verdict(&self) -> Result<(), String> {
+        if let Some(tick) = self.quiet_window {
+            return Err(format!(
+                "the battle stopped: no mobile object was lost in the {PROGRESS_EVERY} ticks before tick {tick}"
+            ));
+        }
+        match self.fewest {
+            Some(fewest) if fewest < BATTLE_UNITS => Err(format!(
+                "the battle shrank to {fewest} mobile objects, under {BATTLE_UNITS}"
+            )),
+            _ => Ok(()),
+        }
+    }
 }
 
 /// Zero for no frames, as when the first frame failed.
@@ -557,6 +697,9 @@ struct Measured {
     /// With `--frame-hashes`: every frame's tick, state hash and multiplayer
     /// sync checksum.
     frame_records: Vec<(u64, u64, Option<u32>)>,
+    /// The process's CPU time inside the frames after the warm-up, over
+    /// every thread.
+    window_cpu: Option<Duration>,
 }
 
 /// The benchmark's frames: each frame's commands and progress are untimed,
@@ -695,7 +838,7 @@ impl Frames for Bench<'_> {
         match &mut *self.plan {
             Plan::March(orders) => orders.get(tick as usize).cloned().unwrap_or_default(),
             Plan::Match(script) => script.orders(self.runtime, tick),
-            Plan::Skirmish => Vec::new(),
+            Plan::Skirmish | Plan::Battle(_) => Vec::new(),
         }
     }
 
@@ -736,8 +879,9 @@ impl Frames for Bench<'_> {
         }
         let recent = &times[times.len().saturating_sub(PROGRESS_EVERY as usize)..];
         let mean: Duration = recent.iter().sum::<Duration>() / recent.len() as u32;
-        let progress = match &*self.plan {
+        let progress = match &mut *self.plan {
             Plan::Match(script) => script.progress(self.runtime),
+            Plan::Battle(battle) => battle.progress(self.runtime, tick + 1),
             _ => format!("live_objects={}", self.runtime.simulation.entities().len()),
         };
         println!(
@@ -754,6 +898,7 @@ impl Frames for Bench<'_> {
 fn run_frames(
     frames: &mut impl Frames,
     ticks: u64,
+    warmup: u64,
     hash_every: u64,
     every_frame: bool,
 ) -> (Measured, Result<(), String>) {
@@ -764,6 +909,7 @@ fn run_frames(
     };
     for tick in 0..ticks {
         let commands = frames.commands(tick);
+        let process_started = (tick >= warmup).then(process_cpu_time).flatten();
         let cpu_started = thread_cpu_time();
         let started = Instant::now();
         let checksum = match frames.advance(&commands) {
@@ -771,6 +917,9 @@ fn run_frames(
             Err(error) => return (measured, Err(format!("tick {tick}: {error}"))),
         };
         measured.times.push(started.elapsed());
+        if let Some((started, ended)) = process_started.zip(process_cpu_time()) {
+            *measured.window_cpu.get_or_insert_default() += ended.saturating_sub(started);
+        }
         measured.cpu_times.push(
             cpu_started
                 .zip(thread_cpu_time())
@@ -854,13 +1003,33 @@ fn report(out: &mut impl Write, measured: &Measured, warmup: u64) -> std::io::Re
     }
     if !steady.is_empty() {
         let steady_total: Duration = steady.iter().sum();
+        let steady_mean = steady_total.as_secs_f64() * 1000.0 / steady.len() as f64;
         writeln!(
             out,
-            "after_orders_mean_ms={:.2} (ticks {}..={})",
-            steady_total.as_secs_f64() * 1000.0 / steady.len() as f64,
+            "after_orders_mean_ms={steady_mean:.2} (ticks {}..={})",
             warmup + 1,
             times.len()
         )?;
+        let mut sorted = steady.clone();
+        sorted.sort_unstable();
+        write!(
+            out,
+            "measured ticks={} mean_ms={steady_mean:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2}",
+            steady.len(),
+            percentile(&sorted, 0.5),
+            percentile(&sorted, 0.95),
+            percentile(&sorted, 0.99),
+            percentile(&sorted, 1.0),
+        )?;
+        if let Some(cpu) = measured.window_cpu {
+            let cpu_ms = cpu.as_secs_f64() * 1000.0 / steady.len() as f64;
+            write!(
+                out,
+                " process_cpu_ms={cpu_ms:.2} cores={:.2}",
+                cpu_ms / steady_mean.max(f64::MIN_POSITIVE)
+            )?;
+        }
+        writeln!(out)?;
     }
     for (tick, hash) in &measured.hashes {
         writeln!(out, "hash tick={tick} {hash:016x}")?;
@@ -886,13 +1055,13 @@ fn main() -> Result<(), String> {
             eprintln!("{error}");
             eprintln!(
                 "usage: sim-bench [--ra2-dir <retail path>] [--map Death.mmx] \
-                 [--scenario march|match|skirmish] [--seed S] [--units 20000] [--houses N] \
-                 [--computers N (match, skirmish; default the map's most, at most 119)] \
-                 [--ticks 300 (match: 1800, skirmish: 9000)] \
+                 [--scenario march|match|skirmish|battle] [--seed S] [--units 20000] [--houses N] \
+                 [--computers N (match, skirmish, battle; default the map's most, at most 119)] \
+                 [--ticks 300 (match: 1800, skirmish: 9000, battle: 3000)] \
                  [--types E1,E2,MTNK,HTNK] [--order-spread 30] [--return-at T] (march) \
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
                  [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
-                 [--client-timing] \
+                 [--client-timing] [--threads N] \
                  [--state-isolation-report <new.json> --prior-map <map> \
                  --isolation-mode lan|wol --isolation-humans 1|2]"
             );
@@ -902,9 +1071,14 @@ fn main() -> Result<(), String> {
     if args.isolation_report.is_some() {
         return sim_bench_isolation::run(&args);
     }
+    if let Some(threads) = args.threads {
+        use_worker_threads(threads)?;
+    }
     let computers = match args.scenario {
         ScenarioKind::March => 0,
-        ScenarioKind::Match | ScenarioKind::Skirmish => seated_computers(&args)?,
+        ScenarioKind::Match | ScenarioKind::Skirmish | ScenarioKind::Battle => {
+            seated_computers(&args)?
+        }
     };
     let load_started = Instant::now();
     let mut scenario = match args.scenario {
@@ -933,7 +1107,7 @@ fn main() -> Result<(), String> {
             None,
             None,
         )?,
-        ScenarioKind::Skirmish => headless_scenario::load_session(
+        ScenarioKind::Skirmish | ScenarioKind::Battle => headless_scenario::load_session(
             &args.ra2_dir,
             &args.map,
             args.seed,
@@ -984,6 +1158,13 @@ fn main() -> Result<(), String> {
             let ticks = args.ticks.map_or(SKIRMISH_TICKS, NonZeroU64::get);
             (simulation.houses().order().len(), 0, Plan::Skirmish, ticks)
         }
+        ScenarioKind::Battle => {
+            // The local house plays: its start's army fights as the others do.
+            let houses = scenario.runtime.simulation.houses().order().len();
+            let ticks = args.ticks.map_or(BATTLE_TICKS, NonZeroU64::get);
+            let battle = Battle::start(&scenario.runtime);
+            (houses, 0, Plan::Battle(battle), ticks)
+        }
     };
     if args.lan {
         // A LAN GameMode selects `Queue_AI_Multiplayer @ 0x006475F0`, whose
@@ -998,11 +1179,12 @@ fn main() -> Result<(), String> {
         Plan::March(_) => args.order_spread,
         Plan::Match(_) => sim_bench_match::WARMUP,
         Plan::Skirmish => 0,
+        Plan::Battle(_) => BATTLE_WARMUP,
     };
     let computers = match &plan {
         Plan::March(_) => 0,
         Plan::Match(script) => script.computers(),
-        Plan::Skirmish => computers,
+        Plan::Skirmish | Plan::Battle(_) => computers,
     };
     let tick_ms = args.tick_ms();
     let runtime = &mut scenario.runtime;
@@ -1018,6 +1200,9 @@ fn main() -> Result<(), String> {
         live_at_start
     );
     println!("simulation_tick_ms={tick_ms}");
+    if let Some(threads) = worker_threads() {
+        println!("worker_threads={threads}");
+    }
     if let Plan::Match(script) = &plan {
         println!("progress tick=0 {}", script.progress(runtime));
     }
@@ -1038,6 +1223,7 @@ fn main() -> Result<(), String> {
         let (measured, frames) = run_frames(
             &mut bench,
             ticks,
+            warmup,
             args.hash_every,
             args.frame_hashes.is_some(),
         );
@@ -1084,7 +1270,60 @@ fn main() -> Result<(), String> {
     println!("final_hash={final_hash:016x}");
     let (asleep, counted) = runtime.simulation.idle_sleep_counts();
     println!("idle_sleep asleep_now={asleep} visits_counted={counted}");
+    if let Plan::Battle(battle) = &plan {
+        println!(
+            "battle fewest_mobile={} lost={} objects_made={}",
+            battle.fewest.unwrap_or(0),
+            battle.lost,
+            battle.made
+        );
+        battle.verdict()?;
+    }
     Ok(())
+}
+
+/// Give the worker pool `threads` threads. It must run before anything uses
+/// the pool.
+#[cfg(not(target_arch = "wasm32"))]
+fn use_worker_threads(threads: usize) -> Result<(), String> {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build_global()
+        .map_err(|error| format!("--threads: {error}"))
+}
+
+/// A build without the pool runs every item on the calling thread.
+#[cfg(target_arch = "wasm32")]
+fn use_worker_threads(_threads: usize) -> Result<(), String> {
+    Err("--threads: this build has no worker pool".to_string())
+}
+
+/// The worker pool's threads, where the build has a pool.
+fn worker_threads() -> Option<usize> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        Some(rayon::current_num_threads())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        None
+    }
+}
+
+/// The process's CPU time over every thread, where the platform reports it.
+fn process_cpu_time() -> Option<Duration> {
+    #[cfg(unix)]
+    {
+        let mut time = std::mem::MaybeUninit::<libc::timespec>::uninit();
+        // SAFETY: clock_gettime only writes the timespec it is given, and
+        // that timespec is read only when the call reports success.
+        if unsafe { libc::clock_gettime(libc::CLOCK_PROCESS_CPUTIME_ID, time.as_mut_ptr()) } == 0 {
+            // SAFETY: clock_gettime succeeded, so it initialized `time`.
+            let time = unsafe { time.assume_init() };
+            return Some(Duration::new(time.tv_sec as u64, time.tv_nsec as u32));
+        }
+    }
+    None
 }
 
 /// The simulation's frame profile over the measured frames: the buckets, the
@@ -1164,7 +1403,7 @@ mod partial_report_tests {
 
     fn run(fail_at: u64) -> (Measured, Result<(), String>, String) {
         let mut frames = Scripted { fail_at, done: 0 };
-        let (measured, result) = run_frames(&mut frames, 5, 1, true);
+        let (measured, result) = run_frames(&mut frames, 5, 1, 1, true);
         let mut out = Vec::new();
         report(&mut out, &measured, 1).unwrap();
         (measured, result, String::from_utf8(out).unwrap())
