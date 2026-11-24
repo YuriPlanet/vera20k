@@ -377,9 +377,9 @@ impl Simulation {
             }
             EntityCategory::Structure => false,
             EntityCategory::Infantry => {
-                // Firestorm 2.0's deploy admissions (vt+0x29C `0x00631E70`,
-                // Can_Deploy_Now `0x00631EC0`) refuse Is_Immobilized, which
-                // holds a webbed infantryman (`0x004D5B10`).
+                // Firestorm 2.0 `Can_Deploy_Now` 0x00631EC0 asks a non-Unit
+                // Is_Immobilized (`0x006320BA`), which holds a webbed
+                // infantryman (`0x004D5B10`).
                 if entity.is_webbed(self.session.binary_frame() as i32) {
                     return false;
                 }

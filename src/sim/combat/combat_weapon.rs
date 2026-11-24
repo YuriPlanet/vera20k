@@ -965,9 +965,13 @@ fn techno_what_weapon_should_i_use<'r>(
     // picks the secondary exactly when the target's webbability equals the
     // secondary's (`0x0062A13A..0x0062A145`): a web gun webs what it can,
     // the other gun takes the rest. gamemd's ladder has no such arm; it sits
-    // here, after the arms gamemd adds. Residual: Firestorm first drops a
+    // here, after the arms gamemd adds. Residuals: Firestorm first drops a
     // slot whose Can_Fire answers CANT, ILLEGAL or REARM, which this ladder
-    // does not ask.
+    // does not ask. It has no arms C/D either: an empty slot's Can_Fire
+    // answers CANT (`0x0062F8D6`), so a unit whose only weapon webs picks
+    // the empty slot for what it cannot web and holds its fire
+    // (`UnitClass::Firing_AI` `0x0064E7CD`), where C/D here answer slot 0
+    // and it fires the web gun at everything.
     let webs = |warhead: Option<&WarheadType>| warhead.is_some_and(|w| w.webby().is_some());
     let secondary_webs = webs(secondary_warhead);
     if secondary_webs || webs(primary_warhead) {

@@ -54,8 +54,10 @@ Struggle=0,6,0           ; the frames a webbed man plays, from WebbedInfantry's 
 - Struggle is drawn from `WebbedInfantry`'s image when that key is set. Without it, the
   man's own image is used. A type without `Struggle=` cannot struggle: he is still held,
   in whatever he was doing.
-- A unit with a Webby weapon fires it only at infantry it can web, and its other weapon at
-  everything else: a webbed or web-immune man, a vehicle, a building, a bridge cell. The
+- A unit with a Webby weapon and another weapon fires the web gun only at infantry it can
+  web, and its other weapon at everything else: a webbed or web-immune man, a vehicle, a
+  building, a bridge cell. A unit whose only weapon webs fires it at everything (see the
+  residuals). The
   computer's target scan does not pick a man who is already webbed for more than a
   quarter of its own web gun's duration.
 - A vehicle whose chosen weapon is its web gun, aimed at a man still webbed for more than
@@ -97,5 +99,16 @@ Residuals:
   back to the primary. A unit whose primary is the web gun therefore picks it at a
   webbed man while it reloads, drops him and goes back to Guard. In VERA it fires its
   other weapon at him instead. With the web gun as secondary, neither game drops him.
-- The computer's web filter runs before Yuri's Revenge's own threat checks rather than
-  among them.
+- The computer's web filter runs after Yuri's Revenge's own target checks, just before
+  the score, rather than where Firestorm's `Evaluate_Object` has it. Each of them only
+  turns a target down, so the order changes nothing.
+- Firestorm's weapon choice does not ask whether both weapons exist. A unit whose only
+  weapon webs picks its empty slot for anything it cannot web, and holds its fire
+  (`UnitClass::Firing_AI` `0x0064E7CD`). Yuri's Revenge's choice answers the primary
+  first when a slot is empty (`0x006F3391`), and VERA keeps that, so such a unit fires
+  its web gun at everything: at a vehicle, and at a webbed man once a quarter of his
+  web is left, which webs him again before he lies down. Retail Firestorm's Reaper has
+  two weapons.
+- A deployed infantryman, such as a GI behind sandbags, struggles like any other and
+  then lies down in `Prone`, no longer deployed. Firestorm has no deployed infantry and
+  Yuri's Revenge has no webs, so this is VERA's choice.
