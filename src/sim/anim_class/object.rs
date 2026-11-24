@@ -537,6 +537,12 @@ impl AnimObject {
         }
     }
 
+    /// Mark the fixture's anim as a presentation anim outside the Anim array.
+    #[cfg(test)]
+    pub(crate) fn mark_presentation_for_test(&mut self) {
+        self.presentation = Some(None);
+    }
+
     /// The owning House (`AnimClass+0x180`).
     #[cfg(test)]
     pub fn owner_house(&self) -> Option<InternedId> {
