@@ -3717,6 +3717,11 @@ pub(crate) fn estimated_damage_on(
         return 0;
     };
     let target_obj = sim.interner.object_type(target.type_ref(), rules);
+    // By the country's name: a house holds its country as an interned name,
+    // not a `CountryIdx`, and the rules key each country's multipliers by
+    // name. The probe uppercases on the stack and allocates nothing; an index
+    // kept on the house would be a second record of its country to keep in
+    // step with the name across a load.
     let house_type_armor = sim.houses.get(&target.owner()).map_or(1.0, |house| {
         rules.country_armor_mult_for_type(sim.interner.resolve(house.house_type_id()), attacker_obj)
     });

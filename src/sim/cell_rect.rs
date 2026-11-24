@@ -1263,48 +1263,75 @@ mod clamp_tests;
 /// YRpp `CellSpreadEnumerator` (`Helpers/Enumerators.h`): cell offsets from
 /// the center outward, ring by ring, clamped to its `Max` of 0x100. Ring 1 is
 /// `(0,0), (-1,-1), (0,-1), (1,-1), (-1,0), (1,0), (-1,1), (0,1), (1,1)`.
-pub fn cell_spread_offsets(spread: usize) -> Vec<(i16, i16)> {
+/// Enumerated as it is walked, as the native enumerator is: a walk builds no
+/// list.
+pub fn cell_spread_offsets(spread: usize) -> CellSpreadOffsets {
     /// `CellSpreadEnumerator::Max`.
     const MAX_SPREAD: usize = 0x100;
-    let spread = spread.min(MAX_SPREAD);
-    let mut curspread: usize = 0;
-    let mut current = (0i16, 0i16);
-    let mut has_two = true;
-    let mut had_two = true;
-    let mut cells = Vec::with_capacity(spread * 4 + 1);
-    loop {
-        if curspread > spread {
-            return cells;
+    CellSpreadOffsets {
+        spread: spread.min(MAX_SPREAD),
+        curspread: 0,
+        current: (0, 0),
+        has_two: true,
+        had_two: true,
+    }
+}
+
+/// The walk [`cell_spread_offsets`] returns: the enumerator's state.
+#[derive(Debug, Clone)]
+pub struct CellSpreadOffsets {
+    spread: usize,
+    curspread: usize,
+    current: (i16, i16),
+    has_two: bool,
+    had_two: bool,
+}
+
+impl Iterator for CellSpreadOffsets {
+    type Item = (i16, i16);
+
+    fn next(&mut self) -> Option<(i16, i16)> {
+        if self.curspread > self.spread {
+            return None;
         }
-        cells.push(current);
-        if current == (0, 0) || (current.0 == 1 && current.1 == curspread as i16) {
-            curspread += 1;
-            current = (-1, -(curspread as i16));
-            has_two = true;
-            had_two = true;
-            continue;
+        let cell = self.current;
+        self.step();
+        Some(cell)
+    }
+}
+
+impl CellSpreadOffsets {
+    /// The enumerator's `operator++`: the cell after `current`.
+    fn step(&mut self) {
+        let current = &mut self.current;
+        if *current == (0, 0) || (current.0 == 1 && current.1 == self.curspread as i16) {
+            self.curspread += 1;
+            *current = (-1, -(self.curspread as i16));
+            self.has_two = true;
+            self.had_two = true;
+            return;
         }
-        if has_two {
+        if self.has_two {
             current.0 += 1;
-            has_two = current.0 == 0;
-            continue;
+            self.has_two = current.0 == 0;
+            return;
         }
         if current.0 < 0 {
             current.0 = -current.0;
-            has_two = had_two;
-            continue;
+            self.has_two = self.had_two;
+            return;
         }
         current.1 += 1;
         let change_sign = current.1 > 0;
         if change_sign {
             current.1 = -current.1;
         }
-        current.0 = (curspread as i16 + current.1)
+        current.0 = (self.curspread as i16 + current.1)
             .wrapping_mul(-2)
             .wrapping_sub(1);
         let diff = current.0 - current.1;
-        has_two = diff >= 0;
-        had_two = has_two;
+        self.has_two = diff >= 0;
+        self.had_two = self.has_two;
         if diff == -1 {
             current.0 += 1;
         } else if diff < 0 {
@@ -1312,7 +1339,7 @@ pub fn cell_spread_offsets(spread: usize) -> Vec<(i16, i16)> {
                 .1
                 .wrapping_neg()
                 .wrapping_div(2)
-                .wrapping_sub(curspread as i16);
+                .wrapping_sub(self.curspread as i16);
         }
         if change_sign {
             current.1 = -current.1;
