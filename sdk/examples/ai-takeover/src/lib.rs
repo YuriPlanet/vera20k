@@ -14,9 +14,11 @@
 //!   factory is idle (`Factory.Building.*`) and placed with
 //!   `PlaceReadyBuilding` at a cell `find` answers `Placeable=1` for, near
 //!   the yard. With a barracks and a war factory it trains infantry and
-//!   tanks and lets each ready one out (`TakeProduct`); with three or more
-//!   it sends its army at the human player's base (`AttackMove`), again
-//!   every 450 frames.
+//!   tanks and lets each ready one out (`TakeProduct`); once the war factory
+//!   stands and the army has three or more, it sends it at the human
+//!   player's base (`AttackMove`), again every 450 frames. `find` also
+//!   returns the product a factory holds, off the map, so a building counts
+//!   as standing only beyond the one the building factory holds.
 //! - Results: a `Commanded` trigger bound to the unit types and a global
 //!   `OrderRefused` trigger deliver records to `on_events`; a `Birth`
 //!   trigger on the trained types tells it a unit left the factory.
@@ -201,11 +203,13 @@ const MARK_TRAIN: i64 = 1 << 4;
 const MARK_ATTACK: i64 = 1 << 5;
 const MARK_REJECTED: i64 = 1 << 6;
 const MARK_IDLE: i64 = 1 << 7;
+const MARK_BASE: i64 = 1 << 8;
 /// One-time notes that are not marks.
 const NOTE_NO_CELL: i64 = 1 << 16;
 const NOTE_NATIVE_BUILT: i64 = 1 << 17;
 const NOTE_DEPLOY_HEARD: i64 = 1 << 18;
 const NOTE_NO_SEAT: i64 = 1 << 19;
+const NOTE_PLAYER_DEFEATED: i64 = 1 << 20;
 
 /// Logs `line` the first time `bit` is marked.
 fn mark(bit: i64, line: &str) {
@@ -229,6 +233,23 @@ fn owned(house: House, ty: TypeRef) -> Techno {
         return Techno(NO_HANDLE);
     }
     Techno(Find::objects().owned_by(house).of_type(ty).first())
+}
+
+/// Whether `house` has a `building` standing on the map. `find` also
+/// returns the product a factory holds (it exists off the map from the
+/// start of production), so the one the building factory holds is not
+/// counted.
+fn standing(house: House, building: TypeRef) -> bool {
+    if building.is_none() {
+        return false;
+    }
+    let mut find = Find::objects().owned_by(house).of_type(building);
+    let mut page = [NO_HANDLE; 2];
+    let Ok((count, _)) = find.page(&mut page, 0) else {
+        return false;
+    };
+    let held = get(house, Prop::Factory_Building_Type).unwrap_or(0) == building.0;
+    count > usize::from(held)
 }
 
 /// The house's units of `ty`, appended to `army` from `len`; the new length.
@@ -477,6 +498,13 @@ fn tick() {
         }
         return;
     }
+    let human = Find::houses().where_prop(Prop::IsHuman, Op::Eq, 1).first();
+    if human != NO_HANDLE && get(House(human), Prop::IsDefeated).unwrap_or(0) != 0 {
+        mark(
+            NOTE_PLAYER_DEFEATED,
+            "ai-takeover: the player's house is defeated",
+        );
+    }
     let visit = ld(&VISITS);
     st(&VISITS, visit + 1);
     let seat = (visit as usize) % seats;
@@ -509,7 +537,7 @@ fn drive(seat: usize, frame: i64) {
     };
     // An order it cannot carry out yet, on purpose: a tank before any war
     // factory. The execution step answers `OrderRefused` (Prerequisite).
-    if ld(&PROVOKED[seat]) == 0 && owned(house, ty(side, SLOT_BUILD + STEP_WAR_FACTORY)).is_none() {
+    if ld(&PROVOKED[seat]) == 0 && !standing(house, ty(side, SLOT_BUILD + STEP_WAR_FACTORY)) {
         let tank = ty(side, SLOT_VEHICLE);
         if !tank.is_none() && house.order(&Order::queue_production(tank)).is_ok() {
             st(&PROVOKED[seat], 1);
@@ -584,12 +612,13 @@ fn build(seat: usize, house: House, side: usize, yard_cell: Cell) {
     }
     for step in 0..BUILD_STEPS {
         let building = ty(side, SLOT_BUILD + step);
-        if building.is_none() || !owned(house, building).is_none() {
+        if building.is_none() || standing(house, building) {
             continue;
         }
         let _ = house.order(&Order::queue_production(building));
         return;
     }
+    mark(MARK_BASE, "DEMO-OK base");
 }
 
 /// Places the finished `building` at a `Placeable` cell near the yard:
@@ -662,7 +691,7 @@ fn train(seat: usize, house: House, side: usize) {
         ),
     ];
     for (step, slot, kind, queued_prop, ready_prop, was_ready, depth) in lines {
-        if owned(house, ty(side, SLOT_BUILD + step)).is_none() {
+        if !standing(house, ty(side, SLOT_BUILD + step)) {
             continue;
         }
         let ready = get(house, ready_prop).unwrap_or(0) != 0;
@@ -685,11 +714,14 @@ fn train(seat: usize, house: House, side: usize) {
     }
 }
 
-/// Sends the army at the human player's base once it is large enough, and
-/// again every [`ATTACK_EVERY`] frames.
+/// Sends the army at the human player's base once the war factory stands
+/// and the army is large enough, and again every [`ATTACK_EVERY`] frames.
 fn attack(seat: usize, house: House, side: usize, frame: i64) {
     let last = ld(&ATTACK_FRAME[seat]);
     if last != 0 && frame - last < ATTACK_EVERY {
+        return;
+    }
+    if !standing(house, ty(side, SLOT_BUILD + STEP_WAR_FACTORY)) {
         return;
     }
     let mut army = [Techno(NO_HANDLE); vera20k_sdk::ORDER_UNITS];

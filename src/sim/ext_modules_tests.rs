@@ -285,10 +285,11 @@ fn playtest_modules_keep_running() {
 }
 
 /// The INI demo mods (`sdk/examples/ini-*`) when `VERA20K_TEST_INI_DEMOS`
-/// lists them, `;`-separated, each `module.wasm|rulesmd.ini|MARK1,MARK2`:
+/// lists them, `;`-separated, each `module.wasm|rulesmd.ini|MARK1,MARK2`
+/// with an optional `|FRAMES` (3000 by default):
 /// the module installs (its `vera_init` registers its INI names), the mod's
 /// INI becomes the merged rules text and its `Wasm.Tags` triggers are built,
-/// then 3000 frames of a Battle against one computer house run. The module
+/// then that many frames of a Battle against one computer house run. The module
 /// must still be running, nothing may be refused, and its log must hold a
 /// line `DEMO-OK <MARK>` for every listed mark. Prints each log
 /// (`--nocapture`).
@@ -300,8 +301,11 @@ fn ini_demo_mods_reach_their_marks() {
     for demo in demos.split(';').filter(|d| !d.trim().is_empty()) {
         let mut parts = demo.split('|');
         let (Some(wasm), Some(ini), marks) = (parts.next(), parts.next(), parts.next()) else {
-            panic!("{demo}: expected module.wasm|rulesmd.ini|MARKS");
+            panic!("{demo}: expected module.wasm|rulesmd.ini|MARKS[|FRAMES]");
         };
+        let frames: u32 = parts
+            .next()
+            .map_or(3000, |f| f.trim().parse().expect("FRAMES is a number"));
         let Some(mut scene) = scenario_with_computer() else {
             return;
         };
@@ -317,7 +321,7 @@ fn ini_demo_mods_reach_their_marks() {
             .unwrap_or_else(|e| panic!("{ini}: {e}"));
         sim.install_ini_triggers(rules, &triggers)
             .unwrap_or_else(|e| panic!("{ini}: {e}"));
-        for _ in 0..3000 {
+        for _ in 0..frames {
             scene.tick();
         }
         let status = scene.sim().ext_modules().status();
@@ -327,8 +331,16 @@ fn ini_demo_mods_reach_their_marks() {
             eprintln!("   {line}");
         }
         assert_eq!(status[0].1, None, "{wasm} stopped; log {log:?}");
-        assert!(!log.iter().any(|l| l.contains("refused")), "{wasm}: {log:?}");
-        for mark in marks.unwrap_or("").split(',').map(str::trim).filter(|m| !m.is_empty()) {
+        assert!(
+            !log.iter().any(|l| l.contains("refused")),
+            "{wasm}: {log:?}"
+        );
+        for mark in marks
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+        {
             let line = format!("DEMO-OK {mark}");
             assert!(
                 log.iter().any(|l| l.contains(&line)),
@@ -784,14 +796,15 @@ fn a_mod_can_refuse_map_modules_and_a_map_can_need_a_newer_game() {
     let map = IniFile::from_str(&map);
     let stock = IniFile::from_str("[General]\n");
     let refusing = IniFile::from_str("[VeraWasm]\nMapWasm=no\n");
-    let allowed = super::PreparedExtModules::load(&stock, None, &map, 0).expect("stock allows it");
+    let allowed =
+        super::PreparedExtModules::load(&stock, None, &map, 0, 0).expect("stock allows it");
     assert_eq!(allowed.modules.len(), 1);
-    let refused = super::PreparedExtModules::load(&refusing, None, &map, 0)
+    let refused = super::PreparedExtModules::load(&refusing, None, &map, 0, 0)
         .err()
         .expect("the mod refuses map modules");
     assert!(refused.contains("MapWasm=no"), "{refused}");
     let newer = IniFile::from_str("[Basic]\nVeraMinVersion=999.0\n");
-    let refused = super::PreparedExtModules::load(&stock, None, &newer, 0)
+    let refused = super::PreparedExtModules::load(&stock, None, &newer, 0, 0)
         .err()
         .expect("the map needs a newer game");
     assert!(refused.contains("999.0"), "{refused}");
@@ -2053,13 +2066,13 @@ fn ini_triggers_bind_weapons_and_take_enum_names() {
         None,
         &IniFile::from_str("[E1]\nWasm.Tags=MapTag\n"),
         0,
+        0,
     )
     .expect("the map loads")
     .notices;
     assert_eq!(notice.len(), 1);
     assert!(notice[0].contains("[E1]"), "{notice:?}");
 }
-
 
 /// RFC 15.4 (0.0.21): budget defaults, the ceiling, the room's
 /// `WasmBudget=` and the floor that refuses the match.
@@ -2069,13 +2082,20 @@ fn wasm_budgets_default_clamp_and_refuse() {
     let policy = WasmPolicy::read(&IniFile::empty(), 0).expect("defaults read");
     assert_eq!(
         (policy.budget, policy.map_budget, policy.seat_budget),
-        (super::FRAME_BUDGET, super::MAP_FRAME_BUDGET, super::SEAT_BUDGET)
+        (
+            super::FRAME_BUDGET,
+            super::MAP_FRAME_BUDGET,
+            super::SEAT_BUDGET
+        )
     );
     let high = IniFile::from_str("[VeraWasm]\nBudget=9000000\nMapBudget=300000\n");
     let policy = WasmPolicy::read(&high, 0).expect("reads");
     assert_eq!((policy.budget, policy.map_budget), (500_000, 300_000));
     let room = WasmPolicy::read(&high, 250_000).expect("reads");
-    assert_eq!(room.budget, 250_000, "the room's WasmBudget replaces Budget");
+    assert_eq!(
+        room.budget, 250_000,
+        "the room's WasmBudget replaces Budget"
+    );
     let low = IniFile::from_str("[VeraWasm]\nMapBudget=5000\n");
     let error = WasmPolicy::read(&low, 0).expect_err("below the floor");
     assert!(error.contains("MapBudget=5000"), "{error}");

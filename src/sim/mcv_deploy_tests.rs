@@ -1766,3 +1766,40 @@ fn retail_dustbowl_a_computer_without_its_yard_sells_off_and_hunts() {
     );
     eprintln!("Strategy ticks {ticks:?}; the yard lost at {lost}, sold off at {sold_at}");
 }
+
+/// RFC 0001 6i: once a Wasm module claims the house's `Production`, an MCV
+/// the house AI sent to Hunt queues Guard, and a refused deploy falls back
+/// to Guard rather than Hunt; the MCV deploys only by the module's order.
+#[test]
+fn a_production_claim_takes_the_mcv_off_the_house_ai_hunt() {
+    let (mut sim, rules, id) = house_fixture(false, BUILDABLE);
+    let hunt = MissionId::from_known(MissionType::Hunt);
+    let guard = MissionId::from_known(MissionType::Guard);
+    sim.substrate.mission_assign_exact(id, hunt, 0).unwrap();
+    let queued = |sim: &Simulation| sim.substrate.entities.get(id).unwrap().mission.queued();
+    assert_eq!(queued(&sim), MissionId::NONE);
+
+    assert_eq!(
+        sim.claim_for_test("Americans", vera20k_wasm_ext::DOMAIN_FORCES as u8, &rules),
+        vera20k_wasm_ext::Status::Ok
+    );
+    assert_eq!(queued(&sim), MissionId::NONE, "Forces leaves the MCV be");
+    let all = vera20k_wasm_ext::DOMAIN_ALL as u8;
+    assert_eq!(
+        sim.claim_for_test("Americans", all, &rules),
+        vera20k_wasm_ext::Status::Ok
+    );
+    assert_eq!(queued(&sim), guard);
+
+    sim.substrate
+        .mission_assign_exact(id, MissionId::from_known(MissionType::Unload), 0)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .mission
+        .set_handler_state(1);
+    finish_initial_attempt(&mut sim, id, &rules);
+    assert_eq!(queued(&sim), guard);
+}
