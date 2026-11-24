@@ -53,6 +53,7 @@ none and keep their country's answer. The `ffe8b25af` writer's layout
 The `93ab2ce86` writer's layout `0xAFC7F643` predates the pending terrain
 dent; it converts with none pending. The `06789b62b` writer's layout
 `0x82C32EA4` predates the Tiberian Sun limpets; its objects convert with none.
+The `8d55b4a73` writer covers direct loading of layout `0xF6127DC1`.
 
 Run the menu and compatibility tests with this command.
 
