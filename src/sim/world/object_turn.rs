@@ -708,7 +708,7 @@ impl Simulation {
             sim.session.binary_frame(),
             sim.resolved_terrain.as_ref(),
             *sim.playfield_bounds,
-            &mut sim.interner,
+            &sim.interner,
             rules,
             &sim.houses,
         );
