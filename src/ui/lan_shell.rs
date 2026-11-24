@@ -752,18 +752,36 @@ impl LanLobbyLayout {
         }
     }
 
-    /// VERA's send key at the chat box's right end: the native template has
-    /// none, and a phone has no Enter to press.
+    /// The chat row moved down to the room's spacing: the gap between the
+    /// chat log's bottom edge and the input row's top edge matches the LAN
+    /// room's chat area (5 authored px).
+    fn chat_row(&self) -> Option<RectPx> {
+        let chat = self.rect(CHAT)?;
+        let log = self.rect(CHAT_LOG)?;
+        let scale = self.page.scale;
+        let y = log.y + log.h + (5.0 * scale.factor()).round() as i32;
+        Some(RectPx::new(chat.x, y, chat.w, chat.h))
+    }
+
+    /// VERA's send key beside the chat box, at the LAN room's slot.
     pub(crate) fn chat_send(&self) -> Option<RectPx> {
-        Some(crate::app::frontend::skirmish_shell_render::chat_send_rect(
-            self.rect(CHAT)?,
+        let chat = self.chat_row()?;
+        let log = self.rect(CHAT_LOG)?;
+        Some(crate::app::frontend::skirmish_shell_render::room_chat_send_rect(
+            chat,
+            log,
+            self.page.scale,
         ))
     }
 
-    /// The chat edit's rect with the send key taking the box's right end.
+    /// The chat edit's rect: the room's width and row position.
     pub(crate) fn chat_text(&self) -> Option<RectPx> {
-        Some(crate::app::frontend::skirmish_shell_render::chat_text_rect(
-            self.rect(CHAT)?,
+        let chat = self.chat_row()?;
+        let log = self.rect(CHAT_LOG)?;
+        Some(crate::app::frontend::skirmish_shell_render::room_chat_text_rect(
+            chat,
+            log,
+            self.page.scale,
         ))
     }
 }

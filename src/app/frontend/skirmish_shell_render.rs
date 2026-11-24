@@ -1965,15 +1965,58 @@ mod wol_page;
 mod wol_quick_match;
 /// The send key's rect at the right end of a chat box: a 22 px square flush
 /// with the box's right edge, matching the online room's key.
-pub(crate) fn chat_send_rect(chat: crate::ui::shell::geom::RectPx) -> crate::ui::shell::geom::RectPx {
-    let size = 22.min(chat.w).min(chat.h);
-    crate::ui::shell::geom::RectPx::new(chat.x + chat.w - size, chat.y + (chat.h - size) / 2, size, size)
+pub(crate) fn chat_send_rect(
+    chat: crate::ui::shell::geom::RectPx,
+    panel_left: i32,
+    scale: crate::ui::shell::geom::ShellScale,
+) -> crate::ui::shell::geom::RectPx {
+    let size = ((22.0 * scale.factor()).round() as i32).clamp(8, 64);
+    // Centre the tile in the gap between the box's right edge and the side
+    // panel, as the internet lobby's emote button sits.
+    let gap = (panel_left - (chat.x + chat.w)).max(size + 2);
+    let left = chat.x + chat.w + (gap - size) / 2;
+    crate::ui::shell::geom::RectPx::new(left, chat.y + (chat.h - size) / 2, size, size)
 }
 
-/// The chat edit's rect once the send key takes the box's right end.
-pub(crate) fn chat_text_rect(chat: crate::ui::shell::geom::RectPx) -> crate::ui::shell::geom::RectPx {
-    let size = 22.min(chat.w).min(chat.h);
-    crate::ui::shell::geom::RectPx::new(chat.x, chat.y, (chat.w - size - 2).max(1), chat.h)
+/// The chat edit's rect: the send key sits beside the box, so the edit keeps
+/// its full length.
+pub(crate) fn chat_text_rect(
+    chat: crate::ui::shell::geom::RectPx,
+    _panel_left: i32,
+    _scale: crate::ui::shell::geom::ShellScale,
+) -> crate::ui::shell::geom::RectPx {
+    chat
+}
+
+/// The room chat edit's rect, sized as the online room's: the log's width
+/// less the send tile and its gap (`26 + 6` authored px).
+pub(crate) fn room_chat_text_rect(
+    chat: crate::ui::shell::geom::RectPx,
+    log: crate::ui::shell::geom::RectPx,
+    scale: crate::ui::shell::geom::ShellScale,
+) -> crate::ui::shell::geom::RectPx {
+    let tile = (26.0 * scale.factor()).round() as i32;
+    let gap = (6.0 * scale.factor()).round() as i32;
+    crate::ui::shell::geom::RectPx::new(chat.x, chat.y, (log.w - tile - gap).max(1), chat.h)
+}
+
+/// The room's send tile, at the online room's emote slot: just right of the
+/// box, one pixel above it and `26 x 23` authored px.
+pub(crate) fn room_chat_send_rect(
+    chat: crate::ui::shell::geom::RectPx,
+    log: crate::ui::shell::geom::RectPx,
+    scale: crate::ui::shell::geom::ShellScale,
+) -> crate::ui::shell::geom::RectPx {
+    let text = room_chat_text_rect(chat, log, scale);
+    let tile_w = (26.0 * scale.factor()).round() as i32;
+    let tile_h = (23.0 * scale.factor()).round() as i32;
+    let gap = (6.0 * scale.factor()).round() as i32;
+    crate::ui::shell::geom::RectPx::new(
+        text.x + text.w + gap,
+        chat.y - (1.0 * scale.factor()).round() as i32,
+        tile_w,
+        tile_h,
+    )
 }
 
 pub(crate) use lan_lobby::render_lan_lobby;

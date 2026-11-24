@@ -132,9 +132,23 @@ pub(crate) fn render_lan_lobby(
         None
     } else {
         let gui = state.frontend.shell_controller.gui();
-        let help = crate::ui::shell::page::hovered_key(gui)
-            .map(|key| state.csf_label(key, ""))
-            .unwrap_or_default();
+        // VERA's send key answers the emote button's hint, whose tile it borrows.
+        #[cfg(target_os = "android")]
+        let send_help = {
+            let (px, py) = state.match_state.input.cursor_px();
+            layout.chat_send().is_some_and(|rect| {
+                px >= rect.x && px < rect.x + rect.w && py >= rect.y && py < rect.y + rect.h
+            })
+        };
+        #[cfg(not(target_os = "android"))]
+        let send_help = false;
+        let help = if send_help {
+            state.csf_text("STT:EmoteButton")
+        } else {
+            crate::ui::shell::page::hovered_key(gui)
+                .map(|key| state.csf_label(key, ""))
+                .unwrap_or_default()
+        };
         crate::app::frontend::menu_page_render::paint_shell_status_line(
             &mut state.frontend.shell_status_line,
             help,
@@ -168,6 +182,20 @@ pub(crate) fn render_lan_lobby(
             &wave.button_draws(),
             SHELL_CONTROL_DEPTH,
         );
+    }
+    // TEMP: the LAN lobby's chat column geometry.
+    #[cfg(target_os = "android")]
+    {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static N: AtomicU64 = AtomicU64::new(0);
+        if N.fetch_add(1, Ordering::Relaxed) % 120 == 0 {
+            log::info!(
+                "CHATGEOM lan chat={:?} log={:?} players={:?}",
+                layout.rect(crate::ui::lan_shell::CHAT),
+                layout.rect(crate::ui::lan_shell::CHAT_LOG),
+                layout.rect(crate::ui::lan_shell::PLAYERS),
+            );
+        }
     }
     let mut controls = Vec::new();
     let mut texts = Vec::new();
@@ -299,21 +327,36 @@ pub(crate) fn render_lan_lobby(
     if runtime.creating {
         paint_create_box(state, atlas, &mut overlay);
     }
-    // VERA's send key on the chat box: a native lobby has none, and a phone
-    // has no Enter to press. The face only here; its art is drawn below.
-    if let Some(rect) = layout.chat_send() {
+    // VERA's send key beside the chat box: the emote button's own square art
+    // (same PCX and drawing path as `Picture::Emote`); a press sends `Enter`.
+    // The host draws it, so it has to go with the page's slide: otherwise it
+    // hangs over the next menu's entrance.
+    if !leaving
+        && let Some(rect) = layout.chat_send()
+    {
         let filled = !state
             .frontend
             .shell_controller
             .text(PAGE.dialog, crate::ui::lan_shell::CHAT)
             .trim()
             .is_empty();
-        let tint = if filled {
-            [0.72, 0.06, 0.06]
-        } else {
-            [0.35, 0.15, 0.15]
-        };
-        super::chrome::push_solid_rect(&mut overlay.controls, atlas, rect, tint, SHELL_CONTROL_DEPTH);
+        if let (Some(released), _) = atlas.wol_emote_images() {
+            let mut entry = released;
+            let [aw, ah] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
+            if aw > 0.0 && ah > 0.0 {
+                let draw = [aw.min(rect.w as f32), ah.min(rect.h as f32)];
+                entry.uv_size[0] *= draw[0] / aw;
+                entry.uv_size[1] *= draw[1] / ah;
+                crate::render::shell_paint::push_entry_sized(
+                    &mut overlay.controls,
+                    entry,
+                    rect.x as f32,
+                    rect.y as f32,
+                    draw,
+                    SHELL_CONTROL_DEPTH,
+                );
+            }
+        }
     }
     in_game_shell::render_shell_frame(
         state,

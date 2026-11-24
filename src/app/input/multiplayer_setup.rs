@@ -480,6 +480,20 @@ fn handle_events(state: &mut AppState, view: &SetupView) {
 /// The status help of the control under the pointer at `x`, `y`.
 fn hovered_help(state: &AppState, view: &SetupView) -> String {
     let (x, y) = state.match_state.input.cursor_px();
+    // VERA's send key has no control id, so it answers its own hint here: the
+    // emote button's, whose tile it borrows (`STT:EmoteButton`).
+    #[cfg(target_os = "android")]
+    if !view.dialog.wol() {
+        let layout = layout_of(state, view);
+        let key = crate::app::frontend::skirmish_shell_render::room_chat_send_rect(
+            layout.chat,
+            layout.chat_log,
+            layout.page.scale,
+        );
+        if x >= key.x && x < key.x + key.w && y >= key.y && y < key.y + key.h {
+            return state.csf_text("STT:EmoteButton");
+        }
+    }
     let controller = &state.frontend.shell_controller;
     let gui = controller.gui();
     let hit = controller
@@ -579,7 +593,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     // sends the line.
     #[cfg(target_os = "android")]
     if pressed
-        && crate::app::frontend::skirmish_shell_render::chat_send_rect(layout.chat).contains(x, y)
+        && crate::app::frontend::skirmish_shell_render::room_chat_send_rect(layout.chat, layout.chat_log, layout.page.scale).contains(x, y)
     {
         key_press(state, Some(winit::keyboard::KeyCode::Enter), None);
         return;

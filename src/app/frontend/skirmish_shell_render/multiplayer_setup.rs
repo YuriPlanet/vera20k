@@ -766,22 +766,42 @@ pub(crate) fn render_multiplayer_setup(
         overlay.controls.extend(paint.controls);
         overlay.texts.extend(paint.texts);
     }
-    // VERA's send key on the room's chat box: the native room has none, and a
-    // phone has no Enter to press.
+    // VERA's send key beside the chat box: the emote button's own square art
+    // (same PCX and drawing path as `Picture::Emote`); a press sends `Enter`.
+    // Only the LAN room needs it: the online room already has its native
+    // emote button in the chat row (`0x3ED`, WOL rooms only). It goes with the
+    // page's slide, like the LAN lobby's.
+    if !leaving
+        && !view.dialog.wol()
+        && let Some(rect) = Some(super::room_chat_send_rect(
+            layout.chat,
+            layout.chat_log,
+            layout.page.scale,
+        ))
     {
-        let rect = super::chat_send_rect(layout.chat);
         let filled = !state
             .frontend
             .shell_controller
-            .text(view.page().dialog, crate::ui::multiplayer_setup::CHAT)
+            .text(view.page().dialog, crate::ui::lan_shell::CHAT)
             .trim()
             .is_empty();
-        let tint = if filled {
-            [0.72, 0.06, 0.06]
-        } else {
-            [0.35, 0.15, 0.15]
-        };
-        super::chrome::push_solid_rect(&mut overlay.controls, atlas, rect, tint, SHELL_CONTROL_DEPTH);
+        if let (Some(released), _) = atlas.wol_emote_images() {
+            let mut entry = released;
+            let [aw, ah] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
+            if aw > 0.0 && ah > 0.0 {
+                let draw = [aw.min(rect.w as f32), ah.min(rect.h as f32)];
+                entry.uv_size[0] *= draw[0] / aw;
+                entry.uv_size[1] *= draw[1] / ah;
+                crate::render::shell_paint::push_entry_sized(
+                    &mut overlay.controls,
+                    entry,
+                    rect.x as f32,
+                    rect.y as f32,
+                    draw,
+                    SHELL_CONTROL_DEPTH,
+                );
+            }
+        }
     }
     in_game_shell::render_shell_frame(
         state,

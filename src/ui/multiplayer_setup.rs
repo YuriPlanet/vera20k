@@ -2372,7 +2372,7 @@ pub(crate) fn sync(
                 .filter(|_| box_page.is_none_or(|page| on_game_options_page(view, page, id)))
                 .map(|rect| {
                     if dialog == page && id == CHAT {
-                        crate::app::frontend::skirmish_shell_render::chat_text_rect(rect)
+                        crate::app::frontend::skirmish_shell_render::room_chat_text_rect(rect, layout.chat_log, scale)
                     } else {
                         rect
                     }
