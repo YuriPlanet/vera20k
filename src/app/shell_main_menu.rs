@@ -35,6 +35,8 @@ impl AppState {
                 csf,
             );
         }
+        crate::app::loading::transitions::resolve_status_texts(self);
+        crate::app::input::keyboard::refresh_title(self);
         // The login form keeps its status line as resolved text; the rest of
         // that page resolves every frame.
         if let Some(visit) = self.frontend.wol.as_mut()
@@ -440,7 +442,7 @@ impl App {
             .score_page
             .as_ref()
             .is_some_and(|page| page.page_count() > 1);
-        let rect_of = |id| layout.control_rect(id, paged);
+        let rect_of = |id| layout.node_rect(id, paged);
         let dialog = score::SCORE_DIALOG;
         match Self::screen_page_pointer(state, dialog, score::nodes, rect_of, &[], down) {
             Some(score::CONTINUE_BUTTON) => Self::leave_shell_dialog(
@@ -833,12 +835,12 @@ impl App {
     ) -> crate::ui::main_menu_dialogs::options::LauncherOptionsLabels {
         let mut labels =
             crate::ui::main_menu_dialogs::options::LauncherOptionsLabels::resolve(&|key| {
+                // The labels' own fallbacks stand in while no table is loaded.
                 state
                     .process_assets
                     .csf
-                    .as_ref()
-                    .and_then(|csf| csf.get(key))
-                    .map(str::to_owned)
+                    .is_some()
+                    .then(|| state.csf_text(key))
             });
         // VERA's Esc menu opens Options over a page: the button returns there.
         if state.frontend.shell_route != ShellRoute::MainMenu {

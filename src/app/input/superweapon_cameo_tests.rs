@@ -2,10 +2,6 @@ use super::*;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::superweapon::{SuperWeaponInstance, superweapon_views_for_owner};
 use crate::sim::world::Simulation;
-use crate::ui::gadget::focus::FocusState;
-use crate::ui::gadget::list::{GadgetList, GadgetSpec};
-use crate::ui::gadget::tick::{GadgetInput, TickOutput, tick};
-use crate::ui::gadget::{self, GadgetRect, ListId};
 use crate::ui::sidebar::{self, SidebarAction, SidebarChromeLayoutSpec, SidebarItem, SidebarTab};
 
 fn sidebar_item(
@@ -17,9 +13,8 @@ fn sidebar_item(
     let views = superweapon_views_for_owner(sim, rules, &owner);
     let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &views);
     let view = sidebar::build_sidebar_view_with_spec(
-        SidebarChromeLayoutSpec::default(),
-        800.0,
-        600.0,
+        SidebarChromeLayoutSpec::stock(),
+        sidebar::SidebarFrame::native(800, 600),
         SidebarTab::Defense,
         0,
         0,
@@ -45,40 +40,20 @@ fn sidebar_item(
         .expect("visible Super cameo")
 }
 
-/// Same GadgetSpec::cameo/tick/hit_test_item used by the retained driver.
+/// The chrome's cameo node and hit_test_item the retained driver uses.
 /// Unavailable drawing does not disable the native press event.
 fn gadget_press(item: &SidebarItem, right: bool) -> SidebarAction {
-    let mut list = GadgetList::new(ListId(1));
     let r = item.rect;
-    list.add_tail(GadgetSpec::cameo(
-        GadgetRect::new(r.x as i32, r.y as i32, r.w as i32, r.h as i32),
-        super::super::gadget_input::ID_CAMEO_BASE,
-    ));
-    let input = GadgetInput {
-        queued_key: if right {
-            gadget::KEY_RMB_DOWN
-        } else {
-            gadget::KEY_LMB_DOWN
-        },
-        event_x: r.x as i32 + 2,
-        event_y: r.y as i32 + 2,
-        mouse_x: r.x as i32 + 2,
-        mouse_y: r.y as i32 + 2,
-        left_held: !right,
-        right_held: right,
-        ..Default::default()
-    };
-    let result = tick(
-        &mut list,
-        &mut FocusState::default(),
-        &input,
-        &mut TickOutput::default(),
-    );
-    assert_eq!(
-        result & !(gadget::RESULT_BUTTON | gadget::RESULT_RIGHT),
-        super::super::gadget_input::ID_CAMEO_BASE
-    );
-    sidebar::hit_test_item(item, result & gadget::RESULT_RIGHT != 0, false)
+    let rect = vera20k_gui::Rect::new(r.x as i32, r.y as i32, r.w as i32, r.h as i32);
+    let (slot, right_marker) = crate::app::input::chrome_input::press_cameo(
+        &[rect],
+        r.x as i32 + 2,
+        r.y as i32 + 2,
+        right,
+    )
+    .expect("the cameo fires on the press");
+    assert_eq!(slot, 0, "the one cameo, id ID_CAMEO_BASE");
+    sidebar::hit_test_item(item, right_marker, false)
 }
 
 #[test]

@@ -820,6 +820,23 @@ pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
     }
 }
 
+/// `0x130`'s widgets on its layout before they paint (input syncs them only
+/// on a pointer message).
+pub(crate) fn verify_sync(state: &mut AppState) {
+    let Some(shown) = verify(state) else {
+        return;
+    };
+    let parts = Some(shown)
+        .and_then(|verify| verify.mismatch.as_ref())
+        .map(|message| verify_mismatch_parts(state, message));
+    let ok = parts.as_ref().map(|parts| parts.button(0)).unwrap_or_default();
+    let layout = verify_layout(state);
+    if let Ok(verify) = verify_mut(state) {
+        verify.sync_widgets(&layout, ok);
+        verify.sync_mismatch(parts.as_ref());
+    }
+}
+
 pub(crate) fn verify_poll_scroll(state: &mut AppState) -> Option<Instant> {
     verify_mut(state).ok()?.poll_scroll().1
 }
@@ -896,14 +913,7 @@ pub(super) fn emote(state: &mut AppState) {
 }
 
 fn csf_units(state: &AppState, key: &str) -> Vec<u16> {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .and_then(|csf| csf.get(key))
-        .unwrap_or_default()
-        .encode_utf16()
-        .collect()
+    state.csf_label(key, "").encode_utf16().collect()
 }
 
 /// `00B73E40` is the login nickname, which the login made the MultiPlayer

@@ -1040,14 +1040,6 @@ impl WolLobbyState {
             && self.chat_blink()
     }
 
-    /// Button `id` paints pushed: captured and under the pointer in its
-    /// own dialog (612B70).
-    pub(crate) fn pressed(&self, id: u16) -> bool {
-        self.find(id).is_some_and(|(dialog, node)| {
-            self.gui.pressed_in(dialog) == Some(node) && self.gui.hovered_in(dialog) == Some(node)
-        })
-    }
-
     /// The control under the pointer in the top dialog.
     pub(crate) fn hovered(&self) -> Option<u16> {
         self.gui

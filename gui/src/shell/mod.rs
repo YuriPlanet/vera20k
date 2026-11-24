@@ -2,6 +2,7 @@
 //! shell (addresses cited per item), and the scaled pixel geometry they lay
 //! out on. The host paints; these give it rects, frames and timing.
 
+pub mod bar;
 pub mod button;
 pub mod combobox;
 pub mod geom;

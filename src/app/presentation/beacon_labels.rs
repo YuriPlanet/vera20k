@@ -103,6 +103,11 @@ pub(crate) fn instances(
     let Some(runtime) = state.match_state.sim_runtime.runtime() else {
         return (fills, outlines, texts);
     };
+    // The labels' built-in template (`health_templates`) may hide or move them.
+    use crate::app::presentation::health_templates::{Mark, family};
+    let Some(offset) = family(Mark::BeaconLabel) else {
+        return (fills, outlines, texts);
+    };
     let presentation = &state.match_state.match_presentation;
     let editing = presentation.message_list.editing();
     let now_ms = crate::app::input::tooltips::now_ms(state);
@@ -141,8 +146,8 @@ pub(crate) fn instances(
         let [x, y, z] = beacon.coord;
         let (wx, wy) = crate::util::lepton::absolute_leptons_to_screen(x, y, z);
         let point = [
-            ((wx - camera[0]) * zoom) as i32,
-            ((wy - camera[1]) * zoom) as i32,
+            (((wx - camera[0]) * zoom) as i32).saturating_add(offset[0]),
+            (((wy - camera[1]) * zoom) as i32).saturating_add(offset[1]),
         ];
         let rect = label_box(point, measured);
         let Some(clipped) = intersect(rect, bounds) else {

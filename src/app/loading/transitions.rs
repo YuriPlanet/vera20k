@@ -137,6 +137,21 @@ pub(crate) struct MapPresentationInputs {
 /// route-specific input, sidebar order, waterlines and timers stay outside it.
 /// Missing map-owned surfaces replace the old ones with absence, so a different
 /// map can never inherit the outgoing geometry or shroud dimensions.
+/// The cameo status strip's labels and Ares hook 6CC2B0's, only when Ares
+/// plays in the game (`RuleSet::ares`): resolved with the incoming world and
+/// after the string table's labels change, instead of with every sidebar draw.
+pub(crate) fn resolve_status_texts(state: &mut AppState) {
+    let ares_status_texts = state.rules().filter(|rules| rules.ares()).map(|rules| {
+        crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
+            state.csf_text(label)
+        })
+    });
+    let status_texts = crate::app::presentation::state::StatusTexts::resolve(state);
+    let presentation = &mut state.match_state.match_presentation;
+    presentation.ares_status_texts = ares_status_texts;
+    presentation.status_texts = status_texts;
+}
+
 pub(crate) fn install_world_presentation(
     state: &mut AppState,
     map: MapPresentationInputs,
@@ -260,20 +275,15 @@ pub(crate) fn install_world_presentation(
             .match_presentation
             .sw_sidebar
             .configure(assets.sw_sidebar_ui, significance);
+        state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .model
+            .reset_sw_sidebar();
     }
     state.match_state.match_presentation.outcome_banner_side_art = assets.outcome_banner_side_art;
-    // Ares hook 6CC2B0's labels, only when Ares plays in the game
-    // (`RuleSet::ares`), resolved once here instead of with every sidebar draw.
-    let ares_status_texts = state.rules().filter(|rules| rules.ares()).map(|rules| {
-        crate::app::presentation::sidebar_build::ares_status_texts(rules, |label| {
-            state
-                .process_assets
-                .csf
-                .as_ref()
-                .map_or_else(|| label.to_owned(), |csf| csf.text(label).into_owned())
-        })
-    });
-    state.match_state.match_presentation.ares_status_texts = ares_status_texts;
+    resolve_status_texts(state);
     state.match_state.match_presentation.end_game_banner = assets.end_game_banner;
     // `Game_LoadUI_LoadSideData` resolves the dialog background pair once per
     // game load. The shell chrome atlas carries the three side slots, so a
@@ -739,13 +749,13 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .match_state
         .match_presentation
         .sidebar_projection
-        .reset_cameo_seed();
+        .model.reset_cameo_seed();
     let owner = state.match_state.local_player_owner().map(str::to_owned);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .start_scenario_credits_counter(owner.as_deref());
+        .model.start_scenario_credits_counter(owner.as_deref());
     if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
         runtime
             .simulation
@@ -781,6 +791,9 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     );
     state.match_state.input.reset_targeting_for_new_world();
     state.match_state.match_presentation.active_sidebar_tab = SidebarTab::default_active_tab();
+    // The match's chrome: the sidebar's and the command bar's nodes, which
+    // take their clicks and draw them, until the match ends.
+    crate::app::input::chrome_input::build_for_match(state);
     // Read_Scenario's Init (`0x00684AC9`). Start_Scenario then changes video
     // mode when the game size differs from the shell's (`0x00683DB8..0x00683DF3`):
     // Change_Video_Mode's Set_View_Dimensions (`0x005610EC`) Inits the empty

@@ -198,7 +198,7 @@ fn handle_hotkey_pressed_inner(
 /// `StripClass::HasEntries` 6ABAC0 gates the switch: a strip with no retained
 /// entry refuses the command outright, so the active tab does not move — VERA
 /// reaches the same gate through the retained strip that also drives
-/// `SidebarProjectionState::selectable_tab`. Structures and Defense then run
+/// `SidebarModel::selectable_tab`. Structures and Defense then run
 /// their completed-building tail; a tab that is already active still runs it,
 /// because native only skips the switch, not the tail.
 fn select_sidebar_tab_command(state: &mut AppState, index: i32) {
@@ -209,7 +209,7 @@ fn select_sidebar_tab_command(state: &mut AppState, index: i32) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .selectable_tab(index)
+        .model.selectable_tab(index)
     else {
         return;
     };
@@ -243,7 +243,7 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .ready_building_for_tab(sim, owner_id, tab)
+            .model.ready_building_for_tab(sim, owner_id, tab)
             .and_then(|(type_id, held)| {
                 // Manual_Place4FB840 refuses a null factory; placement start
                 // centres the foundation on it.
@@ -444,7 +444,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 .is_some_and(|rules| rules.sw_sidebar.toggle_key_enabled)
                 && crate::app::presentation::sw_sidebar::toggle(state)
             {
-                crate::app::input::sw_sidebar::play_main_button_sound(state);
+                crate::app::input::chrome_input::play_gui_main_button_sound(state);
                 crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
             }
         }

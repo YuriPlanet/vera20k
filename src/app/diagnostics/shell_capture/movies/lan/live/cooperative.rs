@@ -17,7 +17,7 @@
 //! starts it as a first start, and it runs over the relay.
 
 use super::*;
-use crate::app::diagnostics::shell_capture::movies::abort_return::AbortReturnInput;
+use crate::app::diagnostics::shell_capture::movies::abort_return::{AbortGoal, AbortReturnInput};
 use crate::app::match_runtime::sim_host::SimWrite;
 
 /// Both players open the menu at this committed frame, so each B6 still
@@ -287,8 +287,12 @@ impl CooperativeRun {
                     self.phase = CoopPhase::AwaitResult;
                     return Ok(());
                 }
-                self.abort = Some(AbortReturnInput::begin_network_observe(
-                    state, route, frame,
+                self.abort = Some(AbortReturnInput::begin(
+                    state,
+                    route,
+                    frame,
+                    AbortGoal::Choose(Some(crate::ui::shell::abort::AbortButton::Secondary)),
+                    false,
                 )?);
                 self.phase = CoopPhase::Observing;
             }

@@ -440,7 +440,7 @@ pub(super) fn resume_player_file(
     loaded.local_view.commit_into(&mut input, &mut gadgets);
     let tab = crate::app::sidebar_projection::loaded_active_tab(presented.sidebar_order.as_ref());
     let mut sidebar = crate::app::sidebar_projection::SidebarProjectionState::default();
-    sidebar.restore_order(presented.sidebar_order);
+    sidebar.model.restore_order(presented.sidebar_order);
     let terrain = runtime.simulation.resolved_terrain().unwrap();
     let mut grid = crate::app::presentation::lighting::rebuild_lighting_grid_from_sim(
         terrain,
@@ -484,6 +484,7 @@ pub(super) fn resume_player_file(
         loaded.map,
     );
     let order = sidebar
+        .model
         .saved_order()
         .map(|saved| saved.with_active_tab(tab.tab_index() as u8));
     let bytes = GameSnapshot::save_validated_with_presentation(

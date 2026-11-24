@@ -13,6 +13,7 @@ use crate::app::frontend::menu_page_render::{
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::ButtonArt;
 use crate::app::frontend::skirmish_shell_render::{paint_saved_browser, push_saved_browser_box};
+use crate::render::hud_paint::Material;
 use crate::ui::skirmish_shell::saved_seed_browser::BROWSER_DIALOG;
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
@@ -64,14 +65,10 @@ pub(crate) fn render_load_saved_game_page(
         ButtonArt::Host,
         !leaving,
     );
-    push_saved_browser_box(
-        state,
-        state.frontend.skirmish_shell_chrome.as_ref(),
-        &layout.browser,
-        browser,
-        &mut over.controls,
-        &mut over.texts,
-    );
+    let atlas = state.frontend.skirmish_shell_chrome.as_ref();
+    over.draw(Material::Controls, |sprites, texts| {
+        push_saved_browser_box(state, atlas, &layout.browser, browser, sprites, texts)
+    });
     frame.over = over;
     encode_family_page(state, encoder, destination, frame);
     Ok(true)

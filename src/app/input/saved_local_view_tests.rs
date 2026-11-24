@@ -407,7 +407,7 @@ fn idle_saved_view_replaces_outgoing_building_placement_and_preview() {
         wall_autofill_cells: vec![],
     });
     outgoing.submit_building_placement(
-        &mut crate::app::sidebar_projection::SidebarProjectionState::default(),
+        &mut crate::app::sidebar_projection::SidebarModel::default(),
     );
     assert!(outgoing.begin_building_placement("UNIT", 3, owner));
 

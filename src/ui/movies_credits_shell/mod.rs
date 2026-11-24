@@ -12,9 +12,10 @@ mod page;
 
 pub use credits::{CreditLine, CreditsLayoutFlags, parse_credits};
 pub use movie_list::{
-    MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY, MovieEntry,
+    FAMILY_LIST_ID, MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT, MOVIE_LIST_TOOLTIP_KEY,
+    MovieEntry,
     MovieListLayout, MovieListState, MovieProgress, PLAY_MOVIE_CONTROL, active_movie_entries,
-    build_family_list, compute_movie_list_layout,
+    build_family_list, compute_movie_list_layout, movie_list_nodes,
     family_list_node, family_list_selected, find_family_list, retained_movie_row,
     set_family_list,
 };

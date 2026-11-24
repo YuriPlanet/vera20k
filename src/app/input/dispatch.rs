@@ -109,11 +109,11 @@ use unit_orders::{
 
 /// Handle mouse button press/release for selection and move commands.
 ///
-/// The in-game gadget walk runs FIRST (study G22/A8): chrome buttons + cameos
-/// fire/consume there; the full-tactical catcher and the minimap region decide
-/// WHICH body runs (the regions are sticky, so a drag stays bound to its region
-/// across the sidebar boundary). A `NotConsumed` click hits no live gadget — only
-/// the legacy dev/pause/producer press path runs; empty-sidebar / off-window
+/// The match's chrome runs FIRST (study G22/A8, `input::chrome_input`): its
+/// buttons and cameos fire/consume there; the full-tactical catcher and the
+/// minimap region decide WHICH body runs (the regions are sticky, so a drag
+/// stays bound to its region across the sidebar boundary). A `NotConsumed`
+/// click hits no live control and does nothing; empty-sidebar / off-window
 /// clicks do nothing (gamemd's sidebar-body gadget swallows them, A6). The middle
 /// button has no tactical behavior; with VERA's wheel zoom on, its press over
 /// the battlefield resets the view distance. Right-press is owned by the tactical catcher
@@ -135,7 +135,7 @@ pub(crate) fn handle_mouse_input(
 }
 
 fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state: ElementState) {
-    use crate::app::input::gadget_input::GadgetConsume;
+    use crate::app::input::chrome_input::ChromeRoute;
     let pressed = btn_state.is_pressed();
     state
         .match_state
@@ -147,11 +147,7 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
         Some(ModalPage::NetworkWait) => {
             if !pressed {
                 state.match_state.input.cancel_tactical_drag();
-                state
-                    .match_state
-                    .match_presentation
-                    .in_game_gadgets
-                    .cancel_pointer_capture();
+                crate::app::input::chrome_input::cancel(state);
             }
             crate::app::input::connection::mouse(state, button, pressed);
             return;
@@ -178,18 +174,16 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
         // UNCHECKED): a release that arrives while the overlay owns the mouse
         // never reaches the tactical body, so the whole gesture is dropped
         // here — not just the capture byte. Leaving a minimap press or the
-        // band drag active would freeze edge auto-scroll, swallow every cursor
-        // move, and keep a stale gadget sticky capture eating clicks for the
-        // rest of the match. `enter_in_game_menu_state` already tore the
-        // gesture down on the way into the modal; this catches releases that
-        // arrive afterwards (debug pause and any path that skips that owner).
+        // band drag active would freeze edge auto-scroll and swallow every
+        // cursor move for the rest of the match. `enter_in_game_menu_state`
+        // already tore the gesture down on the way into the modal; this
+        // catches releases that arrive afterwards (debug pause and any path
+        // that skips that owner). The chrome's capture goes with the menu's
+        // reset of `dialog_ui`, and a dialog on it owns the pointer; a debug
+        // pause with neither drops it here.
         if !pressed {
             state.match_state.input.cancel_tactical_drag();
-            state
-                .match_state
-                .match_presentation
-                .in_game_gadgets
-                .cancel_pointer_capture();
+            crate::app::input::chrome_input::cancel(state);
         }
         match state.match_state.match_presentation.in_game_menu {
             crate::ui::pause_menu::InGameMenuState::Page => {
@@ -230,17 +224,13 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     if super::chat::skirmish_spawn_mouse(state, button, pressed) {
         return;
     }
-    #[cfg(feature = "phobos")]
-    if crate::app::input::sw_sidebar::mouse(state, button, pressed) {
-        return;
-    }
-    match crate::app::input::gadget_input::handle_mouse_button_event(state, button, pressed) {
-        GadgetConsume::Tactical => tactical_mouse(state, button, btn_state),
-        GadgetConsume::Minimap => minimap_mouse(state, button, btn_state),
-        // Consumed (chrome/cameo/control button) → handled by the gadget.
-        // NotConsumed → the click hit no live gadget; nothing to do (every
-        // in-game surface is now on the retained list — R7 complete).
-        GadgetConsume::Consumed | GadgetConsume::NotConsumed => {}
+    match crate::app::input::chrome_input::mouse_button(state, button, pressed) {
+        ChromeRoute::Tactical => tactical_mouse(state, button, btn_state),
+        ChromeRoute::Minimap => minimap_mouse(state, button, btn_state),
+        // Consumed (chrome/cameo/control button) → handled by the chrome.
+        // NotConsumed → the click hit no live control; nothing to do (every
+        // in-game surface is on the chrome).
+        ChromeRoute::Consumed | ChromeRoute::NotConsumed => {}
     }
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
 }
@@ -727,9 +717,10 @@ fn tactical_left_up(state: &mut AppState) {
             .tactical_zoom()
             .map_or((sx, sy), |zoom| zoom.source_to_window(sx, sy));
         let admitted = ordinary && state.persistence.options_profile.right_click_orders;
+        let now = state.frontend.shell_controller.now();
         let double_click = state.match_state.input.note_tactical_selection_click(
             admitted,
-            crate::util::time::Instant::now(),
+            now,
             (window_point.0.round() as i32, window_point.1.round() as i32),
         );
         if double_click && let Some(mutation) = double_click_type_select(state, sx, sy) {
@@ -1120,6 +1111,11 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             return;
         }
         Some(ModalPage::ShellError | ModalPage::ShellMessageBox) | None => {}
+    }
+    // The chrome's hover and its held button's pushed look follow the
+    // cursor (G7, G22 rows 2/3), the layout edit mode included.
+    if !state.match_state.paused() {
+        crate::app::input::chrome_input::refresh_pointer(state);
     }
     // VERA: a part grabbed in the layout edit mode follows the cursor.
     if crate::app::input::layout_edit::active(state) && !state.match_state.paused() {

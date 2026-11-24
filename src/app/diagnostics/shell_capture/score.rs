@@ -19,6 +19,29 @@ use serde_json::{Value, json};
 /// Frames to present once the target state is reached.
 const SETTLE_FRAMES: u32 = 4;
 
+/// The SCRA frame the steady `0x103` capture shows. The emblem animates on a
+/// 100 ms wall-clock timer that keeps running once the statics settle (frame 4
+/// at about 1020 ms after the page opens, frame 5 at about 1055 ms), so a
+/// still taken a fixed number of frames after the settle shows frame 4 or 5
+/// by timing alone. The capture waits for this frame, the one the baseline
+/// stills show.
+const STEADY_SCRA_FRAME: usize = 5;
+
+/// Whether the rendered SCRA `frame` is the steady still's
+/// ([`STEADY_SCRA_FRAME`]); a page without SCRA art has no frame to wait for.
+/// A frame past it cannot come back (the wrap selects frame 29), so the
+/// capture fails rather than show another frame.
+fn steady_scra_frame_ready(frame: Option<usize>) -> Result<bool> {
+    match frame {
+        None => Ok(true),
+        Some(frame) if frame < STEADY_SCRA_FRAME => Ok(false),
+        Some(STEADY_SCRA_FRAME) => Ok(true),
+        Some(frame) => bail!(
+            "campaign score capture settled after SCRA frame {STEADY_SCRA_FRAME} (now {frame})"
+        ),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ScoreTarget {
     /// Settled with every reveal finished, the pointer at the neutral point.
@@ -573,6 +596,17 @@ impl CampaignScoreCapture {
             .collect()
     }
 
+    /// The steady still is selected after the production renderer has polled
+    /// and drawn its SCRA frame, so the frame read back is the one checked:
+    /// settled, on [`STEADY_SCRA_FRAME`].
+    pub(super) fn should_capture_steady_frame(&self, state: &AppState) -> Result<bool> {
+        if !self.ready(state)? {
+            return Ok(false);
+        }
+        let page = state.frontend.campaign_score_page.as_ref();
+        steady_scra_frame_ready(page.and_then(|page| page.emblem_animation_frame()))
+    }
+
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
         if self.phase != CampaignScorePhase::Settling(0) {
             return Ok(false);
@@ -922,5 +956,22 @@ impl ScoreCapture {
             "frame": {"path": FRAME_FILE_NAME, "byte_length": pixels.len(),
                 "sha256": crate::util::sha256::sha256_hex(pixels)}
         })
+    }
+}
+
+#[cfg(all(test, tests_app))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn steady_campaign_still_waits_for_its_scra_frame() {
+        // Settled on frame 4 the still waits; on frame 5 it is taken.
+        assert!(!steady_scra_frame_ready(Some(4)).expect("before"));
+        assert!(steady_scra_frame_ready(Some(STEADY_SCRA_FRAME)).expect("on"));
+        // Past it (or wrapped to 29) no later frame matches the baseline.
+        assert!(steady_scra_frame_ready(Some(6)).is_err());
+        assert!(steady_scra_frame_ready(Some(29)).is_err());
+        // Without SCRA art nothing animates.
+        assert!(steady_scra_frame_ready(None).expect("no art"));
     }
 }

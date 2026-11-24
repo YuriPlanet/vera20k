@@ -198,25 +198,96 @@ pub enum CoopScoreAction {
     Chat(Vec<u16>),
 }
 
-/// The page's buttons and body controls as nodes in hit order, the buttons
-/// first: each hovers with its help. The buttons press, the chat edit
-/// `0x540` edits and its log `0x53F` scrolls; the rest only hover.
+/// The right-panel heading `0x694` and the status line `0x695`, statics
+/// that take no pointer.
+pub const TITLE: u16 = 0x0694;
+pub const STATUS: u16 = 0x0695;
+
+/// Whether body control `id` shows: the final mission hides the
+/// continuation and the flags (`0x0046DE20`), and an empty slot its row.
+pub fn shown(id: u16, can_continue: bool, slots: [bool; 2]) -> bool {
+    if !can_continue && (hidden_on_final_mission(id) || FLAGS.contains(&id)) {
+        return false;
+    }
+    let row = [NAMES, READY_ICONS, FLAGS, COUNTRIES, COLORS, STARTS]
+        .iter()
+        .find_map(|ids| ids.iter().position(|each| *each == id));
+    row.is_none_or(|row| slots[row])
+}
+
+/// The page's buttons and body controls as nodes, the buttons first, the
+/// body in the order it paints (no two body controls overlap, so it is
+/// also the order a press finds them): the heading and status line, the
+/// statics, the score cells, each slot's ready icon, flag and lists
+/// (disabled: BC6 only shows them), Difficulty (disabled, no plaque), the
+/// chat edit `0x540` and its log `0x53F`, the preview. Each but the heading
+/// and status line hovers with its help.
 pub fn nodes() -> vera20k_gui::NodeSpec {
     use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
-    let body = COOP_SCORE_CONTROLS.iter().map(|spec| spec.id);
+    let node = |kind, id: u16| NodeSpec::new(kind).id(id.into());
+    let hover = |kind, id: u16| node(kind, id).tooltip(help_key(id).unwrap_or_default());
+    let align =
+        |spec: NodeSpec, align: ShellAlign| spec.with(Prop::Align, Value::Int(align.0.into()));
+    let spec_align = |id: u16| {
+        COOP_SCORE_CONTROLS
+            .iter()
+            .find(|spec| spec.id == id)
+            .map_or(ShellAlign::NONE, |spec| spec.align)
+    };
+    let statics = COOP_SCORE_CONTROLS
+        .iter()
+        .filter(|spec| {
+            spec.caption_key.is_some() || matches!(spec.id, TIME | NEXT_MISSION | DESCRIPTION)
+        })
+        .map(move |spec| align(hover(NodeKind::Text, spec.id), spec.align));
+    let labels =
+        [MODE_LABEL, MAP_LABEL].map(|id| align(hover(NodeKind::Text, id), ShellAlign::H_CENTER));
+    let cells = ROW_CELLS
+        .into_iter()
+        .flatten()
+        .map(move |id| align(hover(NodeKind::Text, id), spec_align(id)));
+    let slots = (0..2).flat_map(move |row| {
+        let combo = |id| {
+            hover(NodeKind::Combo, id)
+                .with(Prop::Enabled, Value::Bool(false))
+                .with(Prop::Selected, Value::Int(0))
+        };
+        [
+            hover(NodeKind::Image, READY_ICONS[row]),
+            hover(NodeKind::Image, FLAGS[row]),
+            combo(NAMES[row]),
+            combo(COUNTRIES[row]),
+            combo(COLORS[row]),
+            combo(STARTS[row]),
+        ]
+    });
+    let range = DIFFICULTY_RANGE;
+    let difficulty = hover(NodeKind::Trackbar, DIFFICULTY)
+        .with(Prop::Enabled, Value::Bool(false))
+        .with(Prop::ShowValue, Value::Bool(false))
+        .with(Prop::Min, Value::Int(range.min))
+        .with(Prop::Max, Value::Int(range.max))
+        .with(Prop::Step, Value::Int(range.step));
+    let inset = vera20k_gui::Rect::new(2, 0, 2, 0);
+    let log = hover(NodeKind::List, CHAT_LOG)
+        .with(Prop::RowCount, Value::Int(0))
+        .with(Prop::TextInset, Value::Rect(inset))
+        .with(Prop::NoSelectionFill, Value::Bool(true));
     COOP_SCORE_PAGE
         .nodes()
-        .children(body.chain([PREVIEW, MODE_LABEL, MAP_LABEL]).map(|id| {
-            let help = help_key(id).unwrap_or_default();
-            match id {
-                CHAT => NodeSpec::new(NodeKind::Edit).id(id.into()).tooltip(help),
-                CHAT_LOG => NodeSpec::new(NodeKind::List)
-                    .id(id.into())
-                    .tooltip(help)
-                    .with(Prop::RowCount, Value::Int(0)),
-                id => menu_page::hover_target(id, help),
-            }
-        }))
+        .child(align(node(NodeKind::Text, TITLE), ShellAlign::PANEL_TITLE))
+        .child(node(NodeKind::Text, STATUS))
+        .children(statics)
+        .children(labels)
+        .children(cells)
+        .children(slots)
+        .child(difficulty)
+        .child(hover(NodeKind::Edit, CHAT))
+        .child(log)
+        .child(menu_page::hover_target(
+            PREVIEW,
+            help_key(PREVIEW).unwrap_or_default(),
+        ))
 }
 
 /// BC6's own state: the chat transcript (the buttons, the chat edit and

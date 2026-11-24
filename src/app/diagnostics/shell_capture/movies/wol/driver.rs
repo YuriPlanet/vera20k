@@ -913,20 +913,33 @@ impl WolCapture {
                     }
                 }
                 self.abort_input = Some(match self.target {
-                    WolTarget::InternetMenu => {
-                        abort_return::AbortReturnInput::begin_menu(state, &mut self.route, frame)?
-                    }
+                    WolTarget::InternetMenu => abort_return::AbortReturnInput::begin(
+                        state,
+                        &mut self.route,
+                        frame,
+                        abort_return::AbortGoal::Menu,
+                        true,
+                    )?,
                     // A Quick Match game is a tournament game (+0x14 = 1):
                     // Abort opens the Surrender box, whose OK leaves.
                     WolTarget::QmPostmatch | WolTarget::QmPostmatchYes => {
-                        abort_return::AbortReturnInput::begin_surrender(
+                        abort_return::AbortReturnInput::begin(
                             state,
                             &mut self.route,
                             frame,
+                            abort_return::AbortGoal::Surrender { press_ok: true },
                             true,
                         )?
                     }
-                    _ => abort_return::AbortReturnInput::begin(state, &mut self.route, frame)?,
+                    _ => abort_return::AbortReturnInput::begin(
+                        state,
+                        &mut self.route,
+                        frame,
+                        abort_return::AbortGoal::Choose(Some(
+                            crate::ui::shell::abort::AbortButton::Leave,
+                        )),
+                        true,
+                    )?,
                 });
                 self.phase = WolPhase::AbortInput;
             }

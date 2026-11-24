@@ -2,6 +2,11 @@
 
 状态：草案 v6。相对 v5 的变更见 §18。v6 补齐 v5 盲评留下的类型与属性表缺口，并为每条规则与设计空白各定一条决定。
 
+当前实现见 [`vera20k-gui`](../gui/src/lib.rs)。游戏由 `Gui` 管理节点树和各层的布局。宿主用
+[`HudPaint`](../src/render/hud_paint.rs) 把绘制命令转换为渲染实例。单位状态条由
+[状态模板](../gui/src/status.rs) 和[游戏侧的数据适配器](../src/app/presentation/health_templates.rs)生成。
+对局控件的命中与指针路由见 §8.10。其余章节给出设计草案；实际的 Rust 接口以源码为准。
+
 本库从 vera20k 抽离出来，用保留式节点树描述界面，覆盖当前引擎的全部界面功能。它与两处已有设计保持一致：
 
 - `docs/interface-layout.md`：模组作者使用的 `veraui.ini` 格式，键名长期稳定；
@@ -93,6 +98,7 @@ impl Gui {
 }
 
 pub struct InputResult { pub consumed: bool, pub cursor: Option<CursorShape> }
+// 现有代码：pub struct InputResult { pub consumed: bool, pub passthrough: Option<NodeId> }（§8.10）
 pub struct NodeHandle { pub root: NodeId, pub named: BTreeMap<String, NodeId> }
 pub struct DialogHandle { pub id: DialogId, pub root: NodeId, pub named: BTreeMap<String, NodeId> }
 pub struct Refused { pub reason: RefuseReason }      // NotFound, WrongOwner, WrongKind, Limit, Stale, Locked, NoSuchName
@@ -392,10 +398,11 @@ pub struct Expiry { pub ms: u32, pub clock: Clock }
 | `Tab` | `Building`、`Defense`、`Infantry`、`Vehicle`。由游戏侧的造物列表填充 `Items` |
 | `Items` | 由宿主设置；玩家不能通过界面改变它（§7.1） |
 | `Columns`（Int）、`GridRows` | 列数 1..8、行数 1..60 |
-| `CellSize`（Int） | 图标的边长（正方形）。INI 的 `CellWidth`、`CellHeight` 仍为“尚未支持” |
+| `CellSize`（Int） | 图标的边长（正方形）。INI 的 `CellWidth`、`CellHeight` 已由布局读取器支持（侧边栏的 `Cameos`），本草案的 API 仍只有 `CellSize` |
 | `Scroll` | 当前行偏移 |
 | `ItemProgress`、`ItemReady` | 每项的进度与就绪标记 |
 
+- 现有代码没有 `CameoGrid` 节点：造物格是 chrome 层的 `PressActivates` 按钮（§8.10），图标与遮罩由宿主直接生成实例。下文是草案。
 - 标签页：每个标签页是一个 `Button`，`Command = "Tab:Infantry"`，`ActivateOn = Press`，`Target` 为网格。宿主收到 `Activated` 后设置网格的 `Tab` 并重新填充 `Items`；当前标签页的按钮设 `Toggled = true`。
 - 滚动按钮：`Button`，`Command = "Scroll:-1"` 或 `"Scroll:+1"`，`Target` 为网格。**库**直接改变 `Target` 的 `Scroll`，不发出 `Activated`。（v4 中“宿主或库”的歧义到此消除。）
 - `Ready` 标签的文字为 CSF 键 `CSF:Ready`（主题提供默认文字）。
@@ -405,6 +412,7 @@ pub struct Expiry { pub ms: u32, pub clock: Clock }
 ### 5.6 `Bar`
 
 - `Segments`（§4.3）、`Fill`（0..100）、`Bind`（绑定名，§7.4）、`Smooth`（毫秒）。段数是 `Segments` 的长度。
+- 绘制（`vera20k_gui::shell::bar`，原版 0x0064A7B0）：`Background` 是一像素外框（缺省 255,0,0），`Color` 是其上的填充（缺省白色；对话框绘制取宿主样式色），填充内缩 2 像素、至少 6 像素宽，`Fill` 缺省 100。HUD 的绘制列表与宿主的对话框绘制只用这一种含义。
 - 电量条：`Bind = "PowerRatio"`。宿主计算 `Power` 与 `Drain` 的比例并绑定为一个整数（0..100）。库不知道 Power 与 Drain 的存在。
 - 平滑：`Bind` 设置目标值；库在 `Smooth` 毫秒内把显示的 `Fill` 从当前值移到目标值，动画由库内部启动，宿主不参与。`Smooth = 0` 时立即显示。绑定的 Bar 不接受 `Anim::Fill`（返回 `Refused::Locked`），因此不存在两者冲突。原版电量条是 CdTimer 步进，与线性平滑不同，列为已知差异（§16）。
 
@@ -579,7 +587,7 @@ pub enum InputEvent {
     PointerDown { pos: Vec2, button: MouseButton },
     PointerUp { pos: Vec2, button: MouseButton },
     PointerMove { pos: Vec2 },
-    Wheel { lines: f32 },           // 宿主已换算（§8.8）
+    Wheel { lines: f32 },           // 宿主已换算（§8.8）；现有代码为 Wheel { lines: i32, x: i32, y: i32 }
     Key { key: Key, repeat: bool, mods: Mods },
     Text(String),
     Ime(ImeEvent),
@@ -654,6 +662,46 @@ pub enum ActivateOn { Release, Press }
 
 - `Enabled = 0` 作用于节点及其整个子树：子树中的交互节点不接收输入，显示为灰色。
 - 对话框或面板被禁用时，其按钮不能激活，但 Escape 仍然按 `EscapePolicy` 工作（禁用只影响交互节点，不影响对话框自身的关闭）。
+
+### 8.10 chrome 层（已实现）
+
+宿主自己的常驻控件（对局的侧边栏按钮、造物格、命令栏、计时器停靠、布局添加的按钮、超武栏、战场与雷达的接收区）
+放在 chrome 层：一棵 `Dialog` 根下的 `Button` 节点，位于全部对话框之下。规则是原版 gadget 链表的规则。
+
+```rust
+impl Gui {
+    /// 把已有的 Dialog 节点压为 chrome 层（插在栈底）；同时只能有一个，已有时 Refused::Denied。
+    /// 面积大于 hover_seed_area（像素²）的节点不参与悬停。
+    pub fn push_chrome(&mut self, root: NodeId, hover_seed_area: i64) -> Result<DialogId, Refused>;
+    pub fn chrome(&self) -> Option<DialogId>;
+    /// chrome 层在 (x, y) 会悬停的节点：覆盖该点的最小的可用节点，不超过 hover_seed_area。
+    pub fn chrome_hit(&self, x: i32, y: i32) -> Option<NodeId>;
+}
+
+pub enum InputEvent { /* … */ Wheel { lines: i32, x: i32, y: i32 }, /* … */ }
+pub struct InputResult { pub consumed: bool, pub passthrough: Option<NodeId> }
+pub enum UiEvent { /* … */ RightActivated { node: NodeId }, /* … */ }
+```
+
+只用于 chrome 层 `Button` 的属性：
+
+| 属性 | 类型 | 含义 |
+|---|---|---|
+| `Buttons` | Int | 接收的鼠标键：位 1 左键，位 2 右键；未设时只收左键。不收的键穿过它交给下一个节点 |
+| `PressActivates` | Bool | 按下即激活（左键 `Activated`，右键 `RightActivated`），不捕获，释放穿过 |
+| `Passthrough` | Bool | 宿主自己处理的接收区：像按钮一样捕获，但不激活；它收下的输入以 `InputResult.passthrough = Some(node)`、`consumed = false` 交回宿主 |
+| `ToggleOnRelease` | Int | 指针在矩形内释放并激活时：1 翻转 `Toggled`，2 置为开 |
+| `Opaque` | Bool | 它不处理的按下或释放（不收的键、未捕获的释放）被它吞掉，下面的节点看不到 |
+
+路由（只在没有对话框压在 chrome 层之上时）：
+
+- 移动：悬停取最小的可用节点（同面积取后者）；捕获中的按钮按指针是否在矩形内显示按下。悬停在非 `Passthrough` 节点上时消费。
+- 按下：交给树序中第一个收该键的可用节点；`PressActivates` 立即激活，否则捕获（非 `Passthrough` 的发出 `Pressed`）。
+- 捕获期间，持有者收下所有按键消息（可用与否），直到它所收的键释放；最后一次移动把指针留在矩形内时，释放才激活它。
+- 滚轮：交给 `(x, y)` 处的节点；`Passthrough` 节点交回宿主，其它节点消费。对话框中的滚轮仍交给悬停节点（§8.8）。
+- 键与文字不经 chrome 层。
+
+侧边栏与命令栏的按下顺序由宿主保留，以便在按钮图像重叠时选中正确的控件。见[对局输入路由](../src/app/input/chrome_input.rs)和[命中测试](../gui/src/chrome_tests.rs)。
 
 ## 9. 动画与时间
 
@@ -896,7 +944,7 @@ pub struct CustomCanvas { /* fill(rect, rgba)、outline(rect, rgba, width)、pic
 | `Type` 别名 | `PowerBar` 为 `Bar`，`Battlefield` 为 `Field`（§11.1 的完整表） |
 | `Text` 的 `Label` 与 `Value` | 同时出现：`LayoutProblem`，使用 `Value` |
 | `CellX`、`CellY` | 第一个图标的位置（原始键，保留） |
-| `CellWidth`、`CellHeight` | 尚未支持；API 使用 `CellSize` |
+| `CellWidth`、`CellHeight` | 布局读取器已支持（`Cameos`）；本草案的 API 使用 `CellSize` |
 | `ActivateOn=Press` | INI 中尚未支持（§16） |
 | 聊天输入行 | 独立的 `Edit`，不属于 `ChatLog` |
 | 行与列嵌套 | API 允许；INI 不允许（`LayoutProblem`） |
@@ -933,7 +981,8 @@ pub struct CustomCanvas { /* fill(rect, rgba)、outline(rect, rgba, width)、pic
 
 1. 若 IME 处于组合中，宿主先把事件交给 IME。
 2. 调用 `Gui::input(event, now)`；`consumed` 为真则结束。
-3. 否则交给游戏（热键、命令、地图点击）。
+3. `passthrough` 为 `Some(node)` 时，交给该接收区的宿主处理（对局中是战场或雷达）。
+4. 否则交给游戏（热键、命令、地图点击）。
 
 ## 15. RFC 的 ABI 翻译
 

@@ -261,14 +261,7 @@ impl FailureCapture {
                         )
                     })
                     .context("EA Quit hit geometry")?;
-                let point = set_window_pointer_to_rect_center(state, layout.quit);
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                for edge in [
-                    winit::event::ElementState::Pressed,
-                    winit::event::ElementState::Released,
-                ] {
-                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-                }
+                let point = click_in_game(state, layout.quit);
                 self.quit = Some(json!({"held_frame":frame,"observed_bucket":now,"point":point}));
                 route.push(json!({"render_frame":render,"native_frame":frame,"action":"real EA Quit Game clicked","point":point}));
             }

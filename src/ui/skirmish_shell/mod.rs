@@ -14,9 +14,8 @@ pub(crate) use statics::SkirmishStatics;
 
 pub use layout::{
     AdvancedField, CHOOSE_MAP_AUTHOR, CHOOSE_MAP_TITLE_KEY,
-    COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H,
-    COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H, COMBO_DROPDOWN_SCROLLBAR_W, COMBO_FACE_H,
-    COMBO_TEXT_LEFT_INSET, ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics,
+    COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_FACE_H,
+    COMBO_TEXT_LEFT_INSET, ChooseMapModalButton, ChooseMapModalLayout,
     RANDOM_MAP_TITLE_KEY, RIGHT_PANEL_WIDTH, RandomMapSetupControl,
     RandomMapSetupLayout, RectPx, SKIRMISH_LONG_ROW_COUNT, SKIRMISH_ROW_COUNT, SavedSeedLayout,
     SavedSeedMode, SkirmishCheckboxId,

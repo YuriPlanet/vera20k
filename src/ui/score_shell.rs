@@ -51,15 +51,75 @@ pub const SCORE_PAGE: MenuPageSpec = MenuPageSpec {
     .returning(1),
 };
 
-/// Continue and VERA's paging pair as nodes; only Continue has help.
+/// Heading `0x694`, which the proc sets to the result's title.
+pub const HEADING: u16 = 0x0694;
+
+/// Continue and VERA's paging pair, then what paints in the order it
+/// paints: the heading, the table's statics, VERA's page counter, and the
+/// band bars in the proc's band order. Only Continue has help; the statics
+/// and bars take no pointer.
 pub fn nodes() -> vera20k_gui::NodeSpec {
     use vera20k_gui::{NodeKind, NodeSpec};
     let paging = [(PREVIOUS_PAGE, "VERA:Previous"), (NEXT_PAGE, "VERA:Next")];
-    SCORE_PAGE.nodes().children(paging.map(|(id, label)| {
-        NodeSpec::new(NodeKind::Button)
-            .id(i32::from(id))
-            .label(label)
-    }))
+    SCORE_PAGE
+        .nodes()
+        .children(paging.map(|(id, label)| {
+            NodeSpec::new(NodeKind::Button)
+                .id(i32::from(id))
+                .label(label)
+        }))
+        .child(static_node(HEADING, ShellAlign::H_CENTER))
+        .children(table_statics().map(|(id, align)| static_node(id, align)))
+        .child(crate::ui::shell::paging::counter_node())
+        .children(BAND_IDS.map(|id| NodeSpec::new(NodeKind::Image).id(i32::from(id))))
+}
+
+/// A kind-1 static's `Text` node in its alignment.
+pub(crate) fn static_node(id: u16, align: ShellAlign) -> vera20k_gui::NodeSpec {
+    use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+    NodeSpec::new(NodeKind::Text)
+        .id(i32::from(id))
+        .with(Prop::Align, Value::Int(i32::from(align.0)))
+}
+
+/// Every table static in [`ScorePage`]'s order with its alignment: Game,
+/// Time, the headers, then each row's name and numbers.
+fn table_statics() -> impl Iterator<Item = (u16, ShellAlign)> {
+    let (left, right) = (ShellAlign::NONE, ShellAlign::H_RIGHT);
+    let column = move |column: usize| if column == 0 { left } else { right };
+    let headers = HEADER_IDS.into_iter().enumerate();
+    let cells = ROW_CELL_IDS.into_iter().flat_map(|ids| ids.into_iter().enumerate());
+    [(GAME_LABEL, left), (TIME_LABEL, right)]
+        .into_iter()
+        .chain(headers.chain(cells).map(move |(index, id)| (id, column(index))))
+}
+
+/// Writes each `Text` node's text under `root` that `text_of` gives by its
+/// id (the prop and the text), in one pass and only on a change: a steady
+/// frame writes and allocates nothing.
+pub fn sync_static_texts<'a>(
+    gui: &mut vera20k_gui::Gui,
+    root: vera20k_gui::NodeId,
+    text_of: impl Fn(u16) -> Option<(vera20k_gui::Prop, &'a str)>,
+) {
+    let count = gui.tree().children(root).map_or(0, <[_]>::len);
+    for index in 0..count {
+        let Some(node) = gui
+            .tree()
+            .children(root)
+            .ok()
+            .and_then(|children| children.get(index).copied())
+        else {
+            break;
+        };
+        if gui.tree().kind(node) != Ok(vera20k_gui::NodeKind::Text) {
+            continue;
+        }
+        let id = gui.id_of(node).and_then(|id| u16::try_from(id).ok());
+        if let Some((prop, text)) = id.and_then(&text_of) {
+            crate::ui::shell::page::set_node_text(gui, node, prop, text);
+        }
+    }
 }
 
 /// Player rows the template declares.
@@ -284,12 +344,23 @@ impl ScoreLayout {
     /// page and scaled with it: its text scales with the page and is clipped
     /// to this rect.
     pub fn page_label(&self) -> RectPx {
+        use crate::ui::shell::paging::{button_rects, counter_rect};
         self.page
             .scale
-            .derive_rect(self.continue_button(), |continue_button| {
-                let previous = crate::ui::shell::paging::button_rects(continue_button)[0];
-                RectPx::new(previous.x, previous.y - 24, previous.w, 20)
-            })
+            .derive_rect(self.continue_button(), |c| counter_rect(button_rects(c)))
+    }
+
+    /// Every node's window ([`nodes`]): Continue and the paging pair, the
+    /// heading, the table's statics and bands at their template windows,
+    /// and the page counter while the result spans pages.
+    pub fn node_rect(&self, id: u16, paged: bool) -> Option<RectPx> {
+        match id {
+            HEADING => Some(self.page.title),
+            crate::ui::shell::paging::COUNTER => paged.then(|| self.page_label()),
+            id => self
+                .control_rect(id, paged)
+                .or_else(|| self.table.get(id)),
+        }
     }
 
     /// Continue, and VERA's paging pair when the result spans pages.
@@ -316,6 +387,9 @@ pub struct ScoreStatic {
     pub align: ShellAlign,
     pub rgb: Option<[u8; 3]>,
     reveal: PresentedKind1Static,
+    /// This recomposition's reveal window ([`ScoreStatics::paint`]); `None`
+    /// while hidden.
+    window: Option<Kind1RevealWindow>,
 }
 
 impl ScoreStatic {
@@ -334,6 +408,7 @@ impl ScoreStatic {
             align,
             rgb,
             reveal,
+            window: None,
         }
     }
 
@@ -344,11 +419,6 @@ impl ScoreStatic {
     #[cfg(test)]
     pub(crate) fn params(&self) -> Kind1Params {
         self.reveal.params()
-    }
-
-    /// Reveal window for this recomposition, `None` before the slide ends.
-    pub(crate) fn paint(&mut self, now: Instant) -> Option<Kind1RevealWindow> {
-        self.reveal.paint(now)
     }
 }
 
@@ -374,6 +444,21 @@ impl ScoreStatics {
     /// Every reveal ran to completion and its final paint is shown.
     pub fn is_terminal(&self) -> bool {
         self.0.iter().all(|text| text.reveal.is_terminal())
+    }
+
+    /// This recomposition's paint: each static's reveal window when the
+    /// statics `show`, else every one hidden (no paint runs).
+    pub fn paint(&mut self, now: Instant, show: bool) {
+        for text in &mut self.0 {
+            text.window = if show { text.reveal.paint(now) } else { None };
+        }
+    }
+
+    /// Control `id`'s reveal window from [`Self::paint`] and its `0x498`
+    /// colour, `None` while it is hidden.
+    pub fn shown(&self, id: u16) -> Option<(Kind1RevealWindow, Option<[u8; 3]>)> {
+        let text = self.0.iter().find(|text| text.id == id)?;
+        Some((text.window?, text.rgb))
     }
 
     /// Control `id`'s text.

@@ -3,7 +3,6 @@
 //! Contains NewEdit chrome, checkboxes, trackbars, combo faces,
 //! and ComboDropWin popup sprite construction.
 
-use crate::app::loading::init::MapMenuEntry;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_text::{self, ShellTextDraw};
@@ -13,9 +12,8 @@ use crate::render::skirmish_shell_chrome::{
 use crate::rules::ruleset::RuleSet;
 use crate::ui::shell::geom::{ShellAlign, ShellScale};
 use crate::ui::skirmish_shell::{
-    DropdownMetrics, DropdownScrollbarPart, RectPx, SkirmishShellLayout, SkirmishShellState,
-    checkbox_icon_rect, combo_arrow_rect, combo_face_rect, combo_swatch_rect,
-    opponent_scroll_geometry,
+    DropdownScrollbarPart, RectPx, checkbox_icon_rect, combo_arrow_rect, combo_face_rect,
+    combo_swatch_rect,
 };
 use vera20k_gui::shell::trackbar::{PLAQUE_RESERVE, THUMB_W};
 
@@ -24,7 +22,6 @@ use super::chrome::{
     push_ownerdraw_two_pixel_bevel_frame, push_ownerdraw_two_pixel_bevel_frame_px, push_solid_rect,
     push_solid_rect_px, push_tinted_entry,
 };
-use super::text::rect_to_text_rect;
 use super::{
     OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF, SHELL_CONTROL_DEPTH,
     SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE, SHELL_DROPDOWN_DEPTH,
@@ -200,7 +197,7 @@ pub(super) fn push_framed_edit(
         texts.push(shell_text::draw_in_rect_scaled(
             font,
             &text,
-            rect_to_text_rect(at),
+            shell_text::TextRect::of(at),
             rgb,
             ShellAlign::V_CENTER,
             [0.0; 2],
@@ -510,7 +507,7 @@ pub(super) enum ControlPaint {
         rect: RectPx,
     },
     /// A trackbar window with its thumb's window-relative left edge
-    /// ([`vera20k_gui::shell::trackbar::thumb_left`]). `plaque` is off where
+    /// ([`vera20k_gui::shell::trackbar::TrackbarRange::thumb_left`]). `plaque` is off where
     /// the owner sends `0x4AC` with 0 (Options Detail/Difficulty/Scroll, BBB).
     /// `disabled` is the window's `WS_DISABLED` style (`0x0061E0B0`).
     Trackbar {
@@ -572,6 +569,7 @@ pub(super) fn paint_control(
                 paint_trackbar_plaque(out, chrome, rect, SHELL_CONTROL_DEPTH, scale);
             }
             if let Some(thumb) = chrome.trackbar_thumb_trakgrip {
+                let before = out.len();
                 push_entry_top_clipped(
                     out,
                     thumb,
@@ -587,8 +585,12 @@ pub(super) fn paint_control(
                 // A disabled window darkens the thumb rect with the overlay
                 // alpha (`0x0061E0B0..0x0061E0D4`). RESIDUAL: native also
                 // darkens the backdrop under TRAKGRIP's transparent texels.
-                if disabled && let Some(sprite) = out.last_mut() {
-                    sprite.tint = [DISABLED_OVERLAY_KEEP; 3];
+                // Only the thumb's own quad: a clipped-away thumb pushes
+                // none, and what is before it in `out` is not the thumb's.
+                if disabled {
+                    for sprite in &mut out[before..] {
+                        sprite.tint = [DISABLED_OVERLAY_KEEP; 3];
+                    }
                 }
             }
             let base = scale.base_rect(rect);
@@ -694,7 +696,7 @@ pub(super) fn paint_control(
                     out,
                     down,
                     scrollbar.x,
-                    scrollbar.y + scrollbar.h - DropdownMetrics::scaled(scale).button_h,
+                    scrollbar.y + scrollbar.h - vera20k_gui::shell::list::ListMetrics::scaled(scale).arrow_h,
                     scale,
                     SHELL_DROPDOWN_DEPTH - 0.00005,
                 );
@@ -710,36 +712,12 @@ pub(super) fn paint_control(
     }
 }
 
-/// VERA's scrollbar beside the computer rows of a map with more than eight
-/// starts: the shared list's frame and scrollbar.
-pub(super) fn push_opponent_scrollbar_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    layout: &SkirmishShellLayout,
-    shell: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    // The arrow its gui List draws pushed.
-    pressed: Option<vera20k_gui::shell::list::ListScrollPart>,
-) {
-    if let Some(geometry) = opponent_scroll_geometry(layout, shell, maps) {
-        super::list::paint_list(
-            out,
-            atlas,
-            geometry,
-            shell.first_opponent,
-            None,
-            pressed,
-            false,
-            layout.scale,
-        );
-    }
-}
-
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
     use crate::render::skirmish_shell_chrome::{TRACKBAR_FRAMES, trackbar_frame_slot};
-    use crate::ui::skirmish_shell::COMBO_DROPDOWN_SCROLLBAR_BUTTON_H;
+    use crate::ui::skirmish_shell::SkirmishShellState;
+    use vera20k_gui::shell::list::ListMetrics;
 
     #[test]
     fn skirmish_dropdown_highlight_follows_pointer_without_committing_selection() {
@@ -1587,7 +1565,7 @@ mod tests {
             out[2].position,
             [
                 scrollbar.x as f32,
-                (scrollbar.y + scrollbar.h - COMBO_DROPDOWN_SCROLLBAR_BUTTON_H) as f32
+                (scrollbar.y + scrollbar.h - ListMetrics::RETAIL.arrow_h) as f32
             ]
         );
         assert_eq!(out[2].uv_origin, dn_r.uv_origin);

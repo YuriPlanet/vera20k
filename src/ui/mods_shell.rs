@@ -7,9 +7,10 @@
 //! The rows and the choice belong to `app::mods`; this is the page's shape.
 
 use crate::ui::shell::descriptor::DialogResourceId;
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use vera20k_gui::shell::list::ROW_HEIGHT;
+use vera20k_gui::shell::list::{ListMetrics, ROW_HEIGHT, ShellListGeometry, list_box_rect};
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 /// Not a retail dialog: their ids stop near `0xBC7`.
 pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x7E02);
@@ -26,6 +27,31 @@ pub(crate) const TITLE_KEY: &str = "VERA:Mods";
 pub(crate) const BUTTON_HELP_KEY: &str = "VERA:ModsHelp";
 /// The caption over the list, and the list's status help.
 pub(crate) const PROMPT_KEY: &str = "VERA:ModsPrompt";
+/// The list's host id, past the dialog's 16-bit control ids as the movie
+/// list's ([`crate::ui::movies_credits_shell::FAMILY_LIST_ID`]): the rect
+/// sync leaves its window alone and no press names it; the painter finds its
+/// rows by it.
+pub(crate) const LIST_ID: i32 = 0x1_0001;
+/// The page's own statics, VERA's: the empty folder's hint across the list,
+/// the selected mod's lines in the box under it (name, state, maker, what
+/// it is, terms) and the caption over the list. A static with no text
+/// shows nothing.
+pub(crate) const HINT_TEXT: u16 = 0x7E40;
+pub(crate) const DETAIL_TEXTS: [u16; 5] = [0x7E41, 0x7E42, 0x7E43, 0x7E44, 0x7E45];
+pub(crate) const PROMPT_TEXT: u16 = 0x7E46;
+
+/// The page's buttons, then its statics in the order they paint.
+pub(crate) fn nodes() -> NodeSpec {
+    let text = |id: u16, align: ShellAlign| {
+        NodeSpec::new(NodeKind::Text)
+            .id(id.into())
+            .with(Prop::Align, Value::Int(align.0.into()))
+    };
+    PAGE.nodes()
+        .child(text(HINT_TEXT, ShellAlign::NONE))
+        .children(DETAIL_TEXTS.map(|id| text(id, ShellAlign::NONE)))
+        .child(text(PROMPT_TEXT, ShellAlign::H_CENTER).label(PROMPT_KEY))
+}
 
 /// The mod actions in the right column, Back on the bottom row.
 pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
@@ -123,6 +149,33 @@ vera20k_gui::scaled_rects!(ModsLayout {
     about,
     terms
 });
+
+impl ModsLayout {
+    /// Control `id`'s window: a button, or one of the page's statics. The
+    /// hint runs across the list's rows from the third, eight pixels in from
+    /// either side, to the list's end; it shows only while no mod is in the
+    /// folder, so the list then has no scrollbar.
+    pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
+        if let Some(index) = DETAIL_TEXTS.iter().position(|text| *text == id) {
+            return Some([self.name, self.state, self.author, self.about, self.terms][index]);
+        }
+        match id {
+            PROMPT_TEXT => Some(self.prompt),
+            HINT_TEXT => {
+                let metrics = ListMetrics::scaled(self.page.scale);
+                let list = ShellListGeometry::new(list_box_rect(self.list), 0, 0, metrics);
+                let (content, top) = (list.content, list.row(2).y);
+                Some(RectPx::new(
+                    content.x + 8,
+                    top,
+                    content.w - 16,
+                    (content.y + content.h - top).max(0),
+                ))
+            }
+            _ => self.page.button_rect(id),
+        }
+    }
+}
 
 #[cfg(all(test, tests_ui))]
 mod tests {

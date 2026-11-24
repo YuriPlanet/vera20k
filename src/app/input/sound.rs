@@ -44,6 +44,13 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
         )
     },
     own_checkbox_sound: false,
+    // B8 reads the control under the pointer on every move, a held
+    // trackbar's drag included.
+    help_under_held: true,
+    help_fallback: |key| {
+        let mut helps = SoundControl::ALL.into_iter().map(SoundControl::help);
+        helps.find(|(of, _)| *of == key).map_or("", |(_, fallback)| fallback)
+    },
 };
 pub(crate) fn open(state: &mut AppState) {
     if !state.audio.launcher_audio_available {
@@ -63,12 +70,7 @@ pub(crate) fn open(state: &mut AppState) {
         .filter(|(index, _)| state.audio.theme.is_allowed(*index as i32))
         .enumerate()
         .map(|(row, (index, entry))| {
-            let text = state
-                .process_assets
-                .csf
-                .as_ref()
-                .map(|csf| csf.text(&entry.name_key).into_owned())
-                .unwrap_or_else(|| entry.name_key.clone());
+            let text = state.csf_text(&entry.name_key);
             // Native720480's localized Name buffer holds63 UTF16 units.
             let name = String::from_utf16_lossy(&text.encode_utf16().take(63).collect::<Vec<_>>());
             SoundTrackRow {
@@ -186,6 +188,41 @@ fn toggle_score_option(state: &mut AppState, shuffle: bool) {
         .set_score_options(p.is_score_repeat, p.is_score_shuffle);
 }
 
+/// SoundState::new built B8's controls.
+fn nodes() -> vera20k_gui::NodeSpec {
+    vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Dialog)
+}
+
+/// Shuffle's and Repeat's Checked from the Options owner.
+fn score_boxes(state: &AppState) -> [(SoundControl, bool); 2] {
+    let profile = &state.persistence.options_profile;
+    [
+        (SoundControl::Shuffle, profile.is_score_shuffle),
+        (SoundControl::Repeat, profile.is_score_repeat),
+    ]
+}
+
+fn put_boxes(
+    gui: &mut vera20k_gui::Gui,
+    root: vera20k_gui::NodeId,
+    boxes: [(SoundControl, bool); 2],
+) {
+    for (control, on) in boxes {
+        let value = vera20k_gui::Value::Bool(on);
+        crate::ui::shell::page::set(gui, root, control.id(), vera20k_gui::Prop::Checked, value);
+    }
+}
+
+/// Makes B8's nodes current without input (rects, the boxes' Checked): its
+/// renderer's call every drawn frame before it paints from them.
+pub(crate) fn sync(state: &mut AppState) -> Option<SoundLayout> {
+    let layout = super::dialog_page::layout(state, SoundLayout::new)?;
+    let boxes = score_boxes(state);
+    let sync = move |gui: &mut vera20k_gui::Gui, root| put_boxes(gui, root, boxes);
+    DIALOG.sync(state, nodes, |id| layout.rect(id), sync);
+    Some(layout)
+}
+
 /// One pointer message on B8 (`down`: `None` moves). Back, Play and Stop are
 /// owner-draw (GUIMainButtonSound, 0x0061376B); a row press plays the
 /// generic click; 6B6382/6B63EA/6B6444 suppress the rail's.
@@ -193,19 +230,8 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     let Some(layout) = super::dialog_page::layout(state, SoundLayout::new) else {
         return;
     };
-    let profile = &state.persistence.options_profile;
-    let boxes = [
-        (SoundControl::Shuffle, profile.is_score_shuffle),
-        (SoundControl::Repeat, profile.is_score_repeat),
-    ];
-    let sync = |gui: &mut vera20k_gui::Gui, root| {
-        for (control, on) in boxes {
-            let value = vera20k_gui::Value::Bool(on);
-            crate::ui::shell::page::set(gui, root, control.id(), vera20k_gui::Prop::Checked, value);
-        }
-    };
-    // SoundState::new built B8's controls.
-    let nodes = || vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Dialog);
+    let boxes = score_boxes(state);
+    let sync = move |gui: &mut vera20k_gui::Gui, root| put_boxes(gui, root, boxes);
     let events = DIALOG.route(state, down, nodes, |id| layout.rect(id), sync);
     state.platform.window.request_redraw();
     for event in events {

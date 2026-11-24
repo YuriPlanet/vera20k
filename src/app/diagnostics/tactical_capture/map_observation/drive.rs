@@ -528,6 +528,9 @@ impl TacticalCaptureSession {
                 };
                 let mut command_bar = match &scheduled.gesture {
                     MapGesture::CommandBar { command } => {
+                        // The chrome places its nodes at a pointer message;
+                        // the receipt reads them as they stand now.
+                        crate::app::input::chrome_input::refresh(state);
                         Some(MapCommandBarGestureReceipt::capture(state, command)?)
                     }
                     _ => None,
@@ -614,8 +617,11 @@ impl TacticalCaptureSession {
                     thumb.press = Some(MapCommandBarThumbEdge::capture(state, *handle)?);
                 }
                 let mouse = &state.match_state.input.tactical_mouse;
-                let gadgets = &state.match_state.match_presentation.in_game_gadgets;
-                // A consumed gadget press still reaches the shared physical
+                let chrome = crate::app::input::chrome_input::chrome(state).map(|(_, nodes)| nodes);
+                // What the press reached: the node it fired, pressed or
+                // passed on, else the holder.
+                let routed = state.match_state.match_presentation.in_game_chrome.last_route;
+                // A consumed chrome press still reaches the shared physical
                 // button owner; only tactical capture depends on its route.
                 let physical_press_observed =
                     mouse.left_held() == !right && mouse.right_held() == right;
@@ -629,28 +635,17 @@ impl TacticalCaptureSession {
                             &scheduled.gesture
                         {
                             let slot = sidebar_slot.expect("resolved sidebar slot");
-                            match target {
-                                MapSidebarTarget::Tab { .. } => {
-                                    gadgets.handles.as_ref().map(|handles| handles.tabs[slot])
-                                }
-                                MapSidebarTarget::Cameo { .. } => gadgets.cameos.get(slot).copied(),
-                                MapSidebarTarget::ScrollUp {} => {
-                                    gadgets.handles.as_ref().map(|handles| handles.scroll_up)
-                                }
-                                MapSidebarTarget::ScrollDown {} => {
-                                    gadgets.handles.as_ref().map(|handles| handles.scroll_down)
-                                }
-                                MapSidebarTarget::Repair {} => {
-                                    gadgets.handles.as_ref().map(|handles| handles.repair)
-                                }
-                                MapSidebarTarget::Sell {} => {
-                                    gadgets.handles.as_ref().map(|handles| handles.sell)
-                                }
-                            }
+                            chrome.and_then(|nodes| match target {
+                                MapSidebarTarget::Tab { .. } => nodes.tabs.get(slot).copied(),
+                                MapSidebarTarget::Cameo { .. } => nodes.cameos.get(slot).copied(),
+                                MapSidebarTarget::ScrollUp {} => Some(nodes.scroll_up),
+                                MapSidebarTarget::ScrollDown {} => Some(nodes.scroll_down),
+                                MapSidebarTarget::Repair {} => Some(nodes.repair),
+                                MapSidebarTarget::Sell {} => Some(nodes.sell),
+                            })
                         } else {
                             command_bar.as_ref().map(|(_, handle)| *handle)
                         };
-                        let routed = gadgets.out.consumed_by.or(gadgets.focus.sticky);
                         expected.is_some() && routed == expected && !mouse.captured
                     } else if scheduled.gesture.is_minimap() {
                         state.match_state.input.minimap_press_active() && !mouse.captured
@@ -658,11 +653,9 @@ impl TacticalCaptureSession {
                         // A plain click lands on the battlefield, or on a
                         // button the side's layout added.
                         mouse.captured
-                            || gadgets
-                                .out
-                                .consumed_by
-                                .or(gadgets.focus.sticky)
-                                .is_some_and(|handle| gadgets.is_layout_button(handle))
+                            || routed.is_some_and(|node| {
+                                crate::app::input::chrome_input::is_layout_button(state, node)
+                            })
                     };
                 if matches!(scheduled.gesture, MapGesture::Drag { .. }) {
                     let shown = |state: &AppState| {

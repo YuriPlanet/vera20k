@@ -4,7 +4,8 @@
 
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::ui::skirmish_shell::saved_seed_browser::{
-    ACTION, BACK, BROWSER_DIALOG, CONVERT, DELETE, EDIT, LIST, LOAD, NO, PROMPT_DIALOG, YES,
+    ACTION, BACK, BROWSER_DIALOG, CONVERT, DELETE, EDIT, LIST, LOAD, NO, PROMPT, PROMPT_DIALOG,
+    TITLE, YES,
 };
 use crate::ui::skirmish_shell::{
     SavedSeedBrowserState, SavedSeedLayout, SavedSeedMode, SavedSeedOutcome,
@@ -37,11 +38,15 @@ fn sync<I: Clone + PartialEq>(
         (LOAD, browser.selected_saved().is_some()),
         (DELETE, browser.selected_saved().is_some()),
     ];
-    let prompt = browser
-        .prompt
-        .as_ref()
-        .map(|prompt| prompt.layout(extent.0, extent.1));
+    // The box with its texts, on its template.
+    let prompt = browser.prompt.as_ref().map(|prompt| {
+        let shell_box = prompt.shell_box();
+        let retail = crate::ui::shell::geom::RETAIL_SCALE;
+        let parts = shell_box.parts(extent.0 as i32, extent.1 as i32, retail);
+        (shell_box, parts)
+    });
     let rows = Value::Int(browser.entries.len() as i32);
+    let statics = browser.statics;
     let ui = &mut browser.ui;
     ui.set_scale_in(BROWSER_DIALOG, layout.scale);
     ui.set_prop(BROWSER_DIALOG, LIST, Prop::RowCount, rows);
@@ -57,15 +62,18 @@ fn sync<I: Clone + PartialEq>(
             LOAD => layout.load,
             DELETE => layout.delete,
             BACK => Some(layout.back),
+            TITLE => statics.then_some(layout.title),
+            PROMPT => statics.then_some(layout.prompt),
             _ => None,
         });
     }
-    if let (Some((_, _, yes, no)), Some(root)) = (prompt, ui.root_in(PROMPT_DIALOG)) {
-        page::sync_rects(ui.gui_mut(), root, |id| match id {
-            YES => Some(yes),
-            NO => no,
+    if let (Some((shell_box, parts)), Some(root)) = (prompt.as_ref(), ui.root_in(PROMPT_DIALOG)) {
+        let gui = ui.gui_mut();
+        page::sync_rects(gui, root, |id| match id {
+            YES | NO => parts.rect_of(id),
             _ => None,
         });
+        shell_box.sync(gui, root, parts);
     }
 }
 
@@ -267,7 +275,10 @@ mod tests {
     #[test]
     fn a_press_on_a_prompt_button_cues_and_its_release_answers() {
         let (mut browser, layout) = fixture(SavedSeedMode::Save, 0);
-        let (dialog, _, ok, _) = error().layout(800, 600);
+        let parts = error()
+            .shell_box()
+            .parts(800, 600, crate::ui::shell::geom::RETAIL_SCALE);
+        let (dialog, ok) = (parts.dialog, parts.button(0));
         browser.show_prompt(error());
         assert!(click(&mut browser, &layout, (dialog.x + 2, dialog.y + 2)).is_empty());
         assert!(matches!(

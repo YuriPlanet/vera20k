@@ -283,37 +283,21 @@ pub(super) fn push_rect_outline(
     tint: [f32; 3],
     depth: f32,
 ) {
-    if rect.w <= 0 || rect.h <= 0 {
-        return;
+    push_rect_outline_px(out, atlas.white_pixel, rect, tint, depth);
+}
+
+/// [`push_rect_outline`] from the white pixel alone: top, bottom, left,
+/// right.
+pub(super) fn push_rect_outline_px(
+    out: &mut Vec<SpriteInstance>,
+    white_pixel: Option<SkirmishShellChromeEntry>,
+    rect: RectPx,
+    tint: [f32; 3],
+    depth: f32,
+) {
+    for edge in vera20k_gui::shell::bar::outline_edges(rect).into_iter().flatten() {
+        push_solid_rect_px(out, white_pixel, edge, tint, depth);
     }
-    push_solid_rect(
-        out,
-        atlas,
-        RectPx::new(rect.x, rect.y, rect.w, 1),
-        tint,
-        depth,
-    );
-    push_solid_rect(
-        out,
-        atlas,
-        RectPx::new(rect.x, rect.y + rect.h - 1, rect.w, 1),
-        tint,
-        depth,
-    );
-    push_solid_rect(
-        out,
-        atlas,
-        RectPx::new(rect.x, rect.y, 1, rect.h),
-        tint,
-        depth,
-    );
-    push_solid_rect(
-        out,
-        atlas,
-        RectPx::new(rect.x + rect.w - 1, rect.y, 1, rect.h),
-        tint,
-        depth,
-    );
 }
 
 pub(super) fn push_bevel_ring_px(
