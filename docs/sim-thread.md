@@ -432,3 +432,40 @@ Not done:
   `always` ends without a desync.
 - Before phase 2, measure client draw CPU at 2,000 units. If drawing alone
   exceeds the frame budget, it needs its own work.
+
+## Where a 30-house frame goes
+
+Measured with `sim-bench --scenario match --map scale/match30.map --houses 30
+--ticks 300 --frame-profile` on a `--features telemetry` build, 22,142 live
+objects (21,059 AI visits, 18,114 ground Processes). Shares, not absolutes:
+each `frame_profile::Span` costs two clock reads per object, so the totals
+below include roughly 15% the telemetry itself added. The release build of the
+same state measures 43.8 ms per frame (hash `7fca7db00cb332dc`); the 45 fps
+step needs 22 ms.
+
+| Part of one object's turn | ms | share |
+|---|---|---|
+| before the AI visit | 0.7 | 1% |
+| the AI visit | 6.6 | 13% |
+| between the visit and Process | 1.7 | 3% |
+| the ground locomotor's Process | 28.8 | 55% |
+| after the Process | 7.7 | 15% |
+| other class branches | 7.5 | 14% |
+
+Inside the Process: pending-work loop 16.2, inline path searches 6.2, the
+track/turn gate 5.9, walk admission 2.2, path request 1.0, tail 2.3. Inside
+the post-Process tail: firing 3.0, Foot body cadence 1.2, Foot sounds 0.7,
+idle Scatter/piggyback/pending-entry 0.7, disguise/sinking/trailer 2.1.
+
+The inline searches are 95 per frame, 9,147 expansions, 6.2 ms: 14 of them
+take over 100 µs (the slowest 1.6 ms) and own about 5 ms of that. They are
+the immediate requests — a mission order or a Drive/Ship Process path, which
+the mover needs this frame — so deferring them to the batch is a behavior
+change like the one the batch already makes for no-queue walk requests, not
+a free win. Deferring only the own-cell requests (bench probe, reverted) left
+the inline count at 95 and the hash at `569418b4d9d2f0dd`: no gain.
+
+No single item is 5 ms. Two times the frame needs either the two-phase shard
+design above or a general cut in per-object work; 30 fps (33 ms) is reachable
+by removing the inline searches' immediate path, the 22 ms step is not.
+
