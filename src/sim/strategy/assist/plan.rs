@@ -203,6 +203,8 @@ pub(super) enum Item {
     Defense,
     Radar,
     Tech,
+    /// A water-edge naval factory, only when native placement can find a berth.
+    Shipyard,
     /// The plant an `Aircraft` line needs, read off `Factory=` rather than off
     /// a name list.
     Aircraft,
@@ -353,6 +355,10 @@ pub(super) const STEPS: &[Step] = &[
         want: 1,
         gate: Gate::CanReplace,
     },
+    // Naval power is useful on a map with a legal coastline but should not
+    // waste a fragile opening's first factory budget. Native placement is a
+    // hard gate: an inland map gets no shipyard request at all.
+    Step { item: Item::Shipyard, want: 1, gate: Gate::Free(6_000) },
     // A strategic weapon is a real arms-race decision, not the final leftover
     // after cloning vats, satellite, towers and three production plants.
     // The new gate skips it during the opening or an income collapse.
@@ -762,6 +768,12 @@ fn owned(rules: &RuleSet, obs: &Observation<'_>, census: &Census, item: Item) ->
         Item::Defense => build::defenses(rules, obs, census),
         Item::Radar => build::count_in(obs, rules, census, &rules.build_radar_types),
         Item::Tech => build::count_in(obs, rules, census, &rules.build_tech_types),
+        Item::Shipyard => obs.own_entities().filter(|entity| {
+            obs.object_type(rules, entity.type_id).is_some_and(|ty|
+                ty.category == ObjectCategory::Building
+                    && ty.factory_type() == Some(FactoryType::UnitType)
+                    && (ty.naval || rules.shipyard_types.iter().any(|name| name == &ty.id)))
+        }).count(),
         // Count airfields as capacity, not as the boolean presence of an
         // aircraft queue. A second airfield expands native plane slots.
         Item::Aircraft => obs.own_entities().filter(|entity| {
@@ -799,6 +811,10 @@ fn pick<'r>(
         Item::Radar => build::first_buildable(rules, obs, &rules.build_radar_types),
         // The lab that authorises a power the house will actually fire.
         Item::Tech => build::tech_building(rules, obs),
+        Item::Shipyard => {
+            if census.refineries < 2 || census.harvesters < 2 { None }
+            else { build::naval_factory(rules, obs) }
+        },
         // line_factory returns None as soon as one aircraft plant is owned;
         // the surplus step needs the same legal category even with one built.
         Item::Aircraft => build::line_factory(rules, obs, census, ProductionCategory::Aircraft)
@@ -808,6 +824,21 @@ fn pick<'r>(
         Item::Repair => build::unit_repair_building(rules, obs),
         Item::Superweapon => build::superweapon_building(rules, obs),
         Item::SupportSuperweapon => build::additional_superweapon_building(rules, obs),
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod naval_plan_tests {
+    use super::*;
+
+    #[test]
+    fn a_naval_yard_waits_until_after_the_basic_tech_and_repair_chain() {
+        let lab = STEPS.iter().position(|step| step.item == Item::Tech).unwrap();
+        let repair = STEPS.iter().position(|step| step.item == Item::Repair).unwrap();
+        let navy = STEPS.iter().position(|step| step.item == Item::Shipyard).unwrap();
+        assert!(navy > lab && navy > repair);
+        assert!(matches!(STEPS[navy].gate, Gate::Free(6_000)));
+        assert_eq!(STEPS[navy].want, 1);
     }
 }
 

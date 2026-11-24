@@ -172,6 +172,11 @@ pub(super) fn run(
         // unit; an engage order on top of it would walk it back into the blast.
         // A courier is not a new solo raiding squad after collecting its box.
         // Only allow immediate self-defence here, never a proactive target.
+        // A courier's delivery leg is its primary mission; do not give a
+        // passenger ferry a disposable combat assignment on the way in.
+        if brain.specialist_shuttles.contains_key(&item.entity_id)
+            || brain.specialist_shuttles.values().any(|trip|
+                trip.passenger == item.entity_id) { continue; }
         if (brain.crate_claims.contains_key(&item.entity_id)
                 || brain.crate_returns.contains_key(&item.entity_id))
             && !brain.census.enemies.iter().any(|enemy| {
@@ -244,6 +249,8 @@ pub(super) fn run(
         // whole reason the layer exists. "In reach" is reach and weapon
         // together, so a dog walks on past the tank to the infantry behind it
         // instead of being held on a target it cannot hurt.
+        let personnel_specialist = obs.entity_type(rules, item.entity_id)
+            .is_some_and(|ty| ty.disguise_when_still);
         if let Some(enemy) = in_reach(
             brain.census.enemies.iter()
                 // A visible controller of our stolen unit is the legitimate
@@ -277,7 +284,7 @@ pub(super) fn run(
                             item.entity_id, target, item.cell))
             },
             |target| target_rank(
-                prefer(rules,obs,item.preference,target),
+                prefer(rules,obs,item.preference,target,personnel_specialist),
                 liberators.contains(&target) || controllers.contains(&target),
                 economic_raiders.contains(&target),
                 focus_targets.contains(&target),
@@ -708,7 +715,8 @@ fn collect(
                 .map(|enemy| (target, enemy.cell))
         });
         for unit in &brain.census.units {
-            if !squad.members.contains(&unit.entity_id) || !unit.controllable() {
+            if !squad.members.contains(&unit.entity_id) || !unit.controllable()
+                || unit.traits.yard_maker {
                 continue;
             }
             // A unit already mid-fight is told nothing: its mission owns it,
@@ -744,9 +752,26 @@ fn collect(
                     && !super::tactics::armored_support(&brain.census, rules, obs,
                         unit.entity_id, enemy, unit.cell)
             });
+            // A Mirage-like ambusher has an anti-personnel weapon. A nearby
+            // rifleman is worth switching to even while it is shelling a
+            // building: otherwise the tank keeps shooting a concrete wall
+            // while the enemy infantry burns its escort. Read the actual
+            // disguise-when-still rule and current, visible infantry only.
+            let nearby_personnel = current_target.is_some_and(|target|
+                obs.entity_type(rules, target).is_some_and(|ty|
+                    ty.category == ObjectCategory::Building))
+                && obs.entity_type(rules, unit.entity_id)
+                    .is_some_and(|ty| ty.disguise_when_still)
+                && brain.census.enemies.iter().any(|enemy| {
+                    obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+                        && obs.entity_type(rules, enemy.entity_id)
+                            .is_some_and(|ty| ty.category == ObjectCategory::Infantry)
+                        && squared_distance(unit.cell, enemy.cell) <= (reach + 1).pow(2)
+                        && obs.can_hurt(rules, unit.entity_id, enemy.entity_id)
+                });
             if (preserve_existing_attack(fighting,
                 current_target.is_some_and(|id| obs.is_hostile(id)), under_fire)
-                && !losing_duel) || unit.in_service()
+                && !losing_duel && !nearby_personnel) || unit.in_service()
             {
                 continue;
             }
@@ -837,8 +862,12 @@ fn prefer(
     obs: &Observation<'_>,
     preference: super::pilots::Preference,
     target: u64,
+    personnel_specialist: bool,
 ) -> u8 {
     let category = obs.entity_type(rules, target).map(|ty| ty.category);
+    if personnel_specialist {
+        return mirage_target_preference(category);
+    }
     match preference {
         super::pilots::Preference::Any => 0,
         super::pilots::Preference::Armour => u8::from(!matches!(
@@ -848,6 +877,19 @@ fn prefer(
         super::pilots::Preference::Air => {
             u8::from(!matches!(category, Some(ObjectCategory::Aircraft)))
         }
+    }
+}
+
+/// Mirage-style disguise tanks are ambushers, not demolition artillery.
+/// Prefer living infantry, then mobile armor, and leave masonry to artillery.
+/// Self-defence, controller liberation and economic raiders still have higher
+/// precedence in `in_reach`/`target_rank`.
+fn mirage_target_preference(category: Option<ObjectCategory>) -> u8 {
+    match category {
+        Some(ObjectCategory::Infantry) => 0,
+        Some(ObjectCategory::Vehicle | ObjectCategory::Aircraft) => 1,
+        Some(ObjectCategory::Building) => 3,
+        _ => 2,
     }
 }
 
@@ -1297,6 +1339,23 @@ mod tests {
             dug_in > 0,
             "the dug-in one has the missile to fire: {dug_in}"
         );
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v26_personnel_ambush_tests {
+    use super::*;
+
+    #[test]
+    fn mirage_tanks_prioritize_infantry_above_masonry() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+            else { return; };
+        let Some(mirage) = rules.object("MGTK") else { return; };
+        assert!(mirage.disguise_when_still);
+        assert!(mirage_target_preference(Some(ObjectCategory::Infantry))
+            < mirage_target_preference(Some(ObjectCategory::Building)));
+        assert!(mirage_target_preference(Some(ObjectCategory::Vehicle))
+            < mirage_target_preference(Some(ObjectCategory::Building)));
     }
 }
 

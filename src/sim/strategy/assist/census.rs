@@ -373,7 +373,11 @@ impl Traits {
             // One owner for "is this army": the rules-level predicate the
             // autoplay policy asks too, so the two brains cannot disagree
             // about what a squad is made of.
-            combat: crate::rules::unit_role::is_army(rules, ty),
+            // Crate-granted and captured mobile yards remain strategic assets,
+            // including modded ones that carry a dummy/defensive weapon.
+            // Avoid admitting them to any army pass during the crate hand-off.
+            combat: crate::rules::unit_role::is_army(rules, ty)
+                && !super::expand::makes_a_yard(rules, ty),
             harvester: ty.resource_gatherer,
             refinery: ty.resource_destination,
             yard: ty.build_const_eligible(),
@@ -1149,6 +1153,22 @@ mod tests {
             &Observation::new(sim, owner),
         );
         census
+    }
+
+    #[test]
+    fn crate_granted_mcv_is_a_yard_maker_and_never_a_fighter() {
+        let Some((mut sim, rules)) = arena(0x26) else { return; };
+        let owner = sim.interner.intern("Americans");
+        let mcv_ty = rules.object("AMCV").expect("retail MCV");
+        assert!(super::super::expand::makes_a_yard(&rules, mcv_ty));
+        assert!(!Traits::of(&rules, mcv_ty).combat,
+            "a rule-named yard maker cannot be selected as an attack unit");
+        let entity = sim.spawn_object("AMCV", "Americans", 14, 14, 255, &rules)
+            .expect("spawn a crate-reward type as a native object");
+        let ledger = ledger(&rules, &sim, owner);
+        assert_eq!(ledger.yard_makers, 1);
+        assert!(ledger.units.iter().any(|unit| unit.entity_id == entity
+            && unit.traits.yard_maker && !unit.traits.combat));
     }
 
     /// The ledger is what a decision asks instead of six walks over the entity

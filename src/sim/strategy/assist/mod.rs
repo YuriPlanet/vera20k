@@ -426,6 +426,9 @@ pub struct AssistBrain {
     /// A free Gunner chassis reserved for a mechanic rendezvous. The normal
     /// assault must not send the empty IFV away before the engineer boards.
     pub(super) repair_ifv_pending: BTreeMap<u64, u64>,
+    /// One bounded engineer/spy ferry, whose carrier cannot be borrowed by
+    /// the generic troop transport to rush an enemy base.
+    pub(super) specialist_shuttles: BTreeMap<u64, orders::SpecialistShuttle>,
     /// Spy purchases are independent of engineer captures; one infiltration
     /// expedition must not be starved by unsuccessful engineer rushes.
     pub(super) next_spy_purchase: u64,
@@ -578,6 +581,7 @@ impl AssistBrain {
             spy_uniform_retry: BTreeMap::new(),
             repair_ifv_after: BTreeMap::new(),
             repair_ifv_pending: BTreeMap::new(),
+            specialist_shuttles: BTreeMap::new(),
             next_spy_purchase: 0,
             garrison_release_after: BTreeMap::new(),
             combat_board_after: 0,
@@ -1004,9 +1008,11 @@ impl Brain for AssistBrain {
         }
         if obs.forces_enabled() {
             orders::bridges(self, rules, obs, out);
+            orders::specialist_transports(self, rules, obs, out);
             // Boarding and engineer repairs reserve only a spare specialist.
             // Run them before generic capture selection, which otherwise
             // sends every engineer to the first visible neutral building.
+            advanced::free_repair_ifv_seat(self, rules, obs, out);
             advanced::combat_carriers(self, rules, obs, out);
             orders::repair_garrisons(self, rules, obs, out);
             orders::captures(self, rules, obs, out);
@@ -1017,6 +1023,7 @@ impl Brain for AssistBrain {
         }
         if obs.forces_enabled() {
             advanced::protect_base(self, rules, obs, out);
+            advanced::station_home_reserve(self, rules, obs, out);
             advanced::secure_outpost(self, rules, obs, out);
             advanced::secure_captured_assets(self, rules, obs, out);
             advanced::relieve_garrison(self, rules, obs, out);
@@ -1106,6 +1113,10 @@ impl Brain for AssistBrain {
 
     fn orders_suppressed(&mut self, suppressed: &[(u64, Goal)]) {
         for (actor, goal) in suppressed {
+            // Manual takeover of a carrier/passenger cancels its autonomous
+            // ferry ticket; the fifth control-group key is authoritative.
+            self.specialist_shuttles.retain(|carrier,task|
+                *carrier != *actor && task.passenger != *actor);
             if let Some(kind) = self.tracked.live_kind(self.last_tick, *actor)
                 .filter(|kind| tracked::kinds_for(*goal).contains(kind))
             {
@@ -1119,6 +1130,14 @@ impl Brain for AssistBrain {
 
     fn orders_refused(&mut self, refused: &[(u64, Goal)]) {
         for (actor, goal) in refused {
+            if let Goal::Enter { target } = *goal {
+                // A refused boarding command cannot reserve a ferry (and
+                // thereby withhold the engineer from captures) for 3600 ticks.
+                if self.specialist_shuttles.get(&target)
+                    .is_some_and(|task| task.passenger == *actor) {
+                    self.specialist_shuttles.remove(&target);
+                }
+            }
             if self.trace == Some(*actor) {
                 log::info!("trace {actor}: {goal:?} refused by the world");
             }

@@ -2326,8 +2326,9 @@ impl HouseState {
         match class {
             1 => self.spy_gains.veteran_infantry,
             2 => self.spy_gains.veteran_units,
-            3 => self.spy_gains.allied_tech
-                || self.spy_gains.soviet_tech || self.spy_gains.third_tech,
+            3 => self.spy_gains.allied_tech,
+            4 => self.spy_gains.soviet_tech,
+            5 => self.spy_gains.third_tech,
             _ => false,
         }
     }

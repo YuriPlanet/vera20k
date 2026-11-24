@@ -294,8 +294,20 @@ pub(super) fn fill_lines(
             && !brain.director.under_attack_now()
             && !brain.director.recovering_income()
             && early_spy_infiltration(brain, rules, obs, budget.free).is_some();
+        let urgent_capture = category == ProductionCategory::Infantry
+            && (urgent_engineer(brain, rules, obs, budget.free).is_some()
+                || maintenance_engineer(brain, rules, obs, budget.free).is_some());
+        // The wallet saved for a scarce-map lab should not be silently spent
+        // by ordinary unit ranking, but an engineer or spy with a real mission
+        // may still use its own specialist priority.
+        let bank_for_tech = save_for_tech(brain, rules, obs, &budget);
+        let heavy_cost = scarce_advanced_vehicle(brain,rules,obs,budget.income)
+            .map(|(ty,_)|obs.cost_of(rules,ty));
+        let bank_for_heavy = heavy_cost.is_some_and(|cost| budget.free < cost);
+        if (bank_for_tech || bank_for_heavy)
+            && !urgent_infiltration && !urgent_capture { continue; }
         if barracks_holds && category == ProductionCategory::Infantry
-            && !urgent_infiltration
+            && !urgent_infiltration && !urgent_capture
         { continue; }
         // A line holding a product, a queue or a finished object is working and
         // is not given another request; a line with nothing in it — including
@@ -311,6 +323,9 @@ pub(super) fn fill_lines(
         // as the wallet stays above its price. The plant is read off the rules
         // (`Factory=AircraftType`), which is the same owner the build list uses.
         if category == ProductionCategory::Aircraft && !has_aircraft_factory(rules, obs) {
+            continue;
+        }
+        if category == ProductionCategory::Ship && !has_naval_factory(rules, obs) {
             continue;
         }
         let wanted = product_for(
@@ -431,6 +446,8 @@ pub struct EngineerLedger {
     pub(super) quiet_until: u64,
     /// Failures already considered. A living engineer is not yet a loss.
     accounted_failures: u32,
+    /// Limit retries in an active siege even when the normal loss ratio cools down.
+    last_bought_at: Option<u64>,
 }
 
 impl EngineerLedger {
@@ -447,8 +464,14 @@ impl EngineerLedger {
     }
 
     /// Record one bought.
-    pub(super) fn note_bought(&mut self, _tick: u64) {
+    pub(super) fn note_bought(&mut self, tick: u64) {
         self.bought = self.bought.saturating_add(1);
+        self.last_bought_at = Some(tick);
+    }
+
+    fn siege_retry_ready(&self, tick: u64) -> bool {
+        self.last_bought_at.is_none_or(|last|
+            tick.saturating_sub(last) >= 600)
     }
 
     /// Only *lost* engineers count as a failed capture. The old buy/capture
@@ -577,6 +600,181 @@ fn tool<'r>(
         .map(|(ty, id, _)| (ty, id))
 }
 
+/// A siege without any engineer can surround a capturable yard for minutes
+/// while the ordinary tank/infantry ranking spends the entire wallet.
+/// Use only currently visible, *legally capturable* enemy facilities and a
+/// real nearby friendly force; a hidden yard never authorizes a purchase.
+fn urgent_engineer<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>,
+    free: i32,
+) -> Option<(&'r ObjectType, InternedId)> {
+    if brain.director.recovering_income() || brain.director.under_attack_now()
+        || brain.census.refineries == 0 || brain.census.harvesters == 0
+    { return None; }
+    let live = brain.census.units.iter().filter(|unit|
+        unit.traits.engineer && !unit.in_service()).count();
+    let target_count = if free >= 3_500 { 2 } else { 1 };
+    if live >= target_count || !brain.engineers.siege_retry_ready(obs.tick()) {
+        return None;
+    }
+    let siege = obs.capturable_buildings(rules).any(|target| {
+        obs.is_hostile(target.entity_id)
+            && obs.is_cell_visible(target.cell.0, target.cell.1)
+            && obs.object_type(rules, target.type_id).is_some_and(|ty|
+                ty.construction_yard || ty.factory_type().is_some()
+                    || super::orders::strategic_public_asset(ty))
+            && brain.census.units.iter().filter(|unit|
+                unit.controllable() && unit.traits.combat
+                    && super::squared_distance(unit.cell, target.cell) <= 24 * 24
+            ).take(4).count() >= 4
+    });
+    // A bridge already inspected by the player is also a valid engineer job.
+    // It must be near an active base or friendly force, not a hidden hut at
+    // the opposite end of the map.
+    let bridge = obs.bridge_repair_huts(rules).any(|hut| {
+        obs.is_cell_visible(hut.cell.0, hut.cell.1)
+            && brain.census.units.iter().any(|unit|
+                unit.controllable()
+                    && super::squared_distance(unit.cell, hut.cell) <= 35 * 35)
+            && !obs.visible_enemy_entities().any(|enemy|
+                super::squared_distance(enemy.cell, hut.cell) <= 8 * 8)
+    });
+    if !siege && !bridge { return None; }
+    build::class_types(rules, obs, ObjectCategory::Infantry)
+        .filter(|(ty, _)| census::Traits::of(rules, ty).engineer)
+        .filter(|(ty, _)| obs.cost_of(rules, ty) <= free)
+        .min_by_key(|(ty, id)| (obs.cost_of(rules, ty), *id))
+}
+
+/// Engineers are the IFV repair weapon, not regular riflemen. An empty
+/// Gunner chassis without a spare engineer must trigger recruitment before
+/// the normal infantry composition can consume the wallet. This query uses
+/// the actual IFVMode to avoid producing an unsupported mechanic in mods.
+fn maintenance_engineer<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet,
+    obs: &Observation<'_>, free: i32,
+) -> Option<(&'r ObjectType, InternedId)> {
+    let engineers = brain.census.units.iter()
+        .filter(|unit| unit.traits.engineer && !unit.in_service()).count();
+    let tanks = brain.census.units.iter().filter(|unit|
+        unit.traits.combat && obs.entity_type(rules, unit.entity_id)
+            .is_some_and(|ty| ty.category == ObjectCategory::Vehicle && !ty.naval)).count();
+    if engineers >= 2 || tanks < 5 || free < 1_000
+        || brain.census.refineries < 2 || brain.census.harvesters < 2
+        || brain.director.recovering_income() || brain.director.under_attack_now()
+        || !brain.engineers.siege_retry_ready(obs.tick())
+    { return None; }
+    let exists_gunner = brain.census.units.iter().any(|unit| {
+        obs.entity_type(rules, unit.entity_id).is_some_and(|ty|
+            ty.gunner && ty.passengers > 0)
+    });
+    if !exists_gunner || brain.census.units.iter().any(|unit|
+        super::advanced::repair_ifv_loaded(rules, obs, &brain.census, unit.entity_id)) {
+        return None;
+    }
+    build::class_types(rules, obs, ObjectCategory::Infantry)
+        .filter(|(ty, _)| census::Traits::of(rules, ty).engineer)
+        .filter(|(ty, _)| obs.cost_of(rules, ty) <= free)
+        // A gunner IFV already filled with a GI is still convertible:
+        // free_repair_ifv_seat will ask it to Unload once two engineers exist.
+        .filter(|(engineer, _)| brain.census.units.iter().any(|unit|
+            obs.entity_type(rules, unit.entity_id).is_some_and(|carrier|
+                carrier.gunner && super::advanced::gunner_repairs(
+                    rules, carrier, engineer.ifv_mode))))
+        .min_by_key(|(ty,id)| (obs.cost_of(rules,ty), *id))
+}
+
+/// Small ore fields cannot replace endless low-tier casualties. Once a
+/// defensible army and a working miner exist, protect the next genuine lab
+/// or radar purchase rather than buying one cheap infantry every tick.
+fn save_for_tech(
+    brain: &AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, budget: &Budget,
+) -> bool {
+    if obs.tick() < 3_000 || brain.director.under_attack_now()
+        || brain.director.recovering_income() || brain.census.fighters < 12
+        || brain.census.refineries == 0 || brain.census.harvesters == 0
+        || build::count_in(obs, rules, &brain.census, &rules.build_tech_types) > 0
+        || !budget.income.is_some_and(|income| income > 0 && income <= 700)
+        || brain.ore_known.len() >= 18
+    { return false; }
+    let next = build::tech_building(rules, obs).or_else(||
+        build::first_buildable(rules, obs, &rules.build_radar_types));
+    next.is_some_and(|(ty,_)| budget.free < obs.cost_of(rules,ty))
+}
+
+/// The high-tech combat unit the already-built laboratory has made
+/// *actually* legal. On a thin ore field an endless cheap infantry queue is a
+/// debt against one genuine heavy tank. Choose from the native buildable
+/// roster, never a guessed faction name or an unavailable prerequisite.
+fn scarce_advanced_vehicle<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet,
+    obs: &Observation<'_>, income: Option<i32>,
+) -> Option<(&'r ObjectType, InternedId)> {
+    if obs.tick() < 3_000 || brain.director.under_attack_now()
+        || brain.director.recovering_income() || brain.census.fighters < 12
+        || brain.census.refineries == 0 || brain.census.harvesters == 0
+        || build::count_in(obs,rules,&brain.census,&rules.build_tech_types) == 0
+        || brain.ore_known.len() >= 18
+        || !income.is_some_and(|income| income > 0 && income <= 800)
+    { return None; }
+    build::class_types(rules,obs,ObjectCategory::Vehicle)
+        .filter(|(ty,_)| !ty.naval && !ty.resource_gatherer
+            && census::Traits::of(rules,ty).combat)
+        .filter(|(ty,_)| (1_500..=3_400).contains(&obs.cost_of(rules,ty)))
+        .min_by_key(|(ty,id)| (
+            brain.census.type_count(*id),
+            std::cmp::Reverse(obs.cost_of(rules,ty)), *id,
+        ))
+}
+
+/// Only a prosperous army with a visible, distant capture objective asks
+/// for one specialized carrier. Ordinary combat cannot be starved by a fleet
+/// of empty transports; the shuttle state machine remains optional.
+fn expedition_carrier<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>,
+    category: ProductionCategory, free: i32,
+) -> Option<(&'r ObjectType, InternedId)> {
+    if obs.tick() < 4_500 || free < 9_000
+        || brain.director.under_attack_now() || brain.director.recovering_income()
+        || brain.census.refineries < 2 || brain.census.harvesters < 2
+        || brain.census.fighters < 12
+        || !brain.census.units.iter().any(|unit| unit.traits.engineer
+            && unit.controllable() && !unit.in_service())
+        || brain.census.units.iter().any(|unit| obs.entity_type(rules,unit.entity_id)
+            .is_some_and(|ty| ty.passengers > 0 && !ty.gunner && !ty.open_topped
+                && matches!(ty.movement_zone,
+                    crate::rules::locomotor_type::MovementZone::Fly
+                    | crate::rules::locomotor_type::MovementZone::Water
+                    | crate::rules::locomotor_type::MovementZone::WaterBeach)
+                && super::pilots::Pilot::of(rules,ty)==super::pilots::Pilot::Transport))
+    { return None; }
+    let distant = obs.capturable_buildings(rules).any(|site| {
+        obs.is_cell_revealed(site.cell.0,site.cell.1)
+            && (!obs.is_hostile(site.entity_id)
+                || obs.is_cell_visible(site.cell.0,site.cell.1))
+            && brain.census.units.iter().any(|unit| unit.traits.engineer
+                && super::squared_distance(unit.cell,site.cell)>=45*45)
+    });
+    if !distant { return None; }
+    let (object_category,naval) = match category {
+        ProductionCategory::Aircraft => (ObjectCategory::Aircraft,false),
+        ProductionCategory::Ship => (ObjectCategory::Vehicle,true),
+        ProductionCategory::Vehicle => (ObjectCategory::Vehicle,false),
+        _ => return None,
+    };
+    build::class_types(rules,obs,object_category)
+        .filter(|(ty,_)| ty.naval==naval && ty.passengers>0
+            && !ty.gunner && !ty.open_topped
+            && super::pilots::Pilot::of(rules,ty)==super::pilots::Pilot::Transport
+            && matches!(ty.movement_zone,
+                crate::rules::locomotor_type::MovementZone::Fly
+                | crate::rules::locomotor_type::MovementZone::Water
+                | crate::rules::locomotor_type::MovementZone::WaterBeach))
+        .filter(|(ty,_)| obs.cost_of(rules,ty)<=free.saturating_sub(6_000))
+        .min_by_key(|(ty,id)|(obs.cost_of(rules,ty),*id))
+}
+
 /// What one idle line starts next.
 fn product_for<'r>(
     brain: &mut AssistBrain,
@@ -624,16 +822,18 @@ fn product_for<'r>(
         && brain.census.refineries > 0 && brain.census.harvesters >= 2
         && budget.free >= 3_500
         && brain.census.units.iter().filter(|unit| unit.traits.engineer
-            && unit.controllable()).count() >= 2
+            && unit.controllable()).count() >= 1
         && brain.census.units.iter().filter(|unit| unit.traits.combat
             && obs.entity_type(rules, unit.entity_id).is_some_and(|ty|
                 ty.category == ObjectCategory::Vehicle)).count() >= 4
-        && brain.census.units.iter().filter(|unit| unit.health_permille < 850
-            && unit.traits.combat
-            && obs.entity_type(rules, unit.entity_id).is_some_and(|ty|
-                ty.category == ObjectCategory::Vehicle)).count() >= 2
+        && (brain.census.units.iter().any(|unit| unit.health_permille < 850
+                && unit.traits.combat
+                && obs.entity_type(rules, unit.entity_id).is_some_and(|ty|
+                    ty.category == ObjectCategory::Vehicle)) || budget.free >= 6_000)
+        && brain.census.units.iter().filter(|unit|
+            obs.entity_type(rules,unit.entity_id).is_some_and(|ty| ty.gunner)).count() < 2
         && !brain.census.units.iter().any(|unit|
-            obs.entity_type(rules,unit.entity_id).is_some_and(|ty| ty.gunner))
+            super::advanced::repair_ifv_loaded(rules, obs, &brain.census, unit.entity_id))
         && let Some(found) = build::class_types(rules, obs, ObjectCategory::Vehicle)
             .filter(|(ty, _)| ty.gunner && !ty.naval)
             .filter(|(carrier, _)| brain.census.units.iter().any(|unit|
@@ -643,6 +843,30 @@ fn product_for<'r>(
             .min_by_key(|(ty,_)| (obs.cost_of(rules, ty), ty.id.clone()))
     {
         return Some(found);
+    }
+    if category == ProductionCategory::Vehicle
+        && let Some((ty,id)) = scarce_advanced_vehicle(brain,rules,obs,budget.income)
+        && obs.cost_of(rules,ty) <= budget.free
+    {
+        return Some((ty,id));
+    }
+    if let Some(transport) = expedition_carrier(brain,rules,obs,category,budget.free) {
+        return Some(transport);
+    }
+    // Reserve a real engineer for a visible, besieged capturable factory or
+    // a repairable bridge. Native team preferences and generic infantry
+    // composition cannot answer this specialist shortage.
+    if category == ProductionCategory::Infantry
+        && let Some(engineer) = urgent_engineer(brain, rules, obs, budget.free)
+    {
+        log::info!("auto play: specialist engineer requested for siege/bridge at {}", obs.tick());
+        return Some(engineer);
+    }
+    if category == ProductionCategory::Infantry
+        && let Some(engineer) = maintenance_engineer(brain, rules, obs, budget.free)
+    {
+        log::info!("auto play: reserve engineer ordered for repair IFV at {}", obs.tick());
+        return Some(engineer);
     }
     // A scout-revealed safe derrick is a time-limited opportunity, not a
     // generic unit shortfall. Buy the *first* engineer before the native unit
@@ -1362,6 +1586,14 @@ fn unit_ceiling(credits: i32) -> i32 {
 /// exists only when one does, and an aircraft type whose prerequisites are met
 /// answers `CanBuild` yes without it — the queue refuses the order every frame
 /// it is retried.
+fn has_naval_factory(rules: &RuleSet, obs: &Observation<'_>) -> bool {
+    obs.own_entities().any(|entity| obs.object_type(rules,entity.type_id)
+        .is_some_and(|ty| ty.category == ObjectCategory::Building
+            && ty.factory_type() == Some(
+                crate::rules::object_type::FactoryType::UnitType)
+            && (ty.naval || rules.shipyard_types.iter().any(|name| name == &ty.id))))
+}
+
 fn has_aircraft_factory(rules: &RuleSet, obs: &Observation<'_>) -> bool {
     obs.own_entities().any(|entity| {
         obs.object_type(rules, entity.type_id).is_some_and(|ty| {

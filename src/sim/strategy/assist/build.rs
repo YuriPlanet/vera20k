@@ -670,6 +670,10 @@ fn queue_defense_in_parallel(
                 super::squared_distance(*site, enemy.cell) <= 32 * 32)
     }).count();
     let (aa, ring) = armed_defenses(rules, obs, &brain.census);
+    let ground_towers = brain.census.units.iter().filter(|unit|
+        obs.object_type(rules, unit.type_id).is_some_and(|ty|
+            ty.category == ObjectCategory::Building && !ty.construction_yard
+                && armament(rules, ty).anti_ground)).count();
     let urgent_air = approaching_air > 0 && aa < if approaching_air >= 2 { 2 } else { 1 };
     let has_ground = brain.census.units.iter().any(|unit| {
         obs.object_type(rules, unit.type_id).is_some_and(|ty|
@@ -688,8 +692,17 @@ fn queue_defense_in_parallel(
     let solvent = budget.free >= 2_800
         && (budget.income.is_some_and(|income| income > 600)
             || obs.credits() >= 5_500);
-    let baseline_air = solvent && aa < if brain.census.refineries >= 2 { 2 } else { 1 };
-    let baseline_ground = solvent && !has_ground && ring < 2;
+    // A 1v7 economy with enough spare cash should *already* have a meaningful
+    // fixed ring when the first bomber arrives. Do not confuse an existing
+    // anti-air launcher with ground protection or vice versa.
+    let prosperous = brain.census.refineries >= 2 && brain.census.harvesters >= 2
+        && budget.free >= 6_000
+        && (budget.income.is_some_and(|income| income >= 900)
+            || obs.credits() >= 12_000);
+    let aa_goal = if prosperous { 3 } else if brain.census.refineries >= 2 { 2 } else { 1 };
+    let ground_goal = if prosperous { 3 } else { 1 };
+    let baseline_air = solvent && aa < aa_goal && ring < 9;
+    let baseline_ground = solvent && ground_towers < ground_goal && ring < 9;
     let urgent_ground = psychic_near && !has_ground;
     if brain.census.line(ProductionCategory::Defense).busy()
         || brain.census.refineries == 0 || brain.census.harvesters == 0
@@ -723,10 +736,12 @@ fn queue_defense_in_parallel(
         else { frontier.as_ref().map(|(_, anchor)| *anchor) };
     let specialized = if urgent_air {
         specialized_defense(rules, obs, true)
-    } else if urgent_ground || baseline_ground {
+    } else if urgent_ground || (baseline_ground && (!baseline_air || ground_towers <= aa)) {
         specialized_defense(rules, obs, false)
     } else if baseline_air {
         specialized_defense(rules, obs, true)
+    } else if baseline_ground {
+        specialized_defense(rules, obs, false)
     } else { None };
     let emergency = specialized.map(|(ty, type_id)| plan::Chosen {
         step: None, item: Item::Defense, ty, type_id,
@@ -1739,6 +1754,22 @@ pub(super) fn can_replace_units(rules: &RuleSet, obs: &Observation<'_>, census: 
 /// `None` when the house already owns a factory of the category — the line
 /// runs and there is nothing to build — or when nothing of the category is
 /// buildable for it.
+/// A legal coastal building that feeds the native Ship production line.
+/// `Naval=yes` plus `Factory=UnitType` comes from the rules; the final
+/// `Placement` check rejects inland maps and unsuitable shoreline geometries.
+pub(super) fn naval_factory<'r>(
+    rules: &'r RuleSet, obs: &Observation<'_>,
+) -> Option<(&'r ObjectType, InternedId)> {
+    // Use the engine's [AI] Shipyard= names, not only Naval=yes: mods may
+    // describe the berth without marking the factory type as a naval unit.
+    first_buildable(rules, obs, &rules.shipyard_types)
+        .filter(|(ty, _)| ty.factory_type() == Some(FactoryType::UnitType))
+        .filter(|(_, type_id)| Placement::new(obs, rules).cell_for(*type_id, 0).is_some())
+        .or_else(|| class_types(rules, obs, ObjectCategory::Building)
+            .filter(|(ty, _)| ty.naval && ty.factory_type() == Some(FactoryType::UnitType))
+            .find(|(_, type_id)| Placement::new(obs, rules).cell_for(*type_id, 0).is_some()))
+}
+
 pub(super) fn line_factory<'r>(
     rules: &'r RuleSet,
     obs: &Observation<'_>,

@@ -141,6 +141,22 @@ fn searching_cell(obs: &Observation<'_>, anchor: (u16, u16)) -> Option<(u16, u16
 ///
 /// Three is the crate's own reach plus a cell: the box is on the way, not on
 /// the target.
+fn siege_blackout_wait(start: u64, tick: u64, live_power_infiltration: bool) -> bool {
+    live_power_infiltration && tick.saturating_sub(start) < 1_500
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v26_siege_coordination_tests {
+    use super::siege_blackout_wait;
+
+    #[test]
+    fn waiting_for_a_real_spy_blackout_is_finite() {
+        assert!(siege_blackout_wait(100, 700, true));
+        assert!(!siege_blackout_wait(100, 700, false));
+        assert!(!siege_blackout_wait(100, 1_600, true));
+    }
+}
+
 const CRATE_ON_THE_WAY_CELLS: i32 = 3;
 
 /// The crate the walk to `cell` passes, if there is one.
@@ -694,7 +710,9 @@ pub(super) fn advance(
     // "保护英雄单位". They hold at home, which is where the defence step already
     // sends them, and the retreat line walks them out well before the ordinary
     // one when they are caught.
-    fighters.retain(|unit| !unit.traits.irreplaceable
+    fighters.retain(|unit| !unit.traits.irreplaceable && !unit.traits.yard_maker
+        && !brain.specialist_shuttles.contains_key(&unit.entity_id)
+        && !brain.specialist_shuttles.values().any(|trip| trip.passenger == unit.entity_id)
         && !brain.crate_claims.contains_key(&unit.entity_id)
         && !brain.crate_returns.contains_key(&unit.entity_id)
         && !brain.repair_ifv_pending.get(&unit.entity_id)
@@ -854,7 +872,22 @@ pub(super) fn advance(
         brain.push_gate = if tick.saturating_sub(start) >= 1_350 {
             "siege-forced-breach"
         } else { "need-siege" };
-        if tick.saturating_sub(start) < 600 {
+        let spy_power_attempt_live = brain.spy_attempts.iter().any(|(agent, (plant, _, _))| {
+            brain.census.units.iter().any(|unit|
+                unit.entity_id == *agent && unit.traits.spy)
+                && brain.campaign_house.is_some()
+                && obs.visible_enemy_house(*plant) == brain.campaign_house
+                && obs.visible_enemy_entities().any(|enemy|
+                    enemy.entity_id == *plant && obs.entity_type(rules, *plant)
+                        .is_some_and(|ty| ty.power > 0))
+        });
+        // When a real spy is walking to this same house's visible power
+        // plant, hold the heavy cannon assault briefly for the blackout.
+        // Visibility and the native Capture intent, not a guessed effect,
+        // justify the wait; after 1,500 frames it must not deadlock the army.
+        let blackout_window = siege_blackout_wait(start, tick, spy_power_attempt_live);
+        if tick.saturating_sub(start) < 600 || blackout_window {
+            if blackout_window { brain.push_gate = "spy-blackout-staging"; }
             // Waiting must be an actual manoeuvre, not just a label. A tank
             // already walking into the pillbox will keep that native order
             // unless we deliberately move it back out of the gunline.
@@ -1219,7 +1252,7 @@ pub(super) fn advance(
         // expire into a guaranteed suicidal march.
         if let Some((gun, reach)) = super::tactics::lethal_approach(
             rules, obs, unit.entity_id, unit.cell, march_cell,
-        ).filter(|(gun, _)| {
+        ).filter(|(gun, reach)| {
             // Individual fragility rules must still protect infantry and
             // aircraft. A healthy armored fist, however, is allowed to trade
             // through a lone bunker when the nearby force is overwhelming.
@@ -1235,7 +1268,13 @@ pub(super) fn advance(
                     unit.slot == super::census::Slot::Vehicle,
                     unit.health_permille, ours, theirs,
                 );
-            !(can_hit_gun && (super::tactics::overwhelming_armor_commit(
+            // Huge fixed batteries cannot be overrun by simply having more
+            // hit points: the vehicles may die before the first shot.
+            let own_reach = obs.entity_type(rules, unit.entity_id)
+                .map_or(0, |ty| weapon_range_cells(rules, ty,
+                    obs.is_deployed(unit.entity_id)));
+            super::tactics::extreme_battery_mismatch(own_reach, *reach)
+                || !(can_hit_gun && (super::tactics::overwhelming_armor_commit(
                 unit.slot == super::census::Slot::Vehicle,
                 unit.health_permille, ours, theirs,
             ) || forced_breach))
@@ -1262,6 +1301,40 @@ pub(super) fn advance(
                 super::tracked::TrackedKind::Engage,None,None,Goal::Guard,
             ) { issued += 1; }
             continue;
+        }
+        // A Mirage-style ambusher is not the battering ram for an enemy
+        // factory. When infantry are actually visible nearby, let it engage
+        // them from the current line rather than marching past them toward
+        // the campaign's building target. The cannon/psychic danger checks
+        // above still take precedence over this local target specialization.
+        if obs.entity_type(rules, unit.entity_id)
+            .is_some_and(|ty| ty.disguise_when_still)
+        {
+            let personnel = obs.visible_enemy_entities()
+                .filter(|enemy| cell_distance(enemy.cell, unit.cell) <= 12)
+                .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
+                    .is_some_and(|ty| ty.category ==
+                        crate::rules::object_type::ObjectCategory::Infantry))
+                .filter(|enemy| obs.can_hurt(rules, unit.entity_id, enemy.entity_id)
+                    && super::orders::admits(rules, obs, unit.entity_id,
+                        &Goal::Attack { target: enemy.entity_id }))
+                .min_by_key(|enemy| (cell_distance(enemy.cell, unit.cell), enemy.entity_id));
+            if let Some(enemy) = personnel {
+                if obs.attack_target(unit.entity_id) == Some(enemy.entity_id) {
+                    continue;
+                }
+                if super::orders::issue_tracked(
+                    &mut brain.tracked, brain.trace, out, rules, obs,
+                    unit.entity_id, super::tracked::TrackedKind::Attack,
+                    Some(enemy.entity_id), Some(enemy.cell),
+                    Goal::Attack { target: enemy.entity_id },
+                ) {
+                    issued += 1;
+                    continue;
+                }
+                // A denied retarget is not a commitment: let the original
+                // march decision run rather than parking the ambusher.
+            }
         }
         let attacking = unit.mission == MissionId::from_known(MissionType::Attack)
             && obs.attack_target(unit.entity_id).is_some();

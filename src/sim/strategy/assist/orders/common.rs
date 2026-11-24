@@ -117,6 +117,17 @@ fn issue_at_rank(
     unit: u64,
     goal: Goal,
 ) -> bool {
+    // A mobile construction yard may appear from a crate, not only a war
+    // factory. Its value is the future base: never borrow it for an assault,
+    // even while the squads are waiting for their next regroup. Only a
+    // normal Move/Deploy from the expansion owner may steer it.
+    if matches!(goal, Goal::Attack { .. } | Goal::AttackMove { .. } | Goal::Guard)
+        && obs.entity_type(rules, unit)
+            .is_some_and(|ty| super::super::expand::makes_a_yard(rules, ty))
+    {
+        log::debug!("auto play: rejecting combat order {goal:?} on mobile yard {unit}");
+        return false;
+    }
     // The map is the other thing a goal can be wrong about, and neither the
     // funnel nor `Funnel::prepare` looks at it: `Command::Move` to a cell past
     // the edge is accepted, the nav target is never reached, and the unit

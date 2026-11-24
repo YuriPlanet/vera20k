@@ -147,6 +147,11 @@ pub(super) fn need_siege(
                 && obs.can_hurt(rules,unit.entity_id,defender_id)
         })
     }) { return None; }
+    // A truly extreme battery is not a pillbox. Even where our factory
+    // cannot build a longer-ranged ground gun, keep a bounded preparation
+    // mission alive so spies can black out the defending house and aircraft
+    // can find an unprotected approach; never spend the whole army trading HP.
+    if defensive_reach >= 11 { return Some(defensive_reach); }
     // Do not deadlock a faction whose current rules cannot build any standoff
     // answer. It must keep the old v10 assault behaviour instead.
     let buildable = super::build::class_types(rules,obs,
@@ -311,6 +316,13 @@ pub(super) fn overwhelming_armor_commit(
 ) -> bool {
     armored && health_permille >= 650 && theirs > 0
         && ours >= theirs.saturating_mul(3)
+}
+
+/// Heavy fixed artillery can destroy a column before its first shot. Its
+/// range mismatch is not repaired by the 3:1 HP exception used for bunkers.
+/// No type name: mods with another long-range cannon receive the same safety.
+pub(super) fn extreme_battery_mismatch(own_reach: i32, hostile_reach: i32) -> bool {
+    hostile_reach >= 11 && own_reach.saturating_add(3) < hostile_reach
 }
 
 fn loses_range_trade(own_reach: i32, hostile_reach: i32, can_answer: bool) -> bool {
@@ -539,6 +551,20 @@ mod v18_commit_tests {
         assert!(!overwhelming_armor_commit(true, 500, 900, 300));
         assert!(!overwhelming_armor_commit(true, 900, 899, 300));
         assert!(!overwhelming_armor_commit(true, 900, 900, 0));
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v26_long_range_battery_tests {
+    use super::*;
+
+    #[test]
+    fn extreme_batteries_never_use_the_minor_bunker_overrun_exception() {
+        assert!(extreme_battery_mismatch(5, 15));
+        assert!(extreme_battery_mismatch(7, 12));
+        assert!(!extreme_battery_mismatch(9, 11));
+        assert!(!extreme_battery_mismatch(5, 7),
+            "normal pillboxes still admit the old healthy-armor overrun");
     }
 }
 

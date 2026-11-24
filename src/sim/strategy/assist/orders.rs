@@ -312,7 +312,9 @@ pub(super) fn captures(
         if issued >= FORCE_ORDERS_PER_FRAME {
             break;
         }
-        if !unit.orderable || unit.hand || ordered_this_frame(out, unit.entity_id) {
+        if !unit.orderable || unit.hand || ordered_this_frame(out, unit.entity_id)
+            || brain.specialist_shuttles.values().any(|task|
+                task.passenger == unit.entity_id) {
             continue;
         }
         let Some(ty) = obs.object_type(rules, unit.type_id) else {
@@ -436,10 +438,14 @@ pub(super) fn captures(
                             unit.cell, target.cell)
                 })
                 .max_by_key(|(target, value)| {
+                    // A spy blackout supports the active siege only when
+                    // it knocks out the same enemy house's defensive grid.
                     let blackout_opportunity = brain.siege_wait.is_some()
                         && obs.object_type(rules, target.type_id)
-                            .is_some_and(|ty| ty.power > 0);
-                    ((*value).saturating_add(u8::from(blackout_opportunity) * 4),
+                            .is_some_and(|ty| ty.power > 0)
+                        && brain.campaign_house.is_some()
+                        && obs.visible_enemy_house(target.entity_id) == brain.campaign_house;
+                    ((*value).saturating_add(if blackout_opportunity { 9 } else { 0 }),
                         -squared_distance(unit.cell, target.cell))
                 })
                 .map(|(target, _)| *target)
@@ -917,7 +923,14 @@ pub(super) fn bridges(
     }
     let huts: Vec<(u64, (u16, u16))> = obs
         .bridge_repair_huts(rules)
-        .filter(|site| within(home_cells(brain), site.cell, HOME_REACH_CELLS))
+        .filter(|site| obs.is_cell_visible(site.cell.0, site.cell.1))
+        .filter(|site| {
+            within(home_cells(brain), site.cell, 60)
+                || brain.census.units.iter().any(|unit| unit.controllable()
+                    && squared_distance(unit.cell, site.cell) <= 35 * 35)
+        })
+        .filter(|site| !obs.visible_enemy_entities().any(|enemy|
+            squared_distance(enemy.cell, site.cell) <= 8 * 8))
         .map(|site| (site.building_id, site.cell))
         .collect();
     if huts.is_empty() {
@@ -1190,31 +1203,18 @@ fn cash_spy_target(rules: &RuleSet, ty: &ObjectType) -> bool {
 }
 
 fn infiltration_value(rules: &RuleSet, ty: &ObjectType, free: i32) -> u8 {
-    if cash_spy_target(rules, ty) {
-        // A cheating opponent can still have a huge bank when our own wallet
-        // is rich. Never demote its storage based on *our* credits. Lack of
-        // funds makes this even more urgent, but not mandatory.
-        if free < 3_000 { 9 } else { 8 }
-    } else if rules.build_power_types.iter().any(|name| *name == ty.id)
-        || ty.super_weapon.is_some()
-        || ty.super_weapon2.is_some()
-    {
-        4
-    } else if ty.radar {
-        3
-    } else if rules.build_weapons_types.iter().any(|name| *name == ty.id)
-        || rules.build_barracks_types.iter().any(|name| *name == ty.id)
-    {
-        2
-    } else if rules.build_tech_types.iter().any(|name| *name == ty.id) {
-        // The lab is the walk worth taking: infiltrating it is what hands the
-        // house the other side's unit (`sim::spy_infiltration`'s `Tech`), which
-        // is a type the wallet cannot buy. It used to rank last here, so a spy
-        // walked past the lab to a barracks.
-        3
-    } else {
-        1
-    }
+    // Native `Simulation::infiltrated_by` checks Radar, positive Power,
+    // BuildTech, super, Storage and Factory in exactly this order. A factory
+    // gives veteran units, while a lab grants actually stolen technology.
+    if ty.radar { 3 }
+    else if ty.power > 0 { 6 }
+    else if rules.is_build_tech(&ty.id) { 10 }
+    else if ty.super_weapon.is_some() || ty.super_weapon2.is_some() { 5 }
+    else if cash_spy_target(rules, ty) { if free < 3_000 { 9 } else { 8 } }
+    else if matches!(ty.factory_type(),
+        Some(crate::rules::object_type::FactoryType::InfantryType
+            | crate::rules::object_type::FactoryType::UnitType)) { 8 }
+    else { 1 }
 }
 
 /// The cells of the house's own buildings: the yard, the plants, the factories,
@@ -2149,14 +2149,18 @@ fn mind_controls(rules: &RuleSet, ty: &ObjectType) -> bool {
 /// side's tech. Any one of them is enough; a second spy into the same class
 /// buys nothing.
 fn spy_class_code(rules: &RuleSet, ty: &ObjectType) -> Option<u8> {
-    if rules.build_barracks_types.iter().any(|name| *name == ty.id) {
-        Some(1)
-    } else if rules.build_weapons_types.iter().any(|name| *name == ty.id) {
-        Some(2)
-    } else if rules.build_tech_types.iter().any(|name| *name == ty.id) {
-        Some(3)
-    } else {
-        None
+    // Mirror the native arm selection, including its higher-priority power
+    // and shroud effects. A stolen lab unlock belongs to its *own* side:
+    // stealing Allied tech must not mark Soviet/Yuri lab targets exhausted.
+    if ty.radar || ty.power > 0 { return None; }
+    if rules.is_build_tech(&ty.id) {
+        return Some(match ty.ai_base_planning_side { 0 => 3, 1 => 4, _ => 5 });
+    }
+    if ty.super_weapon.is_some() || ty.super_weapon2.is_some() || ty.storage > 0 { return None; }
+    match ty.factory_type() {
+        Some(crate::rules::object_type::FactoryType::InfantryType) => Some(1),
+        Some(crate::rules::object_type::FactoryType::UnitType) => Some(2),
+        _ => None,
     }
 }
 
@@ -2261,12 +2265,18 @@ pub(super) fn crates(
     let live: BTreeSet<u64> = brain.census.units.iter()
         .map(|unit| unit.entity_id).collect();
     brain.crate_returns.retain(|id, (post, until)| {
+        // A collector may turn into a crate-spawned yard maker without changing
+        // its entity ID. Its old return-to-the-fist order is no longer valid.
         live.contains(id) && tick < *until
+            && !brain.census.units.iter().any(|unit|
+                unit.entity_id == *id && unit.traits.yard_maker)
             && brain.census.units.iter().any(|unit| unit.entity_id == *id
                 && squared_distance(unit.cell, *post) > 4 * 4)
     });
     let finished: Vec<u64> = brain.crate_claims.iter()
         .filter(|(id, (cell, until))| !live.contains(id)
+            || brain.census.units.iter().any(|unit|
+                unit.entity_id == **id && unit.traits.yard_maker)
             || *until <= tick || !cells.contains(cell)
             || brain.tracked.primary_goal(**id) != Some(Goal::Move { cell: *cell }))
         .map(|(id, _)| *id).collect();
@@ -2277,7 +2287,8 @@ pub(super) fn crates(
         // Returning alone to a home 100 cells away may be more dangerous
         // than the original box errand. Regroup with a *nearby friendly
         // formation* first; fall back to the base when nobody is close.
-        if let Some(unit) = brain.census.units.iter().find(|unit| unit.entity_id == id) {
+        if let Some(unit) = brain.census.units.iter().find(|unit|
+            unit.entity_id == id && !unit.traits.yard_maker) {
             let nearby = brain.census.units.iter()
                 .filter(|other| other.entity_id != id && other.traits.combat
                     && other.controllable() && !other.in_service()
@@ -2329,6 +2340,7 @@ pub(super) fn crates(
         .iter()
         .filter(|unit| {
             (unit.traits.scout || unit.traits.combat)
+                && !unit.traits.yard_maker
                 && unit.controllable()
                 && !unit.in_service()
                 // A scout on an ordinary exploration Move is still the
@@ -2887,6 +2899,238 @@ fn carrying_step(passengers: usize, distance: i32) -> Carrying {
     }
 }
 
+/// One deliberate ferry for an engineer/spy. The voyage has a bounded
+/// lease; it does not borrow a tank from the attacking fist and it does not
+/// inspect objects hidden by the fog. A ferry is not the generic troop
+/// transport which drops soldiers at the first enemy base.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SpecialistShuttle {
+    pub(super) passenger: u64,
+    target: u64,
+    target_cell: (u16,u16),
+    drop: (u16,u16),
+    origin: (u16,u16),
+    until: u64,
+    boarded: bool,
+}
+
+const SPECIALIST_FERRY_LEASE: u64 = 3_600;
+const SPECIALIST_FERRY_ORDERS: usize = 2;
+
+fn ferry_lease_active(now: u64, until: u64, loaded: bool) -> bool {
+    now < until || (loaded && now < until.saturating_add(1_200))
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod specialist_ferry_tests {
+    use super::*;
+
+    #[test]
+    fn a_loaded_ferry_gets_a_bounded_return_window() {
+        assert!(ferry_lease_active(100, 900, false));
+        assert!(!ferry_lease_active(900, 900, false));
+        assert!(ferry_lease_active(900, 900, true));
+        assert!(ferry_lease_active(2_099, 900, true));
+        assert!(!ferry_lease_active(2_100, 900, true));
+    }
+
+    #[test]
+    fn a_missing_or_refused_passenger_must_not_keep_a_permanent_ticket() {
+        assert!(!ferry_lease_active(6_000, 1_000, false));
+        assert!(!ferry_lease_active(6_000, 1_000, true));
+    }
+}
+
+
+/// A flying carrier can land on a ground cell. A naval one must stop in
+/// water alongside a traversable bank; its native Unload finds the shore.
+/// Every suggested drop is checked in the carrier's *and passenger's* real
+/// movement zones, not by drawing a straight line across an island.
+fn safe_specialist_drop(
+    rules: &RuleSet, obs: &Observation<'_>,
+    passenger: u64, carrier: u64, target: (u16,u16),
+) -> Option<(u16,u16)> {
+    let person_ty = obs.entity_type(rules,passenger)?;
+    let carrier_ty = obs.entity_type(rules,carrier)?;
+    let embark = obs.object_cell_and_type(carrier)?.0;
+    let airborne = carrier_ty.movement_zone == MovementZone::Fly;
+    let water = matches!(carrier_ty.movement_zone,
+        MovementZone::Water | MovementZone::WaterBeach);
+    if !airborne && !water { return None; }
+    let mut options = Vec::new();
+    // A dozen cells around the objective are enough to avoid dropping an
+    // engineer directly into the owner's base-defense guns. Hard cap 17^2.
+    for dx in -8i32..=8 {
+        for dy in -8i32..=8 {
+            let (Ok(x), Ok(y)) = (
+                u16::try_from(i32::from(target.0)+dx),
+                u16::try_from(i32::from(target.1)+dy),
+            ) else { continue; };
+            if !obs.is_cell_in_playfield(x,y) || !obs.is_ground_walkable(x,y)
+                || (dx*dx+dy*dy) < 3*3 || (dx*dx+dy*dy) > 8*8
+                || obs.visible_enemy_entities().any(|enemy| {
+                    if squared_distance(enemy.cell,(x,y)) > 9*9 { return false; }
+                    obs.entity_type(rules,enemy.entity_id).is_some_and(|ty|
+                        ty.category != ObjectCategory::Building
+                            || ty.is_base_defense)
+                })
+            { continue; }
+            // A Capture order can approach a non-walkable building from an
+            // adjacent square; using the building's actual cell in the zone
+            // grid would falsely reject most capturable structures.
+            let walking_to_target = (-2i32..=2).any(|tx| (-2i32..=2).any(|ty| {
+                let (Ok(ax),Ok(ay))=(
+                    u16::try_from(i32::from(target.0)+tx),
+                    u16::try_from(i32::from(target.1)+ty),
+                ) else { return false; };
+                obs.is_cell_in_playfield(ax,ay) && obs.is_ground_walkable(ax,ay)
+                    && obs.can_reach(person_ty.movement_zone,(x,y),(ax,ay))
+            }));
+            if !walking_to_target { continue; }
+            if airborne && obs.can_reach(carrier_ty.movement_zone,embark,(x,y)) {
+                options.push(((dx*dx+dy*dy, x, y), (x,y)));
+            } else if water {
+                for wx in -2i32..=2 {
+                    for wy in -2i32..=2 {
+                        if wx == 0 && wy == 0 { continue; }
+                        let (Ok(nx),Ok(ny))=(
+                            u16::try_from(i32::from(x)+wx),
+                            u16::try_from(i32::from(y)+wy),
+                        ) else { continue; };
+                        if obs.is_cell_in_playfield(nx,ny)
+                            && obs.can_reach(carrier_ty.movement_zone,embark,(nx,ny)) {
+                            options.push(((dx*dx+dy*dy+wx*wx+wy*wy,x,y),(nx,ny)));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    options.into_iter().min_by_key(|(score,drop)|(*score,*drop))
+        .map(|(_,drop)|drop)
+}
+
+/// Use one non-combat transport for a *revealed* long-distance specialist
+/// target. For an inaccessible island, only an airlift or a real coastal
+/// naval landing is accepted; no impossible land Move is sent as a fallback.
+/// Movement, boarding and unloading all use normal human-facing Goals.
+pub(super) fn specialist_transports(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+) {
+    let now=obs.tick();
+    // Retire missing units and completed deliveries; a lease bounds native
+    // pathfinding failures so no loaded engineer is owned forever by a plan.
+    brain.specialist_shuttles.retain(|carrier,plan| {
+        obs.health(*carrier).is_some_and(|hp| hp > 0)
+            && obs.health(plan.passenger).is_some_and(|hp| hp > 0)
+            && ferry_lease_active(now, plan.until,
+                obs.inside_transport(plan.passenger)==Some(*carrier))
+            && !(plan.boarded && obs.inside_transport(plan.passenger)!=Some(*carrier))
+    });
+    let active: Vec<_> = brain.specialist_shuttles.iter()
+        .map(|(carrier, plan)|(*carrier,*plan)).collect();
+    let mut issued=0usize;
+    for (carrier,plan) in active {
+        if issued >= SPECIALIST_FERRY_ORDERS { return; }
+        let Some(carrier_cell)=obs.object_cell_and_type(carrier).map(|v|v.0) else {
+            brain.specialist_shuttles.remove(&carrier);
+            continue;
+        };
+        // The destination was truly seen when this plan was created.
+        // Reassess destruction only after that cell is visible again; the
+        // hidden unit store must never serve as a live radar across fog.
+        let alive_target = !obs.is_cell_visible(plan.target_cell.0,plan.target_cell.1)
+            || (obs.health(plan.target).is_some_and(|hp|hp>0)
+                && !obs.own_entities().any(|unit|unit.entity_id==plan.target));
+        let drop = if alive_target && now < plan.until {plan.drop} else {plan.origin};
+        if obs.inside_transport(plan.passenger)==Some(carrier) {
+            if let Some(task)=brain.specialist_shuttles.get_mut(&carrier) {task.boarded=true;}
+            let near=squared_distance(carrier_cell,drop)<=3*3;
+            if !ordered_this_frame(out,carrier) {
+                let goal=if near {Goal::Unload} else {Goal::Move {cell:drop}};
+                if issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+                    carrier,if near {TrackedKind::Enter} else {TrackedKind::Move},
+                    None,Some(drop),goal) {issued+=1;}
+            }
+        } else if !plan.boarded {
+            let goal=Goal::Enter {target:carrier};
+            if obs.can_enter_transport(rules,plan.passenger,carrier)
+                && !ordered_this_frame(out,plan.passenger)
+                && issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+                    plan.passenger,TrackedKind::Enter,Some(carrier),Some(carrier_cell),goal)
+            {issued+=1;}
+        }
+        if !alive_target && obs.inside_transport(plan.passenger)!=Some(carrier) {
+            brain.specialist_shuttles.remove(&carrier);
+        }
+    }
+    if !brain.specialist_shuttles.is_empty()
+        || now % 60 != 0 || brain.director.under_attack_now()
+        || brain.director.recovering_income() { return; }
+    // Do not borrow the only engineer from a threatened home. Spies are
+    // ferried only once already disguised to their actual target house.
+    let engineer_count = brain.census.units.iter().filter(|unit|
+        unit.controllable() && unit.traits.engineer
+            && obs.inside_transport(unit.entity_id).is_none()).count();
+    let targets: Vec<_> = obs.capturable_buildings(rules)
+        .filter(|site| obs.is_cell_revealed(site.cell.0,site.cell.1)
+            && (!obs.is_hostile(site.entity_id)
+                || obs.is_cell_visible(site.cell.0,site.cell.1)))
+        .take(12).collect();
+    let spy_targets: Vec<_> = obs.spyable_buildings(rules)
+        .filter(|site| obs.is_cell_visible(site.cell.0,site.cell.1))
+        .take(8).collect();
+    for carrier in &brain.census.units {
+        if !carrier.controllable() || carrier.in_service()
+            || obs.passengers(carrier.entity_id)>0
+            || ordered_this_frame(out,carrier.entity_id)
+            || brain.tracked.held(now,carrier.entity_id) { continue; }
+        let Some(carrier_ty)=obs.entity_type(rules,carrier.entity_id) else {continue;};
+        if carrier_ty.passengers<=0 || carrier_ty.gunner || carrier_ty.open_topped
+            || !matches!(carrier_ty.movement_zone,
+                MovementZone::Fly | MovementZone::Water | MovementZone::WaterBeach)
+            || super::pilots::Pilot::of(rules,carrier_ty)
+                != super::pilots::Pilot::Transport {continue;}
+        let passenger = brain.census.units.iter()
+            .filter(|unit| unit.controllable() && !unit.in_service()
+                && (unit.traits.engineer && engineer_count>=2 || unit.traits.spy)
+                && obs.inside_transport(unit.entity_id).is_none()
+                && !ordered_this_frame(out,unit.entity_id)
+                && !brain.tracked.held(now,unit.entity_id)
+                && squared_distance(unit.cell,carrier.cell)<=14*14
+                && obs.can_enter_transport(rules,unit.entity_id,carrier.entity_id))
+            .filter_map(|unit| {
+                let best = if unit.traits.spy { spy_targets.iter() }
+                    else { targets.iter() };
+                best.filter(|site| obs.can_take_building(rules,unit.entity_id,site.entity_id)
+                    && (!unit.traits.spy || obs.disguised_to_visible_enemy(
+                        unit.entity_id,site.entity_id))
+                    && squared_distance(unit.cell,site.cell)>=22*22)
+                .filter_map(|site| {
+                    let drop=safe_specialist_drop(rules,obs,unit.entity_id,
+                        carrier.entity_id,site.cell)?;
+                    Some((site.entity_id,site.cell,drop))
+                }).min_by_key(|(site,cell,drop)| {
+                    (squared_distance(unit.cell,*cell),*drop,*site)
+                }).map(|(site,cell,drop)| (unit.entity_id,site,cell,drop))
+            }).min_by_key(|(id,_,cell,_)|(
+                squared_distance(carrier.cell,*cell),*id));
+        let Some((passenger,target,target_cell,drop))=passenger else {continue;};
+        if issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+            passenger,TrackedKind::Enter,Some(carrier.entity_id),Some(carrier.cell),
+            Goal::Enter {target:carrier.entity_id}) {
+            brain.specialist_shuttles.insert(carrier.entity_id,SpecialistShuttle {
+                passenger,target,target_cell,drop,origin:carrier.cell,
+                until:now.saturating_add(SPECIALIST_FERRY_LEASE),boarded:false,
+            });
+            log::info!("auto play: specialist {} ferry {} to {:?} for target {}",
+                passenger,carrier.entity_id,drop,target);
+            break;
+        }
+    }
+}
+
 /// Drive what a transport carries: the Transport pilot's dispatch.
 ///
 /// Boarding is deliberately not here. It was measured before (won 25636 became
@@ -2917,6 +3161,7 @@ pub(super) fn transports(
             })
             .collect();
     for (entity_id, cell, _) in carriers.iter().copied() {
+        if brain.specialist_shuttles.contains_key(&entity_id) { continue; }
         let step = carrying_step(
             obs.passengers(entity_id),
             super::threats::distance(cell, deliver),
@@ -2971,6 +3216,7 @@ fn board_idle(
     tick: u64,
 ) -> bool {
     for (carrier, cell, capacity) in carriers.iter().copied() {
+        if brain.specialist_shuttles.contains_key(&carrier) { continue; }
         if capacity <= 0 || obs.passengers(carrier) != 0
             || brain.tracked.pending_enterers(tick, carrier).any(|passenger| {
                 obs.inside_transport(passenger) != Some(carrier)
@@ -3775,6 +4021,43 @@ mod v18_execution_tests {
         let Some(oil) = rules.object("CAOILD") else { return; };
         assert!(strategic_public_asset(oil));
         assert!(capture_value(&rules, oil, true) > 0);
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v26_spy_effect_priority_tests {
+    use super::*;
+
+    #[test]
+    fn tech_and_unit_experience_beats_repeat_rich_refinery_spying() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+            else { return; };
+        let Some(money) = rules.object("GAREFN") else { return; };
+        let Some(lab) = rules.object("GATECH") else { return; };
+        let Some(barracks) = rules.object("GAPILE") else { return; };
+        let Some(factory) = rules.object("GAWEAP") else { return; };
+        assert!(cash_spy_target(&rules, money));
+        assert_eq!(infiltration_value(&rules, money, 25_000), 8,
+            "existing V16 money-spy priority must not regress");
+        assert!(rules.is_build_tech(&lab.id));
+        assert!(infiltration_value(&rules, lab, 25_000)
+            > infiltration_value(&rules, money, 25_000));
+        assert_eq!(spy_class_code(&rules, barracks), Some(1));
+        assert_eq!(spy_class_code(&rules, factory), Some(2));
+        assert_eq!(spy_class_code(&rules, lab), Some(3));
+        assert!(infiltration_value(&rules, barracks, 25_000) >= 8);
+        assert!(infiltration_value(&rules, factory, 25_000) >= 8);
+    }
+
+    #[test]
+    fn power_sabotage_is_repeatable_and_has_a_real_power_effect() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+            else { return; };
+        let Some(power) = rules.object("GAPOWR") else { return; };
+        assert!(power.power > 0);
+        assert_eq!(spy_class_code(&rules, power), None,
+            "a temporary blackout cannot permanently exhaust a spy class");
+        assert!(infiltration_value(&rules, power, 25_000) > 1);
     }
 }
 

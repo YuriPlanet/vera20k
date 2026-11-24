@@ -135,6 +135,56 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
     }
 }
 
+/// Role::Defend alone does not bring a soldier home. In long offensive
+/// matches the original Guard order could be issued at the front and the
+/// soldier remained there for the rest of the game, despite occupying a
+/// permanent reserve slot. Repatriate idle, *uncommitted* guards to reachable
+/// cells next to the main base, without stealing active firefights or escorts.
+pub(super) fn station_home_reserve(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+) {
+    if brain.director.under_attack_now() { return; }
+    let Some(home) = brain.census.base_cell else { return; };
+    let defenders = brain.squads.squad(Role::Defend)
+        .map(|s| s.members.clone()).unwrap_or_default();
+    let offsets = [(5,0),(-5,0),(0,5),(0,-5),(4,4),(4,-4),(-4,4),(-4,-4)];
+    let mut issued = 0usize;
+    for unit in &brain.census.units {
+        if issued >= 4 { break; }
+        if !defenders.contains(&unit.entity_id) || !unit.controllable()
+            || !unit.traits.combat || unit.in_service()
+            || brain.outpost_guards.contains_key(&unit.entity_id)
+            || brain.asset_guards.contains_key(&unit.entity_id)
+            || squared_distance(home, unit.cell) <= 12 * 12
+            || ordered_this_frame(out, unit.entity_id)
+            || obs.attack_target(unit.entity_id).is_some()
+            || brain.tracked.held(obs.tick(), unit.entity_id)
+            || super::orders::committed_garrison_entry(
+                &brain.tracked, rules, obs, unit.entity_id)
+        { continue; }
+        let Some(ty) = obs.entity_type(rules, unit.entity_id) else { continue; };
+        let post = offsets.iter().filter_map(|(dx,dy)| {
+            let (Ok(x),Ok(y)) = (
+                u16::try_from(i32::from(home.0) + dx),
+                u16::try_from(i32::from(home.1) + dy),
+            ) else { return None; };
+            let cell = (x,y);
+            (obs.is_cell_in_playfield(x,y) && obs.is_ground_walkable(x,y)
+                && obs.can_reach(ty.movement_zone, unit.cell, cell)
+                && !obs.visible_enemy_entities().any(|enemy|
+                    squared_distance(enemy.cell, cell) <= 8*8))
+                .then_some(cell)
+        }).min_by_key(|cell| squared_distance(unit.cell,*cell));
+        let Some(post) = post else { continue; };
+        if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
+            unit.entity_id, TrackedKind::Move, None, Some(post),
+            Goal::Move { cell: post }) {
+            issued += 1;
+        }
+    }
+}
+
 /// A mining outpost is a military position, not just a newly unfolded
 /// construction yard. Keep two local defenders without weakening the primary
 /// base by borrowing more than the existing Defend reserve can spare.
@@ -167,7 +217,8 @@ pub(super) fn secure_outpost(
     if local + travelling >= 2 { return; }
     // Reserve at least three other defenders at the original base. Count a
     // travelling guard as assigned, not as an already-arrived local defender.
-    if reserves.len().saturating_sub(brain.outpost_guards.len()) <= 3 { return; }
+    if reserves.len().saturating_sub(brain.outpost_guards.len()
+        + brain.asset_guards.len()) <= 4 { return; }
     let candidate = units.iter()
         .filter(|unit| eligible(unit.entity_id)
             && !brain.outpost_guards.contains_key(&unit.entity_id)
@@ -231,7 +282,8 @@ pub(super) fn secure_captured_assets(
             && brain.asset_guards.get(&u.entity_id) != Some(&id)
             && squared_distance(u.cell, cell) <= 7 * 7).count();
         if assigned + local >= desired || brain.asset_guards.len() >= 3
-            || reserves.len().saturating_sub(brain.asset_guards.len()) <= 3 { continue; }
+            || reserves.len().saturating_sub(brain.asset_guards.len()
+                + brain.outpost_guards.len()) <= 4 { continue; }
         let candidate = live.iter()
             .filter(|u| reserves.contains(&u.entity_id) && u.controllable()
                 && u.traits.combat && !u.in_service()
@@ -312,6 +364,57 @@ pub(super) fn relieve_garrison(brain: &mut AssistBrain, rules: &RuleSet,
     }
 }
 
+/// Reconfigure one safe, GI-loaded gunner IFV as a mechanic carrier.
+/// Without this step a base that already filled all its IFVs with riflemen
+/// could never create the requested engineer IFV, regardless of how many
+/// engineers were produced. `Unload` is a normal player order; the native
+/// passenger implementation chooses where the exiting soldier can stand.
+pub(super) fn free_repair_ifv_seat(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+) {
+    if brain.director.under_attack_now() || brain.director.recovering_income() { return; }
+    let Some(base) = brain.census.base_cell else { return; };
+    let available_engineers = brain.census.units.iter().filter(|unit|
+        unit.controllable() && unit.traits.engineer && !unit.in_service()
+            && obs.inside_transport(unit.entity_id).is_none()).count();
+    if available_engineers < 2 { return; }
+    let wounded = brain.census.units.iter().any(|unit|
+        unit.traits.combat && unit.health_permille < 850
+            && obs.entity_type(rules,unit.entity_id).is_some_and(|ty|
+                ty.category == ObjectCategory::Vehicle));
+    let tanks = brain.census.units.iter().filter(|unit| unit.traits.combat
+        && obs.entity_type(rules,unit.entity_id).is_some_and(|ty|
+            ty.category == ObjectCategory::Vehicle)).count();
+    if !wounded && (tanks < 5 || obs.credits() < 3_000) { return; }
+    if brain.census.units.iter().any(|unit|
+        repair_ifv_loaded(rules, obs, &brain.census, unit.entity_id)) { return; }
+    let has_empty_chassis = brain.census.units.iter().any(|unit| {
+        obs.entity_type(rules, unit.entity_id).is_some_and(|ty| ty.gunner)
+            && obs.passengers(unit.entity_id) == 0
+            && squared_distance(base, unit.cell) <= 18 * 18
+    });
+    if has_empty_chassis { return; }
+    let Some(carrier) = brain.census.units.iter().filter(|unit|
+        unit.controllable() && !unit.in_service()
+            && !ordered_this_frame(out,unit.entity_id)
+            && !brain.tracked.held(obs.tick(),unit.entity_id)
+            && obs.attack_target(unit.entity_id).is_none()
+            && squared_distance(base,unit.cell) <= 18 * 18
+            && obs.passengers(unit.entity_id) > 0
+            && obs.entity_type(rules,unit.entity_id).is_some_and(|ty| ty.gunner)
+            && !brain.repair_ifv_pending.contains_key(&unit.entity_id)
+            && !obs.visible_enemy_entities().any(|enemy|
+                squared_distance(enemy.cell,unit.cell) <= 9*9))
+        .min_by_key(|unit|unit.entity_id) else { return; };
+    if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
+        carrier.entity_id, TrackedKind::Enter, None, None, Goal::Unload) {
+        brain.repair_ifv_pending.insert(carrier.entity_id,
+            obs.tick().saturating_add(450));
+        log::info!("auto play: unload IFV {} to create mechanic seat",carrier.entity_id);
+    }
+}
+
 /// Boarding one nearby reserve soldier into IFV (Gunner) or Battle Fortress
 /// (OpenTopped) changes the vehicle's weapon behaviour in the *native* engine.
 /// Unlike ordinary APC delivery, combat carriers must never auto-unload at
@@ -381,7 +484,21 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
                 kind.category == ObjectCategory::Vehicle)).count();
         let prepare_repair = wounded_vehicles > 0
             || (tank_force >= 5 && obs.credits() >= 3_000);
-        if ty.gunner && !repair_carrier_exists && prepare_repair
+        let home = brain.census.base_cell.is_some_and(|base|
+            squared_distance(base, carrier.cell) <= 18 * 18);
+        // Prefer one specialist chassis. Keep its seat free until a second
+        // engineer is trained: otherwise normal reserve infantry fills it
+        // with riflemen first, and the mechanic never gets a slot.
+        let selected_repair_carrier = ty.gunner && !repair_carrier_exists
+            && prepare_repair && home
+            && brain.census.units.iter().filter(|unit| {
+                obs.entity_type(rules, unit.entity_id).is_some_and(|kind| kind.gunner)
+                    && brain.census.base_cell.is_some_and(|base|
+                        squared_distance(base, unit.cell) <= 18 * 18)
+            }).filter(|unit| obs.passengers(unit.entity_id) == 0)
+              .map(|unit| unit.entity_id).min() == Some(carrier.entity_id);
+        if selected_repair_carrier && engineer_count < 2 { continue; }
+        if selected_repair_carrier
             && engineer_count >= 2
             && (!attackers.contains(&carrier.entity_id)
                 || brain.census.base_cell.is_some_and(|home|
@@ -425,6 +542,12 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
                 // do not fill it with a rifleman in this same frame.
                 continue;
             }
+        }
+        // Never immediately fill a selected mechanic seat with a GI when the
+        // engineer is not within reach this frame. The long rendezvous is a
+        // mission, not an invitation to change the chassis weapon again.
+        if selected_repair_carrier || brain.repair_ifv_pending.contains_key(&carrier.entity_id) {
+            continue;
         }
         let soldiers = brain.census.units.iter()
             .filter(|unit| unit.slot == super::census::Slot::Infantry

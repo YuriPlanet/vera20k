@@ -397,7 +397,8 @@ impl Squads {
                     .facts(unit.type_id)
                     .is_some_and(|facts| facts.category == ObjectCategory::Infantry);
                 let distance = anchor.map_or(0, |cell| squared_distance(unit.cell, cell));
-                (raid.is_none() && !old_defend.contains(&unit.entity_id),
+                (raid.is_none() && distance > 14 * 14,
+                 raid.is_none() && !old_defend.contains(&unit.entity_id),
                  !infantry, distance, unit.entity_id)
             });
             let members: BTreeSet<u64> = nearest

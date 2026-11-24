@@ -122,28 +122,45 @@ impl Recovery {
 /// Its native legality and movement-zone connectivity are checked before the
 /// usual Outbox order gate. The two perpendicular sides are tried in stable
 /// id order so all units do not repeatedly select the same escape cell.
+/// Bounded local escape planner. The old two-cell perpendicular shuffle
+/// chose the *first* traversable square, then discarded it if dangerous;
+/// another safe square was never considered. Evaluate several waypoints in
+/// eight directions and score them only if the native connectivity graph can
+/// reach them and today's *visible* guns cannot cover them.
 fn step_around(
-    obs: &Observation<'_>, zone: MovementZone,
+    rules: &RuleSet, obs: &Observation<'_>, zone: MovementZone,
     from: (u16,u16), to: (u16,u16), id: u64,
 ) -> Option<(u16,u16)> {
     let dx = i32::from(to.0) - i32::from(from.0);
     let dy = i32::from(to.1) - i32::from(from.1);
-    let side = if dx.abs() >= dy.abs() { (0, 1) } else { (1, 0) };
-    let dirs = if id % 2 == 0 { [1, -1] } else { [-1, 1] };
-    for distance in 2..=4 {
-        for sign in dirs {
-            let x = i32::from(from.0) + side.0 * sign * distance;
-            let y = i32::from(from.1) + side.1 * sign * distance;
-            let (Ok(x), Ok(y)) = (u16::try_from(x), u16::try_from(y)) else {
-                continue;
-            };
-            let cell = (x, y);
-            if obs.is_ground_walkable(x, y) && obs.can_reach(zone, from, cell) {
-                return Some(cell);
-            }
+    let offsets = [(1,0),(-1,0),(0,1),(0,-1),
+        (1,1),(-1,1),(1,-1),(-1,-1)];
+    let mut best: Option<((i32,i32,i32,u16,u16),(u16,u16))> = None;
+    for distance in [3, 6, 9] {
+        for (sx,sy) in offsets {
+            // Do not just drive forward again into the same blocked approach.
+            // A perpendicular side turn or a backward offset is a detour;
+            // progress toward the original goal is still a useful tie-break.
+            let dot = dx * sx + dy * sy;
+            let cross = (dx * sy - dy * sx).abs();
+            if dot > 0 && cross < (dx.abs()+dy.abs()).max(1)/3 { continue; }
+            let (Ok(x), Ok(y)) = (
+                u16::try_from(i32::from(from.0) + sx*distance),
+                u16::try_from(i32::from(from.1) + sy*distance),
+            ) else { continue; };
+            let cell = (x,y);
+            if !obs.is_cell_in_playfield(x,y) || !obs.is_ground_walkable(x,y)
+                || !obs.can_reach(zone,from,cell)
+                || super::tactics::unsafe_post(rules,obs,id,cell)
+                || obs.visible_enemy_entities().any(|enemy|
+                    super::squared_distance(enemy.cell,cell) <= 6*6)
+            { continue; }
+            let key = (if cross > 0 {0} else {1},
+                cell_distance(cell,to), distance, x, y);
+            if best.is_none_or(|(current,_)|key<current) { best=Some((key,cell)); }
         }
     }
-    None
+    best.map(|(_,cell)|cell)
 }
 
 pub(super) fn run(
@@ -199,7 +216,7 @@ pub(super) fn run(
             }
             continue;
         }
-        let Some(step) = step_around(obs, ty.movement_zone, unit.cell, dest, id) else {
+        let Some(step) = step_around(rules, obs, ty.movement_zone, unit.cell, dest, id) else {
             continue;
         };
         // Do not side-step into an observed enemy. Avoidance and combat micro
