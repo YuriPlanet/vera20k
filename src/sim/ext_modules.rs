@@ -6,8 +6,10 @@
 //! - `on_scenario_start` once on its first phase;
 //! - `on_frame` every frame.
 //!
-//! Each call gets an operation budget. A fault disables only that module, on
-//! every machine in the same frame. The host offers:
+//! Each call gets a whole operation budget. What the frame has used only
+//! decides whether another call starts, so a busy frame defers work instead
+//! of stopping the module. A fault disables only that module, on every
+//! machine in the same frame. The host offers:
 //! - Red Alert 2 local and global variables, through the trigger runtime's
 //!   own writer;
 //! - the module's own random stream;
@@ -60,6 +62,7 @@
 
 use std::hash::{Hash, Hasher};
 
+use vera20k_wasm_ext::decide::{EVENT_DEFEAT, EVENT_PRODUCTION_ALLOWED};
 use vera20k_wasm_ext::{
     ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits, ModuleState,
     NAME_ACTION_KIND, NAME_ANIM, NAME_COUNTRY, NAME_PARTICLE_SYSTEM, NAME_PROJECTILE,
@@ -102,8 +105,10 @@ use crate::sim::world::{FrameEffects, Simulation};
 mod triggers;
 pub(crate) use triggers::ModuleEvent;
 
-/// Maximum operations per module per frame (RFC 15.2 proposes about 2 ms on
-/// the slowest platform; open question 7).
+/// The frame budget B at most (RFC 15.2 proposes about 2 ms on the slowest
+/// platform; open question 7): the limit of one call, and the frame's use
+/// past which no further batch starts. A frame stays below 3B plus the
+/// decision pools (RFC section 5).
 pub const FRAME_BUDGET: u64 = 200_000;
 /// Operations for each one-time call: `vera_init` and `on_scenario_start`.
 pub const ONCE_BUDGET: u64 = 5_000_000;
@@ -162,10 +167,15 @@ struct Slot {
     /// Operations per frame: [`FRAME_BUDGET`], or the mod's
     /// `[VeraWasm]` budget for this source.
     frame_budget: u64,
-    /// Shared by event delivery, decisions and `on_frame`. Saves resume at
-    /// frame boundaries, so they carry only the configured budget.
+    /// The frame the three counts below belong to. Saves resume at frame
+    /// boundaries, so they carry only the configured budget.
     budget_frame: u32,
+    /// `ProductionAllowed`, event delivery and `on_frame`. Decides whether
+    /// another call starts and never shortens one.
     frame_ops_used: u64,
+    /// The other decisions, apart from `Defeat`.
+    decide_ops_used: u64,
+    defeat_ops_used: u64,
     /// Orders waiting for the next command step ([`orders`]).
     orders: Vec<orders::PendingOrder>,
     /// The memory digests the state hash and the checksum read
@@ -174,17 +184,50 @@ struct Slot {
 }
 
 impl Slot {
-    fn remaining_frame_ops(&mut self, frame: u32) -> u64 {
+    fn roll_to(&mut self, frame: u32) {
         if self.budget_frame != frame {
             self.budget_frame = frame;
             self.frame_ops_used = 0;
+            self.decide_ops_used = 0;
+            self.defeat_ops_used = 0;
         }
-        self.frame_budget.saturating_sub(self.frame_ops_used)
     }
 
-    fn charge_frame_ops(&mut self, used: u64) {
+    /// Whether the module phase may start another call this frame. The call
+    /// then has the whole frame budget (RFC section 5).
+    fn may_start_call(&mut self, frame: u32) -> bool {
+        self.roll_to(frame);
+        self.frame_ops_used < self.frame_budget
+    }
+
+    fn charge_frame_ops(&mut self, frame: u32, used: u64) {
+        self.roll_to(frame);
         self.frame_ops_used += used;
     }
+
+    /// What decisions of `kind` count against, and its size (RFC section 5).
+    fn decision_pool(&mut self, frame: u32, kind: i32) -> (&mut u64, u64) {
+        self.roll_to(frame);
+        let budget = self.frame_budget;
+        match kind {
+            EVENT_PRODUCTION_ALLOWED => (&mut self.frame_ops_used, budget),
+            EVENT_DEFEAT => (&mut self.defeat_ops_used, (budget / 4).max(1)),
+            _ => (&mut self.decide_ops_used, (budget / 2).max(1)),
+        }
+    }
+}
+
+/// The ids of four ascending lists, ascending, without allocating.
+fn merge_ascending(mut lists: [&[u64]; 4]) -> impl Iterator<Item = u64> + '_ {
+    std::iter::from_fn(move || {
+        let list = lists
+            .iter_mut()
+            .filter(|list| !list.is_empty())
+            .min_by_key(|list| list[0])?;
+        let (&id, rest) = list.split_first()?;
+        *list = rest;
+        Some(id)
+    })
 }
 
 impl ModuleSource {
@@ -210,9 +253,8 @@ struct SavedSlot {
     frame_budget: u64,
     #[serde(default)]
     orders: Vec<orders::PendingOrder>,
-    /// Saved so a loaded game hashes what the running one does; a save
-    /// from before the rotation has none, and its pages are digested at
-    /// restore.
+    /// Saved so a loaded game hashes what the running one does. Without
+    /// any, each page's is 0 until its turn, as for a new page.
     #[serde(default)]
     digests: PageDigests,
 }
@@ -224,21 +266,23 @@ const fn default_frame_budget() -> u64 {
 /// Frames for the digest rotation to visit every page (RFC 15.1, item 7).
 const DIGEST_ROTATION: usize = 15;
 
-/// One 32-bit FNV-1a digest per 64 KiB page of a module's memory, as far as
+/// One XXH32 digest per 64 KiB page of a module's memory, as far as
 /// it has grown (`memory.size`), for the state hash and the multiplayer
 /// checksum (RFC 15.1, item 7). [`PageDigests::refresh`] runs once a frame
 /// at the end of the module phase: it digests the pages whose index is the
-/// frame modulo 15, and any page grown since; the other pages keep their
-/// digest. A page is digested at least every 15 frames, so a divergence in
-/// module memory shows within 15 frames, and no frame digests more than a
-/// fifteenth of the memory plus its growth. Every machine refreshes the same
-/// pages on the same frames, so the digests agree wherever the memory does.
+/// frame modulo 15; the others keep their digest, and a new page's is 0
+/// until its turn. The page count is in the digests' length, so growth shows
+/// at once. A divergence that lasts until its page's turn shows within 15
+/// frames, and no frame digests more than a fifteenth of the memory, also
+/// when it grows. Every machine refreshes the same pages on the same frames,
+/// so the digests agree wherever the memory does.
 /// A derived cache of the memory, saved with it (`SavedSlot::digests`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct PageDigests(Vec<u32>);
 
 impl PageDigests {
     /// Every page of `memory` digested now.
+    #[cfg(test)]
     fn of(memory: &[u8]) -> Self {
         Self(
             memory
@@ -250,15 +294,12 @@ impl PageDigests {
 
     /// Digests this frame's share of `memory` (see the type).
     fn refresh(&mut self, memory: &[u8], frame: u32) {
-        let pages: Vec<&[u8]> = memory.chunks(vera20k_wasm_ext::PAGE_BYTES).collect();
-        let known = self.0.len().min(pages.len());
+        let pages = memory.chunks(vera20k_wasm_ext::PAGE_BYTES);
         self.0.resize(pages.len(), 0);
+        let due = self.0.iter_mut().zip(pages);
         let phase = frame as usize % DIGEST_ROTATION;
-        let due = (phase..known)
-            .step_by(DIGEST_ROTATION)
-            .chain(known..pages.len());
-        for index in due {
-            self.0[index] = page_digest(pages[index]);
+        for (digest, page) in due.skip(phase).step_by(DIGEST_ROTATION) {
+            *digest = page_digest(page);
         }
     }
 
@@ -268,8 +309,58 @@ impl PageDigests {
     }
 }
 
+/// XXH32 with seed 0, which reads the page by little-endian words (RFC
+/// 15.1, item 7; <https://github.com/Cyan4973/xxHash/blob/dev/doc/xxhash_spec.md>).
 fn page_digest(page: &[u8]) -> u32 {
-    fnv1a(page.iter().copied())
+    const P: [u32; 5] = [
+        0x9E37_79B1,
+        0x85EB_CA77,
+        0xC2B2_AE3D,
+        0x27D4_EB2F,
+        0x1656_67B1,
+    ];
+    let word = |b: &[u8]| u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+    let round = |lane: u32, bytes: &[u8]| {
+        lane.wrapping_add(word(bytes).wrapping_mul(P[1]))
+            .rotate_left(13)
+            .wrapping_mul(P[0])
+    };
+    let mut stripes = page.chunks_exact(16);
+    let mut h = if page.len() < 16 {
+        P[4]
+    } else {
+        let mut lanes = [P[0].wrapping_add(P[1]), P[1], 0, 0u32.wrapping_sub(P[0])];
+        for stripe in &mut stripes {
+            lanes = [
+                round(lanes[0], &stripe[..4]),
+                round(lanes[1], &stripe[4..8]),
+                round(lanes[2], &stripe[8..12]),
+                round(lanes[3], &stripe[12..]),
+            ];
+        }
+        lanes[0]
+            .rotate_left(1)
+            .wrapping_add(lanes[1].rotate_left(7))
+            .wrapping_add(lanes[2].rotate_left(12))
+            .wrapping_add(lanes[3].rotate_left(18))
+    };
+    h = h.wrapping_add(page.len() as u32);
+    let mut words = stripes.remainder().chunks_exact(4);
+    for bytes in &mut words {
+        h = h
+            .wrapping_add(word(bytes).wrapping_mul(P[2]))
+            .rotate_left(17)
+            .wrapping_mul(P[3]);
+    }
+    for &byte in words.remainder() {
+        h = h
+            .wrapping_add(u32::from(byte).wrapping_mul(P[4]))
+            .rotate_left(11)
+            .wrapping_mul(P[0]);
+    }
+    h = (h ^ (h >> 15)).wrapping_mul(P[1]);
+    h = (h ^ (h >> 13)).wrapping_mul(P[2]);
+    h ^ (h >> 16)
 }
 
 /// The loaded simulation modules, in run order, and the modifiers and
@@ -1288,21 +1379,29 @@ impl Host<'_, '_> {
         Ok(Some(true))
     }
 
-    /// `find` over objects, in creation (stable ID) order.
+    /// `find` over objects, in creation (stable ID) order. An owner's come
+    /// from the store's owner and category index; with a type, only from the
+    /// categories that have a type of that name.
     fn find_objects(&self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {
-        let type_filter = match decode_ref(query.type_ref)? {
+        let wanted = match decode_ref(query.type_ref)? {
             None => None,
-            Some(Ref::Type {
-                kind: NAME_TECHNO_TYPE,
-                id,
-            }) if i32::try_from(id).is_ok_and(|id| self.techno_type(id).is_some()) => {
-                Some(type_ref(NAME_TECHNO_TYPE, id))
-            }
-            Some(_) => {
-                return Err(Invalid(format!(
-                    "{:#x} is not a TechnoType for an Objects query",
-                    query.type_ref
-                )));
+            Some(reference) => {
+                let found = match reference {
+                    Ref::Type {
+                        kind: NAME_TECHNO_TYPE,
+                        id,
+                    } => i32::try_from(id)
+                        .ok()
+                        .and_then(|signed| self.techno_type(signed))
+                        .map(|object| (id, object)),
+                    _ => None,
+                };
+                Some(found.ok_or_else(|| {
+                    Invalid(format!(
+                        "{:#x} is not a TechnoType for an Objects query",
+                        query.type_ref
+                    ))
+                })?)
             }
         };
         let owner = match query.owner {
@@ -1320,18 +1419,44 @@ impl Host<'_, '_> {
             },
         };
         let after = u64::try_from(query.after).unwrap_or(0);
-        let mut page = FindPage::default();
-        for (id, entity) in self.sim.entities().iter_sorted() {
-            if id < after {
-                continue;
+        let store = self.sim.entities();
+        let mut owned: [&[u64]; 4] = [&[]; 4];
+        if let Some(owner) = owner {
+            let categories = [
+                EntityCategory::Unit,
+                EntityCategory::Infantry,
+                EntityCategory::Structure,
+                EntityCategory::Aircraft,
+            ];
+            for (list, category) in owned.iter_mut().zip(categories) {
+                if wanted.is_none_or(|(_, object)| {
+                    self.rules
+                        .type_handle_in_category(category.into(), &object.id)
+                        .is_some()
+                }) {
+                    let ids = store.owned_ids(owner, category);
+                    *list = &ids[ids.partition_point(|&id| id < after)..];
+                }
             }
-            if page.found.len() == cap {
+        }
+        let mut owned = merge_ascending(owned).filter_map(|id| Some((id, store.get(id)?)));
+        let mut all = store.iter_sorted_from(after);
+        let candidates: &mut dyn Iterator<Item = (u64, &GameEntity)> = match owner {
+            Some(_) => &mut owned,
+            None => &mut all,
+        };
+        let mut page = FindPage::default();
+        for (id, entity) in candidates {
+            if page.found.len() == cap || !page.examine(id as i64, query) {
                 break;
             }
-            page.scanned += 1;
-            if owner.is_some_and(|owner| entity.owner() != owner)
-                || centre.is_some_and(|(cx, cy)| !in_area(entity, query.area, cx, cy))
-                || type_filter.is_some_and(|t| self.object_property(entity, "Type").0 != t)
+            if centre.is_some_and(|(cx, cy)| !in_area(entity, query.area, cx, cy))
+                || wanted.is_some_and(|(wanted, _)| {
+                    self.sim
+                        .interner
+                        .type_handle(entity.type_ref(), self.rules)
+                        .is_none_or(|handle| handle.0 != wanted)
+                })
             {
                 continue;
             }
@@ -1355,10 +1480,9 @@ impl Host<'_, '_> {
         let mut page = FindPage::default();
         let after = u64::try_from(query.after).unwrap_or(0);
         for handle in self.sim.ext_modules.modifiers.handles_from(after) {
-            if page.found.len() == cap {
+            if page.found.len() == cap || !page.examine(handle as i64, query) {
                 break;
             }
-            page.scanned += 1;
             let reference = handle as i64;
             match self.passes(reference, query)? {
                 Some(true) => page.found.push((reference, reference)),
@@ -1457,10 +1581,9 @@ impl Host<'_, '_> {
         let mut page = FindPage::default();
         let start = usize::try_from(query.after).unwrap_or(usize::MAX);
         for index in start..self.sim.houses.order().len() {
-            if page.found.len() == cap {
+            if page.found.len() == cap || !page.examine(index as i64, query) {
                 break;
             }
-            page.scanned += 1;
             let reference = house_ref(index);
             match self.passes(reference, query)? {
                 Some(true) => page.found.push((index as i64, reference)),
@@ -1601,8 +1724,10 @@ impl Simulation {
                 frame_budget,
                 budget_frame: 0,
                 frame_ops_used: 0,
+                decide_ops_used: 0,
+                defeat_ops_used: 0,
                 orders: Vec::new(),
-                // Digested in full at the first module phase.
+                // Each page is digested when its turn comes.
                 digests: PageDigests::default(),
             },
         );
@@ -1697,11 +1822,6 @@ impl Simulation {
         for saved in std::mem::take(&mut self.ext_modules.pending) {
             let module = SimModule::restore(&saved.bytes, saved.source.limits(), &saved.state)
                 .map_err(|e| format!("{:?} module: {e}", saved.source))?;
-            let digests = if saved.digests.0.is_empty() {
-                PageDigests::of(module.memory())
-            } else {
-                saved.digests
-            };
             self.ext_modules.slots.push(Slot {
                 source: saved.source,
                 module,
@@ -1712,8 +1832,12 @@ impl Simulation {
                 frame_budget: saved.frame_budget.clamp(1, FRAME_BUDGET),
                 budget_frame: 0,
                 frame_ops_used: 0,
+                decide_ops_used: 0,
+                defeat_ops_used: 0,
                 orders: saved.orders,
-                digests,
+                // As saved, also none before the first module phase: what
+                // the running game has.
+                digests: saved.digests,
             });
         }
         self.ext_modules.declare_vars();
@@ -1791,10 +1915,8 @@ impl Simulation {
                 self.disable_ext_module(index, Export::Events, fault);
                 continue;
             }
-            let budget = self.ext_modules.slots[index].remaining_frame_ops(frame);
-            if budget == 0 {
-                continue;
-            }
+            // Every frame, whatever the calls before it used.
+            let budget = self.ext_modules.slots[index].frame_budget;
             match self.call_ext_module(
                 rules,
                 overlay_registry,
@@ -1805,7 +1927,7 @@ impl Simulation {
             ) {
                 Ok(ops) => {
                     let slot = &mut self.ext_modules.slots[index];
-                    slot.charge_frame_ops(ops);
+                    slot.charge_frame_ops(frame, ops);
                     slot.last_frame_ops = ops;
                 }
                 Err(fault) => self.disable_ext_module(index, Export::Frame, fault),

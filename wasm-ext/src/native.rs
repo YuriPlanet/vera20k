@@ -22,14 +22,15 @@ use crate::sections::{Delivery, Sections};
 use crate::triggers::{ActionDef, NAME_MODULE_ACTION, TriggerDef};
 use crate::{
     ActionParams, ENTRY_COST, EventRecord, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits,
-    LoadError, ModuleState, NAME_ACTION_KIND, NAME_KINDS, NAME_PROPERTY, Order, PAGE_BYTES, Query,
-    SCAN_COST, SIM_IMPORT_MODULE, SimHost, Status, VarDecl, action_kind_id, action_kind_name,
-    property_id, property_name,
+    LoadError, MAX_SCAN, ModuleState, NAME_ACTION_KIND, NAME_KINDS, NAME_PROPERTY, Order,
+    PAGE_BYTES, Query, SIM_IMPORT_MODULE, SKIPS_PER_OP, SimHost, Status, VarDecl, action_kind_id,
+    action_kind_name, property_id, property_name,
 };
 
-/// Most records one `on_events` call receives (open question 7), within
-/// what the delivery area holds.
-pub const MAX_BATCH: usize = 256;
+/// Most records one `on_events` call receives (RFC 15.4), within what the
+/// delivery area holds, so that a burst is many calls that can wait instead
+/// of one that overruns.
+pub const MAX_BATCH: usize = 16;
 
 /// Load-time shape limits (RFC section 3, open question 7), so compiling a
 /// downloaded map's module cannot stall the lobby.
@@ -80,6 +81,8 @@ struct Ctx {
     sections: Sections,
     /// The export running, for imports unavailable in `vera_init`.
     export: Option<Export>,
+    /// The budget the running call started with; `find` sizes its pages by it.
+    budget: u64,
 }
 
 // SAFETY: `host` is non-null only inside `SimModule::call`, which holds the
@@ -130,6 +133,7 @@ impl SimModule {
             fault: None,
             sections,
             export: None,
+            budget: 0,
         };
         let mut store = Store::new(engine, ctx);
         store.limiter(|ctx| &mut ctx.limits);
@@ -414,6 +418,7 @@ impl SimModule {
         data.host = Some(host);
         data.fault = None;
         data.export = Some(export);
+        data.budget = budget;
         let fueled = self.store.set_fuel(budget);
         let result = match fueled {
             Ok(()) => call(&mut self.store),
@@ -586,13 +591,15 @@ fn host<'a>(caller: &'a mut Caller<'_, Ctx>) -> wasmtime::Result<&'a mut dyn Sim
 fn charge(caller: &mut Caller<'_, Ctx>, cost: u64) -> wasmtime::Result<()> {
     let fuel = caller.get_fuel()?;
     if fuel < cost {
-        caller.data_mut().fault = Some(Fault::Budget);
-        return Err(wasmtime::Error::msg(
-            "operation budget exceeded in a host call",
-        ));
+        return Err(out_of_budget(caller));
     }
     caller.set_fuel(fuel - cost)?;
     Ok(())
+}
+
+fn out_of_budget(caller: &mut Caller<'_, Ctx>) -> wasmtime::Error {
+    caller.data_mut().fault = Some(Fault::Budget);
+    wasmtime::Error::msg("operation budget exceeded in a host call")
 }
 
 /// Checks that `count` entries of `size` bytes at `ptr` lie in module memory.
@@ -1223,7 +1230,7 @@ fn find(
     check_buffer(caller, out, cap, 8).map_err(|e| fail(caller, e))?;
     check_buffer(caller, res, 1, 16).map_err(|e| fail(caller, e))?;
     charge(caller, HOST_CALL_COST)?;
-    let query = Query::parse(&memory.data(&*caller)[range]).map_err(|e| fail(caller, e))?;
+    let mut query = Query::parse(&memory.data(&*caller)[range]).map_err(|e| fail(caller, e))?;
     let write_result = |caller: &mut Caller<'_, Ctx>, count: usize, next: i64| {
         let mut bytes = [0u8; 16];
         bytes[..4].copy_from_slice(&(count as i32).to_le_bytes());
@@ -1235,6 +1242,12 @@ fn find(
         write_result(caller, 0, 0)?;
         return Ok(Status::Ok as i32);
     }
+    // A page costs at most half of a whole call, so that a search too long
+    // for one call can be paged across calls, and the host examines no more
+    // than what is left pays for.
+    let scan_cost = query.scan_cost();
+    let page_limit = MAX_SCAN.min(caller.data().budget / 2 / scan_cost).max(1);
+    query.max_scan = page_limit.min(caller.get_fuel()? / scan_cost);
     let result = host(caller)?.find(&query, cap);
     let (page, status) = result.map_err(|e| fail(caller, e))?;
     if page.found.len() > cap {
@@ -1243,9 +1256,14 @@ fn find(
             Invalid("host returned more than a page".into()),
         ));
     }
+    if page.resume.is_some() && page.scanned >= query.max_scan && query.max_scan < page_limit {
+        // The budget ended the scan, not the page limit.
+        return Err(out_of_budget(caller));
+    }
     let cost = page
         .scanned
-        .saturating_mul(SCAN_COST)
+        .saturating_mul(scan_cost)
+        .saturating_add(page.skipped / SKIPS_PER_OP)
         .saturating_add((page.found.len() as u64).saturating_mul(ENTRY_COST));
     charge(caller, cost)?;
     if status != Status::Ok {
@@ -1258,9 +1276,11 @@ fn find(
         .flat_map(|(_, r)| r.to_le_bytes())
         .collect();
     write_bytes(caller, out, &refs).map_err(|e| fail(caller, e))?;
-    // A full page continues after its last key; the next page may be empty.
-    let next = match page.found.last() {
-        Some((key, _)) if page.found.len() == cap => key.saturating_add(1),
+    // A scan cut short resumes where it stopped, found or not. A full page
+    // continues after its last key; the next page may be empty.
+    let next = match (page.resume, page.found.last()) {
+        (Some(key), _) => key,
+        (None, Some((key, _))) if page.found.len() == cap => key.saturating_add(1),
         _ => 0,
     };
     write_result(caller, page.found.len(), next)?;
