@@ -120,7 +120,7 @@ VERA20K 用 Rust 独立实现行为，不加载 `Kratos.dll`，也不分发 Krat
 
 已移植功能对应的原作者：
 
-- 卧倒射击点（`PrimaryCrawlingFLH` 等四个键）— **双杀步枪（ChrisLv_CN）**，
+- 卧倒射击点（`CrawlingFLH`）— **双杀步枪（ChrisLv_CN）**，
   `src/Ext/TechnoType/CrawlingFLH.cpp` 与 `CrawlingFLHData.h`。
 
 ## VERA20K 移植署名

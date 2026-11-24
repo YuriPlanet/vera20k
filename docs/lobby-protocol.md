@@ -734,7 +734,7 @@ not know.
   for that tag, else for its language alone (`zh`), else for another region of that
   language, else the operator's `text`, which a missing or malformed tag gets.
 - `Vera-Changes: <percent-encoded JSON>`: what the game changes from the original game,
-  which a room's rules line names: an object with `mod` (the mod's title), `ini_roots:
+  which a room's rules line names: an object with `mod` (the mod's title), optional `kratos: true` when the startup rules enable Kratos, `ini_roots:
   true` (config.toml names other Rules, Art, AI, mode roster or map catalog files, or
   another theater suffix, or [RA2 Mode](ra2-mode.md) is on), `ares` (`on` or `off`, the player's Ares setting where it
   decides which game opens: On unless a selected mod mounts `ares.mix` anyway, Off only

@@ -6,8 +6,7 @@
 //! (AGENTS.md, "Stability, extensions and online play"), as a modder expects
 //! from Kratos.dll: adding Kratos keys to an INI is all it takes. Kratos plays
 //! in a game when a key only a Kratos reader found is present: in the Rules
-//! layers or map the projection reads, or in a pass that reads ART (the
-//! processing passes run before the projection). Retail data holds none of
+//! layers or map the projection reads, or in the final eligible infantry ART. Retail data holds none of
 //! these keys, so a retail game plays as gamemd.
 //!
 //! The player's Kratos setting (`util::kratos_launch::KratosSetting`,
@@ -41,7 +40,7 @@ pub(crate) fn kratos_read<T>(read: impl FnOnce() -> T) -> T {
 }
 
 /// The Kratos-only keys the processing passes found and the launch's setting.
-/// ART is read while the passes run, before the projection whose reads
+/// Infantry ART is read after the layers select Image, before the projection whose reads
 /// [`KratosInputs::decide`] also counts, so those keys come with the processed
 /// rules: saved with them, a loaded game decides the same answer from the same
 /// files.

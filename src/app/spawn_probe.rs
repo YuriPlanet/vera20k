@@ -610,7 +610,6 @@ pub(crate) fn run_desktop(
     map: Option<&Path>,
     mod_switch: Option<&crate::app::mods::ModSwitch>,
     ares: Option<crate::util::ares_launch::AresSetting>,
-    kratos: Option<crate::util::kratos_launch::KratosSetting>,
 ) -> Result<ProbeReport> {
     let config = crate::util::config::GameConfig::load()?;
     let mut config = match ra2_dir {
@@ -622,9 +621,10 @@ pub(crate) fn run_desktop(
         None => config,
     };
     // RA2 mode as startup takes it: `-ra2` or VERA.INI's choice.
-    config.use_ra2_mode(existing_ra2_mode(config.paths.settings_dir()));
-    let personal_rules = existing_personal_rules(config.paths.settings_dir())?;
-    let ares = ares.unwrap_or_else(|| existing_ares_setting(config.paths.settings_dir()));
+    let profile = existing_profile(config.paths.settings_dir());
+    config.use_ra2_mode(profile.ra2_mode);
+    let personal_rules = existing_personal_rules(&profile);
+    let ares = ares.unwrap_or(profile.ares);
     let map = map
         .map(|path| {
             ensure_file(path)?;
@@ -641,7 +641,7 @@ pub(crate) fn run_desktop(
         map.as_deref(),
         crate::app::mods::launch_mod(&config.paths, mod_switch).map_err(anyhow::Error::msg)?,
         ares,
-        kratos.unwrap_or_default(),
+        profile.kratos,
     )
 }
 
@@ -655,43 +655,28 @@ fn ensure_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The player's Ares setting as startup reads it from VERA.INI.
-pub(crate) fn existing_ares_setting(settings_dir: &Path) -> crate::util::ares_launch::AresSetting {
-    crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
-        settings_dir,
-        &Default::default(),
-    )
-    .retained_profile
-    .ares
-}
-
-/// The player's RA2 Mode choice as startup reads it from VERA.INI.
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) fn existing_ra2_mode(settings_dir: &Path) -> bool {
-    crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
-        settings_dir,
-        &Default::default(),
-    )
-    .retained_profile
-    .ra2_mode
-}
-
-/// The player's Options switches as startup reads them from VERA.INI.
-pub(crate) fn existing_personal_rules(
+/// The options the normal startup and the launcher's probes play.
+pub(crate) fn existing_profile(
     settings_dir: &Path,
-) -> Result<crate::rules::personal_rules::PersonalRules> {
-    let mut rules = crate::rules::personal_rules::PersonalRules::default();
-    let profile = crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
+) -> crate::app::persistence::options_profile::RetailOptionsProfile {
+    crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
         settings_dir,
         &Default::default(),
     )
-    .retained_profile;
+    .retained_profile
+}
+
+/// Options shared by a launcher's network match.
+pub(crate) fn existing_personal_rules(
+    profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+) -> crate::rules::personal_rules::PersonalRules {
+    let mut rules = crate::rules::personal_rules::PersonalRules::default();
     rules.set_terrain_deformation(profile.terrain_deformation);
     rules.set_superweapon_limit(i32::from(profile.superweapon_limit));
     // Building Production Queue stays off: the probe reports the digest a
     // launcher's network match agrees on, which plays without it
     // (`App::start_spawn_session`).
-    Ok(rules)
+    rules
 }
 
 #[cfg(all(test, tests_app))]
@@ -776,7 +761,7 @@ mod tests {
         let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
-        let report = run_desktop(Some(&root), None, None, None, None).unwrap();
+        let report = run_desktop(Some(&root), None, None, None).unwrap();
         // The launcher reads this before it runs `--generate-map`.
         assert!(report.generate_map);
         let stock = &report.countries[..10];

@@ -547,23 +547,11 @@ impl RulesLayerStack {
             if kind == RulesLayerKind::Scenario
                 && let Some(after_map) = after_map.take()
             {
-                let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
-                    &processor.ares_reads,
-                    self.ships_ares,
-                    self.ares_keys_off,
+                let prefix = self.finish_rules(
+                    processor.clone(),
+                    fixed_art,
+                    self.content_hash_for_layers(index + 1),
                 );
-                let kratos_inputs = crate::rules::kratos_switch::KratosInputs::from_passes(
-                    &processor.ares_reads,
-                    self.kratos_setting,
-                );
-                let (ini, native_type_construction_trace) = processor.clone().finish();
-                let prefix = ProcessedRulesLayers {
-                    ini,
-                    content_hash: self.content_hash_for_layers(index + 1),
-                    native_type_construction_trace,
-                    ares_inputs,
-                    kratos_inputs,
-                };
                 let rules = match RuleSet::from_processed_rules(&prefix) {
                     Ok(rules) => rules,
                     Err(error) => {
@@ -587,6 +575,37 @@ impl RulesLayerStack {
             processor.init_overlay_theater();
             processor.init_anim_theater();
         }
+        Ok((
+            self.finish_rules(processor, fixed_art, self.content_hash()),
+            after_map_result,
+        ))
+    }
+
+    fn finish_rules(
+        &self,
+        mut processor: RulesPassProcessor,
+        fixed_art: &IniFile,
+        content_hash: u64,
+    ) -> ProcessedRulesLayers {
+        // Kratos reads an eligible infantry's final Image when its component
+        // first updates. Earlier Images or a type the map made Fearless cannot
+        // contribute ART keys to Auto. This also applies to the map prefix.
+        let (_, reads) = crate::rules::ares_switch::record(|| {
+            if let Some(infantry) = processor.families.get_mut(&RulesTypeFamily::Infantry) {
+                for kind in infantry {
+                    if !kind.body.read_bool("Fearless", false) {
+                        let image = kind
+                            .body
+                            .read_name("Image", 2048)
+                            .unwrap_or(&kind.native_stored_id);
+                        kind.weapon_slots
+                            .offsets
+                            .read_kratos_infantry_flh(fixed_art.section_or_empty(image));
+                    }
+                }
+            }
+        });
+        processor.ares_reads.absorb(reads);
         let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
             &processor.ares_reads,
             self.ships_ares,
@@ -597,16 +616,13 @@ impl RulesLayerStack {
             self.kratos_setting,
         );
         let (ini, native_type_construction_trace) = processor.finish();
-        Ok((
-            ProcessedRulesLayers {
-                ini,
-                content_hash: self.content_hash(),
-                native_type_construction_trace,
-                ares_inputs,
-                kratos_inputs,
-            },
-            after_map_result,
-        ))
+        ProcessedRulesLayers {
+            ini,
+            content_hash,
+            native_type_construction_trace,
+            ares_inputs,
+            kratos_inputs,
+        }
     }
 }
 

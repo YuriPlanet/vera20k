@@ -9,14 +9,12 @@ lang: zh-CN
 [English](../kratos.md) · **简体中文**
 
 VERA20K 正在用 Rust 原生移植 [Kratos PP](https://github.com/ChrisLv-CN/KratosPP) ——
-《尤里的复仇》的 C++ 扩展。和 Ares 一样，它存在于每个构建（包括发布构建）中，由游戏自身的数据
-决定是否启用；没有编译特性，也没有启动设置。
+《尤里的复仇》的 C++ 扩展。和 Ares 一样，每个构建（包括发布构建）都内置此扩展。默认的 Auto 设置会根据游戏数据决定是否启用。
 
 ## Kratos 开关
 
 当一局游戏的规则、美术（ART）、模式或地图里含有只有 Kratos 读取器才会读的键时，Kratos 在这局
-游戏中生效（`src/rules/kratos_switch.rs`）。ART 是在规则处理阶段读取的，因此这些键随处理后的
-规则一起保存；开关在投影规则时一次性判定并存入规则集，所以存档、回放和联机中的每一方都能从
+游戏中生效（`src/rules/kratos_switch.rs`）。卧倒射击点取自规则、模式和地图覆盖后的最终步兵 Image，其 ART 键随处理后的规则一起保存；开关在投影规则时一次性判定并存入规则集，所以存档、回放和联机中的每一方都能从
 同一份文件得到同一答案。判定用的键会写入日志，例如
 `Kratos plays in this game: [GI] PrimaryCrawlingFLH is a Kratos key`，模组作者据此能看出原因。
 
@@ -42,27 +40,27 @@ Options 的扩展页提供一个启动级设置：VERA.INI 的 `[VERA] Kratos=Au
 
 ## 卧倒射击点
 
-`InfantryClass::Crawling`（`+0x6DB`）决定步兵射击时枪口从哪里出。Kratos
-（`src/Ext/TechnoType/CrawlingFLH.cpp`）在单位 Image 对应的 ART 段里保留四个键：
+Kratos PP v0.2.4 会调整最终规则为 `Fearless=no` 的步兵的枪口坐标。下面三个键应写在步兵最终
+`Image=` 对应的 ART 段中。任意一个都能让 Auto 启用 Kratos。
 
 ```ini
 [GI]
 PrimaryCrawlingFLH=20,0,20
-ElitePrimaryCrawlingFLH=20,0,20
+ElitePrimaryCrawlingFLH=30,0,20
 SecondaryCrawlingFLH=0,0,20
-EliteSecondaryCrawlingFLH=0,0,20
 ```
 
-- 卧倒时，武器槽 0 / 1 使用对应的卧倒坐标，而不是 `PrimaryFireFLH` / `SecondaryFireFLH`
-  （精英等级用 `Elite*` 那对）。站立时仍用原版坐标。
-- 每个卧倒坐标默认等于该槽的射击坐标、且 `Z=20`（`CrawlingFLHData::Read`），所以一个键都不写的
-  类型，卧倒时枪口也会降低。
-- `Fearless` 步兵被跳过：`CrawlingFLH::Setup` 会为它们禁用自己。
-- 只改动原版的两个武器槽位；Kratos 只改写 `GetWeapon(0)` 与 `GetWeapon(1)`。
+三个数依次表示前后、左右和高度偏移，单位是 lepton。站立时读取主武器或副武器对应的站姿坐标。
+卧倒坐标省略时，沿用站姿的前后和左右偏移，高度取 20。达到精英等级后，即便仍在使用普通武器，
+也会采用精英坐标。
 
-VERA 在 `rules::weapon_offsets` 读取这些键，在 `sim::combat::combat_weapon`
-（`get_weapon_record`）应用它们，因此弹丸起点、枪口动画和开火音效使用同一个坐标。Kratos 不生效的
-对局保持 gamemd 的坐标。
+精英副武器是个特例。v0.2.4 在两种姿态下都读取 `EliteSecondaryFireFLH`，显式填写的高度在卧倒时
+仍然生效。省略该键时，卧倒采用 `SecondaryFireFLH` 的前后和左右偏移，高度取 20。
+`EliteSecondaryCrawlingFLH` 在此版本中无效。这些设置只作用于武器槽 0 和 1。
+[上游 ART 读取代码](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/CrawlingFLHData.h#L19-L39)
+
+VERA 按射手自身的姿态计算枪口位置，弹丸起点、枪口动画和开火音效都使用这一坐标。
+同类型步兵可以独立站立或卧倒。[上游姿态和等级判定](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/CrawlingFLH.cpp#L17-L90)
 
 ## 原作者与项目
 
@@ -80,7 +78,7 @@ VERA20K 的 GPLv3 组合作品保留该许可证。
 
 本页所述功能对应的原作者：
 
-- 卧倒射击点（`PrimaryCrawlingFLH` 等四个键）— **双杀步枪（ChrisLv_CN）**，
+- 卧倒射击点（`CrawlingFLH`）— **双杀步枪（ChrisLv_CN）**，
   `src/Ext/TechnoType/CrawlingFLH.cpp` 与 `CrawlingFLHData.h`。
 
 ## VERA20K 移植署名

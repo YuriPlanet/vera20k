@@ -2,12 +2,12 @@
 
 VERA20K is starting a Rust-native port of [Kratos PP](https://github.com/ChrisLv-CN/KratosPP),
 the C++ extension for Yuri's Revenge. Like Ares it is in every build, the release build too,
-and a game's own data switches it on; there is no build feature and no launch setting.
+and the default Auto setting enables it when a game's data calls for it.
 
 ## The Kratos switch
 
 Kratos plays in a game whose rules, art, mode or map hold a key that only a Kratos reader reads
-(`src/rules/kratos_switch.rs`). ART is read while the processing passes run, so those keys
+(`src/rules/kratos_switch.rs`). The prone firing reader uses the final infantry Image after rules, mode and map overrides. Its ART reads
 travel with the processed rules; the answer is decided once, when the Rules are projected, and
 stored with them, so a save, a replay and every player in an online match reach it again from
 the same files. The log names the deciding key, e.g.
@@ -38,28 +38,31 @@ a game loads carry it, so a save, a replay and every peer reach the same answer.
 
 ## Prone firing offset
 
-`InfantryClass::Crawling` (`+0x6DB`) changes where a man's shot starts. Kratos
-(`src/Ext/TechnoType/CrawlingFLH.cpp`) keeps four ART keys on the type's Image:
+Kratos PP v0.2.4 changes the muzzle of infantry whose final rules leave `Fearless=no`.
+Use these three keys in the ART section named by the infantry type's final `Image=`.
+Each can enable Auto.
 
 ```ini
 [GI]
 PrimaryCrawlingFLH=20,0,20
-ElitePrimaryCrawlingFLH=20,0,20
+ElitePrimaryCrawlingFLH=30,0,20
 SecondaryCrawlingFLH=0,0,20
-EliteSecondaryCrawlingFLH=0,0,20
 ```
 
-- A crawling man fires weapon slot 0 or 1 from the matching crawling coordinate instead of
-  `PrimaryFireFLH`/`SecondaryFireFLH` (the elite pair at elite rank). Standing, he keeps the
-  stock coordinate.
-- Each crawling coordinate defaults to that slot's fire coordinate with `Z` 20
-  (`CrawlingFLHData::Read`), so a type that sets none still moves the prone muzzle down.
-- `Fearless` infantry are skipped: `CrawlingFLH::Setup` disables itself for them.
-- Only the original two slots move; Kratos patches `GetWeapon(0)` and `GetWeapon(1)`.
+The three numbers are forward, lateral and vertical offsets in leptons. While standing,
+the infantry uses its named primary or secondary fire coordinate. While prone, an
+omitted coordinate defaults to the matching standing offset with height 20. Elite rank
+selects the elite offsets even when the unit still uses its ordinary gun.
 
-VERA reads the keys in `rules::weapon_offsets` and applies them in `sim::combat::combat_weapon`
-(`get_weapon_record`), so the projectile's start, its muzzle animation and its report sound all
-use the same coordinate. A game Kratos does not play keeps gamemd's coordinate.
+For the elite secondary weapon, v0.2.4 reads `EliteSecondaryFireFLH` for both stances.
+Giving that key an explicit height also sets the prone height. If omitted, the prone
+offset uses `SecondaryFireFLH` with height 20. The similarly named
+`EliteSecondaryCrawlingFLH` has no effect in this release. Only weapon slots 0 and 1
+use these rules. [Upstream ART reader](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/CrawlingFLHData.h#L19-L39)
+
+VERA resolves the offset for each shooter when calculating its projectile, muzzle
+animation and positioned report sound. Infantry sharing a type can stand and crawl
+independently. [Upstream stance and rank selection](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/CrawlingFLH.cpp#L17-L90)
 
 ## Original project and authors
 
@@ -78,7 +81,7 @@ VERA20K's GPLv3 combined work keeps.
 
 The features ported here originate with:
 
-- Prone firing offset (`PrimaryCrawlingFLH` and the other three keys) -
+- Infantry firing offsets (`CrawlingFLH`) -
   **双杀步枪 (ChrisLv_CN)**, `src/Ext/TechnoType/CrawlingFLH.cpp` and `CrawlingFLHData.h`.
 
 ## VERA20K porting credits

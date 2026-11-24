@@ -31,17 +31,12 @@ pub(crate) struct WeaponOffsets {
     // way fills them.
     extra_base: Vec<WeaponSlotGeometry>,
     extra_elite: Vec<WeaponSlotGeometry>,
-    /// Kratos `PrimaryCrawlingFLH`/`SecondaryCrawlingFLH` (`CrawlingFLHData` in
-    /// Kratos PP, by **双杀步枪 (ChrisLv_CN)**, `src/Ext/TechnoType/CrawlingFLHData.h`):
-    /// the coordinate a crawling infantry fires each of the original two slots
-    /// from. A rules set saved before the keys were read carries zeros, and no
-    /// game applies them unless its own ART sets one
-    /// ([`crate::rules::kratos_switch`]).
+    /// Kratos PP's CrawlingFLH component stores primary and secondary ART
+    /// coordinates for the prone stance, then for the standing stance.
     #[serde(default)]
-    crawling: [[i32; 3]; 2],
-    /// The elite `ElitePrimaryCrawlingFLH`/`EliteSecondaryCrawlingFLH` pair.
+    crawling: [[i32; 3]; 4],
     #[serde(default)]
-    elite_crawling: [[i32; 3]; 2],
+    elite_crawling: [[i32; 3]; 4],
 }
 
 impl WeaponOffsets {
@@ -110,25 +105,6 @@ impl WeaponOffsets {
                 record.barrel_length = art.read_int(length, base.barrel_length);
                 record.barrel_thickness = art.read_int(thickness, base.barrel_thickness);
             }
-        }
-        // Kratos `CrawlingFLHData::Read`: each crawling coordinate defaults to
-        // that slot's fire coordinate with Z 20, and the type's own key wins.
-        // The reads decide the per-game Kratos switch for a game whose ART
-        // sets one (`kratos_switch`), which is why they are marked as a
-        // Kratos reader's.
-        for (slot, key, elite_key) in [
-            (0, "PrimaryCrawlingFLH", "ElitePrimaryCrawlingFLH"),
-            (1, "SecondaryCrawlingFLH", "EliteSecondaryCrawlingFLH"),
-        ] {
-            let mut base_default = self.base[slot].flh;
-            base_default[2] = 20;
-            let mut elite_default = self.elite[slot].flh;
-            elite_default[2] = 20;
-            self.crawling[slot] =
-                crate::rules::kratos_switch::kratos_read(|| art.read_coord3(key, base_default));
-            self.elite_crawling[slot] = crate::rules::kratos_switch::kratos_read(|| {
-                art.read_coord3(elite_key, elite_default)
-            });
         }
         //715F9E..716005 always reads all five ports after either arm, with
         // the current base Weapon[0] coordinate as each default.
@@ -206,17 +182,46 @@ impl WeaponOffsets {
             .into()
     }
 
-    /// Kratos `PrimaryCrawlingFLH`/`SecondaryCrawlingFLH` (the elite variants
-    /// for an elite record): the coordinate a prone infantry fires one of the
-    /// original two slots from (`CrawlingFLHData`, read in [`Self::read_pass`]).
-    /// A slot Kratos does not patch has no crawling coordinate.
-    pub(crate) fn crawling_weapon(&self, slot: usize, elite: bool) -> Option<Flh> {
-        let coordinates = if elite {
-            &self.elite_crawling
-        } else {
-            &self.crawling
-        };
-        coordinates.get(slot).copied().map(Flh::from)
+    /// Kratos PP v0.2.4, Ext/TechnoType/CrawlingFLHData.h::Read. This
+    /// component always reads the *named* ART fields, including on a type
+    /// whose stock weapon records use Weapon1FLH/Weapon2FLH.
+    pub(crate) fn read_kratos_infantry_flh(&mut self, art: &IniSection) {
+        for (slot, fire, elite_fire, prone) in [
+            (
+                0,
+                "PrimaryFireFLH",
+                "ElitePrimaryFireFLH",
+                "PrimaryCrawlingFLH",
+            ),
+            (
+                1,
+                "SecondaryFireFLH",
+                "EliteSecondaryFireFLH",
+                "SecondaryCrawlingFLH",
+            ),
+        ] {
+            let standing = art.read_kratos_coord3(fire, [0; 3]);
+            let elite_standing = art.read_kratos_coord3(elite_fire, standing);
+            self.crawling[2 + slot] = standing;
+            self.elite_crawling[2 + slot] = elite_standing;
+            self.crawling[slot] = crate::rules::kratos_switch::kratos_read(|| {
+                art.read_kratos_coord3(prone, [standing[0], standing[1], 20])
+            });
+            let elite_default = [elite_standing[0], elite_standing[1], 20];
+            self.elite_crawling[slot] = if slot == 0 {
+                crate::rules::kratos_switch::kratos_read(|| {
+                    art.read_kratos_coord3("ElitePrimaryCrawlingFLH", elite_default)
+                })
+            } else {
+                // v0.2.4 reads EliteSecondaryFireFLH a second time here.
+                // Its explicit height survives; this stock key does not enable Auto.
+                art.read_kratos_coord3(elite_fire, elite_default)
+            };
+        }
+    }
+
+    pub(crate) fn kratos_weapon_offsets(&self) -> [&[[i32; 3]; 4]; 2] {
+        [&self.crawling, &self.elite_crawling]
     }
 
     /// Ares Prism SupportWeapon reader `100103F0`: `slot` takes AlternateFLH0
