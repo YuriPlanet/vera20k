@@ -44,6 +44,25 @@ use super::AssistBrain;
 use super::census::Census;
 use super::plan::{self, Budget, Item};
 
+/// Directional emplacements should face the enemy we have actually seen,
+/// not the emptiest rear sector picked for factories and power plants. Last
+/// sightings come only from Perception, never from hidden live enemies.
+fn observed_defense_front(
+    brain: &AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+    type_id: InternedId, anchor: Option<(u16, u16)>,
+) -> Option<((u16, u16), (u16, u16))> {
+    let ty = obs.object_type(rules, type_id)?;
+    if !ty.is_base_defense || ty.wall { return None; }
+    let guns = armament(rules, ty);
+    if !guns.anti_air && !guns.anti_ground { return None; }
+    let home = anchor.or(brain.census.base_cell)?;
+    let threat = brain.perception.enemies().into_iter()
+        .filter(|enemy| enemy.cell != home)
+        .min_by_key(|enemy| (super::squared_distance(home, enemy.cell),
+            enemy.entity_id))?;
+    Some((home, threat.cell))
+}
+
 /// Retry after two seconds of movement/search time. A finished structure
 /// remains paid for: congestion is not a reason to AbandonProduction.
 const SITE_RETRY_FRAMES: u64 = 30;
@@ -211,8 +230,26 @@ fn place_finished(
         ));
         let allowed = |cell| space.as_ref().is_none_or(|space| space.ground_at(cell).buildable());
         let mut placement = Placement::new(obs, rules).reserving(reserved.clone());
-        if let Some(&anchor) = brain.outpost_builds.get(&type_id) {
+        let outpost = brain.outpost_builds.get(&type_id).copied();
+        if let Some(anchor) = outpost {
             placement = placement.preferring(anchor);
+        }
+        if let Some((home, threat)) = observed_defense_front(
+            brain, rules, obs, type_id, outpost,
+        ) {
+            placement = placement.defending_front(home, threat);
+        }
+        // An Enslaves= refinery must be close enough to a legally observed
+        // seam for its spawned workers to collect. General structures keep
+        // the ordinary safe layout; this is not a hardcoded Yuri type name.
+        if obs.object_type(rules, type_id).is_some_and(|ty|
+            ty.resource_destination && ty.enslaves.is_some())
+            && let Some(survey) = brain.ore_scan.as_ref()
+        {
+            placement = placement.serving_known_ore(
+                survey.patches.iter().map(|p| (p.cell, p.stock)),
+                rules.general.slave_miner_slave_scan / 256,
+            );
         }
 
         match job.phase {
@@ -613,6 +650,23 @@ fn build_next(
             .reserving(wall_ring(rules, obs));
         if let Some(anchor) = focused {
             placement = placement.preferring(anchor);
+        }
+        if let Some((home, threat)) = observed_defense_front(
+            brain, rules, obs, type_id, focused,
+        ) {
+            placement = placement.defending_front(home, threat);
+        }
+        // An Enslaves= refinery must be close enough to a legally observed
+        // seam for its spawned workers to collect. General structures keep
+        // the ordinary safe layout; this is not a hardcoded Yuri type name.
+        if obs.object_type(rules, type_id).is_some_and(|ty|
+            ty.resource_destination && ty.enslaves.is_some())
+            && let Some(survey) = brain.ore_scan.as_ref()
+        {
+            placement = placement.serving_known_ore(
+                survey.patches.iter().map(|p| (p.cell, p.stock)),
+                rules.general.slave_miner_slave_scan / 256,
+            );
         }
         let site = placement.cell_for_where(type_id, 0, |cell| space.ground_at(cell).buildable());
         if site.is_none() {

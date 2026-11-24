@@ -33,11 +33,14 @@ use crate::sim::control::observation::Observation;
 use super::advance::cell_distance;
 use super::census::Census;
 
-/// How far from the base the ore search looks, in cells.
-///
-/// A field past this is a field the house would need a second base to work, and
-/// that is `expand`'s question rather than this one.
-pub(super) const SCAN_CELLS: i32 = 40;
+/// Service radius for the *existing* refinery. Retail long scans cover up to
+/// 48 cells; the controller may order a longer haul to an already explored,
+/// safely reachable rich seam while an expansion refinery is being built.
+/// A ceiling prevents a remote deposit from buying unbounded trucks.
+pub(super) const SCAN_CELLS: i32 = 128;
+/// The maximum distance of a remote assignment from a mobile harvester.
+/// The local route still has to pass the native movement-zone reachability test.
+pub(super) const REMOTE_WORK_CELLS: i32 = 240;
 
 /// Every second cell. An ore field is a blob, and reading each of its tiles adds
 /// cost without changing the answer.
@@ -101,6 +104,9 @@ pub(super) struct Survey {
     pub(super) at: u64,
     pub(super) anchors: Vec<(u16, u16)>,
     pub(super) fields: Vec<(u16, u16)>,
+    /// Coarse ore clusters, including legitimately explored remote fields.
+    /// Built once per survey, not during each unit's decision frame.
+    pub(super) patches: Vec<Patch>,
     pub(super) stock: u32,
     pub(super) mean_distance: u32,
     pub(super) targets: Targets,
@@ -129,6 +135,7 @@ impl Survey {
                 Some((anchor, entry))
             })
             .collect();
+        let patches = ore_patches(known_ore);
         let mut fields = Vec::new();
         let mut stock: u32 = 0;
         let mut haul: u64 = 0;
@@ -154,10 +161,61 @@ impl Survey {
         }
         let mean_distance = if stock == 0 { 0 } else { (haul / u64::from(stock)) as u32 };
         let targets = targets(stock, mean_distance, census.refineries);
-        Self { at: obs.tick(), anchors, fields, stock, mean_distance, targets }
+        Self { at: obs.tick(), anchors, fields, patches, stock, mean_distance, targets }
     }
 }
 
+
+
+/// An 8x8-cell resource patch. `stock` is a sum of *last-seen* overlay
+/// stages, never a query into currently shrouded cells. Grouping avoids
+/// favouring a single depleted tile beside the base over a remote rich seam.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Patch {
+    pub(super) cell: (u16, u16),
+    pub(super) stock: u32,
+}
+
+/// Derive patches from the honest ore memory in one O(n log n) pass. A patch's
+/// representative is an actual seen ore cell, so native Harvest receives a
+/// valid ore destination (not an arbitrary bucket centre).
+pub(super) fn ore_patches(known: &BTreeMap<(u16, u16), u8>) -> Vec<Patch> {
+    let mut buckets: BTreeMap<(u16, u16), Patch> = BTreeMap::new();
+    for (&cell, &stage) in known {
+        let bucket = (cell.0 / 8, cell.1 / 8);
+        let entry = buckets.entry(bucket).or_insert(Patch { cell, stock: 0 });
+        entry.stock = entry.stock.saturating_add(u32::from(stage) + 1);
+        // Keep a stable, real ore cell close to the centre of the bucket.
+        let centre = (u32::from(bucket.0) * 8 + 4, u32::from(bucket.1) * 8 + 4);
+        let distance = |at: (u16, u16)| {
+            u32::from(at.0).abs_diff(centre.0) + u32::from(at.1).abs_diff(centre.1)
+        };
+        if distance(cell) < distance(entry.cell) {
+            entry.cell = cell;
+        }
+    }
+    buckets.into_values().collect()
+}
+
+/// Rank the economy of an expedition instead of choosing the nearest single
+/// mineral tile. Remoteness is a cost, richness a benefit; actual reachability
+/// and current observed threats are hard gates supplied by the caller.
+/// The score is a policy heuristic, never an invented native ore value.
+pub(super) fn best_patch(
+    from: (u16, u16), patches: &[Patch],
+    max_trip: i32,
+    mut available: impl FnMut((u16, u16)) -> bool,
+) -> Option<(u16, u16)> {
+    patches.iter().copied()
+        .filter(|patch| cell_distance(from, patch.cell) <= max_trip
+            && available(patch.cell))
+        .max_by_key(|patch| {
+            let distance = cell_distance(from, patch.cell);
+            (i64::from(patch.stock.min(512)) * 12 - i64::from(distance) * 2,
+                std::cmp::Reverse(distance), std::cmp::Reverse(patch.cell))
+        })
+        .map(|patch| patch.cell)
+}
 
 /// Whether this cell carries ore.
 pub(super) fn at(rules: &RuleSet, obs: &Observation<'_>, cell: (u16, u16)) -> bool {
@@ -250,6 +308,32 @@ mod resource_target_tests {
         assert_eq!(targets(550, 4, 1).harvesters, HARVESTERS_PER_BAY);
         assert_eq!(targets(550, 4, 2).harvesters, HARVESTERS_PER_BAY * 2);
         assert_eq!(targets(550, 4, 1).refineries, MAX_RESOURCE_BAYS);
+    }
+
+    #[test]
+    fn a_remote_rich_known_seam_outscores_a_depleted_nearby_tile() {
+        let mut known = BTreeMap::new();
+        known.insert((12, 10), 0);
+        for x in 70..78 {
+            for y in 40..48 {
+                known.insert((x, y), 4);
+            }
+        }
+        let patches = ore_patches(&known);
+        assert_eq!(best_patch((10, 10), &patches, REMOTE_WORK_CELLS, |_| true),
+            Some((76, 44)));
+        assert_eq!(best_patch((10, 10), &patches, 15, |_| true), Some((12, 10)));
+        assert_eq!(best_patch((10, 10), &patches, REMOTE_WORK_CELLS,
+            |cell| cell.0 < 50), Some((12, 10)));
+    }
+
+    #[test]
+    fn patches_represent_real_known_ore_cells_only() {
+        let known = BTreeMap::from([((11, 11), 0), ((12, 12), 3), ((50, 40), 2)]);
+        let patches = ore_patches(&known);
+        assert_eq!(patches.len(), 2);
+        assert!(patches.iter().all(|patch| known.contains_key(&patch.cell)));
+        assert_eq!(patches.iter().map(|patch| patch.stock).sum::<u32>(), 7);
     }
 
     #[test]

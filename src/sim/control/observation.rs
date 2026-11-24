@@ -1310,6 +1310,9 @@ impl<'a> Observation<'a> {
             }
             Some(_) => false,
             None => self.sim.crate_authority().slots().iter().any(|slot| {
+                // CrateSlot stores signed i16 map coordinates, while the
+                // observation exposes unsigned u16 cells. Compare in one
+                // lossless type (and never reinterpret a negative slot).
                 !slot.is_empty() && i32::from(cell.0) == i32::from(slot.cell_x)
                     && i32::from(cell.1) == i32::from(slot.cell_y)
             }),
@@ -2345,6 +2348,26 @@ mod vision_tests {
 #[cfg(all(test, tests_sim_c_g))]
 mod v22_observation_regressions {
     use super::*;
+
+    #[test]
+    fn signed_crate_slot_coordinates_match_visible_unsigned_cells() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+            else { return; };
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+        let owner = sim.interner.intern("Americans");
+        // No overlay grid: the original slot table is the only authority.
+        *sim.overlay_grid_mut_for_test() = None;
+        *sim.crate_authority_mut_for_test().slot_mut_for_test(0) =
+            crate::sim::crates::CrateSlot {
+                cell_x: 20, cell_y: 10, ..Default::default()
+            };
+        sim.fog = crate::sim::vision::FogState::new(64, 64);
+        sim.fog.reveal_cells_for_owner(owner, [(20, 10)]);
+        let seen = Observation::new(&sim, owner);
+        assert!(seen.visible_crate_at(&rules, (20, 10)));
+        assert!(seen.crate_cells(&rules).contains(&(20, 10)));
+        assert!(!seen.visible_crate_at(&rules, (21, 10)));
+    }
 
     #[test]
     fn a_trigger_created_overlay_crate_is_seen_without_an_authority_slot() {

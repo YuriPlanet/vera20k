@@ -416,6 +416,10 @@ pub struct AssistBrain {
     /// target to be attempted again after a short recon/recruit window.
     pub(super) spy_attempts: BTreeMap<u64, (u64, (u16, u16), u64)>,
     pub(super) spy_target_retry: BTreeMap<u64, u64>,
+    /// Last *attempt* by effect category, not a claim of success. Repeated
+    /// money/power attempts should not crowd out an available laboratory or
+    /// production-factory infiltration when the route is equally safe.
+    pub(super) spy_kind_recent: BTreeMap<u8, u64>,
     pub(super) spy_still: BTreeMap<u64, ((u16, u16), u64)>,
     /// Agent -> (uniform specimen id, next legal attempt frame). An L3 request
     /// does not prove the native shot fired, so retries are bounded and logged.
@@ -464,6 +468,22 @@ pub struct AssistBrain {
     pub(super) unstuck: unstuck::Recovery,
     /// Short-lived evasions for economically valuable harvesters.
     pub(super) miner_avoid_until: BTreeMap<u64, u64>,
+    /// Conventional miners on an explicit journey to a *known* remote ore
+    /// seam: (destination, last observed position, last progress tick).
+    pub(super) miner_journeys: BTreeMap<u64, ((u16,u16), (u16,u16), u64)>,
+    /// Harvest mission can remain assigned with no reachable local ore.
+    /// Record a cargo-empty, stationary observation before re-dispatching.
+    pub(super) miner_idle_since: BTreeMap<u64, ((u16,u16), u64)>,
+    pub(super) miner_rejected: BTreeMap<u64, ((u16,u16), u64)>,
+    /// Mobile Enslaves= refineries: sticky deployment target and progress.
+    pub(super) slave_sites: BTreeMap<u64, ((u16,u16), (u16,u16), u64)>,
+    /// A failed deployment cell is not retried on the next brain tick.
+    pub(super) slave_rejected: BTreeMap<(u16,u16), u64>,
+    /// Native building pack attempts must not oscillate with deploys.
+    pub(super) slave_pack_after: u64,
+    /// Each MCV keeps the specific mineral-side deployment plot until it
+    /// arrives, becomes unreachable, or demonstrably stops making progress.
+    pub(super) maker_journeys: BTreeMap<u64, ((u16,u16), (u16,u16), u64)>,
     /// Cells an unarmed unit found closed, and the frame each request stands
     /// until, in `(cell, until)` order.
     ///
@@ -577,6 +597,7 @@ impl AssistBrain {
             spy_sites: BTreeMap::new(),
             spy_attempts: BTreeMap::new(),
             spy_target_retry: BTreeMap::new(),
+            spy_kind_recent: BTreeMap::new(),
             spy_still: BTreeMap::new(),
             spy_uniform_retry: BTreeMap::new(),
             repair_ifv_after: BTreeMap::new(),
@@ -593,6 +614,13 @@ impl AssistBrain {
             last_tick: 0,
             unstuck: unstuck::Recovery::default(),
             miner_avoid_until: BTreeMap::new(),
+            miner_journeys: BTreeMap::new(),
+            miner_idle_since: BTreeMap::new(),
+            miner_rejected: BTreeMap::new(),
+            slave_sites: BTreeMap::new(),
+            slave_rejected: BTreeMap::new(),
+            slave_pack_after: 0,
+            maker_journeys: BTreeMap::new(),
             breaches: Vec::new(),
             blocked_goals: BTreeMap::new(),
             push_progress: (0, usize::MAX),
@@ -670,9 +698,13 @@ impl AssistBrain {
                 !obs.is_cell_visible(cell.0, cell.1) || seen.contains_key(cell)
             });
             self.ore_known.extend(seen);
+            // A deployed Enslaves= resource building is an economic anchor,
+            // not a walker. Its movement zone cannot stand in for the real
+            // mobile miner's when testing a known seam's connectivity.
             let zone = self.census.units.iter()
-                .find(|unit| unit.traits.harvester)
-                .and_then(|unit| obs.object_type(rules, unit.type_id))
+                .filter(|unit| unit.traits.harvester)
+                .filter_map(|unit| obs.object_type(rules, unit.type_id))
+                .find(|ty| ty.category == crate::rules::object_type::ObjectCategory::Vehicle)
                 .or_else(|| build::harvester(rules, obs).map(|(ty, _)| ty))
                 .map_or(crate::rules::locomotor_type::MovementZone::Crusher, |ty| ty.movement_zone);
             self.ore_scan = Some(ore::Survey::read(
@@ -682,9 +714,9 @@ impl AssistBrain {
         self.census.ore_targets = self.ore_scan.as_ref().map(|scan| scan.targets);
         if trace_enabled("AUTOPLAY_TRACE_ORE") && obs.tick() % 600 == 0 {
             if let Some(scan) = self.ore_scan.as_ref() {
-                log::info!("ore survey: cells={} stages={} haul={} target={:?} current={}/{}",
-                    scan.fields.len(), scan.stock, scan.mean_distance, scan.targets,
-                    self.census.harvesters, self.census.refineries);
+                log::info!("ore survey: served={} patches={} stages={} haul={} target={:?} current={}/{}",
+                    scan.fields.len(), scan.patches.len(), scan.stock, scan.mean_distance,
+                    scan.targets, self.census.harvesters, self.census.refineries);
             }
         }
     }
@@ -1055,6 +1087,7 @@ impl Brain for AssistBrain {
             if !advance::advance(self, rules, obs, out) {
                 orders::forces(self, rules, obs, out);
             }
+            orders::slave_miners(self, rules, obs, out);
             orders::harvesters(self, rules, obs, out);
         }
         if obs.production_enabled() {

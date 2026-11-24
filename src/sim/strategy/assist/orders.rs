@@ -58,6 +58,7 @@ use crate::sim::control::{Goal, MicroKind, MicroParams};
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::strategy::assist::AssistBrain;
 
+use super::advance::cell_distance;
 use super::squared_distance;
 use super::tracked::TrackedKind;
 
@@ -158,6 +159,8 @@ pub(super) fn captures(
         log::debug!("auto play: spy {agent} disappeared at target {building}; outcome unconfirmed, retry permitted later");
     }
     brain.spy_target_retry.retain(|_,until| *until > tick);
+    brain.spy_kind_recent.retain(|_, when|
+        tick.saturating_sub(*when) < 2_400);
     brain.spy_still.retain(|agent,_| alive.contains(agent));
     brain.spy_uniform_retry.retain(|agent,_| alive.contains(agent));
     brain.captured_assets.retain(|id,_| obs.own_entities().any(|e| e.entity_id == *id));
@@ -275,6 +278,10 @@ pub(super) fn captures(
         .collect();
     let spy_targets: Vec<(EnemyEntity, u8)> = disguise_sites.iter().copied()
         .filter(|(target, _)| !spy_route_blocked(obs, rules, target.cell, &watchers))
+        // An engineer already claiming this prize should take ownership,
+        // rather than have a spy enter it at the same moment.
+        .filter(|(target, _)| !engineer_claimed(
+            rules, obs, &brain.census, &brain.tracked, *target))
         // A second spy should choose another live target briefly after the
         // first disappears, but never mark money/power as one-time effects.
         .filter(|(target, _)| !brain.spy_target_retry.contains_key(&target.entity_id))
@@ -359,7 +366,8 @@ pub(super) fn captures(
                     rules, unit.entity_id, site.entity_id))
                 .filter(|(site, _)| !obs.disguised_to_visible_enemy(
                     unit.entity_id, site.entity_id))
-                .max_by_key(|(site, value)| (*value,
+                .max_by_key(|(site, value)| (spy_target_score(
+                    brain, rules, obs, site, *value, tick),
                     -squared_distance(unit.cell, site.cell)));
             // A spy can change uniform *before* the dog discovers a refinery.
             // Requiring a currently visible Spyable building to fire the
@@ -437,17 +445,9 @@ pub(super) fn captures(
                         || !spy_gun_crossfire(rules, obs, unit.entity_id,
                             unit.cell, target.cell)
                 })
-                .max_by_key(|(target, value)| {
-                    // A spy blackout supports the active siege only when
-                    // it knocks out the same enemy house's defensive grid.
-                    let blackout_opportunity = brain.siege_wait.is_some()
-                        && obs.object_type(rules, target.type_id)
-                            .is_some_and(|ty| ty.power > 0)
-                        && brain.campaign_house.is_some()
-                        && obs.visible_enemy_house(target.entity_id) == brain.campaign_house;
-                    ((*value).saturating_add(if blackout_opportunity { 9 } else { 0 }),
-                        -squared_distance(unit.cell, target.cell))
-                })
+                .max_by_key(|(target, value)| (spy_target_score(
+                    brain, rules, obs, target, *value, tick),
+                    -squared_distance(unit.cell, target.cell)))
                 .map(|(target, _)| *target)
         } else {
             // One building takes one engineer. Without this both were sent at
@@ -558,6 +558,9 @@ pub(super) fn captures(
         if ty.agent {
             brain.spy_attempts.insert(unit.entity_id,
                 (target.entity_id, target.cell, tick));
+            if let Some(target_ty) = obs.object_type(rules, target.type_id) {
+                brain.spy_kind_recent.insert(spy_purpose(rules, target_ty), tick);
+            }
             if let Some(code) = obs.object_type(rules, target.type_id)
                 .and_then(|target_ty| spy_class_code(rules, target_ty))
             {
@@ -1215,6 +1218,97 @@ fn infiltration_value(rules: &RuleSet, ty: &ObjectType, free: i32) -> u8 {
         Some(crate::rules::object_type::FactoryType::InfantryType
             | crate::rules::object_type::FactoryType::UnitType)) { 8 }
     else { 1 }
+}
+
+/// Semantic infiltration *effect*, not a structure name. Permanent academy /
+/// laboratory unlocks use their actual house-effect class; repeatable effects
+/// have distinct tags to let several spies diversify their assignments.
+fn spy_purpose(rules: &RuleSet, ty: &ObjectType) -> u8 {
+    if let Some(class) = spy_class_code(rules, ty) { return class; }
+    if ty.radar { 20 }
+    else if ty.power > 0 { 21 }
+    else if ty.super_weapon.is_some() || ty.super_weapon2.is_some() { 22 }
+    else if cash_spy_target(rules, ty) { 23 }
+    else { 24 }
+}
+
+/// Give a real, defenseless breach a purpose: steal useful tech/production
+/// experience while engineers take buildings. On a dangerous, powered defense
+/// line blackout remains the decisive supporting action. An *attempt* only
+/// adds a short diversity cost, never marks a benefit as acquired.
+fn spy_context_value(
+    base: u8, purpose: u8, recent: Option<u64>, tick: u64,
+    open_breach: bool, needed_blackout: bool,
+) -> i32 {
+    let mut score = i32::from(base);
+    if open_breach && (1..=5).contains(&purpose) {
+        score += 4;
+    }
+    if needed_blackout && purpose == 21 {
+        score += 9;
+    }
+    if recent.is_some_and(|when| tick.saturating_sub(when) < 1_800)
+        && !needed_blackout
+    {
+        score -= 5;
+    }
+    score
+}
+
+fn spy_open_breach(
+    brain: &AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+    at: (u16, u16),
+) -> bool {
+    // This is not a claim that fog-hidden defenders have vanished: the cell
+    // must be visible and an actual nearby escort must hold the approach.
+    obs.is_cell_visible(at.0, at.1)
+        && brain.census.units.iter().filter(|unit| {
+            unit.traits.combat && unit.controllable()
+                && squared_distance(unit.cell, at) <= 14 * 14
+        }).count() >= 3
+        && !obs.visible_enemy_entities().any(|enemy| {
+            squared_distance(enemy.cell, at) <= 12 * 12
+                && obs.entity_type(rules, enemy.entity_id).is_some_and(|ty| {
+                    if ty.category == ObjectCategory::Building {
+                        ty.is_base_defense && obs.visible_enemy_building_operational(
+                            rules, enemy.entity_id)
+                    } else {
+                        (0..ty.weapon_record_count()).any(|slot| {
+                            ty.weapon_at(slot).and_then(|name| rules.weapon(name))
+                                .is_some_and(|weapon| !weapon.never_use
+                                    && weapon.damage > 0)
+                        })
+                    }
+                })
+        })
+}
+
+fn spy_target_score(
+    brain: &AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+    target: &EnemyEntity, base: u8, tick: u64,
+) -> i32 {
+    let Some(ty) = obs.object_type(rules, target.type_id) else {
+        return i32::from(base);
+    };
+    let purpose = spy_purpose(rules, ty);
+    // The power plant is valuable during an actual battery siege, not just
+    // because there was a stalled push long ago. A vanished or unpowered
+    // defensive grid is no reason to repeat a blackout instead of stealing
+    // factory experience or a lab unlock.
+    let needed_blackout = purpose == 21 && brain.siege_wait.is_some()
+        && obs.visible_enemy_house(target.entity_id) == brain.campaign_house
+        && brain.campaign_house.is_some()
+        && obs.visible_enemy_entities().any(|enemy| {
+            obs.visible_enemy_same_owner(enemy.entity_id, target.entity_id)
+                && obs.entity_type(rules, enemy.entity_id)
+                    .is_some_and(|ty| ty.is_base_defense)
+                && obs.visible_enemy_building_operational(rules, enemy.entity_id)
+        });
+    let open_breach = (1..=5).contains(&purpose)
+        && spy_open_breach(brain, rules, obs, target.cell);
+    spy_context_value(base, purpose,
+        brain.spy_kind_recent.get(&purpose).copied(), tick,
+        open_breach, needed_blackout)
 }
 
 /// The cells of the house's own buildings: the yard, the plants, the factories,
@@ -1884,6 +1978,190 @@ pub(super) fn harvester_safety(
     }
 }
 
+/// An Enslaves= mobile producer is a refinery that must be placed *beside*
+/// ore, not a normal harvester. This is the rule-driven version of the Yuri
+/// Slave Miner: the deployed type has ResourceDestination= and spawns the
+/// actual worker infantry. The original UnitClass::Mission_Harvest (0x73E5E9)
+/// only services its slave manager; it does not walk the chassis to ore.
+fn mobile_slave_refinery<'r>(rules: &'r RuleSet, ty: &ObjectType) -> Option<&'r ObjectType> {
+    if ty.category != ObjectCategory::Vehicle || !ty.resource_gatherer
+        || ty.enslaves.is_none() { return None; }
+    let building = rules.object(ty.deploys_into.as_deref()?)?;
+    (building.resource_destination && building.enslaves.is_some()).then_some(building)
+}
+
+/// A depleted deployed slave refinery may move; do not pack a productive one
+/// to chase a slightly richer patch. `distance` is to another known seam.
+fn slave_relocation_worthwhile(local: u32, remote: u32, distance: i32, scan: i32) -> bool {
+    local < 6 && remote >= 20 && remote > local.saturating_mul(3)
+        && distance > scan
+}
+
+/// Find a truly deployable and reachable post near an *observed* ore cluster.
+/// The slave scan is read from the active rules, allowing mods to change the
+/// radius. A rich ore patch's centre may itself be covered by ore and unable
+/// to accept the mine's building footprint; search its fringe instead.
+fn slave_work_site(
+    brain: &AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+    miner: u64, from: (u16,u16), ty: &ObjectType,
+) -> Option<(u16,u16)> {
+    let building = mobile_slave_refinery(rules, ty)?;
+    let scan = (rules.general.slave_miner_slave_scan / 256).clamp(4, 20);
+    let space = super::terrain::Space::read(
+        obs, rules, &brain.census.home_cells, brain.census.base_cell);
+    let patches = brain.ore_scan.as_ref()?.patches.as_slice();
+    // Prefer substantial, reachable deposits, but do not send a miner across
+    // the map for an exhausted two-tile vein. A candidate's eventual footprint
+    // and the whole route are checked against native movement/admission.
+    let mut prospects: Vec<_> = patches.iter().copied()
+        .filter(|p| p.stock >= 6
+            && super::advance::cell_distance(from, p.cell) <= super::ore::REMOTE_WORK_CELLS
+            && space.ground_at(p.cell).buildable())
+        .collect();
+    prospects.sort_by_key(|p| std::cmp::Reverse((
+        i64::from(p.stock.min(512)) * 12
+            - i64::from(super::advance::cell_distance(from, p.cell)) * 2,
+        p.stock,
+    )));
+    for patch in prospects.into_iter().take(20) {
+        // Do not stack several worker factories on a small seam that already
+        // has a working Enslaves= refinery. Large fields may support more.
+        let serviced = brain.census.units.iter().any(|unit| {
+            obs.object_type(rules, unit.type_id).is_some_and(|t|
+                t.category == ObjectCategory::Building && t.resource_destination
+                    && t.enslaves.is_some()
+                    && super::advance::cell_distance(unit.cell, patch.cell) <= scan)
+        });
+        if serviced && patch.stock < 80 { continue; }
+        // Another mobile mine already has a committed post at this seam.
+        // Do not send a second one into the same foundation and then blame
+        // native deployment when the first one unfolds there.
+        if brain.slave_sites.iter().any(|(id, (site, _, _))|
+            *id != miner && super::advance::cell_distance(*site, patch.cell) <= scan)
+        { continue; }
+        for ring in 0i32..=scan {
+            for dy in -ring..=ring {
+                for dx in -ring..=ring {
+                    if dx.abs().max(dy.abs()) != ring { continue; }
+                    let (Ok(x),Ok(y)) = (
+                        u16::try_from(i32::from(patch.cell.0) + dx),
+                        u16::try_from(i32::from(patch.cell.1) + dy),
+                    ) else { continue; };
+                    let site = (x,y);
+                    if brain.slave_rejected.contains_key(&site)
+                        || !obs.is_cell_in_playfield(x,y)
+                        || !space.ground_at(site).buildable()
+                        || !obs.is_ground_walkable(x,y)
+                        || brain.census.enemies.iter().any(|enemy|
+                            obs.is_cell_visible(enemy.cell.0,enemy.cell.1)
+                            && super::squared_distance(enemy.cell,site) <= 12*12)
+                        || !obs.deploy_admits_at(rules, miner, building, site)
+                        || !obs.can_reach(ty.movement_zone, from, site)
+                    { continue; }
+                    return Some(site);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Two-stage economic mission: Move to a legal slave-refinery plot, then
+/// Deploy. Distinguish it from both MCV expansion and normal ore Harvest.
+/// Keep the destination sticky while driving; abort a genuinely stalled or
+/// newly blocked plot instead of selecting a different one every frame.
+pub(super) fn slave_miners(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+) {
+    if !obs.production_enabled() || !obs.forces_enabled() { return; }
+    let now = obs.tick();
+    brain.slave_rejected.retain(|_,until| *until > now);
+    let mobiles: Vec<_> = brain.census.units.iter()
+        .filter(|unit| unit.orderable && unit.controllable() && !unit.in_service())
+        .filter(|unit| obs.object_type(rules, unit.type_id)
+            .is_some_and(|ty| mobile_slave_refinery(rules, ty).is_some()))
+        .map(|unit| (unit.entity_id, unit.cell, unit.type_id))
+        .collect();
+    brain.slave_sites.retain(|id,_| mobiles.iter().any(|unit| unit.0 == *id));
+    for (id, cell, type_id) in mobiles.into_iter().take(3) {
+        if out.ordered_this_frame(id)
+            || brain.miner_avoid_until.get(&id).is_some_and(|until| *until > now)
+        { continue; }
+        let Some(ty) = obs.object_type(rules, type_id) else { continue; };
+        let Some(building) = mobile_slave_refinery(rules, ty) else { continue; };
+        if let Some((site, last, progress)) = brain.slave_sites.get(&id).copied() {
+            if cell == site && obs.deploy_site_admits(rules, id, building) {
+                if issue(brain, out, rules, obs, id, Goal::Deploy) {
+                    log::info!("auto play: slave refinery {id} deploys at {site:?}");
+                }
+                // Native transformation is the confirmation; it removes this
+                // vehicle from the mobile list on the following frame.
+                continue;
+            }
+            let progress = if cell != last { now } else { progress };
+            if now.saturating_sub(progress) >= 300
+                || !obs.can_reach(ty.movement_zone, cell, site)
+                || (cell == site && !obs.deploy_site_admits(rules, id, building)
+                    && now.saturating_sub(progress) >= 150)
+            {
+                brain.slave_sites.remove(&id);
+                brain.slave_rejected.insert(site, now.saturating_add(1200));
+                log::debug!("auto play: slave refinery {id} rejects stalled site {site:?}");
+            } else {
+                brain.slave_sites.insert(id, (site, cell, progress));
+                if obs.destination(id) == Some(site) { continue; }
+                if obs.destination(id).is_some() { continue; }
+                // Reissue only when the native mission has actually stopped.
+                issue(brain, out, rules, obs, id, Goal::Move { cell: site });
+                continue;
+            }
+        }
+        // Another task may have just moved the miner out of observed danger.
+        if obs.destination(id).is_some() { continue; }
+        if let Some(site) = slave_work_site(brain, rules, obs, id, cell, ty) {
+            let goal = if site == cell { Goal::Deploy } else { Goal::Move { cell: site } };
+            if issue(brain, out, rules, obs, id, goal) {
+                brain.slave_sites.insert(id, (site, cell, now));
+                log::info!("auto play: slave refinery {id} assigned safe mineral site {site:?}");
+            }
+        }
+    }
+    // A depleted *deployed* slave mine should be allowed to move to a new
+    // known safe patch. The native can_repack gate is final authority; never
+    // pack another type of refinery, a still productive mine, or a structure
+    // held by the player's control groups.
+    if now < brain.slave_pack_after { return; }
+    let scan = (rules.general.slave_miner_slave_scan / 256).clamp(4, 20);
+    for unit in &brain.census.units {
+        if !unit.orderable || !unit.controllable() { continue; }
+        let Some(ty) = obs.object_type(rules, unit.type_id) else { continue; };
+        if ty.category != ObjectCategory::Building || !ty.resource_destination
+            || ty.enslaves.is_none()
+            || !ty.undeploys_into.as_deref()
+                .and_then(|name| rules.object(name))
+                .is_some_and(|mobile| mobile_slave_refinery(rules, mobile).is_some())
+            || !obs.can_repack_yard(rules, unit.entity_id)
+        { continue; }
+        let local_stock = brain.ore_known.iter()
+            .filter(|(cell,_)| super::advance::cell_distance(**cell,unit.cell) <= scan)
+            .map(|(_,stage)| u32::from(*stage)+1).sum::<u32>();
+        let useful_remote = brain.ore_scan.as_ref().is_some_and(|survey|
+            survey.patches.iter().any(|p|
+                slave_relocation_worthwhile(local_stock,p.stock,
+                    super::advance::cell_distance(unit.cell,p.cell),scan)
+                && !brain.census.enemies.iter().any(|enemy|
+                    obs.is_cell_visible(enemy.cell.0,enemy.cell.1)
+                    && super::squared_distance(enemy.cell,p.cell) <= 12*12)));
+        if !useful_remote { continue; }
+        out.intent(Intent::UndeployBuilding { entity_id: unit.entity_id });
+        brain.slave_pack_after = now.saturating_add(1200);
+        log::info!("auto play: depleted slave refinery {} at {:?} relocates toward known ore",
+            unit.entity_id,unit.cell);
+        break;
+    }
+}
+
 /// Put an idle harvester back on the ore.
 ///
 /// The miner's state machine (`SearchOre → Harvest → ReturnToRefinery → Dock`)
@@ -1899,9 +2177,18 @@ pub(super) fn harvesters(
     out: &mut Outbox,
 ) {
     let tick = obs.tick();
+    brain.miner_rejected.retain(|_, (_, until)| *until > tick);
+    // Bound long-lived state even if many crate miners die or change owner.
+    if tick % 300 == 0 {
+        let miners: BTreeSet<u64> = brain.census.units.iter()
+            .filter(|unit| unit.traits.harvester && unit.controllable())
+            .map(|unit| unit.entity_id).collect();
+        brain.miner_journeys.retain(|id, _| miners.contains(id));
+        brain.miner_idle_since.retain(|id, _| miners.contains(id));
+    }
     let harvest = MissionId::from_known(MissionType::Harvest);
     let unload = MissionId::from_known(MissionType::Unload);
-    let idle: Vec<(u64, (u16, u16), crate::sim::intern::InternedId)> = brain
+    let idle: Vec<(u64, (u16, u16), crate::sim::intern::InternedId, MissionId)> = brain
         .census
         .units
         .iter()
@@ -1910,66 +2197,126 @@ pub(super) fn harvesters(
                 && !unit.hand
                 && unit.orderable
                 && !unit.in_service()
-                && unit.mission != harvest
+                // An Enslaves= chassis is a mobile *refinery*, not a
+                // conventional ore truck. It must deploy beside ore and let
+                // its spawned workers harvest. Harvest on it merely executes
+                // the native slave-manager prologue, never drives to the seam.
+                && obs.object_type(rules, unit.type_id)
+                    .is_some_and(|ty| ty.enslaves.is_none()
+                        && ty.category == ObjectCategory::Vehicle)
                 && unit.mission != unload
         })
-        .map(|unit| (unit.entity_id, unit.cell, unit.type_id))
+        .map(|unit| (unit.entity_id, unit.cell, unit.type_id, unit.mission))
         .collect();
     // The spending decision already surveyed the same ore and counted its
     // density. One snapshot for purchase and dispatch, not two stale answers.
     let anchor = brain.census.base_cell;
-    let fields: &[(u16, u16)] = brain.ore_scan.as_ref()
-        .map(|survey| survey.fields.as_slice())
+    let patches: &[super::ore::Patch] = brain.ore_scan.as_ref()
+        .map(|survey| survey.patches.as_slice())
         .unwrap_or(&[]);
     // What the trucks must not be sent into. Ore inside an enemy base is the
     // wishlist's "the harvester walks into the enemy base to mine": the field is
     // real and the trip is a donation.
     let space = super::terrain::Space::read(obs, rules, &brain.census.home_cells, anchor);
-    for (id, cell, type_id) in idle {
+    for (id, cell, type_id, mission) in idle {
         if ordered_this_frame(out, id)
             || brain.miner_avoid_until.get(&id).is_some_and(|until| *until > tick)
         {
             continue;
         }
-        let zone = obs.object_type(rules, type_id).map(|ty| ty.movement_zone);
-        // The best field is the nearest ore the house may work: close, and not
-        // under an enemy gun. Standing on ore already is its own answer, and the
-        // cell the unit holds is the one field the scan can prove it is on.
+        let Some(zone) = obs.object_type(rules, type_id).map(|ty| ty.movement_zone)
+            else { continue; };
+        if mission == harvest && !brain.miner_journeys.contains_key(&id) {
+            // Native Harvest is already doing useful work if it is walking,
+            // carrying ore or has known ore nearby. Do not disrupt it simply
+            // because a distant high-density seam was discovered. When native
+            // keeps its Harvest mission but the empty miner stands on a spent
+            // field for 300 frames, it needs a deliberate new expedition.
+            let native_scan = (rules.general.tiberium_long_scan / 256).max(1);
+            let nearby_ore = patches.iter().any(|patch|
+                super::advance::cell_distance(cell, patch.cell) <= native_scan / 2);
+            if obs.destination(id).is_some()
+                || obs.miner_cargo_bales(id).is_some_and(|bales| bales > 0)
+                || nearby_ore
+            {
+                brain.miner_idle_since.remove(&id);
+                continue;
+            }
+            let entry = brain.miner_idle_since.entry(id).or_insert((cell, tick));
+            if entry.0 != cell { *entry = (cell, tick); }
+            if tick.saturating_sub(entry.1) < 300 { continue; }
+            brain.miner_idle_since.remove(&id);
+            log::info!("auto play: harvester {id} idle on empty known field; surveying remote ore");
+        } else {
+            brain.miner_idle_since.remove(&id);
+        }
+        // Native Harvest scans only its own LongScan radius (YR: 48 cells),
+        // regardless of the cell named by MegaMission. If the rich seam is
+        // beyond the scan, a miner must physically drive near it FIRST.
+        // Maintain that trip across frames and only then start native Harvest.
+        if let Some((target, last_cell, last_progress)) = brain.miner_journeys.get(&id).copied() {
+            if cell_distance(cell, target) <= 3 {
+                brain.miner_journeys.remove(&id);
+                if issue(brain, out, rules, obs, id, Goal::Harvest { cell: target }) {
+                    brain.tracked.record(tick, id, TrackedKind::Harvest, None, None);
+                }
+                continue;
+            }
+            let progress = if cell != last_cell { tick } else { last_progress };
+            if tick.saturating_sub(progress) >= 300
+                || !obs.can_reach(zone, cell, target)
+                || !brain.ore_known.contains_key(&target)
+            {
+                brain.miner_journeys.remove(&id);
+                brain.miner_rejected.insert(id, (target, tick.saturating_add(900)));
+                log::debug!("auto play: miner {id} abandons stalled ore journey to {target:?}");
+            } else {
+                brain.miner_journeys.insert(id, (target, cell, progress));
+                if obs.destination(id) == Some(target) { continue; }
+                if obs.destination(id).is_some() { continue; }
+                // Navigation reached a temporary halt; retry at most after
+                // actual progress, without continually restarting its mission.
+                if issue(brain, out, rules, obs, id, Goal::Move { cell: target }) {
+                    brain.tracked.record(tick, id, TrackedKind::Move, None, Some(target));
+                }
+                continue;
+            }
+        }
+        // Do not commandeer a miner currently executing another legitimate
+        // movement (e.g. a tactical retreat) and treat it as a fresh ore hunt.
+        if obs.destination(id).is_some() { continue; }
         let target = if super::ore::at(rules, obs, cell) {
             Some(cell)
         } else {
-            super::ore::nearest(
-                cell,
-                &fields
-                    .iter()
-                    .copied()
-                    .filter(|field| space.ground_at(*field).buildable()
-                        && zone.is_none_or(|zone| obs.can_reach(zone, cell, *field))
-                        && !brain.census.enemies.iter().any(|enemy| {
-                            obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
-                                && squared_distance(enemy.cell, *field)
-                                    <= MINER_FIELD_SAFETY_CELLS * MINER_FIELD_SAFETY_CELLS
-                        }))
-                    .collect::<Vec<_>>(),
-            )
+            super::ore::best_patch(cell, patches, super::ore::REMOTE_WORK_CELLS, |field| {
+                space.ground_at(field).buildable()
+                    && obs.can_reach(zone, cell, field)
+                    && !brain.miner_rejected.get(&id).is_some_and(|(blocked, until)|
+                        *blocked == field && *until > tick)
+                    && !brain.census.enemies.iter().any(|enemy| {
+                        obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+                            && squared_distance(enemy.cell, field)
+                                <= MINER_FIELD_SAFETY_CELLS * MINER_FIELD_SAFETY_CELLS
+                    })
+            })
         };
-        let Some(target) = target else {
+        let Some(target) = target else { continue; };
+        // Commit the remote trip as an ordinary, real Move. A 100-cell ore
+        // field cannot be harvested by repeatedly clicking Harvest from home.
+        let native_scan = (rules.general.tiberium_long_scan / 256).max(1);
+        if cell_distance(cell, target) > native_scan / 2 {
+            if issue(brain, out, rules, obs, id, Goal::Move { cell: target }) {
+                brain.miner_journeys.insert(id, (target, cell, tick));
+                brain.tracked.record(tick, id, TrackedKind::Move, None, Some(target));
+                log::debug!("auto play: miner {id} dispatched to known ore seam {target:?}");
+            }
             continue;
-        };
-        // No cell on the record: the click names the unit, not a place, and a
-        // cell that is the unit's own position changes every frame the unit
-        // walks — which would make the intent look stale and re-send it every
-        // frame.
-        if !brain
-            .tracked
-            .admits(tick, id, TrackedKind::Harvest, None, None)
-        {
+        }
+        if !brain.tracked.admits(tick, id, TrackedKind::Harvest, None, None) {
             continue;
         }
         if issue(brain, out, rules, obs, id, Goal::Harvest { cell: target }) {
-            brain
-                .tracked
-                .record(tick, id, TrackedKind::Harvest, None, None);
+            brain.tracked.record(tick, id, TrackedKind::Harvest, None, None);
         }
     }
 }
@@ -2224,10 +2571,16 @@ const SPY_SITE_MEMORY_FRAMES: u64 = 7_200;
 /// give a unit one: measured, a fighter that walked thirty cells for a box
 /// turned a win into a timeout.
 const CRATE_SEEK_CELLS: i32 = 8;
-/// A seen distant crate is worth a scout's whole-map journey, not a tank
-/// attack group. Re-check sightings only with the house's actual vision.
-const CRATE_MEMORY_FRAMES: u64 = 2_700;
-const CRATE_CLAIM_FRAMES: u64 = 1_800;
+/// Crates are transient overlays. A sighting behind fog is a *lead*, not a
+/// guaranteed box: the random crate may expire before the runner gets there.
+/// Keep the lead briefly, but give currently visible boxes first refusal.
+const CRATE_MEMORY_FRAMES: u64 = 360;
+/// Never lend a fast scout to a vanished box for a whole regeneration cycle.
+const CRATE_CLAIM_FRAMES: u64 = 600;
+
+fn crate_sighting_fresh(now: u64, last_seen: u64) -> bool {
+    now.saturating_sub(last_seen) <= CRATE_MEMORY_FRAMES
+}
 
 /// Give an available scout a visible crate collection errand.
 ///
@@ -2249,11 +2602,8 @@ pub(super) fn crates(
     }
     // Do not peek at crate slots behind fog to determine whether a sighting
     // still exists. Confirm disappearance only where we have current vision.
-    let claimed_cells: BTreeSet<(u16, u16)> = brain.crate_claims.values()
-        .filter(|(_, until)| *until > tick).map(|(cell, _)| *cell).collect();
     brain.crate_sightings.retain(|cell, seen| {
-        (tick.saturating_sub(*seen) <= CRATE_MEMORY_FRAMES
-            || claimed_cells.contains(cell))
+        crate_sighting_fresh(tick, *seen)
             && (!obs.is_cell_visible(cell.0, cell.1)
                 || obs.visible_crate_at(rules, *cell))
     });
@@ -2348,7 +2698,14 @@ pub(super) fn crates(
                 // when idle: never interrupt a tank's attack for a box.
                 && (unit.traits.scout || !holds_or_fights(unit.mission)
                     || (obs.attack_target(unit.entity_id).is_none()
-                        && obs.destination(unit.entity_id).is_none()))
+                        && obs.destination(unit.entity_id).is_none())
+                    // A box at a soldier's feet is not a remote expedition.
+                    // Borrow a unit already walking to a *different* goal,
+                    // but never interrupt an actual exchange of fire.
+                    || (obs.attack_target(unit.entity_id).is_none()
+                        && !super::micro::firing(obs, unit.mission, unit.entity_id)
+                        && cells.iter().any(|cell|
+                            squared_distance(unit.cell, *cell) <= 2 * 2)))
                 && !brain.crate_returns.contains_key(&unit.entity_id)
         })
         .filter_map(|unit| {
@@ -2395,7 +2752,11 @@ pub(super) fn crates(
             .unwrap_or(i32::MAX);
         let adjacent = idle.iter().any(|(_, from, _, _, _)|
             squared_distance(*from, *cell) <= 3 * 3);
-        (!adjacent, closest, squared_distance(anchor, *cell), *cell)
+        // A visible box is known to exist NOW. A remembered box may already
+        // have been replaced by the next random crate wave. If a box appears
+        // under a nearby unit, that immediate opportunity still comes first.
+        (!adjacent, !visible_cells.contains(cell), closest,
+            squared_distance(anchor, *cell), *cell)
     });
     let mut sent: BTreeSet<u64> = BTreeSet::new();
     for cell in crates {
@@ -4008,6 +4369,13 @@ mod v18_execution_tests {
     }
 
     #[test]
+    fn a_box_seen_one_wave_ago_does_not_hold_a_courier_forever() {
+        assert!(crate_sighting_fresh(300, 1));
+        assert!(!crate_sighting_fresh(CRATE_MEMORY_FRAMES + 2, 1));
+        assert!(CRATE_CLAIM_FRAMES < 1_800);
+    }
+
+    #[test]
     fn forward_houses_take_all_their_seats_with_a_bounded_detail() {
         assert_eq!(garrison_budget(false, 30), GARRISON_MAX);
         assert_eq!(garrison_budget(true, 12), GARRISON_MAX + 12);
@@ -4058,6 +4426,34 @@ mod v26_spy_effect_priority_tests {
         assert_eq!(spy_class_code(&rules, power), None,
             "a temporary blackout cannot permanently exhaust a spy class");
         assert!(infiltration_value(&rules, power, 25_000) > 1);
+    }
+
+    #[test]
+    fn successful_breach_prefers_new_capabilities_over_repeatable_cash() {
+        // A laboratory and a barracks provide persistent capabilities; their
+        // value should rise after escorts have secured a real approach, even
+        // though their original rule-based target weights are unchanged.
+        let cash = spy_context_value(8, 23, None, 10_000, true, false);
+        let lab = spy_context_value(10, 3, None, 10_000, true, false);
+        let barracks = spy_context_value(8, 1, None, 10_000, true, false);
+        assert!(lab > cash);
+        assert!(barracks > cash);
+    }
+
+    #[test]
+    fn diversifies_attempts_without_marking_them_as_success() {
+        let first_cash = spy_context_value(8, 23, None, 2_000, false, false);
+        let repeated_cash = spy_context_value(8, 23, Some(1_900), 2_000, false, false);
+        let factory = spy_context_value(8, 2, None, 2_000, false, false);
+        assert!(first_cash > repeated_cash);
+        assert!(factory > repeated_cash);
+        // Emergency sabotage of an *active* battery should still win when
+        // the same target's power has been attacked recently.
+        assert!(spy_context_value(6, 21, Some(1_900), 2_000, false, true)
+            > factory);
+        // A recent *attempt* expires; only native observed house effects are
+        // allowed to make a one-time unlock permanently exhausted.
+        assert_eq!(spy_context_value(8, 23, Some(1_000), 3_000, false, false), 8);
     }
 }
 
@@ -4113,5 +4509,31 @@ mod v23_initial_army_and_crate_tests {
         assert!(!crate_runner_available(CRATE_RUNNERS, CRATE_RUNNERS));
         assert!(crate_runner_available(CRATE_RUNNERS, CRATE_RUNNERS + 2));
         assert!(!crate_runner_available(CRATE_RUNNERS + 2, CRATE_RUNNERS + 2));
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v28_slave_miner_strategy_tests {
+    use super::*;
+
+    #[test]
+    fn retail_slave_miner_is_a_mobile_refinery_not_a_normal_ore_truck() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+            else { return; };
+        let mobile = rules.object("SMIN").expect("standard slave miner");
+        let deployed = mobile_slave_refinery(&rules, mobile)
+            .expect("Enslaves= and DeploysInto= give the true refinery lifecycle");
+        assert!(deployed.resource_destination);
+        assert_eq!(deployed.id, "YAREFN");
+        let normal = rules.object("CMIN").expect("standard chrono miner");
+        assert!(mobile_slave_refinery(&rules, normal).is_none());
+    }
+
+    #[test]
+    fn a_working_slave_mine_does_not_pack_for_minor_gain() {
+        assert!(!slave_relocation_worthwhile(12, 100, 40, 14));
+        assert!(!slave_relocation_worthwhile(0, 8, 40, 14));
+        assert!(!slave_relocation_worthwhile(0, 100, 8, 14));
+        assert!(slave_relocation_worthwhile(0, 80, 60, 14));
     }
 }

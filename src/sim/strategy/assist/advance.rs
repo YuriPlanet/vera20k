@@ -76,6 +76,53 @@ fn armour_wave_missing(close: usize, waiting: u64) -> bool {
     close < ARMOUR_WAVE_MIN && waiting < ARMOUR_ASSEMBLE_FRAMES
 }
 
+/// A distant army is not a column standing beside its lead scout. Requiring
+/// actual local companions prevents a lone vehicle from probing a prism or
+/// heavy artillery emplacement while the main fist is still on the road.
+fn battery_wave_ready(nearby: usize) -> bool {
+    nearby >= ARMOUR_WAVE_MIN
+}
+
+fn isolated_battery_approach(
+    fighters: &[&Unit], rules: &RuleSet, obs: &Observation<'_>,
+    actor: u64, from: (u16,u16), to: (u16,u16),
+) -> Option<((u16,u16), i32)> {
+    use crate::rules::object_type::ObjectCategory;
+    let ty = obs.entity_type(rules, actor)?;
+    if !matches!(ty.category, ObjectCategory::Vehicle | ObjectCategory::Infantry)
+        || ty.naval { return None; }
+    obs.visible_enemy_entities().filter_map(|enemy| {
+        let gun = obs.entity_type(rules, enemy.entity_id)?;
+        if !gun.is_base_defense
+            || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
+        { return None; }
+        let reach = super::tactics::effective_reach_against(
+            rules, obs, enemy.entity_id, actor);
+        if reach < 7 { return None; }
+        // Three nearby dogs are not a three-vehicle attack wave. Only units
+        // whose *current native weapons* can actually harm this emplacement
+        // qualify as nearby support. This remains unit-name agnostic for MODs.
+        let nearby = fighters.iter().filter(|friend| {
+            friend.controllable() && friend.traits.combat && !friend.in_service()
+                && cell_distance(friend.cell, from) <= 9
+                && obs.can_hurt(rules, friend.entity_id, enemy.entity_id)
+        }).count();
+        if battery_wave_ready(nearby) { return None; }
+        let in_lane = cell_distance(enemy.cell, from) <= reach + 2
+            || cell_distance(enemy.cell, to) <= reach + 2
+            || super::orders::path_crosses(&[enemy.cell], from, to, reach + 2);
+        if !in_lane { return None; }
+        let own = super::tactics::actual_threat_reach(
+            rules, obs, actor, enemy.entity_id);
+        // Already within safe firing range? Shoot instead of staging again.
+        let safe_shot = own > reach + 1
+            && cell_distance(from, enemy.cell) <= own
+            && cell_distance(from, enemy.cell) > reach + 1
+            && !super::tactics::unsafe_post(rules, obs, actor, from);
+        (!safe_shot).then_some((enemy.cell, reach))
+    }).max_by_key(|(cell, reach)| (*reach, std::cmp::Reverse(cell_distance(from,*cell))))
+}
+
 /// How far behind the leading fighter a unit may fall before the push takes it
 /// again, in cells. A unit that has nothing to walk to keeps whatever it was
 /// told last, which is right for the tip and wrong for the tail: without this
@@ -147,13 +194,20 @@ fn siege_blackout_wait(start: u64, tick: u64, live_power_infiltration: bool) -> 
 
 #[cfg(all(test, tests_sim_p_s))]
 mod v26_siege_coordination_tests {
-    use super::siege_blackout_wait;
+    use super::{battery_wave_ready, siege_blackout_wait};
 
     #[test]
     fn waiting_for_a_real_spy_blackout_is_finite() {
         assert!(siege_blackout_wait(100, 700, true));
         assert!(!siege_blackout_wait(100, 700, false));
         assert!(!siege_blackout_wait(100, 1_600, true));
+    }
+
+    #[test]
+    fn artillery_does_not_probe_a_battery_until_nearby_comrades_arrive() {
+        assert!(!battery_wave_ready(1));
+        assert!(!battery_wave_ready(2));
+        assert!(battery_wave_ready(3));
     }
 }
 
@@ -512,6 +566,18 @@ fn limited_front_skirmish(
                 || super::tactics::unfavourable_vehicle_duel(
                     rules,obs,unit.entity_id,enemy.entity_id)
             { return None; }
+            // Winning the range comparison with *one* tower does not mean a
+            // lone artillery unit may walk into the other towers around it.
+            // It can fire from its safe present position, or wait for its wave.
+            if obs.entity_type(rules, enemy.entity_id)
+                .is_some_and(|ty| ty.is_base_defense)
+                && cell_distance(unit.cell, enemy.cell) > ours
+                && !battery_wave_ready(fighters.iter().filter(|friend|
+                    friend.controllable() && friend.traits.combat
+                        && cell_distance(friend.cell, unit.cell) <= 9
+                        && obs.can_hurt(rules, friend.entity_id, enemy.entity_id)
+                    ).count())
+            { return None; }
             let control = obs.entity_type(rules,enemy.entity_id)
                 .is_some_and(|ty| super::tactics::mind_control_reach(rules,ty).is_some());
             Some((!control, cell_distance(unit.cell,enemy.cell), enemy.entity_id,
@@ -562,7 +628,7 @@ fn assign_breach_battery(
         if !unit.controllable() || unit.in_service() || obs.is_deployed(unit.entity_id)
             || super::orders::ordered_this_frame(out, unit.entity_id)
         { continue; }
-        let Some((gun, _)) = batteries.iter().filter_map(|battery| {
+        let Some((gun, own_reach)) = batteries.iter().filter_map(|battery| {
             if !obs.can_hurt(rules, unit.entity_id, battery.entity_id) { return None; }
             let own = super::tactics::actual_threat_reach(
                 rules, obs, unit.entity_id, battery.entity_id,
@@ -574,6 +640,15 @@ fn assign_breach_battery(
         }).min_by_key(|(battery, _)| (cell_distance(battery.cell, unit.cell), battery.entity_id))
         else { continue; };
         available = true;
+        // Don't send an isolated long-range gun across overlapping towers'
+        // envelopes simply to get within its own range of the first one.
+        if cell_distance(unit.cell, gun.cell) > own_reach
+            && !battery_wave_ready(fighters.iter().filter(|friend|
+                friend.controllable() && friend.traits.combat
+                    && cell_distance(friend.cell, unit.cell) <= 9
+                    && obs.can_hurt(rules, friend.entity_id, gun.entity_id)
+                ).count())
+        { continue; }
         if obs.attack_target(unit.entity_id) == Some(gun.entity_id) { continue; }
         if issued >= 2 { continue; }
         if super::orders::issue_tracked(
@@ -1250,9 +1325,12 @@ pub(super) fn advance(
         // army's *total* points beat the defending base. Unlike the 600-frame
         // artillery purchase window, this individual protection does not
         // expire into a guaranteed suicidal march.
-        if let Some((gun, reach)) = super::tactics::lethal_approach(
-            rules, obs, unit.entity_id, unit.cell, march_cell,
-        ).filter(|(gun, reach)| {
+        let isolated_battery = isolated_battery_approach(
+            &fighters, rules, obs, unit.entity_id, unit.cell, march_cell);
+        if let Some((gun, reach)) = isolated_battery.or_else(||
+            super::tactics::lethal_approach(
+                rules, obs, unit.entity_id, unit.cell, march_cell,
+            )).filter(|(gun, reach)| {
             // Individual fragility rules must still protect infantry and
             // aircraft. A healthy armored fist, however, is allowed to trade
             // through a lone bunker when the nearby force is overwhelming.
@@ -1273,7 +1351,8 @@ pub(super) fn advance(
             let own_reach = obs.entity_type(rules, unit.entity_id)
                 .map_or(0, |ty| weapon_range_cells(rules, ty,
                     obs.is_deployed(unit.entity_id)));
-            super::tactics::extreme_battery_mismatch(own_reach, *reach)
+            isolated_battery.is_some()
+                || super::tactics::extreme_battery_mismatch(own_reach, *reach)
                 || !(can_hit_gun && (super::tactics::overwhelming_armor_commit(
                 unit.slot == super::census::Slot::Vehicle,
                 unit.health_permille, ours, theirs,

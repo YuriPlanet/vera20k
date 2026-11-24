@@ -225,6 +225,7 @@ pub(super) fn deploy_yard_maker(
             makes_a_yard(rules, ty).then_some((unit.entity_id, unit.cell, yard))
         })
         .collect();
+    brain.maker_journeys.retain(|id, _| makers.iter().any(|maker| maker.0 == *id));
     let picked = makers
         .iter()
         .find(|(entity_id, _, _)| brain.retrieve_makers.contains(entity_id))
@@ -356,12 +357,50 @@ pub(super) fn deploy_yard_maker(
     // are currently beside the maker, not on a blocked enemy/remote plot.
     if !yard_stands(&brain.census)
         && !obs.deploy_site_admits(rules, entity_id, yard)
-        && obs.destination(entity_id).is_none()
+        && obs.destination(entity_id).is_none_or(|dest|
+            cell_distance(cell, dest) <= 2)
         && brain.census.units.iter().any(|inf| inf.traits.combat
             && inf.slot == super::census::Slot::Infantry && inf.controllable()
             && super::squared_distance(inf.cell, cell) <= 3 * 3)
         && clear_mcv_foundation(brain, rules, obs, out, cell, entity_id) > 0
     {
+        return;
+    }
+    // The *first* MCV also needs its own appointment. Without a yard, the
+    // placement sweep is anchored on the mobile base; as it walks the anchor
+    // moves and the probe chooses yet another foundation. Keep the original
+    // legal plot across frames and resume an interrupted Move instead of
+    // recomputing it from the MCV's new position every tick.
+    if !yard_stands(&brain.census)
+        && let Some((site, last_cell, last_progress)) =
+            brain.maker_journeys.get(&entity_id).copied()
+    {
+        let progress = if cell != last_cell { obs.tick() } else { last_progress };
+        let reachable = obs.entity_type(rules, entity_id)
+            .is_some_and(|ty| obs.can_reach(ty.movement_zone, cell, site));
+        if maker_trip_stalled(obs.tick(), progress) || !reachable {
+            brain.maker_journeys.remove(&entity_id);
+            if let Some(id) = obs.type_id(&yard.id) {
+                let attempt = brain.maker_site_attempts.get(&id).copied().unwrap_or(0);
+                brain.maker_site_attempts.insert(id,
+                    (attempt + 1) % PLACEMENT_ATTEMPTS);
+            }
+            log::debug!("auto play: first MCV {entity_id} rejects stalled plot {site:?}");
+        } else if cell_distance(cell, site) > 2 {
+            brain.maker_journeys.insert(entity_id, (site, cell, progress));
+            if obs.destination(entity_id).is_some() { return; }
+            if super::orders::issue(brain, out, rules, obs,
+                entity_id, Goal::Move { cell: site }) { return; }
+            brain.maker_journeys.remove(&entity_id);
+        } else {
+            brain.maker_journeys.remove(&entity_id);
+        }
+    }
+    // A fresh MCV already travelling to a deployable plot must finish that
+    // journey. Rechecking Placement every tick while the plot is transiently
+    // clear was a source of A-B-A walks and premature roadside deployments.
+    if obs.destination(entity_id).is_some_and(|dest|
+        cell_distance(cell, dest) > 2) {
         return;
     }
     if obs.deploy_site_admits(rules, entity_id, yard) {
@@ -385,14 +424,20 @@ pub(super) fn deploy_yard_maker(
     let attempt = brain.maker_site_attempts.get(&yard_id).copied().unwrap_or(0);
     match Placement::new(obs, rules).cell_for(yard_id, attempt) {
         Some(target) if target != cell => {
-            super::orders::issue(
-                brain,
-                out,
-                rules,
-                obs,
-                entity_id,
-                Goal::Move { cell: target },
-            );
+            if obs.entity_type(rules, entity_id)
+                .is_some_and(|ty| obs.can_reach(ty.movement_zone, cell, target))
+            {
+                if super::orders::issue(
+                    brain, out, rules, obs, entity_id,
+                    Goal::Move { cell: target },
+                ) {
+                    brain.maker_journeys.insert(entity_id,
+                        (target, cell, obs.tick()));
+                }
+            } else {
+                brain.maker_site_attempts.insert(yard_id,
+                    (attempt + 1) % PLACEMENT_ATTEMPTS);
+            }
         }
         _ => {
             // The sweep's candidate is the cell the maker already stands on, or
@@ -465,7 +510,9 @@ fn nearest_deploy_site(
     yard: &ObjectType,
     from: (u16, u16),
 ) -> Option<(u16, u16)> {
-    let fits = |cell: (u16, u16)| obs.deploy_admits_at(rules, entity_id, yard, cell);
+    let zone = obs.entity_type(rules, entity_id).map(|ty| ty.movement_zone);
+    let fits = |cell: (u16, u16)| obs.deploy_admits_at(rules, entity_id, yard, cell)
+        && zone.is_none_or(|zone| obs.can_reach(zone, from, cell));
     // Ground the house may build on first, any cell the deploy physically fits
     // on second. `deploy_admits_at` answers whether the footprint is clear, not
     // whether the ground is worth standing on: taking its answer alone walked a
@@ -687,13 +734,40 @@ fn deploy_second_yard(
     // The selected ore-side plot, not merely "somewhere ten cells from home",
     // owns the deploy decision. An MCV that stops short of its target used to
     // unfold at the first legal roadside cell and later get packed again.
-    let selected = expansion_site(brain, rules, obs, yard, Some(entity_id));
+    // One selected plot belongs to this *MCV*, not the global expansion
+    // survey. An active journey holds its destination even after the survey's
+    // 450-frame cache expires. Only lack of actual progress invalidates it.
+    let selected = if let Some((site, last_cell, progress)) =
+        brain.maker_journeys.get(&entity_id).copied()
+    {
+        let progress = if cell != last_cell { obs.tick() } else { progress };
+        let reachable = obs.entity_type(rules, entity_id).is_some_and(|ty|
+            obs.can_reach(ty.movement_zone, cell, site));
+        if brain.blocked_expansion_sites.contains_key(&site)
+            || !reachable || maker_trip_stalled(obs.tick(), progress)
+        {
+            brain.maker_journeys.remove(&entity_id);
+            brain.blocked_expansion_sites.insert(site,
+                obs.tick().saturating_add(MCV_REJECT_SITE_FRAMES));
+            brain.expansion_probe = None;
+            log::info!("auto play: MCV {entity_id} abandons stalled expansion plot {site:?}");
+            expansion_site(brain, rules, obs, yard, Some(entity_id))
+        } else {
+            brain.maker_journeys.insert(entity_id, (site, cell, progress));
+            Some(site)
+        }
+    } else {
+        expansion_site(brain, rules, obs, yard, Some(entity_id))
+    };
     // An MCV can arrive successfully but be unable to unfold because the
     // native foundation is blocked by friendly infantry. Do not bounce
     // between two probe answers: clear a local route first, then mark the
     // failed plot unavailable for a bounded period and pick an alternate.
     if let Some(site) = selected
-        && cell == site && !obs.deploy_site_admits(rules, entity_id, yard)
+        && cell_distance(cell, site) <= 2
+        && obs.destination(entity_id).is_none_or(|dest|
+            cell_distance(cell, dest) <= 2)
+        && !obs.deploy_site_admits(rules, entity_id, yard)
     {
         let since = brain.maker_obstructed.entry(entity_id)
             .or_insert((site, obs.tick()));
@@ -705,6 +779,7 @@ fn deploy_second_yard(
         brain.blocked_expansion_sites.insert(site,
             obs.tick().saturating_add(MCV_REJECT_SITE_FRAMES));
         brain.maker_obstructed.remove(&entity_id);
+        brain.maker_journeys.remove(&entity_id);
         brain.expansion_probe = None;
         log::debug!("auto play: MCV {entity_id} failed at {site:?}; selecting alternate plot");
         return;
@@ -712,6 +787,8 @@ fn deploy_second_yard(
         brain.maker_obstructed.remove(&entity_id);
     }
     if at_selected_site(cell, selected)
+        && obs.destination(entity_id).is_none_or(|dest|
+            dest == cell || selected == Some(dest))
         && cell_distance(cell, home) >= EXPAND_MIN_CELLS
         && space.ground_at(cell).buildable()
         && obs.deploy_site_admits(rules, entity_id, yard)
@@ -720,6 +797,7 @@ fn deploy_second_yard(
             && super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy)
         {
             brain.yard_commit.insert(entity_id, obs.tick());
+            brain.maker_journeys.remove(&entity_id);
         }
         return;
     }
@@ -745,7 +823,7 @@ fn deploy_second_yard(
         let Some(rally) = super::census::rally_near(obs, home, &brain.census.home_cells) else {
             return;
         };
-        if rally == cell {
+        if cell_distance(rally, cell) <= 2 {
             return;
         }
         if !super::orders::issue(
@@ -767,20 +845,26 @@ fn deploy_second_yard(
     if obs.destination(entity_id).is_some() {
         return;
     }
-    if cell != target
-        && !super::orders::issue(
-            brain,
-            out,
-            rules,
-            obs,
-            entity_id,
-            Goal::Move { cell: target },
-        )
-    {
-        // The walk was refused: that ground is not reachable, so the house
-        // picks another patch instead of asking for the same one every frame.
-        brain.expansion_probe = None;
+    if cell != target {
+        if super::orders::issue(
+            brain, out, rules, obs, entity_id, Goal::Move { cell: target },
+        ) {
+            brain.maker_journeys.insert(entity_id, (target, cell, obs.tick()));
+        } else {
+            // A rejected plot stays rejected for a bounded time; otherwise
+            // the next planning tick would immediately reverse to it.
+            brain.blocked_expansion_sites.insert(target,
+                obs.tick().saturating_add(MCV_REJECT_SITE_FRAMES));
+            brain.maker_journeys.remove(&entity_id);
+            brain.expansion_probe = None;
+        }
     }
+}
+
+/// A long trip remains committed while its actual position changes; only a
+/// sustained lack of progress permits a different plot. Frames, not seconds.
+fn maker_trip_stalled(now: u64, last_progress: u64) -> bool {
+    now.saturating_sub(last_progress) >= 360
 }
 
 /// Bounded retry: clear incidental blockers without leaving a maker parked
@@ -892,8 +976,12 @@ pub(super) fn expansion_site(
         // changes deploy_admits_at without making the ore field a bad plan.
         // Keep walking toward the committed site for a bounded period instead
         // of alternating between two newly admissible cells each frame.
+        let travelling_to_site = maker.is_some_and(|id|
+            obs.destination(id) == Some(site));
         if !rejected.contains(&site)
-            && keep_expansion_appointment(tick, selected_at, reachable, admits(site))
+            && reachable
+            && (travelling_to_site
+                || keep_expansion_appointment(tick, selected_at, reachable, admits(site)))
         {
             return Some(site);
         }
@@ -1653,5 +1741,25 @@ mod v14_site_commit_tests {
         assert!(keep_expansion_appointment(600,100,true,true));
         assert!(!keep_expansion_appointment(600,100,true,false));
         assert!(!keep_expansion_appointment(120,100,false,true));
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v28_mcv_site_commit_tests {
+    use super::*;
+
+    #[test]
+    fn a_moving_mcv_keeps_a_site_until_genuinely_stalled() {
+        assert!(!maker_trip_stalled(800, 500));
+        assert!(!maker_trip_stalled(3_000, 2_650));
+        assert!(maker_trip_stalled(3_010, 2_650));
+        assert!(!maker_trip_stalled(10, 20));
+    }
+
+    #[test]
+    fn a_mcv_must_approach_its_committed_plot_to_deploy() {
+        assert!(!at_selected_site((50, 50), Some((70, 70))));
+        assert!(at_selected_site((69, 70), Some((70, 70))));
+        assert!(!at_selected_site((50, 50), None));
     }
 }

@@ -207,7 +207,7 @@ pub(super) fn exposed_casualty(
 /// Effective range for the weapons that can *actually* engage this target.
 /// Checking just a unit's primary weapon loses its secondary AA missile,
 /// which is exactly what makes anti-air look harmless to rocket soldiers.
-fn effective_reach_against(
+pub(super) fn effective_reach_against(
     rules: &RuleSet, obs: &Observation<'_>, attacker: u64, victim: u64,
 ) -> i32 {
     use crate::rules::object_type::ObjectCategory;

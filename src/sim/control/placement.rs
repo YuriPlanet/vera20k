@@ -159,6 +159,40 @@ pub struct Placement<'a, 'b> {
     reserved: BTreeSet<(u16, u16)>,
     /// Optional local base to which an outpost building is committed.
     preferred: Option<(u16, u16)>,
+    /// Armed defense sites face a *legitimately observed* threat, instead of
+    /// landing on the empty rear sector selected by the generic base sweep.
+    /// No such bias is applied to fragile infrastructure or normal factories.
+    front: Option<((u16, u16), (u16, u16))>,
+    /// *Observed* ore patches for an Enslaves= resource building. Never read
+    /// the hidden overlay grid here: the owning brain supplies its ore memory.
+    ore_patches: Vec<((u16, u16), u32)>,
+    ore_radius: i32,
+}
+
+/// A deterministic, scale-free ordering within a legal foundation window.
+/// Positive projection is the enemy-facing half of the base, negative the
+/// rear. Ranking never overrides the native placement/traffic legality gates.
+fn front_projection(
+    home: (u16, u16), enemy: (u16, u16), candidate: (u16, u16),
+) -> i64 {
+    let dx = i64::from(enemy.0) - i64::from(home.0);
+    let dy = i64::from(enemy.1) - i64::from(home.1);
+    (i64::from(candidate.0) - i64::from(home.0)) * dx
+        + (i64::from(candidate.1) - i64::from(home.1)) * dy
+}
+
+/// Heuristic coverage, not a claim of real-time ore behind fog. The native
+/// slave gatherer owns precise target selection. Reject distant patches; a
+/// refinery in a beautiful but empty corner is worse than a crowded one next
+/// to a modest known seam.
+fn known_ore_coverage(
+    at: (u16, u16), patches: &[((u16, u16), u32)], radius: i32,
+) -> i64 {
+    patches.iter().filter_map(|(cell, stock)| {
+        let dist = cell_distance(at, *cell);
+        (dist <= radius).then_some(
+            i64::from((*stock).min(256)) * i64::from(radius + 1 - dist))
+    }).sum()
 }
 
 /// How many cells a new foundation must leave between itself and any of the
@@ -186,6 +220,8 @@ struct Candidate {
     open: i32,
     /// Rings from the anchor it was scanned around.
     ring: i32,
+    /// How much historically observed ore the deployed slave workers can reach.
+    ore_coverage: i64,
     cell: (u16, u16),
 }
 
@@ -196,6 +232,9 @@ impl<'a, 'b> Placement<'a, 'b> {
             rules,
             reserved: BTreeSet::new(),
             preferred: None,
+            front: None,
+            ore_patches: Vec::new(),
+            ore_radius: 0,
         }
     }
 
@@ -205,6 +244,30 @@ impl<'a, 'b> Placement<'a, 'b> {
     /// remote foundation is temporarily blocked.
     pub fn preferring(mut self, anchor: (u16, u16)) -> Self {
         self.preferred = Some(anchor);
+        self
+    }
+
+    /// Bias an armed defense toward the observed attack corridor. Buildings
+    /// without weapons must continue using the ordinary secure base layout.
+    pub fn defending_front(mut self, home: (u16, u16), enemy: (u16, u16)) -> Self {
+        if home != enemy {
+            self.front = Some((home, enemy));
+        }
+        self
+    }
+
+    /// Favour observed mineral coverage when choosing a deployed Enslaves=
+    /// refinery's foundation. This is a preference inside native build area,
+    /// never a permission to build on an otherwise illegal site. The caller
+    /// supplies only legitimately observed ore; a hidden new deposit remains
+    /// unknown until a scout sees it.
+    pub fn serving_known_ore(
+        mut self,
+        patches: impl IntoIterator<Item = ((u16, u16), u32)>,
+        radius: i32,
+    ) -> Self {
+        self.ore_patches = patches.into_iter().collect();
+        self.ore_radius = radius.clamp(1, 48);
         self
     }
 
@@ -363,7 +426,13 @@ impl<'a, 'b> Placement<'a, 'b> {
         let ty = self.obs.object_type(self.rules, type_id)?;
         let foundation = ty.foundation.dimensions();
         let crowd = self.crowd();
+        // The computer's native base-site suggestion does not consider the
+        // player's observed gun line. For a directional defense, include all
+        // admissible positions in the same sweep instead of pinning the first
+        // attempt to a possibly rear-facing native cell.
         let native = self.native_site(ty).filter(|&cell| {
+            self.front.is_none() && self.ore_patches.is_empty()
+                &&
             allowed(cell)
                 && self.preferred.is_none_or(|anchor| cell_distance(cell, anchor) <= PLACEMENT_SCAN_RADIUS)
                 && self.obs.placement_admits(self.rules, ty, cell.0, cell.1)
@@ -545,6 +614,8 @@ impl<'a, 'b> Placement<'a, 'b> {
                             sector: crowded[sector],
                             open: self.openness(rx, ry, &blocked),
                             ring,
+                            ore_coverage: known_ore_coverage((rx, ry),
+                                &self.ore_patches, self.ore_radius),
                             cell: (rx, ry),
                         });
                     }
@@ -572,7 +643,16 @@ impl<'a, 'b> Placement<'a, 'b> {
         let Some(nearest) = admitted.iter().map(|site| site.ring).min() else {
             return None;
         };
-        let window = nearest + PLACEMENT_WINDOW_RINGS;
+        // A slave-work refinery is not a generic factory: a small extra walk
+        // away from the yard can be the difference between five productive
+        // workers and five idle ones. Allow the whole legal base scan when
+        // known ore provides a real placement preference; still honour lane,
+        // power, adjacency and the native foundation admission tests.
+        let window = if self.ore_patches.is_empty() {
+            nearest + PLACEMENT_WINDOW_RINGS
+        } else {
+            PLACEMENT_SCAN_RADIUS
+        };
         admitted.retain(|site| site.ring <= window);
         if ty.protect_with_wall {
             self.keep_safe_side(&mut admitted, &anchors);
@@ -612,6 +692,11 @@ impl<'a, 'b> Placement<'a, 'b> {
         admitted.sort_by(|a, b| {
             a.covers_reserved
                 .cmp(&b.covers_reserved)
+                .then_with(|| self.front.map_or(std::cmp::Ordering::Equal, |(home, enemy)| {
+                    front_projection(home, enemy, b.cell)
+                        .cmp(&front_projection(home, enemy, a.cell))
+                }))
+                .then(b.ore_coverage.cmp(&a.ore_coverage))
                 .then(a.sector.cmp(&b.sector))
                 .then(b.open.cmp(&a.open))
                 .then(a.ring.cmp(&b.ring))
@@ -665,6 +750,7 @@ impl<'a, 'b> Placement<'a, 'b> {
                 sector: candidate.sector,
                 open: candidate.open,
                 ring: candidate.ring,
+                ore_coverage: candidate.ore_coverage,
                 cell: candidate.cell,
             })
             .collect();
@@ -809,6 +895,16 @@ impl<'a, 'b> Placement<'a, 'b> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn defenses_prefer_the_enemy_side_not_the_empty_rear() {
+        let home = (50, 50);
+        let enemy = (80, 50);
+        assert!(front_projection(home, enemy, (56, 52))
+            > front_projection(home, enemy, (44, 52)));
+        assert!(front_projection(home, (20, 50), (44, 52))
+            > front_projection(home, (20, 50), (56, 52)));
+    }
+
     /// Whether a foundation at `cell` covers any of `cells`.
     fn covers(cells: &BTreeSet<(u16, u16)>, cell: (u16, u16), foundation: (u16, u16)) -> bool {
         (0..foundation.1)
@@ -906,5 +1002,18 @@ mod tests {
         let filtered = placement.cell_for_where(ty, 0, |cell| cell != first)
             .expect("a policy-filtered alternative");
         assert_ne!(filtered, first, "a policy cannot reselect an ineligible native site");
+    }
+}
+
+#[cfg(all(test, tests_sim_c_g))]
+mod v28_known_resource_placement_tests {
+    use super::known_ore_coverage;
+
+    #[test]
+    fn slave_refinery_favours_legitimately_known_minerals_within_scan() {
+        let patches = [((40, 40), 85), ((10, 10), 4)];
+        assert!(known_ore_coverage((38, 40), &patches, 14)
+            > known_ore_coverage((12, 10), &patches, 14));
+        assert_eq!(known_ore_coverage((80, 80), &patches, 14), 0);
     }
 }
