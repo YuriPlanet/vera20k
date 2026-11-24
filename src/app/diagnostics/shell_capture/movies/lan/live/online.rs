@@ -964,6 +964,8 @@ impl LiveRoundFlow {
                         core.host() == (self.rounds.len() == 1)
                     };
                     if observe {
+                        use super::super::super::abort_return::AbortGoal;
+                        use crate::ui::shell::abort::AbortButton;
                         let solo_ai = self
                             .config
                             .as_ref()
@@ -979,19 +981,27 @@ impl LiveRoundFlow {
                                 state,
                                 &mut self.route,
                                 frame,
+                                AbortGoal::Choose(Some(AbortButton::Leave)),
+                                true,
                             )?
                         } else if quick_match {
                             // A Quick Match game is a tournament game: Abort
                             // opens the Surrender box instead of B6.
-                            super::super::super::abort_return::AbortReturnInput::begin_surrender(
+                            super::super::super::abort_return::AbortReturnInput::begin(
                                 state,
                                 &mut self.route,
                                 frame,
+                                AbortGoal::Surrender { press_ok: true },
                                 true,
                             )?
                         } else {
-                            super::super::super::abort_return::AbortReturnInput::begin_network_observe(
-                                state, &mut self.route, frame)?
+                            super::super::super::abort_return::AbortReturnInput::begin(
+                                state,
+                                &mut self.route,
+                                frame,
+                                AbortGoal::Choose(Some(AbortButton::Secondary)),
+                                false,
+                            )?
                         });
                         self.record(
                             frame,

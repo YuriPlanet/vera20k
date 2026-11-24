@@ -310,6 +310,16 @@ pub struct WarheadType {
     /// for it (`0x00468E9F`). The one stock `EMEffect=yes`, `[EMPuls]`, is
     /// mounted by no stock weapon.
     pub em_effect: bool,
+    /// Tiberian Sun's `LimpetFactor=` (docs/ts-limpets.md): the speed a
+    /// limpeted vehicle loses, in percent. Firestorm 2.0
+    /// `WarheadTypeClass::Read_INI @ 0x0066EE30` reads it on every pass
+    /// (`0x0066F15B..0x0066F19F`) through `INIClass::Get_Double @ 0x004DD970`
+    /// (gamemd's ReadDouble: `35%` is 0.35), defaulted to the current int,
+    /// and truncates it with `__ftol @ 0x006B2020` into WarheadType+0xCC; the
+    /// constructor zeroes it (`0x0066EBA4`). Any nonzero value turns a shot
+    /// into a limpet attach (`sim::limpet`), so `35%` truncates to 0 and
+    /// fires as an ordinary bullet.
+    pub limpet_factor: i32,
 
     // --- List fields ---
     /// `[VoxelAnims]` type names thrown on detonation.
@@ -720,6 +730,7 @@ impl WarheadType {
             bomb_disarm: section.read_bool("BombDisarm", false),
             nuke_maker: section.read_bool("NukeMaker", false),
             em_effect: false,
+            limpet_factor: X87Chop53::ftol_f64_low_masked(section.read_double("LimpetFactor", 0.0)),
 
             // List fields
             debris_types: Vec::new(),

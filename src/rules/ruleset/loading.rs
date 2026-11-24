@@ -993,6 +993,14 @@ impl RuleSet {
         self.general.create_aircraft_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "CreateAircraftSound", None));
+        // ReadAudioVisual 0x66b550..0x66b596 clears Rules+0x648, then reads
+        // IceCrackSounds with ReadSoundList525430 over the emptied list.
+        // Residual: the processed section keeps the last pass that set the
+        // key, where a later pass without it empties gamemd's list.
+        self.general.ice.crack_sounds =
+            ini.section("AudioVisual").map_or_else(Vec::new, |section| {
+                sounds.read_rules_sound_list(section, "IceCrackSounds")
+            });
         // Original66A763..66A973, in native read order for these bound fields. Use the same fixed
         // registry and history-aware reader as every other bound Voc ID.
         self.general.game_closed_sound = ini
@@ -1474,12 +1482,8 @@ impl RuleSet {
         // Original-RA2 `[AI]` ore-scan radii (game.exe 0x0064D005/0x0064D025,
         // ReadInt into RulesClass+0x13E0/+0x13E4; constructor default 0). YR
         // has no such keys, so it reads the 0 default with no behavior change.
-        let tiberium_near_scan = ini
-            .section_or_empty("AI")
-            .read_int("TiberiumNearScan", 0);
-        let tiberium_far_scan = ini
-            .section_or_empty("AI")
-            .read_int("TiberiumFarScan", 0);
+        let tiberium_near_scan = ini.section_or_empty("AI").read_int("TiberiumNearScan", 0);
+        let tiberium_far_scan = ini.section_or_empty("AI").read_int("TiberiumFarScan", 0);
         // `DifficultyClass::ReadINI_IntVector @ 0x00475D70`, reached by
         // `RulesClass::ReadGeneral` for AISlaveMinerNumber
         // `0x00670585..0x006705B7`, AIExtraRefineries `0x006705F9..0x0067062A`

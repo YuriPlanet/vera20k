@@ -2,7 +2,7 @@
 //! Native lifecycle: Mouse Save5BE6D0 / Load5BDF70 / no-init5BE9B0.
 
 use super::*;
-use crate::app::sidebar_projection::SidebarProjectionState;
+use crate::app::sidebar_projection::SidebarModel;
 use crate::sim::intern::InternedId;
 use crate::sim::snapshot::{SavedCameoId, SavedSidebarOrder};
 use crate::ui::sidebar::SidebarTab;
@@ -106,8 +106,8 @@ fn scrolling_fixture() -> (Simulation, RuleSet, InternedId, Vec<Cameo>) {
     (sim, rules, owner, candidates)
 }
 
-fn scrolled_projection(owner: InternedId, candidates: &[Cameo]) -> SidebarProjectionState {
-    let mut projection = SidebarProjectionState::default();
+fn scrolled_projection(owner: InternedId, candidates: &[Cameo]) -> SidebarModel {
+    let mut projection = SidebarModel::default();
     assert!(
         !projection
             .reconcile_fixture(owner, candidates, 1, false)
@@ -139,8 +139,8 @@ fn candidates(types: [InternedId; 2], first_cost: i32) -> Vec<Cameo> {
         .collect()
 }
 
-fn retained_history(owner: InternedId, types: [InternedId; 2]) -> SidebarProjectionState {
-    let mut projection = SidebarProjectionState::default();
+fn retained_history(owner: InternedId, types: [InternedId; 2]) -> SidebarModel {
+    let mut projection = SidebarModel::default();
     assert!(
         !projection
             .reconcile_fixture(owner, &candidates(types, 100), 3, false)
@@ -213,7 +213,7 @@ fn sw_sidebar_expanded_flag_survives_the_snapshot_envelope() {
         !committed
             .sidebar_order
             .expect("retained sidebar")
-            .sw_sidebar_expanded()
+            .sw_sidebar_expanded
     );
 }
 
@@ -292,7 +292,7 @@ fn sidebar_order_prepares_and_commits_unsorted_history_without_reinserting_survi
     let (sim, rules, owner, types) = fixture();
     let saved = retained_history(owner, types).saved_order().unwrap();
     let bytes = save(&sim, &rules, Some(&saved));
-    let mut outgoing = SidebarProjectionState::default();
+    let mut outgoing = SidebarModel::default();
     assert!(
         !outgoing
             .reconcile_fixture(owner, &candidates(types, 400), 3, false)
@@ -475,7 +475,7 @@ fn pending_requests_survive_the_save_transaction_with_reset_prediction() {
     let prepared = prepare(&bytes, &sim, &rules).expect("valid retained requests");
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(Simulation::new());
     let committed = prepared.commit_into(&mut runtime);
-    let mut restored = SidebarProjectionState::default();
+    let mut restored = SidebarModel::default();
     restored.restore_order(committed.sidebar_order);
     assert_eq!(
         restored.cameo_request(types[0]),

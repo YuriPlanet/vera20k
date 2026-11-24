@@ -34,6 +34,12 @@ pub struct GeneralRules {
     /// (`0x0066571B`), read by ReadInteger at `0x006719A1` without a clamp.
     /// ReceiveDamage starts each Techno's radar combat flash with it.
     pub radar_combat_flash_time: i32,
+    /// `[General] CraterLevel=`, which gamemd does not read: Firestorm's
+    /// meteor craters (`docs/terrain-deformation.md`). Firestorm 2.0 0x5C4600
+    /// gives Rules `+0x2B8` 4 and 0x5C9A39 reads it with `INIClass::Get_Int`
+    /// (0x4DD0C0, gamemd's ReadInteger) without a clamp. Retail sets 1. It
+    /// acts only while `[CombatDamage] TerrainDeformation=` is on.
+    pub crater_level: i32,
     /// `[AudioVisual]` thresholds copied to the presentation frame-rate
     /// controller by Fill_In_Data6850F5 and the radar movie transitions.
     pub detail: DetailRules,
@@ -789,6 +795,8 @@ pub struct GeneralRules {
     /// entirely when the count is zero and otherwise plays
     /// `items[rand % count]` at the strike coordinate.
     pub lightning_sounds: Vec<String>,
+    /// The Firestorm ice chain's keys (docs/ts-ice.md).
+    pub ice: crate::rules::ice_rules::IceRules,
     /// Displayed-credits tick cues from `[AudioVisual] CreditTicks=` (stock
     /// `CreditUp,CreditDown`), the `Rules+0x6D0` sound list (count `+0x6DC`).
     ///
@@ -1847,6 +1855,7 @@ impl Default for GeneralRules {
             flash_frame_time: 7,
             weed_capacity: 0,
             radar_combat_flash_time: 21,
+            crater_level: 4,
             detail: DetailRules::default(),
             pose_dir: 0,
             deploy_dir: 0,
@@ -2053,6 +2062,7 @@ impl Default for GeneralRules {
             create_aircraft_sound: None,
             disk_laser_charge_up: None,
             lightning_sounds: Vec::new(),
+            ice: Default::default(),
             credit_ticks: Vec::new(),
             storm_sound: None,
             // `RulesClass::Constructor @ 0x006676BC` writes AL, and the last
@@ -2617,8 +2627,11 @@ impl GeneralRules {
         let airstrike_line_z_adjust = crate::rules::ares_switch::not_ares_read(|| {
             audio_visual.read_ares_int("AirstrikeLineZAdjust", defaults.airstrike_line_z_adjust)
         });
+        let mut ice = defaults.ice.clone();
+        ice.read_audio_visual(&audio_visual);
         let Some(general) = ini.section("General") else {
             return Self {
+                ice,
                 message_delay_minutes,
                 savour_delay_minutes,
                 pose_dir,
@@ -2676,7 +2689,9 @@ impl GeneralRules {
             general.read_double("ConditionRedSparkingProbability", 0.02);
         let condition_yellow_spark_prob: f64 =
             general.read_double("ConditionYellowSparkingProbability", 0.01);
+        ice.read_general(general);
         Self {
+            ice,
             pose_dir,
             deploy_dir,
             max_waypoint_path_length: general
@@ -2685,6 +2700,7 @@ impl GeneralRules {
             weed_capacity: general.read_int("WeedCapacity", defaults.weed_capacity),
             radar_combat_flash_time: general
                 .read_int("RadarCombatFlashTime", defaults.radar_combat_flash_time),
+            crater_level: general.read_int("CraterLevel", defaults.crater_level),
             scroll_multiplier: audio_visual
                 .read_double("ScrollMultiplier", defaults.scroll_multiplier),
             savour_delay_minutes,

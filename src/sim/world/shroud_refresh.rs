@@ -2079,6 +2079,8 @@ impl Simulation {
                 .iter()
                 .copied()
                 .filter(|&viewer| self.fog.retain_source_sight(id, viewer, owner, geometry))
+                // A house that limpeted the source sees through it too
+                // (`sim::limpet`, Firestorm 2.0 Look `0x0063829A`).
                 .filter(|&viewer| {
                     vision::reveal_admits(
                         &self.house_alliances,
@@ -2086,7 +2088,7 @@ impl Simulation {
                         viewer,
                         config,
                         &self.interner,
-                    )
+                    ) || crate::sim::limpet::seen_through_by(entity, viewer)
                 }),
         );
         // The footprint indexes an admitting map's source counts. A source no
@@ -2220,7 +2222,14 @@ impl Simulation {
                 viewer,
                 config,
                 &self.interner,
-            ) {
+            ) && !self
+                .substrate
+                .entities
+                .get(id)
+                // The reveal's limpet arm (`sim::limpet`); its mask changes
+                // only between a release and a reveal.
+                .is_some_and(|entity| crate::sim::limpet::seen_through_by(entity, viewer))
+            {
                 // Native RevealArea's House gate refuses this release. Retire
                 // only the derived index; the old map counts stay remembered.
                 self.fog.abandon_sight_admission(id, viewer);
@@ -2480,7 +2489,7 @@ impl Simulation {
                     &self.interner,
                     &clients,
                 );
-                let viewers: Vec<_> = viewers
+                let viewers: Vec<_> = crate::sim::limpet::sight_viewers(entity, &clients, viewers)
                     .iter()
                     .copied()
                     .filter(|viewer| only_viewer.is_none_or(|only| *viewer == only))
@@ -2535,6 +2544,7 @@ impl Simulation {
             &self.interner,
             &clients,
         );
+        let projected = crate::sim::limpet::sight_viewers(entity, &clients, projected);
         let viewers: Vec<_> = projected
             .iter()
             .copied()

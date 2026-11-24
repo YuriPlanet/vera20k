@@ -10,13 +10,11 @@ pub(crate) mod combo;
 pub(crate) mod edit;
 pub(crate) mod list;
 pub(crate) mod scrollbar;
-
-use std::sync::OnceLock;
+pub(crate) mod trackbar;
 
 use crate::gui::{Key, UiEvent, UiMs};
 use crate::node::{NodeId, Tree};
 use crate::shell::geom::ShellScale;
-use crate::time::{Duration, Instant};
 
 /// What a widget sees of the GUI while it handles one input.
 pub(crate) struct Ctx<'a> {
@@ -24,6 +22,8 @@ pub(crate) struct Ctx<'a> {
     pub events: &'a mut Vec<UiEvent>,
     /// The dialog's device-to-authored mapping.
     pub scale: ShellScale,
+    /// The host's unscaled mapping ([`crate::Gui::set_base_scale`]).
+    pub base_scale: ShellScale,
     pub now: UiMs,
     /// The host's double-click limits: milliseconds, width, height.
     pub double_click: (UiMs, i32, i32),
@@ -34,21 +34,6 @@ pub(crate) struct Ctx<'a> {
     pub popup: &'a mut Option<NodeId>,
     /// The dialog's keyboard focus (an `Edit`).
     pub focus: &'a mut Option<NodeId>,
-}
-
-/// The substrate keeps its timers as `Instant`s; the GUI clock is `UiMs`.
-/// One process-wide epoch maps between them.
-fn epoch() -> Instant {
-    static EPOCH: OnceLock<Instant> = OnceLock::new();
-    *EPOCH.get_or_init(Instant::now)
-}
-
-pub(crate) fn instant(ms: UiMs) -> Instant {
-    epoch() + Duration::from_millis(ms)
-}
-
-pub(crate) fn ui_ms(at: Instant) -> UiMs {
-    at.saturating_duration_since(epoch()).as_millis() as UiMs
 }
 
 /// Per-node interaction state, kept in the tree beside the props.

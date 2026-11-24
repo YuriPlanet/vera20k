@@ -197,6 +197,11 @@ so it ends the dig on the surface. One below
 the cells is on no cell list (Mark UP) and below height 0, so neither gather
 pass reaches it.
 
+A harvester under EMP draws no ore-gather overlay: UnitClass_Draw_OreGatherAnim
+(Ares.dll `10053E50`, hook `0x0073D219`) adds IsUnderEMP (vt+0x37C) to the
+stock refusals before the overlay draw (`harvest_overlay` in
+`app::presentation::instances::units`).
+
 DisableEMPEffect100627F0's Foot tail (100628B2..10062972) is one owner,
 `recover_ares_emp_foot_mission`, which PoweredBy's DisableEMPEffect2 10062650
 calls with Hunt: a driverless Foot queues and starts Harmless; a Unit

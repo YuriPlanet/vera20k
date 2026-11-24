@@ -167,7 +167,7 @@ fn switch_view(state: &mut AppState, next: View) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .reset_cameo_seed();
+        .model.reset_cameo_seed();
     state.match_state.refresh_relation_colors();
     show_sight(state);
     // No House update reports the radar of the House now followed: its

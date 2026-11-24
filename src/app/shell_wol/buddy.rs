@@ -61,9 +61,14 @@ pub(crate) fn layout(state: &AppState) -> WolBuddyLayout {
 /// Builds and places `0x116`'s widgets; the root.
 pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let layout = layout(state);
-    leaf::sync(state, DIALOG, layout.page.scale, spec, |id| {
+    let root = leaf::sync(state, DIALOG, layout.page.scale, spec, |id| {
         layout.rect_of(id)
-    })
+    })?;
+    // The painter's nodes, found once the tree is built.
+    if let Some(dialog) = page(state) {
+        dialog.ui.nodes(state.frontend.shell_controller.gui(), root);
+    }
+    Some(root)
 }
 
 /// Shows the page in its widgets (under `0x115` too).

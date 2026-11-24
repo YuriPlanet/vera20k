@@ -19,6 +19,8 @@ pub(crate) enum TacticalPointerMode<'a> {
     Ordinary,
     SuperWeapon(&'a str),
     RepairSell,
+    /// Display `+0x11B2` ([`crate::app::input::power_mode`]).
+    Power,
 }
 
 /// Client-side handles installed by ManualPlace4FB840. The House factory
@@ -164,6 +166,10 @@ impl PreparedSavedLocalView {
         input.planning.reset();
         sidebar.repair_mode_on = modes.repair;
         sidebar.sell_mode_on = modes.sell;
+        // The raw Display load restores Power (+0x11B2) too; VERA's save has
+        // no power byte (the residual in sim::snapshot::saved_local_view), so
+        // the outgoing world's mode ends here.
+        sidebar.power_mode_on = false;
         sidebar.command_bar_closed = modes.command_bar_closed;
         input.targeting_mode = self.targeting;
         input.skirmish_spawn = None;
@@ -314,7 +320,7 @@ pub(crate) struct MatchInputState {
     /// for the modern-RTS double-click select-same-type-on-screen shortcut.
     /// Wall clock, never sim state; the host's double-click time and rectangle
     /// decide the pair. Only an admitted selection click writes it.
-    pub(crate) last_selection_click: Option<(crate::util::time::Instant, i32, i32)>,
+    pub(crate) last_selection_click: Option<(vera20k_gui::UiMs, i32, i32)>,
     /// Types the local player builds endlessly (Ctrl + left click on a cameo).
     pub(crate) build_repeat: crate::app::input::build_repeat::BuildRepeat,
     /// The object the camera is following, i.e. `DisplayClass +0x11A0` behind
@@ -398,8 +404,10 @@ mod ready_building_placement_tests;
 impl MatchInputState {
     /// DetermineAction692610 returns the selected object's action early.
     /// With no selection, its armed targeted Super overrides Repair/Sell
-    /// at692B06..692B24. Cursor feedback and release share this decision;
-    /// the existing Super producer still owns target admission and launch.
+    /// and Power at692B06..692B24. Those three bytes are never on together
+    /// (their setters clear each other), so their arms' order is moot.
+    /// Cursor feedback and release share this decision; the existing Super
+    /// producer still owns target admission and launch.
     /// Source: original gamemd.exe instructions.
     pub(crate) fn tactical_pointer_mode(
         &self,
@@ -419,14 +427,17 @@ impl MatchInputState {
         if sidebar.repair_mode_on || sidebar.sell_mode_on {
             return TacticalPointerMode::RepairSell;
         }
+        if sidebar.power_mode_on {
+            return TacticalPointerMode::Power;
+        }
         TacticalPointerMode::Ordinary
     }
 
     /// Display Cancel4AAD30 consumes one represented cursor rung: current
-    /// placement product, Repair/Sell, then Super. Repair/Sell setters still
-    /// refuse a retained placement TYPE after its product expires. The
-    /// caller handles the beacon rung (4AAE47) and the final UnselectAll rung.
-    /// Power/Waypoint remain unrepresented Display flags.
+    /// placement product, Repair/Sell, Power (4AADD0), then Super. The mode
+    /// setters still refuse a retained placement TYPE after its product
+    /// expires. The caller handles the beacon rung (4AAE47) and the final
+    /// UnselectAll rung. Waypoint remains an unrepresented Display flag.
     /// Source: original gamemd.exe4AAD34..4AAE84.
     pub(crate) fn cancel_pointer_mode(
         &mut self,
@@ -435,13 +446,17 @@ impl MatchInputState {
         if self.cancel_building_placement() {
             return true;
         }
+        let placement_armed = self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_building_placement)
+            .is_some();
         if sidebar.repair_mode_on || sidebar.sell_mode_on {
-            let placement_armed = self
-                .targeting_mode
-                .as_ref()
-                .and_then(crate::app::types::TargetingMode::as_building_placement)
-                .is_some();
             sidebar.disable_selection_modes(placement_armed);
+            return true;
+        }
+        if sidebar.power_mode_on {
+            sidebar.set_power_mode(false, placement_armed, 0);
             return true;
         }
         if self
@@ -528,19 +543,20 @@ impl MatchInputState {
     pub(crate) fn note_tactical_selection_click(
         &mut self,
         admitted: bool,
-        now: crate::util::time::Instant,
+        now: vera20k_gui::UiMs,
         point: (i32, i32),
     ) -> bool {
         if !admitted {
             self.last_selection_click = None;
             return false;
         }
+        let (time, width, height) = crate::ui::shell::controller::host_double_click_limits();
         vera20k_gui::shell::list::is_double_click(
             &mut self.last_selection_click,
             now,
             point.0,
             point.1,
-            crate::ui::shell::controller::host_double_click_limits(),
+            (time.as_millis() as u64, width, height),
         )
     }
 
@@ -807,7 +823,7 @@ impl MatchInputState {
     /// the active cursor, even if OutList is full.
     pub(crate) fn submit_building_placement(
         &mut self,
-        sidebar: &mut crate::app::sidebar_projection::SidebarProjectionState,
+        sidebar: &mut crate::app::sidebar_projection::SidebarModel,
     ) {
         if let Some(crate::app::types::TargetingMode::BuildingPlacement(target)) =
             &self.targeting_mode
@@ -1111,9 +1127,9 @@ mod double_click_tests {
     #[test]
     fn right_click_orders_double_click_pairs_quick_same_spot_selection_clicks_only() {
         let mut input = MatchInputState::new(Default::default());
-        let start = crate::util::time::Instant::now();
+        let start: vera20k_gui::UiMs = 1_000;
         let point = (120, 80);
-        let shortly = |millis| start + crate::util::time::Duration::from_millis(millis);
+        let shortly = |millis| start + millis;
         assert!(!input.note_tactical_selection_click(false, start, point));
         assert!(!input.note_tactical_selection_click(false, shortly(5), point));
         assert!(!input.note_tactical_selection_click(true, start, point));

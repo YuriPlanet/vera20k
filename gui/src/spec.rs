@@ -1,6 +1,8 @@
 //! Declarative trees (docs/gui-library-api.md §6.1): a screen describes its
 //! widgets once as data and `Gui::create_tree` builds them, all or nothing.
 
+use std::ops::ControlFlow;
+
 use crate::gui::Gui;
 use crate::node::{NodeId, NodeKind, Prop, Refused, Value};
 
@@ -75,11 +77,12 @@ impl Gui {
     /// The first node under `root` (itself included, tree order) whose
     /// `Prop::Id` is `id`.
     pub fn find_id(&self, root: NodeId, id: i32) -> Option<NodeId> {
-        if self.get(root, Prop::Id).ok().flatten() == Some(&Value::Int(id)) {
-            return Some(root);
-        }
-        let children = self.tree().children(root).ok()?;
-        children.iter().find_map(|c| self.find_id(*c, id))
+        self.tree()
+            .walk(root, &mut |node, _| match self.get(node, Prop::Id).ok().flatten() == Some(&Value::Int(id)) {
+                true => ControlFlow::Break(node),
+                false => ControlFlow::Continue(()),
+            })
+            .break_value()
     }
 
     /// The node's `Prop::Id`.

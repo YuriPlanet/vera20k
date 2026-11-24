@@ -15,12 +15,11 @@ use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::sidebar_projection::SidebarViewInputs;
 use crate::sim::production;
-use crate::ui::sidebar::{self, SidebarView};
+use crate::ui::sidebar::{self, ArtKey, SidebarPart, SidebarView};
 
 // Re-export instance builders so callers don't need to know about the split.
 pub(crate) use crate::app::presentation::sidebar_build::{
     build_command_bar_instances, build_sidebar_cameo_instances, build_sidebar_chrome_instances,
-    build_sidebar_text_instances,
 };
 
 // ---------------------------------------------------------------------------
@@ -35,6 +34,19 @@ pub(crate) fn current_sidebar_view(state: &AppState) -> Option<&SidebarView> {
         .match_presentation
         .sidebar_projection
         .view()
+}
+
+/// Where the sidebar's parts sit: the retained view's layout, or, before a
+/// view is built (or while the world has no local player), the layout the
+/// view is built with, from the same table and frame.
+pub(crate) fn current_sidebar_layout(state: &AppState) -> sidebar::SidebarLayout {
+    match current_sidebar_view(state) {
+        Some(view) => view.layout,
+        None => sidebar::compute_layout_with_spec(
+            state.match_state.match_presentation.sidebar_layout_spec,
+            state.sidebar_frame(),
+        ),
+    }
 }
 
 /// The money the credits counter counts toward: `CreditsClass::AI @
@@ -80,14 +92,14 @@ pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .set_observer_clock(&owner_name, seconds);
+            .model.set_observer_clock(&owner_name, seconds);
         return;
     }
     let credits = counter_credits(sim, &owner_name);
     let projection = &mut state.match_state.match_presentation.sidebar_projection;
     let mut last_step = None;
     for _ in 0..visits {
-        let Some(step) = projection.advance_credits(&owner_name, credits) else {
+        let Some(step) = projection.model.advance_credits(&owner_name, credits) else {
             break;
         };
         last_step = Some(step);
@@ -146,7 +158,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
     refresh_projection(state, false);
 }
 
-/// The gadget idle tick's republish on every presentation pass: the same
+/// The frame pass's republish on every unlocked presentation pass: the same
 /// refresh, reusing the simulation inputs kept for the world's revision
 /// ([`crate::app::sidebar_projection::SidebarSimInputs`]).
 pub(crate) fn republish_sidebar_projection(state: &mut AppState) {
@@ -162,18 +174,14 @@ pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::Sideb
     // VERA-only: a map picture is taken with the original interface, whose
     // battlefield its tiles are cut for.
     let map_picture = state.platform.capture_presentation.map_picture;
-    #[cfg(feature = "phobos")]
-    let gdi_positions = state.rules().map_or(
-        theme == crate::render::sidebar_chrome::SidebarTheme::Allied,
-        |rules| rules.side_gdi_positions(current_sidebar_side(state)),
+    let mut spec = crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme_and_positions(
+        theme,
+        gdi_positions(state),
     );
-    #[cfg(not(feature = "phobos"))]
-    let gdi_positions = theme == crate::render::sidebar_chrome::SidebarTheme::Allied;
-    let mut spec =
-        crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme_and_positions(theme, gdi_positions);
     if let Some(atlas) = current_sidebar_chrome(state) {
-        spec.side2_height = atlas.side2.pixel_size[1];
-        spec.side3_height = atlas.side3.pixel_size[1];
+        let height = |key| atlas.art(SidebarPart::Cameos, key, 0).map(|art| art.pixel_size[1]);
+        spec.side2_height = height(ArtKey::RowArt).unwrap_or(spec.side2_height);
+        spec.side3_height = height(ArtKey::EndArt).unwrap_or(spec.side3_height);
     }
     // A mod's `veraui.ini` layout for this side changes the original's numbers.
     if let Some(layout) = side_layout(state).filter(|_| !map_picture) {
@@ -198,6 +206,18 @@ pub(crate) fn local_side_name(state: &AppState) -> Option<&str> {
     rules.side_name(crate::rules::ruleset::SideIdx(side))
 }
 
+/// Whether the local side uses the allied position table: Phobos'
+/// `Sidebar.GDIPositions=`, else whether its pictures are the Allies'.
+fn gdi_positions(state: &AppState) -> bool {
+    let allied = current_sidebar_theme(state) == crate::render::sidebar_chrome::SidebarTheme::Allied;
+    #[cfg(feature = "phobos")]
+    return state.rules().map_or(allied, |rules| {
+        rules.side_gdi_positions(current_sidebar_side(state))
+    });
+    #[cfg(not(feature = "phobos"))]
+    allied
+}
+
 /// The `veraui.ini` layout of the local player's side, if the file gives it
 /// one.
 fn side_layout(state: &AppState) -> Option<&crate::ui::match_layout::MatchLayout> {
@@ -205,7 +225,7 @@ fn side_layout(state: &AppState) -> Option<&crate::ui::match_layout::MatchLayout
         .match_state
         .match_presentation
         .match_layouts
-        .for_side(local_side_name(state))
+        .for_side(local_side_name(state), gdi_positions(state))
 }
 
 /// The grids of build pictures the local side's layout adds to the sidebar,
@@ -215,14 +235,7 @@ fn added_grids(state: &AppState) -> Vec<sidebar::AddedGrid> {
     use crate::ui::added_parts::{AddedKind, Holder};
     let presentation = &state.match_state.match_presentation;
     let spec = presentation.sidebar_layout_spec;
-    let frame = state.sidebar_frame();
-    let (side_width, side_height) = frame.surface_size();
-    let side = [
-        frame.layout_left() as i32,
-        0,
-        side_width as i32,
-        side_height as i32,
-    ];
+    let side = state.sidebar_frame().side_area();
     presentation
         .added_parts
         .iter()
@@ -236,10 +249,7 @@ fn added_grids(state: &AppState) -> Vec<sidebar::AddedGrid> {
             }
             let columns = columns.unwrap_or(spec.columns());
             // The grid is as big as its pictures' places.
-            let natural = [
-                (columns as f32 * spec.cameo_column_pitch) as i32,
-                (rows as f32 * spec.cameo_row_height) as i32,
-            ];
+            let natural = spec.grid_size(columns, rows).map(|v| v as i32);
             let [x, y, _, _] = added.rect_in(side, natural);
             Some(sidebar::AddedGrid {
                 part,
@@ -270,6 +280,21 @@ pub(crate) fn refresh_added_parts(state: &mut AppState) {
         None if !kept.is_empty() => *kept = Default::default(),
         _ => {}
     }
+    // What the layout gives the built-in parts, read again only when the
+    // layout or the side's pictures change.
+    use crate::app::presentation::layout_parts::StockParts;
+    let theme = current_sidebar_theme(state);
+    let original = crate::ui::match_layout::MatchLayout::original(gdi_positions(state));
+    let kept = &state.match_state.match_presentation.stock_parts;
+    let stock = match side_layout(state).filter(|_| !map_picture) {
+        Some(layout) if kept.is_read_from(layout.added(), theme) => None,
+        Some(layout) => Some(StockParts::read(layout, original, theme)),
+        None if kept.is_original() => None,
+        None => Some(StockParts::default()),
+    };
+    if let Some(stock) = stock {
+        state.match_state.match_presentation.stock_parts = stock;
+    }
 }
 
 fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
@@ -278,15 +303,14 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     state.match_state.match_presentation.sidebar_layout_spec = spec;
     refresh_added_parts(state);
     // The sidebar lays out on its own surface (`ui::sidebar::SidebarFrame`).
-    let (screen_w, screen_h) = state.sidebar_frame().layout_screen();
-    let visible_rows =
-        sidebar::compute_layout_with_spec(spec, screen_w, screen_h, 0).side2_tile_count;
+    let sidebar_frame = state.sidebar_frame();
+    let visible_rows = sidebar::compute_layout_with_spec(spec, sidebar_frame).side2_tile_count;
     let Some(owner_name) = preferred_local_owner_name(state) else {
         state
             .match_state
             .match_presentation
             .sidebar_projection
-            .replace_view(None);
+            .clear();
         return;
     };
     let Some(owner) = state.match_state.sim_runtime.presentation().map(|runtime| {
@@ -300,7 +324,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .replace_view(None);
+            .clear();
         return;
     };
     // A scenario's first projection seeds its strips from every building's
@@ -310,7 +334,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .needs_cameo_seed(owner)
+        .model.needs_cameo_seed(owner)
     {
         if state.match_state.sim_runtime.is_lent() {
             return;
@@ -329,7 +353,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .asked_types(&seed_additions);
+        .model.asked_types(&seed_additions);
     state.match_state.sim_runtime.ask_sidebar_types(&asked);
     state.match_state.sim_runtime.ensure_frame();
     let inputs = {
@@ -338,7 +362,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             match_state
                 .match_presentation
                 .sidebar_projection
-                .replace_view(None);
+                .clear();
             return;
         };
         // Only a lent tick's frame can miss a type, one asked after the tick
@@ -350,7 +374,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             match_state
                 .match_presentation
                 .sidebar_projection
-                .replace_view(None);
+                .clear();
             return;
         };
         std::sync::Arc::clone(inputs)
@@ -399,32 +423,32 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .set_cameo_columns(spec.columns());
+        .model.set_cameo_columns(spec.columns());
     let reconciled = state
         .match_state
         .match_presentation
         .sidebar_projection
-        .reconcile_cameos(owner, &cameos, visible_rows, &seed_additions, rules.ares());
+        .model.reconcile_cameos(owner, &cameos, visible_rows, &seed_additions, rules.ares());
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .set_observer_entries(inputs.observers.as_ref().map(Vec::len));
+        .model.set_observer_entries(inputs.observers.as_ref().map(Vec::len));
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .set_cameo_frame(sim.session().binary_frame() as i32);
+        .model.set_cameo_frame(sim.session().binary_frame() as i32);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .reconcile_factory_links(sim, owner);
+        .model.reconcile_factory_links(sim, owner);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .advance_cameo_requests(sim, owner);
+        .model.advance_cameo_requests(sim, owner);
     {
         let presentation = &mut state.match_state.match_presentation;
         apply_cameo_transitions(
@@ -445,7 +469,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .displayed_credits_or_seed(&owner_name, inputs.credits);
+        .model.displayed_credits_or_seed(&owner_name, inputs.credits);
     let (
         tab_btn_size,
         repair_btn_size,
@@ -454,19 +478,19 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         scroll_up_btn_size,
         top_btn_sizes,
     ) = {
-        let size = |entry: Option<&crate::render::sidebar_chrome::SidebarChromeEntry>| {
-            entry.map(|entry| entry.pixel_size)
-        };
         let atlas = current_sidebar_chrome(state);
+        let size = |part| {
+            atlas
+                .and_then(|atlas| atlas.art(part, ArtKey::Art, 0))
+                .map(|entry| entry.pixel_size)
+        };
         (
-            size(atlas.and_then(|atlas| atlas.tab_frames[0][0].as_ref())),
-            size(atlas.and_then(|atlas| atlas.repair_frames[0].as_ref())),
-            size(atlas.and_then(|atlas| atlas.sell_frames[0].as_ref())),
-            size(atlas.and_then(|atlas| atlas.scroll_down_frames[0].as_ref())),
-            size(atlas.and_then(|atlas| atlas.scroll_up_frames[0].as_ref())),
-            std::array::from_fn::<_, 2, _>(|i| {
-                size(atlas.and_then(|atlas| atlas.top_button_frames[i][0].as_ref()))
-            }),
+            size(SidebarPart::Buildings),
+            size(SidebarPart::Repair),
+            size(SidebarPart::Sell),
+            size(SidebarPart::ScrollDown),
+            size(SidebarPart::ScrollUp),
+            [SidebarPart::Diplomacy, SidebarPart::Options].map(size),
         )
     };
     // Placement lifetime is driven by the input owner's ordered native
@@ -488,7 +512,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         });
     let view_inputs = SidebarViewInputs {
         spec: state.match_state.match_presentation.sidebar_layout_spec,
-        screen: (screen_w, screen_h),
+        frame: sidebar_frame,
         tab: state.match_state.match_presentation.active_sidebar_tab,
         credits: display_credits,
         sim: inputs,
@@ -548,8 +572,7 @@ fn build_view(
 ) -> SidebarView {
     let mut view = sidebar::build_sidebar_view_with_spec(
         inputs.spec,
-        inputs.screen.0,
-        inputs.screen.1,
+        inputs.frame,
         inputs.tab,
         inputs.credits,
         inputs.sim.power_produced,
@@ -576,7 +599,7 @@ fn build_view(
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_strips(),
+            .model.cameo_strips(),
     );
     // The grids the side's layout adds follow the sidebar's own in the view,
     // and each keeps the row it could really scroll to.
@@ -599,7 +622,7 @@ fn build_view(
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_strips(),
+            .model.cameo_strips(),
     );
     {
         let scroll = &mut state.match_state.match_presentation.added_grid_scroll;
@@ -625,7 +648,7 @@ fn build_view(
             .match_state
             .match_presentation
             .sidebar_projection
-            .cameo_strips()
+            .model.cameo_strips()
             .scroll_row(inputs.tab);
         sidebar::apply_observer_strip(&mut view, inputs.spec, entries, top, &inputs.gadgets);
     }
@@ -636,7 +659,7 @@ fn build_view(
         .match_state
         .match_presentation
         .sidebar_projection
-        .set_scroll_row(inputs.tab, view.scroll_rows);
+        .model.set_scroll_row(inputs.tab, view.scroll_rows);
     if let Some(atlas) = state
         .match_state
         .match_presentation
@@ -691,7 +714,7 @@ fn build_view(
             .match_state
             .match_presentation
             .sidebar_projection
-            .apply_cameo_draw_state(
+            .model.apply_cameo_draw_state(
                 &mut view,
                 sim,
                 frame,
@@ -750,7 +773,9 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
 /// and for buildings that undeploy). [`SidebarCameoAtlas::cameo`] keeps the
 /// plain cameo when no alternate image loaded.
 ///
-/// Ares1003D800 additionally admits the current Country's retained lists.
+/// With Ares, TechnoTypeClass_GetCameo (hook `0x712045`, Ares.dll
+/// `1005E480`) replaces the choice with CameoIsElite (`1003D800`), which
+/// additionally admits the current Country's retained lists.
 /// An undeploying Building uses the Unit-list branch, comparing its own
 /// BuildingType pointer, not UndeploysInto; that cannot match an INI-produced
 /// UnitType list. Its spy arms read HouseState's stock flags and the Ares
@@ -894,15 +919,15 @@ pub(crate) fn minimap_object_click_position(state: &AppState, id: u64) -> Option
     let rect = active_minimap_screen_rect(state);
     let minimap = state.match_state.match_presentation.minimap.as_ref()?;
     let (x, y) = minimap.native_object_click_point_in_rect(id, [rect.x, rect.y, rect.w, rect.h])?;
-    let frame = state
+    let [x, y, ..] = state
         .sidebar_frame()
-        .rect_to_frame(crate::ui::sidebar::Rect {
+        .rect_to_frame_px(crate::ui::sidebar::Rect {
             x,
             y,
             w: 1.0,
             h: 1.0,
         });
-    Some([frame.x.round() as u32, frame.y.round() as u32])
+    Some([x.max(0) as u32, y.max(0) as u32])
 }
 
 pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {
@@ -996,13 +1021,13 @@ fn sidebar_cursor_centre(state: &AppState) -> (f32, f32) {
 /// The radar aperture in the sidebar's layout space. Input regions take it in
 /// frame pixels through [`crate::ui::sidebar::SidebarFrame::rect_to_frame`].
 pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar::Rect {
-    let (sw, sh) = state.sidebar_frame().layout_screen();
     if current_sidebar_chrome(state).is_some() {
-        crate::ui::sidebar::radar_minimap_rect_with_spec(
-            sw,
-            state.match_state.match_presentation.sidebar_layout_spec,
-        )
+        current_sidebar_layout(state)
+            .minimap_rect(&state.match_state.match_presentation.sidebar_layout_spec)
     } else {
+        // Archives without any sidebar art (`build_sidebar_chrome_set`'s
+        // `None`) still draw the map, in the battlefield's corner.
+        let (_, sh) = state.sidebar_frame().layout_screen();
         let (x, y, w, h) = crate::render::radar::minimap::default_minimap_rect(sh);
         crate::ui::sidebar::Rect { x, y, w, h }
     }
@@ -1284,7 +1309,7 @@ mod tests {
                 gadgets.set_tab_disabled(index, before.as_bool().unwrap());
             }
             let mut projection = crate::app::sidebar_projection::SidebarProjectionState::default();
-            let reconciled = projection.reconcile_cameos(Default::default(), &[], 3, &[], false);
+            let reconciled = projection.model.reconcile_cameos(Default::default(), &[], 3, &[], false);
             super::apply_cameo_transitions(reconciled.transitions(), &mut active, &mut gadgets);
             for (index, after) in control["disabled_after"]
                 .as_array()
@@ -1334,8 +1359,8 @@ mod tests {
             },
         };
         let mut saved = crate::app::sidebar_projection::SidebarProjectionState::default();
-        saved.reconcile_cameos(owner, &[cameo.clone()], 3, &[infantry], false);
-        let order = saved.saved_order().unwrap();
+        saved.model.reconcile_cameos(owner, &[cameo.clone()], 3, &[infantry], false);
+        let order = saved.model.saved_order().unwrap();
         let mut outgoing = crate::app::sidebar_projection::SidebarProjectionState::default();
         let mut active = SidebarTab::Building;
         let mut gadgets = SidebarGadgetState::default();
@@ -1343,11 +1368,11 @@ mod tests {
         let prepared =
             crate::app::sidebar_projection::prepare_saved_order(Some(order.clone()), &sim, &rules)
                 .unwrap();
-        outgoing.restore_order(prepared);
-        let reconciled = outgoing.reconcile_cameos(owner, &[cameo], 3, &[], false);
+        outgoing.model.restore_order(prepared);
+        let reconciled = outgoing.model.reconcile_cameos(owner, &[cameo], 3, &[], false);
         super::apply_cameo_transitions(reconciled.transitions(), &mut active, &mut gadgets);
         assert_eq!(gadgets.tab_disabled, [true, true, false, true]);
-        assert_eq!(outgoing.saved_order().unwrap().strips(), order.strips());
+        assert_eq!(outgoing.model.saved_order().unwrap().strips(), order.strips());
         assert!(
             !reconciled.build_inserted(),
             "saved entries are not new additions"

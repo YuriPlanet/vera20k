@@ -1669,13 +1669,6 @@ fn setup_chat_has(state: &AppState, text: &str) -> Result<bool> {
         .any(|line| String::from_utf16_lossy(&line.text) == text))
 }
 
-fn setup_click(state: &mut AppState, rect: RectPx) {
-    set_window_pointer_to_rect_center(state, rect);
-    crate::app::input::multiplayer_setup::cursor_moved(state);
-    crate::app::input::multiplayer_setup::mouse(state, winit::event::MouseButton::Left, true);
-    crate::app::input::multiplayer_setup::mouse(state, winit::event::MouseButton::Left, false);
-}
-
 /// Presses the Join or Watch on the header of `group`'s box.
 fn press_header(
     state: &mut AppState,

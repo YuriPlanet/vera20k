@@ -643,9 +643,15 @@ pub(crate) fn render_shell_message_box_over_page(
     destination: &wgpu::Texture,
 ) {
     sync_shell_menu_settings(state);
+    let parts = sync_shell_message_box(state);
+    // The box's lists keep their widgets on the box as it lays out now.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    let _ = crate::app::updater::notes::sync(state);
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    let _ = crate::app::shell_mod_import::sync(state);
     let state = &*state;
     let (Some(overlay), Some(chrome)) = (
-        build_shell_message_box_overlay(state),
+        parts.and_then(|parts| build_shell_message_box_overlay(state, &parts)),
         state.frontend.skirmish_shell_chrome.as_ref(),
     ) else {
         return;
@@ -673,6 +679,20 @@ pub(crate) fn render_shell_message_box_over_page(
                 ),
         },
     );
+}
+
+/// The box's own widgets on the shell controller follow it and its layout
+/// before they paint ([`crate::ui::shell::modal::ShellBox::sync`]).
+/// Its rects; none while no box is open.
+fn sync_shell_message_box(state: &mut AppState) -> Option<crate::ui::shell::modal::BoxParts> {
+    let message_box = state.frontend.shell_message_box.as_ref()?;
+    let parts = shell_layout::shell_box_parts(state, &message_box.shell_box);
+    let frontend = &mut state.frontend;
+    if let Some(message_box) = frontend.shell_message_box.as_ref() {
+        let controller = &mut frontend.shell_controller;
+        crate::ui::shell::menu_page::sync_box(controller, &message_box.shell_box, &parts);
+    }
+    Some(parts)
 }
 
 /// The Esc menu's settings tree follows its layout and values before it
@@ -706,7 +726,10 @@ fn sync_shell_menu_settings(state: &mut AppState) {
 /// the skirmish chrome atlas (the only atlas that loads PUDLGBGN/MNBTTN). The
 /// pressed button is read from the shared shell controller (its top dialog is the
 /// modal while open). Returns `None` when the modal is closed or its art is absent.
-fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::ModalDraw> {
+fn build_shell_message_box_overlay(
+    state: &AppState,
+    parts: &crate::ui::shell::modal::BoxParts,
+) -> Option<shell_paint::ModalDraw> {
     use crate::app::frontend::state::ShellMessageBoxPurpose;
     let message_box = state.frontend.shell_message_box.as_ref()?;
     let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
@@ -741,15 +764,6 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     })
     .or_else(|| atlas.mode_two_dialog_background(None));
     let shell_box = &message_box.shell_box;
-    let parts = shell_layout::shell_box_parts(state, shell_box);
-    // The updater's offer lists what changed (`app::updater::notes`).
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    let notes = match &message_box.purpose {
-        ShellMessageBoxPurpose::UpdateOffer(notes) => {
-            crate::app::updater::notes::view(state).map(|view| (notes, view))
-        }
-        _ => None,
-    };
     let controller = &state.frontend.shell_controller;
     let pressed = controller
         .top_id()
@@ -782,101 +796,75 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         },
         ..base_look
     };
+    let tree = crate::app::frontend::skirmish_shell_render::controller_tree(
+        controller,
+        shell_box.dialog,
+    );
     let mut draw = crate::app::frontend::skirmish_shell_render::paint_shell_box(
         state,
         Some(atlas),
+        tree,
         shell_box,
-        &parts,
+        parts,
         |id| pressed == Some(id),
         look,
     );
+    // The updater's offer lists what changed (`app::updater::notes`), and
+    // Add Mod its parts, each from its list's widget: the lists lie on the
+    // dialog's picture, which has no list backing, so their sprites go over
+    // the box's and their text after its own.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    if let Some((notes, (geometry, top, _))) = &notes {
-        let labels: Vec<PaintLabel> = notes
-            .texts(geometry, *top, parts.scale.factor())
-            .into_iter()
-            .map(|(text, rect)| PaintLabel {
-                text: text.into(),
-                rect,
-                align: ShellAlign::NONE,
-                rgb: SHELL_TEXT_RGB_ENABLED,
-                path_a_reveal: None,
-            })
-            .collect();
-        draw.text.extend(shell_paint::paint_labels_at_depth_scaled(
-            &state.renderer.bit_font,
-            &labels,
-            EXIT_CONFIRM_MODAL_DEPTHS.text,
-            parts.scale.factor(),
-        ));
-    }
+    let notes = crate::app::updater::notes::node(state).map(|(node, notes)| {
+        use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
+        use crate::app::updater::notes::LIST_ID;
+        // The rows are the list's `Items`, written as it was built.
+        let gui = state.frontend.shell_controller.gui();
+        // A change's further rows hang under its text.
+        let indent_of = |id: i32, row: usize| {
+            (id == LIST_ID)
+                .then(|| notes.row(row).map(|(_, indent)| indent))
+                .flatten()
+        };
+        let style = GuiStyle {
+            indent_of: Some(&indent_of),
+            solid_lists: true,
+            ..Default::default()
+        };
+        paint_gui_styled(state, gui, node, parts.scale, &[], style)
+    });
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    let notes = notes.map(|mut notes| {
+        let controls = notes.take_lane(crate::render::hud_paint::Material::Controls);
+        draw.text.extend(notes.texts);
+        controls
+    });
     if let Some((settings, controls)) = menu {
         crate::app::frontend::skirmish_shell_render::paint_options_settings(
             &mut draw, state, &controls, settings,
         );
     }
-    // Add Mod's parts, each row's text inset 4 pixels and cut to its row.
+    // Add Mod's parts, each row's text inset 4 pixels from both ends and cut
+    // to its row: the list's `Items`, which its sync writes as they change.
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-    let import_parts = crate::app::shell_mod_import::parts_view(state);
+    let import_parts = crate::app::shell_mod_import::node(state).map(|node| {
+        use crate::app::frontend::skirmish_shell_render::gui_paint::{GuiStyle, paint_gui_styled};
+        let gui = state.frontend.shell_controller.gui();
+        let style = GuiStyle {
+            solid_lists: true,
+            ..Default::default()
+        };
+        paint_gui_styled(state, gui, node, parts.scale, &[], style)
+    });
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-    if let Some(parts_view) = &import_parts {
-        let (font, scale) = (&state.renderer.bit_font, parts.scale);
-        let geometry = &parts_view.geometry;
-        let inset = parts_view.text_inset;
-        let labels: Vec<PaintLabel> = parts_view
-            .rows
-            .iter()
-            .skip(parts_view.top)
-            .take(geometry.visible_rows)
-            .enumerate()
-            .map(|(visible, name)| {
-                let rect = scale.derive_rect(geometry.row(visible), |row| {
-                    RectPx::new(row.x + inset, row.y, row.w - 2 * inset, row.h)
-                });
-                let width = scale.base_rect(rect).w.max(0) as u32;
-                PaintLabel {
-                    text: font.truncate_to_width(name, width).into_owned().into(),
-                    rect,
-                    align: ShellAlign::V_CENTER,
-                    rgb: SHELL_TEXT_RGB_ENABLED,
-                    path_a_reveal: None,
-                }
-            })
-            .collect();
-        draw.text.extend(shell_paint::paint_labels_at_depth_scaled(
-            font,
-            &labels,
-            EXIT_CONFIRM_MODAL_DEPTHS.text,
-            scale.factor(),
-        ));
-    }
-    // The list lies on the dialog's picture, which has no list backing.
+    let import_parts = import_parts.map(|mut import_parts| {
+        let controls = import_parts.take_lane(crate::render::hud_paint::Material::Controls);
+        draw.text.extend(import_parts.texts);
+        controls
+    });
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    if let Some((_, (geometry, top, pressed))) = notes {
-        crate::app::frontend::skirmish_shell_render::paint_list(
-            &mut draw.sprites,
-            atlas,
-            geometry,
-            top,
-            None,
-            pressed,
-            true,
-            parts.scale,
-        );
-    }
+    draw.sprites.extend(notes.into_iter().flatten());
     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-    if let Some(parts_view) = import_parts {
-        crate::app::frontend::skirmish_shell_render::paint_list(
-            &mut draw.sprites,
-            atlas,
-            parts_view.geometry,
-            parts_view.top,
-            parts_view.selected,
-            parts_view.pressed,
-            true,
-            parts.scale,
-        );
-    }
+    draw.sprites.extend(import_parts.into_iter().flatten());
     Some(draw)
 }
 

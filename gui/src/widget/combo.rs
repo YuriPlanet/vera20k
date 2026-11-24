@@ -12,7 +12,7 @@
 //! `RowCount`, `Selected`, `VisibleRows` (0 = every row). The widget writes
 //! `Open`, `Top` and, on a pick, `Selected`.
 
-use super::{Capture, Ctx, WidgetState, instant, ui_ms};
+use super::{Capture, Ctx, WidgetState};
 use crate::gui::{Key, UiEvent};
 use crate::node::{Node, NodeId, Prop, Tree, Value};
 use crate::shell::combobox::{ComboPopup, combo_arrow_hit_rect, combo_face_rect};
@@ -77,22 +77,11 @@ pub(crate) fn drop_down(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<
     })
 }
 
-fn row_count(n: &Node) -> usize {
-    match n.props.get(&Prop::Items) {
-        Some(Value::Items(items)) => items.len(),
-        _ => n.int_prop(Prop::RowCount, 0).max(0) as usize,
-    }
-}
-
-fn selected(n: &Node) -> Option<usize> {
-    usize::try_from(n.int_prop(Prop::Selected, -1)).ok()
-}
-
 /// The list hung under the face (`face.y + face.h + 1`), raised to end by
 /// `PopupBottom` when set; none without rows.
 fn popup_at(tree: &Tree, node: NodeId, scale: ShellScale, top: usize) -> Option<ComboPopup> {
     let n = tree.node(node).ok()?;
-    let total = row_count(n);
+    let total = n.row_count();
     if total == 0 {
         return None;
     }
@@ -173,7 +162,7 @@ pub(crate) fn dismiss(tree: &mut Tree, node: NodeId) {
 /// Opens the list for the host at first row `top`, the selection lit: no
 /// cue, no event.
 pub(crate) fn open_for_host(tree: &mut Tree, node: NodeId, top: usize) {
-    let selected = tree.node(node).ok().and_then(selected);
+    let selected = tree.node(node).ok().and_then(Node::selected);
     if let Some(st) = state_mut(tree, node) {
         st.open(selected);
         st.top_index = top;
@@ -186,7 +175,7 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
     let (Ok(rect), Ok(n)) = (ctx.tree.screen_rect(node), ctx.tree.node(node)) else {
         return Capture::No;
     };
-    let selected = selected(n);
+    let selected = n.selected();
     let anywhere = n.bool_prop(Prop::OpenAnywhere, false);
     let can_open = popup_at(ctx.tree, node, ctx.scale, 0).is_some();
     let scale = ctx.scale;
@@ -237,7 +226,6 @@ pub(crate) fn popup_press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
     };
     let before = st.top_index;
     st.pointer = (x, y);
-    let now = instant(now);
     if let Some(part) = popup.scroll_part_at(x, y) {
         st.scroll.press(part, popup.scroll_geometry(), &mut st.top_index, y, now);
         sync_top(ctx, node, before);
@@ -270,7 +258,7 @@ pub(crate) fn key(ctx: &mut Ctx<'_>, node: NodeId, key: Key) {
         *ctx.popup = None;
         return;
     };
-    let selected = ctx.tree.node(node).ok().and_then(selected);
+    let selected = ctx.tree.node(node).ok().and_then(Node::selected);
     let Some(st) = state_mut(ctx.tree, node) else {
         return;
     };
@@ -334,8 +322,8 @@ pub(crate) fn wheel_pick(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) {
     dismiss(ctx.tree, node);
     *ctx.popup = None;
     let Ok(n) = ctx.tree.node(node) else { return };
-    let last = row_count(n).saturating_sub(1);
-    let Some(selected) = selected(n) else { return };
+    let last = n.row_count().saturating_sub(1);
+    let Some(selected) = n.selected() else { return };
     let row = selected.saturating_add_signed(-(lines.signum() as isize)).min(last);
     if row == selected {
         return;
@@ -353,8 +341,8 @@ pub(crate) fn poll(ctx: &mut Ctx<'_>, node: NodeId) -> Option<crate::gui::UiMs> 
     let st = state_mut(ctx.tree, node)?;
     let before = st.top_index;
     let (x, y) = st.pointer;
-    st.scroll.poll(popup.scroll_geometry(), &mut st.top_index, x, y, instant(now));
-    let next = st.scroll.repeat_at().map(ui_ms);
+    st.scroll.poll(popup.scroll_geometry(), &mut st.top_index, x, y, now);
+    let next = st.scroll.repeat_at();
     sync_top(ctx, node, before);
     next
 }
@@ -441,18 +429,18 @@ mod tests {
         click(&mut g, 129, 25);
         g.input(InputEvent::PointerMove { x: 500, y: 500 }, 0);
         g.drain_events();
-        assert!(g.input(InputEvent::Wheel { lines: -1 }, 0).consumed);
+        assert!(g.input(InputEvent::Wheel { lines: -1, x: 0, y: 0 }, 0).consumed);
         assert_eq!(
             g.drain_events(),
             vec![UiEvent::Changed { node: c, value: Value::Int(1), final_: true }]
         );
         assert_eq!(g.popup(), None);
         click(&mut g, 129, 25);
-        g.input(InputEvent::Wheel { lines: 1 }, 0);
-        g.input(InputEvent::Wheel { lines: 0 }, 0);
+        g.input(InputEvent::Wheel { lines: 1, x: 0, y: 0 }, 0);
+        g.input(InputEvent::Wheel { lines: 0, x: 0, y: 0 }, 0);
         click(&mut g, 129, 25);
         g.drain_events();
-        g.input(InputEvent::Wheel { lines: 2 }, 0);
+        g.input(InputEvent::Wheel { lines: 2, x: 0, y: 0 }, 0);
         assert_eq!(g.drain_events(), vec![], "already the first row");
         assert_eq!((g.popup(), g.get(c, Prop::Selected).unwrap()), (None, Some(&Value::Int(0))));
     }

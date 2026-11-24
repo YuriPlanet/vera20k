@@ -292,6 +292,20 @@ fn find_cursor_feedback_kind(
             CursorFeedbackKind::SellMode(valid)
         });
     }
+    // DetermineAction's power arm (`0x00692815`, Ares `1005C790`): the
+    // Ares cursor table (10057F10) draws its TogglePower/NoTogglePower
+    // entries.
+    if matches!(pointer_mode, super::state::TacticalPointerMode::Power) {
+        let kind = CursorFeedbackKind::TogglePower(
+            super::power_mode::building_under_cursor(state).is_some(),
+        );
+        return Some(super::ares_cursor::tactical(
+            kind,
+            &super::ares_cursor::CursorOverrides::default(),
+            0,
+            state.rules(),
+        ));
+    }
     // No early return for an empty selection here. `242c79ad0` carried
     // `if selected.is_empty() { return None; }` (no comment, no native
     // backing), which made the no-selection arm below unreachable and showed
@@ -392,6 +406,10 @@ pub(crate) struct ActionQuery<'a> {
     pub(crate) selected: &'a [u64],
     pub(crate) modifier: super::context_order::OrderModifier,
     pub(crate) force_move_key: bool,
+    /// The force-fire key's own state, which Ares' Ivan rung reads
+    /// ([`super::context_order::ares_ivan_grinds`]); [`Self::modifier`]
+    /// drops it from a Ctrl+Shift chord the selection cannot attack-move.
+    pub(crate) force_fire_key: bool,
     pub(crate) order_mode: crate::app::types::OrderMode,
     pub(crate) planning: bool,
     /// The Cell What_Action's mouse-over argument
@@ -432,6 +450,7 @@ impl<'a> ActionQuery<'a> {
             selected,
             modifier,
             force_move_key,
+            force_fire_key: crate::app::input::dispatch::is_ctrl_held(state),
             order_mode: state.match_state.input.queued_order_mode,
             planning: state.match_state.input.planning.active(),
             mouse_over,
@@ -571,6 +590,23 @@ impl<'a> ActionQuery<'a> {
                 self.planning,
                 overrides,
             );
+            // Ares `100254B0` (hook `0x0051EB48`) answers at the head of the
+            // Ivan arm, the only row that answers IvanBomb or NoIvanBomb.
+            let kind = if matches!(
+                kind,
+                CursorFeedbackKind::IvanBomb | CursorFeedbackKind::NoIvanBomb
+            ) && let (Some(id), Some(rules)) = (best_id, self.rules)
+                && super::context_order::ares_ivan_grinds(
+                    sim,
+                    rules,
+                    id,
+                    hover.stable_id,
+                    self.force_fire_key,
+                ) {
+                CursorFeedbackKind::Grind
+            } else {
+                kind
+            };
             return Some(promote_attack_move_feedback(kind, attack_move));
         }
 
@@ -590,6 +626,18 @@ impl<'a> ActionQuery<'a> {
         {
             let kind = match action {
                 super::context_order::ObjectKeyAction::ToggleSelect => CursorFeedbackKind::Select,
+                // A healer's AttackSupport, the arrow, replaces the other key
+                // answers ([`super::context_order::healer_supports_over_terrain`]).
+                _ if super::context_order::healer_supports_over_terrain(
+                    sim,
+                    &sim.control_projection(),
+                    rules,
+                    id,
+                    terrain_id,
+                ) =>
+                {
+                    CursorFeedbackKind::Default
+                }
                 super::context_order::ObjectKeyAction::GuardArea => CursorFeedbackKind::GuardArea,
                 super::context_order::ObjectKeyAction::Move => {
                     key_move_feedback(sim, rules, id, terrain_id)
@@ -1947,6 +1995,12 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         }),
         // Action 0xD, the SellUnit row.
         CursorFeedbackKind::SellUnit => Some(CursorId::SellUnit),
+        // Actions 0x21/0x22: rows 0x37 and 0x3C (`0x004AB884` switch).
+        CursorFeedbackKind::TogglePower(valid) => Some(if valid {
+            CursorId::TogglePower
+        } else {
+            CursorId::NoTogglePower
+        }),
         CursorFeedbackKind::SuperWeaponTarget(id) => Some(id),
         // Row 0x4E: mouse.sha frames 435..449 at rate 4.
         CursorFeedbackKind::PlaceBeacon => Some(CursorId::Beacon),
@@ -2219,8 +2273,8 @@ fn sidebar_view_hit(frame: crate::ui::sidebar::SidebarFrame, cursor_x: f32, curs
 /// Action strings come from `[SWType] Action=` in rulesmd.ini. Cursor
 /// frame ranges are pre-loaded in `render/cursor_atlas.rs`.
 ///
-/// Returns `None` for `IonCannon` (TS-legacy, no YR SW uses it) and any
-/// unrecognized string. Caller should fall back to `CursorId::Default`.
+/// Returns `None` for any unrecognized string. Caller should fall back to
+/// `CursorId::Default`.
 pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
     match action {
         "Attack" => Some(CursorId::Attack),
@@ -2236,7 +2290,10 @@ pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
         "GeneticConverter" => Some(CursorId::GeneticMutator),
         "ForceShield" => Some(CursorId::ForceShield),
         "PsychicReveal" => Some(CursorId::PsychicReveal),
-        // IonCannon is TS-legacy — no YR superweapon uses this Action.
+        // VERA's Tiberian Sun Ion Cannon action (Firestorm 2.0 action 37).
+        // RESIDUAL: Firestorm's own ion cursor art is not in YR's mouse
+        // shapes, so it aims with the Attack cursor.
+        "IonCannon" => Some(CursorId::Attack),
         _ => None,
     }
 }

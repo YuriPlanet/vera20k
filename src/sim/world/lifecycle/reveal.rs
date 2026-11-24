@@ -559,18 +559,20 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| entity.category() == EntityCategory::Unit)
         {
-            let visceroid = self
-                .substrate
-                .entities
-                .get(stable_id)
-                .and_then(|entity| {
-                    self.interner.object_type_in_category(
-                        entity.type_ref(),
-                        entity.category().into(),
-                        context.rules(),
-                    )
-                })
-                .is_some_and(|object| object.small_visceroid || object.large_visceroid);
+            let object = self.substrate.entities.get(stable_id).and_then(|entity| {
+                self.interner.object_type_in_category(
+                    entity.type_ref(),
+                    entity.category().into(),
+                    context.rules(),
+                )
+            });
+            let visceroid =
+                object.is_some_and(|object| object.small_visceroid || object.large_visceroid);
+            // Firestorm 2.0 `UnitClass::Unlimbo @ 0x0064F790` also starts a
+            // Tiberian Sun Limpet Drone's Stage at 0, rate 1, after the same
+            // visceroid test (`0x0064F808`, `0x0064F83D..0x0064F85E`); its
+            // body draws that Stage (`sim::limpet::wrap_drone_stage`).
+            let drone = object.is_some_and(|object| object.is_limpet_drone);
             let value = if visceroid {
                 self.scenario_rng.next_range_i32_inclusive(0, 29)
             } else {
@@ -580,7 +582,7 @@ impl Simulation {
                 entity.restart_native_stage(
                     value,
                     self.session.binary_frame() as i32,
-                    i32::from(visceroid),
+                    i32::from(visceroid || drone),
                 );
             }
         }

@@ -1523,6 +1523,11 @@ fn commit_entity(
         let mut receiver_event = *event;
         receiver_event.damage = caller_damage.read(world, rules);
         let event = &receiver_event;
+        // Firestorm 2.0 `TechnoClass::Take_Damage @ 0x006325A0` opens with a
+        // heal taking every Tiberian Sun limpet off (`sim::limpet`).
+        if event.damage < 0 {
+            world.clear_limpets(target_id, rules, run.effects());
+        }
         // Phobos `TechnoClass_ReceiveDamage @ 0x701900+0x6` runs the shield
         // before gamemd's receiver body and replaces `args->Damage` with the
         // surviving damage. The stage owns the mutation here, before the
@@ -3696,14 +3701,15 @@ fn continue_area_damage(
             world.spawn_particle_in_system(system, position, position, rules);
         }
     }
-    // VERA terrain deformation: Tiberian Sun rolled its crater after the
-    // Explodes branch.
+    // VERA terrain deformation: Firestorm rolled its dent after the Explodes
+    // branch (Firestorm 2.0 0x46006B).
     world.roll_terrain_deformation(
         rules,
         context.warhead,
         context.impact,
         context.cell,
         context.damage,
+        run.effects(),
     );
     //48A437..48A479 follows both the bridge and Explodes branches. WH.Particle
     //uses the outer sourceHouse and also constructs one immediate child.
@@ -3724,6 +3730,16 @@ fn continue_area_damage(
     {
         world.spawn_particle_in_system(system, position, position, rules);
     }
+    // Firestorm ice: TS Explosion_Damage cracked ice after its particle
+    // system (Firestorm 2.0 0x4601b4..0x46024f, docs/ts-ice.md).
+    world.explosion_ice(
+        rules,
+        overlay_registry,
+        run.effects(),
+        context.warhead,
+        context.impact,
+        context.cell,
+    );
     death
 }
 

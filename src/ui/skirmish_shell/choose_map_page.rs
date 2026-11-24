@@ -26,7 +26,7 @@ use vera20k_gui::shell::list::ListScrollPart;
 pub const DIALOG: DialogResourceId = DialogResourceId(0x006B);
 
 const MODE_LIST: u16 = 0x6EB;
-const MAP_LIST: u16 = 0x553;
+pub const MAP_LIST: u16 = 0x553;
 const PREVIEW: u16 = 0x468;
 const STATUS_HELP: u16 = 0x695;
 /// The `SS_CENTER` headings: Select Engagement, Game Type, Game Map.
@@ -36,9 +36,13 @@ const HEADINGS: [(u16, &str, &str); 3] = [
     (0x7132, "GUI:GameMap", "Game Map"),
 ];
 /// VERA: the search line over the map list, an edit that keeps the focus.
-/// Typing anywhere on the chooser fills it and no press reaches it, so it
-/// has no rect; the host paints it from [`ChooseMapModalState::search`].
-const MAP_SEARCH: u16 = 0x7121;
+/// Typing anywhere on the chooser fills it and no press reaches it: it
+/// shows on its rect but hits nothing (an empty `HitRect`), and holds
+/// [`ChooseMapModalState::search`].
+pub const MAP_SEARCH: u16 = 0x7121;
+/// The search line's text inset, in 800x600 pixels: its text starts 2 px
+/// in, and its tail keeps 2 px clear at the end.
+pub const MAP_SEARCH_INSET: RectPx = RectPx::new(2, 0, 2, 0);
 /// VERA: the selected map's author under the preview.
 const AUTHOR: u16 = super::CHOOSE_MAP_AUTHOR;
 const BUTTONS: [(u16, ChooseMapModalButton); 4] = [
@@ -79,7 +83,13 @@ fn spec() -> NodeSpec {
             .id(id.into())
             .with(Prop::Align, align)
     };
+    // The search line paints before the map list, whose frame it sits on.
+    let search = NodeSpec::new(NodeKind::Edit)
+        .id(MAP_SEARCH.into())
+        .with(Prop::HitRect, Value::Rect(RectPx::default()))
+        .with(Prop::TextInset, Value::Rect(MAP_SEARCH_INSET));
     NodeSpec::new(NodeKind::Dialog)
+        .child(search)
         .child(list(MODE_LIST))
         .child(list(MAP_LIST))
         // The column's captions sit centred in the buttons.
@@ -103,7 +113,6 @@ fn spec() -> NodeSpec {
         // Top-aligned like `0x102`'s game type there, so a long name keeps
         // its first line.
         .child(text(AUTHOR, align(ShellAlign::H_CENTER)))
-        .child(NodeSpec::new(NodeKind::Edit).id(MAP_SEARCH.into()))
 }
 
 /// Puts the chooser's dialog on top of the controller (dropping whatever a
@@ -126,9 +135,9 @@ pub fn sync_page(
     page::sync_rects(gui, root, |id| match id {
         MODE_LIST => Some(surface(layout.mode_list)),
         MAP_LIST => Some(surface(layout.map_list)),
-        // Shown (so it takes typing) but with an empty rect, so presses
-        // never reach it; the host paints the search line itself.
-        MAP_SEARCH => Some(RectPx::default()),
+        // Shown (so it takes typing); its empty `HitRect` keeps presses
+        // off it.
+        MAP_SEARCH => Some(layout.map_search),
         _ => layout.rects.get(id),
     });
     // The search as the chooser keeps it, the caret after it.

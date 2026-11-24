@@ -278,6 +278,7 @@ impl ResolvedTerrainGrid {
                 tile_animations: Vec::new(),
                 destroyable_cliff_catalog: None,
                 deformation_catalog: None,
+                ice_catalog: None,
                 deformation_enabled: false,
                 bridge_recalc_catalog: None,
                 allocation_caches: Default::default(),
@@ -1004,6 +1005,7 @@ impl ResolvedTerrainGrid {
             tile_animations,
             destroyable_cliff_catalog: None,
             deformation_catalog: None,
+            ice_catalog: None,
             deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
@@ -1446,6 +1448,19 @@ pub(super) fn load_tile_metadata(
     };
     metadata.tmp_file_valid = true;
     merge_tmp_file_metadata(&mut metadata, &tmp, key.sub_tile, terrain_rules);
+    // Firestorm 2.0 Read_Theater 0x4f54a5..0x4f5562 patches the loaded main
+    // image of each ice family's edge and open-water tiles to Water.
+    if key.variant == 0
+        && key.sub_tile == 0
+        && metadata.has_tmp_metadata
+        && super::ice::ice_tile_is_water(td.ice_sets, key.tile_id)
+    {
+        const TMP_WATER: u8 = 9;
+        metadata.raw_land_type = TMP_WATER;
+        metadata.land_type =
+            crate::rules::terrain_rules::tmp_terrain_to_land_type(TMP_WATER).as_index();
+        apply_land_type_semantics(&mut metadata, terrain_rules);
+    }
     metadata
 }
 

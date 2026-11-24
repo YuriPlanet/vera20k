@@ -486,11 +486,14 @@ impl WolCapture {
         );
         match self.target {
             WolTarget::ClanSurrender | WolTarget::ClanSurrenderOk => {
-                self.abort_input = Some(abort_return::AbortReturnInput::begin_surrender(
+                self.abort_input = Some(abort_return::AbortReturnInput::begin(
                     state,
                     &mut self.route,
                     frame,
-                    self.target == WolTarget::ClanSurrenderOk,
+                    abort_return::AbortGoal::Surrender {
+                        press_ok: self.target == WolTarget::ClanSurrenderOk,
+                    },
+                    true,
                 )?);
                 self.phase = WolPhase::AbortInput;
             }

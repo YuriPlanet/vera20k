@@ -175,6 +175,7 @@ struct Answers {
     #[cfg(feature = "phobos")]
     is_power_plant_enhancer_active: bool,
     emp_remaining: i32,
+    is_under_emp: bool,
     #[cfg(feature = "phobos")]
     shield: Option<crate::sim::shield::ShieldState>,
     #[cfg(feature = "phobos")]
@@ -204,6 +205,7 @@ impl Answers {
             #[cfg(feature = "phobos")]
             is_power_plant_enhancer_active: entity.is_power_plant_enhancer_active(),
             emp_remaining: entity.emp_remaining(),
+            is_under_emp: entity.is_under_emp(),
             #[cfg(feature = "phobos")]
             shield: entity.shield().cloned(),
             #[cfg(feature = "phobos")]
@@ -838,6 +840,11 @@ impl ObjectRecord {
 
     pub(crate) fn emp_remaining(&self) -> i32 {
         self.answers.emp_remaining
+    }
+
+    /// vt+0x37C IsUnderEMP ([`GameEntity::is_under_emp`]).
+    pub(crate) fn is_under_emp(&self) -> bool {
+        self.answers.is_under_emp
     }
 
     /// `GameEntity::voxel_recoil`, which the pose holds.

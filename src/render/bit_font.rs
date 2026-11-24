@@ -48,6 +48,12 @@ pub const MISSING_GLYPH_CODEPOINT: u16 = 0x58;
 pub const DARKEN_ALPHA: u8 = 175;
 /// Default fallback space width when FNT lacks a glyph at 0x20 (defensive).
 const DEFAULT_SPACE_WIDTH: u32 = 4;
+
+/// The UTF-16 units the native walks treat as layout.
+const TAB_UNIT: u16 = b'\t' as u16;
+const CR_UNIT: u16 = b'\r' as u16;
+const LF_UNIT: u16 = b'\n' as u16;
+const SPACE_UNIT: u16 = b' ' as u16;
 /// GAME.FNT's baseline row when it has no 'H' to measure it from.
 const DEFAULT_BASELINE_ROW: u32 = 13;
 
@@ -94,6 +100,15 @@ pub struct WrapLayout {
     pub lines: Vec<LineSpan>,
     /// A word wider than a line was split across lines.
     pub split_word: bool,
+}
+
+impl WrapLayout {
+    /// Each line's text in `text`, the text this layout was made from.
+    pub fn line_texts<'a>(&'a self, text: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+        self.lines
+            .iter()
+            .map(move |line| &text[line.start_byte..line.end_byte])
+    }
 }
 
 /// Immutable atlas observation; `source_identity == None` identifies the
@@ -389,20 +404,61 @@ impl BitFont {
         tint: [f32; 3],
         camera_offset: [f32; 2],
     ) -> Vec<SpriteInstance> {
-        let missing_tint = Self::missing_color_xor(tint);
-        let ([x, y], scale) = self.rastered([x, y], scale, camera_offset);
+        self.emit_text(text, [x, y], scale, depth, camera_offset, false, |_| {
+            Some(tint)
+        })
+    }
+
+    /// `text` on one line, its pen at `pen` before `camera_offset`:
+    /// `tint_of` colours each glyph by the UTF-16 unit it starts at, `None`
+    /// cutting the text off there; a missing glyph takes that colour
+    /// XORed. Without `per_unit`, `tint_of` ignores its unit and the shaped
+    /// branch builds no byte-to-unit table.
+    fn emit_text(
+        &self,
+        text: &str,
+        pen: [f32; 2],
+        scale: f32,
+        depth: f32,
+        camera_offset: [f32; 2],
+        per_unit: bool,
+        tint_of: impl Fn(usize) -> Option<[f32; 3]>,
+    ) -> Vec<SpriteInstance> {
+        let glyph_tint = |unit: usize, missing: bool| {
+            let tint = tint_of(unit)?;
+            Some(if missing {
+                Self::missing_color_xor(tint)
+            } else {
+                tint
+            })
+        };
+        let ([x, y], scale) = self.rastered(pen, scale, camera_offset);
+        let mut instances = Vec::with_capacity(text.len());
         if self.native(text) {
-            let mut instances = Vec::with_capacity(text.len());
-            self.native_glyph_pens(text, x, scale, |glyph, pen_x, missing| {
-                let tint = if missing { missing_tint } else { tint };
+            self.native_glyph_pens(text, x, scale, |unit, glyph, pen_x, missing| {
+                let Some(tint) = glyph_tint(unit, missing) else {
+                    return false;
+                };
                 instances.extend(self.native_instance(glyph, [pen_x, y], scale, depth, tint));
                 true
             });
             return instances;
         }
-        let (line, _) = single_line(text);
+
+        let (line, offsets) = single_line(text);
+        // UTF-16 unit index of every byte of `text`, when the tint reads it.
+        let mut unit_at = Vec::new();
+        if per_unit {
+            unit_at.resize(text.len() + 1, 0u32);
+            let mut unit = 0u32;
+            for (at, c) in text.char_indices() {
+                for slot in &mut unit_at[at..at + c.len_utf8()] {
+                    *slot = unit;
+                }
+                unit += c.len_utf16() as u32;
+            }
+        }
         let shaped = self.shape(&line, 0);
-        let mut instances = Vec::with_capacity(line.len());
         let mut engine = self.engine.borrow_mut();
         for shaped_line in &shaped.lines {
             engine.emit_line(
@@ -410,7 +466,19 @@ impl BitFont {
                 [x, y],
                 scale,
                 depth,
-                |glyph| Some(if glyph.missing { missing_tint } else { tint }),
+                |glyph| {
+                    let unit = if per_unit {
+                        let byte = offsets.as_ref().map_or(glyph.cluster, |map| {
+                            map.get(glyph.cluster as usize)
+                                .copied()
+                                .unwrap_or(glyph.cluster)
+                        });
+                        unit_at[byte as usize] as usize
+                    } else {
+                        0
+                    };
+                    glyph_tint(unit, glyph.missing)
+                },
                 &mut instances,
             );
         }
@@ -427,33 +495,31 @@ impl BitFont {
         )
     }
 
-    /// Walk `text` the way native `BitFont` advances its pen: `visit` gets
-    /// each drawn glyph, its pen x in device pixels and whether it is the
-    /// missing-glyph stand-in, and returns `false` to stop. Spaces, tabs and
-    /// line breaks move the pen without a glyph.
+    /// Walk `text`'s UTF-16 units the way native `BitFont` advances its
+    /// pen: `visit` gets each drawn glyph's unit index, the glyph, its pen x
+    /// in device pixels and whether it is the missing-glyph stand-in, and
+    /// returns `false` to stop. Spaces, tabs and line breaks move the pen
+    /// without a glyph; a surrogate half is its own (missing) glyph.
     fn native_glyph_pens(
         &self,
         text: &str,
         x: f32,
         scale: f32,
-        mut visit: impl FnMut(GlyphEntry, f32, bool) -> bool,
+        mut visit: impl FnMut(usize, GlyphEntry, f32, bool) -> bool,
     ) {
         let mut cursor_x = x;
         let spacing = self.char_spacing as f32 * scale;
         let mut emitted = 0u32;
-        for ch in text.chars() {
-            match ch {
+        for (unit, code_unit) in text.encode_utf16().enumerate() {
+            match code_unit {
                 // \r/\n are layout-only control chars.
-                '\r' | '\n' => continue,
-                '\t' => {
+                CR_UNIT | LF_UNIT => continue,
+                TAB_UNIT => {
                     let cell_x = ((cursor_x - x) / scale) as u32;
-                    let advanced = cell_x + self.tab_width;
-                    let next_cell =
-                        advanced - ((advanced.saturating_sub(self.tab_origin)) % self.tab_width);
-                    cursor_x = x + (next_cell as f32) * scale;
+                    cursor_x = x + (self.next_tab_stop(cell_x) as f32) * scale;
                     continue;
                 }
-                ' ' => {
+                SPACE_UNIT => {
                     if emitted > 0 {
                         cursor_x += spacing;
                     }
@@ -463,23 +529,26 @@ impl BitFont {
                 }
                 _ => {}
             }
-            let (entry, missing) = match u16::try_from(ch as u32)
-                .ok()
-                .and_then(|cp| self.glyphs.get(&cp))
-            {
-                Some(g) => (Some(*g), false),
+            let (entry, missing) = match self.glyphs.get(&code_unit) {
+                Some(glyph) => (Some(*glyph), false),
                 None => (self.missing_glyph, true),
             };
             let Some(entry) = entry else { continue };
             if emitted > 0 {
                 cursor_x += spacing;
             }
-            if !visit(entry, cursor_x, missing) {
+            if !visit(unit, entry, cursor_x, missing) {
                 return;
             }
             cursor_x += entry.pixel_width * scale;
             emitted += 1;
         }
+    }
+
+    /// The cell x of the tab stop after cell x `x`.
+    fn next_tab_stop(&self, x: u32) -> u32 {
+        let advanced = x + self.tab_width;
+        advanced - ((advanced.saturating_sub(self.tab_origin)) % self.tab_width)
     }
 
     /// One native glyph with its cell's top-left at `pen`.
@@ -579,123 +648,12 @@ impl BitFont {
         }
         // UI tints multiply the encoded texel (`palette_light`), so the
         // encoded COLORREF bytes are the tint.
-        let tint_of = |unit: usize| {
+        let instances = self.emit_text(text, [x, y], scale, depth, camera_offset, true, |unit| {
             unit_rgb
                 .get(unit)
                 .map(|rgb| rgb.map(|c| f32::from(c) / 255.0))
-        };
-        let ([x, y], scale) = self.rastered([x, y], scale, camera_offset);
-
-        let mut instances = Vec::with_capacity(text.len());
-        if self.native(text) {
-            let mut units = text.encode_utf16().enumerate().filter(|&(_, unit)| {
-                unit != u16::from(b'\r')
-                    && unit != u16::from(b'\n')
-                    && unit != u16::from(b'\t')
-                    && unit != u16::from(b' ')
-            });
-            self.native_glyph_pens_utf16(text, x, scale, |glyph, pen_x, missing| {
-                let Some((unit, _)) = units.next() else {
-                    return false;
-                };
-                let Some(tint) = tint_of(unit) else {
-                    return false;
-                };
-                let tint = if missing {
-                    Self::missing_color_xor(tint)
-                } else {
-                    tint
-                };
-                instances.extend(self.native_instance(glyph, [pen_x, y], scale, depth, tint));
-                true
-            });
-            return (instances, consumed);
-        }
-
-        let (line, offsets) = single_line(text);
-        // UTF-16 unit index of every byte of `text`.
-        let mut unit_at = vec![0u32; text.len() + 1];
-        let mut unit = 0u32;
-        for (at, c) in text.char_indices() {
-            for slot in &mut unit_at[at..at + c.len_utf8()] {
-                *slot = unit;
-            }
-            unit += c.len_utf16() as u32;
-        }
-        let shaped = self.shape(&line, 0);
-        let mut engine = self.engine.borrow_mut();
-        for shaped_line in &shaped.lines {
-            engine.emit_line(
-                shaped_line,
-                [x, y],
-                scale,
-                depth,
-                |glyph| {
-                    let byte = offsets.as_ref().map_or(glyph.cluster, |map| {
-                        map.get(glyph.cluster as usize)
-                            .copied()
-                            .unwrap_or(glyph.cluster)
-                    });
-                    let tint = tint_of(unit_at[byte as usize] as usize)?;
-                    Some(if glyph.missing {
-                        Self::missing_color_xor(tint)
-                    } else {
-                        tint
-                    })
-                },
-                &mut instances,
-            );
-        }
+        });
         (instances, consumed)
-    }
-
-    /// [`Self::native_glyph_pens`] over UTF-16 units, as Path A walks them: a
-    /// surrogate half is its own (missing) glyph.
-    fn native_glyph_pens_utf16(
-        &self,
-        text: &str,
-        x: f32,
-        scale: f32,
-        mut visit: impl FnMut(GlyphEntry, f32, bool) -> bool,
-    ) {
-        let mut cursor_x = x;
-        let spacing = self.char_spacing as f32 * scale;
-        let mut emitted = 0u32;
-        for code_unit in text.encode_utf16() {
-            match code_unit {
-                value if value == u16::from(b'\r') || value == u16::from(b'\n') => continue,
-                value if value == u16::from(b'\t') => {
-                    let cell_x = ((cursor_x - x) / scale) as u32;
-                    let advanced = cell_x + self.tab_width;
-                    let next_cell =
-                        advanced - ((advanced.saturating_sub(self.tab_origin)) % self.tab_width);
-                    cursor_x = x + next_cell as f32 * scale;
-                    continue;
-                }
-                value if value == u16::from(b' ') => {
-                    if emitted > 0 {
-                        cursor_x += spacing;
-                    }
-                    cursor_x += self.space_width as f32 * scale;
-                    emitted += 1;
-                    continue;
-                }
-                _ => {}
-            }
-            let (entry, missing) = match self.glyphs.get(&code_unit) {
-                Some(glyph) => (Some(*glyph), false),
-                None => (self.missing_glyph, true),
-            };
-            let Some(entry) = entry else { continue };
-            if emitted > 0 {
-                cursor_x += spacing;
-            }
-            if !visit(entry, cursor_x, missing) {
-                return;
-            }
-            cursor_x += entry.pixel_width * scale;
-            emitted += 1;
-        }
     }
 
     pub fn wrap_layout(&self, text: &str, max_width: u32) -> WrapLayout {
@@ -745,9 +703,7 @@ impl BitFont {
 
             match ch {
                 '\t' => {
-                    let advanced = line_x + self.tab_width;
-                    line_x =
-                        advanced - ((advanced.saturating_sub(self.tab_origin)) % self.tab_width);
+                    line_x = self.next_tab_stop(line_x);
                     prev_char = Some('\t');
                     i += 1;
                     continue;
@@ -780,7 +736,7 @@ impl BitFont {
                 _ => {}
             }
 
-            let glyph_w = self.lookup_glyph_width(ch);
+            let glyph_w = self.glyph_advance(ch as u32);
             let Some(glyph_w) = glyph_w else {
                 prev_char = Some(ch);
                 i += 1;
@@ -862,17 +818,36 @@ impl BitFont {
         }
     }
 
-    fn lookup_glyph_width(&self, ch: char) -> Option<u32> {
-        if ch == ' ' {
+    /// A GAME.FNT unit's advance before its spacing: a space's width, its
+    /// glyph's, or else the missing glyph's.
+    fn glyph_advance(&self, unit: u32) -> Option<u32> {
+        if unit == u32::from(SPACE_UNIT) {
             return Some(self.space_width);
         }
-        let cp = ch as u32;
-        if cp <= u16::MAX as u32
-            && let Some(g) = self.glyphs.get(&(cp as u16))
-        {
-            return Some(g.pixel_width as u32);
+        u16::try_from(unit)
+            .ok()
+            .and_then(|unit| self.glyphs.get(&unit))
+            .or(self.missing_glyph.as_ref())
+            .map(|g| g.pixel_width as u32)
+    }
+
+    /// The `BitFont__MeasureText` width of native `units`.
+    fn native_width(&self, units: impl IntoIterator<Item = u16>) -> u32 {
+        let mut x: u32 = 0;
+        let mut count: u32 = 0;
+        for unit in units {
+            match unit {
+                TAB_UNIT => x = self.next_tab_stop(x),
+                CR_UNIT | LF_UNIT => {}
+                _ => {
+                    if let Some(w) = self.glyph_advance(u32::from(unit)) {
+                        x += w;
+                        count += 1;
+                    }
+                }
+            }
         }
-        self.missing_glyph.as_ref().map(|g| g.pixel_width as u32)
+        x + count * self.char_spacing
     }
 
     /// Width per gamemd's `BitFont__MeasureText` (0x00433CF0): every char
@@ -884,38 +859,7 @@ impl BitFont {
         if !self.native(text) {
             return self.shape(&single_line(text).0, 0).width().ceil() as u32;
         }
-        let mut x: u32 = 0;
-        let mut count: u32 = 0;
-        for ch in text.chars() {
-            match ch {
-                '\t' => {
-                    let advanced = x + self.tab_width;
-                    x = advanced - ((advanced.saturating_sub(self.tab_origin)) % self.tab_width);
-                    continue;
-                }
-                '\r' | '\n' => continue,
-                ' ' => {
-                    x += self.space_width;
-                    count += 1;
-                }
-                other => {
-                    let cp = other as u32;
-                    let w = if cp <= u16::MAX as u32 {
-                        self.glyphs
-                            .get(&(cp as u16))
-                            .map(|g| g.pixel_width as u32)
-                            .or_else(|| self.missing_glyph.as_ref().map(|g| g.pixel_width as u32))
-                    } else {
-                        self.missing_glyph.as_ref().map(|g| g.pixel_width as u32)
-                    };
-                    if let Some(w) = w {
-                        x += w;
-                        count += 1;
-                    }
-                }
-            }
-        }
-        x + count * self.char_spacing
+        self.native_width(text.encode_utf16())
     }
 
     /// The longest start of `text` that fits `fit_width`, cut the way the
@@ -925,10 +869,12 @@ impl BitFont {
     pub fn truncate_to_width<'a>(&self, text: &'a str, fit_width: u32) -> Cow<'a, str> {
         if self.native(text) {
             let mut utf16: Vec<u16> = text.encode_utf16().collect();
-            if self.utf16_text_width(&utf16) <= fit_width {
+            if self.native_width(utf16.iter().copied().take_while(|&u| u != 0)) <= fit_width {
                 return Cow::Borrowed(text);
             }
-            while !utf16.is_empty() && self.utf16_text_width(&utf16) > fit_width {
+            while !utf16.is_empty()
+                && self.native_width(utf16.iter().copied().take_while(|&u| u != 0)) > fit_width
+            {
                 utf16.pop();
             }
             return Cow::Owned(String::from_utf16_lossy(&utf16));
@@ -954,41 +900,11 @@ impl BitFont {
         Cow::Owned(text[..kept.checked_sub(1).map_or(0, |last| ends[last])].to_owned())
     }
 
-    fn utf16_text_width(&self, units: &[u16]) -> u32 {
-        const TAB: u16 = b'\t' as u16;
-        const CR: u16 = b'\r' as u16;
-        const LF: u16 = b'\n' as u16;
-        const SPACE: u16 = b' ' as u16;
-
-        let mut x: u32 = 0;
-        let mut count: u32 = 0;
-        for unit in units.iter().copied() {
-            match unit {
-                0 => break,
-                TAB => {
-                    let advanced = x + self.tab_width;
-                    x = advanced - ((advanced.saturating_sub(self.tab_origin)) % self.tab_width);
-                    continue;
-                }
-                CR | LF => continue,
-                SPACE => {
-                    x += self.space_width;
-                    count += 1;
-                }
-                other => {
-                    let w = self
-                        .glyphs
-                        .get(&other)
-                        .map(|g| g.pixel_width as u32)
-                        .or_else(|| self.missing_glyph.as_ref().map(|g| g.pixel_width as u32));
-                    if let Some(w) = w {
-                        x += w;
-                        count += 1;
-                    }
-                }
-            }
-        }
-        x + count * self.char_spacing
+    /// `text`'s longest start that leaves room in `width` for `ellipsis`
+    /// ([`Self::truncate_to_width`]), with `ellipsis` after it.
+    pub fn truncate_with_ellipsis(&self, text: &str, width: u32, ellipsis: &str) -> String {
+        let cut = width.saturating_sub(self.text_width(ellipsis));
+        format!("{}{ellipsis}", self.truncate_to_width(text, cut))
     }
 
     /// Tint adjustment for missing-glyph fallback rendering -- caller XORs
@@ -1375,6 +1291,46 @@ pub(crate) mod tests {
             instances[0].tint,
             [248.0 / 255.0, 252.0 / 255.0, 30.0 / 255.0]
         );
+    }
+
+    #[test]
+    fn path_a_heading_reveal_colours_each_glyph_by_its_unit() {
+        // The reveal before Path A shared `native_glyph_pens`: the n-th drawn
+        // glyph took the n-th unit that is no tab, space or line break, and
+        // a cut unit stopped the text.
+        let font = make_test_font(
+            &[(b'M' as u16, 9), (b'o' as u16, 6), (b'd' as u16, 6), (b's' as u16, 5)],
+            4,
+        );
+        let tints = |instances: Vec<SpriteInstance>| {
+            instances.iter().map(|glyph| glyph.tint).collect::<Vec<_>>()
+        };
+        for text in ["Mods", " Mods", "M o\td\r\ns"] {
+            for count in 0..=text.encode_utf16().count() as u32 + 10 {
+                let reveal = PathAReveal {
+                    count,
+                    range: 8,
+                    base_rgb: [255, 255, 0],
+                    highlight_rgb: [255, 255, 255],
+                };
+                let mut old = Vec::new();
+                let drawn = text.encode_utf16().enumerate().filter(|&(_, unit)| {
+                    ![TAB_UNIT, CR_UNIT, LF_UNIT, SPACE_UNIT].contains(&unit)
+                });
+                for (unit, _) in drawn {
+                    let Some(rgb) = encoded_unit_rgb(unit as u32 + 1, reveal) else {
+                        break;
+                    };
+                    old.push(rgb.map(|c| f32::from(c) / 255.0));
+                }
+                let (instances, consumed) =
+                    font.build_text_path_a(text, 0.0, 0.0, 1.0, 0.5, [0.0; 2], 0, reveal);
+                assert_eq!(tints(instances), old, "{text:?} at count {count}");
+                let units = text.encode_utf16().count() as u32;
+                let shown = if count == 0 { units } else { units.min(count - 1) };
+                assert_eq!(consumed, shown, "{text:?} at count {count}");
+            }
+        }
     }
 
     #[test]

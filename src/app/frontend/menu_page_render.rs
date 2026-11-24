@@ -24,8 +24,10 @@ use crate::app::frontend::shell_pass::{
 };
 use crate::app::frontend::shell_transition::{ColumnDraw, ShellSlideKind};
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
-    ButtonArt, GuiPaint, GuiStyle, paint_gui_ids,
+    ButtonArt, GuiStyle, paint_gui_ids,
 };
+use crate::render::batch::SpriteInstance;
+use crate::render::hud_paint::{HudPaint, Material};
 use crate::render::shell_paint::{self, CURSOR_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED};
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
@@ -244,6 +246,117 @@ pub(crate) fn page_panel_state(
     }
 }
 
+/// The right panel's heading `0x694` and status line `0x695` as the family
+/// pages, the online pages and Options show them: the two kind-1 statics,
+/// `Text` widgets of one tree of their own ([`paint_panel_statics`]). The
+/// pages' own trees are rebuilt as scratch trees while a page has no
+/// instance, and their rect tables know no statics; the panel's outlive the
+/// pages.
+pub(crate) struct PanelStatics {
+    gui: Gui,
+    root: NodeId,
+}
+
+/// The heading's and the status line's ids in [`PanelStatics`].
+const PANEL_TITLE: i32 = 0x694;
+const PANEL_STATUS: i32 = 0x695;
+
+impl Default for PanelStatics {
+    fn default() -> Self {
+        let mut gui = Gui::new(4);
+        let root = gui
+            .create(NodeKind::Dialog, None)
+            .expect("an empty tree takes its root");
+        for id in [PANEL_TITLE, PANEL_STATUS] {
+            let node = gui
+                .create(NodeKind::Text, Some(root))
+                .expect("the panel's tree holds both statics");
+            let _ = gui.set(node, Prop::Id, Value::Int(id));
+        }
+        Self { gui, root }
+    }
+}
+
+/// A panel static as it shows this frame: its text, where and how it
+/// aligns, and its kind-1 reveal (unrevealed, the label colour).
+pub(crate) struct PanelStatic<'a> {
+    pub(crate) text: std::borrow::Cow<'a, str>,
+    pub(crate) rect: RectPx,
+    pub(crate) align: ShellAlign,
+    pub(crate) reveal: Option<crate::render::shell_text_reveal::PathAReveal>,
+}
+
+impl<'a> PanelStatic<'a> {
+    /// The heading revealing `window` of its text `text`.
+    pub(crate) fn title(
+        text: impl Into<std::borrow::Cow<'a, str>>,
+        rect: RectPx,
+        align: ShellAlign,
+        window: Kind1RevealWindow,
+    ) -> Self {
+        let reveal = Some(shell_reveal_path_a(window));
+        let text = text.into();
+        Self {
+            text,
+            rect,
+            align,
+            reveal,
+        }
+    }
+
+    /// The status line [`paint_shell_status_line`] gives.
+    pub(crate) fn status(label: PaintLabel<'a>) -> Self {
+        Self {
+            text: label.text,
+            rect: label.rect,
+            align: label.align,
+            reveal: label.path_a_reveal,
+        }
+    }
+}
+
+/// The heading and the status line (each when it shows) from the panel's
+/// widgets, in that order, at `scale`'s glyph size.
+pub(crate) fn paint_panel_statics(
+    state: &AppState,
+    statics: [Option<PanelStatic<'_>>; 2],
+    scale: crate::ui::shell::geom::ShellScale,
+) -> Vec<crate::render::shell_text::ShellTextDraw> {
+    // The render holds `state` shared; the panel's tree is the one piece it
+    // writes (a borrow flag, no lock).
+    let mut panel = state.frontend.panel_statics.borrow_mut();
+    let PanelStatics { gui, root } = &mut *panel;
+    let root = *root;
+    let mut reveals = [None; 2];
+    for (index, shown) in statics.into_iter().enumerate() {
+        let node = gui.tree().children(root).ok().and_then(|c| c.get(index).copied());
+        let Some(node) = node else { continue };
+        let _ = gui.set(node, Prop::Visible, Value::Bool(shown.is_some()));
+        let Some(shown) = shown else { continue };
+        let _ = gui.set(node, Prop::Rect, Value::Rect(shown.rect));
+        let _ = gui.set(node, Prop::Align, Value::Int(shown.align.0.into()));
+        // The text is copied in only when it changes.
+        if !matches!(gui.get(node, Prop::Text), Ok(Some(Value::Text(old))) if *old == *shown.text) {
+            let _ = gui.set(node, Prop::Text, Value::Text(shown.text.into_owned()));
+        }
+        reveals[index] = shown.reveal;
+    }
+    let reveal_of = |id: i32| match id {
+        PANEL_TITLE => reveals[0],
+        PANEL_STATUS => reveals[1],
+        _ => None,
+    };
+    let style = GuiStyle {
+        reveal_of: Some(&reveal_of),
+        ..Default::default()
+    };
+    let mut paint = HudPaint::default();
+    crate::app::frontend::skirmish_shell_render::gui_paint::paint_gui_into(
+        &mut paint, state, None, gui, root, scale, &[], style,
+    );
+    paint.texts
+}
+
 /// Advance the showing family dialog's `0x71C` for this recomposition; the
 /// frame loop commits it after present. No timer reaches the static while the
 /// dialog's first-paint slide runs.
@@ -303,7 +416,13 @@ pub(crate) fn active_page_title_text(
             |browser| browser.game_title_label().0,
         ),
         ShellSlideKind::WolWelcome => crate::ui::wol_shell::WOL_WELCOME_PAGE.title_key,
-        ShellSlideKind::WolLogin => crate::ui::wol_login::PAGE.title_key,
+        ShellSlideKind::WolLogin => wol_login_title_key(
+            state.frontend
+                .wol
+                .as_ref()
+                .and_then(|visit| visit.login())
+                .map(|login| login.policy),
+        ),
         ShellSlideKind::WolLobby => crate::ui::wol_shell::WOL_LOBBY_TITLE_KEY,
         ShellSlideKind::WolOptions => crate::ui::wol_options::PAGE.title_key,
         ShellSlideKind::WolSoundOptions => crate::ui::shell::sound::SHELL_SOUND_PAGE.title_key,
@@ -337,6 +456,13 @@ pub(crate) fn active_page_title_text(
         }
     };
     state.csf_text(key)
+}
+
+fn wol_login_title_key(policy: Option<crate::ui::wol_login::LoginPolicy>) -> &'static str {
+    policy
+        .unwrap_or(crate::ui::wol_login::LoginPolicy::Legacy)
+        .page_spec()
+        .title_key
 }
 
 /// Paint whichever RA2TS menu page the route selects.
@@ -432,7 +558,7 @@ pub(crate) struct FamilyFrame<'a> {
     pub(crate) labels: Vec<PaintLabel<'a>>,
     /// Skirmish-atlas sprites over the buttons (a list, a prompt), with
     /// their text after all other text.
-    pub(crate) over: GuiPaint,
+    pub(crate) over: HudPaint,
     /// Whether this pass draws the cursor (a box painted over the page next
     /// draws it instead).
     pub(crate) cursor: bool,
@@ -458,7 +584,7 @@ impl<'a> FamilyFrame<'a> {
             under: Vec::new(),
             over_panel_art: Vec::new(),
             labels: Vec::new(),
-            over: GuiPaint::default(),
+            over: HudPaint::default(),
             cursor: true,
         }
     }
@@ -510,8 +636,8 @@ pub(crate) fn encode_family_page(
         list_boxes,
         under,
         over_panel_art,
-        mut labels,
-        over,
+        labels,
+        mut over,
         cursor,
     } = frame;
     let (screen, scale) = (layout.screen, layout.scale);
@@ -545,7 +671,7 @@ pub(crate) fn encode_family_page(
         (Some(draws), _) => {
             let column = shell_paint::paint_slide_column(chrome, layout.right_panel, draws);
             panel_sprites.extend(column);
-            GuiPaint::default()
+            HudPaint::default()
         }
         (None, Some((gui, root))) => {
             let style = GuiStyle {
@@ -554,22 +680,31 @@ pub(crate) fn encode_family_page(
             };
             paint_gui_ids(state, gui, root, ids, scale, style)
         }
-        (None, None) => GuiPaint::default(),
+        (None, None) => HudPaint::default(),
     };
-    if let Some(window) = panel.title {
-        labels.push(PaintLabel {
-            text: state.csf_text(title_key).into(),
-            rect: layout.right_panel.family_title_caption(layout.title),
-            align: ShellAlign::ART_CAPTION,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: Some(shell_reveal_path_a(window)),
-        });
-    }
-    labels.extend(panel.status);
+    let title = panel.title.map(|window| {
+        let rect = layout.right_panel.family_title_caption(layout.title);
+        let text = state.csf_text(title_key);
+        PanelStatic::title(text, rect, ShellAlign::ART_CAPTION, window)
+    });
     let mut text =
         shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
-    widgets.extend(over);
-    text.extend(widgets.texts);
+    let status = panel.status.map(PanelStatic::status);
+    text.extend(paint_panel_statics(state, [title, status], scale));
+    // The column's widgets, then what goes over them, lane by lane: a
+    // paint's own buffer where it alone holds the lane.
+    let joined = |first: &mut HudPaint, then: &mut HudPaint, material| -> Vec<SpriteInstance> {
+        let mut lane = first.take_lane(material);
+        if lane.is_empty() {
+            return then.take_lane(material);
+        }
+        then.drain_lane(material, &mut lane);
+        lane
+    };
+    let column = joined(&mut widgets, &mut over, Material::Column);
+    let controls = joined(&mut widgets, &mut over, Material::Controls);
+    text.append(&mut widgets.texts);
+    text.append(&mut over.texts);
     draws.push(TexturedDraw {
         texture: &chrome.texture,
         instances: panel_sprites,
@@ -577,11 +712,11 @@ pub(crate) fn encode_family_page(
     draws.extend(over_panel_art);
     draws.push(TexturedDraw {
         texture: &chrome.texture,
-        instances: widgets.column,
+        instances: column,
     });
     draws.push(TexturedDraw {
         texture: &atlas.texture,
-        instances: widgets.controls,
+        instances: controls,
     });
     encode_shell_pass(
         state,
@@ -606,6 +741,14 @@ pub(crate) fn encode_family_page(
 mod tests {
     use super::*;
     use crate::ui::single_player_shell::SINGLE_PLAYER_PAGE;
+
+    #[test]
+    fn the_wol_login_heading_comes_from_the_drawn_page() {
+        use crate::ui::wol_login::LoginPolicy;
+        assert_eq!(wol_login_title_key(Some(LoginPolicy::ChooseEntry)), "VERA:OnlineTitle");
+        assert_eq!(wol_login_title_key(Some(LoginPolicy::Legacy)), "GUI:LoginScreen");
+        assert_eq!(wol_login_title_key(None), "GUI:LoginScreen");
+    }
 
     #[test]
     fn status_help_includes_disabled_load() {

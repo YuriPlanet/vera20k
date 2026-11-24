@@ -90,9 +90,13 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   the ClickedAction refusals drop a Deactivated object from the click's
   receivers (`Simulation::click_order_receivers`), and GetDeactivatedAction
   10044AD0 decides the hover cursor of the object that owns it
-  (`capability_cursor_for_hover`). The click paths over an object have no
-  single per-class What_Action entry; they keep their stock rungs, whose
-  orders the receiver filter already withholds; when the cursor owner is
+  (`capability_cursor_for_hover`). The click paths need no per-receiver
+  rungs: the release asks each selected object its own What_Action and hands
+  that to its ClickedAction (`0x4AE83A`, `0x4AE844`), whose Deactivated
+  refusal passes only Detonate (0x37), and GetDeactivatedAction answers
+  Detonate only for a lone selected object over itself, which the self-click
+  producer sends. Dropping the Deactivated receivers is therefore
+  equivalent. When the cursor owner is
   Deactivated, its answer decides the whole release, so no object receives
   an order (`ares_head_hook_selection_click`), under Shift too: the class
   hooks precede Techno's ToggleSelect (0x700107), and their Select or 0
@@ -115,12 +119,14 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   unless its type sets `NoSelfGuardArea=yes` (10049710;
   `Simulation::infantry_healer_guards_itself`), or unless it is an Engineer
   among several selected objects, which refuses Ctrl's Attack first
-  (0x51E6B4). Not ported, and only mods reach them since no retail
-  infantryman heals: Foot's Guard for a healer whose weapon 0 does not heal,
-  for which VERA has no order, so it orders nothing; Alt and Ctrl+Alt over a
-  Terrain object, which answer their key rungs, where the arm answers
-  AttackSupport; and a campaign's shroud Move over an ally, which VERA
-  selects, where the arm keeps it. The arms follow the game's Ares switch
+  (0x51E6B4). Foot's case 0x3B picks the mission from weapon 0's damage
+  (0x4D7C93): a healer whose weapon 0 does not heal goes on Guard of itself
+  (`attack_support_command`). Over a Terrain object the arm's AttackSupport
+  replaces Alt's Move and Ctrl+Alt's GuardArea, though not Shift's
+  ToggleSelect (`healer_supports_over_terrain`, `healer_terrain_key_order`).
+  In a campaign the tail keeps the Move Foot's shroud rung makes over a
+  shrouded ally (0x51E77F, `heal_arm_keys`). Only mods reach these, since no
+  retail infantryman heals. The arms follow the game's Ares switch
   (`RuleSet::ares`) in every build, and so do their cursors through the
   Ares cursor owner (`app::input::ares_cursor`).
 - Init_1's capture manager and parasite for any weapon slot and the
@@ -134,8 +140,6 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   (0x4DAA68, 0x7101CF). The airstrike voices (0x41D5AE, 0x41D940) are
   ported in `sim/airstrike.rs`.
 - The AttachEffect anim hiding of the Temporal hook.
-- `SuperGapRadiusInCells` multiples of 256: the stock What_Action
-  (`0x004472AA`) still reads the char, VERA the int.
 
 ## RulesExt general keys
 
@@ -357,7 +361,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
-| `44E2B0` | BuildingClass_Mi_Unload_LargeGap | `1004D1B0` | ported: int SuperGapRadiusInCells; toggle otherwise stock |
+| `44E2B0` | BuildingClass_Mi_Unload_LargeGap | `1004D1B0` | ported: the int radii (`toggle_gap_supercharge`). Ares acts only when the charge changes, so it skips stock's removal and empty re-add for an uncharged generator that is not operational (`0x44E30E..0x44E326`): equivalent: the operational edge (`0x454B91..0x454BEB`, Ares `0x454BDC`) removes a gap the running client holds by the end of that Update either way, and stock's add deposits nothing while not operational |
 | `454BDC` | BuildingClass_UpdatePowered_LargeGap | `1004D250` | ported: int GapRadiusInCells |
 | `4566D5` | BuildingClass_GetRangeOfRadial_LargeGap | `1004D170` | ported: int radius in GetSensorRange |
 | `65731F` | RadarClass_UpdateMinimap_Lock | `1004D2C0` | not applicable: radar surface lock (DirectDraw performance) |

@@ -32,8 +32,14 @@ pub(crate) enum FrameStep {
     Shroud,
     /// The scenario lighting transition.
     Lighting,
+    /// The Firestorm ice chain's growth (`Simulation::tick_ice_growth`),
+    /// which Firestorm 2.0 LogicClass::AI runs before its tiberium updates.
+    IceGrowth,
     /// Ore growth and spread.
     OreGrowth,
+    /// The Firestorm ice chain's solidify pass (`Simulation::solidify_ice`),
+    /// after the tiberium updates (LogicClass::AI 0x506f84).
+    IceSolidify,
     /// `BombListClass::UpdateAll` (`0x0055B4E1`).
     BombList,
     /// `Kamikaze__Update` (`0x0055B4F0`).
@@ -85,13 +91,15 @@ pub(crate) enum FrameStep {
 }
 
 /// The master frame's steps before its tail, in the order they run.
-pub(crate) const LOGIC_STEPS: [FrameStep; 20] = [
+pub(crate) const LOGIC_STEPS: [FrameStep; 22] = [
     FrameStep::SessionCommands,
     FrameStep::AdmitCommands,
     FrameStep::Triggers,
     FrameStep::Shroud,
     FrameStep::Lighting,
+    FrameStep::IceGrowth,
     FrameStep::OreGrowth,
+    FrameStep::IceSolidify,
     FrameStep::BombList,
     FrameStep::Kamikaze,
     FrameStep::TeamScript,
@@ -119,7 +127,7 @@ impl FrameStep {
             Self::Triggers => phase::TRIGGERS,
             Self::Shroud => phase::SHROUD,
             Self::Lighting => phase::LIGHTING,
-            Self::OreGrowth => phase::ORE_GROWTH,
+            Self::IceGrowth | Self::OreGrowth | Self::IceSolidify => phase::ORE_GROWTH,
             Self::BombList | Self::LocalAnims => return None,
             Self::Kamikaze | Self::DiskLasers => phase::BOMBS,
             Self::TeamScript => phase::TEAM_AI,
@@ -343,7 +351,9 @@ impl Simulation {
                 self.tick_fog_regrowth(UninitContext::new(rules).with_effects(effects));
             }
             FrameStep::Lighting => self.tick_scenario_lighting_transition(rules),
+            FrameStep::IceGrowth => self.tick_ice_growth(rules, overlay_registry),
             FrameStep::OreGrowth => self.tick_ore_growth_rungs(rules, overlay_registry, effects)?,
+            FrameStep::IceSolidify => self.solidify_ice(rules, overlay_registry),
             // `BombListClass::UpdateAll` follows growth and spread (0x0055B4E1).
             FrameStep::BombList => Self::bomb_list_update(
                 &self.interner,
@@ -492,6 +502,9 @@ impl Simulation {
                 self.alpha_shapes.purge_disabled();
             }
             FrameStep::CrateRegen => {
+                // Firestorm's pending terrain dent (Firestorm 2.0 0x51EA50)
+                // runs in this slot of its LogicClass::AI.
+                self.finish_terrain_dent(rules, effects);
                 // Called between `AlphaShapeClass::PurgeDisabled` and the
                 // Tactical, Factory and House callbacks, on the
                 // pre-increment frame counter this tick's steps have all
@@ -1304,10 +1317,11 @@ impl Simulation {
             .trigger_effects
             .iter()
             .any(|effect| matches!(effect, TriggerEffect::BridgeStateChanged));
+        let ice_zones_stale = std::mem::take(&mut self.ice_zones_stale);
         self.frame_overlay_updates = self.finalize_frame_overlays_and_navigation(
             rules,
             overlay_registry,
-            bridge_state_changed,
+            bridge_state_changed || ice_zones_stale,
             destroyed_structure || spawned_entities,
         );
         profile_phase!(OVERLAYS);

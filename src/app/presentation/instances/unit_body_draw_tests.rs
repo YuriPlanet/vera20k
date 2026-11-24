@@ -1368,3 +1368,57 @@ fn retail_no_spawn_alt_draw_borrows_the_rules_wo_name() {
     }
     assert!(checked > 0, "retail rules carry NoSpawnAlt vehicles");
 }
+
+/// Ares' UnitClass_Draw_OreGatherAnim (Ares.dll `10053E50`, hook
+/// `0x0073D219`) refuses the gather overlay to a harvester under EMP
+/// (vt+0x37C); stock YR, which tests only the warps, still draws it.
+#[test]
+fn only_ares_hides_the_gather_overlay_under_emp() {
+    use crate::app::presentation::frame::PresentationFrame;
+    use crate::sim::runtime::{SimResources, SimRuntime};
+
+    for ares in [false, true] {
+        let _way = crate::rules::ares_switch::read_ares_way(ares);
+        let ini = format!(
+            "{}[VehicleTypes]\n0=HARV\n[HARV]\nStrength=100\nHarvester=yes\nSpeed=4\n",
+            if ares {
+                "[General]\nTogglePowerAllowed=yes\n"
+            } else {
+                ""
+            }
+        );
+        let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+        assert_eq!(rules.ares(), ares);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let id = sim
+            .spawn_object("HARV", "Americans", 10, 20, 0, &rules)
+            .unwrap();
+        sim.entity_mut_for_test(id)
+            .and_then(|harvester| harvester.miner.as_mut())
+            .expect("a Harvester= unit has a miner")
+            .set_harvesting_for_test(true);
+        let mut runtime = SimRuntime {
+            simulation: sim,
+            resources: SimResources::new(rules).into(),
+        };
+        let drawn = |runtime: &SimRuntime| {
+            let frame = PresentationFrame::capture(runtime, &Default::default(), false);
+            harvest_overlay(
+                Some(&runtime.resources.rules),
+                &runtime.simulation,
+                frame.object(id).unwrap(),
+                0,
+            )
+            .is_some()
+        };
+        assert!(drawn(&runtime), "a harvesting miner shows the overlay");
+        runtime
+            .simulation
+            .entity_mut_for_test(id)
+            .unwrap()
+            .set_emp_remaining_for_test(30);
+        assert_eq!(drawn(&runtime), !ares, "ares {ares}");
+    }
+}

@@ -1,7 +1,37 @@
 //! Local paging for fixed-size dialog rows. The roster and ordering stay with
 //! each screen's existing model; this owner stores only a page index.
 
-use super::geom::RectPx;
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+
+use super::geom::{RectPx, ShellAlign};
+
+/// VERA's Previous and Next page buttons, and the "page n of m" static over
+/// them, in the in-game dialogs that page their rows (0x73, 0xEA).
+pub const PREVIOUS: u16 = 0xF201;
+pub const NEXT: u16 = 0xF202;
+pub const COUNTER: u16 = 0xF20F;
+pub const PREVIOUS_LABEL: &str = "VERA:Previous";
+pub const NEXT_LABEL: &str = "VERA:Next";
+
+/// The page counter: a static centred over the Previous button.
+pub fn counter_node() -> NodeSpec {
+    NodeSpec::new(NodeKind::Text)
+        .id(COUNTER.into())
+        .with(Prop::Align, Value::Int(i32::from(ShellAlign::H_CENTER.0)))
+}
+
+/// The counter's rect, 24 px above the Previous button of `buttons`
+/// ([`button_rects`]) and 20 px tall.
+pub fn counter_rect(buttons: [RectPx; 2]) -> RectPx {
+    let first = buttons[0];
+    RectPx::new(first.x, first.y - 24, first.w, 20)
+}
+
+/// The counter's text for page `index` (from 0) of `pages`.
+pub fn counter_text(index: usize, pages: usize) -> String {
+    let page = index + 1;
+    crate::i18n::tr_fill("VERA:PageOf", &[("page", &page), ("pages", &pages)])
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RowPage {

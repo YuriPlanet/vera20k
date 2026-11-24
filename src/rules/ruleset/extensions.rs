@@ -106,6 +106,12 @@ impl RuleSet {
         })
     }
 
+    /// RulesExt TogglePowerAllowed (`[General] TogglePowerAllowed=`), which
+    /// also gates Ares' TogglePower command (`src/Commands/TogglePower.h`).
+    pub fn ares_toggle_power_allowed(&self) -> bool {
+        self.ares_building_globals().toggle_power_allowed
+    }
+
     /// RulesExt BerserkROFMultiplier, AutoRepel and PlayerAutoRepel.
     pub(crate) fn ares_techno_combat(
         &self,

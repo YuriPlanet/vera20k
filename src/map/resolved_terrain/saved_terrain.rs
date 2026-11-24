@@ -324,6 +324,7 @@ impl SavedTerrainTemplate {
             tile_animations: self.tile_animations,
             destroyable_cliff_catalog: None,
             deformation_catalog: None,
+            ice_catalog: None,
             deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
@@ -460,6 +461,7 @@ impl ResolvedTerrainGrid {
             self.native_tmp_draw_heights.clear();
             self.destroyable_cliff_catalog = None;
             self.deformation_catalog = None;
+            self.ice_catalog = None;
             self.bridge_recalc_catalog = None;
             return;
         }
@@ -467,6 +469,7 @@ impl ResolvedTerrainGrid {
         self.destroyable_cliff_catalog = build_destroyable_cliff_catalog(theater, assets, rules);
         self.deformation_catalog =
             super::deformation::build_deformation_catalog(theater, assets, rules);
+        self.ice_catalog = super::ice::build_ice_catalog(theater, assets, rules);
         self.bridge_recalc_catalog = match (theater, assets, rules) {
             (Some(theater), Some(assets), Some(rules)) => {
                 Some(Arc::new(BridgeRecalcCatalog::for_runtime_terrain(

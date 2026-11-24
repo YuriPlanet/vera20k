@@ -274,6 +274,9 @@ pub struct TerrainGrid {
     /// Tiles terrain deformation can write, for the atlas pre-load when the
     /// rules switch it on ([`ResolvedTerrainGrid::deformation_atlas_tiles`]).
     pub deformation_tiles: Vec<u16>,
+    /// Tiles the Firestorm ice chain can write, for the atlas pre-load
+    /// ([`ResolvedTerrainGrid::ice_atlas_tiles`]).
+    pub ice_tiles: Vec<u16>,
 }
 
 /// Convert isometric cell coordinates to screen-space pixel position — **the
@@ -633,6 +636,7 @@ pub fn build_terrain_grid_from_resolved(
         origin_y: min_y,
         bridge_middle_tiles,
         deformation_tiles: resolved.deformation_atlas_tiles(),
+        ice_tiles: resolved.ice_atlas_tiles(),
     }
 }
 

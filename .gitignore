@@ -44,6 +44,7 @@ Thumbs.db
 /docs/*
 !/docs/save-compatibility.md
 !/docs/capabilities.md
+!/docs/rfcs/
 !/docs/wasm.md
 !/docs/sim-thread.md
 !/docs/ares.md
@@ -92,6 +93,8 @@ Thumbs.db
 !/docs/ares-subterranean.md
 !/docs/npatch.md
 !/docs/verax.md
+!/docs/ts-limpets.md
+!/docs/ts-anim-sounds.md
 !/docs/npbug.md
 !/docs/ares-generic-warhead.md
 !/docs/ares-hunter-seeker.md
@@ -100,8 +103,10 @@ Thumbs.db
 !/docs/modding.md
 !/docs/map-format.md
 !/docs/terrain-deformation.md
+!/docs/ts-ice.md
 !/docs/superweapon-limit.md
 !/docs/dormant-stock-rules.md
+!/docs/ts-ion-cannon.md
 !/docs/_config.yml
 !/docs/index.md
 !/docs/menu-reference.md
@@ -110,6 +115,7 @@ Thumbs.db
 !/docs/ares-superweapon-building-gates.md
 !/docs/ares-superweapon-money.md
 !/docs/ares-building-palettes.md
+!/docs/ares-commands.md
 !/docs/ini-directives.md
 !/docs/ini-commander-personalities.md
 !/docs/ini-end-game-screens.md
