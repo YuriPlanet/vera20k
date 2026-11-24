@@ -47,6 +47,7 @@ pub(crate) struct FireSubject<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FirerPart {
     ares: bool,
+    kratos: bool,
     class: FirerClass,
     frame: i32,
     /// Every link to the target unset: [`Self::facts`] sets them.
@@ -87,6 +88,7 @@ impl FirerPart {
         firer.temporal = self.temporal_target.map(link);
         FireFacts {
             ares: self.ares,
+            kratos: self.kratos,
             class: self.class,
             frame: self.frame,
             weapon_index,
@@ -236,11 +238,13 @@ impl<'a> FireSubject<'a> {
                     aa: false,
                     ag: true,
                     rot: 0,
+                    aa_only: false,
                 },
                 |projectile| ProjectileFacts {
                     aa: projectile.aa,
                     ag: projectile.ag,
                     rot: projectile.rot,
+                    aa_only: projectile.aa_only,
                 },
             ),
         }
@@ -439,6 +443,7 @@ impl<'a> FireSubject<'a> {
         };
         FirerPart {
             ares: self.rules.ares(),
+            kratos: self.rules.kratos(),
             class,
             frame: frame as i32,
             firer: firer_facts,
