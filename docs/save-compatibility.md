@@ -57,7 +57,9 @@ The `8d55b4a73` writer's layout `0xF6127DC1` predates Tiberian Sun's
 BounceSound and ExpireSound; its animation types convert with neither sound.
 The `8852f7a76` writer's layout `0x9441E8D8` predates the Kratos infantry firing
 offsets. Its saves convert with Kratos off, as those matches played. The
-`bc55c35e7` writer covers direct loading of layout `0x9F1BD701`.
+`bc55c35e7` writer's layout `0x9F1BD701` predates the processed rules' NPatch
+key reads; its saves convert with the switch off, as those matches played.
+The `98f5a4a` writer covers direct loading of layout `0xA8595079`.
 
 Run the menu and compatibility tests with this command.
 

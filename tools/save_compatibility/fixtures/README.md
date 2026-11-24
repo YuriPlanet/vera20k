@@ -26,9 +26,13 @@ and executes the saved command before it accepts the fixture.
 | `main-8d55b4a73.sav` | `8d55b4a73` (pre-release) | `skirmish` |
 | `main-8852f7a76.sav` | `8852f7a76` (pre-release) | `skirmish` |
 | `main-bc55c35e7.sav` | `bc55c35e7` (pre-release) | `skirmish` |
+| `main-98f5a4a.sav` | `98f5a4a` (pre-release) | `skirmish` |
 
 The Kratos writer revision is in PR #5080. In a fresh clone, fetch it with
-`git fetch origin pull/5080/head` before checking out `bc55c35e7`.
+`git fetch origin pull/5080/head` before checking out `bc55c35e7`. The
+`98f5a4a` row is the writer after NPatch left the build flags: its layout
+`0xA8595079` stores each processed rules layer's NPatch key reads, which
+`bc55c35e7` predated.
 
 The ordinary worlds use `compat.map`, a flat 3×3 terrain and an authored
 APC type. At tick 91 the Americans player has 1,000 credits. The pending
