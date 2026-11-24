@@ -100,3 +100,18 @@ reader's; the switch then counts a key that no other reader found. The keys, the
 and their clamps come from Kratos PP and from `gamemd.exe` where Kratos hooks it, not from a
 list; the address of the native site goes next to the Rust. A game without the key keeps the
 native path.
+
+### One piece, one module
+
+Put a piece’s keys, defaults and decision in `src/rules/<ext>_<feature>.rs`, with
+tests in `<ext>_<feature>_tests.rs`. Its reader follows the corresponding Kratos
+`Read` method. The simulation uses the decision where it needs that value.
+
+For example, `kratos_crawling_flh.rs` implements `Ext/TechnoType/CrawlingFLHData.h`.
+Its reader fills `WeaponOffsets.crawling` and `WeaponOffsets.elite_crawling`.
+`get_weapon_record` asks a borrowed view for `flh(slot, elite, prone)`. Keeping both
+fields in their original order preserves the player-save layout, which records
+field names and types as well as their order.
+
+Type-level data belongs in the shared `RuleSet` so all units of a type use the
+same offsets at 20,000 units.
