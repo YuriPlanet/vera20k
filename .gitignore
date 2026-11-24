@@ -49,6 +49,7 @@ Thumbs.db
 !/docs/rfcs/
 !/docs/wasm.md
 !/docs/sim-thread.md
+!/docs/scale-benchmark.md
 !/docs/ares.md
 !/docs/android.md
 !/docs/ares-side-defaults.md
