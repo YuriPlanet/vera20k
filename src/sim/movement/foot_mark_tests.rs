@@ -528,11 +528,10 @@ fn a_listed_landed_jumpjet_units_mark_writes_its_vehicle_bit() {
 }
 
 /// `foot_mark_query_scope` drops the Foot's mark, asks the entry question with
-/// it dropped, and puts it back (`4B345B..4B34D1`). It answers the body, and
-/// the world it leaves is the one it found: the list entry, the raw bits and
-/// the mark flag all come back. The two Recalcs the pair used to run are the
-/// part it skips (`docs/sim-thread.md`, "Where a 30-house frame goes" does not
-/// cover this one: it is a behaviour of the fresh arm).
+/// it dropped, and puts it back (`4B345B..4B34D1`). The body sees the Cell
+/// without the Foot, the scope answers what the body answers, and the world it
+/// leaves is the one it found: the list entry, the raw bits and the mark flag
+/// all come back.
 #[test]
 fn the_query_scope_puts_back_the_mark_it_dropped() {
     let mut sim = fixture(EntityCategory::Unit, LocomotorKind::Drive);
@@ -552,9 +551,9 @@ fn the_query_scope_puts_back_the_mark_it_dropped() {
         &rules,
         None,
         &mut crate::sim::world::FrameEffects::default(),
-        |_sim| 7u8,
+        |sim| sim.substrate.occupancy.contains_entity(4, 4, 1),
     );
-    assert_eq!(answer, 7, "the scope answers what the body answers");
+    assert!(!answer, "the body asks with the mark dropped");
     assert_eq!(
         sim.state_hash(),
         before,
