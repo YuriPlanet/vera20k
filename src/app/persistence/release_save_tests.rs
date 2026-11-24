@@ -35,6 +35,7 @@ released_saves! {
     main_06789b62b: "main-06789b62b", 0x82C3_2EA4, Skirmish;
     main_8d55b4a73: "main-8d55b4a73", 0xF612_7DC1, Skirmish;
     main_8852f7a76: "main-8852f7a76", 0x9441_E8D8, Skirmish;
+    main_bc55c35e7: "main-bc55c35e7", 0x9F1B_D701, Skirmish;
 }
 
 const TUNNEL_FIXTURE: &str = "v0.3.9-tunnel";
@@ -207,6 +208,7 @@ fn resume_and_save_again(release: &str, layout: u32, mode: ScenarioGameMode) {
         |runtime| {
             check_world(&runtime.simulation);
             assert_eq!(runtime.resources.rules.object("APC").unwrap().image, "APC");
+            assert!(!runtime.resources.rules.kratos(), "{release}");
             assert_eq!(runtime.simulation.session().tick(), 91, "{release}");
             assert_eq!(
                 runtime.simulation.session().game_options().game_speed,

@@ -54,6 +54,7 @@ oracle families index their own fixtures and producers.
 | Render a whole map as one picture, such as its preview on vera20k.org | `python3 -m tools.map_render --help` |
 | Run one bounded child with retained diagnostics | `tools.child_process.run_child` (shared by capture wrappers) |
 | Check shell UI matrices | [exact shell matrix](exact_shell_ui_matrix/README.md) |
+| Run stock-YR end-to-end checks and available native comparisons | [end-to-end checks](e2e_parity/README.md), `python -m tools.e2e_parity run` |
 | Synchronize authoritative skill sources | `python tools/skill_sync.py --write`, then `--check` |
 
 ## Capture files
@@ -322,8 +323,9 @@ worktree, so the runner starts one only when it can matter:
   blocked or partial; a dry run does not. `--trim-cache` always runs one.
 - **Skipped** while the newest applied pass found nothing removable, finished
   within that interval and nothing deciding removability has changed since:
-  cache directories, registered roots and profiles, protected executables and
-  which cache profiles are idle. While the reserve is short, only a pass that
+  cache directories, registered roots and profiles, protected executables,
+  which cache profiles are idle, and the checkout locks that held an otherwise
+  reclaimable executable back. While the reserve is short, only a pass that
   found it short counts.
 
 Between passes the cache can exceed its budgets; the free-space reserve is still
@@ -485,7 +487,10 @@ ownership records or debug inputs remain blocked; do not manufacture metadata.
 Each attempt writes `owned-builds/retention/<timestamp>-<id>.json`: selected and
 removed files, allocated/logical bytes removed, observed free-space change, errors
 and unmet targets, each cache profile's last use and the profiles whose working
-sets it evicted, in eviction order. A pass removes receipts older than seven days. Dry runs never remove files; their projected space is an estimate.
+sets it evicted, in eviction order, and the checkouts whose held lock alone kept
+an otherwise reclaimable executable alive. Releasing one of those locks makes
+that executable reclaimable, so a later pass stops trusting the receipt while
+the lock is gone. A pass removes receipts older than seven days. Dry runs never remove files; their projected space is an estimate.
 APFS clones/snapshots and unrelated volume activity can make observed reclamation
 differ from file allocation; applying a plan rechecks real free space and tries
 additional eligible cold entries when necessary. Plans are never reused for deletion.

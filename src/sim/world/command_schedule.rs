@@ -1073,6 +1073,11 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
+                    // The receiver refuses an attached slave in every game mode.
+                    if entity.seldom.slave.owner().is_some() {
+                        orders -= 1;
+                        continue;
+                    }
                     if sender.is_some_and(|(owner, source, granted_source)| {
                         // A semantic PlanningRecord can have native payload
                         // bytes without coming from the native queue.

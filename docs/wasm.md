@@ -20,7 +20,7 @@ python3 tools/wasm/build.py
 
 The helper builds the client library as a `cdylib` with
 `--target wasm32-unknown-unknown --no-default-features --features wasm` and
-packages its bindings and an asset-free host into `target/wasm-dist/`. By default
+packages its bindings, host page and skirmish map into `target/wasm-dist/`. By default
 it uses the `wasm` profile, which players download: optimized for size, fat LTO,
 one codegen unit and no symbol names; it takes several times as long to build
 (on 2026-11-09 the single-player Wasm was 16.5 MB, 4.6 MB compressed with brotli, against 45.6 MB and 10.3 MB with `fast`). Use `--profile fast` while editing, or `--profile release`. It
@@ -88,6 +88,10 @@ the selected map through the existing map-transfer protocol, while other retail
 assets stay local. Audio is prepared in that click to satisfy browser autoplay
 policy. Resource bytes are held in memory, so large installations need
 substantial browser memory.
+
+The host installs `Maps/Arctic_Circle_16_Ice_Passages.map` into the browser
+profile on first use. Serve the `Maps/` folder beside the page. Players' edits
+and deletions persist across visits.
 
 The host restores and queues settings/save writes in IndexedDB for this origin.
 The page shows storage failures and pending writes. Engine writes complete in

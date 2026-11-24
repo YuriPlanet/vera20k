@@ -1355,10 +1355,11 @@ fn full_foot_entry<'a>(
                 } else {
                     bt.unit_absorb
                 };
-                // Original RA2 has no Grinding= field; the refund-on-entry
-                // behavior lives on Cloning vats. On the RA2 profile treat a
-                // Cloning building as the grinder/eater for these gates.
-                let refund_eater = bt.grinding || (live.rules.ra2() && bt.cloning);
+                // A `Grinding=` building (YR recycling) eats vehicles here.
+                // Original RA2 has no Grinding= field; refund-on-entry lives
+                // on Cloning vats but is infantry-only there, so a Cloning
+                // building is never a vehicle eater (no RA2 tank grinding).
+                let refund_eater = bt.grinding;
                 if object_target_is(e, blocker_id)
                     && ((mission == Some(MissionType::Enter) && absorber)
                         || (mission == Some(MissionType::Eaten) && refund_eater))
