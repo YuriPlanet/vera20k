@@ -78,7 +78,7 @@ branch of `BulletClass::Detonate` `0x004465B0`; the web arm of `InfantryClass::T
 `Is_Immobilized` (`0x004D5B10`) and its readers; `TechnoClass::What_Weapon_Should_I_Use`
 `0x00629F20`, `Evaluate_Object` `0x0062D516` and `UnitClass::Firing_AI` `0x0064E7A3`; the
 particle AIs `0x005A7170` (system) and `0x005A4310` (particle) and the BehavesLike name
-tables `0x00707B20` and `0x00707D0C`. Code: `sim::combat::world_receiver::commit_web_burst`,
+tables `0x00707B20` and `0x00707D0C`. Code: `sim::combat::world_receiver::web_burst`,
 `Simulation::infantry_take_web`, `sim::particles::web` and `rules::warhead_type::WarheadWeb`.
 
 Residuals:
