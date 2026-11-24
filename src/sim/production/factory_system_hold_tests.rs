@@ -132,14 +132,17 @@ impl PaidHead {
                 .is_empty()
         );
         for _ in 0..2 {
-            assert!(production::enqueue_by_type(
-                sim,
-                rules,
-                "Russians",
-                "E2",
-                &mut FrameEffects::default(),
-                false,
-            ));
+            assert!(
+                production::enqueue_by_type(
+                    sim,
+                    rules,
+                    "Russians",
+                    "E2",
+                    &mut FrameEffects::default(),
+                    false,
+                )
+                .is_ok()
+            );
         }
         // The native harness also visits only FactoryAI here. A whole frame
         // would publish readiness/deliver the old head before the forced seam.

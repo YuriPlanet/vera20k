@@ -761,6 +761,7 @@ fn place_building(
         overlays,
         &mut crate::sim::world::FrameEffects::default(),
     )
+    .is_ok()
 }
 
 /// The placement cursor's preview of `owner`'s `type_id` at `cell`.
@@ -3407,16 +3408,19 @@ fn blocked_active_war_factory_does_not_spawn_from_second_factory() {
             .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Vehicle)
     );
-    assert!(place_production_with_overlays(
-        &mut sim,
-        &rules,
-        "Americans",
-        ProductionPlacement::Mobile {
-            category: ProductionCategory::Vehicle
-        },
-        None,
-        &mut crate::sim::world::FrameEffects::default(),
-    ));
+    assert!(
+        place_production_with_overlays(
+            &mut sim,
+            &rules,
+            "Americans",
+            ProductionPlacement::Mobile {
+                category: ProductionCategory::Vehicle
+            },
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .is_ok()
+    );
     let produced = sim.substrate.entities.get(held).unwrap();
 
     assert_eq!(
@@ -3996,14 +4000,17 @@ fn stock_infantry_fallback_unit_ready_uses_producer_getcoords() {
     let center = ground_pose::object_get_coords(producer_entity, sim.resolved_terrain.as_ref());
     assert_eq!([center.x, center.y, center.z], [3968, 3840, 0]);
 
-    assert!(super::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "Americans",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        super::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "Americans",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
     let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
@@ -4192,14 +4199,17 @@ fn stock_yuri_cloning_vat_duplicates_a_successfully_placed_infantry() {
     )
     .expect("the other house's vat is registered to that house only");
 
-    assert!(super::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "YuriCountry",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        super::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "YuriCountry",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
     let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
@@ -4306,14 +4316,17 @@ fn cloning_vat_keeps_a_refused_copy_in_limbo() {
         .radio_contacts
         .set_slot(0, barracks);
 
-    assert!(super::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "YuriCountry",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        super::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "YuriCountry",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
     let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
@@ -4389,14 +4402,17 @@ fn cloning_vats_do_not_duplicate_yuri_vehicle_factory_output() {
     )
     .expect("stock Yuri Cloning Vats");
 
-    assert!(super::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "YuriCountry",
-        "YTNK",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        super::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "YuriCountry",
+            "YTNK",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let category = ProductionCategory::Vehicle;
     let cost = sim.cost_of(owner, rules.object("YTNK").unwrap(), &rules);
     sim.houses
@@ -4459,14 +4475,17 @@ fn cloning_vat_copies_wait_for_the_source_dock_cell() {
     )
     .expect("stock Yuri Cloning Vats");
 
-    assert!(super::enqueue_by_type(
-        &mut sim,
-        &rules,
-        "YuriCountry",
-        "E1",
-        &mut crate::sim::world::FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        super::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "YuriCountry",
+            "E1",
+            &mut crate::sim::world::FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let category = ProductionCategory::Infantry;
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
     let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
@@ -4597,14 +4616,17 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
         sim.resolved_terrain.as_ref(),
     );
     for (slot, [dx, dy]) in [[0, -128], [0, 128]].into_iter().enumerate() {
-        assert!(super::enqueue_by_type(
-            &mut sim,
-            &rules,
-            "Americans",
-            "ORCA",
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            super::enqueue_by_type(
+                &mut sim,
+                &rules,
+                "Americans",
+                "ORCA",
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         let built = super::lifecycle_tests::held_id(&sim, owner, ProductionCategory::Aircraft);
         let cost = sim.cost_of(owner, rules.object("ORCA").unwrap(), &rules);
         sim.houses
@@ -4690,14 +4712,17 @@ fn ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals() {
                 .radio_contacts
                 .set_slot(0, barracks);
         }
-        assert!(super::enqueue_by_type(
-            &mut sim,
-            &rules,
-            "YuriCountry",
-            "E1",
-            &mut crate::sim::world::FrameEffects::default(),
-            false,
-        ));
+        assert!(
+            super::enqueue_by_type(
+                &mut sim,
+                &rules,
+                "YuriCountry",
+                "E1",
+                &mut crate::sim::world::FrameEffects::default(),
+                false,
+            )
+            .is_ok()
+        );
         let category = ProductionCategory::Infantry;
         let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
         sim.houses
