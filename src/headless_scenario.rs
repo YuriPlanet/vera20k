@@ -586,6 +586,7 @@ fn load_with_assets_and_mod_module(
         mod_module,
         &map.ini,
         native_rules_owner.personal_rules().wasm_budget(),
+        slot_launch.map_or(0, |launch| launch.session().mod_ai_slots.len()),
     )
     .map_err(|error| format!("Wasm extension module: {error}"))?;
     let (scenario_rules, _) = native_rules_owner

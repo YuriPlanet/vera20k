@@ -507,6 +507,8 @@ don't matter: its matches read the original terrain.
 
 - [INI roots and archive names](ini-roots.md): select your own resource filenames.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
+- [Wasm modules](wasm-modules.md): build a `rules.wasm`, put it in a mod or a map, and
+  declare its triggers in `rulesmd.ini`.
 - [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md), [VeraX](verax.md) and
   [Kratos](kratos.md): what each extension covers and how to turn it on or build VERA20k with
   it. The official downloads hold all of Ares, which a game's data turns on, and none of the

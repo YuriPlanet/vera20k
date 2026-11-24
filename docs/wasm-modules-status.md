@@ -6,9 +6,8 @@ content as work lands; do not append a diary.
 
 ## Where the work is
 
-- Branch `feature/wasm-extension-modules` on `libi/vera20k`, PR
-  [YuriPlanet/vera-mod-engine#7](https://github.com/YuriPlanet/vera-mod-engine/pull/7)
-  (the RFC's experiment repository; the earlier work merged there as #5).
+- Branch `feature/wasm-extension-modules` on `libi/vera20k`; the upstream is
+  `YuriPlanet/vera20k`.
 - Scope: RFC phase 1 (`rules.wasm`) first, then phase 2 (`ui.wasm`), then phase 3.
   The TypeScript SDK is deferred by the maintainer; validate with the Rust SDK.
 - Feedback: the RFC draft PR
@@ -21,7 +20,7 @@ content as work lands; do not append a diary.
 | --- | --- |
 | Sandbox: load checks, budgets, delivery, saves of memory/globals, one `SimModule` over a runtime | `wasm-ext/src/module.rs` |
 | Load-time rewrite every runtime runs: basic-block metering, bulk-memory charges, weighted call depth, NaN canonicalization, float globals stored as integer bits, memory maximum capped at the limit, exported mutable globals | `wasm-ext/src/instrument.rs` |
-| The `vera:sim` imports, written once over a `Guest` view and linked into both runtimes | `wasm-ext/src/host.rs` |
+| The `vera:sim` imports, written once over a `Guest` view and linked into both runtimes. A new import is a function here plus one line in `for_each_import!`; neither runtime file changes | `wasm-ext/src/host.rs` |
 | Runtimes: Wasmtime (desktop), the browser's own WebAssembly engine through js-sys (browser) | `wasm-ext/src/native.rs`, `wasm-ext/src/browser.rs`; rewrite tests in `rewrite_tests.rs` |
 | ABI types: import table, `Status`, `SimHost` trait, `PROPERTIES`, `Query`/`Clause` parsing | `wasm-ext/src/lib.rs` |
 | Action kind names and numbers (stock 0..149, atomic from 1000), `lookup`/`name_of(ActionKind)` | `wasm-ext/src/action_kinds.rs` |
@@ -481,7 +480,7 @@ separate work):
 
 ## Cost without modules (2026-11-24)
 
-`sim-bench` release builds of 52857e028 (vera-mod-engine main before any extension
+`sim-bench` release builds of 52857e028 (the engine before any extension
 code: no `wasm-ext`, the same non-extension engine commits) and bad49319b (phase 1,
 INI registration, 6i, browser runtime), no modules, retail Death.mmx, 5 interleaved
 runs each. Every final state hash is identical: skirmish 9000 ticks

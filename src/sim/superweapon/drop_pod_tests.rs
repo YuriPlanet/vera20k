@@ -72,8 +72,8 @@ fn charge(sim: &mut Simulation, rules: &RuleSet, owner: &str) -> InternedId {
 
 fn fire(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) {
     let sw = charge(sim, rules, "Americans");
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::LaunchSuperWeapon {
             sw_type_id: sw,
@@ -83,7 +83,7 @@ fn fire(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) {
         rules,
         None,
         &mut FrameEffects::default(),
-    ));
+    )).is_ok());
 }
 
 fn pods(sim: &Simulation, owner: &str) -> Vec<u64> {

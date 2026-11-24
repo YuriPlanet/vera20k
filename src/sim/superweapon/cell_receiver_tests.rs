@@ -101,8 +101,8 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
         .insert(sw_type_id, instance);
     // ClickFire admits the Super and calls Launch; the cases' own effects
     // are each caller's to check.
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::LaunchSuperWeapon {
             sw_type_id,
@@ -112,7 +112,7 @@ fn launch_command(sim: &mut Simulation, rules: &RuleSet, name: &str, rx: u16, ry
         rules,
         None,
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     assert!(
         !sim.super_weapons[&owner][&sw_type_id].is_ready,
         "actual command consumes readiness"

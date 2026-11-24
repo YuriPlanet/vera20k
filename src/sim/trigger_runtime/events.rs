@@ -275,20 +275,9 @@ impl Simulation {
                     );
                     return fallback;
                 };
-                let Some(type_name) = usize::try_from(condition.value).ok().and_then(|index| {
-                    rules
-                        .type_array_ids(crate::rules::object_type::ObjectCategory::Building)
-                        .get(index)
-                }) else {
+                let Some(count) = self.house_building_count(condition.value, owner, rules) else {
                     return false;
                 };
-                let count = self.houses.get(&owner).map_or(0, |house| {
-                    self.interner.get(type_name).map_or(0, |id| {
-                        house
-                            .tracking()
-                            .active_count(crate::map::entities::EntityCategory::Structure, id)
-                    })
-                });
                 let result = (count != 0) == (condition.kind == 32);
                 crate::sim::ra2_all02_diagnostic::on_building_count_event(
                     self,
@@ -429,6 +418,28 @@ impl Simulation {
         }
     }
 
+    /// Events 32/57's count: how many of BuildingTypes entry `value`
+    /// house `owner` has active; `None` when `value` names no entry.
+    fn house_building_count(
+        &self,
+        value: i32,
+        owner: crate::sim::intern::InternedId,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<i32> {
+        let type_name = usize::try_from(value).ok().and_then(|index| {
+            rules
+                .type_array_ids(crate::rules::object_type::ObjectCategory::Building)
+                .get(index)
+        })?;
+        Some(self.houses.get(&owner).map_or(0, |house| {
+            self.interner.get(type_name).map_or(0, |id| {
+                house
+                    .tracking()
+                    .active_count(crate::map::entities::EntityCategory::Structure, id)
+            })
+        }))
+    }
+
     /// The House half of HasOccurred71E940's House events, once the caller
     /// chose `owner`: the incoming House (12, 15..22, 32, 52, 57) or
     /// Event.value's (3, 5, 9..11, 30, 55, 56, 58). Persistence and the
@@ -482,22 +493,9 @@ impl Simulation {
                     funds <= value
                 }
             }
-            32 | 57 => {
-                let Some(type_name) = usize::try_from(value)
-                    .ok()
-                    .and_then(|index| rules.type_array_ids(ObjectCategory::Building).get(index))
-                else {
-                    return false;
-                };
-                let count = self.houses.get(&owner).map_or(0, |house| {
-                    self.interner.get(type_name).map_or(0, |id| {
-                        house
-                            .tracking()
-                            .active_count(crate::map::entities::EntityCategory::Structure, id)
-                    })
-                });
-                (count != 0) == (kind == 32)
-            }
+            32 | 57 => self
+                .house_building_count(value, owner, rules)
+                .is_some_and(|count| (count != 0) == (kind == 32)),
             15 | 16 => {
                 let Some(house) = self.houses.get(&owner) else {
                     return false;

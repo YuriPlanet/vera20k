@@ -360,8 +360,8 @@ fn fire(
     cell: (u16, u16),
 ) -> bool {
     let owner_name = sim.interner.resolve(owner).to_owned();
-    sim.apply_command_with_overlays(
-        None,
+    (sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &owner_name,
         &Command::LaunchSuperWeapon {
             sw_type_id: sw_type,
@@ -371,7 +371,7 @@ fn fire(
         rules,
         None,
         &mut FrameEffects::default(),
-    )
+    )).is_ok()
 }
 
 #[test]
