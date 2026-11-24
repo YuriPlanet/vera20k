@@ -280,8 +280,8 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .cached_spatial_threat(),
         Some(7)
     );
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &crate::sim::command::Command::CaptureBuilding {
             engineer_id: passenger,
@@ -290,7 +290,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
         &rules,
         Some(&registry),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..64 {
         sim.advance_tick(&[], Some(&rules), Some(&grid), Some(&registry), 67);

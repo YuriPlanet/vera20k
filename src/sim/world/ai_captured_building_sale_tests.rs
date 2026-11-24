@@ -160,14 +160,14 @@ fn capture_by_walking(scene: &mut HeadlessScenario, owner: InternedId, plant: u6
         // This fixture supplies an AI class order, not a player EventClass.
         // Execute_DoList skips an AI House without PlayerControl; drive the
         // existing class/mission receiver at this setup boundary instead.
-        assert!(runtime.simulation.apply_command_with_overlays(
-            None,
+        assert!((runtime.simulation.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             &name,
             &command,
             &runtime.resources.rules,
             Some(runtime.resources.rules.overlay_registry()),
             &mut crate::sim::world::FrameEffects::default(),
-        ));
+        )).is_ok());
     }
     let mut walked = false;
     for _ in 0..FRAME_LIMIT {

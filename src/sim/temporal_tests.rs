@@ -2299,14 +2299,14 @@ fn stop_retains_the_legionnaires_victim_until_attack_dispatch() {
     let pending = dispatch
         .remaining_if_pending(sim.session.binary_frame())
         .expect("the first shot precedes the next Attack dispatch");
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Russians",
         &Command::Stop { entity_id: cleg },
         &rules,
         None,
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
     assert!(entity(&sim, cleg).attack_target.target().is_none());
     assert_eq!(
         entity(&sim, cleg).mission.current().known(),

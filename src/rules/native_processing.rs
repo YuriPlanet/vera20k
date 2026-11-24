@@ -603,7 +603,7 @@ impl RulesLayerStack {
                 let prefix = self.finish_rules(
                     processor.clone(),
                     fixed_art,
-                    self.content_hash_for_layers(index + 1),
+                    self.content_hash_with_ext(index + 1, &ext_hashes),
                 );
                 let rules = match RuleSet::from_processed_rules(&prefix) {
                     Ok(rules) => rules,
@@ -629,7 +629,11 @@ impl RulesLayerStack {
             processor.init_anim_theater();
         }
         Ok((
-            self.finish_rules(processor, fixed_art, self.content_hash()),
+            self.finish_rules(
+                processor,
+                fixed_art,
+                self.content_hash_with_ext(self.layers.len(), &ext_hashes),
+            ),
             after_map_result,
         ))
     }

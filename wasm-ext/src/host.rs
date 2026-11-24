@@ -688,8 +688,7 @@ pub(crate) fn ini_register(
     key: i32,
     out: i32,
 ) -> R<i32> {
-    // Only the initialization function registers (INI registration
-    // addendum, section 3).
+    // Only the initialization function registers (RFC 0001 section 6h).
     if !in_init(g) {
         return Err(fail(g, Invalid("ini_register outside vera_init".into())));
     }

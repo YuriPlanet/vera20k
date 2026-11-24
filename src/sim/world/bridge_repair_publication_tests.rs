@@ -1276,8 +1276,8 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             path_runtime.set_path_blocked_for_test(true);
             path_runtime.set_retries_left_for_test(256);
             let grid = sim.path_grid_snapshot();
-            assert!(sim.apply_command_with_overlays(
-                None,
+            assert!((sim.apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
                 "Americans",
                 &Command::Move {
                     entity_id: rocketeer,
@@ -1287,7 +1287,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
                 &rules,
                 Some(&registry),
                 &mut crate::sim::world::FrameEffects::default()
-            ));
+            )).is_ok());
             drop(grid);
             let mut expected_runtime =
                 crate::sim::components::FootPathRuntime::at_frame(sim.session.binary_frame());
@@ -1592,14 +1592,14 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
         .jumpjet_runtime()
         .unwrap()
         .clone();
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::Stop { entity_id: id },
         &rules,
         Some(&registry),
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     let state = sim
         .substrate
         .entities

@@ -588,6 +588,7 @@ impl crate::sim::world::Simulation {
             };
             self.raise_module_event(
                 rules,
+                context.effects(),
                 crate::sim::ext_modules::ModuleEvent {
                     other: killer,
                     id: lethal_warhead,

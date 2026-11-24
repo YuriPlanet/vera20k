@@ -9,8 +9,11 @@
 //! go with their object ([`VarStore::forget_object`]). The Red Alert 2
 //! variables (IDs 0..149) stay with the trigger runtime.
 //!
+//! Module triggers' `Where` variable clauses read these values and their
+//! `SetVar` action writes them through the host's `var_set`.
+//!
 //! Residual: a write does not yet reset the timers of triggers waiting on the
-//! variable (`VariablePoll`, which the trigger work adds).
+//! variable (`VariablePoll`, not raised yet).
 
 use std::collections::BTreeMap;
 
@@ -78,6 +81,11 @@ impl VarStore {
             .iter()
             .position(|(source, decl)| *source == origin && decl.name.eq_ignore_ascii_case(name))?;
         i32::try_from(index).ok()?.checked_add(FIRST_DECLARED_VAR)
+    }
+
+    /// A declared variable's scope.
+    pub(super) fn scope(&self, var: i32) -> Option<VarScope> {
+        self.decl(var).map(|decl| decl.scope)
     }
 
     /// A declared variable's name.

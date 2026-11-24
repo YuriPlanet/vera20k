@@ -618,14 +618,14 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let command = |sim: &mut Simulation, command: Command| {
-        assert!(sim.apply_command_with_overlays(
-            None,
+        assert!((sim.apply_command_with_overlays(
+            crate::sim::command::CommandSender::Player(None),
             "Americans",
             &command,
             &rules,
             None,
             &mut crate::sim::world::FrameEffects::default(),
-        ));
+        )).is_ok());
     };
     let frame = |sim: &mut Simulation| {
         let grid = sim.path_grid_snapshot();

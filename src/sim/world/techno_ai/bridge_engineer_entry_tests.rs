@@ -113,8 +113,8 @@ fn capture_probe(
 ) -> Value {
     let actor = sim.entities().get(engineer).unwrap();
     let owner = sim.interner.resolve(actor.owner()).to_owned();
-    assert!(sim.apply_command_with_overlays(
-        None,
+    assert!((sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         &owner,
         &Command::CaptureBuilding {
             engineer_id: engineer,
@@ -123,7 +123,7 @@ fn capture_probe(
         &resources.rules,
         Some(resources.rules.overlay_registry()),
         &mut crate::sim::world::FrameEffects::default(),
-    ));
+    )).is_ok());
     let mut snapshot = zone_snapshot(sim, name);
     let actor = sim.entities().get(engineer).unwrap();
     let object = sim

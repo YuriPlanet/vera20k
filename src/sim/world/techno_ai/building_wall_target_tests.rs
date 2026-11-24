@@ -192,8 +192,8 @@ fn a_player_attack_order_cannot_keep_a_pillbox_target_behind_a_wall() {
     };
     scene.wall("Russians", (12, 20));
     scene.old_target();
-    assert!(scene.sim.apply_command_with_overlays(
-        None,
+    assert!((scene.sim.apply_command_with_overlays(
+        crate::sim::command::CommandSender::Player(None),
         "Americans",
         &Command::Attack {
             attacker_id: scene.building,
@@ -202,7 +202,7 @@ fn a_player_attack_order_cannot_keep_a_pillbox_target_behind_a_wall() {
         &scene.rules,
         Some(&scene.registry),
         &mut crate::sim::world::FrameEffects::default()
-    ));
+    )).is_ok());
     assert_eq!(scene.target(), None);
     let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
     assert_eq!(
