@@ -895,7 +895,7 @@ pub(super) fn target_reach_step(
     if !matches!(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry
-    ) || sim.team_script_vm.team_for_member(id).is_some()
+    ) || sim.team_script_vm.team_of(id).is_some()
         || entity.navigation.nav_com().is_some()
     {
         return;

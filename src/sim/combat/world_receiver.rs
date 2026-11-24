@@ -2234,7 +2234,7 @@ fn commit_entity(
                         ) && crate::sim::mission::control::current_control(rules, &target.mission)
                             .is_some_and(|entry| entry.no_threat && !entry.zombie)
                     })
-                && world.team_script_vm.team_for_member(target_id).is_none()
+                && world.team_script_vm.team_of(target_id).is_none()
             {
                 crate::sim::world::enter_idle_mode(
                     world,
