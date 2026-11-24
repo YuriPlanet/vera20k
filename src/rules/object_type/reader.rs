@@ -1022,6 +1022,7 @@ impl ObjectType {
             resolved_weapons: Default::default(),
             resolved_debris: Default::default(),
             weapon_offsets: Default::default(),
+            kratos_freeze: crate::rules::kratos_freeze::FreezeRules::read(section),
             weapon_count: 0,
             naval_targeting: section.read_int("NavalTargeting", 0),
             land_targeting: section.read_int("LandTargeting", 0),

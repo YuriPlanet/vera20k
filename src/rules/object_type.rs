@@ -2245,6 +2245,8 @@ pub struct ObjectType {
     /// Retained WeaponStruct and transport-port coordinates, projected from
     /// the ordered type reader rather than reconstructed from the final Image.
     weapon_offsets: crate::rules::weapon_offsets::WeaponOffsets,
+    /// Kratos' frozen status inputs (`kratos_freeze`): `Wreck` today.
+    kratos_freeze: crate::rules::kratos_freeze::FreezeRules,
 
     /// `WeaponCount=` (`TechnoTypeClass+0x80C`, ReadINI `0x00712873`). Bounds
     /// the `Weapon%d`/`EliteWeapon%d` loop; slots at or past it keep their

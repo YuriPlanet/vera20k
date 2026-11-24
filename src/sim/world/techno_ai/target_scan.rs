@@ -268,6 +268,18 @@ pub(crate) fn scan(
     if !sim.substrate.entities.contains(id) {
         return false;
     }
+    // Kratos `Wreck` (`kratos_freeze`): a frozen object neither scans for a
+    // target nor retaliates, the target half of `OnUpdate_Freeze`'s clear.
+    if rules.kratos()
+        && sim
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| sim.entity_object_type(entity, rules))
+            .is_some_and(|object| object.kratos_freeze().frozen())
+    {
+        return false;
+    }
     retaliate_and_scan(
         &mut WorldScan {
             sim,
