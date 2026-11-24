@@ -479,3 +479,19 @@ No single item is 5 ms. Two times the frame needs either the two-phase shard
 design above or a general cut in per-object work; 30 fps (33 ms) is reachable
 by removing the inline searches' immediate path, the 22 ms step is not.
 
+Two attempts to remove those inline searches, both measured and reverted:
+
+- Deferring only the own-cell requests left the count at 95 and moved the
+  hash to `569418b4d9d2f0dd`.
+- Answering several requests per Foot per frame (`ready` holding a slot per
+  registration, `pending` no longer collapsed to one per Foot) took the count
+  from 95.2 to 94.1 and left the frame at 54.2 ms against 53.8, with the hash
+  at `0673fb10a05d8a73`. It is not the one-answer-per-Foot rule that keeps
+  these searches inline: of the 298 slots a pass stages, 202 carry an answer
+  and 96 are empty because `batched_search` refuses the request (a
+  destination redirect, the Foot's own cell, a `Stopped` or `CellEntryUnavailable`
+  search, or no destination at all). Each of those Feet then searches at its
+  own turn, and an inline search pays about ten times the batch's cost per
+  expansion because it walks its own code-2 chains where a batch shares one
+  cell's chain across the searches that ask about it.
+
