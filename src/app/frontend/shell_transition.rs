@@ -541,7 +541,7 @@ pub(crate) enum ExternalMenuWait {
 
 pub(crate) fn external_menu_wait(state: &AppState) -> Option<ExternalMenuWait> {
     let external = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-        && (crate::app::shell_wol::spawned_visit(state)
+        && (crate::app::shell_wol::spawned_visit(state.frontend.wol.as_ref())
             || crate::app::shell_network_setup::external(state));
     external.then(|| {
         if state.frontend.external_progress.match_started.is_none() {

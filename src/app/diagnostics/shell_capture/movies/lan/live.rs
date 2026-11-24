@@ -1903,7 +1903,7 @@ fn startup_receipt(state: &AppState) -> Result<Value> {
         .context("simulation")?
         .simulation;
     Ok(json!({
-        "match_id":crate::app::shell_wol::online_match_id(state),
+        "match_id":crate::app::shell_wol::online_match_id(state.frontend.wol.as_ref()),
         "seed":session.network_start_seed(),
         "map":launch.selected_map_file,
         "max_ahead":session.network_max_ahead_frames(),

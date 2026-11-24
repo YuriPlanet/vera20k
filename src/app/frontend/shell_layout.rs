@@ -60,8 +60,8 @@ pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
             .is_some_and(|lobby| lobby.ui.is_modern() && lobby.shown && !lobby.covered);
         let dialog = visit.message().is_some()
             || visit.wait_box().is_some_and(|wait| wait.shown)
-            || crate::app::shell_wol::page::page_dialog(state).is_some()
-            || crate::app::shell_wol::page::page_received(state).is_some();
+            || crate::app::shell_wol::page::page_dialog(state.frontend.wol.as_ref()).is_some()
+            || crate::app::shell_wol::page::page_received(state.frontend.wol.as_ref()).is_some();
         return wol_lobby_cursor_scale(fitted, &visit.page, visible, dialog);
     }
     if route == ShellRoute::NetworkSetup {

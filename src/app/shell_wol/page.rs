@@ -10,7 +10,13 @@ use winit::keyboard::KeyCode;
 
 use super::leaf::{self, Pointer};
 use super::service::WolServiceRequest;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
+use crate::ui::game_screen::GameScreen;
 use crate::ui::lan_shell::{LanChatLine, append_wrapped};
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::controller::DialogController;
@@ -24,6 +30,7 @@ use crate::ui::shell::page::{PageCue, PageEvent};
 use crate::ui::wol_chat::{self, WolChatLine};
 use crate::ui::wol_page::*;
 use vera20k_gui::{NodeId, Prop, Value};
+use winit::window::Window;
 
 /// `[0x7EEF2C]`: `0x11E`'s own echo.
 const REPLY_COLOR: u32 = 0xF0F0;
@@ -31,66 +38,70 @@ const REPLY_COLOR: u32 = 0xF0F0;
 /// In a match, the frame the battlefield draws into: the in-match `0xCF`
 /// centres over it, at its source size. Elsewhere the boxes centre like the
 /// shell's other menu boxes, over the window.
-fn match_frame(state: &AppState) -> Result<RectPx, (i32, i32)> {
-    let config = &state.renderer.gpu.config;
-    match state.frontend.screen == crate::app::GameScreen::InGame {
+fn match_frame(renderer: &RendererState, screen: &GameScreen) -> Result<RectPx, (i32, i32)> {
+    let config = &renderer.gpu.config;
+    match *screen == crate::app::GameScreen::InGame {
         true => Ok(RectPx::new(
             0,
             0,
-            state.render_width() as i32,
-            state.render_height() as i32,
+            renderer.render_width(screen) as i32,
+            renderer.render_height(screen) as i32,
         )),
         false => Err((config.width as i32, config.height as i32)),
     }
 }
 
-pub(crate) fn page_layout(state: &AppState) -> WolPageLayout {
-    match_frame(state).map_or_else(|(w, h)| wol_page_layout(w, h), wol_page_layout_in)
+pub(crate) fn page_layout(renderer: &RendererState, screen: &GameScreen) -> WolPageLayout {
+    match_frame(renderer, screen).map_or_else(|(w, h)| wol_page_layout(w, h), wol_page_layout_in)
 }
 
-pub(crate) fn received_layout(state: &AppState) -> WolPageReceivedLayout {
-    match_frame(state).map_or_else(
+pub(crate) fn received_layout(
+    renderer: &RendererState,
+    screen: &GameScreen,
+) -> WolPageReceivedLayout {
+    match_frame(renderer, screen).map_or_else(
         |(w, h)| wol_page_received_layout(w, h),
         wol_page_received_layout_in,
     )
 }
 
-pub(crate) fn page_dialog(state: &AppState) -> Option<&WolPageDialog> {
-    state.frontend.wol.as_ref()?.page_dialog.as_deref()
+pub(crate) fn page_dialog(wol: Option<&WolVisit>) -> Option<&WolPageDialog> {
+    wol?.page_dialog.as_deref()
 }
 
-pub(crate) fn page_received(state: &AppState) -> Option<&WolPageReceived> {
-    state.frontend.wol.as_ref()?.page_received.as_deref()
+pub(crate) fn page_received(wol: Option<&WolVisit>) -> Option<&WolPageReceived> {
+    wol?.page_received.as_deref()
 }
 
 /// `0xCF` or `0x11E` takes the input.
-pub(crate) fn open(state: &AppState) -> bool {
-    top(state).is_some()
+pub(crate) fn open(wol: Option<&WolVisit>) -> bool {
+    top(wol).is_some()
 }
 
 /// The open dialog that takes the input, `0xCF` first.
-fn top(state: &AppState) -> Option<DialogResourceId> {
-    if page_dialog(state).is_some() {
+fn top(wol: Option<&WolVisit>) -> Option<DialogResourceId> {
+    if page_dialog(wol).is_some() {
         Some(PAGE_DIALOG)
     } else {
-        page_received(state).map(|_| RECEIVED_DIALOG)
+        page_received(wol).map(|_| RECEIVED_DIALOG)
     }
 }
 
 /// `dialog`'s widgets, where they sit and its transcript's id.
 fn widgets(
-    state: &AppState,
+    renderer: &RendererState,
+    screen: &GameScreen,
     dialog: DialogResourceId,
 ) -> (fn() -> vera20k_gui::NodeSpec, Rects, u16) {
     if dialog == PAGE_DIALOG {
-        let layout = page_layout(state);
+        let layout = page_layout(renderer, screen);
         (
             page_spec,
             Box::new(move |id| layout.rect_of(id)),
             PAGE_TRANSCRIPT,
         )
     } else {
-        let layout = received_layout(state);
+        let layout = received_layout(renderer, screen);
         (
             received_spec,
             Box::new(move |id| layout.rect_of(id)),
@@ -114,16 +125,19 @@ fn lines(visit: &mut super::WolVisit, dialog: DialogResourceId) -> Option<&mut V
 
 /// Builds and places `dialog`'s widgets at the popups' retail pixels and
 /// gives its list the rows; the root.
-fn sync(state: &mut AppState, dialog: DialogResourceId) -> Option<NodeId> {
-    let (spec, rect_of, list) = widgets(state, dialog);
+fn sync(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    dialog: DialogResourceId,
+) -> Option<NodeId> {
+    let (spec, rect_of, list) = widgets(renderer, &frontend.screen, dialog);
     let root = leaf::place(
-        state,
+        &mut frontend.shell_controller,
         dialog,
         crate::ui::shell::geom::RETAIL_SCALE,
         spec,
         rect_of,
     )?;
-    let frontend = &mut state.frontend;
     let rows = frontend
         .wol
         .as_mut()
@@ -139,18 +153,21 @@ fn sync(state: &mut AppState, dialog: DialogResourceId) -> Option<NodeId> {
 /// A fresh `dialog` over the shell stack, as an overlay: the screens under
 /// it may reset or box their own dialogs (a lobby wait box) and it stays on
 /// top with its widgets until it closes.
-fn push_fresh(state: &mut AppState, dialog: DialogResourceId) {
-    let controller = &mut state.frontend.shell_controller;
+fn push_fresh(frontend: &mut FrontendState, renderer: &RendererState, dialog: DialogResourceId) {
+    let controller = &mut frontend.shell_controller;
     controller.close(dialog);
     controller.push_overlay(dialog);
-    sync(state, dialog);
+    sync(frontend, renderer, dialog);
 }
 
 /// Closes the overlays of dialogs the visit no longer has (a logout drops
 /// `0x11E`, leaving WOL drops both).
-pub(crate) fn close_stale(state: &mut AppState) {
-    let (page, received) = (page_dialog(state).is_none(), page_received(state).is_none());
-    let controller = &mut state.frontend.shell_controller;
+pub(crate) fn close_stale(frontend: &mut FrontendState) {
+    let (page, received) = (
+        page_dialog(frontend.wol.as_ref()).is_none(),
+        page_received(frontend.wol.as_ref()).is_none(),
+    );
+    let controller = &mut frontend.shell_controller;
     for (gone, dialog) in [(page, PAGE_DIALOG), (received, RECEIVED_DIALOG)] {
         if gone {
             controller.close(dialog);
@@ -170,7 +187,7 @@ fn begin(
     if state.frontend.wol.is_none() {
         return;
     }
-    push_fresh(state, PAGE_DIALOG);
+    push_fresh(&mut state.frontend, &state.renderer, PAGE_DIALOG);
     let frontend = &mut state.frontend;
     let (page, actions) = open(
         &mut frontend.shell_controller,
@@ -234,7 +251,7 @@ pub(crate) fn close_page_dialog(state: &mut AppState) {
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.page_dialog = None;
     }
-    close_stale(state);
+    close_stale(&mut state.frontend);
     if state.match_state.match_presentation.in_game_menu == InGameMenuState::Page {
         state.match_state.input.clear_command_latches();
         App::enter_in_game_menu_state(state, InGameMenuState::Closed);
@@ -242,23 +259,22 @@ pub(crate) fn close_page_dialog(state: &mut AppState) {
 }
 
 /// `0x11E` closes.
-pub(super) fn close_received(state: &mut AppState) {
-    if let Some(visit) = state.frontend.wol.as_mut() {
+pub(super) fn close_received(frontend: &mut FrontendState) {
+    if let Some(visit) = frontend.wol.as_mut() {
         visit.page_received = None;
     }
-    close_stale(state);
+    close_stale(frontend);
 }
 
 /// The observer gate `0x0078D52A..0x0078D566`: once the local player is
 /// out (Session+0x300, `[0xA8B538]`), a name `_stricmp`-equal to any
 /// connection node's refuses the page. Outside a match there are no nodes.
-fn observer_cannot_page(state: &AppState, name: &str) -> bool {
-    let out = state
-        .match_state
+fn observer_cannot_page(match_state: &MatchState, name: &str) -> bool {
+    let out = match_state
         .sim_runtime
         .runtime()
         .is_some_and(|runtime| runtime.simulation.local_player_defeated());
-    let session = &state.match_state.session;
+    let session = &match_state.session;
     let nodes: Vec<String> = crate::app::match_runtime::network_match::nodes(session)
         .into_iter()
         .map(|node| crate::app::match_runtime::network_match::participant_name(session, node))
@@ -269,11 +285,15 @@ fn observer_cannot_page(state: &AppState, name: &str) -> bool {
 /// `0x005E2820` into `dialog`'s list, wrapped to its width; the view
 /// follows the rows when it showed the last one. Returns whether the
 /// dialog took the line.
-fn append_line(state: &mut AppState, dialog: DialogResourceId, line: LanChatLine) -> bool {
-    let (_, rect_of, id) = widgets(state, dialog);
+fn append_line(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    dialog: DialogResourceId,
+    line: LanChatLine,
+) -> bool {
+    let (_, rect_of, id) = widgets(renderer, &frontend.screen, dialog);
     let rect = rect_of(id).unwrap_or_default();
-    let font = &state.renderer.bit_font;
-    let frontend = &mut state.frontend;
+    let font = &renderer.bit_font;
     let Some(lines) = frontend.wol.as_mut().and_then(|visit| lines(visit, dialog)) else {
         return false;
     };
@@ -293,13 +313,21 @@ fn append_line(state: &mut AppState, dialog: DialogResourceId, line: LanChatLine
 
 /// `0x005E2790` with `0xCF` current: the line goes to its list `0x5B5`.
 /// Returns whether `0xCF` took it.
-pub(crate) fn append_page_line(state: &mut AppState, line: LanChatLine) -> bool {
-    append_line(state, PAGE_DIALOG, line)
+pub(crate) fn append_page_line(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    line: LanChatLine,
+) -> bool {
+    append_line(frontend, renderer, PAGE_DIALOG, line)
 }
 
 /// `0x005E2700` into `0x11E`'s `0x53F`.
-pub(super) fn append_received_line(state: &mut AppState, line: LanChatLine) {
-    append_line(state, RECEIVED_DIALOG, line);
+pub(super) fn append_received_line(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    line: LanChatLine,
+) {
+    append_line(frontend, renderer, RECEIVED_DIALOG, line);
 }
 
 /// The current window's `0x53F`, else its `0x5B5` (the find sink's tail
@@ -308,11 +336,11 @@ pub(super) fn append_received_line(state: &mut AppState, line: LanChatLine) {
 /// neither, in a match (Session+0x30D8, `0x0069BBE0`), a Grey MessageList
 /// row. Returns false when nothing took the line.
 pub(super) fn current_window_line(state: &mut AppState, line: LanChatLine) -> bool {
-    if page_dialog(state).is_some() {
-        return append_page_line(state, line);
+    if page_dialog(state.frontend.wol.as_ref()).is_some() {
+        return append_page_line(&mut state.frontend, &state.renderer, line);
     }
-    if page_received(state).is_some() {
-        append_received_line(state, line);
+    if page_received(state.frontend.wol.as_ref()).is_some() {
+        append_received_line(&mut state.frontend, &state.renderer, line);
         return true;
     }
     let Some(in_game) = state.frontend.wol.as_ref().map(|visit| visit.in_game) else {
@@ -323,7 +351,9 @@ pub(super) fn current_window_line(state: &mut AppState, line: LanChatLine) -> bo
         crate::app::input::messages::post_wol_result_row(state, &text);
         return true;
     }
-    if state.frontend.shell_route == ShellRoute::NetworkSetup || App::wol_page_is_lobby(state) {
+    if state.frontend.shell_route == ShellRoute::NetworkSetup
+        || App::wol_page_is_lobby(state.frontend.wol.as_ref())
+    {
         crate::app::shell_lan::append_chat(state, line);
         return true;
     }
@@ -337,48 +367,59 @@ pub(super) fn current_window_line(state: &mut AppState, line: LanChatLine) -> bo
 /// RESIDUAL: native keeps the page below (`0x10E`) live under the modeless
 /// dialog, its windows hit-testable and repainting on hover; here `0x11E`
 /// takes every input until Back and the page repaints after it.
-pub(super) fn page_received_line(state: &mut AppState, line: LanChatLine) {
-    if page_received(state).is_none() {
-        open_received(state, false);
+pub(super) fn page_received_line(
+    frontend: &mut FrontendState,
+    window: &Window,
+    renderer: &RendererState,
+    line: LanChatLine,
+) {
+    if page_received(frontend.wol.as_ref()).is_none() {
+        open_received(frontend, renderer, false);
     }
-    append_received_line(state, line);
-    name_pager(state);
+    append_received_line(frontend, renderer, line);
+    name_pager(frontend, window);
 }
 
 /// `0x116`'s Page (`0x0079EA23..0x0079EA75`): `0x11E` created over the
 /// Buddy List and run modally (`0x007759E0` with the pump `0x0077F900`).
 /// Its list is empty, so its reply-to is the selected buddy.
-pub(crate) fn open_received_modal(state: &mut AppState) {
-    open_received(state, true);
-    name_pager(state);
+pub(crate) fn open_received_modal(
+    frontend: &mut FrontendState,
+    window: &Window,
+    renderer: &RendererState,
+) {
+    open_received(frontend, renderer, true);
+    name_pager(frontend, window);
 }
 
 /// `0x718` names the pager.
-fn name_pager(state: &mut AppState) {
-    with_received(state, |received, c| {
+fn name_pager(frontend: &mut FrontendState, window: &Window) {
+    with_received(frontend, |received, c| {
         received.reply_to = received.pager_from_list(c)
     });
-    state.platform.window.request_redraw();
+    window.request_redraw();
 }
 
 /// `0x11E` over the stack, replying by default to `[0xB76E24]`.
-fn open_received(state: &mut AppState, modal: bool) {
-    let fallback = state.frontend.wol_buddies.selected.clone();
-    let Some(visit) = state.frontend.wol.as_mut() else {
+fn open_received(frontend: &mut FrontendState, renderer: &RendererState, modal: bool) {
+    let fallback = frontend.wol_buddies.selected.clone();
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     visit.page_received = Some(Box::new(WolPageReceived::new(&fallback, modal)));
-    push_fresh(state, RECEIVED_DIALOG);
+    push_fresh(frontend, renderer, RECEIVED_DIALOG);
 }
 
 /// The find sink with `0xCF` current (`0x007AA25D`): the status `0x5C8`
 /// takes the room or a `TXT_FINDPAGE_*` text. Returns whether `0xCF` took
 /// the result.
 pub(super) fn located(
-    state: &mut AppState,
+    mut wol: Option<&mut WolVisit>,
+    window: &Window,
+    process_assets: &ProcessAssets,
     result: &Result<crate::ui::wol_lobby::WolChannel, u32>,
 ) -> bool {
-    if page_dialog(state).is_none() {
+    if page_dialog(wol.as_deref()).is_none() {
         return false;
     }
     let key = match result {
@@ -386,35 +427,34 @@ pub(super) fn located(
             let text = match channel.lobby_number().filter(|_| channel.kind == 0) {
                 Some(number) => crate::ui::wol_lobby::WolLobbyRow::joined_name(
                     number,
-                    &super::lobby::base_names(state),
+                    &super::lobby::base_names(wol.as_deref(), process_assets),
                 ),
                 None => channel.name.clone(),
             };
-            return set_status(state, text);
+            return set_status(wol.as_deref_mut(), window, text);
         }
         Err(0x0004_0131) => "TXT_FINDPAGE_NOT_IN_CHANNEL",
         Err(0x0004_0132) => "TXT_FINDPAGE_FIND_DISABLED",
         Err(_) => "TXT_FINDPAGE_NOT_ONLINE",
     };
-    set_status(state, state.csf_label(key, key))
+    set_status(
+        wol.as_deref_mut(),
+        window,
+        process_assets.csf_label(key, key),
+    )
 }
 
-fn set_status(state: &mut AppState, text: String) -> bool {
-    if let Some(page) = state
-        .frontend
-        .wol
-        .as_mut()
-        .and_then(|visit| visit.page_dialog.as_mut())
-    {
+fn set_status(wol: Option<&mut WolVisit>, window: &Window, text: String) -> bool {
+    if let Some(page) = wol.and_then(|visit| visit.page_dialog.as_mut()) {
         page.status = text;
     }
-    state.platform.window.request_redraw();
+    window.request_redraw();
     true
 }
 
-fn request(state: &mut AppState, line: WolChatLine) {
+fn request(wol: Option<&mut WolVisit>, line: WolChatLine) {
     super::service::request(
-        state,
+        wol,
         WolServiceRequest::Chat {
             line,
             to: Vec::new(),
@@ -422,11 +462,11 @@ fn request(state: &mut AppState, line: WolChatLine) {
     );
 }
 
-fn locate(state: &mut AppState, name: String) {
+fn locate(mut wol: Option<&mut WolVisit>, name: String) {
     // API+0x60 without [0xB76E28]: the 0xCF status shows the answer.
-    if state.frontend.wol.as_ref().is_some_and(|visit| visit.api) {
+    if wol.as_deref().is_some_and(|visit| visit.api) {
         request(
-            state,
+            wol.as_deref_mut(),
             WolChatLine::Locate {
                 name: name.encode_utf16().collect(),
             },
@@ -437,42 +477,65 @@ fn locate(state: &mut AppState, name: String) {
 /// API+0xF8 with the record and text, and `u"[%hs] %s"` (`0x0084B94C`)
 /// with the login nickname `[0xB73E40]`, the echo, into `dialog`'s list.
 fn send_page(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
     dialog: DialogResourceId,
     name: &str,
     text: Vec<u16>,
     color: u32,
 ) {
-    let mut echo: Vec<u16> = format!("[{}] ", state.frontend.wol_account.nickname)
+    let mut echo: Vec<u16> = format!("[{}] ", frontend.wol_account.nickname)
         .encode_utf16()
         .collect();
     echo.extend_from_slice(&text);
     request(
-        state,
+        frontend.wol.as_mut(),
         WolChatLine::Page {
             name: name.encode_utf16().collect(),
             text,
         },
     );
-    append_line(state, dialog, LanChatLine { text: echo, color });
+    append_line(
+        frontend,
+        renderer,
+        dialog,
+        LanChatLine { text: echo, color },
+    );
 }
 
 fn apply(state: &mut AppState, actions: Vec<WolPageAction>) {
     for action in actions {
         match action {
-            WolPageAction::Locate(name) => locate(state, name),
+            WolPageAction::Locate(name) => locate(state.frontend.wol.as_mut(), name),
             WolPageAction::Send { name, text } => {
                 // 0x0078D48F: no WOLAPI object, nothing past the clear.
                 if !state.frontend.wol.as_ref().is_some_and(|visit| visit.api) {
                     continue;
                 }
-                if observer_cannot_page(state, &name) {
-                    notice(state, "TXT_OBSERVER_CANT_PAGE");
+                if observer_cannot_page(&state.match_state, &name) {
+                    notice(
+                        &mut state.frontend,
+                        &state.renderer,
+                        &state.process_assets,
+                        "TXT_OBSERVER_CANT_PAGE",
+                    );
                     continue;
                 }
-                send_page(state, PAGE_DIALOG, &name, text, wol_chat::SAY_COLOR);
+                send_page(
+                    &mut state.frontend,
+                    &state.renderer,
+                    PAGE_DIALOG,
+                    &name,
+                    text,
+                    wol_chat::SAY_COLOR,
+                );
             }
-            WolPageAction::Notice(key) => notice(state, key),
+            WolPageAction::Notice(key) => notice(
+                &mut state.frontend,
+                &state.renderer,
+                &state.process_assets,
+                key,
+            ),
             WolPageAction::Close => close_page_dialog(state),
         }
     }
@@ -480,10 +543,16 @@ fn apply(state: &mut AppState, actions: Vec<WolPageAction>) {
 }
 
 /// A white (-1) CSF line through `0x005E2790`.
-fn notice(state: &mut AppState, key: &str) {
-    let text = state.csf_label(key, key).encode_utf16().collect();
+fn notice(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    process_assets: &ProcessAssets,
+    key: &str,
+) {
+    let text = process_assets.csf_label(key, key).encode_utf16().collect();
     append_page_line(
-        state,
+        frontend,
+        renderer,
         LanChatLine {
             text,
             color: u32::MAX,
@@ -491,23 +560,32 @@ fn notice(state: &mut AppState, key: &str) {
     );
 }
 
-fn apply_received(state: &mut AppState, action: Option<WolPageReceivedAction>) {
+fn apply_received(
+    frontend: &mut FrontendState,
+    window: &Window,
+    renderer: &RendererState,
+    action: Option<WolPageReceivedAction>,
+) {
     match action {
-        Some(WolPageReceivedAction::Send { name, text }) => {
-            send_page(state, RECEIVED_DIALOG, &name, text, REPLY_COLOR)
-        }
-        Some(WolPageReceivedAction::Close) => close_received(state),
+        Some(WolPageReceivedAction::Send { name, text }) => send_page(
+            frontend,
+            renderer,
+            RECEIVED_DIALOG,
+            &name,
+            text,
+            REPLY_COLOR,
+        ),
+        Some(WolPageReceivedAction::Close) => close_received(frontend),
         None => {}
     }
-    state.platform.window.request_redraw();
+    window.request_redraw();
 }
 
 /// `0xCF` on its widgets with `[0xB77E8C]`, process global.
 fn with_last<R>(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
     f: impl FnOnce(&mut WolPageDialog, &mut DialogController, &mut u16) -> R,
 ) -> Option<R> {
-    let frontend = &mut state.frontend;
     let page = frontend.wol.as_mut()?.page_dialog.as_deref_mut()?;
     Some(f(
         page,
@@ -518,17 +596,16 @@ fn with_last<R>(
 
 /// `0x11E` on its widgets.
 fn with_received<R>(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
     f: impl FnOnce(&mut WolPageReceived, &mut DialogController) -> R,
 ) -> Option<R> {
-    let frontend = &mut state.frontend;
     let received = frontend.wol.as_mut()?.page_received.as_deref_mut()?;
     Some(f(received, &mut frontend.shell_controller))
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
-    if let Some(dialog) = top(state)
-        && sync(state, dialog).is_some()
+    if let Some(dialog) = top(state.frontend.wol.as_ref())
+        && sync(&mut state.frontend, &state.renderer, dialog).is_some()
     {
         // The boxes' hit tests leave the status line under them alone.
         leaf::pointer_quiet(state, Pointer::Move);
@@ -539,17 +616,17 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
 /// `0xCF`'s transcript row hands it back; a released button acts. A row of
 /// `0x11E`'s selectable owner-draw list clicks like the lobby's.
 pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
-    let Some(dialog) = top(state) else {
+    let Some(dialog) = top(state.frontend.wol.as_ref()) else {
         return;
     };
-    if sync(state, dialog).is_none() {
+    if sync(&mut state.frontend, &state.renderer, dialog).is_none() {
         return;
     }
-    let before = leaf::focused(state);
+    let before = leaf::focused(&state.frontend.shell_controller);
     let events = leaf::pointer_quiet(state, if pressed { Pointer::Down } else { Pointer::Up });
     if dialog == PAGE_DIALOG {
-        let after = leaf::focused(state);
-        let actions = with_last(state, |page, c, last| {
+        let after = leaf::focused(&state.frontend.shell_controller);
+        let actions = with_last(&mut state.frontend, |page, c, last| {
             let mut actions = page.focus_moved(c, before, after, last);
             for event in events {
                 match event {
@@ -566,7 +643,7 @@ pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
         return;
     }
     for event in events {
-        let action = with_received(state, |received, c| match event {
+        let action = with_received(&mut state.frontend, |received, c| match event {
             PageEvent::Selected(RECEIVED_TRANSCRIPT, row) => {
                 received.select(c, row as usize);
                 None
@@ -577,36 +654,59 @@ pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
         if matches!(event, PageEvent::Selected(..)) {
             App::play_page_cue(state, PageCue::ListClick);
         }
-        apply_received(state, action.flatten());
+        apply_received(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.renderer,
+            action.flatten(),
+        );
     }
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
     let shift = state.platform.live_modifiers.shift_key();
     let event = crate::ui::shell::controller::gui_input(code, shift, text);
-    let (Some(dialog), Some(event)) = (top(state), event) else {
+    let (Some(dialog), Some(event)) = (top(state.frontend.wol.as_ref()), event) else {
         return;
     };
-    if sync(state, dialog).is_none() {
+    if sync(&mut state.frontend, &state.renderer, dialog).is_none() {
         return;
     }
     if dialog == RECEIVED_DIALOG {
-        let action = with_received(state, |received, c| received.input(c, event));
-        return apply_received(state, action.flatten());
+        let action = with_received(&mut state.frontend, |received, c| received.input(c, event));
+        return apply_received(
+            &mut state.frontend,
+            &state.platform.window,
+            &state.renderer,
+            action.flatten(),
+        );
     }
-    let actions = with_last(state, |page, c, last| page.input(c, event, last));
+    let actions = with_last(&mut state.frontend, |page, c, last| {
+        page.input(c, event, last)
+    });
     apply(state, actions.unwrap_or_default());
     // 0xCF's focused NewEdit keeps its caret in view: 0x00623880 paints
     // from the first visible unit, at the popup's retail scale.
-    if let Some(node) =
-        leaf::root(state, PAGE_DIALOG).and(state.frontend.shell_controller.gui().focus())
+    if let Some(node) = leaf::root(&state.frontend.shell_controller, PAGE_DIALOG)
+        .and(state.frontend.shell_controller.gui().focus())
     {
-        leaf::scroll_edit(state, node);
+        leaf::scroll_edit(
+            &mut state.frontend.shell_controller,
+            &state.renderer.bit_font,
+            node,
+        );
     }
 }
 
 /// The transcripts' scrollbar repeats.
-pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<crate::util::time::Instant> {
-    close_stale(state);
-    leaf::poll(state, open(state))
+pub(super) fn poll_scroll_repeat(
+    frontend: &mut FrontendState,
+    window: &Window,
+) -> Option<crate::util::time::Instant> {
+    close_stale(frontend);
+    leaf::poll(
+        &mut frontend.shell_controller,
+        window,
+        open(frontend.wol.as_ref()),
+    )
 }

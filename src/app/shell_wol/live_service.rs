@@ -34,6 +34,7 @@ use super::{
     WolServiceRequest, service_event,
 };
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::i18n::tr;
 use crate::net::udp::LanUdpTransport;
@@ -698,42 +699,28 @@ struct PendingStart {
     report: Option<RetryingCommand>,
 }
 
-fn take_service(state: &mut AppState) -> Option<LiveService> {
-    state.frontend.wol.as_mut()?.live_service.take()
+fn take_service(wol: Option<&mut WolVisit>) -> Option<LiveService> {
+    wol?.live_service.take()
 }
 
-fn put_service(state: &mut AppState, service: LiveService) {
-    if let Some(visit) = state.frontend.wol.as_mut() {
+fn put_service(frontend: &mut FrontendState, service: LiveService) {
+    if let Some(visit) = frontend.wol.as_mut() {
         visit.live_service = Some(service);
     } else {
         // A service callback can end its visit while this same owner is
         // temporarily borrowed by the reducer. Preserve its cleanup too.
-        state
-            .frontend
-            .online_cleanup
-            .retire(service, Instant::now());
+        frontend.online_cleanup.retire(service, Instant::now());
     }
 }
 
 /// The authenticated match identity retained by the existing live service.
-pub(crate) fn online_match_id(state: &AppState) -> Option<&str> {
-    state
-        .frontend
-        .wol
-        .as_ref()?
-        .live_service
-        .as_ref()?
-        .match_id
-        .as_deref()
+pub(crate) fn online_match_id(wol: Option<&WolVisit>) -> Option<&str> {
+    wol?.live_service.as_ref()?.match_id.as_deref()
 }
 
 /// This game's relay pass lapsed by `now_ms` (frame_pacer::wall_clock_ms).
-pub(crate) fn relay_pass_lapsed(state: &AppState, now_ms: u32) -> bool {
-    state
-        .frontend
-        .wol
-        .as_ref()
-        .and_then(|visit| visit.live_service.as_ref())
+pub(crate) fn relay_pass_lapsed(wol: Option<&WolVisit>, now_ms: u32) -> bool {
+    wol.and_then(|visit| visit.live_service.as_ref())
         .is_some_and(|service| service.relay_pass_lapsed(now_ms))
 }
 
@@ -750,7 +737,13 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     let relay_pending = crate::app::lan_service::online_retirement_pending(state);
     let cleanup_deadline = state.frontend.online_cleanup.poll(Instant::now());
     for (lobby, name) in std::mem::take(&mut state.frontend.online_cleanup.deleted_accounts) {
-        forget_deleted_account(state, &lobby, &name);
+        forget_deleted_account(
+            &mut state.frontend,
+            state.platform.game_config.as_ref(),
+            &mut state.persistence.options_profile,
+            &lobby,
+            &name,
+        );
     }
     if state
         .frontend
@@ -819,13 +812,13 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             }
         }
     }
-    let mut service = take_service(state)?;
+    let mut service = take_service(state.frontend.wol.as_mut())?;
     if state.frontend.shell_exit.is_none() {
         // A timed-out watch may still be downloading or negotiating. Retire
         // only that admission before handling a later grant.
         if service.watching.as_ref().is_some_and(|watch| {
             (watch.start.is_some() || service.pending.is_some())
-                && !super::lobby::awaits_watch(state, &watch.match_id)
+                && !super::lobby::awaits_watch(state.frontend.wol.as_ref(), &watch.match_id)
         }) {
             cancel_watch_start(state, &mut service);
         }
@@ -839,7 +832,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             // Created/Joined may begin a slide during the drain. Native slides
             // pump no callbacks: leave the following FIFO messages untouched
             // until the transition has admitted the next setup owner.
-            put_service(state, service);
+            put_service(&mut state.frontend, service);
             return Some(Instant::now() + POLL_INTERVAL);
         }
         let requests = state
@@ -871,14 +864,15 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         }
         service.poll_cleanup(Instant::now());
         if let Some(switch) = &mut service.switching_room {
-            if super::lobby::online_request_pending(state, switch.request_id) {
+            if super::lobby::online_request_pending(state.frontend.wol.as_ref(), switch.request_id)
+            {
                 if let Some((id, operation, payload)) = switch.take_due(Instant::now()) {
                     service.send_command(id, operation, payload);
                 }
                 // Keep A's queued setup and map traffic in its owner until
                 // we know which room owns the session. On refusal it resumes;
                 // on admission the old setup is discarded with channel_left.
-                put_service(state, service);
+                put_service(&mut state.frontend, service);
                 return Some(Instant::now() + POLL_INTERVAL);
             }
             service.switching_room = None;
@@ -981,7 +975,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         }
         show_problem_line(state);
     }
-    put_service(state, service);
+    put_service(&mut state.frontend, service);
     Some(Instant::now() + POLL_INTERVAL)
 }
 
@@ -1025,13 +1019,13 @@ fn show_problem_line(state: &mut AppState) {
     let open = problem_chat_open(
         state.frontend.shell_route,
         state.frontend.multiplayer_setup.is_some(),
-        super::quick_match::page_open(state),
+        super::quick_match::page_open(state.frontend.wol.as_ref()),
         state
             .frontend
             .wol
             .as_ref()
             .is_some_and(|visit| visit.lobby().is_some()),
-        super::lobby::awaiting_room(state),
+        super::lobby::awaiting_room(&state.match_state.session),
     );
     if !open {
         return;
@@ -1050,7 +1044,7 @@ fn fail_start(state: &mut AppState, text: &str) {
     if crate::app::loading::pump::cancel_network_loading(state, text) {
         return;
     }
-    if super::spawned_visit(state) {
+    if super::spawned_visit(state.frontend.wol.as_ref()) {
         // No room or setup to return to: the launch itself failed.
         crate::app::App::fail_external_launch(state, text);
         return;
@@ -1065,7 +1059,7 @@ fn fail_start(state: &mut AppState, text: &str) {
     }
     // VERA: the abort leaves the room, and the setup's chat with it
     // (`start_aborted`), so the reason waits for the chat the player lands in.
-    crate::app::shell_wol::hold_problem_line(state, text.to_owned());
+    crate::app::shell_wol::hold_problem_line(state.frontend.wol.as_mut(), text.to_owned());
     if verifying {
         let _ = crate::app::shell_network_setup::service_event(
             state,
@@ -1118,14 +1112,10 @@ fn end_room(state: &mut AppState, service: &mut LiveService) {
 /// The report of the online match whose transport just returned, for that
 /// match's `finish` (docs/lobby-protocol.md).
 pub(crate) fn keep_network_report(
-    state: &mut AppState,
+    wol: Option<&mut WolVisit>,
     report: &crate::app::match_runtime::network_quality::NetworkQualityReport,
 ) {
-    if let Some(service) = state
-        .frontend
-        .wol
-        .as_mut()
-        .and_then(|visit| visit.live_service.as_mut())
+    if let Some(service) = wol.and_then(|visit| visit.live_service.as_mut())
         && let Ok(report) = serde_json::to_value(report)
     {
         service.keep_network_report(report);
@@ -1182,9 +1172,9 @@ impl super::WolVisit {
 }
 
 pub(super) fn leave_visit(state: &mut AppState) {
-    if let Some(mut service) = take_service(state) {
+    if let Some(mut service) = take_service(state.frontend.wol.as_mut()) {
         maps::cancel(state, &mut service);
-        put_service(state, service);
+        put_service(&mut state.frontend, service);
     }
     let frontend = &mut state.frontend;
     if let Some(visit) = frontend.wol.as_mut() {

@@ -6,6 +6,8 @@
 
 use super::{WolProvider, WolServiceRequest};
 use crate::app::AppState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::shell_wol::WolVisit;
 use crate::ui::chat_translation::{ChatLanguage, ChatReply, MARKER, without_note};
 use crate::ui::lan_shell::LanChatLine;
 
@@ -30,23 +32,27 @@ pub(crate) enum TranslatedLine {
 /// the lobby's own line, shown from its phrases in the interface language.
 /// If the chosen language needs it translated, and it was not said in a
 /// match while Translate in Matches is off, ask the online service.
-pub(crate) fn received(state: &mut AppState, text: &[u16], localized: bool, line: TranslatedLine) {
+pub(crate) fn received(
+    mut wol: Option<&mut WolVisit>,
+    options_profile: &RetailOptionsProfile,
+    text: &[u16],
+    localized: bool,
+    line: TranslatedLine,
+) {
     let shown_in = localized
         .then(|| ChatLanguage::of_interface(&crate::i18n::selected_language()))
         .flatten();
-    let chat = state.persistence.options_profile.chat_translation;
+    let chat = options_profile.chat_translation;
     let in_match = matches!(line, TranslatedLine::Match { .. });
     let Some(target) = chat.target(text, in_match, shown_in) else {
         return;
     };
-    if state
-        .frontend
-        .wol
-        .as_ref()
+    if wol
+        .as_deref()
         .is_some_and(|visit| visit.provider == WolProvider::Online)
     {
         super::service::request(
-            state,
+            wol.as_deref_mut(),
             WolServiceRequest::Translate {
                 text: text.to_vec(),
                 target,
@@ -72,7 +78,7 @@ pub(super) fn show(
         return;
     }
     let translated = without_note(&reply.text);
-    let in_match = super::in_match(state);
+    let in_match = super::in_match(state.frontend.wol.as_ref());
     match line {
         TranslatedLine::Wol {
             mut prefix,
@@ -86,7 +92,7 @@ pub(super) fn show(
             };
             if !visit {
                 crate::app::shell_lan::append_room_chat(state, line);
-            } else if super::lobby::visiting(state) {
+            } else if super::lobby::visiting(state.frontend.wol.as_ref()) {
                 crate::app::shell_lan::append_wol_lobby_chat(state, line, None);
             }
             state.platform.window.request_redraw();

@@ -838,7 +838,8 @@ pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text:
     crate::app::App::play_shell_rules_sound(state, |rules| rules.general.incoming_message_sound());
     let units: Vec<u16> = text.encode_utf16().collect();
     crate::app::shell_wol::translation::received(
-        state,
+        state.frontend.wol.as_mut(),
+        &state.persistence.options_profile,
         &units,
         false,
         crate::app::shell_wol::translation::TranslatedLine::Match {

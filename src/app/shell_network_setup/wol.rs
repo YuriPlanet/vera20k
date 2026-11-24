@@ -246,7 +246,7 @@ pub(crate) fn player_choices(
     choices: crate::skirmish_launch::SkirmishLocalSlot,
     observer: bool,
 ) -> anyhow::Result<()> {
-    if crate::app::shell_wol::in_match(state)
+    if crate::app::shell_wol::in_match(state.frontend.wol.as_ref())
         || super::start_phase(state).submitted()
         || super::quick_match(state)
         || !state.match_state.session.host()
@@ -272,7 +272,7 @@ pub(crate) fn player_choices(
 /// Start click, and acts only in a mode that lets players ally outside a clan
 /// room, where the team combos show.
 pub(crate) fn balance_teams(state: &mut AppState, teams: &[(String, u8)]) -> anyhow::Result<()> {
-    if crate::app::shell_wol::in_match(state)
+    if crate::app::shell_wol::in_match(state.frontend.wol.as_ref())
         || super::start_phase(state).in_progress()
         || super::quick_match(state)
         || !state.match_state.session.host()
@@ -323,7 +323,9 @@ fn team_moves(
 /// (`0x5E3E73..0x5E3E90`); the user's node takes the value, and its
 /// accept icon shows only for 1 (`0x5EA3E0`).
 pub(crate) fn player_ready(state: &mut AppState, name: &str, value: i32) -> anyhow::Result<()> {
-    if crate::app::shell_wol::in_match(state) || super::start_phase(state).submitted() {
+    if crate::app::shell_wol::in_match(state.frontend.wol.as_ref())
+        || super::start_phase(state).submitted()
+    {
         return Ok(());
     }
     let result = ready_arm(state, name, value);
@@ -345,10 +347,13 @@ fn quick_match_start(state: &mut AppState, name: &str) {
         .network_setup()
         .and_then(|launch| launch.humans.get(1))
         .is_some_and(|human| human.name.eq_ignore_ascii_case(name));
-    if !session.host() || !second || crate::app::shell_wol::lobby::member_count(state) != 2 {
+    if !session.host()
+        || !second
+        || crate::app::shell_wol::lobby::member_count(state.frontend.wol.as_ref()) != 2
+    {
         return;
     }
-    let users = crate::app::shell_wol::lobby::member_names(state)
+    let users = crate::app::shell_wol::lobby::member_names(state.frontend.wol.as_ref())
         .rev()
         .map(str::to_owned)
         .collect();
@@ -358,7 +363,7 @@ fn quick_match_start(state: &mut AppState, name: &str) {
         .as_mut()
         .is_some_and(|protocol| protocol.submit_start(users))
     {
-        crate::app::shell_wol::quick_match::start_requested(state);
+        crate::app::shell_wol::quick_match::start_requested(state.frontend.wol.as_mut());
     }
 }
 
@@ -379,7 +384,7 @@ pub(super) fn quick_match_accept(state: &mut AppState) {
             let slot = &launch.local_player().slot;
             !slot.country_random && !slot.color_random
         });
-    if !assigned || crate::app::shell_wol::lobby::member_count(state) != 2 {
+    if !assigned || crate::app::shell_wol::lobby::member_count(state.frontend.wol.as_ref()) != 2 {
         return;
     }
     queue(state, NetworkSetupRequest::Ready(true));
@@ -412,7 +417,9 @@ fn ready_arm(state: &mut AppState, name: &str, value: i32) -> anyhow::Result<()>
 /// is open. Like `A`, it is dropped while a match runs or a start is
 /// requested (`0x005E3E73..0x005E3E90`).
 pub(crate) fn map_status(state: &mut AppState, name: &str, status: u8) -> anyhow::Result<()> {
-    if crate::app::shell_wol::in_match(state) || super::start_phase(state).submitted() {
+    if crate::app::shell_wol::in_match(state.frontend.wol.as_ref())
+        || super::start_phase(state).submitted()
+    {
         return Ok(());
     }
     let result = match participant(state, name) {
@@ -605,7 +612,7 @@ pub(super) fn game_started(
     }
     // 0x7A7CC3..0x7A7CE9: modes 1-3 close 0x117; 0x7A7CEE..0x7A7CFC: an
     // open 0xCF closes.
-    crate::app::shell_wol::quick_match::game_started(state);
+    crate::app::shell_wol::quick_match::game_started(&mut state.frontend);
     crate::app::shell_wol::page::close_page_dialog(state);
     // 0x794F6F..: the first user row with flag bit0 is the channel owner.
     let channel_owner = users
@@ -618,7 +625,7 @@ pub(super) fn game_started(
         .prepare_wol_timing(pings, channel_owner)?;
     // [0xB779C4] (0x7A7D0E..0x7A7D49) and Start Game Now's clan lists
     // (0x795250..0x79546E) for the match.
-    let terms = crate::app::shell_wol::lobby::start_terms(state);
+    let terms = crate::app::shell_wol::lobby::start_terms(state.frontend.wol.as_ref());
     state.match_state.session.set_wol_start(terms);
     // C2/C9 stay up: Start Game Now (0x794BA0) pushes the verify 0x130
     // over them with the nodes in [0xA8DA78] order (0x794C5B).
@@ -732,7 +739,7 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
             state.frontend.skirmish_preview_texture = None;
             if quick_match {
                 // 0x130 closes without a slide and no setup dialog exists.
-                crate::app::shell_wol::quick_match::start_leave(state);
+                crate::app::shell_wol::quick_match::start_leave(state.frontend.wol.as_mut());
                 super::commit_start(state, seed);
                 return Ok(());
             }
@@ -740,7 +747,10 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
         }
         1 => crate::app::shell_wol::start_aborted(state),
         2 => {
-            let message = crate::app::shell_wol::message_box(state, "TXT_SCENARIOS_DO_NOT_MATCH");
+            let message = crate::app::shell_wol::message_box(
+                &state.process_assets,
+                "TXT_SCENARIOS_DO_NOT_MATCH",
+            );
             verify_mut(state)?.mismatch = Some(message);
         }
         other => anyhow::bail!("unknown negotiation result {other}"),
@@ -846,7 +856,8 @@ pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
         reply_short: csf_units(state, "TXT_REPLY_COMMAND_SHORT"),
         online: csf_units(state, "TXT_ONLINE_COMMAND"),
     };
-    let last_pager = crate::app::shell_wol::last_pager(state).map(str::to_owned);
+    let last_pager =
+        crate::app::shell_wol::last_pager(state.frontend.wol.as_ref()).map(str::to_owned);
     let nickname = local_nickname(state);
     let line = wol_chat::parse(&text, &commands, last_pager.is_some());
     let echo = match &line {
@@ -869,7 +880,7 @@ pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
             ))
         }
     };
-    crate::app::shell_wol::chat_sent(state, &line);
+    crate::app::shell_wol::chat_sent(state.frontend.wol.as_mut(), &line);
     queue(state, NetworkSetupRequest::WolChat(line));
     if let Some((text, color)) = echo {
         crate::app::shell_lan::append_room_chat(state, LanChatLine { text, color });

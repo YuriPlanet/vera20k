@@ -7,8 +7,11 @@ use vera20k_gui::{Key, NodeKind, NodeSpec, Prop, Value};
 use super::leaf::{self, Pointer};
 use super::service::{self, WolServiceRequest};
 use super::{WolPage, WolVisit};
+use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::{shell_layout, shell_transition};
+use crate::app::input::state::MatchInputState;
 use crate::app::{App, AppState};
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::wol_account::{AccountSuccess, POPUP, WolAccountForm};
 use crate::ui::wol_login::*;
@@ -43,7 +46,10 @@ pub(crate) fn account_form_layout(state: &AppState) -> Option<WolAccountFormLayo
 /// art, the empty backdrop and `UI__BeginDialog(0x10F)`. The nickname is the
 /// process global the flow prefilled.
 pub(super) fn open(state: &mut AppState) {
-    let remembered = super::live_service::remembered_name(state);
+    let remembered = super::live_service::remembered_name(
+        state.frontend.wol.as_ref(),
+        state.platform.game_config.as_ref(),
+    );
     let last = &state.persistence.options_profile.online_name;
     let frontend = &mut state.frontend;
     let Some(visit) = frontend.wol.as_mut() else {
@@ -64,7 +70,7 @@ pub(super) fn open(state: &mut AppState) {
     };
     visit.page = WolPage::Login(Box::new(login));
     if online {
-        super::login_info::refresh(state);
+        super::login_info::refresh(&mut state.frontend.login_info);
     }
     super::leaf::open_art(state, DIALOG);
     let _ = App::ensure_skirmish_shell_chrome(state);
@@ -74,10 +80,9 @@ pub(super) fn open(state: &mut AppState) {
 /// The login page and what it works on; what the tree shows from the model
 /// follows.
 fn with_login<R>(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
     f: impl FnOnce(&mut WolLoginState, &mut LoginCx<'_>) -> R,
 ) -> Option<R> {
-    let frontend = &mut state.frontend;
     let visit: &mut WolVisit = frontend.wol.as_mut()?;
     let WolPage::Login(login) = &mut visit.page else {
         return None;
@@ -100,7 +105,8 @@ fn sync(state: &mut AppState) {
     if let Some(rects) = account_form_layout(state) {
         // Its form built the popup's nodes.
         leaf::sync(
-            state,
+            &mut state.frontend.shell_controller,
+            &state.renderer.bit_font,
             POPUP,
             scale,
             || NodeSpec::new(NodeKind::Dialog),
@@ -109,7 +115,8 @@ fn sync(state: &mut AppState) {
         return;
     }
     if leaf::sync(
-        state,
+        &mut state.frontend.shell_controller,
+        &state.renderer.bit_font,
         DIALOG,
         scale,
         || spec(layout.policy),
@@ -153,7 +160,10 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
         WolLoginAction::Forget { slot, nickname } => {
             // 0x0079A6F0..0x0079A7B6: a lowered match clears AutoLogin, then
             // LastValid.
-            if let Some(file) = super::persona::info_file(state) {
+            if let Some(file) = super::persona::info_file(
+                state.frontend.wol.as_ref(),
+                state.platform.game_config.as_ref(),
+            ) {
                 let name = nickname.to_ascii_lowercase();
                 if file.auto_login().to_ascii_lowercase() == name {
                     file.set_auto_login("");
@@ -165,12 +175,17 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
             if let Some(visit) = state.frontend.wol.as_mut() {
                 visit.credentials.retain(|stored| stored.slot != slot);
             }
-            service::request(state, WolServiceRequest::ForgetCredential { slot });
+            service::request(
+                state.frontend.wol.as_mut(),
+                WolServiceRequest::ForgetCredential { slot },
+            );
         }
         // 0x00773E90 needs the registry URL `Manage` and an HTMLPath; a
         // retail install has neither and it returns.
         WolLoginAction::Manage => {}
-        WolLoginAction::ForgetSignIn => service::request(state, WolServiceRequest::ForgetSignIn),
+        WolLoginAction::ForgetSignIn => {
+            service::request(state.frontend.wol.as_mut(), WolServiceRequest::ForgetSignIn)
+        }
         WolLoginAction::Send(request) => {
             if let Some(visit) = &mut state.frontend.wol {
                 visit.account_attempt = visit.account_attempt.wrapping_add(1);
@@ -187,7 +202,7 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
 /// moves it on, a confirmed account or new password signs in, and a deleted
 /// account's popup says so.
 pub(super) fn account_answered(state: &mut AppState, answer: Result<AccountSuccess, String>) {
-    let action = with_login(state, |login, cx| {
+    let action = with_login(&mut state.frontend, |login, cx| {
         let form = login.account.as_mut().filter(|form| form.busy)?;
         let sign_in = form.answered(cx.ui, answer)?;
         Some(login.signed_up(cx, sign_in))
@@ -199,7 +214,7 @@ pub(super) fn account_answered(state: &mut AppState, answer: Result<AccountSucce
 /// again); Login starts the connect over the empty backdrop. The online
 /// sign-in is the visit's first page, so its Back leaves WOL.
 pub(super) fn commit_close(state: &mut AppState, result: u16) {
-    super::leaf::free_art(state, DIALOG);
+    super::leaf::free_art(&mut state.frontend.wol_art, DIALOG);
     if result != LOGIN {
         if state
             .frontend
@@ -225,7 +240,7 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     if matches!(key, Some(Key::Enter | Key::Escape)) {
         sync(state);
     }
-    let action = with_login(state, |login, cx| match key {
+    let action = with_login(&mut state.frontend, |login, cx| match key {
         Some(key @ (Key::Enter | Key::Escape)) => login.dialog_key(cx, key),
         Some(key) => {
             login.edit_key(cx, key);
@@ -243,32 +258,34 @@ pub(super) fn cursor_moved(state: &mut AppState) {
     sync(state);
     leaf::pointer(state, Pointer::Move);
     // VERA online's chooser: the button under the pointer takes the focus.
-    with_login(state, |login, cx| login.pointer_moved(cx.ui));
+    with_login(&mut state.frontend, |login, cx| login.pointer_moved(cx.ui));
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     sync(state);
     let events = leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up });
-    let action = with_login(state, |login, cx| login.handle(cx, events));
+    let action = with_login(&mut state.frontend, |login, cx| login.handle(cx, events));
     finish(state, action.flatten());
 }
 
 /// The status help under the pointer (`0x006040B0`). Over the nickname
 /// combo's open list it stays the help of the control under the list: the
 /// page's hit test takes no notice of the list.
-pub(crate) fn status_key(state: &AppState) -> Option<&str> {
-    let ui = &state.frontend.shell_controller;
-    let list = ui
+pub(crate) fn status_key<'a>(
+    controller: &'a DialogController,
+    input: &MatchInputState,
+) -> Option<&'a str> {
+    let list = controller
         .control(DIALOG, NICKNAME_DROP)
-        .and_then(|node| ui.gui().combo_drop_down(node));
-    let (x, y) = state.match_state.input.cursor_px();
+        .and_then(|node| controller.gui().combo_drop_down(node));
+    let (x, y) = input.cursor_px();
     if !list.is_some_and(|list| list.popup.rect.contains(x, y)) {
-        return leaf::status_key(state, DIALOG);
+        return leaf::status_key(controller, DIALOG);
     }
     // The control the page's widgets hit under the list; the nickname's
     // edit and its combo share the combo's help.
-    let gui = ui.gui();
-    let node = gui.hit_at(ui.root_in(DIALOG)?, x, y, false)?;
+    let gui = controller.gui();
+    let node = gui.hit_at(controller.root_in(DIALOG)?, x, y, false)?;
     let id = u16::try_from(gui.id_of(node)?).ok()?;
     tooltip_key(if id == NICKNAME_DROP { NICKNAME } else { id })
 }

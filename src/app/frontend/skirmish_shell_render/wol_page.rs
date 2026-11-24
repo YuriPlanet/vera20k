@@ -253,11 +253,14 @@ pub(crate) fn in_match_page_draw(state: &AppState) -> Option<InMatchPageDraw> {
         .set_raster(raster.unwrap_or(crate::render::bit_font::TextRaster::NATIVE));
     let paint = match state.match_state.match_presentation.in_game_menu {
         crate::ui::pause_menu::InGameMenuState::Page => {
-            crate::app::shell_wol::page::page_dialog(state).map(|page| {
+            crate::app::shell_wol::page::page_dialog(state.frontend.wol.as_ref()).map(|page| {
                 paint_wol_page_dialog(
                     state,
                     page,
-                    &crate::app::shell_wol::page::page_layout(state),
+                    &crate::app::shell_wol::page::page_layout(
+                        &state.renderer,
+                        &state.frontend.screen,
+                    ),
                 )
             })
         }
