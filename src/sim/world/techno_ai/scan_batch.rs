@@ -17,8 +17,9 @@
 //! reaches Greatest_Threat this frame as the world stands, and with which
 //! mask and coordinate ([`Simulation::scan_ahead`]: the Area Guard or Hunt
 //! handler's scan, which runs first in a turn, else the targeting slot's),
-//! and runs their Greatest_Threat (`0x006F8DF0`, through the `+0x3C4` override) on
-//! worker threads against that frame-start world. At the object's turn a scan with
+//! and runs their Greatest_Threat (`0x006F8DF0`, through the `+0x3C4` override)
+//! side by side, on the worker threads and the simulation's own, against that
+//! frame-start world. At the object's turn a scan with
 //! that mask and coordinate takes the answer in place of its own
 //! Greatest_Threat when the object still stands as it did ([`ScannerKey`])
 //! and the pick still stands as the scan saw it
@@ -37,7 +38,7 @@
 //! the class tests after it.
 //!
 //! Sim-scale deviation from native order (update order and same-frame
-//! effects), kept so target scans stay off the main thread at 20,000 units:
+//! effects), kept so target scans are answered side by side at 20,000 units:
 //! an answered scan sees the world as it stood when the pass began, not as
 //! the scanner's turn finds it. A target that an earlier turn in the same
 //! pass admits (for a campaign player's scanner, discovers: the target's own
@@ -84,6 +85,7 @@ use std::collections::BTreeSet;
 
 use super::target_scan::{TargetingSlot, passive_acquire_gate};
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::SharedCellDummy;
 use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -110,7 +112,7 @@ pub(crate) struct ScanBatch {
     /// The pass's answers in ascending object id, each until a scan takes
     /// it. Empty between passes, so a save carries only the setting.
     #[serde(skip)]
-    answers: Vec<(u64, Option<BatchedScan>)>,
+    answers: Vec<ScanAnswer>,
     /// The picks a release reached during the pass.
     #[serde(skip)]
     released: BTreeSet<u64>,
@@ -124,8 +126,11 @@ pub(crate) struct ScanBatch {
     used: usize,
 }
 
+/// An object's id and the answer to its scan, until a scan takes it.
+pub(in crate::sim::world) type ScanAnswer = (u64, Option<BatchedScan>);
+
 #[derive(Clone, Debug)]
-struct BatchedScan {
+pub(in crate::sim::world) struct BatchedScan {
     /// The scan the answer is for.
     mask: ScanMission,
     scan_coord: Option<[i32; 3]>,
@@ -232,6 +237,70 @@ impl ScannerKey {
     }
 }
 
+/// What the answers to a live object pass's scans share
+/// ([`Simulation::batched_scans`]). It borrows nothing of the world, so the
+/// pass can ready its path searches before it answers.
+pub(in crate::sim::world) struct PassScans<'a> {
+    rules: &'a RuleSet,
+    overlay_registry: Option<&'a OverlayTypeRegistry>,
+    dummy: SharedCellDummy,
+    now: u32,
+}
+
+impl PassScans<'_> {
+    /// The id of the `index`th object to take a turn in `world`, as the pass
+    /// finds it, and the answer to the scan that turn is due to run; `None`
+    /// when it runs none or the answer cannot be kept. The pass asks for
+    /// every index below [`Simulation::batched_scan_objects`], side by side
+    /// on any threads.
+    pub(in crate::sim::world) fn answer(
+        &self,
+        world: &Simulation,
+        index: usize,
+    ) -> Option<ScanAnswer> {
+        let Self {
+            rules,
+            overlay_registry,
+            ..
+        } = *self;
+        // Only the Logic list's objects take a turn.
+        let id = *world.substrate.logic.as_slice().get(index)?;
+        let (entity, quiet) = world.substrate.entities.get_and_quiet(id)?;
+        if !scan_may_be_due(entity, self.now) {
+            return None;
+        }
+        let (answer, stamped) = self.dummy.detached_stamps(|| {
+            let obj = world.entity_object_type(entity, rules)?;
+            if obj.distributed_fire {
+                return None;
+            }
+            let (mask, scan_coord) =
+                world.scan_ahead(id, entity, quiet, rules, overlay_registry)?;
+            let outcome = world.threat_scan(rules, overlay_registry, id, mask, scan_coord);
+            let pick_house = outcome
+                .object()
+                .and_then(|pick| world.substrate.entities.get(pick))
+                .map(|pick| (pick.owner(), world.scanner_allies(entity, pick.owner())));
+            Some(BatchedScan {
+                mask,
+                scan_coord,
+                key: ScannerKey::of(world, entity, obj, rules),
+                outcome,
+                pick_house,
+            })
+        });
+        // A wall Cell pick (the ring walk's fallback, `0x006F8C10`) is
+        // never kept: an earlier turn may destroy or rebuild the wall.
+        answer
+            .filter(|answer| {
+                !stamped
+                    && !answer.outcome.drew_scenario_rng()
+                    && !matches!(answer.outcome.target(), Some(TargetKind::Cell(..)))
+            })
+            .map(|answer| (id, Some(answer)))
+    }
+}
+
 impl Simulation {
     /// Answer the targeting slots' and Area Guard and Hunt handlers' scans
     /// side by side from now on; see the module docs.
@@ -244,58 +313,33 @@ impl Simulation {
         self.scan_batch.is_some()
     }
 
-    /// The pass's answers, before its first turn.
-    pub(in crate::sim::world) fn answer_batched_scans(
-        &mut self,
-        rules: &RuleSet,
-        overlay_registry: Option<&OverlayTypeRegistry>,
-    ) {
-        let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::TARGETING);
+    /// What this pass's scan answers share ([`PassScans::answer`]); `None`
+    /// while scans are not batched.
+    pub(in crate::sim::world) fn batched_scans<'a>(
+        &self,
+        rules: &'a RuleSet,
+        overlay_registry: Option<&'a OverlayTypeRegistry>,
+    ) -> Option<PassScans<'a>> {
         let (Some(terrain), Some(_)) = (self.resolved_terrain.as_ref(), self.scan_batch.as_ref())
         else {
-            return;
+            return None;
         };
-        let dummy = terrain.shared_cell_dummy();
-        let world: &Simulation = self;
-        // Only the Logic list's objects take a turn.
-        let logic = world.substrate.logic.as_slice();
-        let now = world.session.binary_frame();
-        let mut answers = crate::sim::parallel::filter_map_indices(logic.len(), |index| {
-            let id = logic[index];
-            let (entity, quiet) = world.substrate.entities.get_and_quiet(id)?;
-            if !scan_may_be_due(entity, now) {
-                return None;
-            }
-            let (answer, stamped) = dummy.detached_stamps(|| {
-                let obj = world.entity_object_type(entity, rules)?;
-                if obj.distributed_fire {
-                    return None;
-                }
-                let (mask, scan_coord) =
-                    world.scan_ahead(id, entity, quiet, rules, overlay_registry)?;
-                let outcome = world.threat_scan(rules, overlay_registry, id, mask, scan_coord);
-                let pick_house = outcome
-                    .object()
-                    .and_then(|pick| world.substrate.entities.get(pick))
-                    .map(|pick| (pick.owner(), world.scanner_allies(entity, pick.owner())));
-                Some(BatchedScan {
-                    mask,
-                    scan_coord,
-                    key: ScannerKey::of(world, entity, obj, rules),
-                    outcome,
-                    pick_house,
-                })
-            });
-            // A wall Cell pick (the ring walk's fallback, `0x006F8C10`) is
-            // never kept: an earlier turn may destroy or rebuild the wall.
-            answer
-                .filter(|answer| {
-                    !stamped
-                        && !answer.outcome.drew_scenario_rng()
-                        && !matches!(answer.outcome.target(), Some(TargetKind::Cell(..)))
-                })
-                .map(|answer| (id, Some(answer)))
-        });
+        Some(PassScans {
+            rules,
+            overlay_registry,
+            dummy: terrain.shared_cell_dummy(),
+            now: self.session.binary_frame(),
+        })
+    }
+
+    /// How many objects take a turn this pass: [`PassScans::answer`] takes
+    /// an index below it.
+    pub(in crate::sim::world) fn batched_scan_objects(&self) -> usize {
+        self.substrate.logic.as_slice().len()
+    }
+
+    /// Keep the pass's `answers` ([`PassScans::answer`]) for its turns' scans.
+    pub(in crate::sim::world) fn install_scan_answers(&mut self, mut answers: Vec<ScanAnswer>) {
         answers.sort_unstable_by_key(|&(id, _)| id);
         if let Some(batch) = self.scan_batch.as_mut() {
             batch.answers = answers;
