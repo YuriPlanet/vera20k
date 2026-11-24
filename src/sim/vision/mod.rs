@@ -2039,6 +2039,28 @@ impl FogState {
             .is_some_and(|s| s.is_gap_covered(rx, ry))
     }
 
+    /// Does `viewer` see another house's objects on this cell? Explored (with
+    /// `current_sight_only`, currently seen) and not covered by a hostile gap.
+    /// With `current_sight_only == false` this is the A plane's own admission
+    /// (`render::shroud_buffer::cell_fill`), so overlays whose material reads
+    /// no A can ask it instead of inventing a second fog interpretation. The
+    /// draw plan, the pickers and the extension modules' `Visible` read it.
+    pub fn shows_objects_to(
+        &self,
+        viewer: InternedId,
+        rx: u16,
+        ry: u16,
+        current_sight_only: bool,
+    ) -> bool {
+        let lit = if current_sight_only {
+            self.is_cell_visible(viewer, rx, ry)
+        } else {
+            // Standard YR has no fog-of-war layer: explored ground stays visible.
+            self.is_cell_revealed(viewer, rx, ry)
+        };
+        lit && !self.is_cell_gap_covered(viewer, rx, ry)
+    }
+
     /// Returns true if the cell is covered by a friendly gap generator for this owner.
     pub fn is_cell_gap_fog(&self, owner: InternedId, rx: u16, ry: u16) -> bool {
         self.by_owner
