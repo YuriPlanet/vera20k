@@ -121,6 +121,17 @@ impl Lifecycle {
         self.fatal = true;
         Some(json!({ "type": "engine-error", "error": error }))
     }
+
+    pub(crate) fn worker_stopped(&self, message: &str, fatal: bool) -> Option<Value> {
+        if self.terminal {
+            return None;
+        }
+        Some(json!({
+            "type": "worker-stopped",
+            "message": message,
+            "fatal": fatal,
+        }))
+    }
 }
 
 #[cfg(all(test, tests_root))]
@@ -212,5 +223,19 @@ mod tests {
         let mut panic = Lifecycle::default();
         assert_eq!(panic.fatal("panic").unwrap()["type"], "engine-error");
         assert!(panic.exited().is_none());
+    }
+
+    #[test]
+    fn worker_stopped_reports_fallback_without_ending_the_launch() {
+        let mut lifecycle = Lifecycle::default();
+        lifecycle.start(false).unwrap();
+        let event = lifecycle.worker_stopped("Worker stopped", false).unwrap();
+        assert_eq!(
+            event,
+            json!({"type": "worker-stopped", "message": "Worker stopped", "fatal": false})
+        );
+        assert!(!lifecycle.idle());
+        lifecycle.exited().unwrap();
+        assert!(lifecycle.worker_stopped("Worker stopped", false).is_none());
     }
 }
