@@ -299,7 +299,7 @@ enum Target {
     House(usize),
     Cell(u16, u16),
     Waypoint(i32),
-    /// Type and global rules references: never an action target.
+    /// Type, superweapon and global rules references: never an action target.
     Other,
 }
 
@@ -310,7 +310,9 @@ fn decode(reference: i64) -> Act<Target> {
         Some(super::Ref::House(index)) => Target::House(index),
         Some(super::Ref::Cell { x, y }) => Target::Cell(x, y),
         Some(super::Ref::Waypoint(number)) => Target::Waypoint(number),
-        Some(super::Ref::Type { .. } | super::Ref::Global) => Target::Other,
+        Some(super::Ref::Type { .. } | super::Ref::SuperWeapon { .. } | super::Ref::Global) => {
+            Target::Other
+        }
     })
 }
 

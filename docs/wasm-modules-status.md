@@ -42,7 +42,8 @@ content as work lands; do not append a diary.
 | The `action` import and trigger actions: `run_action` (atomic actions through their owners, stock actions mapped onto the map trigger executor) | `src/sim/ext_modules/actions.rs`; executor without a live trigger `src/sim/trigger_runtime/untriggered.rs` |
 | House orders: `order` checks and queues per module slot; `take_due_orders` turns them into player commands | `src/sim/ext_modules/orders.rs`; executed by `Simulation::run_ext_module_orders` (`src/sim/world/command_schedule.rs`) from `run_network_command_tail` in `master_frame.rs` |
 | Cell and global properties, `find` over cells | `src/sim/ext_modules/cells.rs` |
-| House domain claims (RFC 6i): `ControlDomains`, the claim store, "mod AI" seats, `Simulation::module_claims` that the native AI asks | `src/sim/ext_modules/claims.rs` (gates listed in its module doc); seats from `SkirmishLaunchSession::mod_ai_slots` in `initialize_skirmish_launch_houses`; tests `ext_modules_claim_tests.rs` |
+| Superweapon references, properties and `find` over superweapons | `src/sim/ext_modules/supers.rs` |
+| 6i reads: `Visible` (`Simulation::object_seen_by`, `techno_ai/common_body.rs`), `Engage` (`Simulation::engage_check`, `techno_ai/target_scan.rs`), factories (`FactoryRegistry::owner_view`, `production/factory.rs`); tests | `src/sim/ext_modules/props.rs`; `ext_modules_drive_tests.rs` |
 | Rules stage: `[VeraWasm]` policy, `VeraMinVersion`, `PreparedExtModules` (the `ExtRulesHook`), `RulesHost` for `vera_init`/`on_rules`, `rules_get`/`rules_set` | `src/sim/ext_modules/rules.rs`; hook trait `ExtRulesHook` and the extra pass in `src/rules/native_processing.rs`; entry `NativeRulesProcessOwner::load_scenario_with_ext_rules` (`process_owner.rs`) |
 | Build version and `version_serves` (mods and maps) | `src/util/version.rs` (`GAME_VERSION`) |
 | Module phase hook | end of the Triggers arm in `src/sim/world/master_frame.rs` |
@@ -308,45 +309,32 @@ modders INI names.
   `ModuleEventRecord`, `Trigger::on_module_event`, `Action::raise_event`,
   `ActionDef::module_with`, args helpers (`ini::split`, `ini::int`, `ini::ints`).
 
-## Done (phase 1c: house domain claims)
+## Done (phase 1c: reads for driving a house)
 
-RFC 0001 section 6i, the claim part (`OrderRefused`, the read properties and the
-seat budgets are separate work).
+RFC 0001 section 6i's read surface (branch `impl-6i-reads`; claims and orders are
+separate work):
 
-- House property `ControlDomains` (`Domain` mask, appendix 8.3 enum 25): `get` reads
-  it, `set` claims and releases. The value is the set of bits the writer holds on
-  that house; bits outside `DOMAIN_ALL` are invalid; `Refused` for a human,
-  defeated or local player's house and for a bit the other source holds; leaving a
-  bit out releases only the writer's own. A stopped module releases all its bits.
-  Saved (`SavedExtModules::claims`), hashed and in the checksum only while any claim
-  exists. `ExtModules::claimed_seats(source)` counts a source's seats.
-- "Mod AI" seats: `SkirmishLaunchSession::mod_ai_slots` (AI `raw_slot_index`
-  values, left out of the launch JSON while empty) names the seats. The modules are
-  installed before the launch houses exist, so `initialize_skirmish_launch_houses`
-  calls `Simulation::seat_mod_ai_houses`, which claims all four bits for the mod
-  module when the mod's `[VeraWasm] Controller=yes` (`WasmPolicy::controller`) and
-  its module runs; otherwise the native AI keeps the seat and the log says so.
-- Native AI gates (`Simulation::module_claims`, one emptiness check without
-  claims):
-  - `Production`: the chooser block of `HouseClass::Update`
-    (`update_production_choices`), `Factory_AI`'s start of production
-    (`factory_ai`), `AI_Manage_Build_Queue` and `Fire_Sale` in the strategy tick,
-    the house AI's MCV deploy (`owner_builds_its_own_base`).
-  - `Forces`: team creation and AI triggers (`update_team_creation`), the house's
-    teams in `TeamClass::AI` (`team_ai`, the teams stand still), `All_To_Hunt` in the
-    strategy tick, the regroup after an MCV deploys.
-  - `Abilities`: the computer-only unit arms: the AI auto-deploy of `Deployer=`
-    infantry, `Mission_Hunt`'s computer undeploy, the computer capture arm
-    (engineer capture, spy infiltration, garrisoning).
-  - `SuperWeapons`: `AI_TryFireSW` (`superweapon::ai_fire::try_fire`).
-- Residuals (also in `claims.rs`): the strategy tick's enemy search, anger and timer
-  draw keep running; a building already in the yard when `Production` is claimed is
-  still placed; the production mode still steps at exits; `Abilities` has no
-  house-level entry (house AI ability orders mostly come through team scripts);
-  ungarrisoning, the base defense response and a capturer's Hunt after capture are
-  not gated; a claimed house's emptied team is not dissolved until the claim goes.
-  The lobby does not offer "mod AI" yet (it must send `mod_ai_slots`; an older
-  game refuses such a launch, `deny_unknown_fields`).
+- Objects: `Destination` (NavCom, cell or object), `WeaponReady` (rearm timer run
+  out), `Deployed` (`is_fully_deployed`), `UnderConstruction` (BState 0),
+  `Parasite` (ParasiteEatingMe); `ControlGroup` answers `Unsupported` (client only);
+  `Armor` was already readable.
+- Viewpoint: `Visible` (the viewpoint house's fog as the translucent fog draws,
+  current sight under FogOfWar, and the screen GetVisualState `0x00703860` for
+  cloak and sensors; `FogState::shows_objects_to` is now the one owner the draw
+  plan, pickers and modules share) and `Engage` (`EngageResult`: GetFireError
+  without range, the selected Warhead's Verses against the target's armor, InRange).
+  `Query.viewpoint` may be an object: `Engage` reads for it, house viewpoint
+  properties for its owner; filter clauses keep the trigger house. A clause on a
+  "derived, high" property (`HIGH_COST_PROPERTIES`, now `Engage`) costs
+  `HIGH_CLAUSE_COST` (60) more per candidate.
+- Houses: `Factory.<Kind>.Type/Progress/Ready/Queued` for the six kinds, from the
+  House slot factory or, for a computer house, the first building-held one.
+- Cells: `Zone.<MovementZone>` (MapClass::GetZoneID `0x0056D230`), `Obstructed`
+  (a building in the cell, or a wall or impassable overlay).
+- Global `AutomationAllowed` reads 0 until the room switch exists (phase 2).
+- Superweapons: references (bit 46, house index and `[SuperWeaponTypes]` index),
+  `Type`, `Owner`, `Ready`, `ChargePercent` (writing runs stock action 129), and
+  `find` scope 8 `SuperWeapons` over granted Supers, by house then type.
 
 ## Provisional numbering (open question 5)
 
@@ -378,7 +366,9 @@ seat budgets are separate work).
   `[SuperWeaponTypes]` order; overlay ID: overlay type index; waypoint reference kind 3,
   global reference kind 4.
 - References: object = entity `stable_id`; house = bit 47 over the house index (the RFC
-  wants houses on the shared creation counter); type `(1<<48)|(kind<<32)|id`;
+  wants houses on the shared creation counter); superweapon = bit 46 over
+  `(house index << 16) | [SuperWeaponTypes] index` (same reason; documented at
+  `SUPER_REF_BIT`); type `(1<<48)|(kind<<32)|id`;
   cell `(2<<48)|(x<<16)|y`; global `4<<48`.
 - `Command` numbers (appendix 8.3) 0..25 as the SDK's `Command` lists them; the
   `Order` layout is a 24-byte header (kind, count, target, value) and the unit handles.
@@ -389,9 +379,9 @@ seat budgets are separate work).
 ## Remaining in phase 1
 
 - RFC 0.0.21 section 6i (driving a house: `ControlDomains`, "mod AI" seats,
-  `OrderRefused`, `SimEvent`, `Visible`/`Engage` and the other read properties, the
-  500,000 default budget, `SeatBudget`, `VERA.INI` `WasmBudget`, memory per seat) is
-  specified but not implemented. The implementation still has the old budgets: map
+  `OrderRefused`, `SimEvent`, the 500,000 default budget, `SeatBudget`, `VERA.INI`
+  `WasmBudget`, memory per seat) is specified but not implemented; its read
+  properties are (phase 1c above). The implementation still has the old budgets: map
   default 200,000 (RFC 100,000) and values under 20,000 clamped to 1 (RFC: refuse the
   start).
 
@@ -461,6 +451,15 @@ modules, external modders, freeze), and the later items (`Launch`,
   not honoured; `SuspendProduction`, `EjectBunker`, `Enter` answer `Unsupported`.
 - INI: sounds take numbers only; the map `Wasm.Tags` warning is a match notice, not
   a lobby warning; one module per trigger's `Wasm:` actions.
+- 6i reads: `Engage` uses the target type's own armor (no `TargetArmor`), and a
+  transient GetFireError answer (Rearm, Facing, Moving, Busy, ...) reads as `Ok` in
+  range and can hide a later Illegal check; `Visible` uses current sight under
+  FogOfWar for every client and counts a tunnel unit's ripple as visible;
+  `Zone.<MovementZone>` reads the ground zone under a bridge deck; `Obstructed`
+  ignores trees and units; a computer house with two factories of a kind reports
+  the first built; `ChargePercent` 50 reads 49 for most recharge times
+  (SetPercentage's f32 0.01). The Rust SDK has no `Find` helpers yet for scope 8
+  or an object viewpoint (set `Query` fields directly).
 - A type name shared by two categories resolves to the first. Houses queries with
   area, type or owner answer `Unsupported`.
 - The Rust SDK's delivery area is fixed at address 8 (9 records); one

@@ -590,34 +590,12 @@ pub(crate) fn object_shown_to_local_owner(
         return true;
     };
     crate::map::houses::is_allied_with(alliances, local_owner, owner)
-        || cell_shows_objects(
+        || fog.shows_objects_to(
             local_owner_id.unwrap_or_default(),
-            fog,
             pos.rx(),
             pos.ry(),
             current_sight_only,
         )
-}
-
-/// Does `viewer` see another house's objects on this cell? Explored (with
-/// `current_sight_only`, currently seen) and not covered by a hostile gap.
-/// With `current_sight_only == false` this is the A plane's own admission
-/// (`render::shroud_buffer::cell_fill`), so overlays whose material reads no
-/// A can ask it instead of inventing a second fog interpretation.
-pub(crate) fn cell_shows_objects(
-    viewer: InternedId,
-    fog: &FogState,
-    rx: u16,
-    ry: u16,
-    current_sight_only: bool,
-) -> bool {
-    let lit = if current_sight_only {
-        fog.is_cell_visible(viewer, rx, ry)
-    } else {
-        // Standard YR has no fog-of-war layer: explored ground stays visible.
-        fog.is_cell_revealed(viewer, rx, ry)
-    };
-    lit && !fog.is_cell_gap_covered(viewer, rx, ry)
 }
 
 /// VERA's translucent fog removes the A buffer's native concealment, so what
@@ -634,7 +612,7 @@ pub(crate) fn translucent_fog_conceals_cell(
     let (Some(viewer), Some(fog)) = (viewer, fog) else {
         return false;
     };
-    !cell_shows_objects(viewer, fog, rx, ry, fog_of_war)
+    !fog.shows_objects_to(viewer, rx, ry, fog_of_war)
 }
 
 /// The local house VERA's translucent fog conceals other houses' unseen
