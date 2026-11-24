@@ -70,8 +70,9 @@ pub const SDBTNANM_CELL_W_NARROW: i32 = 156;
 /// Legacy fit for shell controls that still use `PANEL_FACE`.
 pub const RIGHT_PANEL_FACE_W: u32 = 110;
 
-/// The family heading and column buttons share the SDTP window's 116 native
-/// pixels less one pixel on either side. Other shell controls keep their fit.
+/// The family heading and full-width right-panel buttons share the SDTP
+/// window's 116 native pixels less one pixel on either side. Other shell
+/// controls keep their fit.
 pub(crate) const FAMILY_CAPTION_W: i32 = 116 - 2;
 
 /// The shell's text alignment flags: what a GUI text node carries in

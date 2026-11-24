@@ -416,7 +416,13 @@ pub(crate) fn active_page_title_text(
             |browser| browser.game_title_label().0,
         ),
         ShellSlideKind::WolWelcome => crate::ui::wol_shell::WOL_WELCOME_PAGE.title_key,
-        ShellSlideKind::WolLogin => crate::ui::wol_login::PAGE.title_key,
+        ShellSlideKind::WolLogin => wol_login_title_key(
+            state.frontend
+                .wol
+                .as_ref()
+                .and_then(|visit| visit.login())
+                .map(|login| login.policy),
+        ),
         ShellSlideKind::WolLobby => crate::ui::wol_shell::WOL_LOBBY_TITLE_KEY,
         ShellSlideKind::WolOptions => crate::ui::wol_options::PAGE.title_key,
         ShellSlideKind::WolSoundOptions => crate::ui::shell::sound::SHELL_SOUND_PAGE.title_key,
@@ -450,6 +456,13 @@ pub(crate) fn active_page_title_text(
         }
     };
     state.csf_text(key)
+}
+
+fn wol_login_title_key(policy: Option<crate::ui::wol_login::LoginPolicy>) -> &'static str {
+    policy
+        .unwrap_or(crate::ui::wol_login::LoginPolicy::Legacy)
+        .page_spec()
+        .title_key
 }
 
 /// Paint whichever RA2TS menu page the route selects.
@@ -728,6 +741,14 @@ pub(crate) fn encode_family_page(
 mod tests {
     use super::*;
     use crate::ui::single_player_shell::SINGLE_PLAYER_PAGE;
+
+    #[test]
+    fn the_wol_login_heading_comes_from_the_drawn_page() {
+        use crate::ui::wol_login::LoginPolicy;
+        assert_eq!(wol_login_title_key(Some(LoginPolicy::ChooseEntry)), "VERA:OnlineTitle");
+        assert_eq!(wol_login_title_key(Some(LoginPolicy::Legacy)), "GUI:LoginScreen");
+        assert_eq!(wol_login_title_key(None), "GUI:LoginScreen");
+    }
 
     #[test]
     fn status_help_includes_disabled_load() {

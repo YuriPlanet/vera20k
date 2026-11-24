@@ -12,6 +12,7 @@ pub(super) use crate::render::shell_paint::{
     push_flag_entry_clipped_centered, push_tinted_entry,
 };
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
+use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
 use crate::ui::shell::slide::panel_art_origin;
 use crate::ui::skirmish_shell::{RectPx, SkirmishShellLayout, SkirmishShellState};
 
@@ -201,6 +202,7 @@ pub(super) fn push_button_30(
     }
 }
 
+/// Returns whether the selected frame uses the standard SDBTNANM canvas.
 pub(super) fn push_right_panel_button_shp(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
@@ -208,7 +210,7 @@ pub(super) fn push_right_panel_button_shp(
     visual: impl Into<vera20k_gui::shell::button::ButtonVisual>,
     disabled: bool,
     depth: f32,
-) {
+) -> bool {
     let visual = visual.into();
     let pressed = visual.pressed;
     // Skirmish shell setup classifies Start/Choose/Back as owner-draw type 1.
@@ -230,8 +232,10 @@ pub(super) fn push_right_panel_button_shp(
             depth,
             1.0,
         );
+        entry.pixel_size == [SDBTNANM_CELL_W_NARROW as f32, SDBTNANM_CELL_H as f32]
     } else {
         push_button_30(out, atlas, rect, pressed, disabled, depth);
+        false
     }
 }
 

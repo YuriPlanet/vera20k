@@ -235,6 +235,7 @@ pub mod foundation;
 pub mod gattling_type;
 pub mod gunner_turrets;
 pub mod house_colors;
+pub mod ice_rules;
 pub mod infantry_sequence;
 pub mod ini_parser;
 pub(crate) mod weapon_offsets;

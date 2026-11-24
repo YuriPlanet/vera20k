@@ -254,6 +254,22 @@ pub(crate) fn build_tile_atlas(
             needed.len() - before,
         );
     }
+    // The Firestorm ice chain cracks, breaks and regrows any of its three
+    // families' tiles (docs/ts-ice.md).
+    if !grid.ice_tiles.is_empty() {
+        let before = needed.len();
+        for &tile_id in &grid.ice_tiles {
+            if let Err(error) =
+                theater::inject_template_tiles(&mut needed, tile_id, lookup, asset_manager)
+            {
+                log::debug!("Ice tile_id {tile_id} not pre-loaded: {error}");
+            }
+        }
+        log::info!(
+            "Atlas pre-load: injected {} ice TileKeys",
+            needed.len() - before,
+        );
+    }
     log::info!("Map uses {} unique tile keys", needed.len());
 
     let images: HashMap<TileKey, TileImage> =

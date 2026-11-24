@@ -50,7 +50,9 @@ use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::shell::checkbox::CheckboxFace;
-use crate::ui::shell::geom::{FAMILY_CAPTION_W, RectPx, ShellAlign, ShellScale};
+use crate::ui::shell::geom::{
+    FAMILY_CAPTION_W, RectPx, SDBTNANM_CELL_W_NARROW, ShellAlign, ShellScale,
+};
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::sidebar::SidebarTheme;
 use vera20k_gui::shell::bar;
@@ -180,8 +182,13 @@ impl ButtonArt {
         pressed: bool,
         own_align: Option<ShellAlign>,
         scale: ShellScale,
+        standard_panel_art: bool,
     ) -> (RectPx, ShellAlign) {
         let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+        let shared_face = self == ButtonArt::Column
+            || (self == ButtonArt::Panel
+                && standard_panel_art
+                && scale.base_rect(rect).w >= SDBTNANM_CELL_W_NARROW);
         match (self, own_align) {
             (ButtonArt::Modal, _) => (
                 crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
@@ -192,8 +199,8 @@ impl ButtonArt {
                 (button_text_rect(rect, pressed), centred)
             }
             (_, Some(align)) => (rect, align),
-            (ButtonArt::Column, None) => (
-                column_caption_rect(rect, pressed, scale),
+            (_, None) if shared_face => (
+                right_panel_caption_rect(rect, pressed, scale),
                 ShellAlign::ART_CAPTION | ShellAlign::V_CENTER,
             ),
             (_, None) => (
@@ -332,7 +339,7 @@ pub(crate) enum Picture {
 /// Share the right-panel heading's text width while keeping the retail
 /// type-1 button label's center and pressed offset (0x00612B70). The
 /// button's painted rect and hit target are still the original cell.
-fn column_caption_rect(rect: RectPx, pressed: bool, scale: ShellScale) -> RectPx {
+fn right_panel_caption_rect(rect: RectPx, pressed: bool, scale: ShellScale) -> RectPx {
     scale.derive_rect(rect, |rect| {
         let label =
             crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed);
@@ -836,6 +843,7 @@ pub(crate) fn paint_gui_into(
                     });
                     return;
                 }
+                let mut standard_panel_art = false;
                 match (art, atlas) {
                     (ButtonArt::Host | ButtonArt::Side, _) => return,
                     (ButtonArt::Caption, _) => {}
@@ -984,7 +992,7 @@ pub(crate) fn paint_gui_into(
                             pressed,
                             highlighted: flag(gui, node, Prop::Toggled, false),
                         };
-                        paint.draw(Material::Controls, |out, _| {
+                        standard_panel_art = paint.draw(Material::Controls, |out, _| {
                             super::chrome::push_right_panel_button_shp(
                                 out,
                                 atlas,
@@ -993,7 +1001,7 @@ pub(crate) fn paint_gui_into(
                                 !enabled,
                                 SHELL_CONTROL_DEPTH,
                             )
-                        })
+                        });
                     }
                     (
                         ButtonArt::Modal
@@ -1052,7 +1060,8 @@ pub(crate) fn paint_gui_into(
                     Some(shell_paint::SHELL_TEXT_RGB_DISABLED),
                 );
                 let own_align = gui.get(node, Prop::Align).ok().flatten().map(|_| align);
-                let (at, align) = art.caption_rect(rect, pressed, own_align, scale);
+                let (at, align) =
+                    art.caption_rect(rect, pressed, own_align, scale, standard_panel_art);
                 paint
                     .texts
                     .push(text(state, &label, at, align, glyph, rgb, depth));
@@ -1622,7 +1631,7 @@ pub(crate) fn push_side_button(
     // does: yellow is hard to read on it.
     let rgb = button_text_rgb(side.theme, look.enabled && !look.highlighted);
     let scale = crate::ui::shell::geom::RETAIL_SCALE;
-    let (at, align) = ButtonArt::Side.caption_rect(rect, look.pressed, None, scale);
+    let (at, align) = ButtonArt::Side.caption_rect(rect, look.pressed, None, scale, false);
     texts.push(shell_text::draw_in_rect_scaled(
         font,
         caption,
@@ -2705,12 +2714,13 @@ mod tests {
                 centred,
             );
             for art in [ButtonArt::ModalType2, ButtonArt::Side] {
-                assert_eq!(art.caption_rect(rect, pressed, None, RETAIL_SCALE), hand);
+                assert_eq!(art.caption_rect(rect, pressed, None, RETAIL_SCALE, false), hand);
                 let aligned = Some(ShellAlign::NONE);
-                assert_eq!(art.caption_rect(rect, pressed, aligned, RETAIL_SCALE), hand);
+                assert_eq!(art.caption_rect(rect, pressed, aligned, RETAIL_SCALE, false), hand);
             }
         }
-        let (pressed_at, _) = ButtonArt::ModalType2.caption_rect(rect, true, None, RETAIL_SCALE);
+        let (pressed_at, _) =
+            ButtonArt::ModalType2.caption_rect(rect, true, None, RETAIL_SCALE, false);
         assert_eq!(pressed_at, RectPx::new(102, 205, 104, 18));
     }
 
@@ -2984,19 +2994,51 @@ mod tests {
     }
 
     #[test]
-    fn column_caption_shares_width_and_keeps_the_pressed_anchor_at_scale() {
+    fn full_panel_and_column_captions_share_width_and_keep_the_pressed_anchor() {
         use crate::ui::shell::geom::{RETAIL_SCALE, shell_scale};
 
         let button = RectPx::new(644, 199, 156, 42);
+        let align = ShellAlign::ART_CAPTION | ShellAlign::V_CENTER;
         for (pressed, expected) in [
             (false, RectPx::new(664, 200, 114, 41)),
             (true, RectPx::new(665, 204, 114, 37)),
         ] {
-            assert_eq!(column_caption_rect(button, pressed, RETAIL_SCALE), expected);
-            let scale = shell_scale(1600, 1200);
+            for scale in [RETAIL_SCALE, shell_scale(1024, 768), shell_scale(1600, 1200)] {
+                for (art, standard) in [(ButtonArt::Column, false), (ButtonArt::Panel, true)] {
+                    assert_eq!(
+                        art.caption_rect(scale.scale_rect(button), pressed, None, scale, standard),
+                        (scale.scale_rect(expected), align),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn other_button_faces_and_explicit_alignment_keep_their_caption_fit() {
+        let button = RectPx::new(644, 199, 156, 42);
+        let narrow = RectPx::new(690, 199, 110, 42);
+        for (art, standard, rect) in [
+            (ButtonArt::Panel, false, button),
+            (ButtonArt::Panel, true, narrow),
+            (ButtonArt::ModalSqueezed, false, button),
+        ] {
             assert_eq!(
-                column_caption_rect(scale.scale_rect(button), pressed, scale),
-                scale.scale_rect(expected),
+                art.caption_rect(rect, true, None, RETAIL_SCALE, standard),
+                (
+                    button_label_rect_px(rect, true, RETAIL_SCALE),
+                    ShellAlign::BUTTON_CAPTION,
+                ),
+            );
+        }
+        assert_eq!(
+            ButtonArt::PanelCentred.caption_rect(button, true, None, RETAIL_SCALE, true),
+            (button, ShellAlign::H_CENTER | ShellAlign::V_CENTER),
+        );
+        for art in [ButtonArt::Panel, ButtonArt::Column] {
+            assert_eq!(
+                art.caption_rect(button, true, Some(ShellAlign::NONE), RETAIL_SCALE, true),
+                (button, ShellAlign::NONE),
             );
         }
     }
