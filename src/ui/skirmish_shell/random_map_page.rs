@@ -55,7 +55,7 @@ const SCROLLBAR: u16 = 0x7430;
 const LABEL: u16 = 0x7440;
 /// Ares' Urban Areas caption, beside its box like `0x102`'s.
 pub const URBAN_CAPTION: u16 = 0x7450;
-/// The progress text `0x6C6`'s place.
+/// Status text widget. Its VERA layout entry fits multiline results.
 const PROGRESS: u16 = 0x7451;
 /// The preview static, which hovers with no help: a press on it enlarges
 /// the map (`preview_zoom`).
@@ -179,7 +179,11 @@ fn rect(
             return (basic && modal.ares)
                 .then(|| checkbox_text_rect(layout.rect(5000), layout.scale));
         }
-        PROGRESS => return Some(layout.rect(0x6C6)),
+        PROGRESS => {
+            // The waiting prompt shares the row with the progress bar. Once
+            // generation ends the report can use the whole band above Generate.
+            return Some(layout.rect(if modal.generating { 0x6C6 } else { PROGRESS }));
+        }
         // The progress well shows only while a map generates.
         RandomMapSetupLayout::PROGRESS_BAR => {
             return modal
@@ -500,6 +504,33 @@ pub fn pointer(
 /// The dialog's widgets while they are the controller's top dialog.
 fn shown(controller: &DialogController) -> Option<&Gui> {
     (controller.top_id() == Some(DIALOG)).then(|| controller.gui())
+}
+
+#[cfg(all(test, tests_ui))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completed_fairness_report_fits_above_generate() {
+        let layout = crate::ui::skirmish_shell::compute_random_map_setup_layout(800, 600);
+        let options = crate::map::rmg::options::RmgOptions {
+            seed: 1,
+            ..Default::default()
+        };
+        let mut modal = RandomMapSetupModalState::open(options, None, false);
+        modal.begin_generate();
+        let wait = rect(&modal, &layout, PROGRESS).unwrap();
+        assert!(wait.x + wait.w <= layout.rect(RandomMapSetupLayout::PROGRESS_BAR).x);
+
+        modal.finish_generate(None);
+        modal.fairness = Some(Default::default());
+        let caption = progress_text(&modal, &|_, fallback| fallback.to_owned()).unwrap();
+        let area = rect(&modal, &layout, PROGRESS).unwrap();
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let wrapped = font.wrap_layout(&caption, area.w as u32);
+        assert!(wrapped.height <= area.h as u32, "{caption}: {wrapped:?}");
+        assert!(area.y + area.h <= layout.rect(0x620).y);
+    }
 }
 
 /// Whether something holds the mouse: an open list (`ComboDropWin`
