@@ -163,6 +163,13 @@ pub(crate) fn room_size_shown(state: &AppState) -> bool {
     session.host() && session.network_people_limit().is_some() && !super::quick_match(state)
 }
 
+/// The rows the room list shows: the session's player rows, the number the
+/// seat allocator hands out from. The list and the allocator read one owner,
+/// so a player is never seated in a row the list does not show.
+fn visible_rows(session: &MatchSession) -> usize {
+    usize::from(session.network_player_row_limit())
+}
+
 pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
     let session = &state.match_state.session;
     let launch = session.network_setup()?;
@@ -172,21 +179,13 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
         .clamp(0, crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32)
         as usize;
     let observer_row = session.network_observer_row().map(usize::from);
-    let row_limit = session.network_row_limit()?;
-    let visible_limit = if observer_row == Some(0) && (capacity as i32) < row_limit {
-        capacity + 1
-    } else {
-        capacity
-    };
     // VERA's rooms list their seats, the map's players, whether taken or
     // Open, then the spectators. A seat the host removed (Closed) stays
     // hidden until the host's Add slot row, after the seats, opens it.
     let several = session.network_several_observers() && observer_row.is_some();
-    let visible_limit = if several {
-        usize::from(session.network_player_row_limit())
-    } else {
-        visible_limit
-    };
+    // The rows the room seats: the session owns that number, so the list and
+    // the seat allocator never disagree about a row.
+    let visible_limit = visible_rows(session);
     let add_slot = (several && session.host())
         .then(|| {
             (0..visible_limit.min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT) as u8)
@@ -1165,6 +1164,42 @@ mod tests {
             .unwrap();
         session.set_network_spectators(true).unwrap();
         session
+    }
+
+    /// A WOL tournament room whose host watches lists the row native gives
+    /// the host's observer row: `0x005EC4A3..0x005EC4EF` adds one row when
+    /// the room's capacity is under its row limit (a WOL limit under six
+    /// counts one more). The list reads the session's player rows, so it
+    /// shows the row the room seats and no other.
+    #[test]
+    fn a_wol_tournament_room_where_the_host_watches_lists_its_extra_row() {
+        use crate::app::match_runtime::session::NetworkRoom;
+        let profile: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/map_observation.command-bar.example.json",
+        ))
+        .unwrap();
+        let mut launch: crate::skirmish_launch::SkirmishLaunchSession =
+            serde_json::from_value(profile["launch"].clone()).unwrap();
+        launch.opponents.clear();
+        launch.ai_player_count = 0;
+        launch.local_player_index = 0;
+        let mode = launch.mode.clone();
+        let mut session = MatchSession::default();
+        session.enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
+        // The host watches from row 0 (`open_host_setup`).
+        session
+            .accept_network_setup(launch, true, Some(0), false)
+            .unwrap();
+        session.set_network_room(NetworkRoom {
+            tournament: true,
+            clan: false,
+        });
+        session
+            .select_network_map(mode, "EIGHT.MAP".into(), 8)
+            .unwrap();
+        // A tournament room holds two rows (`0x005EC408`, `0x005E6440`).
+        assert_eq!(session.network_setup_capacity(), Some(2));
+        assert_eq!(visible_rows(&session), 3);
     }
 
     /// In a mode with teams and Teams Off, every seated player lists in one
